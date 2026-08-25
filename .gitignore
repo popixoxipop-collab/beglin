@@ -9,3 +9,4 @@ kleidiai/kai_test_noise
 kleidiai/kai_test_asan*
 kleidiai/*.o.tmp
 node_modules/
+.build/

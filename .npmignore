@@ -1,0 +1,15 @@
+bin/qwen_infer
+.build/
+*.o
+kleidiai/q4gemv.h
+kleidiai/kai_test*
+kleidiai/*thread_scaling*
+kleidiai/za_trace*.py
+kleidiai/verify_gemm_f32_bias.c
+kleidiai/verify_real_repack.c
+kleidiai/d31_fp32_scale_prototype.c
+kleidiai/vdsp_ref.c
+kleidiai/kai_rhs_pack_nxk_qsi4c32p_qsu4c32s1s0.*
+kleidiai/kai_lhs_quant_pack_qsi8d32p_f32.c
+kleidiai/kai_lhs_quant_pack_qsi8d32p_f32.h
+kleidiai/arm_gitlab_issue_*.md

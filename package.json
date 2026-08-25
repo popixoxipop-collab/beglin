@@ -1,0 +1,64 @@
+{
+  "name": "vdsp-engine",
+  "version": "0.1.0",
+  "description": "Hand-written C CPU LLM inference engine for Apple Silicon (NEON/SME2 int4/int8 GEMV, MoE batched serving). AGPL-3.0-or-later, commercial license available.",
+  "main": "lib/index.js",
+  "bin": {
+    "vdsp-engine": "bin/vdsp-engine.js"
+  },
+  "files": [
+    "qwen_infer.c",
+    "sme2_kai.c",
+    "sme2_kai.h",
+    "q4gemv.h",
+    "q4gemv_g256.h",
+    "attn_neon.h",
+    "rope_llama3_scale.h",
+    "kleidiai/kai/kai_common.h",
+    "kleidiai/kai_common_sme_asm.S",
+    "kleidiai/kai_lhs_pack_f16pmrx2_f32_neon.c",
+    "kleidiai/kai_lhs_pack_f16pmrx2_f32_neon.h",
+    "kleidiai/kai_lhs_quant_pack_qsi8d32p_f32_neon.c",
+    "kleidiai/kai_lhs_quant_pack_qsi8d32p_f32_neon.h",
+    "kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa.c",
+    "kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa.h",
+    "kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa_asm.S",
+    "kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa.c",
+    "kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa.h",
+    "kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa_asm.S",
+    "kleidiai/kai_rhs_pack_nxk_qsi4c32ps1s0scalef16_qsu4c32s16s0_neon.c",
+    "kleidiai/kai_rhs_pack_nxk_qsi4c32ps1s0scalef16_qsu4c32s16s0_neon.h",
+    "kleidiai/kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.c",
+    "kleidiai/kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.h",
+    "scripts/",
+    "lib/",
+    "bin/vdsp-engine.js",
+    "LICENSE",
+    "COMMERCIAL-LICENSE.md",
+    "COMMERCIAL-LICENSE-AGREEMENT.md",
+    "RESULTS.md"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/postinstall-build.js",
+    "build": "node scripts/postinstall-build.js",
+    "test": "node scripts/smoke-test.js"
+  },
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/popixoxipop-collab/vdsp-engine.git"
+  },
+  "homepage": "https://github.com/popixoxipop-collab/vdsp-engine#readme",
+  "bugs": {
+    "url": "https://github.com/popixoxipop-collab/vdsp-engine/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
