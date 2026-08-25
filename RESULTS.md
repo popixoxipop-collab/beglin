@@ -409,3 +409,116 @@ untouched by this change.
 
 Raw: `qwen_infer.c` (this repo), llama.cpp comparison run on `bob`
 (`~/llamacpp_kleidi_build`, commit `d83f72d`), 2026-08-25.
+
+## General-purpose loader — Phase 2 sub-step 1: transcode quantizer, oracle-verified (2026-08-25)
+
+New TU `gguf_transcode.c`/`.h`: turns an already-dequantized (F32) GGUF
+tensor into this engine's own `K_Q4G64`/`K_Q8G64` formats, so GGUF tensors
+can run through the SME2/NEON group-64 kernels instead of the slow F32/BLAS
+fallback Phase 1 left them on. This is D-gen-2's "Path A" (convenience:
+dequant→fp32→RTN re-quantize) from `PLAN_general_purpose_loader.md`.
+
+**Not a new algorithm — a straight port** of `eval/quantize_int4.py`'s
+`quant_group_ef()` (int4, WITH error-feedback) and `quant_group_int8()`
+(int8, no error-feedback — the same functions that produced this project's
+own documented ppl numbers), so a real independent implementation already
+existed to check the C port against.
+
+**Oracle**: `tools/gguf_transcode_dump.c` (C: dequant real GGUF tensor →
+new quantizer → raw packed/scales binary) vs `tools/gguf_transcode_oracle.py`
+(fresh Python re-implementation of the same two Python functions, run
+against `gguf-py`'s independent dequant) — `cmp` on the raw binaries, not
+a tolerance check. Two real bugs found this way, neither would have been
+caught by code review alone:
+
+1. **`roundf()` vs `np.round()`** — C's `roundf()` is round-half-away-from-
+   zero; numpy's `np.round()` is IEEE754 round-half-to-even. First attempt
+   showed max-abs-diff of exactly 1 at ~0.1-0.09% of positions (the
+   textbook tie-break signature). Fixed with `rintf()`, which follows the
+   process's current FP rounding mode (round-to-nearest-even by default —
+   confirmed no code anywhere in this repo calls `fesetround()`).
+2. **Reciprocal-multiply vs direct division** — `quant_group_ef()` (q4)
+   precomputes `inv = 1/scale` and multiplies; `quant_group_int8()` (q8)
+   divides directly. These are NOT bit-identical (two roundings vs one).
+   The q4 path already matched `inv`-style, so it hit zero-diff right
+   after the `rintf()` fix; q8 still showed ~173K/233M diffs (same
+   off-by-one signature) until its C code was changed from
+   `grp[p] * inv` to `grp[p] / scale` to match the Python reference
+   exactly.
+
+**Result after both fixes**: zero-diff (`cmp`, exact) on three real
+tensors from the 1.1GB fixture — `blk.0.attn_q.weight` (Q4_K→q4g64,
+1536×1536), `output.weight` (Q4_K→q8g64, 151936×1536, the untied lm_head),
+`blk.0.ffn_down.weight` (Q4_K→q4g64, 1536×8960, exercises a non-square
+shape with `ng=140` groups) — packed bytes, codes, and scales all exact
+matches, not just close.
+
+Compiles clean (`-Wall -Wextra`, 0 warnings), 0 SVE/SME instructions in
+the object file (arithmetic-only TU, no vendor kernel calls, verified on
+bob's actual M4 build anyway per this project's own discipline of not
+assuming a TU is "obviously" caller-plain).
+
+Raw: `gguf_transcode.c`/`.h` (this repo), oracle run and diffs captured
+on `bob`, 2026-08-25.
+
+## General-purpose loader — Phase 2 sub-step 1b: policy table wired in, real inference (2026-08-25)
+
+`load_gguf_weights()` now dispatches by role instead of always registering
+`K_F32`: the 7 2D projection roles (Q/K/V/O/gate/up/down) transcode
+through `gguf_register_q4g64_as()`; the 2 norm roles, all biases, and the
+tied embedding stay `K_F32`; the untied `lm_head` (when present) goes
+through `gguf_register_q8g64_as()`. This is D7/D9/D17 from
+`eval/quantize_int4.py`, replicated exactly — not a new policy invented
+for GGUF.
+
+**A second real bug, again found only by running it**: first attempt
+crashed immediately with `FATAL: gemv in=1536 > pool max_in=0`. The
+K_Q4G64/K_Q8G64 GEMM dispatch (`gemv_q4g64_mt` etc.) reads a shared
+thread-pool (`g_pool`, `q4pool` type) that every other K_Q4G64 producer
+(the `QWEN_INT4_BIN` path) already initializes via `q4pool_init()` before
+using — the GGUF loader path never had, because Phase 1 only ever
+produced `K_F32` tensors. Fixed by running the identical
+`q4pool_init()`/`q4pool_start()` sequence (same `Q4_THREADS`
+detection, same `Q4_POOL_SPIN`/`Q4_POOL_QOS` env vars) in the
+`QWEN_GGUF` branch of `main()`, mirroring the `QWEN_INT4_BIN` branch
+verbatim rather than inventing GGUF-specific pool logic.
+
+**Real end-to-end run**, same 1.1GB/339-tensor fixture, `QWEN_GGUF` set:
+`registered 339 tensors (196 K_Q4G64, 1 K_Q8G64, 142 K_F32)`, lm_head
+correctly detected as `int8` via the same D14 (M49) kind-check the
+`QWEN_INT4_BIN` path uses (not a GGUF-specific reimplementation).
+
+**Accuracy signal — stronger than expected for a "lossy-on-lossy" path**:
+compared greedy-decode output against Phase 1's F32-only GGUF run (which
+was itself an exact 31-token match to upstream llama.cpp). This run
+additionally RTN+error-feedback-quantizes GGUF's own Q4_K weights to
+this engine's q4g64 int4 — two independent lossy quantizations stacked,
+exactly the risk D-gen-2's Path A table flags. Result: **27 of the first
+27 tokens match exactly**, first divergence at token 28 (a numbered-list
+continuation where two token choices are close in log-probability —
+`21273` vs `26437`, both plausible list-item continuations), after which
+tokens 29-32 continue to differ only by that same local perturbation
+propagating forward, not incoherent generation. Far better than the
+worst-case "double lossy quantization" risk implied — no ppl number was
+computed here (that's the still-outstanding Phase 1 gate metric), but
+this is a strong qualitative signal the transcode isn't silently
+degrading the model.
+
+**R1 regression, the untouched paths**: ran the SAME binary in
+`QWEN_INT4_BIN` mode (Llama-3.1-8B production weights, `weights_prod_llama31_8b/`)
+against the pre-existing golden binary (`qwen_infer_f16lhs_default`) --
+byte-identical stderr through arch config, int4 tensor count (291),
+SME2 repack count (224/224, 3.71GB), `Q4_THREADS`, `lm_head=int8`
+detection, and fused-dispatch verification; both then hit the same
+unrelated missing-prompt-ids FATAL (a path-setup issue in this ad hoc
+test invocation, not a code difference -- confirmed identical between
+old and new binaries, so not a regression from this change). Also ran
+the MoE path (`weights_moe/`, auto-detected first in `main()`, entirely
+untouched code) -- byte-identical logits across all 8 verify positions
+between old and new binaries.
+
+Compiles clean (`-Wall -Wextra`, 13 warnings, the documented baseline,
+zero new), 0 SVE/SME instructions leaked into `qwen_infer.o`.
+
+Raw: `qwen_infer.c` (this repo), regression and accuracy runs captured
+on `bob`, 2026-08-25.

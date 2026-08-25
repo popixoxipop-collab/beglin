@@ -32,6 +32,7 @@
                             // to become part of this plain-compiled caller TU's actual logic,
                             // only called into)
 #include "gguf_quants.h"   // general-purpose-loader Phase 1: vendored dequant (own TU, same reason)
+#include "gguf_transcode.h" // general-purpose-loader Phase 2: RTN(+EF) transcode to K_Q4G64/K_Q8G64 (own TU, same reason)
 
 // D1/D2 (structural generalization): NL/NH/NKV/D/HD/KVD/QD/IM/VOCAB/THETA/EPS/MAXSEQ/GROUP/
 // KVG/QG used to be compile-time #defines for Qwen2.5-1.5B only. They are now loaded once at
@@ -4626,17 +4627,103 @@ static WT *gguf_register_f32_as(const char *gguf_name, const char *engine_name) 
     return w;
 }
 
+// Phase 2 sub-step 1b (D-gen-2 Path A): dequantizes one GGUF tensor, then RTN+error-feedback
+// transcodes it to K_Q4G64 via gguf_transcode.c (oracle-verified zero-diff against
+// eval/quantize_int4.py's quant_group_ef(), see RESULTS.md). Falls back to a plain K_F32
+// registration when `in % 64 != 0` -- the transcode group size's hard requirement, the exact
+// same constraint kai_sme2_shape_ok() already enforces downstream (D-gen-3's policy table row:
+// "in%64==0, HARD, fallback already exists -- K_F32->BLAS"), not a new one invented here.
+static WT *gguf_register_q4g64_as(const char *gguf_name, const char *engine_name) {
+    const GgufTensorInfo *t = gguf_find_tensor(g_gguf, gguf_name);
+    if (!t) { fprintf(stderr, "FATAL: gguf model missing tensor '%s'\n", gguf_name); exit(1); }
+    int in = (int)t->ne[0], out = (int)t->ne[1];
+    if (in % 64 != 0) {
+        fprintf(stderr, "[engine] gguf: %s in=%d not a multiple of 64 -> K_F32 fallback (not K_Q4G64)\n", engine_name, in);
+        return gguf_register_f32_as(gguf_name, engine_name);
+    }
+    if (!gguf_dequant_supported(t->type)) {
+        fprintf(stderr, "FATAL: gguf tensor '%s' has unsupported quant type id %d\n", gguf_name, (int)t->type);
+        exit(1);
+    }
+    check_no_dup_name(engine_name);
+    if (g_nwt >= 512) { fprintf(stderr, "FATAL: >512 tensors loading gguf model\n"); exit(1); }
+    float *deq = malloc(sizeof(float) * (size_t)t->n_elements);
+    if (!deq) { fprintf(stderr, "FATAL: gguf dequant alloc failed for '%s'\n", gguf_name); exit(1); }
+    gguf_dequant_row(t->type, gguf_tensor_data(g_gguf, t), deq, (int64_t)t->n_elements);
+
+    int ng = in / 64;
+    uint8_t *packed = malloc((size_t)out * (in / 2));
+    float *scales = malloc(sizeof(float) * (size_t)out * ng);
+    if (!packed || !scales) { fprintf(stderr, "FATAL: gguf transcode alloc failed for '%s'\n", gguf_name); exit(1); }
+    gguf_quantize_q4g64_error_feedback(deq, out, in, packed, scales);
+    free(deq);
+
+    WT *w = &g_wt[g_nwt++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->kind = K_Q4G64; w->in = in; w->out = out; w->ng = ng;
+    w->f32 = NULL; w->packed = packed; w->scales = scales; w->sub = NULL;
+    w->kai_rhs = NULL; w->kai_rhs_bytes = 0; w->kai_lazy_failed = 0;
+    return w;
+}
+
+// Phase 2 sub-step 1b: symmetric int8 group-64 RTN (no error-feedback -- D7/D17's "near-
+// lossless without it" finding), used only for the untied lm_head, matching
+// eval/quantize_int4.py's quant_group_int8() policy exactly.
+static WT *gguf_register_q8g64_as(const char *gguf_name, const char *engine_name) {
+    const GgufTensorInfo *t = gguf_find_tensor(g_gguf, gguf_name);
+    if (!t) { fprintf(stderr, "FATAL: gguf model missing tensor '%s'\n", gguf_name); exit(1); }
+    int in = (int)t->ne[0], out = (int)t->ne[1];
+    if (in % 64 != 0) {
+        fprintf(stderr, "[engine] gguf: %s in=%d not a multiple of 64 -> K_F32 fallback (not K_Q8G64)\n", engine_name, in);
+        return gguf_register_f32_as(gguf_name, engine_name);
+    }
+    if (!gguf_dequant_supported(t->type)) {
+        fprintf(stderr, "FATAL: gguf tensor '%s' has unsupported quant type id %d\n", gguf_name, (int)t->type);
+        exit(1);
+    }
+    check_no_dup_name(engine_name);
+    if (g_nwt >= 512) { fprintf(stderr, "FATAL: >512 tensors loading gguf model\n"); exit(1); }
+    float *deq = malloc(sizeof(float) * (size_t)t->n_elements);
+    if (!deq) { fprintf(stderr, "FATAL: gguf dequant alloc failed for '%s'\n", gguf_name); exit(1); }
+    gguf_dequant_row(t->type, gguf_tensor_data(g_gguf, t), deq, (int64_t)t->n_elements);
+
+    int ng = in / 64;
+    int8_t *codes = malloc((size_t)out * in);
+    float *scales = malloc(sizeof(float) * (size_t)out * ng);
+    if (!codes || !scales) { fprintf(stderr, "FATAL: gguf transcode alloc failed for '%s'\n", gguf_name); exit(1); }
+    gguf_quantize_q8g64(deq, out, in, codes, scales);
+    free(deq);
+
+    WT *w = &g_wt[g_nwt++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->kind = K_Q8G64; w->in = in; w->out = out; w->ng = ng;
+    w->f32 = NULL; w->packed = (const uint8_t *)codes; w->scales = scales; w->sub = NULL;
+    w->kai_rhs = NULL; w->kai_rhs_bytes = 0; w->kai_lazy_failed = 0;
+    return w;
+}
+
 // Populates g_wt[] with every tensor this dense GQA model needs, under this engine's existing
 // HF-style names -- after this returns, init_qkv_bias() and init_tensor_roles() (both already
 // defined above, unmodified) work exactly as they do for the custom binary format, because
 // from their point of view nothing about where the bytes came from is visible.
+//
+// Per-role policy (D7 in eval/quantize_int4.py, replicated exactly, not reinvented): the 7
+// 2D projection roles (Q/K/V/O/gate/up/down) transcode to K_Q4G64; the 2 norm roles and all
+// biases stay K_F32 (quantizing norms/biases was measured, elsewhere in this project's own
+// history, to cost accuracy for no compression win worth it at this size); the tied embedding
+// stays K_F32 (same D7/D9 finding: int4 on the tied embed cost ppl 10.6->20.4 -- not repeated
+// here); the untied lm_head (when present) goes K_Q8G64 (D17: near-lossless, breaks the fp32
+// lm_head Amdahl floor).
 static void load_gguf_weights(void) {
+    int n_q4 = 0, n_f32 = 0;
     for (int r = 0; r < N_LAYER_ROLES; r++) {
+        int is_norm = (r == ROLE_INPUT_LN || r == ROLE_POST_ATTN_LN);
         for (int l = 0; l < g_cfg.nl; l++) {
             char gsrc[96], ename[96];
             snprintf(gsrc, sizeof gsrc, ROLE_PATTERN_GGUF[r], l);
             snprintf(ename, sizeof ename, ROLE_PATTERN_HF[r], l);
-            gguf_register_f32_as(gsrc, ename);
+            if (is_norm) { gguf_register_f32_as(gsrc, ename); n_f32++; }
+            else         { gguf_register_q4g64_as(gsrc, ename); n_q4++; }
         }
     }
     if (g_cfg.qkv_bias) {
@@ -4645,18 +4732,20 @@ static void load_gguf_weights(void) {
             snprintf(gq,sizeof gq,"blk.%d.attn_q.bias",l); snprintf(eq,sizeof eq,"model.layers.%d.self_attn.q_proj.bias",l);
             snprintf(gk,sizeof gk,"blk.%d.attn_k.bias",l); snprintf(ek,sizeof ek,"model.layers.%d.self_attn.k_proj.bias",l);
             snprintf(gv,sizeof gv,"blk.%d.attn_v.bias",l); snprintf(ev,sizeof ev,"model.layers.%d.self_attn.v_proj.bias",l);
-            gguf_register_f32_as(gq, eq);
-            gguf_register_f32_as(gk, ek);
-            gguf_register_f32_as(gv, ev);
+            gguf_register_f32_as(gq, eq); n_f32++;
+            gguf_register_f32_as(gk, ek); n_f32++;
+            gguf_register_f32_as(gv, ev); n_f32++;
         }
     }
-    gguf_register_f32_as("token_embd.weight", "model.embed_tokens.weight");
-    gguf_register_f32_as("output_norm.weight", "model.norm.weight");
-    // output.weight present -> untied lm_head; absent -> tied embeddings, matching this
-    // engine's EXISTING tied-embedding fallback (wt_opt("lm_head.weight") returning NULL is
-    // already how init_tensor_roles() detects that case for the custom format).
-    if (gguf_find_tensor(g_gguf, "output.weight")) gguf_register_f32_as("output.weight", "lm_head.weight");
-    fprintf(stderr, "[engine] gguf: registered %d tensors, all K_F32 (Phase 1 -- quantized transcode is Phase 2)\n", g_nwt);
+    gguf_register_f32_as("token_embd.weight", "model.embed_tokens.weight"); n_f32++;
+    gguf_register_f32_as("output_norm.weight", "model.norm.weight"); n_f32++;
+    // output.weight present -> untied lm_head (K_Q8G64); absent -> tied embeddings, matching
+    // this engine's EXISTING tied-embedding fallback (wt_opt("lm_head.weight") returning NULL
+    // is already how init_tensor_roles() detects that case for the custom format).
+    int n_q8 = 0;
+    if (gguf_find_tensor(g_gguf, "output.weight")) { gguf_register_q8g64_as("output.weight", "lm_head.weight"); n_q8++; }
+    fprintf(stderr, "[engine] gguf: registered %d tensors (%d K_Q4G64, %d K_Q8G64, %d K_F32)\n",
+            g_nwt, n_q4, n_q8, n_f32);
 }
 
 int main(int argc, char **argv) {
@@ -4709,9 +4798,26 @@ int main(int argc, char **argv) {
     char path[512];
     const char *int4bin = getenv("QWEN_INT4_BIN");
     if (gguf_path && gguf_path[0]) {
+        // Phase 2 sub-step 1b: load_gguf_weights() now registers K_Q4G64/K_Q8G64 tensors (not
+        // just K_F32, as in Phase 1), so the same q4pool this engine's other K_Q4G64/K_Q8G64
+        // consumer (the QWEN_INT4_BIN path, below) needs must be initialized here too --
+        // identical T-detection/spin/qos setup, no GGUF-specific pool logic invented.
+        int T = getenv("Q4_THREADS")?atoi(getenv("Q4_THREADS")):detect_q4_threads();
+        q4pool_init(&g_pool, T, g_cfg.im);
+        { const char *e = getenv("Q4_POOL_SPIN"); int m = e ? atoi(e) : 1; g_pool.spin = m ? 1 : 0; }
+        { const char *e = getenv("Q4_POOL_QOS");  g_pool.qos  = (e && atoi(e)) ? 1 : 0; }
+        { const char *e = getenv("Q4_POOL_SPIN_ITERS"); if (e && atoi(e) > 0) g_pool.spin_iters = atoi(e); }
+        q4pool_start(&g_pool);
         load_gguf_weights();   // registers every tensor under the existing HF-style names --
                                 // init_qkv_bias()/init_tensor_roles() below need no changes
-        g_int8_head = 0;        // Phase 1 GGUF path is K_F32 only; no quantized lm_head yet
+        // Same D14 (M49) kind-check the QWEN_INT4_BIN path below uses, not a GGUF-specific
+        // reinvention: wt_opt() returning non-NULL only proves a tensor named "lm_head.weight"
+        // exists, not which encoding it's in (untied lm_head may have stayed K_F32 if
+        // gguf_register_q8g64_as()'s in%64==0 check fell back).
+        const char *fp32h = getenv("QWEN_FP32_HEAD");
+        WT *gguf_lmh = wt_opt("lm_head.weight");
+        g_int8_head = (gguf_lmh && gguf_lmh->kind == K_Q8G64 && !(fp32h && fp32h[0])) ? 1 : 0;
+        fprintf(stderr,"[engine] gguf Q4_THREADS=%d, lm_head=%s\n", T, g_int8_head?"int8":"fp32");
     } else if (int4bin && int4bin[0]) {
         g_int4=1; int T = getenv("Q4_THREADS")?atoi(getenv("Q4_THREADS")):detect_q4_threads();  // M51: per-chip tuned table, see detect_q4_threads() above
         q4pool_init(&g_pool, T, g_cfg.im);

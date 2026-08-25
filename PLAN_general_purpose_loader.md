@@ -322,8 +322,25 @@ writeup: [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-1-complete-gguf
 
 ### Phase 2 — Transcode + on-disk cache; first new model (~1.5 weeks)
 
-1. Transcode stage: GGUF tensor → K_Q4G64/K_Q8G64/K_F32 via a per-role
-   policy table.
+1. ✅ **DONE 2026-08-25** — Transcode stage: GGUF tensor → K_Q4G64/K_Q8G64/K_F32
+   via a per-role policy table (`gguf_transcode.c`/`.h`, new TU, RTN+error-
+   feedback for K_Q4G64 and plain RTN for K_Q8G64 — a direct port of
+   `eval/quantize_int4.py`'s `quant_group_ef()`/`quant_group_int8()`, not a
+   new algorithm). Oracle-verified zero-diff against an independent Python
+   re-implementation on 3 real tensors from the fixture; two real bugs
+   (round-half-to-even vs round-half-away-from-zero, and reciprocal-multiply
+   vs direct division) found and fixed via the oracle diff, not review.
+   `load_gguf_weights()` now wires the policy table in (7 projection roles
+   → K_Q4G64, norms/biases/tied-embed → K_F32, untied lm_head → K_Q8G64,
+   matching D7/D9/D17 exactly) and a second real bug (the shared `q4pool`
+   thread pool never being initialized for this path) was found by running
+   it and fixed by mirroring the `QWEN_INT4_BIN` branch's init sequence.
+   Real end-to-end run on the 1.1GB fixture: 27/27 exact token match
+   against Phase 1's llama.cpp-verified F32 baseline before first
+   divergence at a close-log-probability tie point — far better than the
+   "lossy-on-lossy" worst case this table's own row warns about. R1
+   regression on the untouched `QWEN_INT4_BIN`/MoE paths: byte-identical.
+   Full writeup: [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-2-sub-step-1-transcode-quantizer-oracle-verified-2026-08-25).
 2. **On-disk cache, decided now, not deferred**: naive transcode is a
    memory disaster (8B Q4_K = ~4.5GB mmap + ~4.5GB transcoded + up to
    ~3.7GB SME2 repack = 12+GB on a 16GB machine). Write a `<model>.beglin`
