@@ -113,3 +113,52 @@ stack in each case. The lesson that generalizes: a SIGILL that survives
 extensive *non-interactive* bisection is a signal to get an interactive
 debugger session immediately, not a signal that the environment itself is
 unreliable.
+
+## General-purpose loader — Phase 0 "Shape Soak" (2026-08-25)
+
+Gate for [`PLAN_general_purpose_loader.md`](PLAN_general_purpose_loader.md):
+before building a GGUF-class loader, does the SME2 kernel actually survive
+tensor shapes this engine has never shipped? Every N (`out`) this engine
+has ever passed to the kernel happens to be a multiple of 64 — the shape
+gate (`kai_sme2_shape_ok`) only checks `in % 64 == 0`, leaving `out`
+formally unconstrained but genuinely untested.
+
+**Method**: extended the existing isolated-kernel-correctness pattern
+(`f16lhs_bench.c`) into a shape sweep — real repack + real GEMM kernel
+call at each `(out, in, M)`, compared against a reference that applies
+the same lossy LHS rounding the kernel itself applies (fp16 round for
+f16p-LHS, per-64-group symmetric int8 round for int8-LHS) before an
+exact double-precision dot product. Isolates "does the kernel handle this
+shape" from "how much does LHS precision cost" (already characterized for
+shipped shapes).
+
+**Grid**: `out` ∈ {**63, 65, 127, 129, 1000, 32000**, 1408, 2048, 4096,
+102400} (bold = never shipped, not a multiple of 64) at fixed in=2048,
+M=8; `in` ∈ {64, 128, 512, 1536, 2048, 4096, 8960, 14336} at fixed
+out=128, M=8; two new shape families (4096×4096, 11008×2048 — Mistral/
+Qwen2.5-3B-class dimensions, neither previously exercised) across `M` ∈
+{1, 4, 8, 15, 16, 17, 32, 64}. Both kernel variants (int8-LHS, f16p-LHS),
+64 total (shape, M) combinations, run on bob (real M4/SME2 hardware).
+
+**Result: `any_fail=0`.** No crash, no SIGILL, no repack failure, at any
+shape. Critically, rel_l2 for the never-shipped, non-`%64` `out` values
+(2.7e-4–3.6e-4) sits in the **same band** as the known-good `%64` shapes
+(2.2e-4–3.4e-4) — no spike, no shape-dependent degradation. The
+never-exercised `M=15/16/17` boundary (the kernel's `mr` row-tile
+transition) shows no anomaly either. Timing scales smoothly with M for
+both kernel families at both new shape families; f16p-LHS runs ~1.5-2×
+slower than int8-LHS per shape/M, consistent with its higher LHS
+precision, at every point tested — no shape-specific timing cliff.
+
+**Conclusion (corrects the original `ROADMAP.md` claim)**: the SME2
+kernel wrapper is already shape-generic for correctness at every `out`
+value tested, including values with no relationship to 64. No
+pad-at-repack workaround was needed to reach this result — the untested
+path simply works. This removes the shape-genericity risk the original
+roadmap flagged as the open design question blocking Phase 1; the plan's
+Phase 0 gate is **PASSED**, clearing the way for the GGUF reader work
+without a dispatch-table redesign.
+
+Raw: `shape_soak.c` (this repo), full sweep output
+`f16lhs_bench.c`-pattern log with all 64 `RESULT`/`SKIP` lines, `bob`,
+2026-08-25.

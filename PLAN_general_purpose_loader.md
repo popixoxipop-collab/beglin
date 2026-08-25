@@ -211,7 +211,25 @@ KV+tensor table diff must be empty; dequant vs. `ggml`'s must be exactly
 
 ## 3. Phases
 
-### Phase 0 — "Shape Soak" (~1 week, touches zero shipped code)
+### Phase 0 — "Shape Soak" (~1 week, touches zero shipped code) — ✅ DONE 2026-08-25, GATE PASSED
+
+**Result: `any_fail=0` across 64 (shape, M) combinations on real M4
+hardware**, including every `out` value that isn't a multiple of 64
+(63, 65, 127, 129, 1000, 32000 — none previously shipped). rel_l2 for
+those shapes (2.7e-4-3.6e-4) sits in the same band as known-good `%64`
+shapes (2.2e-4-3.4e-4) — no shape-dependent degradation, no crash, no
+repack failure, no timing cliff at the `M=15/16/17` `mr`-boundary. No
+pad-at-repack workaround was needed. Full writeup:
+[`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-0-shape-soak-2026-08-25),
+harness: [`shape_soak.c`](shape_soak.c), raw output:
+[`results/phase0_shape_soak_out.txt`](results/phase0_shape_soak_out.txt).
+
+**This confirms Correction 1 (§0) empirically, not just by code reading**:
+the SME2 kernel is already shape-generic for correctness. Phase 1 can
+proceed without a dispatch-table redesign for shape support — that open
+design question from the original `ROADMAP.md` is closed.
+
+Original phase spec (for reference — superseded by the actual run above):
 
 The credibility hinge everything downstream is contingent on. Extend
 `probe_sme2_sizes.c`/`f16lhs_bench.c`/`moe3c_sme2_bench.c` into a
