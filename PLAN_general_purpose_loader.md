@@ -256,8 +256,15 @@ rewrite, not discovered late).
 
 ### Phase 1 — GGUF reader + role-based tensor resolution, behind a flag (~2 weeks)
 
-1. `gguf_load.c`/`gguf_load.h` — container parse, bounds-checked, FATAL
-   on unrecognized (the `load_int4` doctrine).
+1. ✅ **DONE 2026-08-25** — `gguf_load.c`/`gguf_load.h`: container parse,
+   bounds-checked, FATAL on unrecognized (the `load_int4` doctrine). R4
+   oracle gate passed with zero diff against `gguf-py` across all 423
+   lines of KV+tensor-table output on the real 1.1GB fixture (339
+   tensors); tensor byte-content spot-checked identical too, not just
+   offsets. Compiles clean (`-Wall -Wextra`, 0 warnings) on both bob and
+   the M1 Max dev machine, its own TU as planned. Full writeup:
+   [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-1-sub-step-1-gguf-container-parser-2026-08-25).
+   Remaining sub-steps below are NOT yet done.
 2. Vendored dequant (`gguf_quants.c`, MIT, `VENDOR.md` entry).
 3. `TensorRole` indirection replacing ~14 name literals / ~50 call sites
    with `wt_role(ROLE_ATTN_Q, l)`, resolved once at load via a

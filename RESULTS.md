@@ -162,3 +162,52 @@ without a dispatch-table redesign.
 Raw: `shape_soak.c` (this repo), full sweep output
 `f16lhs_bench.c`-pattern log with all 64 `RESULT`/`SKIP` lines, `bob`,
 2026-08-25.
+
+## General-purpose loader — Phase 1, sub-step 1: GGUF container parser (2026-08-25)
+
+First concrete step of [`PLAN_general_purpose_loader.md`](PLAN_general_purpose_loader.md)
+Phase 1 (D-gen-1): a from-scratch GGUF v3 container parser (`gguf_load.c`/
+`gguf_load.h`), built and verified in isolation *before* any dequant
+support or `qwen_infer.c` integration — same "prove the foundation before
+building on it" discipline this project used for the SME2 kernel work.
+
+**R4 oracle gate: zero diff.** Wrote a second, independent reader
+(`tools/gguf_dump_oracle.py`, using llama.cpp's own `gguf-py` as the
+reference implementation) that dumps the same canonical
+{KV-entries, tensor-table} format as a C-side dump tool
+(`tools/gguf_verify.c`). Ran both against a real 1.1GB production GGUF
+file (`qwen2.5-1.5b-instruct-q4_k_m.gguf`, 339 tensors, Q4_K/Q6_K/F32
+mixed quantization, on bob) — **423/423 lines identical, `diff` empty.**
+This covers every KV key/type/value, every tensor's name/type/shape/
+element-count/byte-count/absolute-data-offset, including the
+alignment-padded data-section-start computation and the array-skip
+logic needed to walk past the tokenizer's large string arrays (vocab +
+merges) without materializing them.
+
+**Tensor byte-content spot-check** (separate from the metadata oracle
+above — this proves `gguf_tensor_data()`'s offset+length actually points
+at the right bytes, not just that the offset *number* matches):
+first-4/last-4 bytes of 4 tensors spanning all 3 types present in the
+fixture (F32 norm weight, Q4_K embedding, Q6_K output projection, Q4_K
+FFN gate) — **byte-identical** between the C parser and `gguf-py`.
+
+**Compiles clean** with `-Wall -Wextra`, zero warnings, on both bob and
+the M1 Max dev machine. Deliberately its own translation unit (never
+`#include`d into `qwen_infer.c`) — this file's byte-swap/bit-walk loops
+are exactly the code shape that autovectorized into illegal SVE
+instructions once already this project (see the caller-plain convention
+section above); keeping it separate preserves that property with margin
+rather than relying on remembering to re-check it every time
+`qwen_infer.c` changes.
+
+**Not yet done** (tracked in `PLAN_general_purpose_loader.md` Phase 1):
+Q4_K/Q6_K/Q8_0/Q4_0/F16/BF16 dequant vendoring, the `TensorRole`
+indirection replacing ~50 hardcoded tensor-name call sites in
+`qwen_infer.c`, GGUF-metadata-to-`ArchCfg` mapping, and the actual engine
+integration + ppl-delta gate against the existing 12.10 baseline. The
+container parser proven here is the dependency all of that sits on top
+of.
+
+Raw: `gguf_load.c`/`gguf_load.h` (this repo), `tools/gguf_verify.c`,
+`tools/gguf_dump_oracle.py`, `tools/gguf_hash_tensors.c`, `bob`,
+2026-08-25.
