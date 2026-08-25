@@ -33,28 +33,51 @@ adopt the way they adopt llama.cpp, without needing us to hand-port every
 new model.
 
 **COST**: this is large, multi-session engineering work, not an
-incremental patch:
+incremental patch. **Correction (2026-08-25, after a code-reading planning
+pass — see [`PLAN_general_purpose_loader.md`](PLAN_general_purpose_loader.md)):**
+the paragraph below originally claimed the SME2 kernels are shape-fit to
+the 3 validated models. That's wrong. `sme2_kai.c`'s shape gate
+(`kai_sme2_shape_ok`) only constrains `in % 64 == 0`; `out` is
+unconstrained in both the wrapper and the vendored KleidiAI kernel
+(arbitrary N is handled by pad-at-pack). Every N this engine has ever
+actually passed happens to be a multiple of 64 — so the real situation is
+**"probably already shape-generic, but the `out`-arbitrary path has never
+been exercised,"** not "hand-fit, needs a dispatch table." The dense
+engine (`load_arch_cfg`/`alloc_arch_buffers`) is already metadata-driven;
+it's specifically the **MoE path** that's dimension-hardcoded to
+DeepSeek-V2-Lite (stack arrays sized to its exact dims, already caused one
+real stack smash). See the plan doc for the full corrected picture and a
+day-one experiment (a shape sweep on real M4 hardware) that resolves the
+`out`-genericity unknown before anything else is built on top of it.
 - A metadata-driven loader (GGUF or an equivalent) has to replace the
   current `arch_config.txt`-per-model, hand-written-per-architecture
   parsing in `qwen_infer.c`.
-- The SME2 kernels are currently fit to the exact tensor shapes of the 3
-  validated models. Genuinely arbitrary shapes need either (a) a
-  dispatch table of shape-specialized fast paths selected at load time,
-  or (b) a correct generic fallback (NEON/scalar) for unrecognized shapes
-  with SME2 reserved for known-good ones. Which of these — and how much
-  of the current hand-written-kernel identity survives it — is an open
-  design question, not decided here.
-- The export/quantization pipeline needs the same generalization: ingest
-  an arbitrary HF checkpoint, not just the 3 models it currently knows
-  about.
+- The MoE path's DeepSeek-specific stack arrays need converting to
+  heap-allocated, `g_cfg`-style sizing before a second MoE topology can
+  be supported — this turns out to be the largest single chunk of the
+  work (see plan Phase 4), not the SME2 kernels themselves.
+- The export/quantization pipeline needs generalizing to ingest an
+  arbitrary HF checkpoint — turns out to be a smaller job than expected;
+  the existing scripts are already closer to architecture-generic than
+  this file originally assumed (3 hardcoded name literals in one script,
+  not a rewrite).
 
-**EXIT**: if this doesn't pan out (e.g. the shape-generalization cost is
-too high relative to adoption benefit), beglin stays a narrow,
-high-confidence engine for a curated model list — which is still a
-legitimate, honest product; it just doesn't compete with llama.cpp on
-scope, only on measured CPU throughput for the models it does support.
+**EXIT**: if the `out`-genericity experiment (plan Phase 0) fails even
+with padding, beglin stays a narrow, high-confidence engine for a curated
+model list — which is still a legitimate, honest product; it just doesn't
+compete with llama.cpp on scope, only on measured CPU throughput for the
+models it does support.
 
-## Two work streams (not yet planned in detail)
+## Implementation plan
+
+A phased implementation plan exists:
+[`PLAN_general_purpose_loader.md`](PLAN_general_purpose_loader.md)
+(produced by a planning pass that read this repo's actual code, the
+existing export scripts, and bob's dev environment — not written from
+memory). It resolves the open questions below with real positions, not
+just restating them.
+
+## Two work streams (see the plan doc for the resolved detail)
 
 1. **Generic model loading**: GGUF or equivalent. Open question: write a
    minimal from-scratch GGUF parser, or vendor just the format-parsing
