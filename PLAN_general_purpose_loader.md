@@ -265,7 +265,15 @@ rewrite, not discovered late).
    the M1 Max dev machine, its own TU as planned. Full writeup:
    [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-1-sub-step-1-gguf-container-parser-2026-08-25).
    Remaining sub-steps below are NOT yet done.
-2. Vendored dequant (`gguf_quants.c`, MIT, `VENDOR.md` entry).
+2. ✅ **DONE 2026-08-25** — Vendored dequant (`gguf_quants.c`/`gguf_quants.h`,
+   MIT, ported from ggml commit `d83f72d`, [`VENDOR.md`](VENDOR.md) entry).
+   Verified against `gguf-py`'s independent numpy dequant on the real
+   fixture: deep exact-value check on one tensor of each type present
+   (F32/Q4_K/Q6_K), plus a full 339/339-tensor checksum sweep — zero
+   mismatches either way. F16/BF16 implemented (native `__fp16`/bit-shift,
+   no vendoring needed, see `VENDOR.md`) but not yet exercised against
+   real data (absent from this fixture). Full writeup:
+   [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-1-sub-step-2-dequant-vendoring-2026-08-25).
 3. `TensorRole` indirection replacing ~14 name literals / ~50 call sites
    with `wt_role(ROLE_ATTN_Q, l)`, resolved once at load via a
    `role → name pattern` table with `"hf"` and `"gguf"` naming

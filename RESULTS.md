@@ -211,3 +211,47 @@ of.
 Raw: `gguf_load.c`/`gguf_load.h` (this repo), `tools/gguf_verify.c`,
 `tools/gguf_dump_oracle.py`, `tools/gguf_hash_tensors.c`, `bob`,
 2026-08-25.
+
+## General-purpose loader — Phase 1, sub-step 2: dequant vendoring (2026-08-25)
+
+Second piece of Phase 1 (D-gen-1): vendored the dequantization algorithms
+for the types this project's Phase 1 scope targets first — F32, F16,
+BF16, Q4_0, Q8_0, Q4_K, Q6_K (`gguf_quants.c`/`gguf_quants.h`). Ported
+directly from ggml's own C source (`ggml-quants.c`/`ggml-common.h`,
+commit `d83f72d`, MIT license), not reimplemented from memory or from the
+GGUF spec document — bit-layout details like Q4_K's 6-bit packed
+scale-and-min encoding are exactly the kind of fact worth getting from
+the source rather than reconstructing. Full provenance: [`VENDOR.md`](VENDOR.md).
+
+**Verification: two independent checks, both against real production
+data, both zero-diff.**
+
+1. **Deep check** (5 tensors, one of each type actually present in the
+   fixture — F32, Q4_K, Q6_K): dequantized via this project's C code and
+   separately via `gguf-py`'s own numpy dequant implementation
+   (`gguf.quants.dequantize` — a genuinely independent implementation,
+   not a wrapper around the same C source). First 20 and last 20 element
+   values, printed to 9 significant digits, **identical, zero diff**.
+2. **Full-sweep check** (all 339 tensors in the file, not a sample):
+   per-tensor weighted checksum (so a bug hidden in the middle of a large
+   tensor can't slip past an edges-only check), C vs. `gguf-py`, **zero
+   mismatches across every tensor** — no `SKIP_UNSUPPORTED_TYPE` either,
+   confirming the vendored type table covers everything this real file
+   actually uses.
+
+Compiles clean (`-Wall -Wextra`, 0 warnings) on bob and the M1 Max dev
+machine.
+
+**Not yet done**: F16/BF16 weren't exercised against real data (not
+present in this fixture) — the conversion math is standard/native
+(`__fp16` hardware cast, bf16 bit-shift, see `VENDOR.md` for why neither
+needed vendoring), but should still get a real-data check once a
+fixture with those types is available. `TensorRole` indirection,
+`ArchCfg`-from-GGUF-metadata, architecture allowlist, and the actual
+`qwen_infer.c` integration + ppl-delta gate are still ahead (tracked in
+`PLAN_general_purpose_loader.md`).
+
+Raw: `gguf_quants.c`/`gguf_quants.h`, `VENDOR.md` (this repo),
+`tools/gguf_dequant_dump.c`, `tools/gguf_dequant_oracle.py`,
+`tools/gguf_dequant_checksums.c`, `tools/gguf_dequant_checksums_oracle.py`,
+`bob`, 2026-08-25.
