@@ -14,7 +14,7 @@ if (!bin) {
 console.log(`SMOKE TEST: found binary at ${bin}`);
 
 const child = spawnEngine("greedy", 1, {
-  env: { QWEN_BASE: "/nonexistent-vdsp-engine-smoke-test-path" },
+  env: { QWEN_BASE: "/nonexistent-beglin-smoke-test-path" },
 });
 
 let stderr = "";

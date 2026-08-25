@@ -1,10 +1,10 @@
 {
-  "name": "vdsp-engine",
+  "name": "beglin",
   "version": "0.1.0",
   "description": "Hand-written C CPU LLM inference engine for Apple Silicon (NEON/SME2 int4/int8 GEMV, MoE batched serving). AGPL-3.0-or-later, commercial license available.",
   "main": "lib/index.js",
   "bin": {
-    "vdsp-engine": "bin/vdsp-engine.js"
+    "beglin": "bin/beglin.js"
   },
   "files": [
     "qwen_infer.c",
@@ -32,7 +32,7 @@
     "kleidiai/kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.h",
     "scripts/",
     "lib/",
-    "bin/vdsp-engine.js",
+    "bin/beglin.js",
     "LICENSE",
     "COMMERCIAL-LICENSE.md",
     "COMMERCIAL-LICENSE-AGREEMENT.md",
@@ -52,11 +52,11 @@
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/popixoxipop-collab/vdsp-engine.git"
+    "url": "git+https://github.com/popixoxipop-collab/beglin.git"
   },
-  "homepage": "https://github.com/popixoxipop-collab/vdsp-engine#readme",
+  "homepage": "https://github.com/popixoxipop-collab/beglin#readme",
   "bugs": {
-    "url": "https://github.com/popixoxipop-collab/vdsp-engine/issues"
+    "url": "https://github.com/popixoxipop-collab/beglin/issues"
   },
   "engines": {
     "node": ">=18"

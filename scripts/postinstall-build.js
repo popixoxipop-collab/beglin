@@ -23,9 +23,9 @@ const BUILD_DIR = path.join(ROOT, ".build");
 const OUT_BINARY = path.join(BIN_DIR, "qwen_infer");
 
 function warnSkip(reason) {
-  console.warn(`[vdsp-engine] skipping native build: ${reason}`);
+  console.warn(`[beglin] skipping native build: ${reason}`);
   console.warn(
-    "[vdsp-engine] `require('vdsp-engine')` will load, but running the engine will fail " +
+    "[beglin] `require('beglin')` will load, but running the engine will fail " +
       "until a compatible binary is built. See README.md's Build section for the manual steps."
   );
   process.exit(0); // non-fatal: don't break `npm install` on unrelated platforms/CI.
@@ -56,10 +56,10 @@ function main() {
 
   const obj = (name) => path.join(BUILD_DIR, name.replace(/\.(c|S)$/, ".o"));
 
-  console.log("[vdsp-engine] compiling qwen_infer.c (plain -- no SME/SVE arch flag)");
+  console.log("[beglin] compiling qwen_infer.c (plain -- no SME/SVE arch flag)");
   run("clang", ["-O3", "-w", "-c", path.join(ROOT, "qwen_infer.c"), "-o", obj("qwen_infer.c")]);
 
-  console.log("[vdsp-engine] compiling sme2_kai.c (SME2 dispatch wrapper)");
+  console.log("[beglin] compiling sme2_kai.c (SME2 dispatch wrapper)");
   run("clang", [
     "-O2",
     "-march=armv9.2-a+sme2",
@@ -82,7 +82,7 @@ function main() {
     "kleidiai/kai_rhs_pack_nxk_qsi4c32ps1s0scalef16_qsu4c32s16s0_neon.c",
     "kleidiai/kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.c",
   ];
-  console.log("[vdsp-engine] compiling KleidiAI SME2 kernels");
+  console.log("[beglin] compiling KleidiAI SME2 kernels");
   for (const f of kernelFiles) {
     run("clang", [
       "-O2",
@@ -96,7 +96,7 @@ function main() {
     ]);
   }
 
-  console.log("[vdsp-engine] linking");
+  console.log("[beglin] linking");
   const objs = ["qwen_infer.c", "sme2_kai.c", ...kernelFiles].map((f) => obj(path.basename(f)));
   run("clang", ["-O3", ...objs, "-o", OUT_BINARY, "-framework", "Accelerate", "-lpthread"]);
 
@@ -113,7 +113,7 @@ function main() {
     );
   }
 
-  console.log(`[vdsp-engine] built ${OUT_BINARY} (caller-plain check: OK)`);
+  console.log(`[beglin] built ${OUT_BINARY} (caller-plain check: OK)`);
 }
 
 main();

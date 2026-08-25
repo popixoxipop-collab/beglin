@@ -1,10 +1,10 @@
 # Licensing
 
-vdsp-engine is dual-licensed:
+beglin is dual-licensed:
 
 1. **Open source: GNU Affero General Public License v3.0 (AGPL-3.0-or-later)**
    See [`LICENSE`](./LICENSE) for the full text. Under this license you may
-   use, modify, and redistribute vdsp-engine freely, including in a network
+   use, modify, and redistribute beglin freely, including in a network
    service, **provided that**:
    - Any modified version you run as a network service must offer its
      complete corresponding source code to users of that service
@@ -14,7 +14,7 @@ vdsp-engine is dual-licensed:
 
 2. **Commercial license**
    If AGPL-3.0's copyleft/source-disclosure obligations do not work for
-   your use case — for example, you want to embed vdsp-engine in a
+   your use case — for example, you want to embed beglin in a
    closed-source product, ship it inside a proprietary SaaS backend
    without disclosing your modifications, or otherwise use it without
    triggering AGPL's terms — a separate commercial license is available
@@ -22,7 +22,7 @@ vdsp-engine is dual-licensed:
 
    Contact **popixoxipop@gmail.com** to discuss commercial licensing
    terms and pricing. The actual contract text used to license
-   vdsp-engine commercially is [`COMMERCIAL-LICENSE-AGREEMENT.md`](./COMMERCIAL-LICENSE-AGREEMENT.md)
+   beglin commercially is [`COMMERCIAL-LICENSE-AGREEMENT.md`](./COMMERCIAL-LICENSE-AGREEMENT.md)
    (adapted from a freely reusable public template — not yet filled
    in with a specific licensee's deal terms).
 
@@ -43,6 +43,6 @@ through a paid license.
 This file describes the licensing *offer*; it is not itself a commercial
 license agreement. Actual commercial terms (scope, price, support,
 warranty, liability) are set out in a separate contract negotiated per
-licensee. If you are evaluating vdsp-engine for use inside a company,
+licensee. If you are evaluating beglin for use inside a company,
 please also have your own legal/compliance team review the AGPL-3.0 terms
 in `LICENSE` before choosing between the open-source and commercial paths.

@@ -1,4 +1,4 @@
-# vdsp-engine
+# beglin
 
 A from-scratch CPU LLM inference engine for Apple Silicon — no PyTorch, no
 MLX, no llama.cpp. Hand-written C using Apple's Accelerate/vDSP framework and
@@ -14,7 +14,7 @@ copyleft/source-disclosure obligations.
 ## Install
 
 ```sh
-npm install vdsp-engine
+npm install beglin
 ```
 
 Requires macOS on Apple Silicon + the Xcode Command Line Tools (`clang`).
@@ -22,7 +22,7 @@ Requires macOS on Apple Silicon + the Xcode Command Line Tools (`clang`).
 no prebuilt binary yet, see `scripts/postinstall-build.js` for why.
 
 ```js
-const { runEngine, spawnEngine } = require("vdsp-engine");
+const { runEngine, spawnEngine } = require("beglin");
 
 // promise-based, collects output:
 const { code, stdout } = await runEngine("greedy", 32, {
@@ -33,7 +33,7 @@ const { code, stdout } = await runEngine("greedy", 32, {
 const child = spawnEngine("bench", 64, { env: { QWEN_BASE: "..." } });
 ```
 
-Or from the command line: `npx vdsp-engine greedy 32` (same argv the C
+Or from the command line: `npx beglin greedy 32` (same argv the C
 binary itself takes).
 
 ## What's actually novel here
