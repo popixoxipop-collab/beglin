@@ -650,3 +650,38 @@ byte-identical `greedy` output to before the hardening.
 
 Raw: `gguf_cache.c` (this repo), truncation and symlink reproductions
 captured on `bob`, 2026-08-25.
+
+## General-purpose loader — Phase 2 sub-step 4: startup dispatch-tier log (2026-08-25)
+
+`log_gguf_dispatch_tiers()`, called right after weight loading (live or
+from-cache — same summary either way, since both paths populate `g_wt[]`
+identically): walks every registered tensor and classifies it into one
+of four tiers — **SME2-eligible** (`K_Q4G64` where `kai_sme2_shape_ok()`
+is true — this call already internally gates on `kai_sme2_available()`,
+per `sme2_kai.h`'s own safety-contract comment, so this is never true on
+non-SME2 hardware), **NEON-q4g64** (`K_Q4G64` that doesn't shape-qualify),
+**NEON-q8g64** (`K_Q8G64`, always — this kind never routes through
+`kai_route()`), **BLAS-f32** (`K_F32`).
+
+Deliberately named as an *eligibility* classification, not a claim about
+what any specific call actually used: `kai_route()`'s `M >=
+kai_sme2_min_m()` check is per-call and dynamic (`M=1` greedy decode
+never qualifies; batched `serve`/`cbatch` calls might), so an
+SME2-eligible tensor can still execute on NEON for any individual
+forward pass. The log message says this explicitly rather than
+overclaiming.
+
+Real output on the 1.1GB fixture: `196 SME2-eligible, 0 NEON-q4g64, 1
+NEON-q8g64, 142 BLAS-f32` — matches expectations exactly (every K_Q4G64
+tensor in this model has `in` divisible by 64, so none fall back on
+shape grounds; the one K_Q8G64 is the untied lm_head; the 142 K_F32 are
+norms/biases/tied-embed).
+
+Compiles clean (13 warnings, documented baseline, zero new), 0 SVE/SME
+leak. Re-confirmed: `greedy` output unchanged from prior sub-steps, and
+the untouched MoE path (`weights_moe/`, auto-detected first in `main()`)
+still byte-identical to the pre-existing golden binary across all 8
+verify positions.
+
+Raw: `qwen_infer.c` (this repo), tier-classification output and
+regression captured on `bob`, 2026-08-25.

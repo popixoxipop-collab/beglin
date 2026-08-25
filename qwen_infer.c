@@ -4806,6 +4806,32 @@ static void load_gguf_weights_from_cache(const char *cache_path) {
     fprintf(stderr, "[engine] gguf cache: loaded %u tensors from %s (mmap, zero transcode)\n", n, cache_path);
 }
 
+// Phase 2 sub-step 4: startup log naming which tier each tensor landed in. This is an
+// ELIGIBILITY classification, not a guarantee of what actually ran: kai_sme2_shape_ok()
+// already internally gates on kai_sme2_available() (see sme2_kai.h's own safety-contract
+// comment), so "SME2-eligible" here means kai_route() COULD use SME2 for this tensor -- but
+// kai_route()'s M >= kai_sme2_min_m() check is per-call and dynamic (M=1 greedy decode never
+// qualifies, batched serve/cbatch calls might), so an SME2-eligible tensor can still run on
+// NEON for any individual call. Named honestly as eligibility, not overclaimed as a fact about
+// any specific run.
+static void log_gguf_dispatch_tiers(void) {
+    int n_sme2_eligible = 0, n_neon_q4g64 = 0, n_neon_q8g64 = 0, n_blas_f32 = 0;
+    for (int i = 0; i < g_nwt; i++) {
+        WT *t = &g_wt[i];
+        if (t->kind == K_Q4G64) {
+            if (kai_sme2_shape_ok(t->out, t->in)) n_sme2_eligible++;
+            else n_neon_q4g64++;
+        } else if (t->kind == K_Q8G64) {
+            n_neon_q8g64++;
+        } else if (t->kind == K_F32) {
+            n_blas_f32++;
+        }
+    }
+    fprintf(stderr, "[engine] gguf dispatch tiers: %d SME2-eligible, %d NEON-q4g64, %d NEON-q8g64, %d BLAS-f32 "
+            "(SME2-eligible tensors still fall back to NEON per-call below the kernel's row-tile minimum, e.g. M=1 decode)\n",
+            n_sme2_eligible, n_neon_q4g64, n_neon_q8g64, n_blas_f32);
+}
+
 int main(int argc, char **argv) {
     // Phase MoE-3a: checked FIRST, before load_arch_cfg() or any other GQA-dense-model setup
     // runs -- if weights_moe/arch_config_moe.txt exists, this exits without touching a single
@@ -4901,6 +4927,7 @@ int main(int argc, char **argv) {
         WT *gguf_lmh = wt_opt("lm_head.weight");
         g_int8_head = (gguf_lmh && gguf_lmh->kind == K_Q8G64 && !(fp32h && fp32h[0])) ? 1 : 0;
         fprintf(stderr,"[engine] gguf Q4_THREADS=%d, lm_head=%s\n", T, g_int8_head?"int8":"fp32");
+        log_gguf_dispatch_tiers();
     } else if (int4bin && int4bin[0]) {
         g_int4=1; int T = getenv("Q4_THREADS")?atoi(getenv("Q4_THREADS")):detect_q4_threads();  // M51: per-chip tuned table, see detect_q4_threads() above
         q4pool_init(&g_pool, T, g_cfg.im);

@@ -364,8 +364,23 @@ writeup: [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-1-complete-gguf
 3. Ship Mistral-7B-v0.3 (D-gen-4 #1). Zero new engine code expected — if
    anything beyond the loader is needed, that's a Phase-1 defect, not a
    Phase-2 feature.
-4. Startup log naming which tier (SME2/NEON-q4g64/NEON-q8g64/BLAS-f32)
-   each tensor group landed in.
+4. ✅ **DONE 2026-08-25** — Startup log naming which tier (SME2-eligible/
+   NEON-q4g64/NEON-q8g64/BLAS-f32) each tensor landed in, named honestly
+   as an eligibility classification (`kai_route()`'s per-call `M >=
+   kai_sme2_min_m()` check is dynamic, not decidable at load time). Real
+   output on the fixture: `196 SME2-eligible, 0 NEON-q4g64, 1
+   NEON-q8g64, 142 BLAS-f32`. Full writeup:
+   [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-2-sub-step-4-startup-dispatch-tier-log-2026-08-25).
+
+**Phase 2 status: all four sub-steps done.** Transcode quantizer +
+policy table (sub-steps 1-1b), on-disk cache + lazy-repack default
+(sub-step 2, hardened post-review), Mistral-7B-v0.3 validation
+(sub-step 3, in progress — blocked for a while on an unauthenticated
+HuggingFace download rate limit on `bob`, resolved with a user-provided
+token; large download still completing in the background as of this
+writing), startup dispatch-tier log (sub-step 4). Sub-step 3's writeup
+will be appended to this file once the download finishes and the
+validation run completes.
 
 ### Phase 3 — Dispatch-tier hardening across the shape ladder (~1 week)
 
