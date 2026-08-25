@@ -11,6 +11,31 @@ speculative decoding, and request-batched MoE serving.
 [commercial license](COMMERCIAL-LICENSE.md) if you don't want AGPL's
 copyleft/source-disclosure obligations.
 
+## Install
+
+```sh
+npm install vdsp-engine
+```
+
+Requires macOS on Apple Silicon + the Xcode Command Line Tools (`clang`).
+`postinstall` compiles the engine from the source in this package — there's
+no prebuilt binary yet, see `scripts/postinstall-build.js` for why.
+
+```js
+const { runEngine, spawnEngine } = require("vdsp-engine");
+
+// promise-based, collects output:
+const { code, stdout } = await runEngine("greedy", 32, {
+  env: { QWEN_BASE: "/path/to/your/exported/weights" },
+});
+
+// or get the raw ChildProcess for streaming:
+const child = spawnEngine("bench", 64, { env: { QWEN_BASE: "..." } });
+```
+
+Or from the command line: `npx vdsp-engine greedy 32` (same argv the C
+binary itself takes).
+
 ## What's actually novel here
 
 Most "hand-rolled CPU inference" projects stop at dense-model int4 GEMV.
