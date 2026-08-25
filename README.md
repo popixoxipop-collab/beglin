@@ -103,6 +103,13 @@ the weight-directory environment variables at your own exported/quantized
 model. Export/quantization tooling isn't part of this package; open an
 issue if that's something you need.
 
+## Scope, honestly
+
+This is **not** a general-purpose loader like llama.cpp yet — it's
+currently validated for a small set of specific models (Qwen2.5-1.5B,
+Llama-3.1-8B, one MoE model), with a custom weight format, not GGUF. See
+[`ROADMAP.md`](ROADMAP.md) for the plan to change that.
+
 ## Repository contents
 
 ```
