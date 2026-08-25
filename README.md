@@ -1,0 +1,102 @@
+# vdsp-engine
+
+A from-scratch CPU LLM inference engine for Apple Silicon — no PyTorch, no
+MLX, no llama.cpp. Hand-written C using Apple's Accelerate/vDSP framework and
+NEON/SME2 intrinsics, running real pretrained models (Qwen2.5-1.5B-Instruct,
+Llama-3.1-8B, and MoE variants) end-to-end: RMSNorm, RoPE (incl. Llama-3
+NTK scaling), GQA attention, SwiGLU, KV cache, int4/int8 quantized GEMV,
+speculative decoding, and request-batched MoE serving.
+
+📜 **License**: [AGPL-3.0-or-later](LICENSE) (open source) or a
+[commercial license](COMMERCIAL-LICENSE.md) if you don't want AGPL's
+copyleft/source-disclosure obligations.
+
+## What's actually novel here
+
+Most "hand-rolled CPU inference" projects stop at dense-model int4 GEMV.
+This engine additionally integrates ARM KleidiAI's **SME2** (Scalable
+Matrix Extension v2) hardware-accelerated kernel — a real, non-trivial
+integration because SME2 is only reachable inside a special "streaming
+mode" on Apple M4, and naively calling into it (or letting the compiler
+autovectorize into it) outside that mode is an illegal instruction, not a
+compile error. See [`RESULTS.md`](RESULTS.md) for the full measured story,
+including the two independent bugs that caused this and how each was
+root-caused via interactive `lldb`.
+
+## Measured results (real hardware, not projected)
+
+| | |
+|---|---|
+| Correctness vs HuggingFace reference (fp32) | WikiText-103 ppl **10.648 vs 10.647**, HellaSwag **60.50 = 60.50** (200 items, 100% per-item match) |
+| Quantized (GPTQ int4 + int8 lm_head, deployment default) | ppl **12.10** (+13.6% vs fp32), decode throughput lossless |
+| W4A8 int8-SDOT dense decode | **~3.0×** single-stream throughput (~19.4 → ~58.6 tok/s), greedy output **bit-identical** to fp32 baseline |
+| MoE batched serving, SME2 f16p-LHS path (default) | **2.38×** faster than pure-scalar baseline at B=16, accuracy **93.0%** token-match vs scalar ground truth, **zero new errors** introduced vs the scalar reference (remaining mismatches are pre-existing, documented engine-vs-reference edge cases) |
+
+Full methodology, the int8-LHS vs f16p-LHS root-cause story, and every raw
+number: [`RESULTS.md`](RESULTS.md).
+
+## Build
+
+```sh
+# Main engine: plain compile, no arch flags. This is load-bearing, not a
+# style choice — see RESULTS.md "caller-plain convention" for why calling
+# it with an SME/SVE -march flag can SIGILL on real hardware.
+clang -O3 -w -c qwen_infer.c -o qwen_infer.o
+
+# SME2 kernel wrapper (also plain -- it dispatches through function
+# pointers, no SME/SVE code of its own):
+clang -O2 -march=armv9.2-a+sme2 -I. -c sme2_kai.c -o sme2_kai.o
+
+# KleidiAI vendored kernels + assembly: only these carry the arch flag.
+clang -O2 -march=armv9.2-a+sme2 -I. -c \
+  kleidiai/kai_common_sme_asm.S \
+  kleidiai/kai_lhs_pack_f16pmrx2_f32_neon.c \
+  kleidiai/kai_lhs_quant_pack_qsi8d32p_f32_neon.c \
+  kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa.c \
+  kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa_asm.S \
+  kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa.c \
+  kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa_asm.S \
+  kleidiai/kai_rhs_pack_nxk_qsi4c32ps1s0scalef16_qsu4c32s16s0_neon.c \
+  kleidiai/kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.c
+
+# Link
+clang -O3 qwen_infer.o sme2_kai.o kai_*.o \
+  -o qwen_infer -framework Accelerate -lpthread
+
+# Verify no SVE/SME instruction leaked into the plain-compiled caller
+# (this must always print nothing):
+otool -tV qwen_infer.o | grep -iE 'sve|sme|addvl'
+```
+
+Runs on any Apple Silicon Mac; the SME2-accelerated MoE path additionally
+requires an M4-or-later chip (`FEAT_SME2`) — the engine detects this at
+runtime and falls back to NEON-only kernels otherwise (same numerical
+output, just slower).
+
+Weights aren't included (see `.gitignore`) — point `QWEN_ARCH_CONFIG` and
+the weight-directory environment variables at your own exported/quantized
+model. Export/quantization tooling isn't part of this package; open an
+issue if that's something you need.
+
+## Repository contents
+
+```
+qwen_infer.c              # the engine: single translation unit, plain-compiled
+sme2_kai.h/.c              # SME2 dispatch wrapper (int8-LHS + f16p-LHS paths, runtime HW gate)
+q4gemv.h                  # NEON int4/int8 dequant-GEMV + threaded batch GEMM
+q4gemv_g256.h             # alternate group-256 kernel variant
+attn_neon.h                # hand-written NEON GQA attention kernels
+rope_llama3_scale.h        # Llama-3 RoPE NTK scaling
+kleidiai/                  # vendored ARM KleidiAI kernels (Apache-2.0, SPDX headers preserved)
+                            # + this project's correctness harnesses and repack derivation notes
+RESULTS.md                 # full measured results, methodology, and the SIGILL root-cause story
+LICENSE                    # AGPL-3.0-or-later
+COMMERCIAL-LICENSE.md      # dual-licensing offer + contact
+COMMERCIAL-LICENSE-AGREEMENT.md  # the actual commercial contract text (template, per-licensee terms TBD)
+```
+
+## Provenance
+
+`kleidiai/` vendors ARM KleidiAI (upstream commit
+`6787251d9cc2f38a3a6024b11fd7ace10cde4cd9`, Apache-2.0). Everything else is
+original work.

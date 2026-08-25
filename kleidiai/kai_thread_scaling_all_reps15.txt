@@ -1,0 +1,76 @@
+host cpu   : Apple M4  ncpu=10 (P=4 E=6) FEAT_SME2=1
+params     : M=16 bl=64 reps=15 model=all
+policy     : no residual / error-feedback compensation buffer exists in this file by design: it performs no quantization of model weights at all, so there is no quantization error for a residual term to carry. Codes/scales below are synthetic constants that only exist to give the kernel legal operands to time.
+
+  llama q_proj/o_proj  (N=4096,  K=4096)   mr=16 nr=64 kr=4 sr=2 n_step=64  reps=15  work=0.537 GOP
+    config                            best_ms    mean_ms  speedup   eff_%    GOP/s bitexact_vs_1T
+    single-thread (direct call)        0.5870     0.5942    1.000   100.0    914.6 -
+    pool T=1 (1 active shards)         0.5940     0.5983    0.988    98.8    903.8 yes
+    pool T=2 (2 active shards)         0.5490     0.5631    1.069    53.5    977.9 yes
+    pool T=4 (4 active shards)         0.5500     0.5606    1.067    26.7    976.1 yes
+    pool T=8 (8 active shards)         0.4190     0.4427    1.401    17.5   1281.3 yes
+    pool T=10 (10 active shards)       0.3860     0.4016    1.521    15.2   1390.9 yes
+
+  llama k_proj/v_proj  (N=1024,  K=4096)   mr=16 nr=64 kr=4 sr=2 n_step=64  reps=15  work=0.134 GOP
+    config                            best_ms    mean_ms  speedup   eff_%    GOP/s bitexact_vs_1T
+    single-thread (direct call)        0.1560     0.1565    1.000   100.0    860.4 -
+    pool T=1 (1 active shards)         0.1570     0.1611    0.994    99.4    854.9 yes
+    pool T=2 (2 active shards)         0.1430     0.1522    1.091    54.5    938.6 yes
+    pool T=4 (4 active shards)         0.1430     0.1507    1.091    27.3    938.6 yes
+    pool T=8 (8 active shards)         0.1220     0.1399    1.279    16.0   1100.1 yes
+    pool T=10 (10 active shards)       0.1080     0.1198    1.444    14.4   1242.8 yes
+
+  llama gate/up_proj   (N=14336, K=4096)   mr=16 nr=64 kr=4 sr=2 n_step=64  reps=15  work=1.879 GOP
+    config                            best_ms    mean_ms  speedup   eff_%    GOP/s bitexact_vs_1T
+    single-thread (direct call)        2.3530     2.3939    1.000   100.0    798.6 -
+    pool T=1 (1 active shards)         2.3760     2.3853    0.990    99.0    790.8 yes
+    pool T=2 (2 active shards)         1.9660     2.0389    1.197    59.8    955.8 yes
+    pool T=4 (4 active shards)         1.9360     1.9937    1.215    30.4    970.6 yes
+    pool T=8 (8 active shards)         1.4910     1.5805    1.578    19.7   1260.3 yes
+    pool T=10 (10 active shards)       1.3470     1.4005    1.747    17.5   1395.0 yes
+
+  llama down_proj      (N=4096,  K=14336)  mr=16 nr=64 kr=4 sr=2 n_step=64  reps=15  work=1.879 GOP
+    config                            best_ms    mean_ms  speedup   eff_%    GOP/s bitexact_vs_1T
+    single-thread (direct call)        2.3640     2.4117    1.000   100.0    794.9 -
+    pool T=1 (1 active shards)         2.4040     2.4133    0.983    98.3    781.6 yes
+    pool T=2 (2 active shards)         1.9550     2.0113    1.209    60.5    961.1 yes
+    pool T=4 (4 active shards)         1.9250     1.9967    1.228    30.7    976.1 yes
+    pool T=8 (8 active shards)         1.4850     1.5572    1.592    19.9   1265.4 yes
+    pool T=10 (10 active shards)       1.3920     1.4317    1.698    17.0   1349.9 yes
+
+  qwen  q_proj/o_proj  (N=1536,  K=1536)   mr=16 nr=64 kr=4 sr=2 n_step=64  reps=15  work=0.075 GOP
+    config                            best_ms    mean_ms  speedup   eff_%    GOP/s bitexact_vs_1T
+    single-thread (direct call)        0.0920     0.0932    1.000   100.0    820.6 -
+    pool T=1 (1 active shards)         0.0930     0.0952    0.989    98.9    811.8 yes
+    pool T=2 (2 active shards)         0.0850     0.0913    1.082    54.1    888.2 yes
+    pool T=4 (4 active shards)         0.0840     0.0905    1.095    27.4    898.8 yes
+    pool T=8 (8 active shards)         0.0850     0.0939    1.082    13.5    888.2 yes
+    pool T=10 (10 active shards)       0.0780     0.0860    1.179    11.8    967.9 yes
+
+  qwen  k_proj/v_proj  (N=256,   K=1536)   mr=16 nr=64 kr=4 sr=2 n_step=64  reps=15  work=0.013 GOP
+    config                            best_ms    mean_ms  speedup   eff_%    GOP/s bitexact_vs_1T
+    single-thread (direct call)        0.0170     0.0177    1.000   100.0    740.2 -
+    pool T=1 (1 active shards)         0.0190     0.0195    0.895    89.5    662.3 yes
+    pool T=2 (2 active shards)         0.0190     0.0215    0.895    44.7    662.3 yes
+    pool T=4 (4 active shards)         0.0200     0.0249    0.850    21.2    629.1 yes
+    pool T=8 (4 active shards)         0.0340     0.0437    0.500     6.2    370.1 yes
+    pool T=10 (4 active shards)        0.0250     0.0411    0.680     6.8    503.3 yes
+
+  qwen  gate/up_proj   (N=8960,  K=1536)   mr=16 nr=64 kr=4 sr=2 n_step=64  reps=15  work=0.440 GOP
+    config                            best_ms    mean_ms  speedup   eff_%    GOP/s bitexact_vs_1T
+    single-thread (direct call)        0.4900     0.4908    1.000   100.0    898.8 -
+    pool T=1 (1 active shards)         0.4880     0.4934    1.004   100.4    902.5 yes
+    pool T=2 (2 active shards)         0.4540     0.4766    1.079    54.0    970.0 yes
+    pool T=4 (4 active shards)         0.4580     0.4668    1.070    26.7    961.6 yes
+    pool T=8 (8 active shards)         0.3480     0.3698    1.408    17.6   1265.5 yes
+    pool T=10 (10 active shards)       0.3270     0.3445    1.498    15.0   1346.8 yes
+
+  qwen  down_proj      (N=1536,  K=8960)   mr=16 nr=64 kr=4 sr=2 n_step=64  reps=15  work=0.440 GOP
+    config                            best_ms    mean_ms  speedup   eff_%    GOP/s bitexact_vs_1T
+    single-thread (direct call)        0.4890     0.4903    1.000   100.0    900.6 -
+    pool T=1 (1 active shards)         0.4900     0.4932    0.998    99.8    898.8 yes
+    pool T=2 (2 active shards)         0.4520     0.4678    1.082    54.1    974.3 yes
+    pool T=4 (4 active shards)         0.4530     0.4578    1.079    27.0    972.2 yes
+    pool T=8 (8 active shards)         0.3560     0.3749    1.374    17.2   1237.1 yes
+    pool T=10 (10 active shards)       0.3290     0.3441    1.486    14.9   1338.6 yes
+

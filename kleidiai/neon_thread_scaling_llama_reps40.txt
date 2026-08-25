@@ -1,0 +1,40 @@
+host cpu   : Apple M4  ncpu=10 (P=4 E=6)
+kernel     : vdsp production NEON int8-SDOT batched GEMM gemm_qXg64_sdot_mt(bits=4) via q4pool
+params     : M=16 bl=64 reps=40 model=llama Q4_SDOT_BMAX=64  pool.spin=0 pool.qos=0  [non-default]
+
+  llama q_proj/o_proj  (N=4096,  K=4096)   bl=64 M=16 reps=40  work=0.537 GOP
+    config                            best_ms    mean_ms  speedup   eff_%    GOP/s bitexact_vs_1T
+    single-thread (direct call)        2.2590     2.4909    1.000   100.0    237.7 -
+    pool T=1 (1 active shards)         2.3370     2.3627    0.967    96.7    229.7 yes
+    pool T=2 (2 active shards)         1.1740     1.2049    1.924    96.2    457.3 yes
+    pool T=4 (4 active shards)         0.7150     0.8146    3.159    79.0    750.9 yes
+    pool T=8 (8 active shards)         0.5980     0.6015    3.778    47.2    897.8 yes
+    pool T=10 (10 active shards)       0.5970     0.6025    3.784    37.8    899.3 yes
+
+  llama k_proj/v_proj  (N=1024,  K=4096)   bl=64 M=16 reps=40  work=0.134 GOP
+    config                            best_ms    mean_ms  speedup   eff_%    GOP/s bitexact_vs_1T
+    single-thread (direct call)        0.6810     0.6852    1.000   100.0    197.1 -
+    pool T=1 (1 active shards)         0.6830     0.6851    0.997    99.7    196.5 yes
+    pool T=2 (2 active shards)         0.3380     0.3523    2.015   100.7    397.1 yes
+    pool T=4 (4 active shards)         0.1860     0.1948    3.661    91.5    721.6 yes
+    pool T=8 (8 active shards)         0.1660     0.1690    4.102    51.3    808.5 yes
+    pool T=10 (10 active shards)       0.1710     0.1959    3.982    39.8    784.9 yes
+
+  llama gate/up_proj   (N=14336, K=4096)   bl=64 M=16 reps=40  work=1.879 GOP
+    config                            best_ms    mean_ms  speedup   eff_%    GOP/s bitexact_vs_1T
+    single-thread (direct call)        8.6830     8.8341    1.000   100.0    216.4 -
+    pool T=1 (1 active shards)         8.5440     8.5859    1.016   101.6    219.9 yes
+    pool T=2 (2 active shards)         4.3280     4.4059    2.006   100.3    434.2 yes
+    pool T=4 (4 active shards)         2.5230     2.6034    3.442    86.0    744.8 yes
+    pool T=8 (8 active shards)         2.0870     2.1145    4.161    52.0    900.4 yes
+    pool T=10 (10 active shards)       2.1080     2.1250    4.119    41.2    891.4 yes
+
+  llama down_proj      (N=4096,  K=14336)  bl=64 M=16 reps=40  work=1.879 GOP
+    config                            best_ms    mean_ms  speedup   eff_%    GOP/s bitexact_vs_1T
+    single-thread (direct call)       10.5230    10.7385    1.000   100.0    178.6 -
+    pool T=1 (1 active shards)        10.3330    10.4561    1.018   101.8    181.8 yes
+    pool T=2 (2 active shards)         8.2170     8.3769    1.281    64.0    228.7 yes
+    pool T=4 (4 active shards)         4.8840     4.8974    2.155    53.9    384.7 yes
+    pool T=8 (8 active shards)         2.6590     2.7154    3.958    49.5    706.7 yes
+    pool T=10 (10 active shards)       2.4940     2.5503    4.219    42.2    753.4 yes
+

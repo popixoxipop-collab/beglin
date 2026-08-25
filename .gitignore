@@ -1,0 +1,11 @@
+weights/
+weights_*/
+*.o
+*.dSYM/
+qwen_infer
+qwen_infer_engine
+kleidiai/kai_test
+kleidiai/kai_test_noise
+kleidiai/kai_test_asan*
+kleidiai/*.o.tmp
+node_modules/
