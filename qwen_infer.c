@@ -216,7 +216,84 @@ static const float *w(const char *name) {   // fp32 accessor (embed/norm/bias)
     if (t->kind != K_F32) { fprintf(stderr, "FATAL: %s not f32\n", name); exit(1); }
     return t->f32;
 }
-static const float *wlf(const char *fmt, int layer){ char b[96]; snprintf(b,sizeof b,fmt,layer); return w(b); }
+// D-gen-tensorrole-1 (general-purpose-loader Phase 1, PLAN_general_purpose_loader.md): centralizes
+// the ~50 duplicated tensor-name-literal call sites that were scattered across this file's four
+// near-identical forward-pass implementations (single-token decode, batched prefill, sdot-serve,
+// sdot-cbatch each re-deriving "model.layers.%d.self_attn.q_proj.weight" etc. on every call) into
+// one role->pointer cache, resolved once at load instead of on every call.
+//   WHY: (1) safety -- a role's tensor-name PATTERN now has exactly one place to get right,
+//        not 4 (and, once the GGUF loader lands, an eventual 2 conventions x N call sites
+//        collapses to 2 table entries instead). (2) speed, as a side effect, not the point:
+//        wtl()'s snprintf+linear-scan over g_wt[] previously ran on every token/every layer in
+//        the hot decode path; this replaces every one of those with a single array index
+//        resolved once at load. Mirrors this file's own established init_qkv_bias() pattern
+//        (resolve once at load into a g_cfg.nl-sized array, every call site becomes one
+//        dereference) rather than inventing a new convention.
+//   COST: one more init-time pass over every layer (negligible -- runs once per process, not
+//        per token); the cache arrays add g_cfg.nl * N_LAYER_ROLES pointers of memory (trivial,
+//        a few KB even at NL=32).
+//   EXIT: call sites read g_role_wt[ROLE_X][l] (or ->f32 for the two norm roles) instead of
+//        wtl("...", l)/wlf("...", l) -- reverting means restoring those literal calls, no
+//        weight-format or loading-mechanism change either way (this sits ONLY on top of the
+//        existing wt()/wtl()/w() lookups, which still do the actual name->tensor resolution).
+typedef enum {
+    ROLE_ATTN_Q, ROLE_ATTN_K, ROLE_ATTN_V, ROLE_ATTN_O,
+    ROLE_MLP_GATE, ROLE_MLP_UP, ROLE_MLP_DOWN,
+    ROLE_INPUT_LN, ROLE_POST_ATTN_LN,
+    N_LAYER_ROLES
+} LayerRole;
+
+// "hf" naming convention: matches this engine's existing custom weight-format tensor names,
+// themselves copied verbatim from the source HF checkpoint's own tensor names by
+// export_weights.py. A "gguf" convention table (blk.%d.attn_q.weight etc.) joins this one
+// alongside, not replacing it, once the GGUF loader (PLAN_general_purpose_loader.md Phase 1
+// remainder) needs to populate this same cache from a different naming source -- keeping that
+// as a per-role table swap instead of another call-site hunt is the whole point of this cache
+// existing before that work starts, not just for its own sake now.
+static const char *ROLE_PATTERN_HF[N_LAYER_ROLES] = {
+    [ROLE_ATTN_Q]       = "model.layers.%d.self_attn.q_proj.weight",
+    [ROLE_ATTN_K]       = "model.layers.%d.self_attn.k_proj.weight",
+    [ROLE_ATTN_V]       = "model.layers.%d.self_attn.v_proj.weight",
+    [ROLE_ATTN_O]       = "model.layers.%d.self_attn.o_proj.weight",
+    [ROLE_MLP_GATE]     = "model.layers.%d.mlp.gate_proj.weight",
+    [ROLE_MLP_UP]       = "model.layers.%d.mlp.up_proj.weight",
+    [ROLE_MLP_DOWN]     = "model.layers.%d.mlp.down_proj.weight",
+    [ROLE_INPUT_LN]     = "model.layers.%d.input_layernorm.weight",
+    [ROLE_POST_ATTN_LN] = "model.layers.%d.post_attention_layernorm.weight",
+};
+
+static WT **g_role_wt[N_LAYER_ROLES];   // each malloc'd to g_cfg.nl entries in init_tensor_roles()
+
+// Singletons (not per-layer): resolved once instead of the 4x-duplicated lm_head fallback
+// logic and repeated w("model.embed_tokens.weight")/w("model.norm.weight") calls that were
+// previously re-run, identically, in every one of the four forward-pass functions.
+static const float *g_role_embed;
+static const float *g_role_final_norm;
+static WT *g_role_lm_head;
+
+static void init_tensor_roles(void) {
+    for (int r = 0; r < N_LAYER_ROLES; r++) {
+        g_role_wt[r] = malloc((size_t)g_cfg.nl * sizeof(WT*));
+        if (!g_role_wt[r]) { fprintf(stderr, "FATAL: init_tensor_roles alloc failed\n"); exit(1); }
+        for (int l = 0; l < g_cfg.nl; l++) {
+            g_role_wt[r][l] = wtl(ROLE_PATTERN_HF[r], l);
+            if ((r == ROLE_INPUT_LN || r == ROLE_POST_ATTN_LN) && g_role_wt[r][l]->kind != K_F32) {
+                // Same check w()/wlf() already did for these two roles before this cache
+                // existed -- preserved here so a bad tensor kind still FATALs at the same
+                // point in startup, not later as a silent misread of ->f32 on non-f32 data.
+                fprintf(stderr, "FATAL: %s not f32\n", g_role_wt[r][l]->name); exit(1);
+            }
+        }
+    }
+    g_role_embed = w("model.embed_tokens.weight");
+    g_role_final_norm = w("model.norm.weight");
+    // Verbatim port of the lm_head resolution logic that was previously duplicated at each of
+    // the 4 forward-pass functions' end (D14's kind==K_Q8G64 check applies to g_int8_head
+    // itself, set earlier in main() -- this only reproduces the existing fallback-to-embedding
+    // logic those 4 sites shared).
+    if (g_int8_head) g_role_lm_head = wt("lm_head.weight");
+    else { WT *h = wt_opt("lm_head.weight"); g_role_lm_head = (h && h->kind == K_F32) ? h : wt("model.embed_tokens.weight"); }
+}
 
 static uint8_t *mmap_bytes(const char *path, long *out_bytes) {
     int fd = open(path, O_RDONLY); if (fd < 0) { perror("open bin"); exit(1); }
@@ -1158,9 +1235,9 @@ static inline float *qkv_fused_bias_row(int l){ return g_qkv_fused_bias_flat + (
 // immediately after each memcpy that the concatenation is a byte-faithful copy -- not a
 // numerical re-derivation -- before this blob is ever handed to a GEMV call.
 static void build_fused_qkv(int l) {
-    WT *tq = wtl("model.layers.%d.self_attn.q_proj.weight", l);
-    WT *tk = wtl("model.layers.%d.self_attn.k_proj.weight", l);
-    WT *tv = wtl("model.layers.%d.self_attn.v_proj.weight", l);
+    WT *tq = g_role_wt[ROLE_ATTN_Q][l];
+    WT *tk = g_role_wt[ROLE_ATTN_K][l];
+    WT *tv = g_role_wt[ROLE_ATTN_V][l];
     // Phase 2 (M36): fusion accepts uniform K_Q4G64 OR uniform K_Q4G256SF parts (the fused WT
     // inherits the parts' kind; scales rows are wsuper rows for g256sf, and the per-row
     // sub-code array is concatenated with the same byte-faithful memcpy+memcmp discipline).
@@ -1210,8 +1287,8 @@ static void build_fused_qkv(int l) {
 
 }
 static void build_fused_gu(int l) {
-    WT *tg = wtl("model.layers.%d.mlp.gate_proj.weight", l);
-    WT *tu = wtl("model.layers.%d.mlp.up_proj.weight", l);
+    WT *tg = g_role_wt[ROLE_MLP_GATE][l];
+    WT *tu = g_role_wt[ROLE_MLP_UP][l];
     // Phase 2 (M36): same uniform-kind extension as build_fused_qkv above.
     int fkind = tg->kind;
     if (!((fkind == K_Q4G64 || fkind == K_Q4G256SF) && tu->kind == fkind)) { fprintf(stderr,"FATAL: M16-C gu fusion requires uniform K_Q4G64 or K_Q4G256SF parts (layer %d)\n",l); exit(1); }
@@ -1279,7 +1356,7 @@ static void attn_head_fast(const float *kv_base, int lda, const float *qh, float
 static void forward_token(int id, int pos, float *x_out, int dump_layers) {
     double tp0;
     if (prof_on()) tp0 = nowt();
-    const float *emb = w("model.embed_tokens.weight");
+    const float *emb = g_role_embed;
     memcpy(xbuf, emb+(long)id*g_cfg.d, g_cfg.d*sizeof(float));
     if (prof_on()) g_t_emb += nowt()-tp0;
     if (prof_on()) tp0 = nowt();
@@ -1288,20 +1365,20 @@ static void forward_token(int id, int pos, float *x_out, int dump_layers) {
     if (prof_on()) g_t_rope += nowt()-tp0;
     for (int l=0;l<g_cfg.nl;l++){
         if (prof_on()) tp0 = nowt();
-        rmsnorm(xbuf, wlf("model.layers.%d.input_layernorm.weight",l), hbuf, g_cfg.d);
+        rmsnorm(xbuf, g_role_wt[ROLE_INPUT_LN][l]->f32, hbuf, g_cfg.d);
         if (prof_on()) g_t_rms += nowt()-tp0;
 
         if (prof_on()) tp0 = nowt();
         if (fused_dispatch() & 1) matvec_t(&g_qkv_fused[l], hbuf, qkv_fused_bias_row(l), q);
-        else matvec_t(wtl("model.layers.%d.self_attn.q_proj.weight",l), hbuf, g_qbias_l[l], q);
+        else matvec_t(g_role_wt[ROLE_ATTN_Q][l], hbuf, g_qbias_l[l], q);
         if (prof_on()) g_t_q += nowt()-tp0;
 
         if (prof_on()) tp0 = nowt();
-        if (!(fused_dispatch() & 1)) matvec_t(wtl("model.layers.%d.self_attn.k_proj.weight",l), hbuf, g_kbias_l[l], kv_k);
+        if (!(fused_dispatch() & 1)) matvec_t(g_role_wt[ROLE_ATTN_K][l], hbuf, g_kbias_l[l], kv_k);
         if (prof_on()) g_t_k += nowt()-tp0;
 
         if (prof_on()) tp0 = nowt();
-        if (!(fused_dispatch() & 1)) matvec_t(wtl("model.layers.%d.self_attn.v_proj.weight",l), hbuf, g_vbias_l[l], kv_v);
+        if (!(fused_dispatch() & 1)) matvec_t(g_role_wt[ROLE_ATTN_V][l], hbuf, g_vbias_l[l], kv_v);
         if (prof_on()) g_t_v += nowt()-tp0;
 
         if (prof_on()) tp0 = nowt();
@@ -1389,7 +1466,7 @@ static void forward_token(int id, int pos, float *x_out, int dump_layers) {
         g_t_attn += nowt()-ta0;
 
         if (prof_on()) tp0 = nowt();
-        matvec_t(wtl("model.layers.%d.self_attn.o_proj.weight",l), attn, NULL, obuf);
+        matvec_t(g_role_wt[ROLE_ATTN_O][l], attn, NULL, obuf);
         if (prof_on()) g_t_o += nowt()-tp0;
 
         if (prof_on()) tp0 = nowt();
@@ -1397,16 +1474,16 @@ static void forward_token(int id, int pos, float *x_out, int dump_layers) {
         if (prof_on()) g_t_resid += nowt()-tp0;
 
         if (prof_on()) tp0 = nowt();
-        rmsnorm(xbuf, wlf("model.layers.%d.post_attention_layernorm.weight",l), hbuf, g_cfg.d);
+        rmsnorm(xbuf, g_role_wt[ROLE_POST_ATTN_LN][l]->f32, hbuf, g_cfg.d);
         if (prof_on()) g_t_rms += nowt()-tp0;
 
         if (prof_on()) tp0 = nowt();
         if (fused_dispatch() & 2) matvec_t(&g_gu_fused[l], hbuf, NULL, gate);
-        else matvec_t(wtl("model.layers.%d.mlp.gate_proj.weight",l), hbuf, NULL, gate);
+        else matvec_t(g_role_wt[ROLE_MLP_GATE][l], hbuf, NULL, gate);
         if (prof_on()) g_t_gate += nowt()-tp0;
 
         if (prof_on()) tp0 = nowt();
-        if (!(fused_dispatch() & 2)) matvec_t(wtl("model.layers.%d.mlp.up_proj.weight",l), hbuf, NULL, up);
+        if (!(fused_dispatch() & 2)) matvec_t(g_role_wt[ROLE_MLP_UP][l], hbuf, NULL, up);
         if (prof_on()) g_t_up += nowt()-tp0;
 
         if (prof_on()) tp0 = nowt();
@@ -1414,7 +1491,7 @@ static void forward_token(int id, int pos, float *x_out, int dump_layers) {
         if (prof_on()) g_t_swiglu += nowt()-tp0;
 
         if (prof_on()) tp0 = nowt();
-        matvec_t(wtl("model.layers.%d.mlp.down_proj.weight",l), mlpact, NULL, mlpout);
+        matvec_t(g_role_wt[ROLE_MLP_DOWN][l], mlpact, NULL, mlpout);
         if (prof_on()) g_t_down += nowt()-tp0;
 
         if (prof_on()) tp0 = nowt();
@@ -1429,15 +1506,14 @@ static void forward_token(int id, int pos, float *x_out, int dump_layers) {
 static void final_logits(const float *x, float *logits) {
     double tp0;
     if (prof_on()) tp0 = nowt();
-    float normed[g_cfg.d]; rmsnorm(x, w("model.norm.weight"), normed, g_cfg.d);
+    float normed[g_cfg.d]; rmsnorm(x, g_role_final_norm, normed, g_cfg.d);
     if (prof_on()) g_t_headrms += nowt()-tp0;
     // Head selection: int8 lm_head when active; else a fp32 untied lm_head if the layout has one;
     // else the tied fp32 embed (Qwen2.5-1.5B). The embedding *gather* in forward_token always uses
     // the fp32 embed regardless. (QWEN_FP32_HEAD forces g_int8_head=0 -> our int8 head is skipped
     // by the kind!=K_F32 test and we correctly fall back to the tied embed.)
     WT *head;
-    if (g_int8_head) head = wt("lm_head.weight");
-    else { WT *h = wt_opt("lm_head.weight"); head = (h && h->kind == K_F32) ? h : wt("model.embed_tokens.weight"); }
+    head = g_role_lm_head;
     if (prof_on()) tp0 = nowt();
     matvec_t(head, normed, NULL, logits);
     if (prof_on()) g_t_headgemv += nowt()-tp0;
@@ -1474,13 +1550,13 @@ static void matmul_t(const WT *W, const float *x, const float *bias, float *y, i
 // process n tokens (n<=MAXSPEC) at positions start_pos..start_pos+n-1; fill KV; xout=[n][D].
 // causal within the batch (all KV written before attention reads).
 static void forward_tokens(const int *ids, int n, int start_pos, float *xout) {
-    const float *emb = w("model.embed_tokens.weight");
+    const float *emb = g_role_embed;
     for (int m=0;m<n;m++) memcpy(sb_x+(size_t)m*g_cfg.d, emb+(long)ids[m]*g_cfg.d, g_cfg.d*sizeof(float));
     for (int l=0;l<g_cfg.nl;l++){
-        for (int m=0;m<n;m++) rmsnorm(sb_x+(size_t)m*g_cfg.d, wlf("model.layers.%d.input_layernorm.weight",l), sb_h+(size_t)m*g_cfg.d, g_cfg.d);
-        matmul_t(wtl("model.layers.%d.self_attn.q_proj.weight",l), sb_h, g_qbias_l[l], sb_q, n);
-        matmul_t(wtl("model.layers.%d.self_attn.k_proj.weight",l), sb_h, g_kbias_l[l], sb_k, n);
-        matmul_t(wtl("model.layers.%d.self_attn.v_proj.weight",l), sb_h, g_vbias_l[l], sb_v, n);
+        for (int m=0;m<n;m++) rmsnorm(sb_x+(size_t)m*g_cfg.d, g_role_wt[ROLE_INPUT_LN][l]->f32, sb_h+(size_t)m*g_cfg.d, g_cfg.d);
+        matmul_t(g_role_wt[ROLE_ATTN_Q][l], sb_h, g_qbias_l[l], sb_q, n);
+        matmul_t(g_role_wt[ROLE_ATTN_K][l], sb_h, g_kbias_l[l], sb_k, n);
+        matmul_t(g_role_wt[ROLE_ATTN_V][l], sb_h, g_vbias_l[l], sb_v, n);
         for (int m=0;m<n;m++){ int pos=start_pos+m;
             for(int h=0;h<g_cfg.nh;h++) rope_head(sb_q+(size_t)m*g_cfg.qd+h*g_cfg.hd,pos);
             for(int h=0;h<g_cfg.nkv;h++) rope_head(sb_k+(size_t)m*g_cfg.kvd+h*g_cfg.hd,pos);
@@ -1562,13 +1638,13 @@ static void forward_tokens(const int *ids, int n, int start_pos, float *xout) {
                 }
             }
         }
-        matmul_t(wtl("model.layers.%d.self_attn.o_proj.weight",l), sb_attn, NULL, sb_o, n);
+        matmul_t(g_role_wt[ROLE_ATTN_O][l], sb_attn, NULL, sb_o, n);
         for (int m=0;m<n;m++) vDSP_vadd(sb_x+(size_t)m*g_cfg.d,1,sb_o+(size_t)m*g_cfg.d,1,sb_x+(size_t)m*g_cfg.d,1,g_cfg.d);
-        for (int m=0;m<n;m++) rmsnorm(sb_x+(size_t)m*g_cfg.d, wlf("model.layers.%d.post_attention_layernorm.weight",l), sb_h+(size_t)m*g_cfg.d, g_cfg.d);
-        matmul_t(wtl("model.layers.%d.mlp.gate_proj.weight",l), sb_h, NULL, sb_g, n);
-        matmul_t(wtl("model.layers.%d.mlp.up_proj.weight",l), sb_h, NULL, sb_u, n);
+        for (int m=0;m<n;m++) rmsnorm(sb_x+(size_t)m*g_cfg.d, g_role_wt[ROLE_POST_ATTN_LN][l]->f32, sb_h+(size_t)m*g_cfg.d, g_cfg.d);
+        matmul_t(g_role_wt[ROLE_MLP_GATE][l], sb_h, NULL, sb_g, n);
+        matmul_t(g_role_wt[ROLE_MLP_UP][l], sb_h, NULL, sb_u, n);
         for (int m=0;m<n;m++) swiglu(sb_g+(size_t)m*g_cfg.im, sb_u+(size_t)m*g_cfg.im, sb_a+(size_t)m*g_cfg.im, g_cfg.im);
-        matmul_t(wtl("model.layers.%d.mlp.down_proj.weight",l), sb_a, NULL, sb_mo, n);
+        matmul_t(g_role_wt[ROLE_MLP_DOWN][l], sb_a, NULL, sb_mo, n);
         for (int m=0;m<n;m++) vDSP_vadd(sb_x+(size_t)m*g_cfg.d,1,sb_mo+(size_t)m*g_cfg.d,1,sb_x+(size_t)m*g_cfg.d,1,g_cfg.d);
     }
     for (int m=0;m<n;m++) memcpy(xout+(size_t)m*g_cfg.d, sb_x+(size_t)m*g_cfg.d, g_cfg.d*sizeof(float));
@@ -1576,10 +1652,9 @@ static void forward_tokens(const int *ids, int n, int start_pos, float *xout) {
 
 // logits for each of n hidden states: L=[n][VOCAB]
 static void final_logits_batch(const float *xs, int n, float *L) {
-    for (int m=0;m<n;m++) rmsnorm(xs+(size_t)m*g_cfg.d, w("model.norm.weight"), sb_norm+(size_t)m*g_cfg.d, g_cfg.d);
+    for (int m=0;m<n;m++) rmsnorm(xs+(size_t)m*g_cfg.d, g_role_final_norm, sb_norm+(size_t)m*g_cfg.d, g_cfg.d);
     WT *head;                                              // same selection as final_logits()
-    if (g_int8_head) head = wt("lm_head.weight");
-    else { WT *h = wt_opt("lm_head.weight"); head = (h && h->kind == K_F32) ? h : wt("model.embed_tokens.weight"); }
+    head = g_role_lm_head;
     matmul_t(head, sb_norm, NULL, L, n);
 }
 // ---- M20: request-batched decode ("serve" mode) ----
@@ -1732,7 +1807,7 @@ static void matmul_sdot(const WT *W, const float *x, const float *bias, float *y
 // bench). EXIT: thread the per-seq loop over q4pool workers if attention share grows
 // (long contexts), or extend kslot2 mirrors per-seq for mode 1.
 static void serve_step(const int *ids, int B, int pos, float *L) {
-    const float *emb = w("model.embed_tokens.weight");
+    const float *emb = g_role_embed;
     for (int s=0;s<B;s++) memcpy(srv_x+(size_t)s*g_cfg.d, emb+(long)ids[s]*g_cfg.d, g_cfg.d*sizeof(float));
     float rc[g_cfg.hd/2], rs[g_cfg.hd/2]; rope_precompute(pos, rc, rs);
     float scale=1.0f/sqrtf((float)g_cfg.hd);
@@ -1740,10 +1815,10 @@ static void serve_step(const int *ids, int B, int pos, float *L) {
     if (am == 2 && !fast_attn_hd_ok()) am = 0;                                              // M44: split
     if (am == 3 && !fast_attn_shape_ok() && !fast_attn_shape_ok_g4()) am = 0;                // D3/M44, see forward_token
     for (int l=0;l<g_cfg.nl;l++){
-        for (int s=0;s<B;s++) rmsnorm(srv_x+(size_t)s*g_cfg.d, wlf("model.layers.%d.input_layernorm.weight",l), srv_h+(size_t)s*g_cfg.d, g_cfg.d);
-        matmul_sdot(wtl("model.layers.%d.self_attn.q_proj.weight",l), srv_h, g_qbias_l[l], srv_q, B);
-        matmul_sdot(wtl("model.layers.%d.self_attn.k_proj.weight",l), srv_h, g_kbias_l[l], srv_k, B);
-        matmul_sdot(wtl("model.layers.%d.self_attn.v_proj.weight",l), srv_h, g_vbias_l[l], srv_v, B);
+        for (int s=0;s<B;s++) rmsnorm(srv_x+(size_t)s*g_cfg.d, g_role_wt[ROLE_INPUT_LN][l]->f32, srv_h+(size_t)s*g_cfg.d, g_cfg.d);
+        matmul_sdot(g_role_wt[ROLE_ATTN_Q][l], srv_h, g_qbias_l[l], srv_q, B);
+        matmul_sdot(g_role_wt[ROLE_ATTN_K][l], srv_h, g_kbias_l[l], srv_k, B);
+        matmul_sdot(g_role_wt[ROLE_ATTN_V][l], srv_h, g_vbias_l[l], srv_v, B);
         for (int s=0;s<B;s++){
             for(int h=0;h<g_cfg.nh;h++) rope_apply(srv_q+(size_t)s*g_cfg.qd+h*g_cfg.hd,rc,rs);
             for(int h=0;h<g_cfg.nkv;h++) rope_apply(srv_k+(size_t)s*g_cfg.kvd+h*g_cfg.hd,rc,rs);
@@ -1801,19 +1876,18 @@ static void serve_step(const int *ids, int B, int pos, float *L) {
             }
         }
         if (prof_on()) g_srv_attn+=nowt()-tat0;
-        matmul_sdot(wtl("model.layers.%d.self_attn.o_proj.weight",l), srv_attn, NULL, srv_o, B);
+        matmul_sdot(g_role_wt[ROLE_ATTN_O][l], srv_attn, NULL, srv_o, B);
         for (int s=0;s<B;s++) vDSP_vadd(srv_x+(size_t)s*g_cfg.d,1,srv_o+(size_t)s*g_cfg.d,1,srv_x+(size_t)s*g_cfg.d,1,g_cfg.d);
-        for (int s=0;s<B;s++) rmsnorm(srv_x+(size_t)s*g_cfg.d, wlf("model.layers.%d.post_attention_layernorm.weight",l), srv_h+(size_t)s*g_cfg.d, g_cfg.d);
-        matmul_sdot(wtl("model.layers.%d.mlp.gate_proj.weight",l), srv_h, NULL, srv_g, B);
-        matmul_sdot(wtl("model.layers.%d.mlp.up_proj.weight",l), srv_h, NULL, srv_u, B);
+        for (int s=0;s<B;s++) rmsnorm(srv_x+(size_t)s*g_cfg.d, g_role_wt[ROLE_POST_ATTN_LN][l]->f32, srv_h+(size_t)s*g_cfg.d, g_cfg.d);
+        matmul_sdot(g_role_wt[ROLE_MLP_GATE][l], srv_h, NULL, srv_g, B);
+        matmul_sdot(g_role_wt[ROLE_MLP_UP][l], srv_h, NULL, srv_u, B);
         for (int s=0;s<B;s++) swiglu(srv_g+(size_t)s*g_cfg.im, srv_u+(size_t)s*g_cfg.im, srv_a+(size_t)s*g_cfg.im, g_cfg.im);
-        matmul_sdot(wtl("model.layers.%d.mlp.down_proj.weight",l), srv_a, NULL, srv_mo, B);
+        matmul_sdot(g_role_wt[ROLE_MLP_DOWN][l], srv_a, NULL, srv_mo, B);
         for (int s=0;s<B;s++) vDSP_vadd(srv_x+(size_t)s*g_cfg.d,1,srv_mo+(size_t)s*g_cfg.d,1,srv_x+(size_t)s*g_cfg.d,1,g_cfg.d);
     }
-    for (int s=0;s<B;s++) rmsnorm(srv_x+(size_t)s*g_cfg.d, w("model.norm.weight"), srv_norm+(size_t)s*g_cfg.d, g_cfg.d);
+    for (int s=0;s<B;s++) rmsnorm(srv_x+(size_t)s*g_cfg.d, g_role_final_norm, srv_norm+(size_t)s*g_cfg.d, g_cfg.d);
     WT *head;                                              // same selection as final_logits()
-    if (g_int8_head) head = wt("lm_head.weight");
-    else { WT *h = wt_opt("lm_head.weight"); head = (h && h->kind == K_F32) ? h : wt("model.embed_tokens.weight"); }
+    head = g_role_lm_head;
     matmul_sdot(head, srv_norm, NULL, L, B);
 }
 
@@ -1881,7 +1955,7 @@ static inline float *cb_rs_row(int m){ return cb_rs_flat + (long)m*(g_cfg.hd/2);
 // at that slot's own position spos[m]. Fills L[m][VOCAB] when want_logits.
 static void cbatch_step(const int *ids, const int *slot, const int *spos, int A,
                         float *L, int want_logits) {
-    const float *emb = w("model.embed_tokens.weight");
+    const float *emb = g_role_embed;
     for (int m=0;m<A;m++) memcpy(srv_x+(size_t)m*g_cfg.d, emb+(long)ids[m]*g_cfg.d, g_cfg.d*sizeof(float));
     for (int m=0;m<A;m++) rope_precompute(spos[m], cb_rc_row(m), cb_rs_row(m));   // M21-D6
     float scale=1.0f/sqrtf((float)g_cfg.hd);
@@ -1889,10 +1963,10 @@ static void cbatch_step(const int *ids, const int *slot, const int *spos, int A,
     if (am == 2 && !fast_attn_hd_ok()) am = 0;                                              // M44: split
     if (am == 3 && !fast_attn_shape_ok() && !fast_attn_shape_ok_g4()) am = 0;                // D3/M44, see forward_token
     for (int l=0;l<g_cfg.nl;l++){
-        for (int m=0;m<A;m++) rmsnorm(srv_x+(size_t)m*g_cfg.d, wlf("model.layers.%d.input_layernorm.weight",l), srv_h+(size_t)m*g_cfg.d, g_cfg.d);
-        matmul_sdot(wtl("model.layers.%d.self_attn.q_proj.weight",l), srv_h, g_qbias_l[l], srv_q, A);
-        matmul_sdot(wtl("model.layers.%d.self_attn.k_proj.weight",l), srv_h, g_kbias_l[l], srv_k, A);
-        matmul_sdot(wtl("model.layers.%d.self_attn.v_proj.weight",l), srv_h, g_vbias_l[l], srv_v, A);
+        for (int m=0;m<A;m++) rmsnorm(srv_x+(size_t)m*g_cfg.d, g_role_wt[ROLE_INPUT_LN][l]->f32, srv_h+(size_t)m*g_cfg.d, g_cfg.d);
+        matmul_sdot(g_role_wt[ROLE_ATTN_Q][l], srv_h, g_qbias_l[l], srv_q, A);
+        matmul_sdot(g_role_wt[ROLE_ATTN_K][l], srv_h, g_kbias_l[l], srv_k, A);
+        matmul_sdot(g_role_wt[ROLE_ATTN_V][l], srv_h, g_vbias_l[l], srv_v, A);
         for (int m=0;m<A;m++){ int s=slot[m], pos=spos[m];
             for(int h=0;h<g_cfg.nh;h++) rope_apply(srv_q+(size_t)m*g_cfg.qd+h*g_cfg.hd,cb_rc_row(m),cb_rs_row(m));
             for(int h=0;h<g_cfg.nkv;h++) rope_apply(srv_k+(size_t)m*g_cfg.kvd+h*g_cfg.hd,cb_rc_row(m),cb_rs_row(m));
@@ -1951,20 +2025,19 @@ static void cbatch_step(const int *ids, const int *slot, const int *spos, int A,
             }
         }
         if (prof_on()) g_srv_attn+=nowt()-tat0;
-        matmul_sdot(wtl("model.layers.%d.self_attn.o_proj.weight",l), srv_attn, NULL, srv_o, A);
+        matmul_sdot(g_role_wt[ROLE_ATTN_O][l], srv_attn, NULL, srv_o, A);
         for (int m=0;m<A;m++) vDSP_vadd(srv_x+(size_t)m*g_cfg.d,1,srv_o+(size_t)m*g_cfg.d,1,srv_x+(size_t)m*g_cfg.d,1,g_cfg.d);
-        for (int m=0;m<A;m++) rmsnorm(srv_x+(size_t)m*g_cfg.d, wlf("model.layers.%d.post_attention_layernorm.weight",l), srv_h+(size_t)m*g_cfg.d, g_cfg.d);
-        matmul_sdot(wtl("model.layers.%d.mlp.gate_proj.weight",l), srv_h, NULL, srv_g, A);
-        matmul_sdot(wtl("model.layers.%d.mlp.up_proj.weight",l), srv_h, NULL, srv_u, A);
+        for (int m=0;m<A;m++) rmsnorm(srv_x+(size_t)m*g_cfg.d, g_role_wt[ROLE_POST_ATTN_LN][l]->f32, srv_h+(size_t)m*g_cfg.d, g_cfg.d);
+        matmul_sdot(g_role_wt[ROLE_MLP_GATE][l], srv_h, NULL, srv_g, A);
+        matmul_sdot(g_role_wt[ROLE_MLP_UP][l], srv_h, NULL, srv_u, A);
         for (int m=0;m<A;m++) swiglu(srv_g+(size_t)m*g_cfg.im, srv_u+(size_t)m*g_cfg.im, srv_a+(size_t)m*g_cfg.im, g_cfg.im);
-        matmul_sdot(wtl("model.layers.%d.mlp.down_proj.weight",l), srv_a, NULL, srv_mo, A);
+        matmul_sdot(g_role_wt[ROLE_MLP_DOWN][l], srv_a, NULL, srv_mo, A);
         for (int m=0;m<A;m++) vDSP_vadd(srv_x+(size_t)m*g_cfg.d,1,srv_mo+(size_t)m*g_cfg.d,1,srv_x+(size_t)m*g_cfg.d,1,g_cfg.d);
     }
     if (!want_logits) return;   // prefill steps before the last prompt token skip the head GEMM
-    for (int m=0;m<A;m++) rmsnorm(srv_x+(size_t)m*g_cfg.d, w("model.norm.weight"), srv_norm+(size_t)m*g_cfg.d, g_cfg.d);
+    for (int m=0;m<A;m++) rmsnorm(srv_x+(size_t)m*g_cfg.d, g_role_final_norm, srv_norm+(size_t)m*g_cfg.d, g_cfg.d);
     WT *head;                                              // same selection as final_logits()
-    if (g_int8_head) head = wt("lm_head.weight");
-    else { WT *h = wt_opt("lm_head.weight"); head = (h && h->kind == K_F32) ? h : wt("model.embed_tokens.weight"); }
+    head = g_role_lm_head;
     matmul_sdot(head, srv_norm, NULL, L, A);
 }
 
@@ -4476,6 +4549,8 @@ int main(int argc, char **argv) {
     } else load_fp32(base);
     init_qkv_bias();          // D4: must run before init_fused_dispatch() (build_fused_qkv reads
                                // g_qbias_l/g_kbias_l/g_vbias_l) and before any forward pass
+    init_tensor_roles();       // D-gen-tensorrole-1: must run after g_int8_head is finalized
+                               // (just above) and after weights are loaded, before any forward pass
     init_fused_dispatch();
 
     if (kv_int4_on() && kv_int8_on()) {           // M24-D5: precedence, checked once

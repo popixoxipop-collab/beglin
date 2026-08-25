@@ -274,10 +274,16 @@ rewrite, not discovered late).
    no vendoring needed, see `VENDOR.md`) but not yet exercised against
    real data (absent from this fixture). Full writeup:
    [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-1-sub-step-2-dequant-vendoring-2026-08-25).
-3. `TensorRole` indirection replacing ~14 name literals / ~50 call sites
-   with `wt_role(ROLE_ATTN_Q, l)`, resolved once at load via a
-   `role → name pattern` table with `"hf"` and `"gguf"` naming
-   conventions (mirrors `init_qkv_bias`'s existing one-dereference design).
+3. ✅ **DONE 2026-08-25** — `TensorRole` (`LayerRole` enum) indirection
+   replacing 57 name-literal call sites with `g_role_wt[ROLE_X][l]`,
+   resolved once at load via `ROLE_PATTERN_HF[]` (mirrors `init_qkv_bias`'s
+   one-dereference design as planned; the `"gguf"` naming table is a
+   follow-on, not added yet). R1 golden-output regression: 3 of 4
+   forward-pass functions byte-identical to pre-refactor output on real
+   production weights (both dense models + MoE); the 4th's test mode
+   hit an unrelated pre-existing SIGILL confirmed on the *original*
+   binary too (flagged, not fixed, out of scope). Full writeup:
+   [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-1-sub-step-3-tensorrole-indirection-2026-08-25).
 4. `ArchCfg` from GGUF metadata (`%s.block_count`, `.embedding_length`,
    etc.) — do NOT add keys to `arch_config.txt` (qwen_score.c/qwen_spec.c
    each FATAL on unrecognized keys; RoPE scaling already lives in a

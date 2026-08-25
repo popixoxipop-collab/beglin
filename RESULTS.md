@@ -255,3 +255,64 @@ Raw: `gguf_quants.c`/`gguf_quants.h`, `VENDOR.md` (this repo),
 `tools/gguf_dequant_dump.c`, `tools/gguf_dequant_oracle.py`,
 `tools/gguf_dequant_checksums.c`, `tools/gguf_dequant_checksums_oracle.py`,
 `bob`, 2026-08-25.
+
+## General-purpose loader — Phase 1, sub-step 3: TensorRole indirection (2026-08-25)
+
+Third piece of Phase 1 (see `PLAN_general_purpose_loader.md`): replaced
+the ~57 tensor-name-literal call sites scattered across this engine's
+four near-identical forward-pass implementations (single-token decode,
+batched prefill, sdot-serve, sdot-cbatch — each independently re-deriving
+strings like `"model.layers.%d.self_attn.q_proj.weight"`) with a
+`LayerRole` enum + a `g_role_wt[role][layer]` pointer cache, resolved
+once at load. This is the first sub-step that touches the actual
+production forward-pass code (`qwen_infer.c`) rather than sitting
+alongside it — real regression risk, verified accordingly.
+
+**R1 golden-output lock, captured before any change**, using the exact
+production binary/weights already deployed: greedy-32 output for both
+validated dense models (Qwen2.5-1.5B, Llama-3.1-8B) and the MoE model's
+sequential-verify + cbatch-online modes.
+
+**Regression result across all 4 forward-pass functions the refactor
+touched:**
+
+| Function | Mode tested | Result |
+|---|---|---|
+| Single-token decode (`matvec_t`) | `greedy 32`, both dense models | **Byte-identical** to golden (exact token match) |
+| sdot-serve (`matmul_sdot`, B) | `serve 16`, 4 parallel streams | **Byte-identical** to golden (all 4 streams exact match, "streams all-identical") |
+| Batched prefill (`matmul_t`) | `bench 16` | Runs correctly, throughput unchanged (22.36→22.39 tok/s, noise-level) — no token output to diff in this mode by design |
+| sdot-cbatch (`matmul_sdot`, A) | `cbatch 16` | **Inconclusive by an unrelated cause**: this exact mode/config SIGILLs (exit 132) on the *pristine, unmodified* original binary too — confirmed identically before touching anything. A real, reproducible, pre-existing bug, unrelated to this refactor and out of this sub-step's scope; not chased further here. |
+
+MoE sequential-verify (8/8 argmax tokens) and MoE cbatch-online (all
+per-request token streams, timing fields normalized out) also diff empty
+against golden — confirms the MoE subsystem's own separate tensor-lookup
+path (`moe_find_f32`, `AFTensor`) was correctly left untouched by this
+refactor, as intended (MoE has its own parallel lookup mechanism, out of
+scope here).
+
+**A bug this same verification caught**: the mechanical regex
+substitution initially also rewrote the cache's own *initializer*
+assignments (`g_role_embed = w(...)` → a self-assignment
+`g_role_embed = g_role_embed`) and a comment string, since the
+substitution was textual, not language-aware. Caught by re-reading the
+diff before compiling, not by the compiler (a self-assignment to a
+already-implicitly-zero-initialized static pointer doesn't warn) — fixed
+before it ever reached a build.
+
+Compiles clean (`-Wall -Wextra`, 13 warnings — the documented pre-existing
+baseline, zero new; one now-dead helper function `wlf()` deleted rather
+than left as unused code). Caller-plain convention re-verified (`otool`:
+0 SVE/SME instructions in the plain-compiled object). Full npm build
+chain re-run end-to-end (`postinstall-build.js` → `npm test` → CLI) with
+the refactored source, all pass.
+
+**Not yet done**: GGUF-metadata-to-`ArchCfg` mapping, architecture
+allowlist, and actually wiring the GGUF loader (`gguf_load.c`,
+`gguf_quants.c`) to populate this same `g_role_wt` cache via the
+`ROLE_PATTERN_HF`-alongside-`ROLE_PATTERN_GGUF` design this sub-step set
+up for. The pre-existing `cbatch` SIGILL found above is a separate,
+unrelated bug — flagged, not fixed, since it's outside this phase's
+scope.
+
+Raw: `qwen_infer.c` (this repo, the diff itself), golden logs and
+regression output captured on `bob`, 2026-08-25.
