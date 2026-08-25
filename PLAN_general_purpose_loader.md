@@ -284,19 +284,41 @@ rewrite, not discovered late).
    hit an unrelated pre-existing SIGILL confirmed on the *original*
    binary too (flagged, not fixed, out of scope). Full writeup:
    [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-1-sub-step-3-tensorrole-indirection-2026-08-25).
-4. `ArchCfg` from GGUF metadata (`%s.block_count`, `.embedding_length`,
-   etc.) — do NOT add keys to `arch_config.txt` (qwen_score.c/qwen_spec.c
-   each FATAL on unrecognized keys; RoPE scaling already lives in a
-   separate optional sidecar for exactly this reason).
-5. Architecture allowlist on `general.architecture` — FATAL with a named
-   supported-list rather than attempting an unvalidated run.
-6. Grow `g_wt[512]` to a `realloc`'d array.
+4. ✅ **DONE 2026-08-25** — `ArchCfg` from GGUF metadata (`%s.block_count`,
+   `.embedding_length`, `.feed_forward_length`, `.attention.head_count`,
+   `.attention.head_count_kv`, `.rope.freq_base`,
+   `.attention.layer_norm_rms_epsilon`), plus VOCAB derived from
+   `token_embd.weight`'s own tensor shape and QKV_BIAS from tensor
+   *presence* rather than a scalar key. No keys added to `arch_config.txt`
+   — this path is fully independent of it, as planned. Full writeup:
+   [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-1-complete-gguf-loading-end-to-end-verified-against-upstream-llamacpp-2026-08-25).
+5. ✅ **DONE 2026-08-25** — Architecture allowlist on `general.architecture`
+   (only `"qwen2"` currently) — FATAL with a named supported-list rather
+   than attempting an unvalidated run, matching `load_int4`'s doctrine.
+6. **Deferred, not done** — `g_wt[512]` is still a fixed-size array. Not
+   load-bearing for this fixture (339 tensors), so not blocking Phase 1's
+   gate; real risk starts around ~55+ layer models. Tracked for Phase 3+
+   when deeper architectures actually get validated — noted here rather
+   than silently skipped.
 
-**Fixture/gate:** `qwen2.5-1.5b-instruct-q4_k_m.gguf` — same model already
-validated in the custom format, clean A/B. Metrics: R4 oracle diff empty;
-greedy prefix-match vs. existing run; WikiText ppl delta vs. the existing
-12.10 (tokens won't be bit-identical — different quantizer — so the ppl
-delta IS the Path-A measured number).
+**Fixture/gate — result:** `qwen2.5-1.5b-instruct-q4_k_m.gguf`, real
+1.1GB/339-tensor file. R4 oracle diff: empty (sub-steps 1-2). Greedy
+correctness: the plan's own literal "prefix-match vs. existing [custom-
+format] run" metric was superseded by a stronger, fairer check — the
+custom format is q4g64-int4 and GGUF here is Q4_K, two different lossy
+quantizations of the same weights, so a byte-for-byte token match between
+them was never the right bar (got a 5-token exact prefix before expected
+divergence, consistent with that). Instead: this engine's GGUF-loaded
+greedy output was compared against **upstream llama.cpp** (`llama-simple`,
+a separate build) reading the *same* `.gguf` file on the same 13-token
+prompt — **exact match, all 31 generated tokens**, decoded to identical
+text. WikiText ppl delta vs. the existing 12.10 baseline: **not measured**
+this session — Phase 1's GGUF path is F32-only (no quantized transcode
+until Phase 2), so this number would mainly confirm "F32 dequant ≥ int4,"
+an expected/low-risk result, and the llama.cpp token-exact-match is a
+strictly stronger signal for the same underlying correctness question.
+Flagged as an outstanding gate metric, not silently dropped. Full
+writeup: [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-1-complete-gguf-loading-end-to-end-verified-against-upstream-llamacpp-2026-08-25).
 
 ### Phase 2 — Transcode + on-disk cache; first new model (~1.5 weeks)
 

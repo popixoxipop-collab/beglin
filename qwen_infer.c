@@ -27,6 +27,11 @@
 
 #include "attn_neon.h"
 #include "rope_llama3_scale.h"   // M43: Llama-3.1-style RoPE NTK scaling (additive header)
+#include "gguf_load.h"     // general-purpose-loader Phase 1: GGUF container parser (own TU --
+                            // see gguf_load.h's own header comment for why it's never allowed
+                            // to become part of this plain-compiled caller TU's actual logic,
+                            // only called into)
+#include "gguf_quants.h"   // general-purpose-loader Phase 1: vendored dequant (own TU, same reason)
 
 // D1/D2 (structural generalization): NL/NH/NKV/D/HD/KVD/QD/IM/VOCAB/THETA/EPS/MAXSEQ/GROUP/
 // KVG/QG used to be compile-time #defines for Qwen2.5-1.5B only. They are now loaded once at
@@ -4469,6 +4474,191 @@ static int run_moe_verify_mode(int argc, char **argv) {
     return 1;   // signal: MoE mode ran, caller should exit without touching GQA main() logic
 }
 
+// ============================================================================================
+// General-purpose loader, Phase 1 (PLAN_general_purpose_loader.md): GGUF as a fourth loader,
+// alongside load_fp32()/load_int4()/the MoE loaders -- same additive, byte-identical-when-absent
+// discipline (R2 in the plan): triggered only by QWEN_GGUF being set, touching nothing else.
+//
+// D-gen-loader-1: register every GGUF tensor under this engine's EXISTING HF-style names
+// ("model.layers.%d.self_attn.q_proj.weight" etc, via ROLE_PATTERN_HF -- see the
+// D-gen-tensorrole-1 comment above) instead of inventing a parallel GGUF-named code path.
+//   WHY: init_qkv_bias() and init_tensor_roles() are already load-tested, byte-verified
+//        functions (see RESULTS.md's TensorRole sub-step) that only care about NAME matching
+//        in g_wt[] -- they have no idea (and don't need to know) whether the bytes behind a
+//        name came from the custom binary format or a dequantized GGUF tensor. Reusing them
+//        unmodified for the GGUF path means the two hardest-to-get-right pieces of load-time
+//        logic in this file exist exactly once, not twice.
+//   COST: an extra small pass renaming each tensor at registration time (negligible -- runs
+//        once per process, not per token, same cost class as everything else at load time).
+//   EXIT: if GGUF-sourced tensors ever need to diverge from the HF role/name model (e.g. an
+//        architecture GGUF's own layout can't be mapped onto ROLE_PATTERN_HF's 9 roles),
+//        that's the point to introduce a real GGUF-named parallel path -- not needed yet.
+//
+// Phase 1 scope note: every tensor is dequantized straight to K_F32 here, regardless of its
+// GGUF quant type. This proves the loader itself is correct (which is what Phase 1's own gate
+// checks -- greedy-token match + ppl delta vs the existing 12.10 baseline) without also taking
+// on quantized-transcode risk in the same step; K_Q4G64 transcoding for real SME2 throughput is
+// Phase 2 (D-gen-2 in the plan), a deliberately separate piece of work.
+static GgufFile *g_gguf = NULL;
+
+static const char *ROLE_PATTERN_GGUF[N_LAYER_ROLES] = {
+    [ROLE_ATTN_Q]       = "blk.%d.attn_q.weight",
+    [ROLE_ATTN_K]       = "blk.%d.attn_k.weight",
+    [ROLE_ATTN_V]       = "blk.%d.attn_v.weight",
+    [ROLE_ATTN_O]       = "blk.%d.attn_output.weight",
+    [ROLE_MLP_GATE]     = "blk.%d.ffn_gate.weight",
+    [ROLE_MLP_UP]       = "blk.%d.ffn_up.weight",
+    [ROLE_MLP_DOWN]     = "blk.%d.ffn_down.weight",
+    [ROLE_INPUT_LN]     = "blk.%d.attn_norm.weight",
+    [ROLE_POST_ATTN_LN] = "blk.%d.ffn_norm.weight",
+};
+
+// Sets every g_cfg.* field load_arch_cfg() would have, from GGUF metadata instead of
+// arch_config.txt -- deliberately does NOT touch arch_config.txt or its parser (qwen_score.c/
+// qwen_spec.c each FATAL on an unrecognized key in that file; adding GGUF-only concepts to it
+// would break both siblings for a feature they don't have, same reasoning load_rope_scale_cfg's
+// own comment already gives for keeping RoPE scaling in a separate sidecar file).
+static void load_gguf_arch(const char *path) {
+    g_gguf = gguf_open(path);
+    if (!g_gguf) { perror("gguf_open"); fprintf(stderr, "FATAL: could not open gguf file %s\n", path); exit(1); }
+
+    const char *arch_ptr; uint64_t arch_len;
+    if (!gguf_kv_str(g_gguf, "general.architecture", &arch_ptr, &arch_len)) {
+        fprintf(stderr, "FATAL: gguf file %s missing general.architecture\n", path); exit(1);
+    }
+    // Architecture allowlist: FATAL with a named supported-list rather than attempting an
+    // unvalidated run -- silently-wrong is worse than a crash (same doctrine as load_int4's
+    // unrecognized-kind FATAL). Only "qwen2" is validated so far (this is the fixture Phase 1
+    // is gated on); extending this list is exactly the D-gen-4 architecture-priority work.
+    static const char *SUPPORTED_ARCH[] = { "qwen2" };
+    int arch_ok = 0;
+    for (size_t i = 0; i < sizeof(SUPPORTED_ARCH)/sizeof(SUPPORTED_ARCH[0]); i++) {
+        if (arch_len == strlen(SUPPORTED_ARCH[i]) && !memcmp(arch_ptr, SUPPORTED_ARCH[i], arch_len)) { arch_ok = 1; break; }
+    }
+    if (!arch_ok) {
+        fprintf(stderr, "FATAL: gguf architecture '%.*s' not validated by this engine; supported: qwen2\n",
+                (int)arch_len, arch_ptr);
+        exit(1);
+    }
+    char arch[64]; snprintf(arch, sizeof arch, "%.*s", (int)arch_len, arch_ptr);
+
+    char key[128]; uint64_t u; double d;
+    snprintf(key,sizeof key,"%s.block_count",arch);
+    if (!gguf_kv_u64(g_gguf,key,&u)) { fprintf(stderr,"FATAL: gguf missing '%s'\n",key); exit(1); } g_cfg.nl=(int)u;
+    snprintf(key,sizeof key,"%s.embedding_length",arch);
+    if (!gguf_kv_u64(g_gguf,key,&u)) { fprintf(stderr,"FATAL: gguf missing '%s'\n",key); exit(1); } g_cfg.d=(int)u;
+    snprintf(key,sizeof key,"%s.feed_forward_length",arch);
+    if (!gguf_kv_u64(g_gguf,key,&u)) { fprintf(stderr,"FATAL: gguf missing '%s'\n",key); exit(1); } g_cfg.im=(int)u;
+    snprintf(key,sizeof key,"%s.attention.head_count",arch);
+    if (!gguf_kv_u64(g_gguf,key,&u)) { fprintf(stderr,"FATAL: gguf missing '%s'\n",key); exit(1); } g_cfg.nh=(int)u;
+    snprintf(key,sizeof key,"%s.attention.head_count_kv",arch);
+    if (!gguf_kv_u64(g_gguf,key,&u)) { fprintf(stderr,"FATAL: gguf missing '%s'\n",key); exit(1); } g_cfg.nkv=(int)u;
+    snprintf(key,sizeof key,"%s.rope.freq_base",arch);
+    if (!gguf_kv_f64(g_gguf,key,&d)) { fprintf(stderr,"FATAL: gguf missing '%s'\n",key); exit(1); } g_cfg.theta=(float)d;
+    snprintf(key,sizeof key,"%s.attention.layer_norm_rms_epsilon",arch);
+    if (!gguf_kv_f64(g_gguf,key,&d)) { fprintf(stderr,"FATAL: gguf missing '%s'\n",key); exit(1); } g_cfg.eps=(float)d;
+
+    // MAXSEQ: deliberately NOT the model's trained context_length metadata (routinely 32K+,
+    // which would allocate KV-cache buffers far larger than this Phase 1 correctness check
+    // needs) -- a small, override-able cap, same spirit as arch_config.txt's own MAXSEQ.
+    const char *ov = getenv("QWEN_GGUF_MAXSEQ");
+    g_cfg.maxseq = (ov && ov[0]) ? atoi(ov) : 2048;
+
+    // No single "%s.vocab_size" scalar key in practice -- the embedding table's own shape
+    // (ne[1], the slower/row dimension) can't disagree with how many rows it actually has.
+    const GgufTensorInfo *embed_t = gguf_find_tensor(g_gguf, "token_embd.weight");
+    if (!embed_t) { fprintf(stderr, "FATAL: gguf missing token_embd.weight\n"); exit(1); }
+    g_cfg.vocab = (int)embed_t->ne[1];
+
+    // qkv_bias is a presence fact, not a metadata scalar: GGUF simply includes attn_q.bias
+    // etc. when the source architecture has them (true for Qwen2, false for Llama-3).
+    g_cfg.qkv_bias = gguf_find_tensor(g_gguf, "blk.0.attn_q.bias") ? 1 : 0;
+
+    if (g_cfg.nh <= 0 || g_cfg.nkv <= 0 || g_cfg.nh % g_cfg.nkv != 0) {
+        fprintf(stderr,"FATAL: gguf NH=%d not a positive multiple of NKV=%d\n",g_cfg.nh,g_cfg.nkv); exit(1); }
+    if (g_cfg.d <= 0 || g_cfg.d % g_cfg.nh != 0) {
+        fprintf(stderr,"FATAL: gguf D=%d not evenly divisible by NH=%d (cannot derive HD)\n",g_cfg.d,g_cfg.nh); exit(1); }
+    g_cfg.hd = g_cfg.d / g_cfg.nh;
+    if (g_cfg.hd % 2 != 0) { fprintf(stderr,"FATAL: gguf HD=%d (D/NH) is odd\n",g_cfg.hd); exit(1); }
+    g_cfg.kvd = g_cfg.nkv * g_cfg.hd;
+    g_cfg.qd  = g_cfg.nh  * g_cfg.hd;
+    g_cfg.group = g_cfg.nh / g_cfg.nkv;
+    if (g_cfg.kvd % 64 != 0) { fprintf(stderr,"FATAL: gguf KVD=%d not a multiple of 64\n",g_cfg.kvd); exit(1); }
+    if (g_cfg.qd  % 64 != 0) { fprintf(stderr,"FATAL: gguf QD=%d not a multiple of 64\n",g_cfg.qd); exit(1); }
+    g_cfg.kvg = g_cfg.kvd / 64;
+    g_cfg.qg  = g_cfg.qd  / 64;
+    if (g_cfg.nl <= 0 || g_cfg.maxseq <= 0) { fprintf(stderr,"FATAL: gguf NL=%d MAXSEQ=%d must be positive\n",g_cfg.nl,g_cfg.maxseq); exit(1); }
+
+    fprintf(stderr,"[engine] gguf arch config (%s, architecture=%s): NL=%d NH=%d NKV=%d D=%d HD=%d IM=%d VOCAB=%d THETA=%.1f EPS=%g MAXSEQ=%d QKV_BIAS=%d GROUP=%d\n",
+        path, arch, g_cfg.nl,g_cfg.nh,g_cfg.nkv,g_cfg.d,g_cfg.hd,g_cfg.im,g_cfg.vocab,g_cfg.theta,g_cfg.eps,g_cfg.maxseq,g_cfg.qkv_bias,g_cfg.group);
+}
+
+// Dequantizes one GGUF tensor to fp32 and registers it in g_wt[] under `engine_name` (an
+// HF-style name, NOT the raw GGUF tensor name -- see D-gen-loader-1 above). g_gguf must
+// already be open (load_gguf_arch() called first).
+static WT *gguf_register_f32_as(const char *gguf_name, const char *engine_name) {
+    const GgufTensorInfo *t = gguf_find_tensor(g_gguf, gguf_name);
+    if (!t) { fprintf(stderr, "FATAL: gguf model missing tensor '%s'\n", gguf_name); exit(1); }
+    if (!gguf_dequant_supported(t->type)) {
+        fprintf(stderr, "FATAL: gguf tensor '%s' has unsupported quant type id %d (see gguf_dequant_supported())\n",
+                gguf_name, (int)t->type);
+        exit(1);
+    }
+    check_no_dup_name(engine_name);
+    if (g_nwt >= 512) { fprintf(stderr, "FATAL: >512 tensors loading gguf model\n"); exit(1); }
+    WT *w = &g_wt[g_nwt++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->kind = K_F32; w->ng = 0;
+    // GGUF ne[] is fastest-varying-first (ne[0] = row length = this engine's "in"; ne[1] = row
+    // count = "out"), matching how load_int4()/load_fp32() already populate these fields for
+    // 2D weight matrices. 1D tensors (biases, norms) get ne[1]=1 from gguf_load.c's own
+    // unused-dims-default-to-1 convention -- harmless here since those are only ever read via
+    // ->f32 directly (rmsnorm/bias-add), never through W->out/W->in in a matvec call.
+    w->in = (int)t->ne[0];
+    w->out = (int)t->ne[1];
+    w->packed = NULL; w->scales = NULL; w->sub = NULL;
+    w->kai_rhs = NULL; w->kai_rhs_bytes = 0; w->kai_lazy_failed = 0;
+    float *buf = malloc(sizeof(float) * (size_t)t->n_elements);
+    if (!buf) { fprintf(stderr, "FATAL: gguf dequant alloc failed for '%s' (%llu elements)\n",
+                        gguf_name, (unsigned long long)t->n_elements); exit(1); }
+    gguf_dequant_row(t->type, gguf_tensor_data(g_gguf, t), buf, (int64_t)t->n_elements);
+    w->f32 = buf;
+    return w;
+}
+
+// Populates g_wt[] with every tensor this dense GQA model needs, under this engine's existing
+// HF-style names -- after this returns, init_qkv_bias() and init_tensor_roles() (both already
+// defined above, unmodified) work exactly as they do for the custom binary format, because
+// from their point of view nothing about where the bytes came from is visible.
+static void load_gguf_weights(void) {
+    for (int r = 0; r < N_LAYER_ROLES; r++) {
+        for (int l = 0; l < g_cfg.nl; l++) {
+            char gsrc[96], ename[96];
+            snprintf(gsrc, sizeof gsrc, ROLE_PATTERN_GGUF[r], l);
+            snprintf(ename, sizeof ename, ROLE_PATTERN_HF[r], l);
+            gguf_register_f32_as(gsrc, ename);
+        }
+    }
+    if (g_cfg.qkv_bias) {
+        for (int l = 0; l < g_cfg.nl; l++) {
+            char gq[96], gk[96], gv[96], eq[96], ek[96], ev[96];
+            snprintf(gq,sizeof gq,"blk.%d.attn_q.bias",l); snprintf(eq,sizeof eq,"model.layers.%d.self_attn.q_proj.bias",l);
+            snprintf(gk,sizeof gk,"blk.%d.attn_k.bias",l); snprintf(ek,sizeof ek,"model.layers.%d.self_attn.k_proj.bias",l);
+            snprintf(gv,sizeof gv,"blk.%d.attn_v.bias",l); snprintf(ev,sizeof ev,"model.layers.%d.self_attn.v_proj.bias",l);
+            gguf_register_f32_as(gq, eq);
+            gguf_register_f32_as(gk, ek);
+            gguf_register_f32_as(gv, ev);
+        }
+    }
+    gguf_register_f32_as("token_embd.weight", "model.embed_tokens.weight");
+    gguf_register_f32_as("output_norm.weight", "model.norm.weight");
+    // output.weight present -> untied lm_head; absent -> tied embeddings, matching this
+    // engine's EXISTING tied-embedding fallback (wt_opt("lm_head.weight") returning NULL is
+    // already how init_tensor_roles() detects that case for the custom format).
+    if (gguf_find_tensor(g_gguf, "output.weight")) gguf_register_f32_as("output.weight", "lm_head.weight");
+    fprintf(stderr, "[engine] gguf: registered %d tensors, all K_F32 (Phase 1 -- quantized transcode is Phase 2)\n", g_nwt);
+}
+
 int main(int argc, char **argv) {
     // Phase MoE-3a: checked FIRST, before load_arch_cfg() or any other GQA-dense-model setup
     // runs -- if weights_moe/arch_config_moe.txt exists, this exits without touching a single
@@ -4481,7 +4671,10 @@ int main(int argc, char **argv) {
     int n_gen = argc>2?atoi(argv[2]):32;
     const char *base_env = getenv("QWEN_BASE");
     const char *base = (base_env && base_env[0]) ? base_env : "/Volumes/D50/vdsp/llm_engine";
-    load_arch_cfg(base);      // D1/D2: must run before anything below reads g_cfg
+    const char *gguf_path = getenv("QWEN_GGUF");   // general-purpose-loader Phase 1: 4th loader,
+                                                     // additive, byte-identical-when-absent (R2)
+    if (gguf_path && gguf_path[0]) load_gguf_arch(gguf_path);
+    else load_arch_cfg(base);      // D1/D2: must run before anything below reads g_cfg
     load_rope_scale_cfg(base);// M43: needs nothing but base; no ordering dependency on g_cfg
     alloc_arch_buffers();     // D2: heap-allocate every buffer g_cfg.* now sizes
     init_rope_scale();        // M43: needs g_cfg.hd/theta (loaded) + g_rope_cfg (loaded) + g_rope_scale (just malloc'd)
@@ -4515,7 +4708,11 @@ int main(int argc, char **argv) {
     }
     char path[512];
     const char *int4bin = getenv("QWEN_INT4_BIN");
-    if (int4bin && int4bin[0]) {
+    if (gguf_path && gguf_path[0]) {
+        load_gguf_weights();   // registers every tensor under the existing HF-style names --
+                                // init_qkv_bias()/init_tensor_roles() below need no changes
+        g_int8_head = 0;        // Phase 1 GGUF path is K_F32 only; no quantized lm_head yet
+    } else if (int4bin && int4bin[0]) {
         g_int4=1; int T = getenv("Q4_THREADS")?atoi(getenv("Q4_THREADS")):detect_q4_threads();  // M51: per-chip tuned table, see detect_q4_threads() above
         q4pool_init(&g_pool, T, g_cfg.im);
         // M29 default promotion: spin-wait measured +21.6--28.5% real decode speedup (TSan-clean,

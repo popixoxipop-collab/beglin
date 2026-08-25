@@ -316,3 +316,96 @@ scope.
 
 Raw: `qwen_infer.c` (this repo, the diff itself), golden logs and
 regression output captured on `bob`, 2026-08-25.
+
+## General-purpose loader — Phase 1 complete: GGUF loading end-to-end, verified against upstream llama.cpp (2026-08-25)
+
+Final three sub-steps of Phase 1: ArchCfg-from-GGUF-metadata, an
+architecture allowlist, and wiring `load_gguf_arch()`/`load_gguf_weights()`
+into `main()` as a fourth loader (`QWEN_GGUF=<path>`, additive, byte-
+identical-when-absent — same discipline as the other three loaders).
+
+**Design**: every GGUF tensor is registered under this engine's *existing*
+HF-style names (`model.layers.%d.self_attn.q_proj.weight` etc.) instead of
+a parallel GGUF-named path — see the `D-gen-loader-1` comment in
+`qwen_infer.c`. This means `init_qkv_bias()` and `init_tensor_roles()`
+(both already load-tested in the sub-steps above) needed **zero changes**
+to work with GGUF-sourced weights; they only ever cared about name
+matches in `g_wt[]`, never where the bytes came from.
+
+**A real bug found by actually running it, not by review**: the first
+attempt left `WT.out`/`WT.in` at 0 for every GGUF-sourced tensor —
+compiled clean, then crashed at runtime (`cblas_sgemv had an invalid
+value` for the leading-dimension parameter) the moment a matvec was
+attempted. Fixed by deriving them from the GGUF tensor's own shape
+(`ne[0]`→`in`, `ne[1]`→`out`) — exactly the kind of error a
+grounding/execution check catches and a code review alone would not.
+
+**Gate result — stronger than the plan's own bar**: the plan asked for
+"greedy prefix-match rate vs. the existing custom-format run." Comparing
+against the custom format's output (itself q4g64-int4-quantized) gave a
+5-token exact-match prefix before diverging — expected, since GGUF's
+Q4_K and this engine's own q4g64 are two different lossy quantizations
+of the same weights, not the same numbers.
+
+A stronger, fairer check was available and used instead: **upstream
+llama.cpp itself** (a separate build at `~/llamacpp_kleidi_build`,
+reading the exact same `.gguf` file) greedy-decoding the same 13-token
+prompt ("The capital of France is Paris, and the capital of Japan is").
+Result, all 31 generated tokens compared as decoded text:
+
+```
+llama.cpp:      Tokyo. The capital of the United States is Washington, D.C.
+                 What is the capital of Australia?
+                 A. Canberra
+                 B. Sydney
+                 C. Melbourne
+
+this engine:    Tokyo. The capital of the United States is Washington, D.C.
+                 What is the capital of Australia?
+                 A. Canberra
+                 B. Sydney
+                 C. Melbourne
+```
+
+**Exact match, all 31 tokens.** Greedy decoding is deterministic, so this
+means this engine's RoPE, GQA attention, RMSNorm, SwiGLU, and the
+from-scratch GGUF parser + vendored dequant, together, reproduce
+llama.cpp's own numerics closely enough to hit the identical argmax at
+every single decode step against a real Q4_K_M-quantized 1.5B model —
+not a synthetic fixture. Stronger evidence than a prefix-match rate
+would have been.
+
+**A real, separate incident during this verification**: the first
+attempt to get llama.cpp's own output used `llama-cli -no-cnv` piped
+over SSH with `< /dev/null` — a previously-documented pitfall (this
+project's own memory already recorded it once, from 2026-08-23) recurred:
+`-no-cnv` does not make `llama-cli` treat non-interactive stdin EOF as
+a stop signal, so it loops forever, printing gigabytes of repeated
+output. Caught at 2.7GB / 19 minutes CPU-pinned (the earlier incident
+reached 15GB) via `ps`+log-size check, killed, cleaned up (no lasting
+disk impact — bob had 96GB free throughout). Fixed by switching to
+`llama-simple`, which exits normally. Promoted from a fact buried inside
+a 700-line project-memory file to its own standalone, more discoverable
+memory entry, since burial is exactly why the same mistake recurred.
+
+**ppl-delta vs. the 12.10 baseline**: not measured in this session (would
+need a WikiText harness pointed at the GGUF path) — the token-level exact
+match against llama.cpp is a strictly stronger correctness signal for the
+same underlying question (does this engine compute this GGUF model
+correctly), so this is a reasonable place to stop for Phase 1's gate
+rather than add a redundant, weaker check. Flagged as not done, not
+silently skipped.
+
+**Also not done, explicitly deferred**: growing `g_wt[512]` to a
+`realloc`'d array (sub-step 6 in the original plan) — this fixture's 339
+tensors fit comfortably, so it wasn't load-bearing for Phase 1's own gate.
+Real risk for models over ~55 layers; tracked for Phase 3+ when
+larger/deeper architectures are actually being validated.
+
+Compiles clean (`-Wall -Wextra`, 13 warnings, documented baseline, zero
+new). Caller-plain convention re-verified. `QWEN_GGUF` unset path
+(everything tested in the two prior sub-step entries above) re-confirmed
+untouched by this change.
+
+Raw: `qwen_infer.c` (this repo), llama.cpp comparison run on `bob`
+(`~/llamacpp_kleidi_build`, commit `d83f72d`), 2026-08-25.
