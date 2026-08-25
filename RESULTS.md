@@ -522,3 +522,91 @@ zero new), 0 SVE/SME instructions leaked into `qwen_infer.o`.
 
 Raw: `qwen_infer.c` (this repo), regression and accuracy runs captured
 on `bob`, 2026-08-25.
+
+## General-purpose loader — Phase 2 sub-step 2a: lazy-repack default-on, and a real pre-existing bug found (2026-08-25)
+
+The GGUF loader path never calls `kai_repack_all()` (unlike the
+`QWEN_INT4_BIN` path) — an eager repack burst right after sub-step 1's
+transcode work would stack the two memory costs the plan's own "12+GB on
+a 16GB machine" line warns about. Without lazy mode defaulting on for
+this path specifically, `kai_route()` would see `W->kai_rhs == NULL`
+forever with `sme2_lazy_on()==0` and SME2 would silently never engage
+for any GGUF-loaded model — not a crash, just quietly always-NEON.
+Fixed: `if (!getenv("QWEN_SME2_LAZY_REPACK")) g_sme2_lazy = 1;` right at
+the top of the `QWEN_GGUF` branch in `main()` (an explicit env var from
+the user still wins).
+
+**Verifying this actually engages SME2 surfaced a real, pre-existing bug
+unrelated to this work.** `greedy`/`bench` (the only two CLI modes the
+GGUF path currently supports) both run at `M=1`, which `kai_route()`'s
+own `M >= kai_sme2_min_m()` gate excludes by construction — so neither
+mode ever calls `kai_repack_one_lazy()`, meaning the lazy-default fix
+above is real but untestable through the currently-supported modes. To
+actually exercise it, `serve` mode (M20 batched decode, real M>1) was
+temporarily and locally extended to accept the GGUF path (it was gated
+on `g_int4`, a "loaded via `QWEN_INT4_BIN`" flag that turned out to be
+read nowhere else in that code block). Running `serve` with
+`QWEN_SME2_LAZY_REPACK` on: one tensor repacks successfully and logs,
+then the process **SIGILLs (exit 132)**.
+
+A differential test isolated this immediately: the *exact same*
+`QWEN_SME2_LAZY_REPACK=1` + `serve` combination, run on the completely
+unmodified `QWEN_INT4_BIN` / Llama-3.1-8B production path — zero GGUF
+code involved — **SIGILLs identically**. This is a pre-existing latent
+bug in this codebase (lazy repack was previously only ever exercised at
+`M=1`, where it's never actually invoked; the `serve` combination was
+simply never tested before), not a regression from this session's work.
+Likely cause (not verified): `kai_repack_one_lazy()` has no synchronization
+for `q4pool`'s concurrent worker threads, which `serve` mode uses and
+`greedy`/`bench` don't.
+
+**Resolution for this sub-step**: reverted the `serve`-mode gate
+extension (it was a verification aid, not part of the plan's actual
+ask) — the GGUF path stays limited to `greedy`/`bench`, where this bug
+category can't be reached (M=1 always). The lazy-default-on fix itself
+is kept, since it's correct and safe for every mode the GGUF path
+actually supports today. The SIGILL is recorded as a known, low-priority,
+pre-existing issue — not fixed here, not silently ignored either (see
+project memory `vdsp_sme2_lazy_repack_serve_sigill.md`).
+
+Re-confirmed after the revert: compiles clean (13 warnings, baseline),
+0 SVE/SME leak, `greedy` output byte-identical to sub-step 1b's run.
+
+Raw: `qwen_infer.c` (this repo), differential SIGILL reproduction
+captured on `bob`, 2026-08-25.
+
+## General-purpose loader — Phase 2 sub-step 2b: on-disk `.beglin` cache, real speedup measured (2026-08-25)
+
+New TU `gguf_cache.c`/`.h`: after `load_gguf_weights()` transcodes every
+tensor the normal way (sub-step 1's path), the result is serialized to
+`<gguf_path>.beglin` (magic-tagged, source size+mtime recorded for
+staleness detection). On the next run, if that sidecar is present and its
+recorded size+mtime match the source GGUF file's current `stat()`, the
+engine mmaps the cache directly and points every `WT`'s `packed`/`scales`/
+`f32` fields straight into it — zero dequant, zero RTN+error-feedback
+recompute, zero malloc for tensor data. `QWEN_GGUF_CACHE=0` opts out
+(e.g. to force-exercise the live transcode path); default is on.
+
+**Real measurement, not estimated**: on the 1.1GB/339-tensor fixture,
+cold cache-miss load (dequant + transcode all 339 tensors): **7.94s
+wall-clock** (64.99s user — multi-threaded). Cache-hit load (mmap +
+directory walk only): **0.76s wall-clock** — **~10.4× faster**. Greedy
+output byte-identical between the two paths (confirmed via `grep
+"^greedy:"` on both logs, not just eyeballed).
+
+**Staleness check verified, not assumed**: `touch`ing the source `.gguf`
+file (changing its mtime with no content change) correctly forced a
+cache miss and a fresh write on the next run — the engine did not trust
+a stale cache just because the file existed.
+
+Compiles clean (`gguf_cache.c`: 0 warnings; `qwen_infer.c`: 13 warnings,
+the documented baseline, zero new), 0 SVE/SME leak in either object file.
+R1 regression on the untouched `QWEN_INT4_BIN` path (`serve` mode, B=8,
+eager SME2 repack — this exercises real SME2 GEMM, unlike the earlier
+sub-step's `greedy`-only regression checks): byte-identical token output
+across all 8 streams against the pre-existing golden binary
+(`qwen_infer_f16lhs_default`), timing within normal noise (39.4 vs 38.8
+tok/s aggregate).
+
+Raw: `gguf_cache.c`/`.h` (this repo), timing and staleness runs captured
+on `bob`, 2026-08-25.

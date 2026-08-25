@@ -33,6 +33,7 @@
                             // only called into)
 #include "gguf_quants.h"   // general-purpose-loader Phase 1: vendored dequant (own TU, same reason)
 #include "gguf_transcode.h" // general-purpose-loader Phase 2: RTN(+EF) transcode to K_Q4G64/K_Q8G64 (own TU, same reason)
+#include "gguf_cache.h"     // general-purpose-loader Phase 2 sub-step 2: on-disk transcode cache (own TU, same reason)
 
 // D1/D2 (structural generalization): NL/NH/NKV/D/HD/KVD/QD/IM/VOCAB/THETA/EPS/MAXSEQ/GROUP/
 // KVG/QG used to be compile-time #defines for Qwen2.5-1.5B only. They are now loaded once at
@@ -4748,6 +4749,63 @@ static void load_gguf_weights(void) {
             g_nwt, n_q4, n_q8, n_f32);
 }
 
+// Phase 2 sub-step 2: on-disk transcode cache (gguf_cache.c). After load_gguf_weights() has
+// already populated g_wt[0..g_nwt) the normal way (dequant + transcode, sub-step 1's path),
+// serialize every entry to `<gguf_path>.beglin` so the NEXT load can skip straight to mmap --
+// zero dequant, zero RTN+error-feedback recompute. Byte sizes are derived purely from each
+// WT's own kind/in/out/ng (out defaults to 1 for the 1D norm/bias tensors, per
+// gguf_register_f32_as()'s own comment, so out*in*sizeof(float) is correct for those too --
+// no separate 1D case needed).
+static void gguf_write_cache(const char *cache_path, const char *src_gguf_path) {
+    GgufCacheWriter *w = gguf_cache_writer_open(cache_path, src_gguf_path, (uint32_t)g_nwt);
+    for (int i = 0; i < g_nwt; i++) {
+        WT *t = &g_wt[i];
+        uint64_t data_bytes, scales_bytes = 0;
+        const void *data_ptr, *scales_ptr = NULL;
+        if (t->kind == K_F32) {
+            data_ptr = t->f32; data_bytes = (uint64_t)t->out * t->in * sizeof(float);
+        } else if (t->kind == K_Q4G64) {
+            data_ptr = t->packed; data_bytes = (uint64_t)t->out * (t->in / 2);
+            scales_ptr = t->scales; scales_bytes = (uint64_t)t->out * t->ng * sizeof(float);
+        } else if (t->kind == K_Q8G64) {
+            data_ptr = t->packed; data_bytes = (uint64_t)t->out * t->in;
+            scales_ptr = t->scales; scales_bytes = (uint64_t)t->out * t->ng * sizeof(float);
+        } else {
+            fprintf(stderr, "FATAL: gguf_write_cache: unexpected kind %d for '%s'\n", t->kind, t->name);
+            exit(1);
+        }
+        gguf_cache_writer_add(w, t->name, t->kind, t->out, t->in, t->ng, data_ptr, data_bytes, scales_ptr, scales_bytes);
+    }
+    gguf_cache_writer_close(w);
+    fprintf(stderr, "[engine] gguf cache: wrote %d tensors to %s\n", g_nwt, cache_path);
+}
+
+// Phase 2 sub-step 2: cache-hit path. Every WT field points straight into the cache's mmap --
+// no malloc, no dequant, no transcode. Byte-identical downstream behavior to the live-transcode
+// path (kai_route()/matvec_t() only ever look at kind/in/out/ng/packed/scales/f32, never at
+// where the bytes came from -- same "no parallel logic needed" property TensorRole was
+// designed around in Phase 1).
+static void load_gguf_weights_from_cache(const char *cache_path) {
+    GgufCacheFile *c = gguf_cache_open(cache_path);
+    uint32_t n = gguf_cache_count(c);
+    const uint8_t *base = gguf_cache_base(c);
+    for (uint32_t i = 0; i < n; i++) {
+        const GgufCacheEntry *e = gguf_cache_entry(c, i);
+        check_no_dup_name(e->name);
+        if (g_nwt >= 512) { fprintf(stderr, "FATAL: >512 tensors loading gguf cache\n"); exit(1); }
+        WT *w = &g_wt[g_nwt++];
+        snprintf(w->name, sizeof w->name, "%s", e->name);
+        w->kind = e->kind; w->out = e->out; w->in = e->in; w->ng = e->ng;
+        w->f32 = NULL; w->packed = NULL; w->scales = NULL; w->sub = NULL;
+        w->kai_rhs = NULL; w->kai_rhs_bytes = 0; w->kai_lazy_failed = 0;
+        const uint8_t *data_ptr = base + e->data_offset;
+        if (e->kind == K_F32) w->f32 = (const float *)data_ptr;
+        else w->packed = data_ptr;  // K_Q4G64 nibbles / K_Q8G64 int8 codes, same field reuse as the live path
+        if (e->scales_bytes) w->scales = (const float *)(base + e->scales_offset);
+    }
+    fprintf(stderr, "[engine] gguf cache: loaded %u tensors from %s (mmap, zero transcode)\n", n, cache_path);
+}
+
 int main(int argc, char **argv) {
     // Phase MoE-3a: checked FIRST, before load_arch_cfg() or any other GQA-dense-model setup
     // runs -- if weights_moe/arch_config_moe.txt exists, this exits without touching a single
@@ -4798,6 +4856,19 @@ int main(int argc, char **argv) {
     char path[512];
     const char *int4bin = getenv("QWEN_INT4_BIN");
     if (gguf_path && gguf_path[0]) {
+        // Phase 2 sub-step 2 (PLAN_general_purpose_loader.md's own text: "flip
+        // QWEN_SME2_LAZY_REPACK to default-on for the GGUF path"): this path never calls
+        // kai_repack_all() (unlike the QWEN_INT4_BIN branch below), by design -- an eager
+        // repack burst here would stack on top of the transcode work sub-step 1 already did,
+        // which is exactly the "12+GB on a 16GB machine" risk this plan flagged. Without lazy
+        // mode ALSO defaulting on here, kai_route() (below, in matvec_t) would see
+        // W->kai_rhs==NULL forever with sme2_lazy_on()==0 and SME2 would silently never
+        // engage for any GGUF-loaded model -- not a crash, just quietly always-NEON, exactly
+        // the kind of "silently wrong performance" this project's doctrine treats as a bug.
+        // An explicit QWEN_SME2_LAZY_REPACK=0/1 from the user still wins; this only fills in
+        // the unset case. g_sme2_lazy is this TU's own memoized sme2_lazy_on() cache (-1 =
+        // unset), safe to preset directly since nothing reads it before this point in main().
+        if (!getenv("QWEN_SME2_LAZY_REPACK")) g_sme2_lazy = 1;
         // Phase 2 sub-step 1b: load_gguf_weights() now registers K_Q4G64/K_Q8G64 tensors (not
         // just K_F32, as in Phase 1), so the same q4pool this engine's other K_Q4G64/K_Q8G64
         // consumer (the QWEN_INT4_BIN path, below) needs must be initialized here too --
@@ -4808,8 +4879,20 @@ int main(int argc, char **argv) {
         { const char *e = getenv("Q4_POOL_QOS");  g_pool.qos  = (e && atoi(e)) ? 1 : 0; }
         { const char *e = getenv("Q4_POOL_SPIN_ITERS"); if (e && atoi(e) > 0) g_pool.spin_iters = atoi(e); }
         q4pool_start(&g_pool);
-        load_gguf_weights();   // registers every tensor under the existing HF-style names --
-                                // init_qkv_bias()/init_tensor_roles() below need no changes
+        // Phase 2 sub-step 2: on-disk cache. `<gguf_path>.beglin`, default on -- QWEN_GGUF_CACHE=0
+        // opts out (e.g. for debugging the live transcode path itself). Staleness is checked by
+        // the source GGUF's own size+mtime (gguf_cache_is_valid()), not trusted blindly.
+        char cache_path[560];
+        snprintf(cache_path, sizeof cache_path, "%s.beglin", gguf_path);
+        const char *cache_env = getenv("QWEN_GGUF_CACHE");
+        int cache_wanted = !(cache_env && !atoi(cache_env));
+        if (cache_wanted && gguf_cache_is_valid(cache_path, gguf_path)) {
+            load_gguf_weights_from_cache(cache_path);
+        } else {
+            load_gguf_weights();   // registers every tensor under the existing HF-style names --
+                                    // init_qkv_bias()/init_tensor_roles() below need no changes
+            if (cache_wanted) gguf_write_cache(cache_path, gguf_path);
+        }
         // Same D14 (M49) kind-check the QWEN_INT4_BIN path below uses, not a GGUF-specific
         // reinvention: wt_opt() returning non-NULL only proves a tensor named "lm_head.weight"
         // exists, not which encoding it's in (untied lm_head may have stayed K_F32 if

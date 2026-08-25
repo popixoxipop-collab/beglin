@@ -341,11 +341,26 @@ writeup: [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-1-complete-gguf
    "lossy-on-lossy" worst case this table's own row warns about. R1
    regression on the untouched `QWEN_INT4_BIN`/MoE paths: byte-identical.
    Full writeup: [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-2-sub-step-1-transcode-quantizer-oracle-verified-2026-08-25).
-2. **On-disk cache, decided now, not deferred**: naive transcode is a
-   memory disaster (8B Q4_K = ~4.5GB mmap + ~4.5GB transcoded + up to
-   ~3.7GB SME2 repack = 12+GB on a 16GB machine). Write a `<model>.beglin`
-   sidecar on first load, mmap on subsequent loads. Flip
-   `QWEN_SME2_LAZY_REPACK` to default-on for the GGUF path.
+2. ✅ **DONE 2026-08-25** — On-disk cache: `gguf_cache.c`/`.h`, new TU.
+   `<gguf_path>.beglin` sidecar written after first transcode, mmap'd on
+   every subsequent load (`WT` fields point straight into the mapping,
+   zero malloc/dequant/transcode on a cache hit); staleness detected via
+   the source GGUF's own size+mtime, verified by actually `touch`ing the
+   source and confirming a forced re-transcode, not assumed. Real
+   measurement: cache-miss 7.94s vs cache-hit 0.76s wall-clock on the
+   1.1GB fixture (~10.4×), byte-identical output either way.
+   `QWEN_SME2_LAZY_REPACK` flipped default-on for the GGUF path (`if
+   (!getenv(...)) g_sme2_lazy = 1;`) — without it, `kai_repack_all()`
+   (never called on this path, by design, to avoid stacking an eager
+   repack burst on top of the transcode work) would leave SME2 silently
+   never engaging. Verifying that turned up a **real, pre-existing bug
+   unrelated to this work**: `QWEN_SME2_LAZY_REPACK=1` combined with
+   `serve` mode SIGILLs, reproduced identically on the completely
+   unmodified `QWEN_INT4_BIN` path — the GGUF path's only supported
+   modes (`greedy`/`bench`) run at M=1 and can't reach this bug class,
+   so the fix ships safely; the bug itself is recorded, not fixed here
+   (project memory `vdsp_sme2_lazy_repack_serve_sigill.md`). Full
+   writeup: [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-2-sub-step-2b-on-disk-beglin-cache-real-speedup-measured-2026-08-25).
 3. Ship Mistral-7B-v0.3 (D-gen-4 #1). Zero new engine code expected — if
    anything beyond the loader is needed, that's a Phase-1 defect, not a
    Phase-2 feature.
