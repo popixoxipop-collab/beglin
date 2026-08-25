@@ -1,4 +1,4 @@
-# vdsp Commercial Software License Terms
+# beglin Commercial Software License Terms
 
 > **Template status — not a signed contract.** This is the actual agreement text a
 > commercial licensee would sign, adapted from a freely reusable template (see
@@ -15,21 +15,21 @@ Adapted from the **Basic-Perpetual** template in
 templates specifically for open-source projects doing AGPL/GPL + commercial dual
 licensing — the same model MySQL, MongoDB, and Qt have used. This is the
 **Perpetual** variant (one-time fee, no renewal) rather than the Yearly variant.
-Wording below is the template's own text with vdsp-specific values filled in and
+Wording below is the template's own text with beglin-specific values filled in and
 one drafting bug in the original fixed (the "customer" definition in §1(c) of the
 source template incorrectly repeated the vendor definition).
 
-This is **not legal advice** — vdsp's own operator has adapted a public-domain-style
+This is **not legal advice** — beglin's own operator has adapted a public-domain-style
 template, not a lawyer. Anyone on either side of an actual commercial deal should
 have their own counsel review the filled-in version before signing.
 
 ---
 
-## vdsp Commercial Software License Terms
+## beglin Commercial Software License Terms
 
 ### 1. Definitions
 
-(a) "The software" in this license refers to **vdsp** copyrighted by
+(a) "The software" in this license refers to **beglin** copyrighted by
 **[VENDOR LEGAL NAME — TBD]**.
 
 (b) "The new software" in this license refers to the customer's product or service
@@ -135,7 +135,7 @@ not the terms of this agreement. If the license terms for any open source
 component require an offer of source code or other information related to that
 component, the vendor agrees to provide on written request.
 
-(b) **Dual Licensing.** vdsp is also available under
+(b) **Dual Licensing.** beglin is also available under
 [AGPL-3.0-or-later](./LICENSE) (see [`COMMERCIAL-LICENSE.md`](./COMMERCIAL-LICENSE.md)
 for why a commercial license exists alongside it):
 
@@ -161,7 +161,7 @@ them available to download online, without any additional charge. The vendor
 agrees to make new versions of the software covered by this agreement available
 in the same way.
 
-(c) **License Keys.** vdsp does not currently use license keys; if that changes,
+(c) **License Keys.** beglin does not currently use license keys; if that changes,
 this section's key-delivery and renewal terms apply as written in the source
 template.
 
@@ -207,7 +207,7 @@ time of signing this agreement, those software dependencies will be either
 provided in the copies of the software delivered to the customer or generally
 available for the customer to download, free of charge, from a well known
 website or Internet service, such as an open source software package repository.
-*(vdsp's own dependency: Apple Accelerate framework, part of macOS.)*
+*(beglin's own dependency: Apple Accelerate framework, part of macOS.)*
 
 ### 12. Liability
 
