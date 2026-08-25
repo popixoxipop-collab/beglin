@@ -361,9 +361,27 @@ writeup: [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-1-complete-gguf
    so the fix ships safely; the bug itself is recorded, not fixed here
    (project memory `vdsp_sme2_lazy_repack_serve_sigill.md`). Full
    writeup: [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-2-sub-step-2b-on-disk-beglin-cache-real-speedup-measured-2026-08-25).
-3. Ship Mistral-7B-v0.3 (D-gen-4 #1). Zero new engine code expected — if
-   anything beyond the loader is needed, that's a Phase-1 defect, not a
-   Phase-2 feature.
+3. ✅ **DONE 2026-08-25** — Mistral-7B-v0.3 (D-gen-4 #1). Structural
+   loading matched the "zero new engine code" prediction exactly
+   (`ArchCfg` derived correctly with one allowlist entry added, no other
+   loader change needed). But greedy output was initially degenerate --
+   root-caused via direct `llama.cpp` source inspection (not guessed) to
+   a real cross-architecture RoPE pairing convention difference this
+   plan's "rotate_half, no rope scaling" framing didn't anticipate:
+   `LLM_ARCH_QWEN2` uses NeoX/split-half pairing (what this engine has
+   always implemented) but `LLM_ARCH_LLAMA` uses NORM/interleaved-pair
+   -- GGUF's own tensor layout differs by architecture at the ggml
+   level. Fixed with a one-flag branch in `rope_apply()`/`rope_head()`
+   (`g_rope_norm`, set from the GGUF architecture string). Post-fix:
+   fully coherent output, first 2 tokens exact-match upstream
+   `llama.cpp` on the identical file before diverging to an equally
+   fluent continuation (same *class* of quantization-noise divergence
+   already documented for Qwen2, shorter prefix). Regression: Qwen2
+   GGUF and the custom-format Llama-3.1-8B path (same HD=128/GROUP=4
+   shape family, different loader) both confirmed byte-identical --
+   this flag is provably inert for every path except newly-added
+   `"llama"`-tagged GGUF loading. Full writeup:
+   [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-2-sub-step-3-mistral-7b-v03-and-a-real-cross-architecture-rope-bug-2026-08-25).
 4. ✅ **DONE 2026-08-25** — Startup log naming which tier (SME2-eligible/
    NEON-q4g64/NEON-q8g64/BLAS-f32) each tensor landed in, named honestly
    as an eligibility classification (`kai_route()`'s per-call `M >=
@@ -372,15 +390,15 @@ writeup: [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-1-complete-gguf
    NEON-q8g64, 142 BLAS-f32`. Full writeup:
    [`RESULTS.md`](RESULTS.md#general-purpose-loader--phase-2-sub-step-4-startup-dispatch-tier-log-2026-08-25).
 
-**Phase 2 status: all four sub-steps done.** Transcode quantizer +
-policy table (sub-steps 1-1b), on-disk cache + lazy-repack default
-(sub-step 2, hardened post-review), Mistral-7B-v0.3 validation
-(sub-step 3, in progress — blocked for a while on an unauthenticated
-HuggingFace download rate limit on `bob`, resolved with a user-provided
-token; large download still completing in the background as of this
-writing), startup dispatch-tier log (sub-step 4). Sub-step 3's writeup
-will be appended to this file once the download finishes and the
-validation run completes.
+**Phase 2 status: all four sub-steps done, including a second new
+architecture family (Llama, via Mistral-7B-v0.3) validated end-to-end.**
+Transcode quantizer + policy table (sub-steps 1-1b), on-disk cache +
+lazy-repack default (sub-step 2, hardened post-review), Mistral-7B-v0.3
+validation (sub-step 3 -- download was blocked for a while on an
+unauthenticated HuggingFace rate limit on `bob`, resolved with a
+user-provided token; validation itself found and fixed a real
+cross-architecture RoPE bug, see above), startup dispatch-tier log
+(sub-step 4).
 
 ### Phase 3 — Dispatch-tier hardening across the shape ladder (~1 week)
 

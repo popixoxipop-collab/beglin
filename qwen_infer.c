@@ -692,6 +692,20 @@ static void swiglu(const float *g, const float *u, float *out, int n) {
 // rope_precompute below. Populated once at startup by init_rope_scale() (called from main()
 // after alloc_arch_buffers()) -- position-independent (pure function of index i and g_rope_cfg),
 // so unlike rc/rs it is computed once for the whole program run, not once per token.
+// Phase 2 sub-step 3 (Mistral-7B-v0.3 validation): two RoPE pairing conventions exist across
+// architectures this project supports, verified by reading llama.cpp's own rope-type switch
+// (src/llama-model.cpp) directly, not guessed: LLM_ARCH_QWEN2 -> LLAMA_ROPE_TYPE_NEOX (split-
+// half pairing, v[i] with v[i+hd/2] -- what this file has always implemented, and what every
+// model shipped before Llama-family GGUF support used); LLM_ARCH_LLAMA -> LLAMA_ROPE_TYPE_NORM
+// (interleaved-pair, v[2i] with v[2i+1]). GGUF's own Q/K tensor bytes are laid out to match
+// whichever convention ggml uses for that architecture, so loading a "llama"-arch GGUF and
+// applying split-half rotation produces exactly what was observed: real computation, not a
+// crash, but positionally scrambled -> degenerate repetitive greedy output. Root-caused via
+// A/B against upstream llama.cpp on the identical file (see RESULTS.md), not assumed.
+// Default 0 (NEOX): the custom binary-format path and QWEN2 GGUF loads never set this, so
+// their behavior is byte-identical to before this flag existed.
+static int g_rope_norm = 0;  // 0 = NEOX (split-half, existing), 1 = NORM (interleaved-pair)
+
 static float *g_rope_scale;
 static void init_rope_scale(void) {
     int half = g_cfg.hd/2;
@@ -702,6 +716,12 @@ static void init_rope_scale(void) {
             : 1.0f;
 }
 static void rope_head(float *v, int pos) {
+    if (g_rope_norm) {
+        for(int i=0;i<g_cfg.hd/2;i++){ float inv=powf(g_cfg.theta,-(2.0f*i)/g_cfg.hd); inv*=g_rope_scale[i]; float ang=pos*inv;
+            float c=cosf(ang),s=sinf(ang); float a=v[2*i],b=v[2*i+1];
+            v[2*i]=a*c-b*s; v[2*i+1]=b*c+a*s; }
+        return;
+    }
     for(int i=0;i<g_cfg.hd/2;i++){ float inv=powf(g_cfg.theta,-(2.0f*i)/g_cfg.hd); inv*=g_rope_scale[i]; float ang=pos*inv;
         float c=cosf(ang),s=sinf(ang); float a=v[i],b=v[i+g_cfg.hd/2];
         v[i]=a*c-b*s; v[i+g_cfg.hd/2]=b*c+a*s; }
@@ -713,6 +733,11 @@ static void rope_head(float *v, int pos) {
 // (same cosf/sinf inputs, just computed once instead of 392 times). rope_head (above) is kept
 // untouched for forward_tokens (the batched path), not yet propagated here -- separate decision.
 static inline void rope_apply(float *v, const float *rc, const float *rs) {
+    if (g_rope_norm) {
+        for(int i=0;i<g_cfg.hd/2;i++){ float c=rc[i],s=rs[i]; float a=v[2*i],b=v[2*i+1];
+            v[2*i]=a*c-b*s; v[2*i+1]=b*c+a*s; }
+        return;
+    }
     for(int i=0;i<g_cfg.hd/2;i++){ float c=rc[i],s=rs[i]; float a=v[i],b=v[i+g_cfg.hd/2];
         v[i]=a*c-b*s; v[i+g_cfg.hd/2]=b*c+a*s; }
 }
@@ -4530,19 +4555,29 @@ static void load_gguf_arch(const char *path) {
     }
     // Architecture allowlist: FATAL with a named supported-list rather than attempting an
     // unvalidated run -- silently-wrong is worse than a crash (same doctrine as load_int4's
-    // unrecognized-kind FATAL). Only "qwen2" is validated so far (this is the fixture Phase 1
-    // is gated on); extending this list is exactly the D-gen-4 architecture-priority work.
-    static const char *SUPPORTED_ARCH[] = { "qwen2" };
+    // unrecognized-kind FATAL). "qwen2" was the Phase 1 fixture; "llama" added for Phase 2
+    // sub-step 3 (D-gen-4 #1, Mistral-7B-v0.3 -- GGUF tags it general.architecture="llama",
+    // not "mistral"). Extending this list further is exactly the D-gen-4 architecture-priority
+    // work.
+    static const char *SUPPORTED_ARCH[] = { "qwen2", "llama" };
     int arch_ok = 0;
     for (size_t i = 0; i < sizeof(SUPPORTED_ARCH)/sizeof(SUPPORTED_ARCH[0]); i++) {
         if (arch_len == strlen(SUPPORTED_ARCH[i]) && !memcmp(arch_ptr, SUPPORTED_ARCH[i], arch_len)) { arch_ok = 1; break; }
     }
     if (!arch_ok) {
-        fprintf(stderr, "FATAL: gguf architecture '%.*s' not validated by this engine; supported: qwen2\n",
+        fprintf(stderr, "FATAL: gguf architecture '%.*s' not validated by this engine; supported: qwen2, llama\n",
                 (int)arch_len, arch_ptr);
         exit(1);
     }
     char arch[64]; snprintf(arch, sizeof arch, "%.*s", (int)arch_len, arch_ptr);
+
+    // g_rope_norm: see its own declaration comment (near rope_head/rope_apply) for the full
+    // root-cause writeup. "llama" -> NORM (interleaved-pair); "qwen2" (and anything else that
+    // reaches here, since SUPPORTED_ARCH already rejected everything else above) -> NEOX
+    // (split-half, this file's original convention -- explicit else, not just leaving the
+    // static initializer's 0 to do the work, so a third architecture added later doesn't
+    // silently inherit NEOX by omission).
+    g_rope_norm = !strcmp(arch, "llama") ? 1 : 0;
 
     char key[128]; uint64_t u; double d;
     snprintf(key,sizeof key,"%s.block_count",arch);

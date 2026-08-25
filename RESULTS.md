@@ -685,3 +685,115 @@ verify positions.
 
 Raw: `qwen_infer.c` (this repo), tier-classification output and
 regression captured on `bob`, 2026-08-25.
+
+## General-purpose loader — Phase 2 sub-step 3: Mistral-7B-v0.3, and a real cross-architecture RoPE bug (2026-08-25)
+
+D-gen-4 #1's target: `bartowski/Mistral-7B-Instruct-v0.3-GGUF`
+(Q4_K_M, public, apache-2.0, requant of the official
+`mistralai/Mistral-7B-Instruct-v0.3`), the first genuinely new model
+family run through the GGUF loader (everything before this was
+Qwen2.5-1.5B).
+
+**Structural loading — matched the plan's own zero-new-code prediction.**
+GGUF tags this model `general.architecture="llama"` (Mistral has no
+separate GGUF architecture tag). The allowlist gained one entry
+(`"llama"`) — every other part of `load_gguf_arch()`/`load_gguf_weights()`
+is already keyed off the architecture string via `%s.field` templates
+and tensor-presence checks, so no other loader code needed to change to
+derive a correct `ArchCfg`: `NL=32 NH=32 NKV=8 D=4096 HD=128 IM=14336
+VOCAB=32768 THETA=1000000.0 EPS=1e-05 QKV_BIAS=0 GROUP=4` — exactly what
+D-gen-4 #1 predicted (`HD=128/GROUP=4`, no qkv_bias, same shape family
+as the already-validated Llama-3.1-8B custom-format model). 291 tensors
+registered (224 K_Q4G64, 1 K_Q8G64, 66 K_F32), transcoded and cached
+the same way Qwen2.5 was.
+
+**But greedy output was degenerate** — a short repeating token loop,
+not a crash. This survived even after fixing an unrelated test-harness
+mistake (the first attempt reused Qwen's tokenized prompt file against
+Mistral's completely different vocabulary — obviously wrong input,
+fixed by tokenizing the real prompt with Mistral's own GGUF tokenizer
+via `llama-tokenize`). The repeat-loop persisted with the correct
+prompt, meaning this was a real bug, not a test mistake.
+
+**Root-caused via direct source inspection, not guessed** (per this
+project's own hw-kernel-vendoring discipline: pretrained knowledge is
+unreliable on exactly this kind of chip/format-specific fact). Read
+`llama.cpp`'s own `src/llama-model.cpp` rope-type switch directly:
+`LLM_ARCH_QWEN2` maps to `LLAMA_ROPE_TYPE_NEOX` ("operating on...
+pairs offset by n_rot/2" — split-half pairing, `v[i]` with
+`v[i+hd/2]`) while `LLM_ARCH_LLAMA` maps to `LLAMA_ROPE_TYPE_NORM`
+("pairs of consecutive head values" — interleaved pairing, `v[2i]`
+with `v[2i+1]`). This engine's `rope_apply()`/`rope_head()` have only
+ever implemented the NEOX/split-half convention (documented in this
+file's own header comment as "HF rotate_half, NON-interleaved") — exactly
+right for Qwen2's GGUF tensors (explaining the earlier 31-token exact
+match), but wrong for a `"llama"`-tagged GGUF's tensor layout, which
+ggml's own graph expects NORM/interleaved-pair rotation to be applied
+to. The symptom matches precisely: real computation (not a crash), but
+scrambled positional structure -> degenerate, repetitive greedy output.
+
+**Fix**: `g_rope_norm` (default 0, `0=NEOX/1=NORM`), set from the GGUF
+architecture string in `load_gguf_arch()` (`"llama" -> 1`, else `0`,
+explicit rather than relying on the static initializer so a third
+architecture added later can't silently inherit NEOX by omission).
+`rope_apply()`/`rope_head()` each gained one branch on this flag,
+selecting which pair of indices gets rotated — same rotation math
+either way, only the indexing differs. The custom binary-format path
+and Qwen2 GGUF loading never touch this flag, so their behavior is
+provably unchanged (see regression below).
+
+**Post-fix result**: greedy output is fully coherent, grammatical
+English — `"Tokyo.\n\n## How many countries have a capital city?\n\n
+There are 196 countries in the world, and each of them has a"` — a
+categorically different failure mode than the pre-fix repeat-loop, and
+qualitatively confirms the fix (a remaining RoPE bug would not produce
+fluent prose). Compared against upstream llama.cpp (`llama-simple`,
+same file, same prompt, greedy): **first 2 tokens match exactly**
+("Tokyo."), then diverges to a different but equally fluent
+continuation ("The capital of the United States..." vs "## How many
+countries..."). This is a shorter exact-match prefix than Qwen's
+(27 tokens) but the same *class* of result — this project's own
+established doctrine already documented double-lossy quantization
+(GGUF's own Q4_K, then this engine's independent RTN+error-feedback
+retranscode) as an expected source of early greedy-decode divergence,
+not evidence of a bug; a shorter prefix here plausibly reflects this
+specific model/prompt/token landing on a closer-probability decision
+point earlier, not a different failure class. Not chased to bit-exact
+parity — that is explicitly the outstanding ppl-delta metric's job
+(still deferred, see Phase 1's own writeup), not a new requirement
+invented here.
+
+**Regression, both real runs**: Qwen2.5-1.5B GGUF greedy output byte-
+identical to every prior run this session (`g_rope_norm=0` for
+`"qwen2"`, unchanged). Custom binary-format Llama-3.1-8B `serve` mode
+(B=8, real SME2 GEMM) byte-identical to the pre-existing golden binary
+across all 8 streams (`g_rope_norm` never touched by that loader,
+stays at its 0 default) — notable because this is the *same* HD=128/
+GROUP=4/Llama-family shape as the newly-fixed GGUF path, run through a
+completely different loader (the offline `quantize_int4.py`/GPTQ
+export pipeline apparently already emits Q/K weights in the layout
+this engine's NEOX-convention `rope_apply()` expects — i.e. HF's
+native, unpermuted layout — consistent with the finding that it's
+specifically GGUF's own `"llama"`-architecture conversion that
+introduces the NORM/interleaved permutation, not something inherent
+to the Llama architecture family itself).
+
+Compiles clean (13 warnings, documented baseline, zero new), 0 SVE/SME
+leak.
+
+**D-gen-4 #1 status**: the plan's "zero new engine code" prediction
+held for loader/ArchCfg/tensor-mapping structure, but needed one
+correction — RoPE pairing convention is architecture-dependent at the
+GGUF level in a way the plan's "rotate_half, no rope scaling" framing
+didn't anticipate (rotate_half describes the *math*, not which two
+indices get paired, and GGUF's own per-architecture convention
+differs from HF's native layout for the Llama family specifically).
+Worth flagging honestly: this is a second real, load-bearing GGUF
+gotcha this phase surfaced (after the round-half-to-even/reciprocal-
+division bugs in sub-step 1), reinforcing that "the loader is
+correctness-critical and needs real end-to-end validation per new
+architecture family," not just a shape/config check.
+
+Raw: `qwen_infer.c` (this repo), llama.cpp source inspection
+(`~/llamacpp_kleidi_build/src/llama-model.cpp`) and comparison run
+captured on `bob`, 2026-08-25.
