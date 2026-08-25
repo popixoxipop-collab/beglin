@@ -610,3 +610,43 @@ tok/s aggregate).
 
 Raw: `gguf_cache.c`/`.h` (this repo), timing and staleness runs captured
 on `bob`, 2026-08-25.
+
+## General-purpose loader — Phase 2 sub-step 2c: cache-file hardening after automated push review (2026-08-25)
+
+An automated post-push security review of the sub-step 2b commit flagged
+two real, legitimate classes of issue in `gguf_cache.c` — both fixed and
+verified here, not just patched blind:
+
+1. **Missing bounds validation on the cache file's own directory.**
+   `gguf_cache_open()` mmap'd the file and immediately trusted
+   `n_tensors` and every entry's `data_offset`/`data_bytes`/
+   `scales_offset`/`scales_bytes` as pointer arithmetic (`base + offset`)
+   with no check against the actual mmap'd size — a truncated or
+   corrupted cache (crashed mid-write, disk full, manual tampering)
+   would read past the mapping instead of failing loudly. Fixed: the
+   whole directory is now validated at open time (directory-fits-in-file,
+   then every entry's offset+length checked with overflow-safe
+   arithmetic: `offset <= size` first, then `bytes <= size - offset`).
+   **Verified by actually truncating a real cache file to 100KB** and
+   confirming a clean `FATAL: ... entry 0 (...) has an out-of-bounds
+   offset/length` instead of a crash.
+2. **Symlink-follow on `cache_path`.** All three opens of the
+   `<gguf_path>.beglin` sidecar (`gguf_cache_is_valid()`,
+   `gguf_cache_open()`, `gguf_cache_writer_open()`) used `fopen`/`open`
+   without `O_NOFOLLOW`, so a pre-existing symlink planted at that exact
+   path (e.g. a stale/shared tmp-style directory) would be followed —
+   the writer in particular would then truncate-and-overwrite whatever
+   the symlink pointed at. `src_gguf_path` (the user-supplied `.gguf`
+   itself) intentionally keeps following symlinks — that's expected,
+   wanted behavior for the file the user explicitly named — only the
+   derived `.beglin` path was hardened. **Verified with a real symlink**:
+   pointed `<gguf_path>.beglin` at a sentinel file via `ln -s`, ran the
+   engine, confirmed it refused (`FATAL: ... Too many levels of symbolic
+   links`) and the sentinel file's content was untouched afterward.
+
+Re-confirmed after both fixes: `gguf_cache.c` compiles with 0 warnings,
+0 SVE/SME leak; normal cache-miss-write and cache-hit-read still produce
+byte-identical `greedy` output to before the hardening.
+
+Raw: `gguf_cache.c` (this repo), truncation and symlink reproductions
+captured on `bob`, 2026-08-25.

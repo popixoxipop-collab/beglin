@@ -8,6 +8,18 @@
 //   data section: each tensor's data, then its scales (if any), each 64-byte aligned from the
 //                 start of the file (matches this codebase's existing alignment convention for
 //                 K_Q4G64/SME2 buffers elsewhere)
+//
+// Security note (post-push review, 2026-08-25): this file is reached with a cache_path derived
+// from QWEN_GGUF (an env var the user controls, but the RESULTING .beglin file is a NEW path
+// this process creates/reads on the user's own machine -- unlike src_gguf_path, which the user
+// explicitly points at and where following a symlink is the expected, wanted behavior, nothing
+// here should have ever silently followed a pre-existing symlink planted at cache_path (e.g. a
+// stale/shared tmp-style directory) into an unintended file. Every open of cache_path below now
+// uses O_NOFOLLOW. Separately, this cache file's own header/directory content (n_tensors and
+// each entry's byte offsets/lengths) is now validated against the actual mmap'd file size
+// before any of it is used as pointer arithmetic in gguf_cache_open() -- a truncated or
+// corrupted cache (crash mid-write, disk full, manual tampering) FATALs loudly instead of an
+// out-of-bounds read past the mmap.
 
 #include "gguf_cache.h"
 #include <stdio.h>
@@ -18,6 +30,7 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
 
 #define GGUF_CACHE_MAGIC "BEGLINC1"
 
@@ -40,22 +53,26 @@ static uint64_t align64(uint64_t x) { return (x + 63) & ~(uint64_t)63; }
 
 int gguf_cache_is_valid(const char *cache_path, const char *src_gguf_path) {
     struct stat src_st;
-    if (stat(src_gguf_path, &src_st) != 0) return 0;
-    FILE *f = fopen(cache_path, "rb");
-    if (!f) return 0;
+    if (stat(src_gguf_path, &src_st) != 0) return 0;  // src_gguf_path: following a symlink here is intended
+    int fd = open(cache_path, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return 0;  // missing, or a symlink (O_NOFOLLOW/ELOOP) -- either way, "no valid cache"
     GgufCacheHeader h;
-    size_t nread = fread(&h, sizeof h, 1, f);
-    fclose(f);
-    if (nread != 1) return 0;
+    ssize_t nread = read(fd, &h, sizeof h);
+    close(fd);
+    if (nread != (ssize_t)sizeof h) return 0;
     if (memcmp(h.magic, GGUF_CACHE_MAGIC, 8) != 0) return 0;
     return h.src_size == (uint64_t)src_st.st_size && h.src_mtime == (uint64_t)src_st.st_mtime;
 }
 
 GgufCacheFile *gguf_cache_open(const char *cache_path) {
-    int fd = open(cache_path, O_RDONLY);
-    if (fd < 0) { fprintf(stderr, "FATAL: gguf_cache_open: could not open %s\n", cache_path); exit(1); }
+    int fd = open(cache_path, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) { fprintf(stderr, "FATAL: gguf_cache_open: could not open %s (%s)\n", cache_path, strerror(errno)); exit(1); }
     struct stat st;
     if (fstat(fd, &st) != 0) { fprintf(stderr, "FATAL: gguf_cache_open: fstat %s failed\n", cache_path); exit(1); }
+    if ((uint64_t)st.st_size < sizeof(GgufCacheHeader)) {
+        fprintf(stderr, "FATAL: gguf_cache_open: %s too small to hold a header (%lld bytes)\n", cache_path, (long long)st.st_size);
+        exit(1);
+    }
     void *base = mmap(NULL, (size_t)st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
     close(fd);
     if (base == MAP_FAILED) { fprintf(stderr, "FATAL: gguf_cache_open: mmap %s failed\n", cache_path); exit(1); }
@@ -67,7 +84,30 @@ GgufCacheFile *gguf_cache_open(const char *cache_path) {
         fprintf(stderr, "FATAL: gguf_cache_open: %s bad magic (caller should have checked gguf_cache_is_valid() first)\n", cache_path);
         exit(1);
     }
+    // Bounds-validate the WHOLE file before any of it is trusted as pointer arithmetic --
+    // n_tensors and every entry's offset/length come from the file itself, not from a source
+    // this process already trusts the way it trusts its own live-transcode output.
+    uint64_t n = c->hdr->n_tensors;
+    uint64_t dir_bytes = n * (uint64_t)sizeof(GgufCacheEntry);   // n is uint32_t-derived; product fits u64 with wide margin
+    uint64_t dir_end = sizeof(GgufCacheHeader) + dir_bytes;
+    if (dir_end > (uint64_t)c->size) {
+        fprintf(stderr, "FATAL: gguf_cache_open: %s directory (n_tensors=%llu) extends past end of file -- truncated or corrupt\n",
+                cache_path, (unsigned long long)n);
+        exit(1);
+    }
     c->dir = (const GgufCacheEntry *)(c->base + sizeof(GgufCacheHeader));
+    for (uint64_t i = 0; i < n; i++) {
+        const GgufCacheEntry *e = &c->dir[i];
+        // Split as "offset <= size" then "bytes <= size - offset" so this can't overflow even
+        // for a maliciously/corruptly huge offset or bytes value.
+        int data_ok   = e->data_offset   <= (uint64_t)c->size && e->data_bytes   <= (uint64_t)c->size - e->data_offset;
+        int scales_ok = e->scales_offset <= (uint64_t)c->size && e->scales_bytes <= (uint64_t)c->size - e->scales_offset;
+        if (!data_ok || !scales_ok) {
+            fprintf(stderr, "FATAL: gguf_cache_open: %s entry %llu ('%.*s') has an out-of-bounds offset/length -- truncated or corrupt\n",
+                    cache_path, (unsigned long long)i, (int)sizeof e->name, e->name);
+            exit(1);
+        }
+    }
     return c;
 }
 
@@ -89,8 +129,16 @@ GgufCacheWriter *gguf_cache_writer_open(const char *cache_path, const char *src_
     if (stat(src_gguf_path, &src_st) != 0) {
         fprintf(stderr, "FATAL: gguf_cache_writer_open: stat %s failed\n", src_gguf_path); exit(1);
     }
-    FILE *f = fopen(cache_path, "wb");
-    if (!f) { fprintf(stderr, "FATAL: gguf_cache_writer_open: could not create %s\n", cache_path); exit(1); }
+    // O_NOFOLLOW: refuse to write through a pre-existing symlink at cache_path (see file header
+    // comment) -- if one exists, that's a stale/unexpected state, not something to silently
+    // truncate-and-overwrite the symlink's target through.
+    int fd = open(cache_path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
+    if (fd < 0) {
+        fprintf(stderr, "FATAL: gguf_cache_writer_open: could not create %s (%s)\n", cache_path, strerror(errno));
+        exit(1);
+    }
+    FILE *f = fdopen(fd, "wb");
+    if (!f) { fprintf(stderr, "FATAL: gguf_cache_writer_open: fdopen %s failed\n", cache_path); close(fd); exit(1); }
     GgufCacheWriter *w = malloc(sizeof *w);
     w->f = f;
     w->path = strdup(cache_path);
