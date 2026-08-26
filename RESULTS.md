@@ -985,3 +985,69 @@ Raw: `tools/kai_route_threshold_bench.c`, `sme2_kai.c` (this repo,
 `D4`), crash report `qwen_infer_p3-2026-08-26-144616.ips` (bob,
 `~/Library/Logs/DiagnosticReports/`), interactive `lldb` disassembly +
 backtrace (bob, screen-shared session), all repros, `bob`, 2026-08-26.
+
+## General-purpose loader — Phase 3 sub-step 1: Qwen2.5-0.5B-Instruct
+## GGUF validation (2026-08-26)
+
+First real shape-ladder model: `arch=qwen2, NL=24 NH=14 NKV=2 D=896
+HD=64 IM=4864 VOCAB=151936 GROUP=7`. `HD=64`/`GROUP=7` is a genuinely
+new shape combination for this engine -- every model validated so far
+(Qwen1.5B, Qwen2.5-1.5B, Mistral-7B, Llama-3.1-8B) used `HD=128`.
+Neither of `attn_neon.h`'s two existing fast NEON attention kernel
+families (`HD=128/GROUP=6` and `HD=128/GROUP=4`) matches this shape,
+so this run is the first real exercise of the generic-scalar attention
+path that's existed in this file since D3 but had never been hit by
+an actual model.
+
+**Diagnostic bug (exactly as the plan predicted -- "expect diagnostic
+bugs, not math bugs")**: `FATAL: gguf tensor 'blk.0.attn_q.weight' has
+unsupported quant type id 6`. Enumerated this GGUF's tensor types via
+`gguf-py`'s `GGUFReader` before guessing: `{Q8_0, Q5_0, F32, Q6_K,
+Q4_K}` -- `Q5_0` (type id 6) was the only one this loader didn't
+support yet. Checked the other 3 already-downloaded fixtures
+(Llama-3.2-1B/3B, Qwen2.5-3B) the same way first: all three use only
+`{F32, Q4_K, Q6_K}`, already supported -- this gap is specific to how
+llama.cpp's Q4_K_M recipe treats very small models (dropping
+`ffn_gate`/`ffn_up`/`token_embd` to `Q5_0` rather than `Q4_K`), not a
+general shape-ladder problem.
+
+**Fix**: ported `dequantize_row_q5_0` into `gguf_quants.c` (block
+layout + dequant algorithm from `ggml-quants.c`/`ggml-common.h`, same
+vendoring discipline and provenance-comment style as this file's
+existing Q4_0/Q8_0/Q4_K/Q6_K ports) -- `gguf_load.c`'s own
+`GGML_TYPE_TABLE` already had `Q5_0`'s block/typesize entry (`32`/`22`
+bytes), so only the dequantizer itself was missing, not the parser's
+byte-accounting.
+
+**Correctness, R4-oracle style against `llama.cpp`'s own reference
+implementation** (not this engine's byte-identical convention, since
+GGUF's own recipe already quantizes this model with `Q5_0`/`Q4_K`/
+`Q6_K` before this engine re-quantizes to its own `q4g64`/`q8g64` --
+double-quantization noise is expected, same situation as the
+Mistral-7B/Qwen2.5-1.5B validations): tokenized `"The capital of
+France is Paris, and the capital of Japan is"` with this GGUF's own
+vocab via `llama-tokenize` (confirmed byte-identical token IDs to this
+engine's own loader/tokenizer path), ran greedy generation both ways.
+`llama-simple` (not `llama-cli -no-cnv` -- see
+`reference_llamacpp_cli_infinite_loop.md`, that flag hangs on
+non-interactive stdin) produced `"...Tokyo. If you travel from Paris
+to Tokyo by train, you will pass through"`; this engine produced
+`[26194, 13, 1416, 498, ...]` vs llama.cpp's `[26194, 13, 1416, 498,
+...]` -- **first 4 generated tokens byte-identical** ("Tokyo. If
+you"), diverging at token 5 the same way the Mistral-7B/Qwen2.5-1.5B
+validations did: ordinary double-quantization noise at a close
+argmax decision boundary, not a correctness bug.
+
+Startup dispatch-tier log: `168 SME2-eligible, 0 NEON-q4g64, 1
+NEON-q8g64, 122 BLAS-f32` -- confirms the `HD=64` shapes route through
+the same `K_Q4G64`/SME2-eligibility machinery as every other model,
+no shape-specific carve-out needed.
+
+**Phase 3-1 verdict**: PASS. One real diagnostic bug found and fixed
+(a genuinely missing quant-type dequantizer, not a shape/math issue),
+zero changes needed to the generic-scalar attention path itself --
+it was already correct for `HD=64`/`GROUP=7`, just never previously
+exercised by a real model.
+
+Raw: `gguf_quants.c` (this repo, Q5_0 port), `llama-tokenize`/
+`llama-simple` reference run, `bob`, 2026-08-26.

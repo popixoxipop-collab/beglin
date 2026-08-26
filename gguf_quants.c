@@ -33,6 +33,7 @@
 #define K_SCALE_SIZE 12
 #define QK4_0 32
 #define QK8_0 32
+#define QK5_0 32
 
 typedef uint16_t ggml_half;
 
@@ -46,6 +47,12 @@ typedef struct {
     ggml_half d;       // delta
     int8_t  qs[QK8_0]; // quants
 } GgmlBlockQ8_0;
+
+typedef struct {
+    ggml_half d;            // delta
+    uint8_t qh[4];          // 5th bit of quants
+    uint8_t qs[QK5_0 / 2];  // nibbles / quants
+} GgmlBlockQ5_0;
 
 typedef struct {
     ggml_half d;                   // super-block scale for quantized scales
@@ -105,6 +112,29 @@ static void dequant_row_q8_0(const void *src, float *y, int64_t n) {
     for (int i = 0; i < nb; i++) {
         const float d = fp16_to_fp32(x[i].d);
         for (int j = 0; j < QK8_0; ++j) y[i*QK8_0 + j] = x[i].qs[j]*d;
+    }
+}
+
+// Ported from ggml-quants.c's dequantize_row_q5_0 (see file header for provenance). Found
+// needed 2026-08-26 (Phase 3 sub-step 1, Qwen2.5-0.5B-Instruct GGUF): small models' Q4_K_M
+// recipe drops several tensor kinds (ffn_gate/ffn_up/token_embd) to Q5_0 rather than Q4_K --
+// a diagnostic gap, not a math bug, per the general-purpose-loader plan's own Phase 3
+// expectation.
+static void dequant_row_q5_0(const void *src, float *y, int64_t n) {
+    const GgmlBlockQ5_0 *x = (const GgmlBlockQ5_0 *)src;
+    const int nb = (int)(n / QK5_0);
+    for (int i = 0; i < nb; i++) {
+        const float d = fp16_to_fp32(x[i].d);
+        uint32_t qh;
+        memcpy(&qh, x[i].qh, sizeof(qh));
+        for (int j = 0; j < QK5_0/2; ++j) {
+            const uint8_t xh_0 = ((qh >> (j +  0)) << 4) & 0x10;
+            const uint8_t xh_1 = ((qh >> (j + 12))     ) & 0x10;
+            const int32_t x0 = ((x[i].qs[j] & 0x0F) | xh_0) - 16;
+            const int32_t x1 = ((x[i].qs[j] >>   4) | xh_1) - 16;
+            y[i*QK5_0 + j + 0]         = x0*d;
+            y[i*QK5_0 + j + QK5_0/2]   = x1*d;
+        }
     }
 }
 
@@ -171,7 +201,7 @@ static void dequant_row_f32(const void *src, float *y, int64_t n) {
 int gguf_dequant_supported(GgmlType type) {
     switch (type) {
         case GGML_TYPE_F32: case GGML_TYPE_F16: case GGML_TYPE_BF16:
-        case GGML_TYPE_Q4_0: case GGML_TYPE_Q8_0:
+        case GGML_TYPE_Q4_0: case GGML_TYPE_Q8_0: case GGML_TYPE_Q5_0:
         case GGML_TYPE_Q4_K: case GGML_TYPE_Q6_K:
             return 1;
         default:
@@ -186,6 +216,7 @@ void gguf_dequant_row(GgmlType type, const void *src, float *dst, int64_t n_elem
         case GGML_TYPE_BF16: dequant_row_bf16(src, dst, n_elements); return;
         case GGML_TYPE_Q4_0: dequant_row_q4_0(src, dst, n_elements); return;
         case GGML_TYPE_Q8_0: dequant_row_q8_0(src, dst, n_elements); return;
+        case GGML_TYPE_Q5_0: dequant_row_q5_0(src, dst, n_elements); return;
         case GGML_TYPE_Q4_K: dequant_row_q4_k(src, dst, n_elements); return;
         case GGML_TYPE_Q6_K: dequant_row_q6_k(src, dst, n_elements); return;
         default:
