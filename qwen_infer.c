@@ -2903,6 +2903,13 @@ static void moe_top_k_select(const float *scores, int n, int k, int *out_idx) {
 typedef struct {
     MoeAFTensor *q_proj, *kv_a_proj, *kv_b_proj, *o_proj;
     MoeF32Tensor *input_ln, *post_attn_ln, *kv_a_ln;
+    // Phase 4 sub-part 2, Step 2.3: GQA attention tensors (Mixtral/Qwen3-MoE), resolved by
+    // moe_resolve_attn_tensors_gqa() at Step 2.7 -- q_proj/o_proj above are reused as-is (both
+    // attention kinds have a plain q_proj/o_proj), only k_proj/v_proj/q_norm/k_norm are new.
+    // q_norm/k_norm stay NULL for architectures without per-head QK-norm (Mixtral); non-NULL
+    // means Step 2.7's moe_gqa_attention() family must apply them (Qwen3-MoE).
+    MoeAFTensor *k_proj, *v_proj;
+    MoeF32Tensor *q_norm, *k_norm;
     MoeAFTensor *dense_gate, *dense_up, *dense_down;
     MoeF32Tensor *gate_w;
     MoeAFTensor *shared_gate, *shared_up, *shared_down;
@@ -2927,21 +2934,41 @@ static void moe_check_af_shape(const MoeAFTensor *t, const char *name, int l, lo
     }
 }
 
+// Phase 4 sub-part 2, Step 2.3: the MLA half of tensor resolution, factored out of
+// moe_resolve_layer_tensors() so a second attention kind (GQA, Step 2.7) can resolve a
+// different tensor set for the same per-layer loop without an ever-growing if/else inline.
+// Unchanged behavior/line-for-line move of what used to be the first block of that loop body.
+static void moe_resolve_attn_tensors_mla(int l, MoeLayerTensors *t) {
+    char nm[256];
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.q_proj",l);            t->q_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.kv_a_proj_with_mqa",l);t->kv_a_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.kv_b_proj",l);         t->kv_b_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.o_proj",l);            t->o_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.kv_a_layernorm.weight",l); t->kv_a_ln = moe_find_f32(nm);
+    moe_check_af_shape(t->q_proj,    "q_proj",    l, MOE_QDIM,    MOE_HIDDEN);
+    moe_check_af_shape(t->kv_a_proj, "kv_a_proj", l, MOE_KVA_OUT, MOE_HIDDEN);
+    moe_check_af_shape(t->kv_b_proj, "kv_b_proj", l, MOE_KVB_OUT, MOE_KV_LORA_RANK);
+    moe_check_af_shape(t->o_proj,    "o_proj",    l, MOE_HIDDEN,  MOE_ATTN_OUT);
+}
+// Phase 4 sub-part 2, Step 2.3: stub -- the seam is real (moe_resolve_layer_tensors() already
+// dispatches on MOE_ATTN_KIND below) but resolving Mixtral/Qwen3-MoE's actual GQA tensor names
+// (self_attn.{q,k,v,o}_proj + optional q_norm/k_norm) is Step 2.7, once a second model's
+// arch_config_moe.txt exists to test it against. FATALs rather than silently half-working.
+static void moe_resolve_attn_tensors_gqa(int l, MoeLayerTensors *t) {
+    (void)t;
+    fprintf(stderr, "FATAL: moe_resolve_attn_tensors_gqa: ATTN_KIND=gqa tensor resolution not "
+                     "implemented yet (layer %d) -- see Phase 4 sub-part 2 Step 2.7\n", l);
+    exit(1);
+}
+
 static void moe_resolve_layer_tensors(void) {
     char nm[256];
     for (int l = 0; l < MOE_NL; l++) {
         MoeLayerTensors *t = &g_moe_lt[l];
-        snprintf(nm,sizeof nm,"model.layers.%d.self_attn.q_proj",l);            t->q_proj = moe_find_af(nm);
-        snprintf(nm,sizeof nm,"model.layers.%d.self_attn.kv_a_proj_with_mqa",l);t->kv_a_proj = moe_find_af(nm);
-        snprintf(nm,sizeof nm,"model.layers.%d.self_attn.kv_b_proj",l);         t->kv_b_proj = moe_find_af(nm);
-        snprintf(nm,sizeof nm,"model.layers.%d.self_attn.o_proj",l);            t->o_proj = moe_find_af(nm);
+        if (MOE_ATTN_KIND == MOE_ATTN_MLA) moe_resolve_attn_tensors_mla(l, t);
+        else moe_resolve_attn_tensors_gqa(l, t);
         snprintf(nm,sizeof nm,"model.layers.%d.input_layernorm.weight",l);      t->input_ln = moe_find_f32(nm);
         snprintf(nm,sizeof nm,"model.layers.%d.post_attention_layernorm.weight",l); t->post_attn_ln = moe_find_f32(nm);
-        snprintf(nm,sizeof nm,"model.layers.%d.self_attn.kv_a_layernorm.weight",l); t->kv_a_ln = moe_find_f32(nm);
-        moe_check_af_shape(t->q_proj,    "q_proj",    l, MOE_QDIM,    MOE_HIDDEN);
-        moe_check_af_shape(t->kv_a_proj, "kv_a_proj", l, MOE_KVA_OUT, MOE_HIDDEN);
-        moe_check_af_shape(t->kv_b_proj, "kv_b_proj", l, MOE_KVB_OUT, MOE_KV_LORA_RANK);
-        moe_check_af_shape(t->o_proj,    "o_proj",    l, MOE_HIDDEN,  MOE_ATTN_OUT);
         if (l < MOE_FIRST_DENSE_LAYERS) {
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.gate_proj",l); t->dense_gate = moe_find_af(nm);
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.up_proj",l);   t->dense_up   = moe_find_af(nm);
