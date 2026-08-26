@@ -431,6 +431,32 @@ output vs baseline across 3 runs, **2.98x measured throughput gain**
 (33.54 -> ~100 tok/s), and `matmul_sdot`'s already-shipped SME2 path
 re-verified unaffected (`identical 1`).
 
+**Sub-steps 1-4 done (2026-08-26)**: all 5 planned models validated
+(Qwen2.5-0.5B/3B/7B, Llama-3.2-1B/3B) against `llama.cpp` (`llama-
+simple` greedy, matching prompt IDs confirmed via `llama-tokenize`).
+Every `HD`/`GROUP` combination the plan named now has a real-model
+run through it. Two real gaps found and closed: `Q5_0` dequant
+(Qwen2.5-0.5B's small-model quant recipe drops several tensor kinds
+to `Q5_0`, not `Q4_K`) and `rope_freqs.weight` NTK scaling (Llama-3's
+scaling has no dedicated GGUF KV keys -- llama.cpp ships a precomputed
+per-frequency-pair correction tensor instead, confirmed from the real
+file + `ggml-cpu/ops.cpp` source, wired onto this engine's existing
+`g_rope_scale[]` mechanism rather than a new one). Qwen2.5-7B needed
+`llama-gguf-split --merge` for its 2 shards (external tool, this
+engine's own loader keeps its single-file design). Greedy exact-match
+run length against `llama.cpp` scaled with model size (2 tokens for
+the two smallest, 9-11 tokens for the two largest) across all 5 models
+-- consistent evidence, not a single lucky result. Full detail in
+RESULTS.md.
+
+**Sub-step 6 done (2026-08-26)**: measured (not guessed) whether `HD=64`
+needs a dedicated NEON attention kernel. `QWEN_PROF=1` `bench` profiling
+on both real `HD=64` models: attention is 1.5-2.5% of per-token decode
+time on both (FFN projections 55-63%, `lm_head` 20-32% are the real
+cost). A perfect `HD=64` kernel caps the possible gain at that same
+1.5-2.5% -- not worth the engineering cost. Decision: **stay scalar**,
+no new kernel family. Phase 3 fully complete.
+
 ### Phase 4 — De-hardcode the MoE path; second MoE topology (~3 weeks, largest chunk, under-estimated by the original roadmap)
 
 1. Convert every DeepSeek-dimensioned stack array to `g_cfg`-style heap

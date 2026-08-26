@@ -1210,3 +1210,37 @@ not a single lucky result.
 
 Raw: `llama-gguf-split --merge` output, `llama-tokenize`/
 `llama-simple` reference run, `bob`, 2026-08-26.
+
+## General-purpose loader — Phase 3 sub-step 6: does HD=64 need a
+## dedicated `attn_neon.h` kernel family? (2026-08-26)
+
+The plan's own framing: "decide with a measured number, not a guess."
+Used the engine's existing `bench` mode profiler (`QWEN_PROF=1`,
+per-phase ms/token breakdown, already instrumented, no new code
+needed) on both real `HD=64` models from this shape ladder:
+
+| phase | Qwen2.5-0.5B (GROUP=7) | Llama-3.2-1B (GROUP=4) |
+|---|---|---|
+| **attn** | 0.39 ms (**2.49%**) | 0.70 ms (**1.46%**) |
+| proj_q/k/v/o | 2.07 ms (13.25%) | 5.20 ms (10.91%) |
+| proj_gate/up/down | 9.83 ms (62.84%) | 26.08 ms (54.71%) |
+| head_gemv (lm_head) | 3.12 ms (19.92%) | 15.43 ms (32.36%) |
+| total | 15.65 ms/tok (64 tok/s) | 47.68 ms/tok (21 tok/s) |
+
+**Verdict: scalar stays.** Attention is 1.5-2.5% of per-token decode
+time on both real `HD=64` models -- even a hypothetical *perfect*
+`HD=64` NEON kernel (attention cost -> 0) would improve end-to-end
+throughput by at most that same 1.5-2.5%. The actual bottleneck for
+both models is the same as it is for every dense model this engine
+has ever profiled: FFN projections (`gate`/`up`/`down`, 55-63%) and
+`lm_head`'s output projection (20-32%, worse for Llama-3.2-1B's larger
+128256-vocab, fp32 `lm_head` since it isn't tied/int8-quantized here).
+Writing, hand-verifying, and maintaining a new hand-tuned NEON kernel
+family for `HD=64` (on top of the two that already exist for
+`HD=128`) would be real, nontrivial engineering effort for a return
+capped under 2.5% -- not justified by this data. No new kernel work
+scheduled; the generic-scalar attention path stays as the permanent
+`HD=64` implementation.
+
+Raw: `QWEN_PROF=1` `bench` mode output, both `HD=64` models, `bob`,
+2026-08-26.
