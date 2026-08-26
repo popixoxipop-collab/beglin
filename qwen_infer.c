@@ -2555,6 +2555,17 @@ static int MOE_ATTN_OUT;  // = MOE_N_HEADS * MOE_V_HD              (o_proj->in)
 static int MOE_SH_IM;     // = MOE_IM_DIM * MOE_N_SHARED           (shared_gate->out)
 static int MOE_MAX_IN;    // = max(HIDDEN, IM_DIM, SH_IM, DENSE_IM)
 static int MOE_MAX_NG;    // = (MOE_MAX_IN + 63) / 64              (groupsum bound)
+// Phase 4 sub-part 2, Step 2.2: the per-position K/V row size, one level up from the per-head
+// stride (MOE_Q_HEAD_DIM/MOE_V_HD, still valid and untouched below -- MLA's per-head chunk size
+// doesn't change). For MLA these equal MOE_N_HEADS*MOE_Q_HEAD_DIM / MOE_N_HEADS*MOE_V_HD exactly
+// as before (every K/V family stores one full head's worth of decompressed K/V per query head).
+// For GQA (Step 2.7) they become MOE_N_KV_HEADS*MOE_HEAD_DIM for both -- only MOE_N_KV_HEADS
+// distinct K/V rows exist per position, shared across query-head groups. All 8 K/V row
+// accessors, all 8 K/V allocations, and all 12 cross-family memcpys read these instead of
+// re-deriving MOE_N_HEADS*MOE_Q_HEAD_DIM/MOE_N_HEADS*MOE_V_HD inline, so Step 2.7 only has to
+// change this one computation (see below) to point every one of those at the right size.
+static int MOE_KROW;      // MLA: MOE_N_HEADS*MOE_Q_HEAD_DIM ; GQA: MOE_N_KV_HEADS*MOE_HEAD_DIM
+static int MOE_VROW;      // MLA: MOE_N_HEADS*MOE_V_HD       ; GQA: MOE_N_KV_HEADS*MOE_HEAD_DIM
 static void alloc_moe_buffers(void);  // forward decl -- populated in later sub-steps, empty for now
 
 // Phase 4 sub-part 1, Step 2: heap, MOE_N_EXPERTS ints -- alloc_moe_buffers(). Replaces
@@ -2983,8 +2994,8 @@ static float *g_moe_K_flat, *g_moe_V_flat;
 static float *g_moe_bK_flat, *g_moe_bV_flat;
 static float *g_moe_cK_flat, *g_moe_cV_flat;
 static float *g_moe_sK_flat, *g_moe_sV_flat;
-static inline float *moe_K_row(int l, int pos) { return g_moe_K_flat + ((long)l*MOE_MAXPOS + pos)*(long)MOE_N_HEADS*MOE_Q_HEAD_DIM; }
-static inline float *moe_V_row(int l, int pos) { return g_moe_V_flat + ((long)l*MOE_MAXPOS + pos)*(long)MOE_N_HEADS*MOE_V_HD; }
+static inline float *moe_K_row(int l, int pos) { return g_moe_K_flat + ((long)l*MOE_MAXPOS + pos)*(long)MOE_KROW; }
+static inline float *moe_V_row(int l, int pos) { return g_moe_V_flat + ((long)l*MOE_MAXPOS + pos)*(long)MOE_VROW; }
 static inline float *moe_K_at(int l, int pos, int hh) { return moe_K_row(l,pos) + (long)hh*MOE_Q_HEAD_DIM; }
 static inline float *moe_V_at(int l, int pos, int hh) { return moe_V_row(l,pos) + (long)hh*MOE_V_HD; }
 
@@ -3286,8 +3297,8 @@ static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, 
 
 #define MOE_BATCH_MAX 64
 // g_moe_bK_flat/g_moe_bV_flat declared with the rest of Group B above (qwen_infer.c ~L2946).
-static inline float *moe_bK_row(int l, int b) { return g_moe_bK_flat + ((long)l*MOE_BATCH_MAX + b)*(long)MOE_N_HEADS*MOE_Q_HEAD_DIM; }
-static inline float *moe_bV_row(int l, int b) { return g_moe_bV_flat + ((long)l*MOE_BATCH_MAX + b)*(long)MOE_N_HEADS*MOE_V_HD; }
+static inline float *moe_bK_row(int l, int b) { return g_moe_bK_flat + ((long)l*MOE_BATCH_MAX + b)*(long)MOE_KROW; }
+static inline float *moe_bV_row(int l, int b) { return g_moe_bV_flat + ((long)l*MOE_BATCH_MAX + b)*(long)MOE_VROW; }
 static inline float *moe_bK_at(int l, int b, int hh) { return moe_bK_row(l,b) + (long)hh*MOE_Q_HEAD_DIM; }
 static inline float *moe_bV_at(int l, int b, int hh) { return moe_bV_row(l,b) + (long)hh*MOE_V_HD; }
 
@@ -3309,8 +3320,8 @@ _Static_assert(MOE_CBATCH_MAXPOS <= MOE_MAXPOS,
     "Phase MoE-4c) index g_moe_K/V[l][pos] and a stack scores[MOE_MAXPOS] array at pos values "
     "up to MOE_CBATCH_MAXPOS-1 -- MOE_MAXPOS must stay at least that large.");
 // g_moe_cK_flat/g_moe_cV_flat declared with the rest of Group B above (qwen_infer.c ~L2946).
-static inline float *moe_cK_row(int l, int slot, int pos) { return g_moe_cK_flat + (((long)l*MOE_BATCH_MAX + slot)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_N_HEADS*MOE_Q_HEAD_DIM; }
-static inline float *moe_cV_row(int l, int slot, int pos) { return g_moe_cV_flat + (((long)l*MOE_BATCH_MAX + slot)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_N_HEADS*MOE_V_HD; }
+static inline float *moe_cK_row(int l, int slot, int pos) { return g_moe_cK_flat + (((long)l*MOE_BATCH_MAX + slot)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_KROW; }
+static inline float *moe_cV_row(int l, int slot, int pos) { return g_moe_cV_flat + (((long)l*MOE_BATCH_MAX + slot)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_VROW; }
 static inline float *moe_cK_at(int l, int slot, int pos, int hh) { return moe_cK_row(l,slot,pos) + (long)hh*MOE_Q_HEAD_DIM; }
 static inline float *moe_cV_at(int l, int slot, int pos, int hh) { return moe_cV_row(l,slot,pos) + (long)hh*MOE_V_HD; }
 
@@ -4167,8 +4178,8 @@ static int rq_hist[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS];
 // Only *_row (whole-position, all-heads) is needed -- every g_moe_sK/sV site is a cross-family
 // memcpy of one full position, never an element-wise per-head read (unlike K/V/cK/cV), so this
 // family has no *_at counterpart.
-static inline float *moe_sK_row(int l, int lane, int pos) { return g_moe_sK_flat + (((long)l*MOE_CB4C_LANES + lane)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_N_HEADS*MOE_Q_HEAD_DIM; }
-static inline float *moe_sV_row(int l, int lane, int pos) { return g_moe_sV_flat + (((long)l*MOE_CB4C_LANES + lane)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_N_HEADS*MOE_V_HD; }
+static inline float *moe_sK_row(int l, int lane, int pos) { return g_moe_sK_flat + (((long)l*MOE_CB4C_LANES + lane)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_KROW; }
+static inline float *moe_sV_row(int l, int lane, int pos) { return g_moe_sV_flat + (((long)l*MOE_CB4C_LANES + lane)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_VROW; }
 static int   g_moe_sh_req[MOE_CB4C_LANES];     // -1 = free, else owning request id
 static int   g_moe_sh_valid[MOE_CB4C_LANES];   // positions 0..valid-1 already replayed+cached
 static int   g_moe_sh_next_evict = 0;
@@ -4208,8 +4219,8 @@ static void moe_reverify_exact(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTen
 
     for (int l = 0; l < MOE_NL; l++)
         for (int p = 0; p < start; p++) {
-            memcpy(moe_K_row(l,p), moe_sK_row(l,lane,p), (size_t)MOE_N_HEADS*MOE_Q_HEAD_DIM*sizeof(float));
-            memcpy(moe_V_row(l,p), moe_sV_row(l,lane,p), (size_t)MOE_N_HEADS*MOE_V_HD*sizeof(float));
+            memcpy(moe_K_row(l,p), moe_sK_row(l,lane,p), (size_t)MOE_KROW*sizeof(float));
+            memcpy(moe_V_row(l,p), moe_sV_row(l,lane,p), (size_t)MOE_VROW*sizeof(float));
         }
 
     float *logits_tmp = g_mre_logits_tmp;
@@ -4222,8 +4233,8 @@ static void moe_reverify_exact(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTen
 
     for (int l = 0; l < MOE_NL; l++)
         for (int p = start; p <= pos; p++) {
-            memcpy(moe_sK_row(l,lane,p), moe_K_row(l,p), (size_t)MOE_N_HEADS*MOE_Q_HEAD_DIM*sizeof(float));
-            memcpy(moe_sV_row(l,lane,p), moe_V_row(l,p), (size_t)MOE_N_HEADS*MOE_V_HD*sizeof(float));
+            memcpy(moe_sK_row(l,lane,p), moe_K_row(l,p), (size_t)MOE_KROW*sizeof(float));
+            memcpy(moe_sV_row(l,lane,p), moe_V_row(l,p), (size_t)MOE_VROW*sizeof(float));
         }
     g_moe_sh_valid[lane] = pos + 1;
     if (n_scalar_tok_out) *n_scalar_tok_out = n_scalar;
@@ -4303,8 +4314,8 @@ static void moe_cb4c_maybe_reverify(const uint8_t *af, MoeAFTensor *t_embed, Moe
         int lane = moe_shadow_lane_for(req);
         if (g_moe_sh_valid[lane] == pos) {
             for (int l = 0; l < MOE_NL; l++) {
-                memcpy(moe_sK_row(l,lane,pos), moe_cK_row(l,slot,pos), (size_t)MOE_N_HEADS*MOE_Q_HEAD_DIM*sizeof(float));
-                memcpy(moe_sV_row(l,lane,pos), moe_cV_row(l,slot,pos), (size_t)MOE_N_HEADS*MOE_V_HD*sizeof(float));
+                memcpy(moe_sK_row(l,lane,pos), moe_cK_row(l,slot,pos), (size_t)MOE_KROW*sizeof(float));
+                memcpy(moe_sV_row(l,lane,pos), moe_cV_row(l,slot,pos), (size_t)MOE_VROW*sizeof(float));
             }
             g_moe_sh_valid[lane] = pos + 1;
         }
@@ -4339,8 +4350,8 @@ static void moe_cb4c_maybe_reverify(const uint8_t *af, MoeAFTensor *t_embed, Moe
         int lane = moe_shadow_lane_for(req);   // now resident after moe_reverify_exact() above
         for (int l = 0; l < MOE_NL; l++)
             for (int p = 0; p <= pos; p++) {
-                memcpy(moe_cK_row(l,slot,p), moe_sK_row(l,lane,p), (size_t)MOE_N_HEADS*MOE_Q_HEAD_DIM*sizeof(float));
-                memcpy(moe_cV_row(l,slot,p), moe_sV_row(l,lane,p), (size_t)MOE_N_HEADS*MOE_V_HD*sizeof(float));
+                memcpy(moe_cK_row(l,slot,p), moe_sK_row(l,lane,p), (size_t)MOE_KROW*sizeof(float));
+                memcpy(moe_cV_row(l,slot,p), moe_sV_row(l,lane,p), (size_t)MOE_VROW*sizeof(float));
             }
     }
 }
@@ -4429,8 +4440,8 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
         // g_moe_K/V, positions 0..prompt_len[s]-1) into its dedicated ragged-cache slot.
         for (int l = 0; l < MOE_NL; l++)
             for (int p = 0; p < prompt_len[s]; p++) {
-                memcpy(moe_cK_row(l,s,p), moe_K_row(l,p), (size_t)MOE_N_HEADS*MOE_Q_HEAD_DIM*sizeof(float));
-                memcpy(moe_cV_row(l,s,p), moe_V_row(l,p), (size_t)MOE_N_HEADS*MOE_V_HD*sizeof(float));
+                memcpy(moe_cK_row(l,s,p), moe_K_row(l,p), (size_t)MOE_KROW*sizeof(float));
+                memcpy(moe_cV_row(l,s,p), moe_V_row(l,p), (size_t)MOE_VROW*sizeof(float));
             }
         int am = 0; float bm = logits1[0];
         for (int v = 1; v < MOE_VOCAB; v++) if (logits1[v] > bm) { bm = logits1[v]; am = v; }
@@ -4600,8 +4611,8 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
                     moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, prompt_ids[r % MOE_CBATCH_N][p], p, logits1, NULL);
                 for (int l = 0; l < MOE_NL; l++)
                     for (int p = 0; p < rq_plen[r]; p++) {
-                        memcpy(moe_cK_row(l,s,p), moe_K_row(l,p), (size_t)MOE_N_HEADS*MOE_Q_HEAD_DIM*sizeof(float));
-                        memcpy(moe_cV_row(l,s,p), moe_V_row(l,p), (size_t)MOE_N_HEADS*MOE_V_HD*sizeof(float));
+                        memcpy(moe_cK_row(l,s,p), moe_K_row(l,p), (size_t)MOE_KROW*sizeof(float));
+                        memcpy(moe_cV_row(l,s,p), moe_V_row(l,p), (size_t)MOE_VROW*sizeof(float));
                     }
                 int am = 0; float bm = logits1[0];
                 for (int v = 1; v < MOE_VOCAB; v++) if (logits1[v] > bm) { bm = logits1[v]; am = v; }
@@ -4788,14 +4799,14 @@ static void alloc_moe_buffers(void) {
     // MOE_CBATCH_MAXPOS/MOE_CB4C_LANES) are compile-time macros (R-10); trailing per-head dims
     // come from the config/derived globals. (long) on the first factor of every product forces
     // 64-bit arithmetic throughout -- these products would overflow int32 for large configs.
-    g_moe_K_flat  = malloc((long)MOE_MAXLAYERS*MOE_MAXPOS*MOE_N_HEADS*MOE_Q_HEAD_DIM*sizeof(float));
-    g_moe_V_flat  = malloc((long)MOE_MAXLAYERS*MOE_MAXPOS*MOE_N_HEADS*MOE_V_HD*sizeof(float));
-    g_moe_bK_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_N_HEADS*MOE_Q_HEAD_DIM*sizeof(float));
-    g_moe_bV_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_N_HEADS*MOE_V_HD*sizeof(float));
-    g_moe_cK_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_CBATCH_MAXPOS*MOE_N_HEADS*MOE_Q_HEAD_DIM*sizeof(float));
-    g_moe_cV_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_CBATCH_MAXPOS*MOE_N_HEADS*MOE_V_HD*sizeof(float));
-    g_moe_sK_flat = malloc((long)MOE_MAXLAYERS*MOE_CB4C_LANES*MOE_CBATCH_MAXPOS*MOE_N_HEADS*MOE_Q_HEAD_DIM*sizeof(float));
-    g_moe_sV_flat = malloc((long)MOE_MAXLAYERS*MOE_CB4C_LANES*MOE_CBATCH_MAXPOS*MOE_N_HEADS*MOE_V_HD*sizeof(float));
+    g_moe_K_flat  = malloc((long)MOE_MAXLAYERS*MOE_MAXPOS*MOE_KROW*sizeof(float));
+    g_moe_V_flat  = malloc((long)MOE_MAXLAYERS*MOE_MAXPOS*MOE_VROW*sizeof(float));
+    g_moe_bK_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_KROW*sizeof(float));
+    g_moe_bV_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_VROW*sizeof(float));
+    g_moe_cK_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_CBATCH_MAXPOS*MOE_KROW*sizeof(float));
+    g_moe_cV_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_CBATCH_MAXPOS*MOE_VROW*sizeof(float));
+    g_moe_sK_flat = malloc((long)MOE_MAXLAYERS*MOE_CB4C_LANES*MOE_CBATCH_MAXPOS*MOE_KROW*sizeof(float));
+    g_moe_sV_flat = malloc((long)MOE_MAXLAYERS*MOE_CB4C_LANES*MOE_CBATCH_MAXPOS*MOE_VROW*sizeof(float));
 
     // Step 5 (Group C): per-token scalar FFN scratch, one malloc set PER FUNCTION (Rule 3 -- see
     // the declaration comment above moe_forward_token()). All malloc: every buffer is fully
@@ -4963,6 +4974,12 @@ static int run_moe_verify_mode(int argc, char **argv) {
     MOE_KVB_OUT  = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD);
     MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
     MOE_SH_IM    = MOE_IM_DIM * MOE_N_SHARED;
+    // Phase 4 sub-part 2, Step 2.2: MLA-only formula for now (both attention kinds' real
+    // per-position row sizes are the same for MLA since GQA support doesn't exist yet --
+    // Step 2.7 adds the ATTN_KIND branch here, once MOE_N_KV_HEADS/MOE_HEAD_DIM are real
+    // config values instead of always-unset for every existing arch_config_moe.txt).
+    MOE_KROW = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_VROW = MOE_N_HEADS * MOE_V_HD;
     MOE_MAX_IN   = MOE_HIDDEN;
     if (MOE_IM_DIM   > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
     if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
