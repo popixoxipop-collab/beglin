@@ -3118,6 +3118,15 @@ static float *g_mcs_sgate_v, *g_mcs_sup_v, *g_mcs_sdown_v;
 static float *g_mft_router_scores; static int *g_mft_top_idx;
 static float *g_mcs_router_scores; static int *g_mcs_top_idx;
 
+// Phase 4 sub-part 2, Step 2.4: forward decls for the same reason as moe_mla_attention_ragged()'s
+// own forward decl below -- moe_forward_token()/moe_cbatch_step_scalar_one() (which call these)
+// are defined before the dispatchers' own definitions (textually placed after
+// moe_mla_attention_batched(), which they mirror). Real definitions further down.
+static inline void moe_attention(const uint8_t *af, MoeLayerTensors *t, int l, int pos,
+                                  const float *h, float *x_residual);
+static inline void moe_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int slot, int l, int pos,
+                                         const float *h, float *x_residual);
+
 // Full 27-layer MLA+MoE forward for one token, appended to the existing verification-mode
 // entry point below -- run_moe_verify_mode() drives this once per position of a fixed
 // 8-token prompt (same one used throughout Phase MoE-2a/2b), dumping logits/routing exactly
@@ -3134,7 +3143,7 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
         MoeLayerTensors *t = &g_moe_lt[l];
         float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
         moe_rmsnorm(x, w_inln, h, MOE_HIDDEN);
-        moe_mla_attention(af, t, l, pos, h, x);
+        moe_attention(af, t, l, pos, h, x);
 
         float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
         moe_rmsnorm(x, w_postln, h2, MOE_HIDDEN);
@@ -3234,7 +3243,7 @@ static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, 
         MoeLayerTensors *t = &g_moe_lt[l];
         float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
         moe_rmsnorm(x, w_inln, h, MOE_HIDDEN);
-        moe_mla_attention_ragged(af, t, slot, l, spos, h, x);
+        moe_attention_ragged(af, t, slot, l, spos, h, x);
 
         float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
         moe_rmsnorm(x, w_postln, h2, MOE_HIDDEN);
@@ -3462,6 +3471,50 @@ static void moe_mla_attention_batched(const uint8_t *af, MoeLayerTensors *t, int
     }
     moe_matvec_af(af, t->o_proj, 0, attn_out, o_out);
     for (int c = 0; c < MOE_HIDDEN; c++) x_residual[c] += o_out[c];
+}
+
+// Phase 4 sub-part 2, Step 2.4: the three attention dispatchers, one per K/V family. Each is a
+// thin two-way MOE_ATTN_KIND branch -- can't be a single function pointer, the three attention
+// functions have three different signatures (pos vs slot+pos vs b), and can't be a shared outer
+// loop either (see the design note in the sub-part 2 plan: a `_gqa` sibling family would
+// duplicate ~300 lines of routing/gather/SME2-dispatch logic across 4 callers to swap one line).
+// The GQA targets are FATAL stubs for now (a bare forward decl isn't enough -- these are static
+// and MOE_ATTN_KIND is a runtime value, so the compiler can't prove the GQA branch dead and
+// would otherwise leave an unresolved internal-linkage symbol at link time). Step 2.7 replaces
+// each stub body with the real implementation in place -- same pattern as
+// moe_resolve_attn_tensors_gqa()'s stub above.
+static void moe_gqa_attention(const uint8_t *af, MoeLayerTensors *t, int l, int pos,
+                               const float *h, float *x_residual) {
+    (void)af; (void)t; (void)l; (void)pos; (void)h; (void)x_residual;
+    fprintf(stderr, "FATAL: moe_gqa_attention: ATTN_KIND=gqa not implemented yet -- see Phase 4 sub-part 2 Step 2.7\n");
+    exit(1);
+}
+static void moe_gqa_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int slot, int l, int pos,
+                                      const float *h, float *x_residual) {
+    (void)af; (void)t; (void)slot; (void)l; (void)pos; (void)h; (void)x_residual;
+    fprintf(stderr, "FATAL: moe_gqa_attention_ragged: ATTN_KIND=gqa not implemented yet -- see Phase 4 sub-part 2 Step 2.7\n");
+    exit(1);
+}
+static void moe_gqa_attention_batched(const uint8_t *af, MoeLayerTensors *t, int l, int b,
+                                       const float *h, float *x_residual) {
+    (void)af; (void)t; (void)l; (void)b; (void)h; (void)x_residual;
+    fprintf(stderr, "FATAL: moe_gqa_attention_batched: ATTN_KIND=gqa not implemented yet -- see Phase 4 sub-part 2 Step 2.7\n");
+    exit(1);
+}
+static inline void moe_attention(const uint8_t *af, MoeLayerTensors *t, int l, int pos,
+                                  const float *h, float *x_residual) {
+    if (MOE_ATTN_KIND == MOE_ATTN_MLA) moe_mla_attention(af, t, l, pos, h, x_residual);
+    else moe_gqa_attention(af, t, l, pos, h, x_residual);
+}
+static inline void moe_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int slot, int l, int pos,
+                                         const float *h, float *x_residual) {
+    if (MOE_ATTN_KIND == MOE_ATTN_MLA) moe_mla_attention_ragged(af, t, slot, l, pos, h, x_residual);
+    else moe_gqa_attention_ragged(af, t, slot, l, pos, h, x_residual);
+}
+static inline void moe_attention_batched(const uint8_t *af, MoeLayerTensors *t, int l, int b,
+                                         const float *h, float *x_residual) {
+    if (MOE_ATTN_KIND == MOE_ATTN_MLA) moe_mla_attention_batched(af, t, l, b, h, x_residual);
+    else moe_gqa_attention_batched(af, t, l, b, h, x_residual);
 }
 
 // Per-layer expert -> member-token gather table. Rebuilt every layer (routing differs per
@@ -3833,7 +3886,7 @@ static void moe_forward_batch(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
 
         for (int b = 0; b < B; b++) {
             moe_rmsnorm(x + (size_t)b*MOE_HIDDEN, w_inln, h + (size_t)b*MOE_HIDDEN, MOE_HIDDEN);
-            moe_mla_attention_batched(af, t, l, b, h + (size_t)b*MOE_HIDDEN, x + (size_t)b*MOE_HIDDEN);
+            moe_attention_batched(af, t, l, b, h + (size_t)b*MOE_HIDDEN, x + (size_t)b*MOE_HIDDEN);
             moe_rmsnorm(x + (size_t)b*MOE_HIDDEN, w_postln, h2 + (size_t)b*MOE_HIDDEN, MOE_HIDDEN);
         }
 
@@ -4084,7 +4137,7 @@ static void moe_cbatch_step(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor
 
         for (int m = 0; m < A; m++) {
             moe_rmsnorm(x + (size_t)m*MOE_HIDDEN, w_inln, h + (size_t)m*MOE_HIDDEN, MOE_HIDDEN);
-            moe_mla_attention_ragged(af, t, slot[m], l, spos[m], h + (size_t)m*MOE_HIDDEN, x + (size_t)m*MOE_HIDDEN);
+            moe_attention_ragged(af, t, slot[m], l, spos[m], h + (size_t)m*MOE_HIDDEN, x + (size_t)m*MOE_HIDDEN);
             moe_rmsnorm(x + (size_t)m*MOE_HIDDEN, w_postln, h2 + (size_t)m*MOE_HIDDEN, MOE_HIDDEN);
         }
 
