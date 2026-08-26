@@ -2537,6 +2537,19 @@ static double g_moe_rope_mscale, g_moe_attn_scale;
 #define MOE_ATTN_MLA 0
 #define MOE_ATTN_GQA 1
 static int MOE_ATTN_KIND;
+// Phase 4 sub-part 2, Step 2.5: config the second model (GQA) needs that MLA never had to
+// express. All defaulted (via moe_cfg_get_opt()) so every existing arch_config_moe.txt --
+// DeepSeek-V2-Lite's real one included -- keeps its exact prior behavior with zero changes:
+// MOE_N_KV_HEADS absent -> MOE_N_HEADS (MLA's own "every head decompresses its own K/V", i.e.
+// no grouping); MOE_HEAD_DIM absent -> MOE_Q_HEAD_DIM (MLA's already-derived per-head dim);
+// MOE_RMS_EPS absent -> 1e-6 (DeepSeek's real eps, was hardcoded in moe_rmsnorm());
+// MOE_NORM_TOPK_PROB absent -> 0 (DeepSeek does not renormalize post-top-k; Qwen3-MoE does);
+// MOE_ROPE_STYLE absent -> MOE_ROPE_TRADITIONAL (DeepSeek's MLA needs interleaved-pair RoPE;
+// Qwen3-MoE/Mixtral need NEOX split-half -- see moe_rope_neox_apply(), Step 2.6).
+#define MOE_ROPE_TRADITIONAL 0
+#define MOE_ROPE_NEOX 1
+static int MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_NORM_TOPK_PROB, MOE_ROPE_STYLE;
+static double MOE_RMS_EPS;
 // Phase 4 sub-part 1, Step 2: heap, MOE_QK_ROPE_HD/2 doubles -- alloc_moe_buffers(), written by
 // moe_init_yarn() (called after alloc_moe_buffers() in run_moe_verify_mode() specifically so this
 // exists before that write), read by moe_rope_traditional_apply(). Exact sizing means there's no
@@ -2624,10 +2637,12 @@ static void moe_rope_traditional_apply(float *v, int dim, int pos) {
 }
 
 // Distinct from the file's existing rmsnorm() (which reads g_cfg.eps -- unset/meaningless
-// in MoE mode since load_arch_cfg() is never called on this path). DeepSeek's real eps=1e-6.
+// in MoE mode since load_arch_cfg() is never called on this path). Reads MOE_RMS_EPS (Step
+// 2.5) instead of a hardcoded 1e-6 -- DeepSeek's real eps is 1e-6, so this is byte-identical
+// for DeepSeek; Mixtral's real eps is 1e-5.
 static void moe_rmsnorm(const float *x, const float *g, float *y, int n) {
     double ss = 0.0; for (int i = 0; i < n; i++) ss += (double)x[i]*x[i];
-    double inv = 1.0 / sqrt(ss/n + 1e-6);
+    double inv = 1.0 / sqrt(ss/n + MOE_RMS_EPS);
     for (int i = 0; i < n; i++) y[i] = (float)(x[i]*inv*g[i]);
 }
 static void moe_matvec_af(const uint8_t *blob, MoeAFTensor *t, long e, const float *x, float *y) {
@@ -4801,8 +4816,9 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
 // 2*MOE_TOP_K+2<=MOE_BATCH_MAX_ITEMS) would otherwise silently overflow a stack array deep
 // inside moe_forward_token() on the very first token, exactly the failure class this whole
 // sub-part exists to close. Positivity + the two structural inequalities are checked for
-// every dim moe_cfg_get() loads; MOE_NL>MOE_MAXLAYERS is the pre-existing check, kept here
-// unchanged (not duplicated) for a single validation call site.
+// every dim moe_cfg_get() loads. Phase 4 sub-part 2, Step 2.5: MOE_NL>MOE_MAXLAYERS moved in
+// here (was a standalone bare-if at the call site) so this really is the single validation
+// call site the rest of this comment already promised, plus the two new GQA-era checks.
 static void moe_cfg_validate(void) {
     if (MOE_HIDDEN <= 0 || MOE_N_HEADS <= 0 || MOE_KV_LORA_RANK <= 0 || MOE_QK_ROPE_HD <= 0 ||
         MOE_QK_NOPE_HD <= 0 || MOE_V_HD <= 0 || MOE_NL <= 0 || MOE_N_EXPERTS <= 0 ||
@@ -4838,6 +4854,22 @@ static void moe_cfg_validate(void) {
     if (MOE_ATTN_KIND != MOE_ATTN_MLA && MOE_ATTN_KIND != MOE_ATTN_GQA) {
         fprintf(stderr, "FATAL: moe_cfg_validate: ATTN_KIND=%d not in {%d=mla, %d=gqa}\n",
                 MOE_ATTN_KIND, MOE_ATTN_MLA, MOE_ATTN_GQA);
+        exit(1);
+    }
+    // Phase 4 sub-part 2, Step 2.5: moved in from its old bare-if site at the ATTN_KIND read
+    // call site above (same check, same message content, now inside the single validation
+    // call site this function's own header comment already promises).
+    if (MOE_NL > MOE_MAXLAYERS) {
+        fprintf(stderr, "FATAL: moe_cfg_validate: NL=%d > MOE_MAXLAYERS=%d\n", MOE_NL, MOE_MAXLAYERS);
+        exit(1);
+    }
+    if (MOE_N_KV_HEADS <= 0 || MOE_N_HEADS % MOE_N_KV_HEADS != 0) {
+        fprintf(stderr, "FATAL: moe_cfg_validate: N_HEADS=%d not a multiple of N_KV_HEADS=%d\n",
+                MOE_N_HEADS, MOE_N_KV_HEADS);
+        exit(1);
+    }
+    if (MOE_HEAD_DIM <= 0 || MOE_HEAD_DIM % 2 != 0) {
+        fprintf(stderr, "FATAL: moe_cfg_validate: HEAD_DIM=%d must be even and positive\n", MOE_HEAD_DIM);
         exit(1);
     }
 }
@@ -5044,7 +5076,12 @@ static int run_moe_verify_mode(int argc, char **argv) {
     // step (DeepSeek-V2-Lite's real one included) -- defaults to MLA so those files keep
     // their exact prior behavior with zero changes required.
     MOE_ATTN_KIND = (int)moe_cfg_get_opt(path,"ATTN_KIND",(double)MOE_ATTN_MLA);
-    if (MOE_NL > MOE_MAXLAYERS) { fprintf(stderr,"FATAL: NL=%d > MOE_MAXLAYERS=%d\n",MOE_NL,MOE_MAXLAYERS); exit(1); }
+    // Phase 4 sub-part 2, Step 2.5: same additive-only defaulting as ATTN_KIND above.
+    MOE_N_KV_HEADS = (int)moe_cfg_get_opt(path,"N_KV_HEADS",(double)MOE_N_HEADS);
+    MOE_HEAD_DIM = (int)moe_cfg_get_opt(path,"HEAD_DIM",(double)MOE_Q_HEAD_DIM);
+    MOE_RMS_EPS = moe_cfg_get_opt(path,"RMS_EPS",1e-6);
+    MOE_NORM_TOPK_PROB = (int)moe_cfg_get_opt(path,"NORM_TOPK_PROB",0.0);
+    MOE_ROPE_STYLE = (int)moe_cfg_get_opt(path,"ROPE_STYLE",(double)MOE_ROPE_TRADITIONAL);
     moe_cfg_validate();
     // Phase 4 sub-part 1: derived dimensions (see their declaration comment for the formulas
     // and how each was confirmed against real call sites), computed once here so every later
