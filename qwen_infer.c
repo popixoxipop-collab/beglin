@@ -3441,10 +3441,19 @@ typedef struct {
 // M=B tensors, which have exactly one copy in the AF blob (blob address always e=0) but need a
 // cache identity distinct from routed expert 0's slot at the same layer (shared_experts runs
 // at every layer >=MOE_FIRST_DENSE_LAYERS, where expert 0 may also be routed-to that layer).
-#define MOE_SME2_SLOT_DENSE  64
-#define MOE_SME2_SLOT_SHARED 65
-#define MOE_SME2_SLOT_LMHEAD 66
-static MoeSme2Slot g_moe_sme2[MOE_MAXLAYERS][128][3];
+// Phase 4 sub-part 1, Step 10 (Group H): these were literal 64/65/66, correct only because
+// DeepSeek-V2-Lite happens to have exactly 64 experts -- for any model with MOE_N_EXPERTS>=64
+// these would COLLIDE with a real routed-expert's cache slot (not just overflow: silently wrong
+// weights served from the wrong slot). Derived at runtime as MOE_N_EXPERTS+{0,1,2} instead, so
+// they always sit just past the real expert range regardless of N_EXPERTS. g_moe_sme2/_f16lhs
+// are heap now, exact-sized MOE_MAXLAYERS*(MOE_N_EXPERTS+3)*3 (was a literal 128 second
+// dimension) -- calloc, not malloc: `.ready==0` ("not attempted") is load-bearing zero-init.
+static int MOE_SME2_SLOT_DENSE, MOE_SME2_SLOT_SHARED, MOE_SME2_SLOT_LMHEAD;
+static int MOE_SME2_CACHE_SLOTS;   // = MOE_N_EXPERTS + 3
+static MoeSme2Slot *g_moe_sme2;
+static inline MoeSme2Slot *moe_sme2_slot(int layer, long cache_e, int proj_idx) {
+    return g_moe_sme2 + ((size_t)layer * MOE_SME2_CACHE_SLOTS + cache_e) * 3 + proj_idx;
+}
 static void *g_moe_sme2_lhs_scratch = NULL;
 static int g_moe_sme2_scratch_max_in = 0;
 
@@ -3469,7 +3478,10 @@ static int g_moe_sme2_scratch_max_in = 0;
 //   both features confirmed present together on M4).
 //   EXIT: set QWEN_MOE_SME2_F16LHS=0 to opt back into the int8-LHS path (kept fully intact,
 //   byte-identical to its pre-2026-08-25 behavior) -- no code change needed to roll back.
-static MoeSme2Slot g_moe_sme2_f16lhs[MOE_MAXLAYERS][128][3];
+static MoeSme2Slot *g_moe_sme2_f16lhs;
+static inline MoeSme2Slot *moe_sme2_f16lhs_slot(int layer, long cache_e, int proj_idx) {
+    return g_moe_sme2_f16lhs + ((size_t)layer * MOE_SME2_CACHE_SLOTS + cache_e) * 3 + proj_idx;
+}
 static void *g_moe_sme2_f16lhs_lhs_scratch = NULL;
 static int g_moe_sme2_f16lhs_scratch_max_in = 0;
 static int g_moe_sme2_f16lhs_mode_cached = -1;
@@ -3517,7 +3529,7 @@ static void moe_sme2_ensure_scratch(int max_in) {
 // blob_e is always 0 for both.
 static void moe_sme2_ensure_ready(const uint8_t *af, MoeAFTensor *tsr, long blob_e, long cache_e, int layer, int proj_idx) {
     int f16lhs = moe_sme2_f16lhs_mode();
-    MoeSme2Slot *slot = f16lhs ? &g_moe_sme2_f16lhs[layer][cache_e][proj_idx] : &g_moe_sme2[layer][cache_e][proj_idx];
+    MoeSme2Slot *slot = f16lhs ? moe_sme2_f16lhs_slot(layer,cache_e,proj_idx) : moe_sme2_slot(layer,cache_e,proj_idx);
     if (slot->ready != 0) return;
     int out = tsr->out, in = tsr->in, ng = tsr->ng;
     if (f16lhs) {
@@ -3571,7 +3583,7 @@ static void moe_matvec_af_group_smart(const uint8_t *af, MoeAFTensor *tsr, long 
                                        const float *x_group, int M, float *y_group) {
     int f16lhs = moe_sme2_f16lhs_mode();
     moe_sme2_ensure_ready(af, tsr, blob_e, cache_e, layer, proj_idx);
-    MoeSme2Slot *slot = f16lhs ? &g_moe_sme2_f16lhs[layer][cache_e][proj_idx] : &g_moe_sme2[layer][cache_e][proj_idx];
+    MoeSme2Slot *slot = f16lhs ? moe_sme2_f16lhs_slot(layer,cache_e,proj_idx) : moe_sme2_slot(layer,cache_e,proj_idx);
     int in = tsr->in, out = tsr->out;
     if (slot->ready != 1) {
         for (int m = 0; m < M; m++) moe_matvec_af(af, tsr, blob_e, x_group + (size_t)m*in, y_group + (size_t)m*out);
@@ -4820,6 +4832,11 @@ static void alloc_moe_buffers(void) {
     g_mcbs_dup_group   = malloc((size_t)MOE_BATCH_MAX*MOE_DENSE_IM*sizeof(float));
     g_mcbs_xn_group    = malloc((size_t)MOE_BATCH_MAX*MOE_HIDDEN*sizeof(float));
 
+    // Step 10 (Group H): SME2 slot cache, calloc -- .ready==0 ("not attempted") is load-bearing
+    // zero-init, unlike every other buffer in this function (which are all write-before-read).
+    g_moe_sme2        = calloc((size_t)MOE_MAXLAYERS * MOE_SME2_CACHE_SLOTS * 3, sizeof(MoeSme2Slot));
+    g_moe_sme2_f16lhs = calloc((size_t)MOE_MAXLAYERS * MOE_SME2_CACHE_SLOTS * 3, sizeof(MoeSme2Slot));
+
     if (!g_moe_yarn_freqs || !g_moe_topk_used ||
         !g_mla_q || !g_mla_kv_ap || !g_mla_kv_b || !g_mla_normed_kv || !g_mla_attn_out || !g_mla_o_out ||
         !g_mlar_q || !g_mlar_kv_ap || !g_mlar_kv_b || !g_mlar_normed_kv || !g_mlar_attn_out || !g_mlar_o_out ||
@@ -4843,7 +4860,8 @@ static void alloc_moe_buffers(void) {
         !g_mfb_x_group || !g_mfb_gate_group || !g_mfb_up_group || !g_mfb_down_group ||
         !g_mfb_sgate_group || !g_mfb_sup_group || !g_mfb_sdown_group || !g_groupsum ||
         !g_mfob_dgate_group || !g_mfob_dup_group || !g_mfob_xn_group ||
-        !g_mcbs_dgate_group || !g_mcbs_dup_group || !g_mcbs_xn_group) {
+        !g_mcbs_dgate_group || !g_mcbs_dup_group || !g_mcbs_xn_group ||
+        !g_moe_sme2 || !g_moe_sme2_f16lhs) {
         fprintf(stderr, "FATAL: alloc_moe_buffers: an allocation failed\n");
         exit(1);
     }
@@ -4892,6 +4910,13 @@ static int run_moe_verify_mode(int argc, char **argv) {
     if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
     if (MOE_DENSE_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_DENSE_IM;
     MOE_MAX_NG   = (MOE_MAX_IN + 63) / 64;
+    // Step 10 (Group H): SME2 cache reserved slots, derived from MOE_N_EXPERTS instead of the
+    // old literal 64/65/66 (see the declaration comment above g_moe_sme2 for why that collided
+    // with real routed-expert slots for any N_EXPERTS>=64).
+    MOE_SME2_SLOT_DENSE  = MOE_N_EXPERTS;
+    MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
+    MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2;
+    MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
     fprintf(stderr, "[moe cfg] NL=%d FIRST_DENSE=%d N_EXPERTS=%d TOP_K=%d MOE_IM=%d DENSE_IM=%d VOCAB=%d\n",
             MOE_NL,MOE_FIRST_DENSE_LAYERS,MOE_N_EXPERTS,MOE_TOP_K,MOE_IM_DIM,MOE_DENSE_IM,MOE_VOCAB);
     alloc_moe_buffers();   // Phase 4 sub-part 1, Step 2: must run before moe_init_yarn() below --
