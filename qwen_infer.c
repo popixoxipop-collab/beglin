@@ -2516,6 +2516,19 @@ static double MOE_ROPE_THETA, MOE_YARN_FACTOR, MOE_YARN_BETA_FAST, MOE_YARN_BETA
 static double g_moe_rope_mscale, g_moe_attn_scale;
 #define MOE_MAX_ROPE_PAIRS 64
 static double g_moe_yarn_freqs[MOE_MAX_ROPE_PAIRS];
+// Phase 4 sub-part 1 (de-hardcode the MoE path): derived dimensions, same pattern as
+// MOE_Q_HEAD_DIM above -- computed once in run_moe_verify_mode() right after the raw
+// MOE_* config loads, used both by moe_cfg_validate()'s shape cross-checks and by
+// alloc_moe_buffers() to size every heap buffer that used to be a DeepSeek-literal stack
+// array. See PLAN_general_purpose_loader.md's Phase 4 plan for the full derivation.
+static int MOE_QDIM;      // = MOE_N_HEADS * MOE_Q_HEAD_DIM        (q_proj->out)
+static int MOE_KVA_OUT;   // = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD   (kv_a_proj->out)
+static int MOE_KVB_OUT;   // = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD) (kv_b_proj->out)
+static int MOE_ATTN_OUT;  // = MOE_N_HEADS * MOE_V_HD              (o_proj->in)
+static int MOE_SH_IM;     // = MOE_IM_DIM * MOE_N_SHARED           (shared_gate->out)
+static int MOE_MAX_IN;    // = max(HIDDEN, IM_DIM, SH_IM, DENSE_IM)
+static int MOE_MAX_NG;    // = (MOE_MAX_IN + 63) / 64              (groupsum bound)
+static void alloc_moe_buffers(void);  // forward decl -- populated in later sub-steps, empty for now
 
 // YaRN table + interleaved RoPE, ported verbatim from Phase MoE-2a's mla_verify.c (the
 // angle=pos/freqs[i] DIVISION was that phase's decisive empirically-confirmed finding --
@@ -2851,6 +2864,22 @@ typedef struct {
 #define MOE_MAXLAYERS 32
 static MoeLayerTensors g_moe_lt[MOE_MAXLAYERS];
 
+// Phase 4 sub-part 1, Step 1: shape cross-checks. Every (out,in) pair here was confirmed by
+// reading the real call sites, not assumed -- moe_mla_attention() (q_proj/kv_a_proj/kv_b_proj/
+// o_proj) and moe_forward_token()'s dense/switch/shared branches (dense_*/switch_*/shared_*,
+// including the shared_gate/up "in==MOE_HIDDEN, out==MOE_IM_DIM*MOE_N_SHARED" fact confirmed by
+// moe_swiglu_inplace(sgate_v, sup_v, MOE_IM_DIM * MOE_N_SHARED)'s explicit size argument).
+// Turns "the arch_config_moe.txt sidecar lies about the weights" from a silent OOB write deep
+// inside a forward pass into a load-time FATAL, immediately, with the offending layer named.
+static void moe_check_af_shape(const MoeAFTensor *t, const char *name, int l, long exp_out, long exp_in) {
+    if (t->out != exp_out || t->in != exp_in) {
+        fprintf(stderr, "FATAL: moe shape mismatch layer %d %s: tensor has out=%ld in=%ld, "
+                        "but arch_config_moe.txt's dims imply out=%ld in=%ld\n",
+                l, name, t->out, t->in, exp_out, exp_in);
+        exit(1);
+    }
+}
+
 static void moe_resolve_layer_tensors(void) {
     char nm[256];
     for (int l = 0; l < MOE_NL; l++) {
@@ -2862,10 +2891,17 @@ static void moe_resolve_layer_tensors(void) {
         snprintf(nm,sizeof nm,"model.layers.%d.input_layernorm.weight",l);      t->input_ln = moe_find_f32(nm);
         snprintf(nm,sizeof nm,"model.layers.%d.post_attention_layernorm.weight",l); t->post_attn_ln = moe_find_f32(nm);
         snprintf(nm,sizeof nm,"model.layers.%d.self_attn.kv_a_layernorm.weight",l); t->kv_a_ln = moe_find_f32(nm);
+        moe_check_af_shape(t->q_proj,    "q_proj",    l, MOE_QDIM,    MOE_HIDDEN);
+        moe_check_af_shape(t->kv_a_proj, "kv_a_proj", l, MOE_KVA_OUT, MOE_HIDDEN);
+        moe_check_af_shape(t->kv_b_proj, "kv_b_proj", l, MOE_KVB_OUT, MOE_KV_LORA_RANK);
+        moe_check_af_shape(t->o_proj,    "o_proj",    l, MOE_HIDDEN,  MOE_ATTN_OUT);
         if (l < MOE_FIRST_DENSE_LAYERS) {
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.gate_proj",l); t->dense_gate = moe_find_af(nm);
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.up_proj",l);   t->dense_up   = moe_find_af(nm);
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.down_proj",l); t->dense_down = moe_find_af(nm);
+            moe_check_af_shape(t->dense_gate, "dense_gate", l, MOE_DENSE_IM, MOE_HIDDEN);
+            moe_check_af_shape(t->dense_up,   "dense_up",   l, MOE_DENSE_IM, MOE_HIDDEN);
+            moe_check_af_shape(t->dense_down, "dense_down", l, MOE_HIDDEN,   MOE_DENSE_IM);
         } else {
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.gate.weight",l); t->gate_w = moe_find_f32(nm);
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.gate_proj",l); t->shared_gate = moe_find_af(nm);
@@ -2874,6 +2910,12 @@ static void moe_resolve_layer_tensors(void) {
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.switch_mlp.gate_proj",l); t->switch_gate = moe_find_af(nm);
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.switch_mlp.up_proj",l);   t->switch_up   = moe_find_af(nm);
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.switch_mlp.down_proj",l); t->switch_down = moe_find_af(nm);
+            moe_check_af_shape(t->shared_gate, "shared_gate", l, MOE_SH_IM,  MOE_HIDDEN);
+            moe_check_af_shape(t->shared_up,   "shared_up",   l, MOE_SH_IM,  MOE_HIDDEN);
+            moe_check_af_shape(t->shared_down, "shared_down", l, MOE_HIDDEN, MOE_SH_IM);
+            moe_check_af_shape(t->switch_gate, "switch_gate", l, MOE_IM_DIM, MOE_HIDDEN);
+            moe_check_af_shape(t->switch_up,   "switch_up",   l, MOE_IM_DIM, MOE_HIDDEN);
+            moe_check_af_shape(t->switch_down, "switch_down", l, MOE_HIDDEN, MOE_IM_DIM);
         }
     }
 }
@@ -4470,6 +4512,68 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     return 1;
 }
 
+// Phase 4 sub-part 1, Step 1: catches a misconfigured/second-model arch_config_moe.txt at
+// load time, BEFORE any forward-pass function runs -- several of these conditions (esp.
+// 2*MOE_TOP_K+2<=MOE_BATCH_MAX_ITEMS) would otherwise silently overflow a stack array deep
+// inside moe_forward_token() on the very first token, exactly the failure class this whole
+// sub-part exists to close. Positivity + the two structural inequalities are checked for
+// every dim moe_cfg_get() loads; MOE_NL>MOE_MAXLAYERS is the pre-existing check, kept here
+// unchanged (not duplicated) for a single validation call site.
+static void moe_cfg_validate(void) {
+    if (MOE_HIDDEN <= 0 || MOE_N_HEADS <= 0 || MOE_KV_LORA_RANK <= 0 || MOE_QK_ROPE_HD <= 0 ||
+        MOE_QK_NOPE_HD <= 0 || MOE_V_HD <= 0 || MOE_NL <= 0 || MOE_N_EXPERTS <= 0 ||
+        MOE_N_SHARED < 0 || MOE_TOP_K <= 0 || MOE_IM_DIM <= 0 || MOE_DENSE_IM <= 0 || MOE_VOCAB <= 0) {
+        fprintf(stderr, "FATAL: moe_cfg_validate: arch_config_moe.txt has a non-positive "
+                        "dimension (HIDDEN=%d N_HEADS=%d KV_LORA_RANK=%d QK_ROPE_HD=%d "
+                        "QK_NOPE_HD=%d V_HD=%d NL=%d N_EXPERTS=%d N_SHARED=%d TOP_K=%d "
+                        "IM_DIM=%d DENSE_IM=%d VOCAB=%d)\n",
+                MOE_HIDDEN, MOE_N_HEADS, MOE_KV_LORA_RANK, MOE_QK_ROPE_HD, MOE_QK_NOPE_HD,
+                MOE_V_HD, MOE_NL, MOE_N_EXPERTS, MOE_N_SHARED, MOE_TOP_K, MOE_IM_DIM,
+                MOE_DENSE_IM, MOE_VOCAB);
+        exit(1);
+    }
+    if (MOE_TOP_K > MOE_N_EXPERTS) {
+        fprintf(stderr, "FATAL: moe_cfg_validate: TOP_K=%d > N_EXPERTS=%d\n", MOE_TOP_K, MOE_N_EXPERTS);
+        exit(1);
+    }
+    if (MOE_FIRST_DENSE_LAYERS < 0 || MOE_FIRST_DENSE_LAYERS > MOE_NL) {
+        fprintf(stderr, "FATAL: moe_cfg_validate: FIRST_DENSE_LAYERS=%d not in [0,NL=%d]\n",
+                MOE_FIRST_DENSE_LAYERS, MOE_NL);
+        exit(1);
+    }
+    if (MOE_QK_ROPE_HD % 2 != 0) {
+        fprintf(stderr, "FATAL: moe_cfg_validate: QK_ROPE_HEAD_DIM=%d is odd\n", MOE_QK_ROPE_HD);
+        exit(1);
+    }
+    if (MOE_QK_ROPE_HD / 2 > MOE_MAX_ROPE_PAIRS) {
+        fprintf(stderr, "FATAL: moe_cfg_validate: QK_ROPE_HEAD_DIM/2=%d > MOE_MAX_ROPE_PAIRS=%d "
+                        "(g_moe_yarn_freqs would overflow -- bump MOE_MAX_ROPE_PAIRS)\n",
+                MOE_QK_ROPE_HD / 2, MOE_MAX_ROPE_PAIRS);
+        exit(1);
+    }
+    if (2 * MOE_TOP_K + 2 > MOE_BATCH_MAX_ITEMS) {
+        fprintf(stderr, "FATAL: moe_cfg_validate: 2*TOP_K+2=%d > MOE_BATCH_MAX_ITEMS=%d "
+                        "(moe_forward_token()'s items[] would overflow -- bump MOE_BATCH_MAX_ITEMS)\n",
+                2 * MOE_TOP_K + 2, MOE_BATCH_MAX_ITEMS);
+        exit(1);
+    }
+}
+
+// Phase 4 sub-part 1: heap-allocates every buffer that used to be a DeepSeek-literal stack/
+// static array, sized from the MOE_* config globals (+ the derived dims above) instead of a
+// hardcoded literal. Mirrors alloc_arch_buffers()'s own role for the dense-model g_cfg.
+// Called once from run_moe_verify_mode(), right after the derived dims are computed and
+// before any of the 3 verify-mode branches (sequential/batch/cbatch) run -- single choke
+// point, all three pass through it. Empty in this step (Step 1); populated incrementally,
+// one array-family group at a time, in later steps -- see PLAN_general_purpose_loader.md's
+// Phase 4 plan for the full group-by-group breakdown and the rules each allocation follows
+// (flat float*, no VLAs, one allocation per existing declaration, calloc only where zero-init
+// is semantically load-bearing, never realloc after startup, aligned_alloc(64,...) for
+// pool-worker-written buffers).
+static void alloc_moe_buffers(void) {
+    // (intentionally empty -- Step 1 only adds the guards/derived-dims/call-site plumbing)
+}
+
 static int run_moe_verify_mode(int argc, char **argv) {
     (void)argc; (void)argv;   // unlike moe2b_verify.c, argv[1] here is the GQA MODE string
                               // (e.g. "greedy"), not a directory -- only QWEN_MOE_BASE selects
@@ -4500,9 +4604,24 @@ static int run_moe_verify_mode(int argc, char **argv) {
     MOE_YARN_ORIG_MAX_POS = moe_cfg_get(path,"YARN_ORIG_MAX_POS");
     moe_init_yarn();
     if (MOE_NL > MOE_MAXLAYERS) { fprintf(stderr,"FATAL: NL=%d > MOE_MAXLAYERS=%d\n",MOE_NL,MOE_MAXLAYERS); exit(1); }
+    moe_cfg_validate();
+    // Phase 4 sub-part 1: derived dimensions (see their declaration comment for the formulas
+    // and how each was confirmed against real call sites), computed once here so every later
+    // shape check / buffer allocation reads them instead of re-deriving inline.
+    MOE_QDIM     = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_KVA_OUT  = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
+    MOE_KVB_OUT  = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD);
+    MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
+    MOE_SH_IM    = MOE_IM_DIM * MOE_N_SHARED;
+    MOE_MAX_IN   = MOE_HIDDEN;
+    if (MOE_IM_DIM   > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
+    if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
+    if (MOE_DENSE_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_DENSE_IM;
+    MOE_MAX_NG   = (MOE_MAX_IN + 63) / 64;
     fprintf(stderr, "[moe cfg] NL=%d FIRST_DENSE=%d N_EXPERTS=%d TOP_K=%d MOE_IM=%d DENSE_IM=%d VOCAB=%d\n",
             MOE_NL,MOE_FIRST_DENSE_LAYERS,MOE_N_EXPERTS,MOE_TOP_K,MOE_IM_DIM,MOE_DENSE_IM,MOE_VOCAB);
     fprintf(stderr, "[moe yarn] rope_mscale=%.10f attn_scale=%.10f\n", g_moe_rope_mscale, g_moe_attn_scale);
+    alloc_moe_buffers();   // Phase 4 sub-part 1: empty for now (Step 1), populated incrementally
 
     // Phase MoE-3b: QWEN_MOE_BATCH=<B> branches to the batched+gather verification mode
     // instead of MoE-3a's single-sequence mode below -- checked here (config already loaded,
