@@ -2509,11 +2509,34 @@ static double moe_cfg_get(const char *path, const char *key) {
     fclose(f);
     fprintf(stderr, "FATAL: moe arch_config key '%s' not found in %s\n", key, path); exit(1);
 }
+// Phase 4 sub-part 2, Step 2.1: moe_cfg_get()'s sibling for keys a pre-sub-part-2
+// arch_config_moe.txt (e.g. DeepSeek-V2-Lite's real one on disk today) never had a chance to
+// set -- returns def instead of FATALing so every such key is additive/backward-compatible,
+// matching this whole sub-part's "never break the existing DeepSeek config file" constraint.
+static double moe_cfg_get_opt(const char *path, const char *key, double def) {
+    FILE *f = fopen(path, "r");
+    if (!f) { perror(path); exit(1); }
+    char line[128], k[64]; double v;
+    while (fgets(line, sizeof line, f)) {
+        if (sscanf(line, "%63[^=]=%lf", k, &v) == 2 && !strcmp(k, key)) { fclose(f); return v; }
+    }
+    fclose(f);
+    return def;
+}
 
 static int MOE_HIDDEN, MOE_N_HEADS, MOE_KV_LORA_RANK, MOE_QK_ROPE_HD, MOE_QK_NOPE_HD, MOE_V_HD, MOE_Q_HEAD_DIM;
 static int MOE_NL, MOE_FIRST_DENSE_LAYERS, MOE_N_EXPERTS, MOE_N_SHARED, MOE_TOP_K, MOE_IM_DIM, MOE_DENSE_IM, MOE_VOCAB;
 static double MOE_ROPE_THETA, MOE_YARN_FACTOR, MOE_YARN_BETA_FAST, MOE_YARN_BETA_SLOW, MOE_YARN_MSCALE, MOE_YARN_MSCALE_ALL_DIM, MOE_YARN_ORIG_MAX_POS;
 static double g_moe_rope_mscale, g_moe_attn_scale;
+// Phase 4 sub-part 2, Step 2.1: which attention family this model uses. MLA (DeepSeek's
+// low-rank joint KV-compression attention, the only kind this engine has ever run) is 0 so an
+// arch_config_moe.txt predating this field (read via moe_cfg_get_opt() with default 0 below)
+// keeps its exact prior behavior. GQA (grouped-query attention, needed for Mixtral/Qwen3-MoE,
+// sub-part 2 Steps 2.3-2.7) is 1. Read once in run_moe_verify_mode(), validated in
+// moe_cfg_validate(), never written anywhere else.
+#define MOE_ATTN_MLA 0
+#define MOE_ATTN_GQA 1
+static int MOE_ATTN_KIND;
 // Phase 4 sub-part 1, Step 2: heap, MOE_QK_ROPE_HD/2 doubles -- alloc_moe_buffers(), written by
 // moe_init_yarn() (called after alloc_moe_buffers() in run_moe_verify_mode() specifically so this
 // exists before that write), read by moe_rope_traditional_apply(). Exact sizing means there's no
@@ -4721,6 +4744,11 @@ static void moe_cfg_validate(void) {
                 2 * MOE_TOP_K + 2, MOE_BATCH_MAX_ITEMS);
         exit(1);
     }
+    if (MOE_ATTN_KIND != MOE_ATTN_MLA && MOE_ATTN_KIND != MOE_ATTN_GQA) {
+        fprintf(stderr, "FATAL: moe_cfg_validate: ATTN_KIND=%d not in {%d=mla, %d=gqa}\n",
+                MOE_ATTN_KIND, MOE_ATTN_MLA, MOE_ATTN_GQA);
+        exit(1);
+    }
 }
 
 // Phase 4 sub-part 1: heap-allocates every buffer that used to be a DeepSeek-literal stack/
@@ -4921,6 +4949,10 @@ static int run_moe_verify_mode(int argc, char **argv) {
     MOE_YARN_BETA_FAST = moe_cfg_get(path,"YARN_BETA_FAST"); MOE_YARN_BETA_SLOW = moe_cfg_get(path,"YARN_BETA_SLOW");
     MOE_YARN_MSCALE = moe_cfg_get(path,"YARN_MSCALE"); MOE_YARN_MSCALE_ALL_DIM = moe_cfg_get(path,"YARN_MSCALE_ALL_DIM");
     MOE_YARN_ORIG_MAX_POS = moe_cfg_get(path,"YARN_ORIG_MAX_POS");
+    // Phase 4 sub-part 2, Step 2.1: absent in every arch_config_moe.txt written before this
+    // step (DeepSeek-V2-Lite's real one included) -- defaults to MLA so those files keep
+    // their exact prior behavior with zero changes required.
+    MOE_ATTN_KIND = (int)moe_cfg_get_opt(path,"ATTN_KIND",(double)MOE_ATTN_MLA);
     if (MOE_NL > MOE_MAXLAYERS) { fprintf(stderr,"FATAL: NL=%d > MOE_MAXLAYERS=%d\n",MOE_NL,MOE_MAXLAYERS); exit(1); }
     moe_cfg_validate();
     // Phase 4 sub-part 1: derived dimensions (see their declaration comment for the formulas
@@ -4943,8 +4975,8 @@ static int run_moe_verify_mode(int argc, char **argv) {
     MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
     MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2;
     MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
-    fprintf(stderr, "[moe cfg] NL=%d FIRST_DENSE=%d N_EXPERTS=%d TOP_K=%d MOE_IM=%d DENSE_IM=%d VOCAB=%d\n",
-            MOE_NL,MOE_FIRST_DENSE_LAYERS,MOE_N_EXPERTS,MOE_TOP_K,MOE_IM_DIM,MOE_DENSE_IM,MOE_VOCAB);
+    fprintf(stderr, "[moe cfg] NL=%d FIRST_DENSE=%d N_EXPERTS=%d TOP_K=%d MOE_IM=%d DENSE_IM=%d VOCAB=%d ATTN_KIND=%d\n",
+            MOE_NL,MOE_FIRST_DENSE_LAYERS,MOE_N_EXPERTS,MOE_TOP_K,MOE_IM_DIM,MOE_DENSE_IM,MOE_VOCAB,MOE_ATTN_KIND);
     alloc_moe_buffers();   // Phase 4 sub-part 1, Step 2: must run before moe_init_yarn() below --
                             // it writes g_moe_yarn_freqs, which this call allocates.
     moe_init_yarn();
