@@ -2514,8 +2514,12 @@ static int MOE_HIDDEN, MOE_N_HEADS, MOE_KV_LORA_RANK, MOE_QK_ROPE_HD, MOE_QK_NOP
 static int MOE_NL, MOE_FIRST_DENSE_LAYERS, MOE_N_EXPERTS, MOE_N_SHARED, MOE_TOP_K, MOE_IM_DIM, MOE_DENSE_IM, MOE_VOCAB;
 static double MOE_ROPE_THETA, MOE_YARN_FACTOR, MOE_YARN_BETA_FAST, MOE_YARN_BETA_SLOW, MOE_YARN_MSCALE, MOE_YARN_MSCALE_ALL_DIM, MOE_YARN_ORIG_MAX_POS;
 static double g_moe_rope_mscale, g_moe_attn_scale;
-#define MOE_MAX_ROPE_PAIRS 64
-static double g_moe_yarn_freqs[MOE_MAX_ROPE_PAIRS];
+// Phase 4 sub-part 1, Step 2: heap, MOE_QK_ROPE_HD/2 doubles -- alloc_moe_buffers(), written by
+// moe_init_yarn() (called after alloc_moe_buffers() in run_moe_verify_mode() specifically so this
+// exists before that write), read by moe_rope_traditional_apply(). Exact sizing means there's no
+// fixed ceiling to violate, unlike the array this replaced -- moe_cfg_validate() no longer needs
+// (and no longer has) a MOE_MAX_ROPE_PAIRS check.
+static double *g_moe_yarn_freqs = NULL;
 // Phase 4 sub-part 1 (de-hardcode the MoE path): derived dimensions, same pattern as
 // MOE_Q_HEAD_DIM above -- computed once in run_moe_verify_mode() right after the raw
 // MOE_* config loads, used both by moe_cfg_validate()'s shape cross-checks and by
@@ -2529,6 +2533,15 @@ static int MOE_SH_IM;     // = MOE_IM_DIM * MOE_N_SHARED           (shared_gate-
 static int MOE_MAX_IN;    // = max(HIDDEN, IM_DIM, SH_IM, DENSE_IM)
 static int MOE_MAX_NG;    // = (MOE_MAX_IN + 63) / 64              (groupsum bound)
 static void alloc_moe_buffers(void);  // forward decl -- populated in later sub-steps, empty for now
+
+// Phase 4 sub-part 1, Step 2: heap, MOE_N_EXPERTS ints -- alloc_moe_buffers(). Replaces
+// moe_top_k_select()'s old `int used[128]` stack array (overflowed for N_EXPERTS>128). Safe as a
+// single shared buffer, not per-call/per-thread: moe_top_k_select()'s 4 call sites are all plain
+// sequential for-loops over a batch (moe_forward_token(), moe_cbatch_step_scalar_one(),
+// moe_ffn_batched(), moe_ffn_naive_batched()), never invoked concurrently from pool workers --
+// confirmed by reading each call site, not assumed. Re-zeroed at the top of every
+// moe_top_k_select() call, same as the old `= {0}` did per-call.
+static int *g_moe_topk_used = NULL;
 
 // YaRN table + interleaved RoPE, ported verbatim from Phase MoE-2a's mla_verify.c (the
 // angle=pos/freqs[i] DIVISION was that phase's decisive empirically-confirmed finding --
@@ -2845,11 +2858,11 @@ static void moe_swiglu_inplace(float *gate, const float *up, int n) {
 // Order-invariant repeated-max top-k -- correct regardless of MLX's own argpartition
 // tie-break order, since the weighted MoE sum doesn't care about selection order.
 static void moe_top_k_select(const float *scores, int n, int k, int *out_idx) {
-    int used[128] = {0};
+    memset(g_moe_topk_used, 0, (size_t)n * sizeof(int));
     for (int i = 0; i < k; i++) {
         int best = -1; float bestv = -1e30f;
-        for (int j = 0; j < n; j++) if (!used[j] && scores[j] > bestv) { bestv = scores[j]; best = j; }
-        used[best] = 1; out_idx[i] = best;
+        for (int j = 0; j < n; j++) if (!g_moe_topk_used[j] && scores[j] > bestv) { bestv = scores[j]; best = j; }
+        g_moe_topk_used[best] = 1; out_idx[i] = best;
     }
 }
 
@@ -4545,12 +4558,6 @@ static void moe_cfg_validate(void) {
         fprintf(stderr, "FATAL: moe_cfg_validate: QK_ROPE_HEAD_DIM=%d is odd\n", MOE_QK_ROPE_HD);
         exit(1);
     }
-    if (MOE_QK_ROPE_HD / 2 > MOE_MAX_ROPE_PAIRS) {
-        fprintf(stderr, "FATAL: moe_cfg_validate: QK_ROPE_HEAD_DIM/2=%d > MOE_MAX_ROPE_PAIRS=%d "
-                        "(g_moe_yarn_freqs would overflow -- bump MOE_MAX_ROPE_PAIRS)\n",
-                MOE_QK_ROPE_HD / 2, MOE_MAX_ROPE_PAIRS);
-        exit(1);
-    }
     if (2 * MOE_TOP_K + 2 > MOE_BATCH_MAX_ITEMS) {
         fprintf(stderr, "FATAL: moe_cfg_validate: 2*TOP_K+2=%d > MOE_BATCH_MAX_ITEMS=%d "
                         "(moe_forward_token()'s items[] would overflow -- bump MOE_BATCH_MAX_ITEMS)\n",
@@ -4564,14 +4571,23 @@ static void moe_cfg_validate(void) {
 // hardcoded literal. Mirrors alloc_arch_buffers()'s own role for the dense-model g_cfg.
 // Called once from run_moe_verify_mode(), right after the derived dims are computed and
 // before any of the 3 verify-mode branches (sequential/batch/cbatch) run -- single choke
-// point, all three pass through it. Empty in this step (Step 1); populated incrementally,
-// one array-family group at a time, in later steps -- see PLAN_general_purpose_loader.md's
-// Phase 4 plan for the full group-by-group breakdown and the rules each allocation follows
-// (flat float*, no VLAs, one allocation per existing declaration, calloc only where zero-init
-// is semantically load-bearing, never realloc after startup, aligned_alloc(64,...) for
-// pool-worker-written buffers).
+// point, all three pass through it. Populated incrementally, one array-family group at a
+// time -- see PLAN_general_purpose_loader.md's Phase 4 plan for the full group-by-group
+// breakdown and the rules each allocation follows (flat float*, no VLAs, one allocation per
+// existing declaration, calloc only where zero-init is semantically load-bearing, never
+// realloc after startup, aligned_alloc(64,...) for pool-worker-written buffers).
 static void alloc_moe_buffers(void) {
-    // (intentionally empty -- Step 1 only adds the guards/derived-dims/call-site plumbing)
+    // Step 2 (Group D partial): g_moe_yarn_freqs is malloc, not calloc -- moe_init_yarn()
+    // (called right after this function returns) writes every element before
+    // moe_rope_traditional_apply() ever reads one. g_moe_topk_used is malloc for the same
+    // reason -- moe_top_k_select() memsets it at the top of every call.
+    int rope_half = MOE_QK_ROPE_HD / 2;
+    g_moe_yarn_freqs = malloc((size_t)rope_half * sizeof(double));
+    g_moe_topk_used  = malloc((size_t)MOE_N_EXPERTS * sizeof(int));
+    if (!g_moe_yarn_freqs || !g_moe_topk_used) {
+        fprintf(stderr, "FATAL: alloc_moe_buffers: an allocation failed\n");
+        exit(1);
+    }
 }
 
 static int run_moe_verify_mode(int argc, char **argv) {
@@ -4602,7 +4618,6 @@ static int run_moe_verify_mode(int argc, char **argv) {
     MOE_YARN_BETA_FAST = moe_cfg_get(path,"YARN_BETA_FAST"); MOE_YARN_BETA_SLOW = moe_cfg_get(path,"YARN_BETA_SLOW");
     MOE_YARN_MSCALE = moe_cfg_get(path,"YARN_MSCALE"); MOE_YARN_MSCALE_ALL_DIM = moe_cfg_get(path,"YARN_MSCALE_ALL_DIM");
     MOE_YARN_ORIG_MAX_POS = moe_cfg_get(path,"YARN_ORIG_MAX_POS");
-    moe_init_yarn();
     if (MOE_NL > MOE_MAXLAYERS) { fprintf(stderr,"FATAL: NL=%d > MOE_MAXLAYERS=%d\n",MOE_NL,MOE_MAXLAYERS); exit(1); }
     moe_cfg_validate();
     // Phase 4 sub-part 1: derived dimensions (see their declaration comment for the formulas
@@ -4620,8 +4635,10 @@ static int run_moe_verify_mode(int argc, char **argv) {
     MOE_MAX_NG   = (MOE_MAX_IN + 63) / 64;
     fprintf(stderr, "[moe cfg] NL=%d FIRST_DENSE=%d N_EXPERTS=%d TOP_K=%d MOE_IM=%d DENSE_IM=%d VOCAB=%d\n",
             MOE_NL,MOE_FIRST_DENSE_LAYERS,MOE_N_EXPERTS,MOE_TOP_K,MOE_IM_DIM,MOE_DENSE_IM,MOE_VOCAB);
+    alloc_moe_buffers();   // Phase 4 sub-part 1, Step 2: must run before moe_init_yarn() below --
+                            // it writes g_moe_yarn_freqs, which this call allocates.
+    moe_init_yarn();
     fprintf(stderr, "[moe yarn] rope_mscale=%.10f attn_scale=%.10f\n", g_moe_rope_mscale, g_moe_attn_scale);
-    alloc_moe_buffers();   // Phase 4 sub-part 1: empty for now (Step 1), populated incrementally
 
     // Phase MoE-3b: QWEN_MOE_BATCH=<B> branches to the batched+gather verification mode
     // instead of MoE-3a's single-sequence mode below -- checked here (config already loaded,
