@@ -1166,3 +1166,47 @@ scalar correctness.
 the generic-scalar attention tier.
 
 Raw: `llama-tokenize`/`llama-simple` reference runs, `bob`, 2026-08-26.
+
+## General-purpose loader — Phase 3 sub-step 4: Qwen2.5-7B GGUF
+## validation (2-shard merge) (2026-08-26)
+
+Last model in the shape ladder, and the only one requiring the
+2-shard merge the plan flagged: `llama-gguf-split --merge` combined
+`qwen2.5-7b-instruct-q4_k_m-{00001,00002}-of-00002.gguf` into a single
+339-tensor file (`gguf_merge: ... merged from 2 split with 339
+tensors`) -- this engine's own `gguf_load.c` parser only ever reads a
+single file, by design (see its own Phase 1 scope note), so this merge
+step happens once, upstream of this engine's loader entirely, not
+inside it.
+
+`arch=qwen2, NL=28 NH=28 NKV=4 D=3584 HD=128 IM=18944 VOCAB=152064
+GROUP=7` -- `HD=128` combined with `GROUP=7` (Qwen2.5-0.5B had
+`GROUP=7` at `HD=64`), one more generic-scalar-tier combination
+covered. Loaded and ran with the merged file directly, zero code
+changes needed beyond Phase 3-1/3-2's fixes.
+
+vs `llama-simple`: **9 tokens byte-identical**
+(`26194, 13, 15920, 315, 279, 2701, 12239, 374, 830` =
+`"Tokyo. Which of the following statements is true"`) before
+diverging on a punctuation-token variant (`?\n` vs `? \n`-style
+tokenization noise, not a semantic difference) -- another long,
+strong match consistent with this model's larger size.
+
+**Phase 3-4 verdict**: PASS. Shard-merge step confirmed to be a
+`llama-gguf-split`-external operation this project doesn't need to
+implement itself; the loader's existing single-file assumption is
+correct and doesn't need changing.
+
+**Full shape-ladder summary (Phase 3-1 through 3-4, all 5 new
+models)**: every combination the plan named (`HD∈{64,128}`,
+`GROUP∈{3,4,7,8}`) now has at least one real-model validation run,
+all through the generic-scalar attention tier with zero kernel changes
+needed, one real diagnostic bug fixed (`Q5_0` dequant), and one real
+feature gap closed (`rope_freqs.weight` NTK scaling). Greedy-token
+exact-match run lengths against `llama.cpp` scaled with model size as
+expected (2 tokens for the two smallest models, 9-11 tokens for the
+two 3B-7B models) -- consistent evidence across 5 independent models,
+not a single lucky result.
+
+Raw: `llama-gguf-split --merge` output, `llama-tokenize`/
+`llama-simple` reference run, `bob`, 2026-08-26.
