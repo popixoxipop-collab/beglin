@@ -1129,3 +1129,40 @@ multiplicative hook rather than a new scaling mechanism.
 Raw: `qwen_infer.c` (this repo, `rope_freqs.weight` support),
 `ggml-cpu/ops.cpp` source inspection (`~/llamacpp_kleidi_build`),
 `llama-tokenize`/`llama-simple` reference run, `bob`, 2026-08-26.
+
+## General-purpose loader — Phase 3 sub-step 3: Qwen2.5-3B / Llama-3.2-3B
+## GGUF validation (2026-08-26)
+
+Lower-risk pair per the plan (same `HD=128` shape family as models
+already validated; both use only `F32`/`Q4_K`/`Q6_K`, no new quant
+type). Loaded and ran with **zero code changes** -- both are pure
+validation runs against the Phase 3-1/3-2 code as-is.
+
+**Qwen2.5-3B**: `arch=qwen2, NL=36 NH=16 NKV=2 D=2048 HD=128 IM=11008
+GROUP=8` -- `GROUP=8` is neither of `attn_neon.h`'s two existing fast
+paths (6 or 4), so this exercises the generic-scalar attention tier at
+`HD=128` for the first time (Phase 3-1 only exercised it at `HD=64`).
+vs `llama-simple`: first 2 tokens byte-identical (`26194, 13` =
+"Tokyo."), diverges after -- same double-quantization pattern as
+every prior model.
+
+**Llama-3.2-3B**: `arch=llama, NL=28 NH=24 NKV=8 D=3072 HD=128
+IM=8192 GROUP=3` -- `GROUP=3`, the third value the plan's
+`GROUP∈{3,7,8}` called out, also a new generic-scalar-tier exercise at
+`HD=128`. `rope_freqs.weight` found (64 values = `hd/2`), same
+mechanism as Llama-3.2-1B, applied without any new code. vs
+`llama-simple`: **11 tokens byte-identical**
+(`27286, 13, 11995, 9919, 527, 3967, 369, 872, 9257, 3925, 11` =
+`"Tokyo. Both cities are known for their rich history,"`) before
+diverging -- a much longer exact-match run than any smaller model in
+this shape ladder, consistent with a larger model's argmax decisions
+sitting further from quantization-noise decision boundaries. Strong
+positive signal for both the rope scaling fix and `GROUP=3` generic-
+scalar correctness.
+
+**Phase 3-3 verdict**: PASS, both models, zero new code. All three
+`GROUP` values the plan flagged (`3`, `7`, `8`) and both `HD` values
+(`64`, `128`) now have at least one real-model validation run through
+the generic-scalar attention tier.
+
+Raw: `llama-tokenize`/`llama-simple` reference runs, `bob`, 2026-08-26.
