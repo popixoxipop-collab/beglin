@@ -885,38 +885,103 @@ touching the fix further:
    real-sized scratch buffer -- **passed cleanly, all shapes, all M**.
 
 Neither isolated repro reproduced the crash the real engine hit
-immediately and consistently. The trigger is something about the real
-multi-layer call graph (196 already-repacked tensors alive at once,
-`q4pool`'s 10 background worker threads present and idle, or some
-other production-only state) that a small isolated harness doesn't
-share -- root-causing this precisely needs an interactive `lldb`
-session (this project's own established remedy for a SIGILL that
-survives non-interactive bisection), which is not available over this
-project's non-interactive SSH channel to `bob`.
+immediately and consistently -- a 3rd repro (full 197-tensor eager
+repack, then a 28-layer M=1 GEMM sweep in the real layer/shape order,
+`q4pool` active) *also* passed clean. First shipped, reverted the
+`matmul_t` change back to `kai_route(W, M)` (floor=16) pending
+interactive `lldb`, since non-interactive SSH `lldb` on this hardware
+refuses with "cannot get permission to debug processes" (confirmed
+again this sub-step, `-tt` forced-pty didn't help either -- this is a
+macOS Developer-Tools-TCC restriction tied to the session, not a pty
+issue).
 
-**Decision: reverted, not shipped.** `matmul_t` now calls the
-original, safe `kai_route(W, M)` (floor=`kai_sme2_min_m()`=16,
-unchanged behavior -- SME2 still never dispatches from this call site,
-exactly as before this sub-step started). Verified via `spec` mode
-byte-identical output vs the pre-change baseline (only the timing line
-differs, 33.54 vs 33.77 tok/s, ordinary run-to-run noise) and a GGUF-
-path smoke test (Qwen2.5-1.5B GGUF, `greedy` mode, clean run, coherent
-output). `kai_route_min()` is left in the codebase as tested, working
-infrastructure (its correctness was never in question -- the isolated
-repros prove that) for a future session to re-attempt safely once
-interactive `lldb` access is available.
+**Resolved same-day via a real interactive `lldb` session** (the user
+screen-shared into `bob` and ran `lldb` locally there, sidestepping the
+non-interactive-SSH restriction entirely). The crash backtrace landed
+on `rdvl x11, #0x1` inside `kai_sme2_gemm_f32`, called from
+`forward_tokens`. Full disassembly of the function showed no `smstart`
+anywhere in it, and -- critically -- the illegal `rdvl`+z-register block
+sits in a section that's only reached when `bias != NULL`: `cbz x20,
+<exit>` gates the whole block on the bias-pointer argument. This
+pinpointed the actual root cause in `sme2_kai.c`: `kai_sme2_gemm_f32`'s
+own bias-add loop --
+
+```c
+if (bias) {
+    for (int m = 0; m < M; m++) {
+        float *ym = y + (size_t)m * out;
+        for (int r = 0; r < out; r++) ym[r] += bias[r];
+    }
+}
+```
+
+-- is a plain scalar loop that Clang autovectorized into raw SVE
+instructions in this SME2-arch-flagged TU. This is the SAME
+caller-plain-violation class this exact file had already hit and fixed
+**twice before** (see `kai_sme2_repack_q4g64_f16lhs()`'s own
+`vectorize(disable)` pragma and D-f16lhs-1 note) -- missed here because
+this bias-add loop was added in a later phase, after those fixes
+landed. The SVE code runs *after* `kai_run_matmul_clamp_f32_...()`
+(the real kernel, hand-written `.S` assembly) has already returned --
+that kernel's own streaming-mode session is over by then, and Apple
+Silicon has no plain `FEAT_SVE` to fall back to, so any SVE instruction
+here is unconditionally illegal -- independent of `M`, shape, or
+anything else, firing on *any* call with `bias != NULL`.
+
+Confirmed root cause with a minimal, isolated repro (single tensor,
+`bias` non-NULL, M=1) -- **reproduced the SIGILL in 3 lines of setup**,
+finally succeeding where the 3 shape/volume/thread-focused repros
+above had all failed to, because none of them ever passed a non-NULL
+bias.
+
+**A second, previously-unnoticed instance of the same bug**:
+`kai_sme2_gemm_f16lhs()` (the f16p-LHS sibling, used by the MoE SME2
+path, D-f16lhs-3's shipped default) has the byte-identical unguarded
+bias-add loop. This is a **latent bug in code that was already
+shipped** -- `matmul_sdot`'s own `kai_sme2_gemm_f32` calls pass `bias`
+too (Q/K/V always have bias, `QKV_BIAS=1`), and this exact crash could
+already have fired there. It never has, purely because every
+production `B` value used in practice (`matmul_sdot`'s `kai_route()`
+floor is 16, and real serve/cbatch batch sizes are 16/32/48/64) happens
+to reach this code path safely by luck, not by any actual protection --
+the bug fires unconditionally regardless of `M`.
+
+**Fix**: `#pragma clang loop vectorize(disable) interleave(disable)`
+on the *inner* loop (an earlier attempt at this fix put the pragma on
+the *outer* `m` loop, where Clang's per-loop pragma silently does
+nothing to the actually-vectorized inner loop -- caught by re-checking
+`otool -tV` after the first fix attempt still showed the SVE
+instructions unchanged). Applied to both `kai_sme2_gemm_f32` and
+`kai_sme2_gemm_f16lhs`. Verified via `otool -tV`: **0** SVE/z-register
+instructions in either function's compiled object (previously
+nonzero). Re-ran the minimal bias repro across M=1/8/15/16/17/32 --
+**all pass**.
+
+**`matmul_t`'s floor=1 change re-applied and verified for real**: with
+`sme2_kai.c` fixed, rebuilt the full engine and re-ran `spec` mode
+against production Qwen1.5B weights, `QWEN_SME2=1`. **No crash.** Token
+output byte-identical to the pre-change baseline (same 64-token
+sequence, exactly) across 3 repeated runs. Throughput:
+**33.54 -> ~100 tok/s (2.98x)**, consistent across 3 runs (100.89,
+99.99, 99.88 tok/s) -- `matmul_t`'s SME2 dispatch really was dead code
+before this fix, and turning it on delivers the full measured gain, not
+a partial one. `matmul_sdot`'s own serve-mode path (`B=16`, the
+already-shipped SME2 route, sharing the now-fixed `kai_sme2_gemm_f32`)
+re-verified separately: `identical 1` in the engine's own built-in
+parity check, confirming the vectorization-disable fix changed
+*codegen only*, not the arithmetic.
 
 **Net outcome for the actual plan question** ("wire the M-threshold
-table into `kai_route`, decide with a measured number"): the measured
-number says `kai_sme2_min_m()=16` is empirically the right floor for
-`matmul_sdot`'s real NEON comparator and should NOT change. A real,
-measured, second optimization opportunity exists for `matmul_t`'s call
-site specifically (different, weaker NEON comparator, MAXSPEC caps it
-at M<=15 so the current floor makes it permanently dead code) but is
-NOT safe to ship yet -- blocked on a real crash that needs interactive
-debugging to root-cause, not on missing data.
+table into `kai_route`, decide with a measured number"): `matmul_sdot`
+keeps `kai_sme2_min_m()=16` (measured-correct, unchanged).
+`matmul_t` now uses `kai_route_min(W, M, 1)` for real -- the SME2
+dispatch this call site was structurally denied since Phase 4 is live,
+delivering a measured 2.98x spec-decode throughput gain, with the
+actual blocker (an unrelated, now-fixed, and previously-latent SVE
+autovectorization bug affecting BOTH SME2 GEMM variants) fully
+root-caused and closed rather than worked around.
 
-Raw: `tools/kai_route_threshold_bench.c` (this repo), crash report
-`qwen_infer_p3-2026-08-26-144616.ips` (bob,
-`~/Library/Logs/DiagnosticReports/`), both isolated repros, `bob`,
-2026-08-26.
+Raw: `tools/kai_route_threshold_bench.c`, `sme2_kai.c` (this repo,
+`D4`), crash report `qwen_infer_p3-2026-08-26-144616.ips` (bob,
+`~/Library/Logs/DiagnosticReports/`), interactive `lldb` disassembly +
+backtrace (bob, screen-shared session), all repros, `bob`, 2026-08-26.

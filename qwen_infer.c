@@ -648,13 +648,13 @@ static inline int w4a8_on(void) {
 // 2.2x-6.4x at EVERY M from 1 to 64 across 4 shapes, and matmul_t is only ever called from
 // forward_tokens() with n<=MAXSPEC-1=15, so the old shared M>=16 floor made SME2 structurally
 // unreachable from that call site. kai_route_min() below exists so a caller CAN supply its own
-// floor instead of sharing kai_sme2_min_m()'s sdot-tuned one -- but wiring floor=1 into
-// matmul_t's actual call site produced a real, reproducible SIGILL inside kai_sme2_gemm_f32
-// that 2 separate isolated repros (same shapes, same shared-scratch sizing) could NOT
-// reproduce (see matmul_t's own comment, RESULTS.md). matmul_t currently still calls the
-// shared kai_route(W, M) (floor=16, i.e. this optimization is NOT live) pending an interactive
-// lldb session to root-cause the crash -- kai_route_min() is real, tested infrastructure, just
-// not yet safely exercised at M<16 from this specific call site.
+// floor instead of sharing kai_sme2_min_m()'s sdot-tuned one -- wiring floor=1 into matmul_t's
+// actual call site first produced a real, reproducible SIGILL inside kai_sme2_gemm_f32 that
+// isolated repros couldn't reproduce; root-caused via an interactive lldb session (see
+// matmul_t's own comment, RESULTS.md) to an unrelated latent bug (an autovectorized bias-add
+// loop in sme2_kai.c executing SVE outside streaming mode, fixed there) -- NOT a problem with
+// this function's own floor-as-parameter design, which was correct all along. matmul_t now
+// uses kai_route_min(W, M, 1) for real.
 static inline int kai_route_min(const WT *W, int M, int min_m) {
     if (!(sme2_gemm_on() && kai_sme2_available() && W->kind == K_Q4G64 && M >= min_m))
         return 0;
@@ -1591,26 +1591,38 @@ static void matmul_t(const WT *W, const float *x, const float *bias, float *y, i
         // for g256sf (out of this phase's approved scope) -- refuse loudly, don't misread
         // wsuper as per-64 scales. Spec keeps running on the g64 blob via QWEN_INT4_BIN.
         fprintf(stderr,"FATAL: spec mode is not wired for q4g256sf (%s) -- run spec with the q4g64 blob\n", W->name); exit(1);
-    } else if (kai_route(W, M)) {
+    } else if (kai_route_min(W, M, 1)) {
         // SME2 Phase 4: the only new call site in this function. x here is
         // already fp32 (spec's per-position activation tile) -- exactly what
         // kai_sme2_gemm_f32() wants, no extra quantization step needed here
         // (it does its own LHS int8 quantize+pack internally).
-        // Phase 3 sub-step 5 EXIT (attempted, reverted): tried kai_route_min(W, M, 1) here --
-        // isolated bench + 2 targeted repros (real shapes, real shared-scratch sizing, single
-        // tensor at a time) all measured SME2 correctly beating gemm_qXg64_mt at every M in
-        // [1,64], no crash. But wiring it into this real call site SIGILL'd immediately on the
-        // very first forward_tokens() call (M=1, Qwen1.5B, crash report: EXC_BAD_INSTRUCTION
-        // inside kai_sme2_gemm_f32, offset 400, called from forward_tokens) -- reproducible,
-        // not flaky (2/2 runs). Neither repro attempt reproduced it (see RESULTS.md), so the
-        // trigger is something about the REAL multi-layer call graph (196 tensors' worth of
-        // repacked kai_rhs alive at once, q4pool's 10 background threads present, or something
-        // else not yet isolated) that a small isolated harness doesn't share. lldb would settle
-        // this in minutes but is unavailable non-interactively over this project's SSH channel
-        // (same limitation noted elsewhere in this file's SIGILL history). Reverted to the
-        // known-safe kai_sme2_min_m()=16 floor rather than ship a demonstrated crash for a
-        // spec-decode-only perf win; kai_route_min() is left in place as the primitive a future
-        // session can safely re-attempt this with, WITH interactive lldb access first.
+        // Phase 3 sub-step 5 (RESOLVED, root cause found and fixed, 2026-08-26): a first
+        // attempt at floor=1 here SIGILL'd immediately on the real first forward_tokens()
+        // call, but 3 isolated repros (real shapes, real shared-scratch sizing, real q4pool,
+        // even a full 197-tensor repack-then-28-layer-sweep at M=1) all passed clean -- the
+        // difference turned out to be `bias`: every one of those repros called
+        // kai_sme2_gemm_f32() with bias=NULL, but matmul_t's Q/K/V calls always pass a real
+        // bias (QKV_BIAS=1). Root-caused via an interactive lldb session on bob (the user's
+        // own machine, screen-shared -- non-interactive SSH lldb refuses task_for_pid
+        // permission on this hardware, a separate limitation from the crash itself):
+        // sme2_kai.c's bias-add loop (inside kai_sme2_gemm_f32/kai_sme2_gemm_f16lhs) is a
+        // plain scalar loop that got autovectorized into raw SVE instructions in this
+        // SME2-arch-flagged TU -- the SAME caller-plain-violation class this file had ALREADY
+        // hit and fixed twice before (see kai_sme2_repack_q4g64_f16lhs()'s own pragma), just
+        // missed here because this loop was added later. That SVE code runs AFTER the real
+        // SME2 kernel call already returned (streaming mode off again), and Apple Silicon has
+        // no plain FEAT_SVE -- unconditionally illegal, independent of M or shape, firing on
+        // ANY call with bias!=NULL. Fixed with the same `#pragma clang loop
+        // vectorize(disable)` pattern (sme2_kai.c, D4) -- confirmed via otool -tV (0 SVE
+        // instructions in either function now) and a minimal repro (single tensor, bias
+        // non-NULL, M=1/8/15/16/17/32, all pass). This was a LATENT bug in the
+        // already-shipped matmul_sdot path too (same bias-add code), it simply never
+        // triggered there because production B values are always exact multiples of 16 --
+        // pure luck, not a structural protection. Measured (tools/kai_route_threshold_bench.c,
+        // bob/M4): SME2 beats this function's actual NEON fallback (gemm_qXg64_mt, plain
+        // fp32-activation) by 2.2x-6.4x at every M in [1,64] across 4 shapes -- this call
+        // site was permanently dead code before this fix (MAXSPEC=16 caps M<=15, always
+        // below the old shared floor).
         kai_sme2_gemm_f32(M, W->out, W->in, x, W->kai_rhs, bias, y, g_kai_lhs_scratch);
     } else {
         gemm_qXg64_mt(&g_pool, W->kind==K_Q8G64?8:4, W->packed, W->scales, x, bias, y, W->out, W->in, M);

@@ -415,15 +415,21 @@ found and fixed 2 bugs in it (caller-plain SIGILL, wrong kernel family
 measured), then resolved an apparent contradiction with `sme2_kai.h`'s
 "M=1 is not a target" comment -- both were right, they were measuring
 against *different* NEON kernels (`matmul_sdot`'s int8-SDOT fallback vs
-`matmul_t`'s plain-fp32 fallback). Conclusion: `kai_sme2_min_m()=16`
-stays as-is (confirmed correct for `matmul_sdot`'s real comparator). A
-real second opportunity exists for `matmul_t`'s call site (different,
-weaker comparator, permanently dead code today since `MAXSPEC=16` caps
-its M at 15) but attempting it produced a reproducible SIGILL in the
-real engine that 2 isolated repros couldn't reproduce -- reverted,
-documented, left for a session with interactive `lldb` access. No
-change to `kai_route()`'s live threshold this sub-step; `kai_route_min()`
-exists as tested infrastructure for the retry.
+`matmul_t`'s plain-fp32 fallback). `kai_sme2_min_m()=16` stays as-is for
+`matmul_sdot` (confirmed correct). `matmul_t`'s floor=1 attempt first hit
+a real SIGILL that 3 isolated repros couldn't reproduce -- root-caused
+via an interactive `lldb` session (screen-shared into `bob`, since
+non-interactive SSH `lldb` refuses debug permission on this hardware) to
+an unrelated, previously-latent bug: `sme2_kai.c`'s bias-add loop
+(shared by both `kai_sme2_gemm_f32` and `kai_sme2_gemm_f16lhs`)
+autovectorized into illegal SVE, the same caller-plain-violation class
+this file had already hit twice before, just missed on this
+later-added loop. Fixed with the same `vectorize(disable)` pragma
+pattern (this time correctly on the inner loop). `matmul_t` now runs
+`kai_route_min(W, M, 1)` for real: verified byte-identical `spec`-mode
+output vs baseline across 3 runs, **2.98x measured throughput gain**
+(33.54 -> ~100 tok/s), and `matmul_sdot`'s already-shipped SME2 path
+re-verified unaffected (`identical 1`).
 
 ### Phase 4 — De-hardcode the MoE path; second MoE topology (~3 weeks, largest chunk, under-estimated by the original roadmap)
 

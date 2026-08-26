@@ -172,9 +172,40 @@ void kai_sme2_gemm_f32(int M, int out, int in, const float *x, const void *rhs_p
     // The kernel itself has no bias parameter (verified against its .h and
     // kai_test_correct2.c's own usage) -- added here, same as every reference
     // harness in this project's KleidiAI work does it.
+    //
+    // D4 (2026-08-26, found via a real production SIGILL, not a code review):
+    //   WHY: this plain scalar bias-add loop, in this SME2-arch-flagged TU, gets
+    //     autovectorized into raw SVE instructions (rdvl + z-register ldr/fadd/str) --
+    //     the SAME root cause already fixed twice elsewhere in this file (see the
+    //     kai_sme2_repack_q4g64_f16lhs() pragma above and its own D-f16lhs-1 note), but
+    //     missed here because this loop was added later, after those fixes landed. This
+    //     code runs AFTER kai_run_matmul_clamp_f32_...() has already returned -- that
+    //     kernel's own .S assembly enters+exits SME2 streaming mode internally, so by
+    //     the time this loop runs, streaming mode is OFF again, and Apple Silicon has no
+    //     plain FEAT_SVE to fall back to -- any SVE instruction here is unconditionally
+    //     illegal. Confirmed root cause via lldb backtrace (real crash, bob/M4) landing
+    //     exactly on `rdvl` inside this function, then confirmed by disassembly showing
+    //     no smstart anywhere in this function, then confirmed with a minimal repro
+    //     (single tensor, bias!=NULL, M=1) that reproduces the SIGILL in isolation.
+    //   COST: negligible -- this loop is O(M*out) scalar adds, a tiny fraction of the
+    //     GEMM's own cost; disabling vectorization here doesn't measurably change
+    //     matmul_t/matmul_sdot's SME2 wall-clock.
+    //   EXIT: safe to drop this pragma once/if this bias-add is rewritten to run INSIDE
+    //     the kernel's own streaming-mode session instead of after it returns (would
+    //     need a KleidiAI kernel variant with native bias support, or manual
+    //     smstart/smstop around this loop) -- verify via otool -tV | grep -c 'rdvl|ldr z'
+    //     on this function's .o before removing.
     if (bias) {
+        // D4 correction: the pragma must sit on the INNER loop (the one actually large
+        // enough to vectorize -- `out` is typically 256-151936, `M` is often 1) -- an
+        // earlier version of this fix put it on the outer `m` loop by mistake, which
+        // Clang's `#pragma clang loop` only ever applies to the loop it immediately
+        // precedes, so it silently did nothing and the SVE codegen was unchanged.
+        // Verified via otool -tV after moving it here: zero rdvl/z-register instructions
+        // in this function's compiled object.
         for (int m = 0; m < M; m++) {
             float *ym = y + (size_t)m * out;
+            #pragma clang loop vectorize(disable) interleave(disable)
             for (int r = 0; r < out; r++) ym[r] += bias[r];
         }
     }
@@ -301,8 +332,11 @@ void kai_sme2_gemm_f16lhs(int M, int out, int in, const float *x, const void *rh
         (size_t)out * sizeof(float), sizeof(float), -FLT_MAX, FLT_MAX);
 
     if (bias) {
+        // D4 (same root cause + same fix as kai_sme2_gemm_f32's identical bias-add loop
+        // above -- see that comment for the full story): pragma on the INNER loop only.
         for (int m = 0; m < M; m++) {
             float *ym = y + (size_t)m * out;
+            #pragma clang loop vectorize(disable) interleave(disable)
             for (int r = 0; r < out; r++) ym[r] += bias[r];
         }
     }
