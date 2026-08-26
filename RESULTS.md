@@ -1051,3 +1051,81 @@ exercised by a real model.
 
 Raw: `gguf_quants.c` (this repo, Q5_0 port), `llama-tokenize`/
 `llama-simple` reference run, `bob`, 2026-08-26.
+
+## General-purpose loader — Phase 3 sub-step 2: Llama-3.2-1B-Instruct
+## GGUF validation + Llama-3 NTK rope scaling (2026-08-26)
+
+`arch=llama, NL=16 NH=32 NKV=8 D=2048 HD=64 IM=8192 VOCAB=128256
+THETA=500000.0 GROUP=4`. Second `HD=64` model (different `GROUP` from
+Qwen2.5-0.5B's 7), and the first Llama-family model whose real
+training config uses NTK-by-parts RoPE scaling for its 128K trained
+context.
+
+**Metadata research resolved by inspecting the real file, not
+guessing.** A prior session deferred this: neither `gguf-py`'s
+`Keys.Rope` class nor llama.cpp's `LLAMA_ROPE_SCALING_TYPES` enum
+(`{none, linear, yarn, longrope}`) has a dedicated "llama3" entry or
+`low_freq_factor`/`high_freq_factor` keys. Dumping this GGUF's actual
+KV metadata with `gguf-py` (`GGUFReader`) settled it: only
+`llama.rope.freq_base=500000.0` and `llama.rope.dimension_count=64` --
+no scaling-type/factor keys at all. But a `rope_freqs.weight` tensor
+(shape `[32]` = `hd/2`) exists in the tensor table. Confirmed via
+`ggml-cpu/ops.cpp`'s `ggml_rope_cache_init` (the ground-truth CPU rope
+kernel) exactly how it's used: `theta/ff` where
+`ff = freq_factors[i0/2]`, with `freq_scale=1.0`/`ext_factor=0` for
+this scaling type -- i.e. llama.cpp doesn't compute NTK-by-parts at
+runtime from raw HF parameters at all for a GGUF-converted model; the
+converter precomputes the per-frequency-pair correction ONCE and ships
+it as this small weight tensor. No YaRN ramp/interpolation math
+applies here (that machinery exists in the same function but is gated
+off by `ext_factor=0`).
+
+**This maps directly onto an already-existing, already-verified
+mechanism**: this engine's legacy loader already has `g_rope_scale[]`
+(`hd/2` floats, multiplied into `inv` in `rope_head`/`rope_apply`/
+`rope_precompute`), populated from a `rope_scaling.txt` sidecar's raw
+HF parameters via `rope_llama3_scale()`. `theta/ff` is exactly
+`inv * (1/ff[i])`, so the fix was additive, not a new mechanism: in
+`load_gguf_arch()`, look up `rope_freqs.weight` via the loader's
+existing `gguf_find_tensor`/`gguf_tensor_data`/`gguf_dequant_row`
+primitives (already used for every other GGUF tensor read), and in
+`main()`, after `init_rope_scale()` runs (which leaves `g_rope_scale`
+all-1.0 for the GGUF path, since no sidecar file exists), overwrite it
+with `1/ff[i]` when the tensor was found. Absent for every model
+without this tensor (Qwen2, and any Llama checkpoint converted without
+it) -- `g_rope_freqs_gguf` stays `NULL`, override is a no-op, zero
+behavior change for every previously-validated model.
+
+**Correctness, same R4-oracle-style check as every other GGUF model**:
+tokenized `"The capital of France is Paris, and the capital of Japan
+is"` with this GGUF's own vocab (`llama-tokenize`, confirmed
+byte-identical prompt IDs), ran greedy both ways. `llama-simple`:
+`"...Tokyo. Paris is the largest city in France, while Tokyo is the
+largest city"`. This engine: first 2 generated tokens byte-identical
+(`27286, 13` = `"Tokyo."`) -- gets the actually-hard part (the correct
+city name, which the RoPE-position-dependent attention pattern has to
+get right across a 14-token prompt) exactly right, then diverges the
+same way every other GGUF validation in this project has (Mistral-7B,
+Qwen2.5-1.5B, Qwen2.5-0.5B): double-quantization noise at a close
+argmax boundary, not a correctness bug. Output stayed fully coherent
+English throughout (not the degenerate repeat-loop pattern the actual
+RoPE *pairing*-convention bug produced in Phase 2 sub-step 3) --
+positive signal that the NTK *scaling* fix is separately correct from
+the NEOX/NORM *pairing* fix that same file's `g_rope_norm` already
+handles.
+
+Startup dispatch tiers: `112 SME2-eligible, 0 NEON-q4g64, 0
+NEON-q8g64, 34 BLAS-f32`. `QKV_BIAS=0` (Llama family, as expected --
+contrast Qwen2.5-0.5B's `QKV_BIAS=1`), zero-filled correctly by
+existing logic.
+
+**Phase 3-2 verdict**: PASS. One real feature gap found and closed
+(GGUF-sourced Llama-3 NTK scaling was simply unimplemented for the
+GGUF loader before this), derived from reading the actual file and the
+actual `ggml` kernel source rather than guessing a formula, and
+implemented as a 2-line reuse of an existing, already-validated
+multiplicative hook rather than a new scaling mechanism.
+
+Raw: `qwen_infer.c` (this repo, `rope_freqs.weight` support),
+`ggml-cpu/ops.cpp` source inspection (`~/llamacpp_kleidi_build`),
+`llama-tokenize`/`llama-simple` reference run, `bob`, 2026-08-26.

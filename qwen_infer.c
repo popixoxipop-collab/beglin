@@ -731,6 +731,10 @@ static void swiglu(const float *g, const float *u, float *out, int n) {
 static int g_rope_norm = 0;  // 0 = NEOX (split-half, existing), 1 = NORM (interleaved-pair)
 
 static float *g_rope_scale;
+// Set by load_gguf_arch() if the GGUF file has a rope_freqs.weight tensor (Llama-3 NTK
+// scaling, precomputed by llama.cpp's own converter -- see that call site's own comment for
+// the full derivation). NULL for every other model/loader path.
+static float *g_rope_freqs_gguf = NULL;
 static void init_rope_scale(void) {
     int half = g_cfg.hd/2;
     for (int i=0;i<half;i++)
@@ -4677,6 +4681,34 @@ static void load_gguf_arch(const char *path) {
     g_cfg.qg  = g_cfg.qd  / 64;
     if (g_cfg.nl <= 0 || g_cfg.maxseq <= 0) { fprintf(stderr,"FATAL: gguf NL=%d MAXSEQ=%d must be positive\n",g_cfg.nl,g_cfg.maxseq); exit(1); }
 
+    // Phase 3 sub-step 2 (Llama-3.2-1B/3B validation): Llama-3's NTK-by-parts RoPE scaling has
+    // NO dedicated KV keys in GGUF (checked directly: gguf-py's Keys.Rope class and llama.cpp's
+    // llama-model.cpp rope-scaling-type enum {none,linear,yarn,longrope} -- no "llama3" entry,
+    // no low_freq_factor/high_freq_factor keys anywhere in a real Llama-3.2 GGUF's KV metadata,
+    // confirmed by dumping it with gguf-py, not assumed). llama.cpp instead PRECOMPUTES the
+    // correction once at conversion time and ships it as a small `rope_freqs.weight` tensor,
+    // shape [hd/2] -- one multiplier per rotary frequency pair (confirmed via
+    // ggml-cpu/ops.cpp's ggml_rope_cache_init: `theta/ff` where `ff = freq_factors[i0/2]`, with
+    // freq_scale=1.0 and ext_factor=0 for this rope-scaling-type, so llama3's ENTIRE scaling
+    // effect is this one per-pair division -- no YaRN ramp/interpolation math applies). This
+    // maps directly onto g_rope_scale[]'s existing multiplicative slot (`inv *= g_rope_scale[i]`
+    // in rope_head/rope_apply/rope_precompute, already used by the legacy loader's
+    // rope_llama3_scale() path) as `g_rope_scale[i] = 1/ff[i]` -- reusing an already-verified
+    // mechanism instead of adding a second one. Absent for Qwen2/models without this scaling
+    // (this tensor simply doesn't exist in their GGUF) -- g_rope_freqs_gguf stays NULL, and
+    // main()'s override step below is a no-op, identical to before this existed.
+    const GgufTensorInfo *rf = gguf_find_tensor(g_gguf, "rope_freqs.weight");
+    if (rf) {
+        int half = g_cfg.hd / 2;
+        if ((int64_t)half != rf->n_elements) {
+            fprintf(stderr, "FATAL: gguf rope_freqs.weight has %lld elements, expected hd/2=%d\n",
+                    (long long)rf->n_elements, half); exit(1);
+        }
+        g_rope_freqs_gguf = malloc(sizeof(float) * half);
+        gguf_dequant_row(rf->type, gguf_tensor_data(g_gguf, rf), g_rope_freqs_gguf, half);
+        fprintf(stderr, "[engine] gguf rope_freqs.weight found (%d values) -- Llama-3 NTK scaling active\n", half);
+    }
+
     fprintf(stderr,"[engine] gguf arch config (%s, architecture=%s): NL=%d NH=%d NKV=%d D=%d HD=%d IM=%d VOCAB=%d THETA=%.1f EPS=%g MAXSEQ=%d QKV_BIAS=%d GROUP=%d\n",
         path, arch, g_cfg.nl,g_cfg.nh,g_cfg.nkv,g_cfg.d,g_cfg.hd,g_cfg.im,g_cfg.vocab,g_cfg.theta,g_cfg.eps,g_cfg.maxseq,g_cfg.qkv_bias,g_cfg.group);
 }
@@ -4937,6 +4969,13 @@ int main(int argc, char **argv) {
     load_rope_scale_cfg(base);// M43: needs nothing but base; no ordering dependency on g_cfg
     alloc_arch_buffers();     // D2: heap-allocate every buffer g_cfg.* now sizes
     init_rope_scale();        // M43: needs g_cfg.hd/theta (loaded) + g_rope_cfg (loaded) + g_rope_scale (just malloc'd)
+    // Phase 3 sub-step 2: GGUF-sourced Llama-3 NTK scaling overrides init_rope_scale()'s
+    // (necessarily disabled, since no rope_scaling.txt sidecar exists for a bare GGUF file)
+    // output -- see load_gguf_arch()'s own comment for the ff[i] -> 1/ff[i] derivation. No-op
+    // (g_rope_freqs_gguf stays NULL) for every model without a rope_freqs.weight tensor.
+    if (g_rope_freqs_gguf) {
+        for (int i = 0; i < g_cfg.hd/2; i++) g_rope_scale[i] = 1.0f / g_rope_freqs_gguf[i];
+    }
     // D2 bug fix 2: KV4_NB = g_cfg.maxseq/KV4_W silently floored with no divisibility guard --
     // exact only by luck for MAXSEQ=2048 (2048/64=32 exactly). A future MAXSEQ not a multiple
     // of KV4_W would under-allocate the int4-KV per-block scale/zero arrays (g_k4s/g_k4z/
