@@ -1244,3 +1244,109 @@ scheduled; the generic-scalar attention path stays as the permanent
 
 Raw: `QWEN_PROF=1` `bench` mode output, both `HD=64` models, `bob`,
 2026-08-26.
+
+## Phase 4 sub-part 1: de-hardcode the MoE path -- config-driven heap storage (2026-08-26)
+
+### Problem
+
+The MoE subsystem (`qwen_infer.c`, DeepSeek-V2-Lite MLA+MoE, gated behind
+`weights_moe/arch_config_moe.txt`) already loaded per-model config dynamically
+into `MOE_*` globals, but every forward-pass function used literal-sized C
+arrays (`float q[16*192]`, `float x[2048]`, `float logits_out[][102400]`, ...)
+that happened to match DeepSeek-V2-Lite's own dimensions. Loading a second MoE
+model with different dimensions would silently corrupt memory -- no crash, no
+warning, just wrong numbers or a stack smash (`groupsum[256]`'s own comment in
+the pre-existing code documents exactly this having happened once already).
+
+### What changed
+
+Every DeepSeek-dimensioned stack/static array in the MoE section was converted
+to config-driven heap allocation via a new `alloc_moe_buffers()` (mirroring the
+existing `alloc_arch_buffers()` convention on the dense-model side), executed
+across 11 incremental steps (Groups A-H from the approved plan), each gated by
+a byte-identical or normalized-stderr-identical regression check against an
+11-scenario golden matrix (G1-G11, each exercising a distinct `QWEN_MOE_*`
+env-var-driven code path) on real bob (M4) hardware with the real 9.8GB
+DeepSeek-V2-Lite weights. Design rules held throughout: flat `float*` + stride
+(no VLAs, ever), renamed arrays so stale references are compile errors not
+silent bugs, one allocation per pre-existing declaration (no merging
+provably-disjoint scratch sets), `calloc` only where zero-init is
+semantically load-bearing (SME2 slot-cache `.ready` flags), and the 4 K/V
+cache families kept `malloc`-only so their ~1.5GB stays lazily faulted exactly
+as it did as static arrays.
+
+### 6 real bugs found and fixed along the way
+
+1. **`moe_forward_token`'s `items[]` array** was hardcoded to a `16`-based
+   bound while its verbatim-mirror sibling (`moe_cbatch_step_scalar_one`)
+   correctly used `MOE_BATCH_MAX_ITEMS` -- a latent stack overflow for any
+   future model with `TOP_K > 16`.
+2. **3 GEMM call sites** in the batch/ragged FFN path passed
+   `&h2_batch[0][0]` / `&mlp_out[0][0]` assuming row-stride ==
+   `MOE_HIDDEN` -- true only by coincidence for DeepSeek-V2-Lite
+   (2048 == `MOE_HIDDEN`). Flattening the signatures to explicit
+   `float* + stride` fixed the mechanism, not just the value.
+3. **2 more GEMM call sites**, same pattern, keyed on `MOE_VOCAB` instead
+   of `MOE_HIDDEN`.
+4. **`MOE_VOCAB` had no ceiling guard anywhere** -- Qwen3-30B-A3B
+   (vocab=151936, a named Phase-4 sub-part-3 target model) would have
+   silently overrun every logits buffer on its first token. Exact-sizing
+   removes this class of bug structurally.
+5. **`MOE_SME2_SLOT_DENSE/SHARED/LMHEAD`** were hardcoded to `64/65/66`
+   (DeepSeek-V2-Lite has exactly 64 experts) baked into a
+   `[MOE_MAXLAYERS][128][3]` array dimension. For any future model with
+   `N_EXPERTS >= 64` these constants **collide with real routed-expert
+   slot indices** -- not an overflow, a silent wrong-weights bug with zero
+   crash signal. This is the most severe finding in the whole sub-part.
+   Derived as `MOE_N_EXPERTS + {0,1,2}` instead.
+6. **`moe_ffn_naive_batched`'s own per-token scratch** (gate_v/up_v/down_v/
+   sgate_v/sup_v/sdown_v) was missed when Group C converted its sibling
+   function -- found only by the final Step 11 literal-array sweep, not by
+   any gate (it never crashed; it was simply still a stack array left
+   behind mid-refactor).
+
+### Verification
+
+- **Gate-FULL** (G1-G8, G10, G11) + **G9** (nthreads=1, slow path): all 11
+  scenarios byte-identical (G1's `moe3a_c_logits.bin`/`moe3a_c_routing.txt`)
+  or normalized-stderr-identical (G2-G11) vs the Step-0 golden baseline,
+  confirmed on bob (M4, the only hardware where the SME2-gated gates G2-G8/G10
+  actually exercise real KleidiAI code paths rather than silently falling back
+  to scalar).
+- **ASan+UBSan**: G1+G5+G7 (G7 is the only exerciser of the Tier2
+  `moe_reverify_exact` path and the shadow K/V lane family) -- 0 sanitizer
+  reports, both before (Step 0) and after (Step 11) the full conversion.
+- **`-Wall -Wextra`**: 14 warnings throughout, identical to the Step-0
+  baseline (5x deprecated `cblas_sgemv`, 1x sign-compare, 6x unused-function
+  in `q4gemv_g256.h`, 2x unused-variable) -- zero new warnings introduced by
+  the conversion.
+- **SVE/SME leak check**: 0 throughout (caller-plain convention preserved;
+  the linked binary's ~226-227 SME2 instructions come only from the vendored
+  KleidiAI kernels, never from the plain-compiled main TU).
+- **Peak RSS** (`/usr/bin/time -l`, golden binary vs final Step-11 binary,
+  same bob hardware, same weights):
+
+  | Gate | golden | Step 11 | delta |
+  |---|---|---|---|
+  | G3 (`QWEN_MOE_BATCH=64`) | 5.6656 GB | 5.6655 GB | -0.1 MB (noise) |
+  | G6 (online+check) | 11.2168 GB | 11.4133 GB | +196.5 MB (+1.75%) |
+
+  The K/V cache families (the ~1.5GB whose lazy-fault behavior Rule 6 exists
+  to protect) show no regression. The small G6 increase comes from newly
+  heap-allocated per-token/per-group scratch across Groups C/G/Step-11 now
+  being counted as resident once touched (previously stack-resident, not
+  separately visible in RSS) -- not from any array growing beyond its
+  previous size, and not from force-faulting anything that used to be lazy.
+
+### Commits
+
+`c8499d3`(guards+derived dims) `9842ac0`(Group D partial)
+`780f3b0`(Group A: MLA scratch) `5200f24`(Group B: K/V families)
+`ecb19a2`(Group C: FFN scratch) `20db8d0`(Group D remainder)
+`e202eda`(Group E: [][2048] flatten) `484ac10`(Group F: [][102400] flatten)
+`2780dea`(Group G: gather/group buffers) `d3d1381`(Group H: SME2 slot cache)
++ this final sweep/document/commit.
+
+Full plan: `/Users/xox/.claude/plans/serene-finding-ullman.md`. Phase 4's
+remaining 3 sub-parts (split MLA from FFN attention, ship a second MoE
+topology, GGUF stacked-expert-tensor mapping) are out of scope here.

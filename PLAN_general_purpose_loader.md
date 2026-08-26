@@ -459,9 +459,16 @@ no new kernel family. Phase 3 fully complete.
 
 ### Phase 4 — De-hardcode the MoE path; second MoE topology (~3 weeks, largest chunk, under-estimated by the original roadmap)
 
-1. Convert every DeepSeek-dimensioned stack array to `g_cfg`-style heap
-   allocation, one at a time, re-verifying the R1 MoE golden output after
-   each (this code has already stack-smashed once).
+1. **DONE (2026-08-26)** — Convert every DeepSeek-dimensioned stack array to
+   config-driven heap allocation (`alloc_moe_buffers()`, mirroring
+   `alloc_arch_buffers()`), one array-family at a time (Groups A-H), re-
+   verifying an 11-scenario golden gate (byte-identical or normalized-stderr
+   -identical) after each of 11 steps, on bob (M4) with the real DeepSeek-
+   V2-Lite weights. Found and fixed 6 real bugs along the way, the worst
+   being an `MOE_SME2_SLOT_*` hardcoded-64 collision that would silently
+   serve wrong expert weights for any future `N_EXPERTS >= 64` model. Full
+   writeup: `RESULTS.md` "Phase 4 sub-part 1"; full plan:
+   `/Users/xox/.claude/plans/serene-finding-ullman.md`.
 2. Split MoE forward into attention × FFN so non-MLA MoE (Mixtral,
    Qwen3-MoE) reuses dense GQA attention and supplies only routing +
    experts.
