@@ -797,3 +797,126 @@ architecture family," not just a shape/config check.
 Raw: `qwen_infer.c` (this repo), llama.cpp source inspection
 (`~/llamacpp_kleidi_build/src/llama-model.cpp`) and comparison run
 captured on `bob`, 2026-08-25.
+
+## General-purpose loader — Phase 3 sub-step 5: kai_route() M-threshold
+## investigation (2026-08-26)
+
+Phase 3's plan text asked for the Phase 0 M-threshold table to be wired
+into `kai_route()`, deciding "with a measured number, not a guess"
+whether the existing `M >= kai_sme2_min_m()=16` gate is still correct.
+Phase 0's `shape_soak.c` never actually measured this — it explicitly
+deferred "NEON-comparison timing" as a separate later step (its own
+header comment), only ever measuring SME2's own absolute cost curve.
+This sub-step built that missing NEON-comparison bench
+(`tools/kai_route_threshold_bench.c`) and, in the process, surfaced and
+resolved two real methodology bugs and one real, reproducible SIGILL.
+
+**Bug 1 (build): caller-plain violation.** Compiling the whole bench
+file with `-march=armv9.2-a+sme2` (needed only to call vendor SME2
+functions) let clang autovectorize a plain scalar nibble-packing loop
+into SME2/SVE instructions -- illegal outside a managed streaming
+context, SIGILL (exit 132). Fixed the same way this project always
+fixes this class of bug: compile the bench `.c` file plain (no arch
+flag; verified via `otool -tV | grep -c sve|sme|addvl` = 0) and link
+against the separately-arch-flagged, pre-built vendor `.o` files --
+exactly `qwen_infer.c`'s own caller-plain convention.
+
+**Bug 2 (methodology): wrong kernel family measured.** The first
+working version of the bench measured the f16p-LHS kernel
+(`kai_sme2_gemm_f16lhs`) -- but grepping `qwen_infer.c`'s actual
+`kai_route()` call sites (`matmul_t`, `matmul_sdot`) showed both
+dispatch to the INT8-LHS kernel (`kai_sme2_gemm_f32`, no `_f16lhs`
+suffix), the same one `kai_sme2_min_m()` itself queries. Rewrote the
+bench to measure the correct kernel.
+
+**The apparent contradiction.** With both bugs fixed, the bench showed
+SME2 beating NEON (`gemm_qXg64_mt`) at **every M from 1 to 64**, across
+4 shapes (square-4096, mlp-11008x2048, small-2048x2048,
+small-4864x896), ratios 2.2x-6.4x -- directly contradicting
+`sme2_kai.h`'s own documented comment on `kai_sme2_min_m()`: *"verified
+2026-08-16: M=1 decode is NOT a target."* Per this project's
+investigation-protocol discipline, this was NOT taken at face value in
+either direction. Re-reading `matmul_t`/`matmul_sdot` side by side
+found the real resolution: they use **two different NEON kernels** as
+their SME2 fallback. `matmul_sdot`'s fallback is `gemm_qXg64_sdot_mt`
+(int8-SDOT NEON -- it ALSO dynamically quantizes the activation to
+int8, the same information-loss trade SME2's int8-LHS kernel makes).
+`matmul_t`'s fallback is `gemm_qXg64_mt` (plain fp32-activation NEON,
+no int8 quant at all) -- a much weaker competitor. Extending the bench
+to add `gemm_qXg64_sdot_mt` as a second comparator on the same 4 shapes
+confirmed this exactly: against the sdot-NEON comparator, SME2 is
+**near-parity or worse below M~16-32** (ratios 0.46-1.07 at M=1-24,
+depending on shape) and only pulls ahead consistently from M=32+ for
+larger shapes, staying near-parity even at M=64 for smaller ones --
+closely matching the project's own prior "M16 near-zero, M64 +37%"
+dense-projection finding (`vdsp_general_serving_engine_goal.md`). So
+**both findings were correct all along** -- they were never measuring
+the same comparison. `kai_sme2_min_m()=16` is a reasonable,
+now-confirmed floor for `matmul_sdot`'s call site (sdot-NEON
+comparator). It is not a general "SME2 vs any NEON" floor.
+
+**A real, previously-unnoticed consequence.** `matmul_t` is only ever
+called from `forward_tokens()` with `n <= MAXSPEC-1 = 15` (spec-decode
+verify). Since the shared `M >= 16` gate applied to `matmul_t` too,
+SME2 dispatch from this call site was **structurally unreachable** --
+zero dispatches, always, on every model, forever -- not because SME2
+was unhelpful there (the plain-fp32-NEON comparator data says the
+opposite, 2.2x-6.4x at every M<=15) but because nobody had separated
+the two call sites' thresholds before.
+
+**Attempted fix and the crash.** Added `kai_route_min(W, M, min_m)`
+(condition 5 as a parameter instead of a hardcoded `kai_sme2_min_m()`)
+and wired `matmul_t` to call it with `min_m=1`. Compiled clean, 0
+SVE/SME leaked into the plain-compiled caller. Built the full engine on
+`bob` and ran `spec` mode (the real `matmul_t` call path) against the
+production Qwen1.5B int4 weights, `QWEN_SME2=1` -- **SIGILL on the very
+first `forward_tokens()` call** (crash report:
+`EXC_BAD_INSTRUCTION` inside `kai_sme2_gemm_f32`, offset 400, called
+from `forward_tokens`; reproduced identically on a second run).
+
+Two targeted isolated repros were built to chase this down before
+touching the fix further:
+1. A generic-shape repro using the exact real allocation pattern
+   (one shared LHS scratch buffer sized once for `Q4_SDOT_BMAX=64`,
+   `kai_ensure_lhs_scratch()`'s real formula, reused across M=1..15) --
+   **passed cleanly, all M**.
+2. The SAME repro using Qwen1.5B's actual 8 real projection shapes
+   (Q/K/V/O/GATE/UP/DOWN/HEAD, `max_in=8960`) and the same shared,
+   real-sized scratch buffer -- **passed cleanly, all shapes, all M**.
+
+Neither isolated repro reproduced the crash the real engine hit
+immediately and consistently. The trigger is something about the real
+multi-layer call graph (196 already-repacked tensors alive at once,
+`q4pool`'s 10 background worker threads present and idle, or some
+other production-only state) that a small isolated harness doesn't
+share -- root-causing this precisely needs an interactive `lldb`
+session (this project's own established remedy for a SIGILL that
+survives non-interactive bisection), which is not available over this
+project's non-interactive SSH channel to `bob`.
+
+**Decision: reverted, not shipped.** `matmul_t` now calls the
+original, safe `kai_route(W, M)` (floor=`kai_sme2_min_m()`=16,
+unchanged behavior -- SME2 still never dispatches from this call site,
+exactly as before this sub-step started). Verified via `spec` mode
+byte-identical output vs the pre-change baseline (only the timing line
+differs, 33.54 vs 33.77 tok/s, ordinary run-to-run noise) and a GGUF-
+path smoke test (Qwen2.5-1.5B GGUF, `greedy` mode, clean run, coherent
+output). `kai_route_min()` is left in the codebase as tested, working
+infrastructure (its correctness was never in question -- the isolated
+repros prove that) for a future session to re-attempt safely once
+interactive `lldb` access is available.
+
+**Net outcome for the actual plan question** ("wire the M-threshold
+table into `kai_route`, decide with a measured number"): the measured
+number says `kai_sme2_min_m()=16` is empirically the right floor for
+`matmul_sdot`'s real NEON comparator and should NOT change. A real,
+measured, second optimization opportunity exists for `matmul_t`'s call
+site specifically (different, weaker NEON comparator, MAXSPEC caps it
+at M<=15 so the current floor makes it permanently dead code) but is
+NOT safe to ship yet -- blocked on a real crash that needs interactive
+debugging to root-cause, not on missing data.
+
+Raw: `tools/kai_route_threshold_bench.c` (this repo), crash report
+`qwen_infer_p3-2026-08-26-144616.ips` (bob,
+`~/Library/Logs/DiagnosticReports/`), both isolated repros, `bob`,
+2026-08-26.

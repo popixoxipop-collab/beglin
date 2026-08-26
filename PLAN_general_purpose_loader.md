@@ -409,6 +409,22 @@ Phase 0 M-threshold table into `kai_route`. Decide (with a measured
 number, not a guess) whether HD=64 needs a new `attn_neon.h` family or
 stays scalar.
 
+**Sub-step 5 done (2026-08-26, see RESULTS.md's own section for the full
+investigation)**: built the missing NEON-comparison bench Phase 0 deferred,
+found and fixed 2 bugs in it (caller-plain SIGILL, wrong kernel family
+measured), then resolved an apparent contradiction with `sme2_kai.h`'s
+"M=1 is not a target" comment -- both were right, they were measuring
+against *different* NEON kernels (`matmul_sdot`'s int8-SDOT fallback vs
+`matmul_t`'s plain-fp32 fallback). Conclusion: `kai_sme2_min_m()=16`
+stays as-is (confirmed correct for `matmul_sdot`'s real comparator). A
+real second opportunity exists for `matmul_t`'s call site (different,
+weaker comparator, permanently dead code today since `MAXSPEC=16` caps
+its M at 15) but attempting it produced a reproducible SIGILL in the
+real engine that 2 isolated repros couldn't reproduce -- reverted,
+documented, left for a session with interactive `lldb` access. No
+change to `kai_route()`'s live threshold this sub-step; `kai_route_min()`
+exists as tested infrastructure for the retry.
+
 ### Phase 4 — De-hardcode the MoE path; second MoE topology (~3 weeks, largest chunk, under-estimated by the original roadmap)
 
 1. Convert every DeepSeek-dimensioned stack array to `g_cfg`-style heap

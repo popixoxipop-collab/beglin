@@ -635,12 +635,36 @@ static inline int w4a8_on(void) {
 // this function returns). const is cast away deliberately: g_wt[] itself is
 // never const, only this parameter is -- see kai_repack_one_lazy()'s own
 // comment for why mutating kai_rhs here is safe.
-static inline int kai_route(const WT *W, int M) {
-    if (!(sme2_gemm_on() && kai_sme2_available() && W->kind == K_Q4G64 && M >= kai_sme2_min_m()))
+//
+// Phase 3 sub-step 5 (general-purpose-loader plan, tools/kai_route_threshold_bench.c):
+// condition 5's floor is NOT one number -- it depends on which NEON kernel SME2 is actually
+// being compared against at the call site, and that differs between this function's two real
+// callers. matmul_sdot's NEON fallback is gemm_qXg64_sdot_mt (int8-SDOT -- itself dynamically
+// quantizes the activation to int8, the same information-loss trade SME2's own int8-LHS kernel
+// makes) -- measured near-parity below M~16-32 and a real-but-shape-dependent SME2 edge above
+// that (RESULTS.md), so kai_sme2_min_m()=16 (the kernel's own mr) is a reasonable, now
+// data-CONFIRMED floor for that path, not a guess. matmul_t's NEON fallback is gemm_qXg64_mt
+// (plain fp32-activation NEON, no int8 quant) -- ISOLATED measurement showed SME2 beating it by
+// 2.2x-6.4x at EVERY M from 1 to 64 across 4 shapes, and matmul_t is only ever called from
+// forward_tokens() with n<=MAXSPEC-1=15, so the old shared M>=16 floor made SME2 structurally
+// unreachable from that call site. kai_route_min() below exists so a caller CAN supply its own
+// floor instead of sharing kai_sme2_min_m()'s sdot-tuned one -- but wiring floor=1 into
+// matmul_t's actual call site produced a real, reproducible SIGILL inside kai_sme2_gemm_f32
+// that 2 separate isolated repros (same shapes, same shared-scratch sizing) could NOT
+// reproduce (see matmul_t's own comment, RESULTS.md). matmul_t currently still calls the
+// shared kai_route(W, M) (floor=16, i.e. this optimization is NOT live) pending an interactive
+// lldb session to root-cause the crash -- kai_route_min() is real, tested infrastructure, just
+// not yet safely exercised at M<16 from this specific call site.
+static inline int kai_route_min(const WT *W, int M, int min_m) {
+    if (!(sme2_gemm_on() && kai_sme2_available() && W->kind == K_Q4G64 && M >= min_m))
         return 0;
     if (W->kai_rhs == NULL && sme2_lazy_on() && !W->kai_lazy_failed)
         kai_repack_one_lazy((WT *)W);
     return W->kai_rhs != NULL;
+}
+
+static inline int kai_route(const WT *W, int M) {
+    return kai_route_min(W, M, kai_sme2_min_m());
 }
 
 static void matvec_t(const WT *W, const float *x, const float *bias, float *y) {
@@ -1572,6 +1596,21 @@ static void matmul_t(const WT *W, const float *x, const float *bias, float *y, i
         // already fp32 (spec's per-position activation tile) -- exactly what
         // kai_sme2_gemm_f32() wants, no extra quantization step needed here
         // (it does its own LHS int8 quantize+pack internally).
+        // Phase 3 sub-step 5 EXIT (attempted, reverted): tried kai_route_min(W, M, 1) here --
+        // isolated bench + 2 targeted repros (real shapes, real shared-scratch sizing, single
+        // tensor at a time) all measured SME2 correctly beating gemm_qXg64_mt at every M in
+        // [1,64], no crash. But wiring it into this real call site SIGILL'd immediately on the
+        // very first forward_tokens() call (M=1, Qwen1.5B, crash report: EXC_BAD_INSTRUCTION
+        // inside kai_sme2_gemm_f32, offset 400, called from forward_tokens) -- reproducible,
+        // not flaky (2/2 runs). Neither repro attempt reproduced it (see RESULTS.md), so the
+        // trigger is something about the REAL multi-layer call graph (196 tensors' worth of
+        // repacked kai_rhs alive at once, q4pool's 10 background threads present, or something
+        // else not yet isolated) that a small isolated harness doesn't share. lldb would settle
+        // this in minutes but is unavailable non-interactively over this project's SSH channel
+        // (same limitation noted elsewhere in this file's SIGILL history). Reverted to the
+        // known-safe kai_sme2_min_m()=16 floor rather than ship a demonstrated crash for a
+        // spec-decode-only perf win; kai_route_min() is left in place as the primitive a future
+        // session can safely re-attempt this with, WITH interactive lldb access first.
         kai_sme2_gemm_f32(M, W->out, W->in, x, W->kai_rhs, bias, y, g_kai_lhs_scratch);
     } else {
         gemm_qXg64_mt(&g_pool, W->kind==K_Q8G64?8:4, W->packed, W->scales, x, bias, y, W->out, W->in, M);

@@ -36,6 +36,14 @@ int kai_sme2_available(void);
 // INT_MAX when SME2 is unavailable, so any "M >= kai_sme2_min_m()" caller-side
 // check is false by construction rather than by remembering to also check
 // kai_sme2_available() -- redundant safety, not the only gate.
+//
+// Phase 3 sub-step 5 correction (tools/kai_route_threshold_bench.c, RESULTS.md): the
+// 2026-08-16 finding above is real but was measured against gemm_qXg64_sdot_mt (int8-SDOT
+// NEON) -- matmul_sdot's actual fallback, and this value is still the right floor for that
+// call site. It is NOT a general "SME2 vs any NEON" floor: matmul_t's fallback is a DIFFERENT,
+// weaker NEON kernel (gemm_qXg64_mt, plain fp32-activation), and against that one SME2 wins
+// at every M down to 1. qwen_infer.c's kai_route_min() lets each caller supply its own
+// floor instead of both sharing this (correctly sdot-tuned, but not universal) one.
 int kai_sme2_min_m(void);
 
 // Whether (out, in) is a legal shape for this kernel's fixed group size
