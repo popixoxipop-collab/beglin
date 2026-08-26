@@ -3035,6 +3035,24 @@ static void moe_mla_attention(const uint8_t *af, MoeLayerTensors *t, int l, int 
     for (int c = 0; c < MOE_HIDDEN; c++) x_residual[c] += o_out[c];
 }
 
+// Phase 4 sub-part 1, Step 5 (Group C): per-token scalar FFN scratch, heap -- alloc_moe_buffers().
+// One set PER FUNCTION (Rule 3 -- same reasoning as Group A's MLA scratch: moe_forward_token()
+// and moe_cbatch_step_scalar_one() are verbatim structural mirrors of each other by design, see
+// moe_cbatch_step_scalar_one()'s own comment). All malloc: every buffer below is fully written
+// before read within its own call (dense branch: moe_matvec_af_mt() writes the whole buffer;
+// routed branch: moe_matvec_af_batch_mt() writes each MOE_TOP_K/MOE_N_SHARED slice exactly once
+// before it's read) -- confirmed by re-reading both function bodies, not assumed. gate_v/up_v/
+// down_v were [16][N] 2D arrays; flattened to stride MOE_IM_DIM/MOE_HIDDEN, indexed as
+// buf + (size_t)k*stride instead of buf[k].
+static float *g_mft_x, *g_mft_h, *g_mft_h2, *g_mft_mlp_out, *g_mft_xn;
+static float *g_mft_dgate, *g_mft_dup;                          // dense branch, MOE_DENSE_IM each
+static float *g_mft_gate_v, *g_mft_up_v, *g_mft_down_v;         // routed branch, stride MOE_IM_DIM/MOE_IM_DIM/MOE_HIDDEN
+static float *g_mft_sgate_v, *g_mft_sup_v, *g_mft_sdown_v;      // shared expert
+static float *g_mcs_x, *g_mcs_h, *g_mcs_h2, *g_mcs_mlp_out, *g_mcs_xn;
+static float *g_mcs_dgate, *g_mcs_dup;
+static float *g_mcs_gate_v, *g_mcs_up_v, *g_mcs_down_v;
+static float *g_mcs_sgate_v, *g_mcs_sup_v, *g_mcs_sdown_v;
+
 // Full 27-layer MLA+MoE forward for one token, appended to the existing verification-mode
 // entry point below -- run_moe_verify_mode() drives this once per position of a fixed
 // 8-token prompt (same one used throughout Phase MoE-2a/2b), dumping logits/routing exactly
@@ -3043,9 +3061,8 @@ static void moe_mla_attention(const uint8_t *af, MoeLayerTensors *t, int l, int 
 static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
                                float *w_finalnorm, int token_id, int pos, float *logits_out,
                                FILE *routing_out) {
-    static float x[2048];   // static: no stack-size concern from the caller's loop
-    float h[2048], h2[2048];
-    if (pos == 0) memset(x, 0, sizeof x);   // silence-only; overwritten below regardless
+    float *x = g_mft_x, *h = g_mft_h, *h2 = g_mft_h2;   // g_mft_x persists across calls (was static)
+    if (pos == 0) memset(x, 0, (size_t)MOE_HIDDEN*sizeof(float));   // silence-only; overwritten below regardless
     for (int c = 0; c < MOE_HIDDEN; c++) x[c] = moe_decode_af(af, t_embed, 0, token_id, c);
 
     for (int l = 0; l < MOE_NL; l++) {
@@ -3057,9 +3074,9 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
         float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
         moe_rmsnorm(x, w_postln, h2, MOE_HIDDEN);
 
-        float mlp_out[2048];
+        float *mlp_out = g_mft_mlp_out;
         if (l < MOE_FIRST_DENSE_LAYERS) {
-            float gate_v[16384], up_v[16384];
+            float *gate_v = g_mft_dgate, *up_v = g_mft_dup;
             moe_matvec_af_mt(af, t->dense_gate, 0, h2, gate_v);
             moe_matvec_af_mt(af, t->dense_up, 0, h2, up_v);
             moe_swiglu_inplace(gate_v, up_v, MOE_DENSE_IM);
@@ -3079,26 +3096,27 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
             // separate ones. down_v depends on its own expert's swiglu'd gate/up, but the
             // MOE_TOP_K+1 down projections are independent of EACH OTHER -- second batch. Bit-
             // identical to the old sequential-per-expert version (see MoeBatchJob's own comment);
-            // only dispatch/barrier overhead is amortized, per-row math is untouched.
-            static float gate_v[16][4096], up_v[16][4096], down_v[16][2048];
-            static float sgate_v[4096], sup_v[4096], sdown_v[2048];
+            // only dispatch/barrier overhead is amortized, per-row math is untouched. gate_v/up_v/
+            // down_v were [16][N] 2D arrays -- flat now, indexed buf + (size_t)k*stride.
+            float *gate_v = g_mft_gate_v, *up_v = g_mft_up_v, *down_v = g_mft_down_v;
+            float *sgate_v = g_mft_sgate_v, *sup_v = g_mft_sup_v, *sdown_v = g_mft_sdown_v;
             {
-                MoeBatchItem items[2 * 16 + 2]; int ni = 0;
+                MoeBatchItem items[MOE_BATCH_MAX_ITEMS]; int ni = 0;
                 for (int k = 0; k < MOE_TOP_K; k++) {
                     long e = top_idx[k];
-                    items[ni++] = (MoeBatchItem){af, t->switch_gate, e, h2, gate_v[k], 0, 0};
-                    items[ni++] = (MoeBatchItem){af, t->switch_up,   e, h2, up_v[k],   0, 0};
+                    items[ni++] = (MoeBatchItem){af, t->switch_gate, e, h2, gate_v + (size_t)k*MOE_IM_DIM, 0, 0};
+                    items[ni++] = (MoeBatchItem){af, t->switch_up,   e, h2, up_v   + (size_t)k*MOE_IM_DIM, 0, 0};
                 }
                 items[ni++] = (MoeBatchItem){af, t->shared_gate, 0, h2, sgate_v, 0, 0};
                 items[ni++] = (MoeBatchItem){af, t->shared_up,   0, h2, sup_v,   0, 0};
                 moe_matvec_af_batch_mt(items, ni);
             }
             {
-                MoeBatchItem items[16 + 1]; int ni = 0;
+                MoeBatchItem items[MOE_BATCH_MAX_ITEMS]; int ni = 0;
                 for (int k = 0; k < MOE_TOP_K; k++) {
                     long e = top_idx[k];
-                    moe_swiglu_inplace(gate_v[k], up_v[k], MOE_IM_DIM);
-                    items[ni++] = (MoeBatchItem){af, t->switch_down, e, gate_v[k], down_v[k], 0, 0};
+                    moe_swiglu_inplace(gate_v + (size_t)k*MOE_IM_DIM, up_v + (size_t)k*MOE_IM_DIM, MOE_IM_DIM);
+                    items[ni++] = (MoeBatchItem){af, t->switch_down, e, gate_v + (size_t)k*MOE_IM_DIM, down_v + (size_t)k*MOE_HIDDEN, 0, 0};
                 }
                 moe_swiglu_inplace(sgate_v, sup_v, MOE_IM_DIM * MOE_N_SHARED);
                 items[ni++] = (MoeBatchItem){af, t->shared_down, 0, sgate_v, sdown_v, 0, 0};
@@ -3106,7 +3124,7 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
             }
             for (int k = 0; k < MOE_TOP_K; k++) {
                 float wgt = router_scores[top_idx[k]];
-                for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] += wgt * down_v[k][c];
+                for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] += wgt * down_v[(size_t)k*MOE_HIDDEN + c];
             }
             for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] += sdown_v[c];
 
@@ -3119,7 +3137,7 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
         for (int c = 0; c < MOE_HIDDEN; c++) x[c] += mlp_out[c];
     }
 
-    float xn[2048];
+    float *xn = g_mft_xn;
     moe_rmsnorm(x, w_finalnorm, xn, MOE_HIDDEN);
     moe_matvec_af_mt(af, t_lmhead, 0, xn, logits_out);
 }
@@ -3144,7 +3162,7 @@ static void moe_mla_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int 
 static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
                                         float *w_finalnorm, int token_id, int slot, int spos,
                                         float *logits_out) {
-    float x[2048], h[2048], h2[2048];
+    float *x = g_mcs_x, *h = g_mcs_h, *h2 = g_mcs_h2;
     for (int c = 0; c < MOE_HIDDEN; c++) x[c] = moe_decode_af(af, t_embed, 0, token_id, c);
 
     for (int l = 0; l < MOE_NL; l++) {
@@ -3156,9 +3174,9 @@ static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, 
         float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
         moe_rmsnorm(x, w_postln, h2, MOE_HIDDEN);
 
-        float mlp_out[2048];
+        float *mlp_out = g_mcs_mlp_out;
         if (l < MOE_FIRST_DENSE_LAYERS) {
-            float gate_v[16384], up_v[16384];
+            float *gate_v = g_mcs_dgate, *up_v = g_mcs_dup;
             moe_matvec_af_mt(af, t->dense_gate, 0, h2, gate_v);
             moe_matvec_af_mt(af, t->dense_up, 0, h2, up_v);
             moe_swiglu_inplace(gate_v, up_v, MOE_DENSE_IM);
@@ -3173,16 +3191,18 @@ static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, 
 
             for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] = 0.0f;
             // Task#102 2nd pass, same batching as moe_forward_token()'s mirror block above --
-            // see that block's comment. Local (non-static) here too, matching this function's own
-            // existing convention (it may run different (slot,token) pairs back-to-back).
-            float gate_v[16][4096], up_v[16][4096], down_v[16][2048];
-            float sgate_v[4096], sup_v[4096], sdown_v[2048];
+            // see that block's comment. This function's own buffers (not shared with
+            // moe_forward_token(), Rule 3), since it may run different (slot,token) pairs
+            // back-to-back. gate_v/up_v/down_v were [16][N] 2D arrays -- flat now, indexed
+            // buf + (size_t)k*stride.
+            float *gate_v = g_mcs_gate_v, *up_v = g_mcs_up_v, *down_v = g_mcs_down_v;
+            float *sgate_v = g_mcs_sgate_v, *sup_v = g_mcs_sup_v, *sdown_v = g_mcs_sdown_v;
             {
                 MoeBatchItem items[MOE_BATCH_MAX_ITEMS]; int ni = 0;
                 for (int k = 0; k < MOE_TOP_K; k++) {
                     long e = top_idx[k];
-                    items[ni++] = (MoeBatchItem){af, t->switch_gate, e, h2, gate_v[k], 0, 0};
-                    items[ni++] = (MoeBatchItem){af, t->switch_up,   e, h2, up_v[k],   0, 0};
+                    items[ni++] = (MoeBatchItem){af, t->switch_gate, e, h2, gate_v + (size_t)k*MOE_IM_DIM, 0, 0};
+                    items[ni++] = (MoeBatchItem){af, t->switch_up,   e, h2, up_v   + (size_t)k*MOE_IM_DIM, 0, 0};
                 }
                 items[ni++] = (MoeBatchItem){af, t->shared_gate, 0, h2, sgate_v, 0, 0};
                 items[ni++] = (MoeBatchItem){af, t->shared_up,   0, h2, sup_v,   0, 0};
@@ -3192,8 +3212,8 @@ static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, 
                 MoeBatchItem items[MOE_BATCH_MAX_ITEMS]; int ni = 0;
                 for (int k = 0; k < MOE_TOP_K; k++) {
                     long e = top_idx[k];
-                    moe_swiglu_inplace(gate_v[k], up_v[k], MOE_IM_DIM);
-                    items[ni++] = (MoeBatchItem){af, t->switch_down, e, gate_v[k], down_v[k], 0, 0};
+                    moe_swiglu_inplace(gate_v + (size_t)k*MOE_IM_DIM, up_v + (size_t)k*MOE_IM_DIM, MOE_IM_DIM);
+                    items[ni++] = (MoeBatchItem){af, t->switch_down, e, gate_v + (size_t)k*MOE_IM_DIM, down_v + (size_t)k*MOE_HIDDEN, 0, 0};
                 }
                 moe_swiglu_inplace(sgate_v, sup_v, MOE_IM_DIM * MOE_N_SHARED);
                 items[ni++] = (MoeBatchItem){af, t->shared_down, 0, sgate_v, sdown_v, 0, 0};
@@ -3201,14 +3221,14 @@ static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, 
             }
             for (int k = 0; k < MOE_TOP_K; k++) {
                 float wgt = router_scores[top_idx[k]];
-                for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] += wgt * down_v[k][c];
+                for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] += wgt * down_v[(size_t)k*MOE_HIDDEN + c];
             }
             for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] += sdown_v[c];
         }
         for (int c = 0; c < MOE_HIDDEN; c++) x[c] += mlp_out[c];
     }
 
-    float xn[2048];
+    float *xn = g_mcs_xn;
     moe_rmsnorm(x, w_finalnorm, xn, MOE_HIDDEN);
     moe_matvec_af_mt(af, t_lmhead, 0, xn, logits_out);
 }
@@ -4661,12 +4681,40 @@ static void alloc_moe_buffers(void) {
     g_moe_sK_flat = malloc((long)MOE_MAXLAYERS*MOE_CB4C_LANES*MOE_CBATCH_MAXPOS*MOE_N_HEADS*MOE_Q_HEAD_DIM*sizeof(float));
     g_moe_sV_flat = malloc((long)MOE_MAXLAYERS*MOE_CB4C_LANES*MOE_CBATCH_MAXPOS*MOE_N_HEADS*MOE_V_HD*sizeof(float));
 
+    // Step 5 (Group C): per-token scalar FFN scratch, one malloc set PER FUNCTION (Rule 3 -- see
+    // the declaration comment above moe_forward_token()). All malloc: every buffer is fully
+    // written before read within its own call (dense branch write-through moe_matvec_af_mt();
+    // routed branch: each MOE_TOP_K/MOE_N_SHARED slice written exactly once by
+    // moe_matvec_af_batch_mt() before it's read).
+    g_mft_x = malloc((size_t)MOE_HIDDEN*sizeof(float)); g_mft_h = malloc((size_t)MOE_HIDDEN*sizeof(float));
+    g_mft_h2 = malloc((size_t)MOE_HIDDEN*sizeof(float)); g_mft_mlp_out = malloc((size_t)MOE_HIDDEN*sizeof(float));
+    g_mft_xn = malloc((size_t)MOE_HIDDEN*sizeof(float));
+    g_mft_dgate = malloc((size_t)MOE_DENSE_IM*sizeof(float)); g_mft_dup = malloc((size_t)MOE_DENSE_IM*sizeof(float));
+    g_mft_gate_v = malloc((size_t)MOE_TOP_K*MOE_IM_DIM*sizeof(float)); g_mft_up_v = malloc((size_t)MOE_TOP_K*MOE_IM_DIM*sizeof(float));
+    g_mft_down_v = malloc((size_t)MOE_TOP_K*MOE_HIDDEN*sizeof(float));
+    g_mft_sgate_v = malloc((size_t)MOE_IM_DIM*MOE_N_SHARED*sizeof(float)); g_mft_sup_v = malloc((size_t)MOE_IM_DIM*MOE_N_SHARED*sizeof(float));
+    g_mft_sdown_v = malloc((size_t)MOE_HIDDEN*sizeof(float));
+    g_mcs_x = malloc((size_t)MOE_HIDDEN*sizeof(float)); g_mcs_h = malloc((size_t)MOE_HIDDEN*sizeof(float));
+    g_mcs_h2 = malloc((size_t)MOE_HIDDEN*sizeof(float)); g_mcs_mlp_out = malloc((size_t)MOE_HIDDEN*sizeof(float));
+    g_mcs_xn = malloc((size_t)MOE_HIDDEN*sizeof(float));
+    g_mcs_dgate = malloc((size_t)MOE_DENSE_IM*sizeof(float)); g_mcs_dup = malloc((size_t)MOE_DENSE_IM*sizeof(float));
+    g_mcs_gate_v = malloc((size_t)MOE_TOP_K*MOE_IM_DIM*sizeof(float)); g_mcs_up_v = malloc((size_t)MOE_TOP_K*MOE_IM_DIM*sizeof(float));
+    g_mcs_down_v = malloc((size_t)MOE_TOP_K*MOE_HIDDEN*sizeof(float));
+    g_mcs_sgate_v = malloc((size_t)MOE_IM_DIM*MOE_N_SHARED*sizeof(float)); g_mcs_sup_v = malloc((size_t)MOE_IM_DIM*MOE_N_SHARED*sizeof(float));
+    g_mcs_sdown_v = malloc((size_t)MOE_HIDDEN*sizeof(float));
+
     if (!g_moe_yarn_freqs || !g_moe_topk_used ||
         !g_mla_q || !g_mla_kv_ap || !g_mla_kv_b || !g_mla_normed_kv || !g_mla_attn_out || !g_mla_o_out ||
         !g_mlar_q || !g_mlar_kv_ap || !g_mlar_kv_b || !g_mlar_normed_kv || !g_mlar_attn_out || !g_mlar_o_out ||
         !g_mlab_q || !g_mlab_kv_ap || !g_mlab_kv_b || !g_mlab_normed_kv || !g_mlab_attn_out || !g_mlab_o_out ||
         !g_moe_K_flat || !g_moe_V_flat || !g_moe_bK_flat || !g_moe_bV_flat ||
-        !g_moe_cK_flat || !g_moe_cV_flat || !g_moe_sK_flat || !g_moe_sV_flat) {
+        !g_moe_cK_flat || !g_moe_cV_flat || !g_moe_sK_flat || !g_moe_sV_flat ||
+        !g_mft_x || !g_mft_h || !g_mft_h2 || !g_mft_mlp_out || !g_mft_xn ||
+        !g_mft_dgate || !g_mft_dup || !g_mft_gate_v || !g_mft_up_v || !g_mft_down_v ||
+        !g_mft_sgate_v || !g_mft_sup_v || !g_mft_sdown_v ||
+        !g_mcs_x || !g_mcs_h || !g_mcs_h2 || !g_mcs_mlp_out || !g_mcs_xn ||
+        !g_mcs_dgate || !g_mcs_dup || !g_mcs_gate_v || !g_mcs_up_v || !g_mcs_down_v ||
+        !g_mcs_sgate_v || !g_mcs_sup_v || !g_mcs_sdown_v) {
         fprintf(stderr, "FATAL: alloc_moe_buffers: an allocation failed\n");
         exit(1);
     }
