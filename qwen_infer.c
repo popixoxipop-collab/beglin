@@ -3719,7 +3719,7 @@ static float *g_mfob_x, *g_mfob_h, *g_mfob_h2, *g_mfob_mlp_out;
 // isolates gather's own effect and nothing else.
 static void moe_forward_batch(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
                                float *w_finalnorm, const int *token_ids, int B,
-                               float logits_out[][102400], int use_gather) {
+                               float *logits_out, int use_gather) {
     float *x = g_mfob_x, *h = g_mfob_h, *h2 = g_mfob_h2, *mlp_out = g_mfob_mlp_out;
 
     for (int b = 0; b < B; b++)
@@ -3768,18 +3768,18 @@ static void moe_forward_batch(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
 
     if (use_gather) {
         // Phase MoE-3e: lm_head always runs for every token, one M=B group GEMM. logits_out is
-        // a real [][102400] fixed-width array (stride == MOE_VOCAB == t_lmhead's `out`), so the
-        // group call writes into it directly with no separate scatter step. layer=0 is reused
-        // (lm_head has no real layer concept) -- safe because cache_e=MOE_SME2_SLOT_LMHEAD is
-        // already a unique key on its own, distinct from every other slot at layer 0.
+        // flat with stride MOE_VOCAB (== t_lmhead's `out`), so the group call writes into it
+        // directly with no separate scatter step. layer=0 is reused (lm_head has no real layer
+        // concept) -- safe because cache_e=MOE_SME2_SLOT_LMHEAD is already a unique key on its
+        // own, distinct from every other slot at layer 0.
         static float xn_group[MOE_BATCH_MAX*2048];
         for (int b = 0; b < B; b++) moe_rmsnorm(x + (size_t)b*MOE_HIDDEN, w_finalnorm, xn_group + (size_t)b*MOE_HIDDEN, MOE_HIDDEN);
-        moe_matvec_af_group_smart(af, t_lmhead, 0, MOE_SME2_SLOT_LMHEAD, 0, 0, xn_group, B, &logits_out[0][0]);
+        moe_matvec_af_group_smart(af, t_lmhead, 0, MOE_SME2_SLOT_LMHEAD, 0, 0, xn_group, B, logits_out);
     } else {
         for (int b = 0; b < B; b++) {
             float xn[2048];
             moe_rmsnorm(x + (size_t)b*MOE_HIDDEN, w_finalnorm, xn, MOE_HIDDEN);
-            moe_matvec_af(af, t_lmhead, 0, xn, logits_out[b]);
+            moe_matvec_af(af, t_lmhead, 0, xn, logits_out + (size_t)b*MOE_VOCAB);
         }
     }
 }
@@ -3794,6 +3794,11 @@ static double moe_baware_threshold(int B) {
     if (B <= 32) return 0.2;    // measured: B=32 needs 0.2 for 100%
     return 0.32;                // measured: B=64 needs 0.32 for 100% (MOE_BATCH_MAX caps B<=64)
 }
+
+// Phase 4 sub-part 1, Step 8 (Group F): logits buffers, flat, MOE_BATCH_MAX*MOE_VOCAB each --
+// this function's own set (Rule 3). Also fixes an "accidentally correct stride" risk: the old
+// [MOE_BATCH_MAX][102400] arrays coupled row width to a literal 102400, not MOE_VOCAB.
+static float *g_rmbv_logits_gather, *g_rmbv_logits_naive, *g_rmbv_logits_hybrid;
 
 // Entry point: QWEN_MOE_BATCH=<B> (with weights_moe/ present) runs this phase's batched
 // verification instead of MoE-3a's single-sequence mode. Checked at the same point in
@@ -3837,8 +3842,8 @@ static int run_moe_batch_verify_mode(int argc, char **argv, const char *dir) {
     MoeF32Tensor *t_finalnorm = moe_find_f32("model.norm.weight");
     float *w_finalnorm = (float *)(g_moe_f32_blob + t_finalnorm->off);
 
-    static float logits_gather[MOE_BATCH_MAX][102400];
-    static float logits_naive[MOE_BATCH_MAX][102400];
+    float *logits_gather = g_rmbv_logits_gather;
+    float *logits_naive  = g_rmbv_logits_naive;
 
     struct timespec t0, t1, t2;
     clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -3855,19 +3860,20 @@ static int run_moe_batch_verify_mode(int argc, char **argv, const char *dir) {
     // inferred from "should be the same by construction".
     double worst_abs = 0.0, worst_rel = 0.0;
     for (int b = 0; b < B; b++) {
+        float *lg = logits_gather + (size_t)b*MOE_VOCAB, *ln = logits_naive + (size_t)b*MOE_VOCAB;
         double sse = 0.0, ssref = 0.0;
         for (int v = 0; v < MOE_VOCAB; v++) {
-            double d = (double)logits_gather[b][v] - (double)logits_naive[b][v];
-            sse += d*d; ssref += (double)logits_naive[b][v]*(double)logits_naive[b][v];
+            double d = (double)lg[v] - (double)ln[v];
+            sse += d*d; ssref += (double)ln[v]*(double)ln[v];
             double ad = fabs(d); if (ad > worst_abs) worst_abs = ad;
         }
         double rel = ssref > 0 ? sqrt(sse/ssref) : (sse == 0 ? 0.0 : 1.0);
         if (rel > worst_rel) worst_rel = rel;
-        int am_g = 0; float bm_g = logits_gather[b][0];
-        int am_n = 0; float bm_n = logits_naive[b][0];
+        int am_g = 0; float bm_g = lg[0];
+        int am_n = 0; float bm_n = ln[0];
         for (int v = 1; v < MOE_VOCAB; v++) {
-            if (logits_gather[b][v] > bm_g) { bm_g = logits_gather[b][v]; am_g = v; }
-            if (logits_naive[b][v]  > bm_n) { bm_n = logits_naive[b][v];  am_n = v; }
+            if (lg[v] > bm_g) { bm_g = lg[v]; am_g = v; }
+            if (ln[v] > bm_n) { bm_n = ln[v]; am_n = v; }
         }
         fprintf(stderr, "[moe batch] slot %2d token %6d: naive_argmax=%d gather_argmax=%d %s\n",
                 b, token_ids[b], am_n, am_g, am_n == am_g ? "[MATCH]" : "[MISMATCH]");
@@ -3886,10 +3892,11 @@ static int run_moe_batch_verify_mode(int argc, char **argv, const char *dir) {
     static float margin_g[MOE_BATCH_MAX];
     static int argmax_g[MOE_BATCH_MAX];
     for (int b = 0; b < B; b++) {
-        int am = 0; float bm = logits_gather[b][0];
-        for (int v = 1; v < MOE_VOCAB; v++) if (logits_gather[b][v] > bm) { bm = logits_gather[b][v]; am = v; }
+        float *lg = logits_gather + (size_t)b*MOE_VOCAB;
+        int am = 0; float bm = lg[0];
+        for (int v = 1; v < MOE_VOCAB; v++) if (lg[v] > bm) { bm = lg[v]; am = v; }
         float second = -1e30f;
-        for (int v = 0; v < MOE_VOCAB; v++) if (v != am && logits_gather[b][v] > second) second = logits_gather[b][v];
+        for (int v = 0; v < MOE_VOCAB; v++) if (v != am && lg[v] > second) second = lg[v];
         argmax_g[b] = am;
         margin_g[b] = bm - second;
     }
@@ -3908,10 +3915,10 @@ static int run_moe_batch_verify_mode(int argc, char **argv, const char *dir) {
     int n_thr = do_sweep ? (int)(sizeof(sweep_thresholds)/sizeof(sweep_thresholds[0])) : 1;
     double single_thr = explicit_thr ? atof(thr_env) : moe_baware_threshold(B);
 
-    static float logits_hybrid[MOE_BATCH_MAX][102400];
+    float *logits_hybrid = g_rmbv_logits_hybrid;
     for (int ti = 0; ti < n_thr; ti++) {
         double threshold = do_sweep ? sweep_thresholds[ti] : single_thr;
-        for (int b = 0; b < B; b++) memcpy(logits_hybrid[b], logits_gather[b], sizeof logits_hybrid[b]);
+        memcpy(logits_hybrid, logits_gather, (size_t)B*MOE_VOCAB*sizeof(float));
 
         struct timespec rt0, rt1;
         clock_gettime(CLOCK_MONOTONIC, &rt0);
@@ -3919,7 +3926,7 @@ static int run_moe_batch_verify_mode(int argc, char **argv, const char *dir) {
         for (int b = 0; b < B; b++) {
             if (margin_g[b] < threshold) {
                 n_reverified++;
-                moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, token_ids[b], 0, logits_hybrid[b], NULL);
+                moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, token_ids[b], 0, logits_hybrid + (size_t)b*MOE_VOCAB, NULL);
             }
         }
         clock_gettime(CLOCK_MONOTONIC, &rt1);
@@ -3928,10 +3935,11 @@ static int run_moe_batch_verify_mode(int argc, char **argv, const char *dir) {
 
         int n_match = 0;
         for (int b = 0; b < B; b++) {
-            int am_h = 0; float bm_h = logits_hybrid[b][0];
-            for (int v = 1; v < MOE_VOCAB; v++) if (logits_hybrid[b][v] > bm_h) { bm_h = logits_hybrid[b][v]; am_h = v; }
-            int am_n = 0; float bm_n = logits_naive[b][0];
-            for (int v = 1; v < MOE_VOCAB; v++) if (logits_naive[b][v] > bm_n) { bm_n = logits_naive[b][v]; am_n = v; }
+            float *lh = logits_hybrid + (size_t)b*MOE_VOCAB, *ln = logits_naive + (size_t)b*MOE_VOCAB;
+            int am_h = 0; float bm_h = lh[0];
+            for (int v = 1; v < MOE_VOCAB; v++) if (lh[v] > bm_h) { bm_h = lh[v]; am_h = v; }
+            int am_n = 0; float bm_n = ln[0];
+            for (int v = 1; v < MOE_VOCAB; v++) if (ln[v] > bm_n) { bm_n = ln[v]; am_n = v; }
             if (am_h == am_n) n_match++;
         }
         fprintf(stderr, "[moe3d] threshold=%.4g reverified=%d/%d argmax_match=%d/%d reverify_ms=%.2f hybrid_total_ms=%.2f speedup_vs_naive=%.3fx\n",
@@ -3959,7 +3967,7 @@ static float *g_mcbs_x, *g_mcbs_h, *g_mcbs_h2, *g_mcbs_mlp_out;
 
 static void moe_cbatch_step(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
                              float *w_finalnorm, const int *token_ids, const int *slot,
-                             const int *spos, int A, float logits_out[][102400],
+                             const int *spos, int A, float *logits_out,
                              int want_logits) {
     float *x = g_mcbs_x, *h = g_mcbs_h, *h2 = g_mcbs_h2, *mlp_out = g_mcbs_mlp_out;
 
@@ -3996,7 +4004,7 @@ static void moe_cbatch_step(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor
                                     largest GEMM in the model (lm_head, out=102400 x in=2048). */
     static float xn_group[MOE_BATCH_MAX*2048];
     for (int m = 0; m < A; m++) moe_rmsnorm(x + (size_t)m*MOE_HIDDEN, w_finalnorm, xn_group + (size_t)m*MOE_HIDDEN, MOE_HIDDEN);
-    moe_matvec_af_group_smart(af, t_lmhead, 0, MOE_SME2_SLOT_LMHEAD, 0, 0, xn_group, A, &logits_out[0][0]);
+    moe_matvec_af_group_smart(af, t_lmhead, 0, MOE_SME2_SLOT_LMHEAD, 0, 0, xn_group, A, logits_out);
 }
 
 // Phase MoE-4a entry point: QWEN_MOE_CBATCH=1 runs a STATIC ragged batch -- N real prompts of
@@ -4116,6 +4124,11 @@ static int moe_shadow_lane_for(int req) {
     return lane;
 }
 
+// Phase 4 sub-part 1, Step 8 (Group F): 1D logits scratch, heap, MOE_VOCAB each -- these were
+// [102400] literals with no MOE_VOCAB ceiling guard (a model with vocab>102400, e.g. Qwen3-30B-
+// A3B at 151936, would have silently overrun them).
+static float *g_mre_logits_tmp;
+
 // Tier2: exact scalar answer for request `req` at position `pos`, via moe_forward_token()
 // (unmodified, its own g_moe_K/V) replaying rq_hist[req][0..pos]. Incremental: only replays
 // positions beyond what this request's lane already has cached, so a request's TOTAL Tier2
@@ -4134,7 +4147,7 @@ static void moe_reverify_exact(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTen
             memcpy(moe_V_row(l,p), moe_sV_row(l,lane,p), (size_t)MOE_N_HEADS*MOE_V_HD*sizeof(float));
         }
 
-    static float logits_tmp[102400];
+    float *logits_tmp = g_mre_logits_tmp;
     int n_scalar = 0;
     for (int p = start; p <= pos; p++) {
         moe_forward_token(af, t_embed, t_lmhead, w_finalnorm, rq_hist[req][p], p, logits_tmp, NULL);
@@ -4185,6 +4198,8 @@ static double moe_cb4c_margin(const float *logits) {
 // allows: Tier1 first (cheap, O(1)); if Tier1's argmax disagrees with the SME2 answer and mode
 // requests it, escalate to Tier2 (exact, cost bounded by how much of `req`'s history isn't yet
 // shadow-cached). Overwrites logits_inout in place whenever re-verification changes the answer.
+static float *g_mcmr_logits_t1, *g_mcmr_logits_t2;
+
 static void moe_cb4c_maybe_reverify(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
                                      float *w_finalnorm, int slot, int req, int pos, int token_id,
                                      int A, float *logits_inout, int *budget_inout,
@@ -4197,7 +4212,7 @@ static void moe_cb4c_maybe_reverify(const uint8_t *af, MoeAFTensor *t_embed, Moe
     for (int v = 1; v < MOE_VOCAB; v++) if (logits_inout[v] > bm) { bm = logits_inout[v]; am_sme2 = v; }
     double margin_seen = moe_cb4c_margin(logits_inout);
 
-    static float logits_t1[102400];
+    float *logits_t1 = g_mcmr_logits_t1;
     double t1_t0 = nowt();
     moe_cbatch_step_scalar_one(af, t_embed, t_lmhead, w_finalnorm, token_id, slot, pos, logits_t1);
     double t1_ms = (nowt() - t1_t0) * 1000.0;
@@ -4243,7 +4258,7 @@ static void moe_cb4c_maybe_reverify(const uint8_t *af, MoeAFTensor *t_embed, Moe
         memcpy(logits_inout, logits_t1, MOE_VOCAB * sizeof(float));   // budget-starved: keep Tier1
         return;
     }
-    static float logits_t2[102400];
+    float *logits_t2 = g_mcmr_logits_t2;
     int n_scalar = 0;
     double t2_t0 = nowt();
     moe_reverify_exact(af, t_embed, t_lmhead, w_finalnorm, req, pos, logits_t2, &n_scalar);
@@ -4264,6 +4279,14 @@ static void moe_cb4c_maybe_reverify(const uint8_t *af, MoeAFTensor *t_embed, Moe
             }
     }
 }
+
+// Phase 4 sub-part 1, Step 8 (Group F): logits_step, flat, MOE_BATCH_MAX*MOE_VOCAB -- shared by
+// both the offline (!online) and online scheduler blocks below (they're mutually exclusive
+// within one call, the offline block returns before the online block's code is ever reached),
+// so one buffer, not two. g_rmcv_logits1 (MOE_VOCAB, 1D) is the same story for the two scalar
+// single-token prefill loops (offline's own prefill, online's PREFILL_MODE=0 admission path).
+static float *g_rmcv_logits_step;
+static float *g_rmcv_logits1;
 
 static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     (void)argc; (void)argv;
@@ -4332,7 +4355,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     struct timespec pt0, pt1; clock_gettime(CLOCK_MONOTONIC, &pt0);
     int n_prefill_tok = 0;
     for (int s = 0; s < MOE_CBATCH_N; s++) {
-        static float logits1[102400];
+        float *logits1 = g_rmcv_logits1;
         for (int p = 0; p < prompt_len[s]; p++) {
             moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, prompt_ids[s][p], p, logits1, NULL);
             n_prefill_tok++;
@@ -4354,7 +4377,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
             MOE_CBATCH_N, n_prefill_tok, ms_prefill, ms_prefill/n_prefill_tok);
 
     struct timespec t0, t1; clock_gettime(CLOCK_MONOTONIC, &t0);
-    static float logits_step[MOE_BATCH_MAX][102400];
+    float *logits_step = g_rmcv_logits_step;
     int step = 0;
     while (1) {
         int A = 0;
@@ -4366,8 +4389,9 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
         moe_cbatch_step(af_blob, t_embed, t_lmhead, w_finalnorm, ids, slots, sposs, A, logits_step, 1);
         for (int m = 0; m < A; m++) {
             int s = slots[m];
-            int am = 0; float bm = logits_step[m][0];
-            for (int v = 1; v < MOE_VOCAB; v++) if (logits_step[m][v] > bm) { bm = logits_step[m][v]; am = v; }
+            float *lm = logits_step + (size_t)m*MOE_VOCAB;
+            int am = 0; float bm = lm[0];
+            for (int v = 1; v < MOE_VOCAB; v++) if (lm[v] > bm) { bm = lm[v]; am = v; }
             generated[s][cb_nout[s]++] = am;
             cb_pos[s]++;
             cb_next_tok[s] = am;
@@ -4482,7 +4506,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     int qhead = 0, nact = 0, step = 0;
     long steps_idle = 0, steps_with_idle_slot = 0, admitted_after_evict = 0;
     long queue_wait_events = 0, queue_wait_max_steps = 0, steps_pure_prefill = 0;
-    static float logits_step[MOE_BATCH_MAX][102400];
+    float *logits_step = g_rmcv_logits_step;
 
     double t_run0 = nowt();
     while (qhead < R || nact > 0) {
@@ -4506,7 +4530,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
             for (int p = 0; p < rq_plen[r]; p++) rq_hist[r][p] = prompt_ids[r % MOE_CBATCH_N][p];
 
             if (prefill_mode == 0) {
-                static float logits1[102400];
+                float *logits1 = g_rmcv_logits1;
                 for (int p = 0; p < rq_plen[r]; p++)
                     moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, prompt_ids[r % MOE_CBATCH_N][p], p, logits1, NULL);
                 for (int l = 0; l < MOE_NL; l++)
@@ -4565,10 +4589,11 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
         // 4. decode columns: emit + evict (EOS/stop_extra/maxnew/MOE_CBATCH_MAXPOS)
         for (int m = 0; m < ndec; m++) {
             int s = slots[m], r = mcb_req[s];
+            float *lm = logits_step + (size_t)m*MOE_VOCAB;
             moe_cb4c_maybe_reverify(af_blob, t_embed, t_lmhead, w_finalnorm, s, r, sposs[m], ids[m],
-                                     A, logits_step[m], &step_budget, reverify_mode, resync_on);
-            int am = 0; float bm = logits_step[m][0];
-            for (int v = 1; v < MOE_VOCAB; v++) if (logits_step[m][v] > bm) { bm = logits_step[m][v]; am = v; }
+                                     A, lm, &step_budget, reverify_mode, resync_on);
+            int am = 0; float bm = lm[0];
+            for (int v = 1; v < MOE_VOCAB; v++) if (lm[v] > bm) { bm = lm[v]; am = v; }
             rq_out[r][rq_nout[r]++] = am; mcb_pos[s]++;
             if (mcb_pos[s] < MOE_CBATCH_MAXPOS) rq_hist[r][mcb_pos[s]] = am;
             if (am == 100001 || am == stop_extra || rq_nout[r] >= rq_maxnew[r] || mcb_pos[s] >= MOE_CBATCH_MAXPOS)
@@ -4580,10 +4605,11 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
             for (int m = ndec; m < A; m++) {
                 int s = slots[m], r = mcb_req[s];
                 if (sposs[m] != rq_plen[r] - 1) continue;
+                float *lm = logits_step + (size_t)m*MOE_VOCAB;
                 moe_cb4c_maybe_reverify(af_blob, t_embed, t_lmhead, w_finalnorm, s, r, sposs[m], ids[m],
-                                         A, logits_step[m], &step_budget, reverify_mode, resync_on);
-                int am = 0; float bm = logits_step[m][0];
-                for (int v = 1; v < MOE_VOCAB; v++) if (logits_step[m][v] > bm) { bm = logits_step[m][v]; am = v; }
+                                         A, lm, &step_budget, reverify_mode, resync_on);
+                int am = 0; float bm = lm[0];
+                for (int v = 1; v < MOE_VOCAB; v++) if (lm[v] > bm) { bm = lm[v]; am = v; }
                 rq_out[r][rq_nout[r]++] = am; rq_t_first[r] = temit;
                 if (rq_plen[r] < MOE_CBATCH_MAXPOS) rq_hist[r][rq_plen[r]] = am;
                 if (am == 100001 || am == stop_extra || rq_nout[r] >= rq_maxnew[r])
@@ -4740,6 +4766,19 @@ static void alloc_moe_buffers(void) {
     g_mcbs_x = malloc((size_t)MOE_BATCH_MAX*MOE_HIDDEN*sizeof(float)); g_mcbs_h = malloc((size_t)MOE_BATCH_MAX*MOE_HIDDEN*sizeof(float));
     g_mcbs_h2 = malloc((size_t)MOE_BATCH_MAX*MOE_HIDDEN*sizeof(float)); g_mcbs_mlp_out = malloc((size_t)MOE_BATCH_MAX*MOE_HIDDEN*sizeof(float));
 
+    // Step 8 (Group F): logits buffers, flat, MOE_VOCAB-strided. Fixes the "no ceiling guard"
+    // risk noted in the plan -- these were literal-102400 arrays regardless of the real
+    // MOE_VOCAB, would silently overrun for any model with vocab>102400 (e.g. Qwen3-30B-A3B,
+    // vocab=151936).
+    g_rmbv_logits_gather = malloc((size_t)MOE_BATCH_MAX*MOE_VOCAB*sizeof(float));
+    g_rmbv_logits_naive  = malloc((size_t)MOE_BATCH_MAX*MOE_VOCAB*sizeof(float));
+    g_rmbv_logits_hybrid = malloc((size_t)MOE_BATCH_MAX*MOE_VOCAB*sizeof(float));
+    g_rmcv_logits_step   = malloc((size_t)MOE_BATCH_MAX*MOE_VOCAB*sizeof(float));
+    g_rmcv_logits1       = malloc((size_t)MOE_VOCAB*sizeof(float));
+    g_mre_logits_tmp     = malloc((size_t)MOE_VOCAB*sizeof(float));
+    g_mcmr_logits_t1     = malloc((size_t)MOE_VOCAB*sizeof(float));
+    g_mcmr_logits_t2     = malloc((size_t)MOE_VOCAB*sizeof(float));
+
     if (!g_moe_yarn_freqs || !g_moe_topk_used ||
         !g_mla_q || !g_mla_kv_ap || !g_mla_kv_b || !g_mla_normed_kv || !g_mla_attn_out || !g_mla_o_out ||
         !g_mlar_q || !g_mlar_kv_ap || !g_mlar_kv_b || !g_mlar_normed_kv || !g_mlar_attn_out || !g_mlar_o_out ||
@@ -4756,7 +4795,10 @@ static void alloc_moe_buffers(void) {
         !g_mfb_router_scores || !g_mfb_top_idx || !g_mfnb_router_scores || !g_mfnb_top_idx ||
         !g_moe_bucket ||
         !g_mfob_x || !g_mfob_h || !g_mfob_h2 || !g_mfob_mlp_out ||
-        !g_mcbs_x || !g_mcbs_h || !g_mcbs_h2 || !g_mcbs_mlp_out) {
+        !g_mcbs_x || !g_mcbs_h || !g_mcbs_h2 || !g_mcbs_mlp_out ||
+        !g_rmbv_logits_gather || !g_rmbv_logits_naive || !g_rmbv_logits_hybrid ||
+        !g_rmcv_logits_step || !g_rmcv_logits1 || !g_mre_logits_tmp ||
+        !g_mcmr_logits_t1 || !g_mcmr_logits_t2) {
         fprintf(stderr, "FATAL: alloc_moe_buffers: an allocation failed\n");
         exit(1);
     }
