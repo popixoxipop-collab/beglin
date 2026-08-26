@@ -3052,6 +3052,10 @@ static float *g_mcs_x, *g_mcs_h, *g_mcs_h2, *g_mcs_mlp_out, *g_mcs_xn;
 static float *g_mcs_dgate, *g_mcs_dup;
 static float *g_mcs_gate_v, *g_mcs_up_v, *g_mcs_down_v;
 static float *g_mcs_sgate_v, *g_mcs_sup_v, *g_mcs_sdown_v;
+// Phase 4 sub-part 1, Step 6 (Group D remainder): router_scores/top_idx, heap -- one set per
+// function (Rule 3, same as the FFN scratch above), sized MOE_N_EXPERTS/MOE_TOP_K.
+static float *g_mft_router_scores; static int *g_mft_top_idx;
+static float *g_mcs_router_scores; static int *g_mcs_top_idx;
 
 // Full 27-layer MLA+MoE forward for one token, appended to the existing verification-mode
 // entry point below -- run_moe_verify_mode() drives this once per position of a fixed
@@ -3083,10 +3087,10 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
             moe_matvec_af_mt(af, t->dense_down, 0, gate_v, mlp_out);
         } else {
             float *w_gate = (float *)(g_moe_f32_blob + t->gate_w->off);
-            float router_scores[128];
+            float *router_scores = g_mft_router_scores;
             moe_matvec_f32(w_gate, h2, router_scores, MOE_N_EXPERTS, MOE_HIDDEN);
             moe_softmax_full(router_scores, MOE_N_EXPERTS);
-            int top_idx[16];
+            int *top_idx = g_mft_top_idx;
             moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
 
             for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] = 0.0f;
@@ -3183,10 +3187,10 @@ static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, 
             moe_matvec_af_mt(af, t->dense_down, 0, gate_v, mlp_out);
         } else {
             float *w_gate = (float *)(g_moe_f32_blob + t->gate_w->off);
-            float router_scores[128];
+            float *router_scores = g_mcs_router_scores;
             moe_matvec_f32(w_gate, h2, router_scores, MOE_N_EXPERTS, MOE_HIDDEN);
             moe_softmax_full(router_scores, MOE_N_EXPERTS);
-            int top_idx[16];
+            int *top_idx = g_mcs_top_idx;
             moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
 
             for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] = 0.0f;
@@ -3400,14 +3404,21 @@ static void moe_mla_attention_batched(const uint8_t *af, MoeLayerTensors *t, int
 }
 
 // Per-layer expert -> member-token gather table. Rebuilt every layer (routing differs per
-// layer). MOE_N_EXPERTS <= 128 fits comfortably; MOE_BATCH_MAX members per expert bucket is
-// the worst case (every token in the batch picking the same expert).
+// layer). MOE_BATCH_MAX members per expert bucket is the worst case (every token in the batch
+// picking the same expert). Phase 4 sub-part 1, Step 6 (Group D remainder): heap, MOE_N_EXPERTS
+// entries -- alloc_moe_buffers(). member_tok/member_score's MOE_BATCH_MAX inner dim stays a
+// compile-time macro (R-10). n_members is always explicitly zeroed before use (moe_ffn_batched()'s
+// own "for (e...) g_moe_bucket[e].n_members = 0;"), so malloc is fine -- no calloc needed.
 typedef struct {
     int member_tok[MOE_BATCH_MAX];    // token indices (into the batch) that picked this expert
     float member_score[MOE_BATCH_MAX];// that token's already-full-softmax weight for this expert
     int n_members;
 } MoeExpertBucket;
-static MoeExpertBucket g_moe_bucket[128];
+static MoeExpertBucket *g_moe_bucket;
+// router_scores/top_idx for moe_ffn_batched()/moe_ffn_naive_batched() -- same Rule 3 reasoning,
+// one set per function.
+static float *g_mfb_router_scores; static int *g_mfb_top_idx;
+static float *g_mfnb_router_scores; static int *g_mfnb_top_idx;
 
 // Phase MoE-3c: real SME2 dispatch for routed-expert (switch_mlp) tensors, using the
 // symmetric+affine-correction decomposition verified in Phase MoE-3b
@@ -3602,10 +3613,10 @@ static void moe_ffn_batched(const uint8_t *af, MoeLayerTensors *t, int l, int B,
     for (int e = 0; e < MOE_N_EXPERTS; e++) g_moe_bucket[e].n_members = 0;
     float *w_gate = (float *)(g_moe_f32_blob + t->gate_w->off);
     for (int b = 0; b < B; b++) {
-        float router_scores[128];
+        float *router_scores = g_mfb_router_scores;
         moe_matvec_f32(w_gate, h2_batch[b], router_scores, MOE_N_EXPERTS, MOE_HIDDEN);
         moe_softmax_full(router_scores, MOE_N_EXPERTS);
-        int top_idx[16];
+        int *top_idx = g_mfb_top_idx;
         moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
         for (int k = 0; k < MOE_TOP_K; k++) {
             int e = top_idx[k];
@@ -3665,10 +3676,10 @@ static void moe_ffn_naive_batched(const uint8_t *af, MoeLayerTensors *t, int B,
     float *w_gate = (float *)(g_moe_f32_blob + t->gate_w->off);
     for (int b = 0; b < B; b++) {
         for (int c = 0; c < MOE_HIDDEN; c++) mlp_out_batch[b][c] = 0.0f;
-        float router_scores[128];
+        float *router_scores = g_mfnb_router_scores;
         moe_matvec_f32(w_gate, h2_batch[b], router_scores, MOE_N_EXPERTS, MOE_HIDDEN);
         moe_softmax_full(router_scores, MOE_N_EXPERTS);
-        int top_idx[16];
+        int *top_idx = g_mfnb_top_idx;
         moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
         for (int k = 0; k < MOE_TOP_K; k++) {
             long e = top_idx[k];
@@ -4703,6 +4714,15 @@ static void alloc_moe_buffers(void) {
     g_mcs_sgate_v = malloc((size_t)MOE_IM_DIM*MOE_N_SHARED*sizeof(float)); g_mcs_sup_v = malloc((size_t)MOE_IM_DIM*MOE_N_SHARED*sizeof(float));
     g_mcs_sdown_v = malloc((size_t)MOE_HIDDEN*sizeof(float));
 
+    // Step 6 (Group D remainder): router_scores/top_idx (one set per function, Rule 3) +
+    // g_moe_bucket (MOE_BATCH_MAX inner dim stays a compile-time macro, R-10; n_members always
+    // explicitly zeroed before use, so malloc not calloc -- see g_moe_bucket's own comment).
+    g_mft_router_scores  = malloc((size_t)MOE_N_EXPERTS*sizeof(float)); g_mft_top_idx  = malloc((size_t)MOE_TOP_K*sizeof(int));
+    g_mcs_router_scores  = malloc((size_t)MOE_N_EXPERTS*sizeof(float)); g_mcs_top_idx  = malloc((size_t)MOE_TOP_K*sizeof(int));
+    g_mfb_router_scores  = malloc((size_t)MOE_N_EXPERTS*sizeof(float)); g_mfb_top_idx  = malloc((size_t)MOE_TOP_K*sizeof(int));
+    g_mfnb_router_scores = malloc((size_t)MOE_N_EXPERTS*sizeof(float)); g_mfnb_top_idx = malloc((size_t)MOE_TOP_K*sizeof(int));
+    g_moe_bucket = malloc((size_t)MOE_N_EXPERTS*sizeof(MoeExpertBucket));
+
     if (!g_moe_yarn_freqs || !g_moe_topk_used ||
         !g_mla_q || !g_mla_kv_ap || !g_mla_kv_b || !g_mla_normed_kv || !g_mla_attn_out || !g_mla_o_out ||
         !g_mlar_q || !g_mlar_kv_ap || !g_mlar_kv_b || !g_mlar_normed_kv || !g_mlar_attn_out || !g_mlar_o_out ||
@@ -4714,7 +4734,10 @@ static void alloc_moe_buffers(void) {
         !g_mft_sgate_v || !g_mft_sup_v || !g_mft_sdown_v ||
         !g_mcs_x || !g_mcs_h || !g_mcs_h2 || !g_mcs_mlp_out || !g_mcs_xn ||
         !g_mcs_dgate || !g_mcs_dup || !g_mcs_gate_v || !g_mcs_up_v || !g_mcs_down_v ||
-        !g_mcs_sgate_v || !g_mcs_sup_v || !g_mcs_sdown_v) {
+        !g_mcs_sgate_v || !g_mcs_sup_v || !g_mcs_sdown_v ||
+        !g_mft_router_scores || !g_mft_top_idx || !g_mcs_router_scores || !g_mcs_top_idx ||
+        !g_mfb_router_scores || !g_mfb_top_idx || !g_mfnb_router_scores || !g_mfnb_top_idx ||
+        !g_moe_bucket) {
         fprintf(stderr, "FATAL: alloc_moe_buffers: an allocation failed\n");
         exit(1);
     }
