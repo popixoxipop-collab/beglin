@@ -2944,10 +2944,26 @@ static void moe_resolve_layer_tensors(void) {
 static float g_moe_K[MOE_MAXLAYERS][MOE_MAXPOS][16][192];
 static float g_moe_V[MOE_MAXLAYERS][MOE_MAXPOS][16][128];
 
+// Phase 4 sub-part 1, Step 3 (Group A): MLA per-call scratch, heap -- alloc_moe_buffers().
+// One allocation SET PER FUNCTION (not shared/merged) per the approved plan's Rule 3: these 3
+// functions (moe_mla_attention/_ragged/_batched) are verbatim structural mirrors of each other,
+// kept textually near-identical on purpose as a transcription-bug defense (see
+// moe_mla_attention_ragged()'s and moe_mla_attention_batched()'s own comments) -- merging their
+// scratch would change the aliasing graph, a separate future increment with its own gate, not
+// this one. All malloc (not calloc): every buffer is fully written before read within its own
+// call, confirmed by reading each function body, not assumed. Sizes: q=MOE_QDIM
+// (N_HEADS*Q_HEAD_DIM), kv_ap=MOE_KVA_OUT (KV_LORA_RANK+QK_ROPE_HD), kv_b=MOE_KVB_OUT
+// (N_HEADS*(QK_NOPE_HD+V_HD)), normed_kv=MOE_KV_LORA_RANK, attn_out=MOE_ATTN_OUT
+// (N_HEADS*V_HD), o_out=MOE_HIDDEN.
+static float *g_mla_q, *g_mla_kv_ap, *g_mla_kv_b, *g_mla_normed_kv, *g_mla_attn_out, *g_mla_o_out;
+static float *g_mlar_q, *g_mlar_kv_ap, *g_mlar_kv_b, *g_mlar_normed_kv, *g_mlar_attn_out, *g_mlar_o_out;
+static float *g_mlab_q, *g_mlab_kv_ap, *g_mlab_kv_b, *g_mlab_normed_kv, *g_mlab_attn_out, *g_mlab_o_out;
+
 // MLA attention for one layer/position, appending to x_residual in place. Verbatim math
 // from Phase MoE-2a's mla_verify.c, per-layer instead of layer-0-only.
 static void moe_mla_attention(const uint8_t *af, MoeLayerTensors *t, int l, int pos, const float *h, float *x_residual) {
-    float q[16*192], kv_ap[576], kv_b[4096], normed_kv[512], attn_out[16*128], o_out[2048];
+    float *q = g_mla_q, *kv_ap = g_mla_kv_ap, *kv_b = g_mla_kv_b;
+    float *normed_kv = g_mla_normed_kv, *attn_out = g_mla_attn_out, *o_out = g_mla_o_out;
     moe_matvec_af_mt(af, t->q_proj, 0, h, q);
     moe_matvec_af_mt(af, t->kv_a_proj, 0, h, kv_ap);
     float *compressed_kv = kv_ap;
@@ -3231,7 +3247,8 @@ static float g_moe_cV[MOE_MAXLAYERS][MOE_BATCH_MAX][MOE_CBATCH_MAXPOS][16][128];
 // re-verification path) and moe_mla_attention_batched() (MoE-3b~3f's lockstep path) are both
 // left completely untouched.
 static void moe_mla_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int slot, int l, int pos, const float *h, float *x_residual) {
-    float q[16*192], kv_ap[576], kv_b[4096], normed_kv[512], attn_out[16*128], o_out[2048];
+    float *q = g_mlar_q, *kv_ap = g_mlar_kv_ap, *kv_b = g_mlar_kv_b;
+    float *normed_kv = g_mlar_normed_kv, *attn_out = g_mlar_attn_out, *o_out = g_mlar_o_out;
     moe_matvec_af_mt(af, t->q_proj, 0, h, q);
     moe_matvec_af_mt(af, t->kv_a_proj, 0, h, kv_ap);
     float *compressed_kv = kv_ap;
@@ -3291,7 +3308,8 @@ static void moe_mla_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int 
 // re-verification. Otherwise identical math to moe_mla_attention().
 static void moe_mla_attention_batched(const uint8_t *af, MoeLayerTensors *t, int l, int b,
                                        const float *h, float *x_residual) {
-    float q[16*192], kv_ap[576], kv_b[4096], normed_kv[512], attn_out[16*128], o_out[2048];
+    float *q = g_mlab_q, *kv_ap = g_mlab_kv_ap, *kv_b = g_mlab_kv_b;
+    float *normed_kv = g_mlab_normed_kv, *attn_out = g_mlab_attn_out, *o_out = g_mlab_o_out;
     moe_matvec_af(af, t->q_proj, 0, h, q);
     moe_matvec_af(af, t->kv_a_proj, 0, h, kv_ap);
     float *compressed_kv = kv_ap;
@@ -4584,7 +4602,23 @@ static void alloc_moe_buffers(void) {
     int rope_half = MOE_QK_ROPE_HD / 2;
     g_moe_yarn_freqs = malloc((size_t)rope_half * sizeof(double));
     g_moe_topk_used  = malloc((size_t)MOE_N_EXPERTS * sizeof(int));
-    if (!g_moe_yarn_freqs || !g_moe_topk_used) {
+
+    // Step 3 (Group A): MLA per-call scratch, one malloc set per function (Rule 3 -- see the
+    // declaration comment above moe_mla_attention() for why these aren't shared/merged).
+    g_mla_q = malloc((size_t)MOE_QDIM*sizeof(float)); g_mla_kv_ap = malloc((size_t)MOE_KVA_OUT*sizeof(float));
+    g_mla_kv_b = malloc((size_t)MOE_KVB_OUT*sizeof(float)); g_mla_normed_kv = malloc((size_t)MOE_KV_LORA_RANK*sizeof(float));
+    g_mla_attn_out = malloc((size_t)MOE_ATTN_OUT*sizeof(float)); g_mla_o_out = malloc((size_t)MOE_HIDDEN*sizeof(float));
+    g_mlar_q = malloc((size_t)MOE_QDIM*sizeof(float)); g_mlar_kv_ap = malloc((size_t)MOE_KVA_OUT*sizeof(float));
+    g_mlar_kv_b = malloc((size_t)MOE_KVB_OUT*sizeof(float)); g_mlar_normed_kv = malloc((size_t)MOE_KV_LORA_RANK*sizeof(float));
+    g_mlar_attn_out = malloc((size_t)MOE_ATTN_OUT*sizeof(float)); g_mlar_o_out = malloc((size_t)MOE_HIDDEN*sizeof(float));
+    g_mlab_q = malloc((size_t)MOE_QDIM*sizeof(float)); g_mlab_kv_ap = malloc((size_t)MOE_KVA_OUT*sizeof(float));
+    g_mlab_kv_b = malloc((size_t)MOE_KVB_OUT*sizeof(float)); g_mlab_normed_kv = malloc((size_t)MOE_KV_LORA_RANK*sizeof(float));
+    g_mlab_attn_out = malloc((size_t)MOE_ATTN_OUT*sizeof(float)); g_mlab_o_out = malloc((size_t)MOE_HIDDEN*sizeof(float));
+
+    if (!g_moe_yarn_freqs || !g_moe_topk_used ||
+        !g_mla_q || !g_mla_kv_ap || !g_mla_kv_b || !g_mla_normed_kv || !g_mla_attn_out || !g_mla_o_out ||
+        !g_mlar_q || !g_mlar_kv_ap || !g_mlar_kv_b || !g_mlar_normed_kv || !g_mlar_attn_out || !g_mlar_o_out ||
+        !g_mlab_q || !g_mlab_kv_ap || !g_mlab_kv_b || !g_mlab_normed_kv || !g_mlab_attn_out || !g_mlab_o_out) {
         fprintf(stderr, "FATAL: alloc_moe_buffers: an allocation failed\n");
         exit(1);
     }
