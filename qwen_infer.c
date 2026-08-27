@@ -2482,12 +2482,15 @@ static uint8_t *g_moe_f32_blob;
 static void moe_load_layout_f32(const char *path) {
     FILE *f = fopen(path, "r");
     if (!f) { perror(path); exit(1); }
-    g_moe_f32 = malloc(sizeof(MoeF32Tensor) * 256);
+    // Phase 4 sub-part 3, Step 3.1: 256->512. Qwen3-30B-A3B needs 241 (1 + 5*48) f32
+    // tensors -- only 15 spare under the old 256 cap, not real margin for a model this
+    // size. DeepSeek-V2-Lite uses 108; still comfortably under the new cap.
+    g_moe_f32 = malloc(sizeof(MoeF32Tensor) * 512);
     char line[512];
     while (fgets(line, sizeof line, f)) {
         char name[128]; long off, numel;
         if (sscanf(line, "%127s %ld %ld", name, &off, &numel) != 3) continue;
-        if (g_moe_nf32 >= 256) { fprintf(stderr, "FATAL: >256 moe f32 tensors\n"); exit(1); }
+        if (g_moe_nf32 >= 512) { fprintf(stderr, "FATAL: >512 moe f32 tensors\n"); exit(1); }
         MoeF32Tensor *t = &g_moe_f32[g_moe_nf32++];
         strncpy(t->name, name, sizeof t->name - 1);
         t->off = off; t->numel = numel;
@@ -2973,7 +2976,14 @@ typedef struct {
     MoeAFTensor *shared_gate, *shared_up, *shared_down;
     MoeAFTensor *switch_gate, *switch_up, *switch_down;
 } MoeLayerTensors;
-#define MOE_MAXLAYERS 32
+// Phase 4 sub-part 3, Step 3.1: bumped 32->64 for Qwen3-30B-A3B's NL=48. All 8 K/V
+// flat arrays below this macro are malloc-only, never calloc/memset (Rule 6) -- pages
+// for layers >= MOE_NL are never faulted, so they cost virtual address space only, not
+// RSS. Measured at this step (see RESULTS.md): G3/G6 peak RSS unchanged within noise,
+// confirming the doubled reservation stays lazily-unfaulted exactly as designed. A
+// runtime `int` (sub-part 1's R-10 seam) was considered and rejected -- it would touch
+// ~20 sites (8 accessor inlines + heap-allocating g_moe_lt) to save 0 bytes of RSS.
+#define MOE_MAXLAYERS 64
 static MoeLayerTensors g_moe_lt[MOE_MAXLAYERS];
 
 // Phase 4 sub-part 1, Step 1: shape cross-checks. Every (out,in) pair here was confirmed by
