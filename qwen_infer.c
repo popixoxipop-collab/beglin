@@ -5277,6 +5277,106 @@ static void alloc_moe_buffers(void) {
     }
 }
 
+// Phase 4 sub-part 2 GQA numeric verification (scoped mini-check ahead of full sub-part
+// 3's exporter/GGUF-loader pipeline): exercises the REAL committed moe_attention() ->
+// moe_gqa_attention() dispatch chain against real Qwen3-30B-A3B layer-0 attention
+// weights (q/k/v/o_proj + q_norm/k_norm, exported by a small standalone script -- not
+// weights_moe/'s full model format, no FFN/router tensors needed at all since this calls
+// moe_resolve_attn_tensors_gqa() directly rather than the full per-layer
+// moe_resolve_layer_tensors() loop). Gated by QWEN_MOE_GQA_SELFTEST=<dir> pointing at
+// that export's output directory. Dummy-but-valid values fill every MLA/FFN/router
+// config field moe_cfg_validate()/alloc_moe_buffers() require positive but which this
+// attention-only path never reads.
+static int run_moe_gqa_selftest_mode(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *dir = getenv("QWEN_MOE_GQA_SELFTEST");
+    if (!dir || !dir[0]) return 0;
+
+    fprintf(stderr, "[gqa selftest] QWEN_MOE_GQA_SELFTEST=%s -- attention-only numeric check\n", dir);
+
+    // Real Qwen3-30B-A3B config (verified against the model's own config.json).
+    MOE_HIDDEN = 2048; MOE_N_HEADS = 32; MOE_N_KV_HEADS = 4; MOE_HEAD_DIM = 128;
+    MOE_ROPE_THETA = 1000000.0; MOE_RMS_EPS = 1e-6; MOE_ATTN_KIND = MOE_ATTN_GQA;
+    MOE_ROPE_STYLE = MOE_ROPE_NEOX; MOE_NORM_TOPK_PROB = 0;
+    // Dummy-but-valid: MLA-specific/FFN/router fields this attention-only test never
+    // reads (moe_resolve_attn_tensors_gqa() is called directly below, bypassing the
+    // full per-layer loop and its FFN/router tensor resolution entirely) -- exist only
+    // to satisfy moe_cfg_validate()'s positivity checks and alloc_moe_buffers()'s size
+    // formulas without a crash.
+    MOE_KV_LORA_RANK = 2; MOE_QK_ROPE_HD = 2; MOE_QK_NOPE_HD = 2; MOE_V_HD = 2;
+    MOE_Q_HEAD_DIM = MOE_QK_ROPE_HD + MOE_QK_NOPE_HD;
+    MOE_NL = 1; MOE_FIRST_DENSE_LAYERS = 1; MOE_N_EXPERTS = 1; MOE_N_SHARED = 1;
+    MOE_TOP_K = 1; MOE_IM_DIM = 8; MOE_DENSE_IM = 8; MOE_VOCAB = 8;
+    MOE_YARN_FACTOR = 1.0; MOE_YARN_BETA_FAST = 1.0; MOE_YARN_BETA_SLOW = 1.0;
+    MOE_YARN_MSCALE = 1.0; MOE_YARN_MSCALE_ALL_DIM = 1.0; MOE_YARN_ORIG_MAX_POS = 4096.0;
+    moe_cfg_validate();
+
+    MOE_QDIM     = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_KVA_OUT  = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
+    MOE_KVB_OUT  = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD);
+    MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
+    MOE_SH_IM    = MOE_IM_DIM * MOE_N_SHARED;
+    MOE_KROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    MOE_VROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    MOE_MAX_IN = MOE_HIDDEN;
+    if (MOE_IM_DIM   > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
+    if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
+    if (MOE_DENSE_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_DENSE_IM;
+    MOE_MAX_NG = (MOE_MAX_IN + 63) / 64;
+    MOE_SME2_SLOT_DENSE  = MOE_N_EXPERTS;
+    MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
+    MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2;
+    MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
+
+    alloc_moe_buffers();
+    moe_init_yarn();
+    moe_init_rope_gqa();
+
+    char path[1024];
+    snprintf(path, sizeof path, "%s/gqa_layout_af.txt", dir); moe_load_layout_af(path);
+    snprintf(path, sizeof path, "%s/gqa_af.bin", dir);
+    long af_bytes; uint8_t *af_blob = moe_mmap_file(path, &af_bytes);
+    snprintf(path, sizeof path, "%s/gqa_layout_f32.txt", dir); moe_load_layout_f32(path);
+    snprintf(path, sizeof path, "%s/gqa_f32.bin", dir);
+    long f32_bytes; g_moe_f32_blob = moe_mmap_file(path, &f32_bytes);
+    fprintf(stderr, "[gqa selftest] af blob %ld bytes (%d tensors), f32 blob %ld bytes (%d tensors)\n",
+            af_bytes, g_moe_naf, f32_bytes, g_moe_nf32);
+
+    moe_resolve_attn_tensors_gqa(0, &g_moe_lt[0]);
+    fprintf(stderr, "[gqa selftest] layer-0 attention tensors resolved and shape-checked\n");
+
+    snprintf(path, sizeof path, "%s/x_embed.bin", dir);
+    long xb; uint8_t *xblob = moe_mmap_file(path, &xb);
+    int N = (int)(xb / ((long)MOE_HIDDEN * sizeof(float)));
+    fprintf(stderr, "[gqa selftest] N=%d positions, HIDDEN=%d N_HEADS=%d N_KV_HEADS=%d HEAD_DIM=%d\n",
+            N, MOE_HIDDEN, MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM);
+
+    MoeF32Tensor *t_inln = moe_find_f32("model.layers.0.input_layernorm.weight");
+    float *w_inln = (float *)(g_moe_f32_blob + t_inln->off);
+
+    float *x_embed = malloc((size_t)MOE_HIDDEN * sizeof(float));
+    float *h = malloc((size_t)MOE_HIDDEN * sizeof(float));
+    float *x_residual = malloc((size_t)MOE_HIDDEN * sizeof(float));
+
+    snprintf(path, sizeof path, "%s/gqa_c_dump.txt", dir);
+    FILE *out = fopen(path, "w");
+    if (!out) { perror(path); exit(1); }
+
+    for (int pos = 0; pos < N; pos++) {
+        memcpy(x_embed, xblob + (size_t)pos*MOE_HIDDEN*sizeof(float), (size_t)MOE_HIDDEN*sizeof(float));
+        memcpy(x_residual, x_embed, (size_t)MOE_HIDDEN*sizeof(float));
+        moe_rmsnorm(x_embed, w_inln, h, MOE_HIDDEN);
+        moe_attention(af_blob, &g_moe_lt[0], 0, pos, h, x_residual);
+        fprintf(out, "pos %d", pos);
+        for (int c = 0; c < MOE_HIDDEN; c++) fprintf(out, " %.8g", x_residual[c]);
+        fprintf(out, "\n");
+        fprintf(stderr, "[gqa selftest] pos %d done\n", pos);
+    }
+    fclose(out);
+    fprintf(stderr, "RESULT: gqa selftest forward complete, dumped to %s/gqa_c_dump.txt\n", dir);
+    return 1;
+}
+
 static int run_moe_verify_mode(int argc, char **argv) {
     (void)argc; (void)argv;   // unlike moe2b_verify.c, argv[1] here is the GQA MODE string
                               // (e.g. "greedy"), not a directory -- only QWEN_MOE_BASE selects
@@ -5805,6 +5905,11 @@ int main(int argc, char **argv) {
     // line of the code below. Absent that file (every existing Qwen/Llama run), this is one
     // fopen() that immediately fails and falls through -- byte-identical to this file's
     // behavior before Phase MoE-3a existed.
+    // Phase 4 sub-part 2 GQA numeric verification: checked before run_moe_verify_mode()
+    // since it's gated by its own env var (not weights_moe/ file presence) -- absent
+    // QWEN_MOE_GQA_SELFTEST (every existing run), this is one getenv() call and falls
+    // through, byte-identical to before this self-test existed.
+    if (run_moe_gqa_selftest_mode(argc, argv)) return 0;
     if (run_moe_verify_mode(argc, argv)) return 0;
 
     const char *mode = argc>1?argv[1]:"greedy";
