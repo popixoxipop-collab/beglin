@@ -5493,6 +5493,337 @@ static int run_moe_gqa_selftest_mode(int argc, char **argv) {
     return 1;
 }
 
+// ============================================================================
+// Phase 4 sub-part 4: GGUF stacked-expert MoE loader.
+//
+// Bridges a real GGUF-format MoE checkpoint (llama.cpp's "qwen3moe" architecture convention,
+// verified against an actual downloaded file's header, not just llama.cpp source -- Step 4.1)
+// onto the exact same g_moe_af[]/g_moe_f32[]/MoeLayerTensors machinery run_moe_verify_mode()
+// already drives for the AF-blob path. moe_resolve_layer_tensors(), moe_forward_token(), and
+// everything downstream of them run completely unmodified -- the only new code here is WHERE
+// g_moe_af[]/g_moe_f32[] entries come from: live per-tensor GGUF dequant + symmetric RTN
+// transcode (gguf_quants.c/gguf_transcode.c, the exact same functions the dense GGUF loader
+// already uses), not a pre-built offline blob.
+//
+// Gated by QWEN_MOE_GGUF=<path.gguf> -- absent, this is a single getenv() that returns 0 and
+// falls through, byte-identical to every existing code path.
+// ============================================================================
+
+static const char *SUPPORTED_ARCH_MOE_GGUF[] = { "qwen3moe" };
+
+// GGUF tensor name pattern -> this engine's existing logical name pattern (moe_find_af()/
+// moe_find_f32()'s key -- the SAME names moe_resolve_layer_tensors()/moe_resolve_attn_tensors_gqa()
+// already look up for the AF-blob path, verified against their real call sites above, not
+// re-derived). is_af: 1 = quantized (dequant+transcode via gguf_register_moe_q4g64_as), 0 = f32
+// (dequant only). is_expert: 1 = 3-D expert-stacked tensor (E=MOE_N_EXPERTS), 0 = plain 2-D
+// (E=1) -- informational here (gguf_register_moe_q4g64_as() derives E from the tensor's own
+// n_dims/ne[2], doesn't need this flag), kept for a human reader matching this table against
+// Step 4.1's real tensor dump.
+typedef struct {
+    const char *gguf_pattern;
+    const char *engine_pattern;
+    int is_af;
+    int is_expert;
+} MoeGgufRole;
+
+static const MoeGgufRole MOE_GGUF_LAYER_ROLES[] = {
+    { "blk.%d.attn_q.weight",        "model.layers.%d.self_attn.q_proj",                1, 0 },
+    { "blk.%d.attn_k.weight",        "model.layers.%d.self_attn.k_proj",                1, 0 },
+    { "blk.%d.attn_v.weight",        "model.layers.%d.self_attn.v_proj",                1, 0 },
+    { "blk.%d.attn_output.weight",   "model.layers.%d.self_attn.o_proj",                1, 0 },
+    { "blk.%d.attn_q_norm.weight",   "model.layers.%d.self_attn.q_norm.weight",         0, 0 },
+    { "blk.%d.attn_k_norm.weight",   "model.layers.%d.self_attn.k_norm.weight",         0, 0 },
+    { "blk.%d.attn_norm.weight",     "model.layers.%d.input_layernorm.weight",          0, 0 },
+    { "blk.%d.ffn_norm.weight",      "model.layers.%d.post_attention_layernorm.weight", 0, 0 },
+    { "blk.%d.ffn_gate_inp.weight",  "model.layers.%d.mlp.gate.weight",                 0, 0 },
+    { "blk.%d.ffn_gate_exps.weight", "model.layers.%d.mlp.switch_mlp.gate_proj",        1, 1 },
+    { "blk.%d.ffn_up_exps.weight",   "model.layers.%d.mlp.switch_mlp.up_proj",          1, 1 },
+    { "blk.%d.ffn_down_exps.weight", "model.layers.%d.mlp.switch_mlp.down_proj",        1, 1 },
+};
+
+static GgufFile *g_gguf_moe = NULL;
+
+// Mirrors gguf_register_q4g64_as() (the dense loader's own registration function) but writes
+// into g_moe_af[]/MoeAFTensor instead of g_wt[]/WT, and handles the 3-D expert-stacked case
+// (E>1) by transcoding one expert at a time (4.G: caps the transient dequant buffer at one
+// expert's worth -- ~6.3MB for Qwen3-30B-A3B's switch_mlp tensors -- instead of materializing
+// all E experts' fp32 at once, ~805MB for a 128-expert tensor).
+static MoeAFTensor *gguf_register_moe_q4g64_as(const char *gguf_name, const char *engine_name) {
+    const GgufTensorInfo *t = gguf_find_tensor(g_gguf_moe, gguf_name);
+    if (!t) { fprintf(stderr, "FATAL: gguf moe model missing tensor '%s'\n", gguf_name); exit(1); }
+    // ne[] is fastest-varying-first: ne[0]=in, ne[1]=out, ne[2]=E (expert, slowest-varying) --
+    // verified against a real Qwen3-30B-A3B GGUF file's header (Step 4.1), not assumed from
+    // llama.cpp source alone.
+    long E = (t->n_dims >= 3) ? (long)t->ne[2] : 1;
+    long out = (long)t->ne[1], in = (long)t->ne[0];
+    if (in % 64 != 0) {
+        fprintf(stderr, "FATAL: gguf moe: %s in=%ld not a multiple of 64 (SME2_KAI_BL requirement)\n",
+                gguf_name, in);
+        exit(1);
+    }
+    if (!gguf_dequant_supported(t->type)) {
+        fprintf(stderr, "FATAL: gguf moe tensor '%s' has unsupported quant type id %d\n",
+                gguf_name, (int)t->type);
+        exit(1);
+    }
+    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (gguf)\n"); exit(1); }
+
+    long ng = in / 64;
+    size_t row_pbytes = (size_t)(in / 2);
+    size_t packed_bytes = (size_t)E * (size_t)out * row_pbytes;
+    size_t scale_bytes  = (size_t)E * (size_t)out * (size_t)ng * sizeof(float);
+    // 4.B: gguf_quantize_q4g64_error_feedback() is symmetric-only (packed nibbles + scales, no
+    // bias) -- one buffer holds both, back-to-back, nothing else needed.
+    uint8_t *base = malloc(packed_bytes + scale_bytes);
+    if (!base) {
+        fprintf(stderr, "FATAL: gguf moe transcode alloc failed for '%s' (%zu bytes)\n",
+                gguf_name, packed_bytes + scale_bytes);
+        exit(1);
+    }
+    uint8_t *packed_all = base;
+    float *scales_all = (float *)(base + packed_bytes);
+
+    float *deq = malloc((size_t)out * (size_t)in * sizeof(float));
+    if (!deq) { fprintf(stderr, "FATAL: gguf moe dequant scratch alloc failed for '%s'\n", gguf_name); exit(1); }
+    const uint8_t *raw = (const uint8_t *)gguf_tensor_data(g_gguf_moe, t);
+    size_t expert_stride_bytes = (size_t)t->n_bytes / (size_t)E;
+    for (long e = 0; e < E; e++) {
+        gguf_dequant_row(t->type, raw + (size_t)e * expert_stride_bytes, deq, out * in);
+        gguf_quantize_q4g64_error_feedback(deq, (int)out, (int)in,
+                                            packed_all + (size_t)e * (size_t)out * row_pbytes,
+                                            scales_all + (size_t)e * (size_t)out * (size_t)ng);
+    }
+    free(deq);
+
+    MoeAFTensor *w = &g_moe_af[g_moe_naf++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->E = E; w->out = out; w->in = in; w->ng = ng;
+    w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
+    w->scale_off = (long)packed_bytes; w->bias_off = -1;  // never dereferenced: sym=1
+    w->base = base; w->sym = 1;
+    return w;
+}
+
+// Mirrors gguf_register_f32_as() but writes into g_moe_f32[]/g_moe_f32_blob -- a single
+// growable buffer every f32-role MoE tensor shares, exactly like the AF-blob path's mmap'd f32
+// blob. realloc-safe: every reader re-derives `g_moe_f32_blob + t->off` at access time (see
+// e.g. run_moe_verify_mode()'s own `w_finalnorm = g_moe_f32_blob + t_finalnorm->off`), never
+// holds a raw pointer into the middle of the blob across a call to this function.
+static size_t g_moe_f32_blob_cap = 0, g_moe_f32_blob_used = 0;
+static MoeF32Tensor *gguf_register_moe_f32_as(const char *gguf_name, const char *engine_name) {
+    const GgufTensorInfo *t = gguf_find_tensor(g_gguf_moe, gguf_name);
+    if (!t) { fprintf(stderr, "FATAL: gguf moe model missing tensor '%s'\n", gguf_name); exit(1); }
+    if (!gguf_dequant_supported(t->type)) {
+        fprintf(stderr, "FATAL: gguf moe tensor '%s' has unsupported quant type id %d\n",
+                gguf_name, (int)t->type);
+        exit(1);
+    }
+    if (g_moe_nf32 >= 512) { fprintf(stderr, "FATAL: >512 moe f32 tensors (gguf)\n"); exit(1); }
+    size_t numel = (size_t)t->n_elements;
+    size_t need_bytes = numel * sizeof(float);
+    if (g_moe_f32_blob_used + need_bytes > g_moe_f32_blob_cap) {
+        size_t new_cap = g_moe_f32_blob_cap ? g_moe_f32_blob_cap * 2 : (1u << 20);
+        while (new_cap < g_moe_f32_blob_used + need_bytes) new_cap *= 2;
+        uint8_t *grown = realloc(g_moe_f32_blob, new_cap);
+        if (!grown) { fprintf(stderr, "FATAL: gguf moe f32 blob realloc failed\n"); exit(1); }
+        g_moe_f32_blob = grown;
+        g_moe_f32_blob_cap = new_cap;
+    }
+    gguf_dequant_row(t->type, gguf_tensor_data(g_gguf_moe, t),
+                      (float *)(g_moe_f32_blob + g_moe_f32_blob_used), (int64_t)numel);
+    MoeF32Tensor *w = &g_moe_f32[g_moe_nf32++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->off = (long)g_moe_f32_blob_used; w->numel = (long)numel;
+    g_moe_f32_blob_used += need_bytes;
+    return w;
+}
+
+static int run_gguf_moe_verify_mode(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *path = getenv("QWEN_MOE_GGUF");
+    if (!path || !path[0]) return 0;   // not a GGUF-MoE run -- fall through, byte-identical
+
+    fprintf(stderr, "[engine] QWEN_MOE_GGUF=%s -- GGUF stacked-expert MoE verification mode\n", path);
+    g_gguf_moe = gguf_open(path);
+    if (!g_gguf_moe) { perror("gguf_open"); fprintf(stderr, "FATAL: could not open gguf file %s\n", path); exit(1); }
+
+    const char *arch_ptr; uint64_t arch_len;
+    if (!gguf_kv_str(g_gguf_moe, "general.architecture", &arch_ptr, &arch_len)) {
+        fprintf(stderr, "FATAL: gguf moe file %s missing general.architecture\n", path); exit(1);
+    }
+    int arch_ok = 0;
+    for (size_t i = 0; i < sizeof(SUPPORTED_ARCH_MOE_GGUF)/sizeof(SUPPORTED_ARCH_MOE_GGUF[0]); i++) {
+        if (arch_len == strlen(SUPPORTED_ARCH_MOE_GGUF[i]) &&
+            !memcmp(arch_ptr, SUPPORTED_ARCH_MOE_GGUF[i], arch_len)) { arch_ok = 1; break; }
+    }
+    if (!arch_ok) {
+        fprintf(stderr, "FATAL: gguf moe architecture '%.*s' not validated by this engine; supported: qwen3moe\n",
+                (int)arch_len, arch_ptr);
+        exit(1);
+    }
+    char arch[64]; snprintf(arch, sizeof arch, "%.*s", (int)arch_len, arch_ptr);
+
+    char key[128]; uint64_t u; double d;
+    snprintf(key,sizeof key,"%s.block_count",arch);
+    if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_NL=(int)u;
+    snprintf(key,sizeof key,"%s.embedding_length",arch);
+    if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_HIDDEN=(int)u;
+    snprintf(key,sizeof key,"%s.attention.head_count",arch);
+    if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_N_HEADS=(int)u;
+    snprintf(key,sizeof key,"%s.attention.head_count_kv",arch);
+    if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_N_KV_HEADS=(int)u;
+    snprintf(key,sizeof key,"%s.attention.key_length",arch);
+    if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_HEAD_DIM=(int)u;
+    snprintf(key,sizeof key,"%s.expert_count",arch);
+    if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_N_EXPERTS=(int)u;
+    snprintf(key,sizeof key,"%s.expert_used_count",arch);
+    if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_TOP_K=(int)u;
+    snprintf(key,sizeof key,"%s.expert_feed_forward_length",arch);
+    if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_IM_DIM=(int)u;
+    snprintf(key,sizeof key,"%s.feed_forward_length",arch);
+    if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_DENSE_IM=(int)u;
+    snprintf(key,sizeof key,"%s.rope.freq_base",arch);
+    if (!gguf_kv_f64(g_gguf_moe,key,&d)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_ROPE_THETA=d;
+    snprintf(key,sizeof key,"%s.attention.layer_norm_rms_epsilon",arch);
+    if (!gguf_kv_f64(g_gguf_moe,key,&d)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_RMS_EPS=d;
+
+    const GgufTensorInfo *embed_t = gguf_find_tensor(g_gguf_moe, "token_embd.weight");
+    if (!embed_t) { fprintf(stderr, "FATAL: gguf moe missing token_embd.weight\n"); exit(1); }
+    MOE_VOCAB = (int)embed_t->ne[1];
+
+    // Architecture-level facts about qwen3moe (verified this session against real config.json /
+    // mlx_lm source, sub-part 3's own F-3/C-6 findings -- not read from any KV key, because none
+    // exists for these): NEOX RoPE, top-k renormalization always on, no shared experts, every
+    // layer is MoE (no forced-dense layers).
+    MOE_ATTN_KIND = MOE_ATTN_GQA;
+    MOE_ROPE_STYLE = MOE_ROPE_NEOX;
+    MOE_NORM_TOPK_PROB = 1;
+    MOE_N_SHARED = 0;
+    MOE_FIRST_DENSE_LAYERS = 0;
+    MOE_Q_HEAD_DIM = MOE_HEAD_DIM;
+    // MLA-only fields this GQA path never reads (moe_cfg_validate()/alloc_moe_buffers() require
+    // them positive regardless of ATTN_KIND) -- same dummy-but-valid placeholders the sub-part-2
+    // self-test and sub-part-3 exporter already proved run clean, see moe_cfg_validate()'s own
+    // comment and PLAN_general_purpose_loader.md's B-8 decision.
+    MOE_KV_LORA_RANK = 2; MOE_QK_ROPE_HD = 2; MOE_QK_NOPE_HD = 2; MOE_V_HD = 2;
+    MOE_YARN_FACTOR = 1.0; MOE_YARN_BETA_FAST = 1.0; MOE_YARN_BETA_SLOW = 1.0;
+    MOE_YARN_MSCALE = 1.0; MOE_YARN_MSCALE_ALL_DIM = 1.0; MOE_YARN_ORIG_MAX_POS = 4096.0;
+    moe_cfg_validate();
+
+    // Derived dims -- verbatim mirror of run_moe_verify_mode()'s own block (same formulas, same
+    // order); kept as an intentional duplicate rather than a shared helper so this new, unproven
+    // code path cannot alter run_moe_verify_mode()'s own already-gated behavior by definition.
+    MOE_QDIM     = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_KVA_OUT  = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
+    MOE_KVB_OUT  = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD);
+    MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
+    MOE_SH_IM    = MOE_IM_DIM * MOE_N_SHARED;
+    MOE_KROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    MOE_VROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    MOE_MAX_IN   = MOE_HIDDEN;
+    if (MOE_IM_DIM   > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
+    if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
+    if (MOE_DENSE_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_DENSE_IM;
+    MOE_MAX_NG   = (MOE_MAX_IN + 63) / 64;
+    MOE_SME2_SLOT_DENSE  = MOE_N_EXPERTS;
+    MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
+    MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2;
+    MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
+    fprintf(stderr, "[gguf moe cfg] arch=%s NL=%d N_EXPERTS=%d TOP_K=%d MOE_IM=%d DENSE_IM=%d "
+                    "VOCAB=%d N_KV_HEADS=%d HEAD_DIM=%d\n",
+            arch, MOE_NL, MOE_N_EXPERTS, MOE_TOP_K, MOE_IM_DIM, MOE_DENSE_IM, MOE_VOCAB,
+            MOE_N_KV_HEADS, MOE_HEAD_DIM);
+    alloc_moe_buffers();
+    moe_init_yarn();
+    moe_init_rope_gqa();
+    fprintf(stderr, "[gguf moe yarn] rope_mscale=%.10f attn_scale=%.10f\n", g_moe_rope_mscale, g_moe_attn_scale);
+
+    g_moe_af = malloc(sizeof(MoeAFTensor) * 512);
+    g_moe_f32 = malloc(sizeof(MoeF32Tensor) * 512);
+
+    for (int l = 0; l < MOE_NL; l++) {
+        for (size_t r = 0; r < sizeof(MOE_GGUF_LAYER_ROLES)/sizeof(MOE_GGUF_LAYER_ROLES[0]); r++) {
+            const MoeGgufRole *role = &MOE_GGUF_LAYER_ROLES[r];
+            char gsrc[96], ename[96];
+            snprintf(gsrc, sizeof gsrc, role->gguf_pattern, l);
+            snprintf(ename, sizeof ename, role->engine_pattern, l);
+            if (role->is_af) gguf_register_moe_q4g64_as(gsrc, ename);
+            else             gguf_register_moe_f32_as(gsrc, ename);
+        }
+        if ((l+1) % 8 == 0 || l+1 == MOE_NL)
+            fprintf(stderr, "[gguf moe load] layer %d/%d transcoded\n", l+1, MOE_NL);
+    }
+    gguf_register_moe_q4g64_as("token_embd.weight", "model.embed_tokens");
+    gguf_register_moe_f32_as("output_norm.weight", "model.norm.weight");
+    // output.weight present -> untied lm_head; absent -> tied embeddings (moe_find_af() would
+    // then need "lm_head" to resolve to the embed tensor -- not yet handled, FATAL is correct
+    // until a real tied-embedding qwen3moe checkpoint is actually seen).
+    if (gguf_find_tensor(g_gguf_moe, "output.weight")) {
+        gguf_register_moe_q4g64_as("output.weight", "lm_head");
+    } else {
+        fprintf(stderr, "FATAL: gguf moe: tied embeddings (no output.weight) not yet supported\n");
+        exit(1);
+    }
+    fprintf(stderr, "[gguf moe load] registered %d af tensors, %d f32 tensors\n", g_moe_naf, g_moe_nf32);
+
+    moe_resolve_layer_tensors();
+    fprintf(stderr, "[gguf moe check] all %d layers' tensors resolved\n", MOE_NL);
+
+    MoeAFTensor *t_embed = moe_find_af("model.embed_tokens");
+    MoeAFTensor *t_lmhead = moe_find_af("lm_head");
+    MoeF32Tensor *t_finalnorm = moe_find_f32("model.norm.weight");
+    float *w_finalnorm = (float *)(g_moe_f32_blob + t_finalnorm->off);
+    if (t_lmhead->out != MOE_VOCAB || t_lmhead->in != MOE_HIDDEN) {
+        fprintf(stderr, "FATAL: gguf moe lm_head shape mismatch\n"); exit(1);
+    }
+
+    // Same QWEN_MOE_PROMPT_IDS mechanism sub-part 3's Step 3.9 gate already established (see its
+    // own comment at the AF-blob path's copy) -- a second model needs its own tokenizer's IDs for
+    // the same prompt text; falls back to the (semantically meaningless for this tokenizer, but
+    // still in-bounds) DeepSeek default if unset.
+    static int prompt_ids_default[] = {100000, 549, 4345, 280, 8204, 317, 245, 1234};
+    static int prompt_ids_override[MOE_MAXPOS];
+    int *prompt_ids = prompt_ids_default;
+    int N = sizeof(prompt_ids_default) / sizeof(prompt_ids_default[0]);
+    const char *prompt_ids_env = getenv("QWEN_MOE_PROMPT_IDS");
+    if (prompt_ids_env && prompt_ids_env[0]) {
+        char buf[1024];
+        strncpy(buf, prompt_ids_env, sizeof buf - 1);
+        buf[sizeof buf - 1] = '\0';
+        int n = 0;
+        char *tok = strtok(buf, ",");
+        while (tok && n < MOE_MAXPOS) { prompt_ids_override[n++] = atoi(tok); tok = strtok(NULL, ","); }
+        prompt_ids = prompt_ids_override;
+        N = n;
+    }
+    if (N > MOE_MAXPOS) { fprintf(stderr, "FATAL: N=%d > MOE_MAXPOS=%d\n", N, MOE_MAXPOS); exit(1); }
+
+    FILE *logits_out = fopen("moe_gguf_c_logits.bin", "wb");
+    if (!logits_out) { perror("moe_gguf_c_logits.bin"); exit(1); }
+    FILE *routing_out = fopen("moe_gguf_c_routing.txt", "w");
+    if (!routing_out) { perror("moe_gguf_c_routing.txt"); exit(1); }
+
+    // AF blob param: NULL is deliberate, not a placeholder to fill in later -- every tensor
+    // registered above carries its own base (gguf_register_moe_q4g64_as() always sets it), so
+    // moe_decode_af()/moe_matvec_af_row[_vdsp]()'s `t->base ? t->base : blob` resolution never
+    // falls through to this parameter for a GGUF-sourced model (MOE_N_SHARED=0 and
+    // MOE_FIRST_DENSE_LAYERS=0 also mean the shared_experts/dense_gate/up/down branches that
+    // would otherwise dereference `af` directly are unconditionally skipped -- see MoeAFTensor's
+    // own base/sym comment, Step 4.2).
+    float *logits = malloc((size_t)MOE_VOCAB * sizeof(float));
+    for (int pos = 0; pos < N; pos++) {
+        moe_forward_token(NULL, t_embed, t_lmhead, w_finalnorm, prompt_ids[pos], pos, logits, routing_out);
+        fwrite(logits, sizeof(float), MOE_VOCAB, logits_out);
+        int argmax = 0; float best = logits[0];
+        for (int v = 1; v < MOE_VOCAB; v++) if (logits[v] > best) { best = logits[v]; argmax = v; }
+        fprintf(stderr, "[gguf moe verify] pos %d token %d -> argmax next-token %d (logit %.4f)\n",
+                pos, prompt_ids[pos], argmax, best);
+    }
+    fclose(logits_out); fclose(routing_out);
+    fprintf(stderr, "RESULT: GGUF-MoE production-binary forward complete for %d positions\n", N);
+    return 1;
+}
+
 static int run_moe_verify_mode(int argc, char **argv) {
     (void)argc; (void)argv;   // unlike moe2b_verify.c, argv[1] here is the GQA MODE string
                               // (e.g. "greedy"), not a directory -- only QWEN_MOE_BASE selects
@@ -6065,6 +6396,7 @@ int main(int argc, char **argv) {
     // QWEN_MOE_GQA_SELFTEST (every existing run), this is one getenv() call and falls
     // through, byte-identical to before this self-test existed.
     if (run_moe_gqa_selftest_mode(argc, argv)) return 0;
+    if (run_gguf_moe_verify_mode(argc, argv)) return 0;
     if (run_moe_verify_mode(argc, argv)) return 0;
 
     const char *mode = argc>1?argv[1]:"greedy";
