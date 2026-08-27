@@ -5515,6 +5515,129 @@ static int run_moe_sym_selftest_mode(int argc, char **argv) {
 #undef SYMTEST_IN
 #undef SYMTEST_NG
 
+// MQA numeric verification (12-axis generality table, "attention mechanism" item): MQA is
+// N_KV_HEADS=1, a degenerate case of the ALREADY-verified GQA formula moe_gqa_attention()
+// implements (`kvh = hh/group` with `group = MOE_N_HEADS/MOE_N_KV_HEADS`; Step 3.9 verified this
+// exact formula end-to-end at group=8 against a real MLX reference, 48 layers, real weights --
+// see moe_gqa_attention()'s own "NUMERIC VERIFICATION: CLOSED" comment). At N_KV_HEADS=1,
+// group==MOE_N_HEADS so kvh=hh/MOE_N_HEADS==0 for every hh in [0,MOE_N_HEADS) -- provable by
+// inspection, not a new code path. What ISN'T covered by that inspection alone: whether
+// MOE_KROW/MOE_VROW (== MOE_N_KV_HEADS*MOE_HEAD_DIM == exactly one head's worth of columns at
+// N_KV_HEADS=1) still address moe_K_row()/moe_V_row() correctly, and whether every query head
+// really does end up reading the SAME single K/V row rather than an off-by-one/aliased one. This
+// self-test closes that gap directly: synthetic (not real-model) weights, all-sym AF tensors (same
+// generation style as Gate 4.2's sym-selftest, but sized in multiples of 64 -- moe_matvec_af_row()
+// ALWAYS processes 64 columns per group regardless of `in`, so unlike Gate 4.2's HIDDEN=64 case a
+// non-multiple-of-64 `in` here would read out of bounds, not just be untested), 2 query heads
+// sharing 1 KV head, 3 sequential positions (exercises the KV-cache row read across positions, not
+// just pos=0's trivial 1-token case). Diffed against an independent Python/numpy reference
+// (mqa_selftest_reference.py) that reimplements the same dequant+RoPE+attention math from this
+// project's own committed formulas, not copy-pasted from this function. Gated by
+// QWEN_MOE_MQA_SELFTEST=1; output path via QWEN_MOE_MQA_SELFTEST_OUT (default
+// /tmp/mqa_selftest_c_dump.txt). No SME2 hardware requirement -- moe_gqa_attention()'s q/k/v/o_proj
+// matvecs always go through moe_matvec_af_mt()->moe_matvec_af() (plain scalar/vDSP thread pool),
+// never moe_matvec_af_group_smart()'s SME2 dispatch, so this runs identically on bob or macstudio.
+// Returns the malloc'd blob (non-const) so the caller can free() it directly -- t->base is
+// const-qualified (4.C bridge design, see MoeAFTensor's own comment), and free() on a const
+// uint8_t* discards qualifiers.
+static uint8_t *mqa_build_sym_tensor(MoeAFTensor *t, int out_n, int in_n,
+                                      int p1, int p2, int p3, float s0, int smod) {
+    long ng = in_n / 64;
+    size_t packed_bytes = (size_t)out_n * (size_t)(in_n / 2);
+    size_t scale_bytes  = (size_t)out_n * (size_t)ng * sizeof(float);
+    uint8_t *blob = malloc(packed_bytes + scale_bytes);
+    for (int row = 0; row < out_n; row++) {
+        for (int byte_i = 0; byte_i < in_n / 2; byte_i++) {
+            int col_lo = byte_i * 2, col_hi = byte_i * 2 + 1;
+            int nib_lo = (row * p1 + col_lo * p2 + p3) & 0xF;
+            int nib_hi = (row * p1 + col_hi * p2 + p3) & 0xF;
+            blob[(size_t)row * (in_n / 2) + byte_i] = (uint8_t)(nib_lo | (nib_hi << 4));
+        }
+        for (long g = 0; g < ng; g++) {
+            float scale = s0 * (float)((row % smod) + 1) * (1.0f + 0.1f * (float)g);
+            memcpy(blob + packed_bytes + ((size_t)row * (size_t)ng + (size_t)g) * sizeof(float),
+                   &scale, sizeof(float));
+        }
+    }
+    t->E = 1; t->out = out_n; t->in = in_n; t->ng = ng;
+    t->packed_off = 0; t->packed_bytes = (long)packed_bytes;
+    t->scale_off = (long)packed_bytes; t->bias_off = -1;   // never dereferenced: sym=1
+    t->base = blob; t->sym = 1;
+    return blob;
+}
+static int run_moe_mqa_selftest_mode(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *env = getenv("QWEN_MOE_MQA_SELFTEST");
+    if (!env || !env[0]) return 0;
+
+    fprintf(stderr, "[mqa selftest] QWEN_MOE_MQA_SELFTEST=1 -- MQA (N_KV_HEADS=1) numeric check\n");
+
+    MOE_HIDDEN = 64; MOE_N_HEADS = 2; MOE_N_KV_HEADS = 1; MOE_HEAD_DIM = 64;
+    MOE_ROPE_THETA = 1000000.0; MOE_RMS_EPS = 1e-6; MOE_ATTN_KIND = MOE_ATTN_GQA;
+    MOE_ROPE_STYLE = MOE_ROPE_NEOX; MOE_NORM_TOPK_PROB = 0;
+    // Dummy-but-valid MLA/FFN/router fields, same pattern as run_moe_sym_selftest_mode /
+    // run_moe_gqa_selftest_mode above -- this attention-only test never reads them, they exist
+    // only to satisfy moe_cfg_validate()/alloc_moe_buffers()'s positivity requirements.
+    MOE_KV_LORA_RANK = 2; MOE_QK_ROPE_HD = 2; MOE_QK_NOPE_HD = 2; MOE_V_HD = 2;
+    MOE_Q_HEAD_DIM = MOE_QK_ROPE_HD + MOE_QK_NOPE_HD;
+    MOE_NL = 1; MOE_FIRST_DENSE_LAYERS = 1; MOE_N_EXPERTS = 1; MOE_N_SHARED = 1;
+    MOE_TOP_K = 1; MOE_IM_DIM = 64; MOE_DENSE_IM = 64; MOE_VOCAB = 8;
+    MOE_YARN_FACTOR = 1.0; MOE_YARN_BETA_FAST = 1.0; MOE_YARN_BETA_SLOW = 1.0;
+    MOE_YARN_MSCALE = 1.0; MOE_YARN_MSCALE_ALL_DIM = 1.0; MOE_YARN_ORIG_MAX_POS = 4096.0;
+    moe_cfg_validate();
+    MOE_QDIM = MOE_N_HEADS * MOE_Q_HEAD_DIM; MOE_KVA_OUT = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
+    MOE_KVB_OUT = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD); MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
+    MOE_SH_IM = MOE_IM_DIM * MOE_N_SHARED;
+    MOE_KROW = MOE_N_KV_HEADS * MOE_HEAD_DIM; MOE_VROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    MOE_MAX_IN = MOE_HIDDEN;
+    if (MOE_IM_DIM > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
+    if (MOE_SH_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
+    if (MOE_DENSE_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_DENSE_IM;
+    if (MOE_N_HEADS * MOE_HEAD_DIM > MOE_MAX_IN) MOE_MAX_IN = MOE_N_HEADS * MOE_HEAD_DIM;
+    MOE_MAX_NG = (MOE_MAX_IN + 63) / 64;
+    MOE_SME2_SLOT_DENSE  = MOE_N_EXPERTS;
+    MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
+    MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2;
+    MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
+    alloc_moe_buffers();
+    moe_init_rope_gqa();
+
+    MoeAFTensor tq = {0}, tk = {0}, tv = {0}, to = {0};
+    uint8_t *blob_q = mqa_build_sym_tensor(&tq, MOE_N_HEADS*MOE_HEAD_DIM,    MOE_HIDDEN,             3,  5, 1, 0.005f, 13);
+    uint8_t *blob_k = mqa_build_sym_tensor(&tk, MOE_N_KV_HEADS*MOE_HEAD_DIM, MOE_HIDDEN,            11,  7, 2, 0.006f, 11);
+    uint8_t *blob_v = mqa_build_sym_tensor(&tv, MOE_N_KV_HEADS*MOE_HEAD_DIM, MOE_HIDDEN,            13,  3, 3, 0.004f,  9);
+    uint8_t *blob_o = mqa_build_sym_tensor(&to, MOE_HIDDEN,                  MOE_N_HEADS*MOE_HEAD_DIM, 5, 11, 4, 0.007f,  7);
+
+    MoeLayerTensors t = {0};
+    t.q_proj = &tq; t.k_proj = &tk; t.v_proj = &tv; t.o_proj = &to;   // q_norm/k_norm left NULL
+
+    const int N_POS = 3;
+    const char *out_env = getenv("QWEN_MOE_MQA_SELFTEST_OUT");
+    const char *out_path = (out_env && out_env[0]) ? out_env : "/tmp/mqa_selftest_c_dump.txt";
+    FILE *out = fopen(out_path, "w");
+    if (!out) { perror(out_path); exit(1); }
+
+    float *h = malloc((size_t)MOE_HIDDEN * sizeof(float));
+    float *x_residual = malloc((size_t)MOE_HIDDEN * sizeof(float));
+    for (int pos = 0; pos < N_POS; pos++) {
+        for (int c = 0; c < MOE_HIDDEN; c++)
+            h[c] = 0.01f * (float)(((c * 7 + pos * 13 + 3) % 41) - 20);
+        memset(x_residual, 0, (size_t)MOE_HIDDEN * sizeof(float));   // isolate o_out: no incoming residual
+        moe_gqa_attention(NULL, &t, 0, pos, h, x_residual);
+        fprintf(out, "pos %d", pos);
+        for (int c = 0; c < MOE_HIDDEN; c++) fprintf(out, " %.9g", x_residual[c]);
+        fprintf(out, "\n");
+    }
+    fclose(out);
+    fprintf(stderr, "[mqa selftest] N_HEADS=%d N_KV_HEADS=%d HEAD_DIM=%d group=%d -- dumped %d "
+                     "positions to %s\n", MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM,
+                     MOE_N_HEADS / MOE_N_KV_HEADS, N_POS, out_path);
+    fprintf(stderr, "RESULT: mqa selftest forward complete\n");
+    free(blob_q); free(blob_k); free(blob_v); free(blob_o);
+    free(h); free(x_residual);
+    return 1;
+}
+
 static int run_moe_gqa_selftest_mode(int argc, char **argv) {
     (void)argc; (void)argv;
     const char *dir = getenv("QWEN_MOE_GQA_SELFTEST");
@@ -6556,6 +6679,7 @@ int main(int argc, char **argv) {
     // QWEN_MOE_GQA_SELFTEST (every existing run), this is one getenv() call and falls
     // through, byte-identical to before this self-test existed.
     if (run_moe_sym_selftest_mode(argc, argv)) return 0;
+    if (run_moe_mqa_selftest_mode(argc, argv)) return 0;
     if (run_moe_gqa_selftest_mode(argc, argv)) return 0;
     if (run_gguf_moe_verify_mode(argc, argv)) return 0;
     if (run_moe_verify_mode(argc, argv)) return 0;
