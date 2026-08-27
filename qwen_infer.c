@@ -2556,6 +2556,12 @@ static double MOE_RMS_EPS;
 // fixed ceiling to violate, unlike the array this replaced -- moe_cfg_validate() no longer needs
 // (and no longer has) a MOE_MAX_ROPE_PAIRS check.
 static double *g_moe_yarn_freqs = NULL;
+// Phase 4 sub-part 2, Step 2.6: plain (non-YaRN) RoPE inverse-frequency table for GQA models --
+// Mixtral/Qwen3-MoE don't use YaRN long-context scaling the way DeepSeek-V2-Lite's MLA does, so
+// this is the standard `1/theta^(2i/dim)` table, not moe_init_yarn()'s ramped/interpolated one.
+// heap, MOE_HEAD_DIM/2 doubles -- alloc_moe_buffers(), written by moe_init_rope_gqa() (called
+// from run_moe_verify_mode() only when MOE_ATTN_KIND==GQA), read by moe_rope_neox_apply().
+static double *g_moe_rope_inv = NULL;
 // Phase 4 sub-part 1 (de-hardcode the MoE path): derived dimensions, same pattern as
 // MOE_Q_HEAD_DIM above -- computed once in run_moe_verify_mode() right after the raw
 // MOE_* config loads, used both by moe_cfg_validate()'s shape cross-checks and by
@@ -2633,6 +2639,34 @@ static void moe_rope_traditional_apply(float *v, int dim, int pos) {
         double a = v[2*i], b = v[2*i+1];
         v[2*i]   = (float)(a*c - b*s);
         v[2*i+1] = (float)(a*s + b*c);
+    }
+}
+// Phase 4 sub-part 2, Step 2.6: plain RoPE table for GQA models -- standard
+// `1/theta^(2i/dim)` (multiplication in moe_rope_neox_apply() below, NOT YaRN's division --
+// that division convention is specific to moe_init_yarn()'s MLA-only ramped table, verified
+// empirically in Phase MoE-2a and must not be copied here without the same verification this
+// GQA path doesn't have yet). Mirrors moe_init_yarn()'s role: fills a table once at load,
+// read per-token by moe_rope_neox_apply(). Only called when MOE_ATTN_KIND==GQA.
+static void moe_init_rope_gqa(void) {
+    int half = MOE_HEAD_DIM / 2;
+    for (int i = 0; i < half; i++) {
+        g_moe_rope_inv[i] = 1.0 / pow(MOE_ROPE_THETA, (2.0 * i) / MOE_HEAD_DIM);
+    }
+}
+// Phase 4 sub-part 2, Step 2.6: NEOX split-half RoPE convention -- rotates (v[i], v[i+half])
+// pairs, as opposed to moe_rope_traditional_apply()'s interleaved (v[2i], v[2i+1]) pairs.
+// Verified from mlx_lm's qwen3_moe.py/mixtral.py: both construct their RoPE as
+// `nn.RoPE(head_dim, traditional=False, base=rope_theta)` -- `traditional=False` is this
+// split-half convention, not MLA's. Structurally mirrors moe_rope_traditional_apply() so the
+// two stay easy to diff against each other (this project's usual transcription-bug defense).
+static void moe_rope_neox_apply(float *v, int dim, int pos) {
+    int half = dim / 2;
+    for (int i = 0; i < half; i++) {
+        double ang = (double)pos * g_moe_rope_inv[i];
+        double c = cos(ang), s = sin(ang);
+        double a = v[i], b = v[i+half];
+        v[i]      = (float)(a*c - b*s);
+        v[i+half] = (float)(a*s + b*c);
     }
 }
 
@@ -3500,13 +3534,19 @@ static void moe_mla_attention_batched(const uint8_t *af, MoeLayerTensors *t, int
 // moe_resolve_attn_tensors_gqa()'s stub above.
 static void moe_gqa_attention(const uint8_t *af, MoeLayerTensors *t, int l, int pos,
                                const float *h, float *x_residual) {
-    (void)af; (void)t; (void)l; (void)pos; (void)h; (void)x_residual;
+    (void)af; (void)t; (void)l; (void)h;
+    // Step 2.6: exercises moe_rope_neox_apply()'s real signature ahead of Step 2.7 replacing
+    // this whole stub with the actual per-head q/k rotation loop -- keeps the seam
+    // type-checked and referenced (not dead code) rather than a bare FATAL. Discarded by the
+    // exit(1) below either way, so which buffer it touches is inconsequential here.
+    moe_rope_neox_apply(x_residual, MOE_HEAD_DIM, pos);
     fprintf(stderr, "FATAL: moe_gqa_attention: ATTN_KIND=gqa not implemented yet -- see Phase 4 sub-part 2 Step 2.7\n");
     exit(1);
 }
 static void moe_gqa_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int slot, int l, int pos,
                                       const float *h, float *x_residual) {
-    (void)af; (void)t; (void)slot; (void)l; (void)pos; (void)h; (void)x_residual;
+    (void)af; (void)t; (void)slot; (void)l; (void)h;
+    moe_rope_neox_apply(x_residual, MOE_HEAD_DIM, pos);
     fprintf(stderr, "FATAL: moe_gqa_attention_ragged: ATTN_KIND=gqa not implemented yet -- see Phase 4 sub-part 2 Step 2.7\n");
     exit(1);
 }
@@ -4892,6 +4932,11 @@ static void alloc_moe_buffers(void) {
     int rope_half = MOE_QK_ROPE_HD / 2;
     g_moe_yarn_freqs = malloc((size_t)rope_half * sizeof(double));
     g_moe_topk_used  = malloc((size_t)MOE_N_EXPERTS * sizeof(int));
+    // Step 2.6: plain-RoPE table for GQA models, malloc not calloc -- moe_init_rope_gqa()
+    // (called right after, only when MOE_ATTN_KIND==GQA) writes every element before
+    // moe_rope_neox_apply() ever reads one, same write-before-read reasoning as
+    // g_moe_yarn_freqs above. Harmless to allocate even for MLA (never read in that case).
+    g_moe_rope_inv = malloc((size_t)(MOE_HEAD_DIM/2) * sizeof(double));
 
     // Step 3 (Group A): MLA per-call scratch, one malloc set per function (Rule 3 -- see the
     // declaration comment above moe_mla_attention() for why these aren't shared/merged).
@@ -5011,7 +5056,7 @@ static void alloc_moe_buffers(void) {
     g_mfob_dense_up_v   = malloc((size_t)MOE_DENSE_IM*sizeof(float));
     g_mfob_xn1          = malloc((size_t)MOE_HIDDEN*sizeof(float));
 
-    if (!g_moe_yarn_freqs || !g_moe_topk_used ||
+    if (!g_moe_yarn_freqs || !g_moe_topk_used || !g_moe_rope_inv ||
         !g_mla_q || !g_mla_kv_ap || !g_mla_kv_b || !g_mla_normed_kv || !g_mla_attn_out || !g_mla_o_out ||
         !g_mlar_q || !g_mlar_kv_ap || !g_mlar_kv_b || !g_mlar_normed_kv || !g_mlar_attn_out || !g_mlar_o_out ||
         !g_mlab_q || !g_mlab_kv_ap || !g_mlab_kv_b || !g_mlab_normed_kv || !g_mlab_attn_out || !g_mlab_o_out ||
@@ -5114,6 +5159,10 @@ static int run_moe_verify_mode(int argc, char **argv) {
     alloc_moe_buffers();   // Phase 4 sub-part 1, Step 2: must run before moe_init_yarn() below --
                             // it writes g_moe_yarn_freqs, which this call allocates.
     moe_init_yarn();
+    // Phase 4 sub-part 2, Step 2.6: GQA models don't use YaRN -- fills g_moe_rope_inv instead.
+    // Unreachable with today's DeepSeek config (ATTN_KIND defaults to MLA), but referenced
+    // here so the function isn't dead code, exactly like Step 2.3/2.4's GQA stubs.
+    if (MOE_ATTN_KIND == MOE_ATTN_GQA) moe_init_rope_gqa();
     fprintf(stderr, "[moe yarn] rope_mscale=%.10f attn_scale=%.10f\n", g_moe_rope_mscale, g_moe_attn_scale);
 
     // Phase MoE-3b: QWEN_MOE_BATCH=<B> branches to the batched+gather verification mode
