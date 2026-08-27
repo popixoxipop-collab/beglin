@@ -5434,12 +5434,28 @@ static int run_moe_verify_mode(int argc, char **argv) {
     MOE_KVB_OUT  = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD);
     MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
     MOE_SH_IM    = MOE_IM_DIM * MOE_N_SHARED;
-    // Phase 4 sub-part 2, Step 2.2: MLA-only formula for now (both attention kinds' real
-    // per-position row sizes are the same for MLA since GQA support doesn't exist yet --
-    // Step 2.7 adds the ATTN_KIND branch here, once MOE_N_KV_HEADS/MOE_HEAD_DIM are real
-    // config values instead of always-unset for every existing arch_config_moe.txt).
-    MOE_KROW = MOE_N_HEADS * MOE_Q_HEAD_DIM;
-    MOE_VROW = MOE_N_HEADS * MOE_V_HD;
+    // Phase 4 sub-part 3, Step 3.2: the ATTN_KIND branch Step 2.2's comment promised but
+    // Step 2.7 never actually added -- verified present as a real bug at HEAD 9a100e4
+    // before this fix (moe_gqa_attention() would memcpy/read a truncated K/V row for any
+    // real GQA config; silent, no crash -- the mini self-test at 5329-5330 couldn't catch
+    // it because it sets MOE_KROW/VROW by hand instead of going through this function).
+    if (MOE_ATTN_KIND == MOE_ATTN_GQA) {
+        MOE_KROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+        MOE_VROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    } else {
+        MOE_KROW = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+        MOE_VROW = MOE_N_HEADS * MOE_V_HD;
+    }
+    // R-6: wrong K/V row geometry is silent in both directions (too small -> OOB/
+    // neighbour reads via moe_gqa_attention's kvh*MOE_HEAD_DIM addressing; too large ->
+    // wasted memory) -- assert the invariant the accessors depend on instead of trusting
+    // review.
+    if (MOE_ATTN_KIND == MOE_ATTN_GQA &&
+        (MOE_KROW != MOE_N_KV_HEADS * MOE_HEAD_DIM || MOE_VROW != MOE_N_KV_HEADS * MOE_HEAD_DIM)) {
+        fprintf(stderr, "FATAL: GQA K/V row geometry mismatch (KROW=%d VROW=%d, expected %d)\n",
+                MOE_KROW, MOE_VROW, MOE_N_KV_HEADS * MOE_HEAD_DIM);
+        exit(1);
+    }
     MOE_MAX_IN   = MOE_HIDDEN;
     if (MOE_IM_DIM   > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
     if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
