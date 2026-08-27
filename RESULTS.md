@@ -1984,16 +1984,20 @@ oracle:**
   weights and by the `safetensors` container-parser increment above (real
   `Qwen2.5-0.5B` checkpoint, BF16 throughout, 290/290 checksums byte-exact).
 
-**Vendored but NOT yet exercised by a real downloaded file**: `Q4_0`. Ported
-from `ggml-quants.c` at Phase 1 sub-step 2 alongside the others, but every
-real GGUF file this project has processed so far (7 models across Phase
-1-4) happens to use `{F32,Q4_K,Q6_K}` or `{F32,Q4_K,Q6_K,Q5_0,Q8_0}` --
-none has actually contained a `Q4_0` tensor. Recorded as an honest gap, not
-assumed-working: if a future model exercises this path and something is
-wrong, it would currently surface as a silent wrong-value bug, not a FATAL
-(unlike the missing-dequantizer case, which is loud). Flagging for whoever
-next processes a GGUF file that includes `Q4_0` to check its output against
-`gguf-py` explicitly, the same way Q5_0 was checked at Phase 3-1.
+**Update (2026-08-28, same day): `Q4_0` gap closed.** Downloaded a real
+`Q4_0`-recipe GGUF file specifically to exercise this path --
+`TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF`'s
+`tinyllama-1.1b-chat-v1.0.Q4_0.gguf` (637,699,456 bytes). Tensor-type
+enumeration via `gguf-py` first, not assumed from the filename: **155
+`Q4_0` tensors, 45 `F32` (norms), 1 `Q6_K`** (llama.cpp's `Q4_0` recipe
+keeps `output.weight` at higher precision), 201 total. Ran the existing
+`gguf_dequant_checksums.c`/`gguf_dequant_checksums_oracle.py` pair (same
+tool used for every prior Gate 4.1-style check this session, no new code
+needed) against the real file: **201/201 checksums byte-exact, 0 diff**
+(`diff` exit 0), including all 155 `Q4_0` tensors. `Q4_0` moves from "gap"
+to "confirmed against a real file" -- every dtype `gguf_quants.c` vendors
+(`F32, F16, BF16, Q4_0, Q8_0, Q5_0, Q4_K, Q6_K`) is now exercise-verified
+against real downloaded data, not just synthetic/oracle-only.
 
 **This engine's own scheme** (orthogonal to GGUF's on-disk types): every
 GGUF-sourced tensor is re-quantized, after dequant, into this engine's own
