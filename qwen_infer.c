@@ -3056,15 +3056,22 @@ static void moe_resolve_layer_tensors(void) {
             moe_check_af_shape(t->dense_down, "dense_down", l, MOE_HIDDEN,   MOE_DENSE_IM);
         } else {
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.gate.weight",l); t->gate_w = moe_find_f32(nm);
-            snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.gate_proj",l); t->shared_gate = moe_find_af(nm);
-            snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.up_proj",l);   t->shared_up   = moe_find_af(nm);
-            snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.down_proj",l); t->shared_down = moe_find_af(nm);
+            // Phase 4 sub-part 3, Step 3.3: Qwen3-30B-A3B has N_SHARED=0 (no shared experts) --
+            // moe_find_af() exit(1)s on a miss, so this whole resolve+shape-check pair must be
+            // skipped, not just left to fail loudly. DeepSeek's N_SHARED=2 exercises this guard
+            // on every gate run (guard is a no-op there), which is why Gate-FULL catches a
+            // mis-scoped brace immediately.
+            if (MOE_N_SHARED > 0) {
+                snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.gate_proj",l); t->shared_gate = moe_find_af(nm);
+                snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.up_proj",l);   t->shared_up   = moe_find_af(nm);
+                snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.down_proj",l); t->shared_down = moe_find_af(nm);
+                moe_check_af_shape(t->shared_gate, "shared_gate", l, MOE_SH_IM,  MOE_HIDDEN);
+                moe_check_af_shape(t->shared_up,   "shared_up",   l, MOE_SH_IM,  MOE_HIDDEN);
+                moe_check_af_shape(t->shared_down, "shared_down", l, MOE_HIDDEN, MOE_SH_IM);
+            }
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.switch_mlp.gate_proj",l); t->switch_gate = moe_find_af(nm);
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.switch_mlp.up_proj",l);   t->switch_up   = moe_find_af(nm);
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.switch_mlp.down_proj",l); t->switch_down = moe_find_af(nm);
-            moe_check_af_shape(t->shared_gate, "shared_gate", l, MOE_SH_IM,  MOE_HIDDEN);
-            moe_check_af_shape(t->shared_up,   "shared_up",   l, MOE_SH_IM,  MOE_HIDDEN);
-            moe_check_af_shape(t->shared_down, "shared_down", l, MOE_HIDDEN, MOE_SH_IM);
             moe_check_af_shape(t->switch_gate, "switch_gate", l, MOE_IM_DIM, MOE_HIDDEN);
             moe_check_af_shape(t->switch_up,   "switch_up",   l, MOE_IM_DIM, MOE_HIDDEN);
             moe_check_af_shape(t->switch_down, "switch_down", l, MOE_HIDDEN, MOE_IM_DIM);
@@ -3267,8 +3274,10 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
                     items[ni++] = (MoeBatchItem){af, t->switch_gate, e, h2, gate_v + (size_t)k*MOE_IM_DIM, 0, 0};
                     items[ni++] = (MoeBatchItem){af, t->switch_up,   e, h2, up_v   + (size_t)k*MOE_IM_DIM, 0, 0};
                 }
-                items[ni++] = (MoeBatchItem){af, t->shared_gate, 0, h2, sgate_v, 0, 0};
-                items[ni++] = (MoeBatchItem){af, t->shared_up,   0, h2, sup_v,   0, 0};
+                if (MOE_N_SHARED > 0) {
+                    items[ni++] = (MoeBatchItem){af, t->shared_gate, 0, h2, sgate_v, 0, 0};
+                    items[ni++] = (MoeBatchItem){af, t->shared_up,   0, h2, sup_v,   0, 0};
+                }
                 moe_matvec_af_batch_mt(items, ni);
             }
             {
@@ -3278,15 +3287,17 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
                     moe_swiglu_inplace(gate_v + (size_t)k*MOE_IM_DIM, up_v + (size_t)k*MOE_IM_DIM, MOE_IM_DIM);
                     items[ni++] = (MoeBatchItem){af, t->switch_down, e, gate_v + (size_t)k*MOE_IM_DIM, down_v + (size_t)k*MOE_HIDDEN, 0, 0};
                 }
-                moe_swiglu_inplace(sgate_v, sup_v, MOE_IM_DIM * MOE_N_SHARED);
-                items[ni++] = (MoeBatchItem){af, t->shared_down, 0, sgate_v, sdown_v, 0, 0};
+                if (MOE_N_SHARED > 0) {
+                    moe_swiglu_inplace(sgate_v, sup_v, MOE_IM_DIM * MOE_N_SHARED);
+                    items[ni++] = (MoeBatchItem){af, t->shared_down, 0, sgate_v, sdown_v, 0, 0};
+                }
                 moe_matvec_af_batch_mt(items, ni);
             }
             for (int k = 0; k < MOE_TOP_K; k++) {
                 float wgt = router_scores[top_idx[k]];
                 for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] += wgt * down_v[(size_t)k*MOE_HIDDEN + c];
             }
-            for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] += sdown_v[c];
+            if (MOE_N_SHARED > 0) for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] += sdown_v[c];
 
             if (routing_out) {
                 fprintf(routing_out, "pos %d layer %d experts", pos, l);
@@ -3364,8 +3375,10 @@ static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, 
                     items[ni++] = (MoeBatchItem){af, t->switch_gate, e, h2, gate_v + (size_t)k*MOE_IM_DIM, 0, 0};
                     items[ni++] = (MoeBatchItem){af, t->switch_up,   e, h2, up_v   + (size_t)k*MOE_IM_DIM, 0, 0};
                 }
-                items[ni++] = (MoeBatchItem){af, t->shared_gate, 0, h2, sgate_v, 0, 0};
-                items[ni++] = (MoeBatchItem){af, t->shared_up,   0, h2, sup_v,   0, 0};
+                if (MOE_N_SHARED > 0) {
+                    items[ni++] = (MoeBatchItem){af, t->shared_gate, 0, h2, sgate_v, 0, 0};
+                    items[ni++] = (MoeBatchItem){af, t->shared_up,   0, h2, sup_v,   0, 0};
+                }
                 moe_matvec_af_batch_mt(items, ni);
             }
             {
@@ -3375,15 +3388,17 @@ static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, 
                     moe_swiglu_inplace(gate_v + (size_t)k*MOE_IM_DIM, up_v + (size_t)k*MOE_IM_DIM, MOE_IM_DIM);
                     items[ni++] = (MoeBatchItem){af, t->switch_down, e, gate_v + (size_t)k*MOE_IM_DIM, down_v + (size_t)k*MOE_HIDDEN, 0, 0};
                 }
-                moe_swiglu_inplace(sgate_v, sup_v, MOE_IM_DIM * MOE_N_SHARED);
-                items[ni++] = (MoeBatchItem){af, t->shared_down, 0, sgate_v, sdown_v, 0, 0};
+                if (MOE_N_SHARED > 0) {
+                    moe_swiglu_inplace(sgate_v, sup_v, MOE_IM_DIM * MOE_N_SHARED);
+                    items[ni++] = (MoeBatchItem){af, t->shared_down, 0, sgate_v, sdown_v, 0, 0};
+                }
                 moe_matvec_af_batch_mt(items, ni);
             }
             for (int k = 0; k < MOE_TOP_K; k++) {
                 float wgt = router_scores[top_idx[k]];
                 for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] += wgt * down_v[(size_t)k*MOE_HIDDEN + c];
             }
-            for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] += sdown_v[c];
+            if (MOE_N_SHARED > 0) for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] += sdown_v[c];
         }
         for (int c = 0; c < MOE_HIDDEN; c++) x[c] += mlp_out[c];
     }
@@ -4049,14 +4064,18 @@ static void moe_ffn_batched(const uint8_t *af, MoeLayerTensors *t, int l, int B,
     // one M=B group GEMM per projection instead of B individual scalar matvecs. h2_batch is
     // flat with stride MOE_HIDDEN (== shared_gate/up's `in`), used directly with no separate
     // gather memcpy.
-    float *sgate_group = g_mfb_sgate_group, *sup_group = g_mfb_sup_group, *sdown_group = g_mfb_sdown_group;
-    int sh_im = MOE_IM_DIM * MOE_N_SHARED;
-    moe_matvec_af_group_smart(af, t->shared_gate, 0, MOE_SME2_SLOT_SHARED, l, 0, h2_batch, B, sgate_group);
-    moe_matvec_af_group_smart(af, t->shared_up,   0, MOE_SME2_SLOT_SHARED, l, 1, h2_batch, B, sup_group);
-    for (int b = 0; b < B; b++) moe_swiglu_inplace(sgate_group + (size_t)b*sh_im, sup_group + (size_t)b*sh_im, sh_im);
-    moe_matvec_af_group_smart(af, t->shared_down, 0, MOE_SME2_SLOT_SHARED, l, 2, sgate_group, B, sdown_group);
-    for (int b = 0; b < B; b++)
-        for (int c = 0; c < MOE_HIDDEN; c++) mlp_out_batch[(size_t)b*MOE_HIDDEN+c] += sdown_group[(size_t)b*MOE_HIDDEN+c];
+    // Phase 4 sub-part 3, Step 3.3: skip entirely when N_SHARED=0 (Qwen3-30B-A3B) -- t->shared_*
+    // are NULL there, and moe_matvec_af_group_smart() must never be called with a NULL tensor.
+    if (MOE_N_SHARED > 0) {
+        float *sgate_group = g_mfb_sgate_group, *sup_group = g_mfb_sup_group, *sdown_group = g_mfb_sdown_group;
+        int sh_im = MOE_IM_DIM * MOE_N_SHARED;
+        moe_matvec_af_group_smart(af, t->shared_gate, 0, MOE_SME2_SLOT_SHARED, l, 0, h2_batch, B, sgate_group);
+        moe_matvec_af_group_smart(af, t->shared_up,   0, MOE_SME2_SLOT_SHARED, l, 1, h2_batch, B, sup_group);
+        for (int b = 0; b < B; b++) moe_swiglu_inplace(sgate_group + (size_t)b*sh_im, sup_group + (size_t)b*sh_im, sh_im);
+        moe_matvec_af_group_smart(af, t->shared_down, 0, MOE_SME2_SLOT_SHARED, l, 2, sgate_group, B, sdown_group);
+        for (int b = 0; b < B; b++)
+            for (int c = 0; c < MOE_HIDDEN; c++) mlp_out_batch[(size_t)b*MOE_HIDDEN+c] += sdown_group[(size_t)b*MOE_HIDDEN+c];
+    }
 }
 
 // Naive (non-gathered) reference for the throughput comparison: same router + same per-token
@@ -4083,12 +4102,14 @@ static void moe_ffn_naive_batched(const uint8_t *af, MoeLayerTensors *t, int B,
             moe_matvec_af(af, t->switch_down, e, gate_v, down_v);
             for (int c = 0; c < MOE_HIDDEN; c++) mlp_out_batch[(size_t)b*MOE_HIDDEN+c] += wgt * down_v[c];
         }
-        float *sgate_v = g_mfnb_sgate_v, *sup_v = g_mfnb_sup_v, *sdown_v = g_mfnb_sdown_v;
-        moe_matvec_af(af, t->shared_gate, 0, h2_batch + (size_t)b*MOE_HIDDEN, sgate_v);
-        moe_matvec_af(af, t->shared_up, 0, h2_batch + (size_t)b*MOE_HIDDEN, sup_v);
-        moe_swiglu_inplace(sgate_v, sup_v, MOE_IM_DIM * MOE_N_SHARED);
-        moe_matvec_af(af, t->shared_down, 0, sgate_v, sdown_v);
-        for (int c = 0; c < MOE_HIDDEN; c++) mlp_out_batch[(size_t)b*MOE_HIDDEN+c] += sdown_v[c];
+        if (MOE_N_SHARED > 0) {
+            float *sgate_v = g_mfnb_sgate_v, *sup_v = g_mfnb_sup_v, *sdown_v = g_mfnb_sdown_v;
+            moe_matvec_af(af, t->shared_gate, 0, h2_batch + (size_t)b*MOE_HIDDEN, sgate_v);
+            moe_matvec_af(af, t->shared_up, 0, h2_batch + (size_t)b*MOE_HIDDEN, sup_v);
+            moe_swiglu_inplace(sgate_v, sup_v, MOE_IM_DIM * MOE_N_SHARED);
+            moe_matvec_af(af, t->shared_down, 0, sgate_v, sdown_v);
+            for (int c = 0; c < MOE_HIDDEN; c++) mlp_out_batch[(size_t)b*MOE_HIDDEN+c] += sdown_v[c];
+        }
     }
 }
 
