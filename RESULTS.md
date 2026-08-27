@@ -1957,3 +1957,51 @@ copy-pasted from the C source), run on bob.
 
 Commit: `d04d44d` (`feat(moe): MQA (N_KV_HEADS=1) degenerate-GQA numeric
 self-test`).
+
+## Quantization-scheme axis: consolidated status (2026-08-28)
+
+Not a new increment -- a status roundup, since evidence for this axis is
+scattered across several sub-steps and the 12-axis table needs a single
+citable answer. `gguf_quants.c` currently vendors 8 dtypes (checked directly
+against the source, not from memory): `F32, F16, BF16, Q4_0, Q8_0, Q5_0,
+Q4_K, Q6_K`.
+
+**Confirmed against real downloaded GGUF files, not just a synthetic
+oracle:**
+- **F32, Q4_K, Q6_K**: every real GGUF model validated in Phase 1-4
+  (Qwen1.5B, Mistral-7B, Llama-3.2-1B/3B, Qwen2.5-3B/7B, Qwen3-30B-A3B) uses
+  this trio. Checksum-oracle byte-exact against `gguf-py` in every case
+  (Gate 4.1's 579/579 exact match on Qwen3-30B-A3B is the largest single
+  instance).
+- **Q8_0, Q5_0**: Phase 3-1 (`Qwen2.5-0.5B-Instruct`) is the one real file
+  encountered so far with `Q5_0`/`Q8_0` tensors (`llama.cpp`'s Q4_K_M recipe
+  drops small models' `ffn_gate`/`ffn_up`/`token_embd` to `Q5_0` rather than
+  `Q4_K`). `Q5_0`'s dequantizer was missing entirely until this run (a real
+  diagnostic FATAL, not a hypothetical) -- ported from `ggml-quants.c`, then
+  the full model validated end-to-end against `llama.cpp`'s own
+  `llama-simple` output (first 4 generated tokens byte-identical).
+- **F16, BF16**: exercised continuously by every model's own norm/embedding
+  weights and by the `safetensors` container-parser increment above (real
+  `Qwen2.5-0.5B` checkpoint, BF16 throughout, 290/290 checksums byte-exact).
+
+**Vendored but NOT yet exercised by a real downloaded file**: `Q4_0`. Ported
+from `ggml-quants.c` at Phase 1 sub-step 2 alongside the others, but every
+real GGUF file this project has processed so far (7 models across Phase
+1-4) happens to use `{F32,Q4_K,Q6_K}` or `{F32,Q4_K,Q6_K,Q5_0,Q8_0}` --
+none has actually contained a `Q4_0` tensor. Recorded as an honest gap, not
+assumed-working: if a future model exercises this path and something is
+wrong, it would currently surface as a silent wrong-value bug, not a FATAL
+(unlike the missing-dequantizer case, which is loud). Flagging for whoever
+next processes a GGUF file that includes `Q4_0` to check its output against
+`gguf-py` explicitly, the same way Q5_0 was checked at Phase 3-1.
+
+**This engine's own scheme** (orthogonal to GGUF's on-disk types): every
+GGUF-sourced tensor is re-quantized, after dequant, into this engine's own
+`q4g64`/`q8g64` symmetric group-64 format (`gguf_transcode.c`,
+`K_Q4G64`/`K_Q8G64` kinds) or kept `K_F32` -- the same target format used by
+the MLX-sourced AF blobs (DeepSeek-V2-Lite, Qwen3-30B-A3B). So the
+"quantization scheme" axis is really two independent questions this project
+answers separately: which on-disk formats can be *read* (the GGUF dtype
+list above, plus safetensors' F32/F16/BF16), and which in-memory scheme the
+engine *computes* in (`q4g64`/`q8g64`/`f32`, hardware-verified via the SME2
+gates throughout Phase 4).
