@@ -469,9 +469,15 @@ no new kernel family. Phase 3 fully complete.
    serve wrong expert weights for any future `N_EXPERTS >= 64` model. Full
    writeup: `RESULTS.md` "Phase 4 sub-part 1"; full plan:
    `/Users/xox/.claude/plans/serene-finding-ullman.md`.
-2. Split MoE forward into attention × FFN so non-MLA MoE (Mixtral,
-   Qwen3-MoE) reuses dense GQA attention and supplies only routing +
-   experts.
+2. **DONE (2026-08-27)** — Split MoE forward into attention × FFN via a
+   `MOE_ATTN_KIND` dispatch seam and a new `moe_gqa_attention()` family.
+   Correction: there is no dense GQA attention function to reuse (verified —
+   dense GQA is written inline 4x, bound to `g_cfg` which the MoE path never
+   populates); a new MoE-local GQA implementation was written instead,
+   structurally mirroring the existing MLA functions. Numeric verification
+   is deferred to sub-part 3 Step 3.2 (no second model exists yet to test
+   against). Full writeup: `RESULTS.md` "Phase 4 sub-part 2"; full plan:
+   `/Users/xox/.claude/plans/serene-finding-ullman.md`.
 3. Ship Mixtral-8x7B or Qwen3-30B-A3B — puts the 2.38×-at-B=16 SME2
    result on a second, mainstream topology (this is what makes the
    *differentiator* generalize, not just the loader).

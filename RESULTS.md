@@ -1350,3 +1350,108 @@ as it did as static arrays.
 Full plan: `/Users/xox/.claude/plans/serene-finding-ullman.md`. Phase 4's
 remaining 3 sub-parts (split MLA from FFN attention, ship a second MoE
 topology, GGUF stacked-expert-tensor mapping) are out of scope here.
+
+## Phase 4 sub-part 2: split MoE attention from FFN -- GQA seam for a second topology (2026-08-27)
+
+### Problem
+
+Phase 4 sub-part 1 made the MoE forward pass's *storage* config-driven, but the
+*attention math* stayed hardwired to DeepSeek-V2-Lite's MLA (Multi-head Latent
+Attention). The roadmap's Phase 4 item 2 claimed non-MLA MoE models (Mixtral,
+Qwen3-MoE) could "reuse dense GQA attention" -- **verified false**: no such
+function exists. Dense GQA attention is written inline four separate times
+(`forward_token()`, `prefill_batch()`, `serve_step()`, the dense `cbatch_step()`),
+each bound to dense-only globals, and `g_cfg` (which those blocks read for
+`hd`/`theta`/rope scale) is never populated on the MoE path --
+`run_moe_verify_mode()` returns before `load_arch_cfg()` is ever reached. This
+sub-part had to write a new, MoE-local GQA attention family from scratch.
+
+### Design
+
+**`MOE_ATTN_KIND` + three thin dispatchers**, one per K/V family
+(`moe_attention()`/`_ragged()`/`_batched()`), each a two-way branch to the
+matching MLA or GQA function. Rejected a single function pointer (the three
+attention functions have three different signatures: `pos` vs `slot+pos` vs
+`b`) and rejected a `_gqa` sibling outer-loop family (would duplicate ~300
+lines of routing/gather/SME2-dispatch logic across the 4 real callers to swap
+one line -- the entanglement that would justify it doesn't exist; every
+outer-loop function calls attention on exactly one line, everything else
+-- embedding, norms, routing, top-k, expert dispatch, SME2 slot cache -- is
+attention-independent).
+
+**K/V row geometry generalized one level before adding a second kind**:
+`MOE_KROW`/`MOE_VROW` replace the hardcoded `MOE_N_HEADS*MOE_Q_HEAD_DIM` /
+`MOE_N_HEADS*MOE_V_HD` in all 8 K/V row accessors, all 8 K/V allocations, and
+all 12 cross-family memcpys. MLA-only formula for now (numerically identical
+to the old expression); GQA's `MOE_N_KV_HEADS*MOE_HEAD_DIM` slots in with zero
+further plumbing changes once a second model's config sets it.
+
+**5 new config keys** (`MOE_N_KV_HEADS`, `MOE_HEAD_DIM`, `MOE_RMS_EPS`,
+`MOE_NORM_TOPK_PROB`, `MOE_ROPE_STYLE`, plus `MOE_ATTN_KIND` itself), all read
+via a new `moe_cfg_get_opt()` (returns a default instead of FATALing on a
+missing key) so DeepSeek-V2-Lite's real `arch_config_moe.txt` -- predating
+every one of these keys -- needed zero changes and stayed byte-identical
+throughout.
+
+**NEOX RoPE for GQA** (`moe_rope_neox_apply()`, split-half `(v[i],v[i+half])`
+rotation) alongside MLA's existing interleaved-pair `moe_rope_traditional_apply()`
+-- verified from `mlx_lm`'s `qwen3_moe.py`/`mixtral.py`: both build
+`nn.RoPE(head_dim, traditional=False, ...)`. No YaRN scaling for GQA (Mixtral/
+Qwen3-MoE don't use it) -- a plain `1/theta^(2i/dim)` table via
+`moe_init_rope_gqa()`, not `moe_init_yarn()`'s ramped/interpolated one.
+
+**`moe_gqa_attention()` + `_ragged`/`_batched`**, structurally mirroring the
+MLA triple (this project's usual transcription-bug defense -- confirmed via a
+structural diff showing only the intended K/V-addressing/simplification
+differences). No low-rank KV compression: separate `k_proj`/`v_proj`, only
+`MOE_N_KV_HEADS` distinct K/V rows per position. Optional per-head `q_norm`/
+`k_norm` applied before RoPE (Qwen3-MoE has it, Mixtral doesn't -- a new
+`moe_find_f32_opt()` returns NULL instead of FATALing, same pattern as
+`moe_cfg_get_opt()`). Plain `scale=1/sqrt(HEAD_DIM)`, no YaRN mscale (verified:
+`qwen3_moe.py`'s `self.scale = head_dim**-0.5`). Batched sibling skips RoPE
+(pos=0 is the identity rotation regardless of convention) and softmax (single
+key, softmax≡1.0), same simplifications `moe_mla_attention_batched()` already
+uses.
+
+### **NUMERIC VERIFICATION EXPLICITLY DEFERRED**
+
+`moe_gqa_attention()` and its siblings have never run against a real GQA model
+or an MLX reference. There is no second model's `arch_config_moe.txt` yet, so
+the GQA branch is structurally complete but numerically unverified -- Phase 4
+sub-part 3 Step 3.2 (first Qwen3-30B-A3B token vs MLX reference capture) is
+the named gate that closes this. Do not treat this code as verified before
+that gate passes.
+
+### Verification
+
+Every step (2.0 baseline through 2.7) ran the full G1-G11 golden matrix on bob
+(M4) against the Step 2.0 baseline captured from `qwen_infer.c`'s HEAD at
+sub-part 1's completion (`0cf83a6`): G1's binary artifacts
+(`moe3a_c_logits.bin`/`moe3a_c_routing.txt`) byte-identical, G2-G11 normalized-
+stderr-identical (only intended additive log fields -- `ATTN_KIND=0` from Step
+2.1 -- differ from the baseline). Steps 2.2, 2.4, 2.5, and 2.7 ran the full
+11-scenario matrix (K/V geometry, dispatcher wiring, config defaulting, and
+the GQA implementation itself all touch or could touch every code path);
+Steps 2.1, 2.3, and 2.6 ran the smaller Gate-A+B+C tier (config plumbing,
+tensor-resolution split, and RoPE table addition respectively don't touch the
+K/V/batch machinery). Step 2.7 additionally ran ASan+UBSan G1+G5+G7 (0 reports)
+and a structural diff of the three new GQA functions against each other. Every
+step's `-Wall -Wextra` warning count stayed at the sub-part 1 baseline (14);
+every step's SVE/SME leak check on the plain-compiled object stayed 0.
+
+Because DeepSeek-V2-Lite's `arch_config_moe.txt` has no `ATTN_KIND` key
+(defaults to MLA), every one of these gates ran the GQA code path through
+zero real executions -- the byte-identical bar proves the *refactor* didn't
+change DeepSeek's behavior, not that the *new* GQA code is correct. That
+numeric proof is sub-part 3's job.
+
+### Commits
+
+`9a0366b`(2.1: ATTN_KIND+config) `67099c4`(2.2: MOE_KROW/MOE_VROW)
+`e12ec93`(2.3: split tensor resolution) `d9e4e81`(2.4: attention dispatchers)
+`aaa8389`(2.5: config generalization) `11951b8`(2.6: NEOX RoPE)
+`93a14a3`(2.7: moe_gqa_attention + siblings) + this final document/commit.
+
+Full plan: `/Users/xox/.claude/plans/serene-finding-ullman.md`. Sub-part 3
+(ship Qwen3-30B-A3B, the model recommended in that plan with rationale) and
+sub-part 4 (GGUF stacked-expert-tensor mapping) remain out of scope here.
