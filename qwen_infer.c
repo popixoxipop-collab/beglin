@@ -2416,9 +2416,16 @@ static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row
     int nib = (col % 2 == 0) ? (byte & 0xF) : ((byte >> 4) & 0xF);
     long group = col / 64;
     long scale_idx = t->scale_off + ((e * t->out + row) * t->ng + group) * 4;
-    long bias_idx = t->bias_off + ((e * t->out + row) * t->ng + group) * 4;
-    float scale, bias;
+    float scale;
     memcpy(&scale, base + scale_idx, 4);
+    // 4.B: gguf_quantize_q4g64_error_feedback() (the existing GGUF symmetric transcoder) emits
+    // ONLY packed nibbles + scales -- no bias array exists in memory for a sym tensor, so
+    // bias_off must never be dereferenced here. (nib-8)*scale is the exact symmetric-kernel
+    // convention (kai_sme2_repack_q4g64() and gguf_load's own scalar fallback both use it) --
+    // not an approximation of the affine formula, the same value a bias of -8*scale would give.
+    if (t->sym) return ((float)nib - 8.0f) * scale;
+    long bias_idx = t->bias_off + ((e * t->out + row) * t->ng + group) * 4;
+    float bias;
     memcpy(&bias, base + bias_idx, 4);
     return (float)nib * scale + bias;
 }
@@ -2442,10 +2449,14 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
     double acc = 0.0;
     for (long g = 0; g < ng; g++) {
         long scale_idx = t->scale_off + (row_base * ng + g) * 4;
-        long bias_idx = t->bias_off + (row_base * ng + g) * 4;
-        float scale, bias;
+        float scale;
         memcpy(&scale, base + scale_idx, 4);
-        memcpy(&bias, base + bias_idx, 4);
+        // 4.B: sym tensor has no bias array in memory -- see moe_decode_af()'s comment.
+        float bias = 0.0f;
+        if (!t->sym) {
+            long bias_idx = t->bias_off + (row_base * ng + g) * 4;
+            memcpy(&bias, base + bias_idx, 4);
+        }
         long col0 = g * 64;
         for (long ci = 0; ci < 64; ci++) {
             long col = col0 + ci;
@@ -2454,7 +2465,7 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
             long byte_idx = t->packed_off + (row_base * row_words + word_idx) * 4 + byte_in_word;
             uint8_t byte = base[byte_idx];
             int nib = (col % 2 == 0) ? (byte & 0xF) : ((byte >> 4) & 0xF);
-            float w = (float)nib * scale + bias;
+            float w = t->sym ? ((float)nib - 8.0f) * scale : (float)nib * scale + bias;
             acc += (double)w * x[col];
         }
     }
@@ -2484,10 +2495,14 @@ static double moe_matvec_af_row_vdsp(const uint8_t *blob, MoeAFTensor *t, long e
     float wbuf[64];
     for (long g = 0; g < ng; g++) {
         long scale_idx = t->scale_off + (row_base * ng + g) * 4;
-        long bias_idx = t->bias_off + (row_base * ng + g) * 4;
-        float scale, bias;
+        float scale;
         memcpy(&scale, base + scale_idx, 4);
-        memcpy(&bias, base + bias_idx, 4);
+        // 4.B: sym tensor has no bias array in memory -- see moe_decode_af()'s comment.
+        float bias = 0.0f;
+        if (!t->sym) {
+            long bias_idx = t->bias_off + (row_base * ng + g) * 4;
+            memcpy(&bias, base + bias_idx, 4);
+        }
         long col0 = g * 64;
         for (long ci = 0; ci < 64; ci++) {
             long col = col0 + ci;
@@ -2496,7 +2511,7 @@ static double moe_matvec_af_row_vdsp(const uint8_t *blob, MoeAFTensor *t, long e
             long byte_idx = t->packed_off + (row_base * row_words + word_idx) * 4 + byte_in_word;
             uint8_t byte = base[byte_idx];
             int nib = (col % 2 == 0) ? (byte & 0xF) : ((byte >> 4) & 0xF);
-            wbuf[ci] = (float)nib * scale + bias;
+            wbuf[ci] = t->sym ? ((float)nib - 8.0f) * scale : (float)nib * scale + bias;
         }
         float group_dot;
         vDSP_dotpr(wbuf, 1, x + col0, 1, &group_dot, 64);
