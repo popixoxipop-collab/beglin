@@ -2498,6 +2498,15 @@ static MoeF32Tensor *moe_find_f32(const char *name) {
     for (int i = 0; i < g_moe_nf32; i++) if (!strcmp(g_moe_f32[i].name, name)) return &g_moe_f32[i];
     fprintf(stderr, "FATAL: moe f32 tensor not found: %s\n", name); exit(1);
 }
+// Phase 4 sub-part 2, Step 2.7: moe_find_f32()'s optional sibling, same pattern as
+// moe_cfg_get_opt() -- NULL instead of FATAL when absent. Needed for q_norm/k_norm: Qwen3-MoE
+// has per-head QK-norm, Mixtral does not (verified from mixtral.py -- no such tensor exists),
+// and this engine's dense-model side already has the same "NULL means absent" convention via
+// wt_opt() for the optional int8 lm_head.
+static MoeF32Tensor *moe_find_f32_opt(const char *name) {
+    for (int i = 0; i < g_moe_nf32; i++) if (!strcmp(g_moe_f32[i].name, name)) return &g_moe_f32[i];
+    return NULL;
+}
 
 static double moe_cfg_get(const char *path, const char *key) {
     FILE *f = fopen(path, "r");
@@ -2999,15 +3008,25 @@ static void moe_resolve_attn_tensors_mla(int l, MoeLayerTensors *t) {
     moe_check_af_shape(t->kv_b_proj, "kv_b_proj", l, MOE_KVB_OUT, MOE_KV_LORA_RANK);
     moe_check_af_shape(t->o_proj,    "o_proj",    l, MOE_HIDDEN,  MOE_ATTN_OUT);
 }
-// Phase 4 sub-part 2, Step 2.3: stub -- the seam is real (moe_resolve_layer_tensors() already
-// dispatches on MOE_ATTN_KIND below) but resolving Mixtral/Qwen3-MoE's actual GQA tensor names
-// (self_attn.{q,k,v,o}_proj + optional q_norm/k_norm) is Step 2.7, once a second model's
-// arch_config_moe.txt exists to test it against. FATALs rather than silently half-working.
+// Phase 4 sub-part 2, Step 2.7: GQA half of tensor resolution (Mixtral/Qwen3-MoE). q_proj/
+// o_proj share the same logical names as MLA (both attention kinds have a plain q_proj/o_proj)
+// but different shapes -- q_proj/k_proj/v_proj/o_proj here, no kv_a_proj/kv_b_proj/kv_a_ln
+// (those are MLA's low-rank-compression-specific tensors, don't exist for GQA). q_norm/k_norm
+// are optional (moe_find_f32_opt(), NULL for Mixtral -- verified from mixtral.py, present for
+// Qwen3-MoE). Shape checks per the plan: q_proj->(N_HEADS*HEAD_DIM, HIDDEN), k_proj/v_proj->
+// (N_KV_HEADS*HEAD_DIM, HIDDEN), o_proj->(HIDDEN, N_HEADS*HEAD_DIM).
 static void moe_resolve_attn_tensors_gqa(int l, MoeLayerTensors *t) {
-    (void)t;
-    fprintf(stderr, "FATAL: moe_resolve_attn_tensors_gqa: ATTN_KIND=gqa tensor resolution not "
-                     "implemented yet (layer %d) -- see Phase 4 sub-part 2 Step 2.7\n", l);
-    exit(1);
+    char nm[256];
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.q_proj",l); t->q_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.k_proj",l); t->k_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.v_proj",l); t->v_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.o_proj",l); t->o_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.q_norm.weight",l); t->q_norm = moe_find_f32_opt(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.k_norm.weight",l); t->k_norm = moe_find_f32_opt(nm);
+    moe_check_af_shape(t->q_proj, "q_proj", l, (long)MOE_N_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
+    moe_check_af_shape(t->k_proj, "k_proj", l, (long)MOE_N_KV_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
+    moe_check_af_shape(t->v_proj, "v_proj", l, (long)MOE_N_KV_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
+    moe_check_af_shape(t->o_proj, "o_proj", l, MOE_HIDDEN, (long)MOE_N_HEADS*MOE_HEAD_DIM);
 }
 
 static void moe_resolve_layer_tensors(void) {
@@ -3089,6 +3108,14 @@ static inline float *moe_V_at(int l, int pos, int hh) { return moe_V_row(l,pos) 
 static float *g_mla_q, *g_mla_kv_ap, *g_mla_kv_b, *g_mla_normed_kv, *g_mla_attn_out, *g_mla_o_out;
 static float *g_mlar_q, *g_mlar_kv_ap, *g_mlar_kv_b, *g_mlar_normed_kv, *g_mlar_attn_out, *g_mlar_o_out;
 static float *g_mlab_q, *g_mlab_kv_ap, *g_mlab_kv_b, *g_mlab_normed_kv, *g_mlab_attn_out, *g_mlab_o_out;
+
+// Phase 4 sub-part 2, Step 2.7: GQA per-call scratch, same Rule 3 (one set per function, no
+// merging) as the MLA triple above. Simpler than MLA's: no low-rank KV compression, so no
+// kv_ap/normed_kv/kv_b -- just q/k/v/attn_out/o_out. Sizes: q/attn_out=N_HEADS*HEAD_DIM,
+// k/v=N_KV_HEADS*HEAD_DIM, o_out=MOE_HIDDEN.
+static float *g_mgqa_q, *g_mgqa_k, *g_mgqa_v, *g_mgqa_attn_out, *g_mgqa_o_out;
+static float *g_mgqar_q, *g_mgqar_k, *g_mgqar_v, *g_mgqar_attn_out, *g_mgqar_o_out;
+static float *g_mgqab_q, *g_mgqab_k, *g_mgqab_v, *g_mgqab_attn_out, *g_mgqab_o_out;
 
 // MLA attention for one layer/position, appending to x_residual in place. Verbatim math
 // from Phase MoE-2a's mla_verify.c, per-layer instead of layer-0-only.
@@ -3527,34 +3554,179 @@ static void moe_mla_attention_batched(const uint8_t *af, MoeLayerTensors *t, int
 // functions have three different signatures (pos vs slot+pos vs b), and can't be a shared outer
 // loop either (see the design note in the sub-part 2 plan: a `_gqa` sibling family would
 // duplicate ~300 lines of routing/gather/SME2-dispatch logic across 4 callers to swap one line).
-// The GQA targets are FATAL stubs for now (a bare forward decl isn't enough -- these are static
-// and MOE_ATTN_KIND is a runtime value, so the compiler can't prove the GQA branch dead and
-// would otherwise leave an unresolved internal-linkage symbol at link time). Step 2.7 replaces
-// each stub body with the real implementation in place -- same pattern as
-// moe_resolve_attn_tensors_gqa()'s stub above.
+// The GQA targets were FATAL stubs through Step 2.6 (a bare forward decl wasn't enough --
+// these are static and MOE_ATTN_KIND is a runtime value, so the compiler can't prove the GQA
+// branch dead and would otherwise leave an unresolved internal-linkage symbol at link time).
+// Step 2.7 (below) replaced each stub body with the real implementation in place.
+// Phase 4 sub-part 2, Step 2.7: GQA attention (Mixtral/Qwen3-MoE), structurally mirroring
+// moe_mla_attention() (verbatim-mirror transcription-bug defense, same as the MLA triple).
+// No low-rank KV compression: separate k_proj/v_proj instead of kv_a_proj/kv_b_proj, only
+// MOE_N_KV_HEADS distinct K/V rows per position (grouped-query, not per-head). Optional
+// per-head q_norm/k_norm applied before RoPE (Qwen3-MoE has it, Mixtral doesn't -- t->q_norm
+// NULL check). NEOX RoPE across the FULL head_dim (no nope/rope split, no YaRN mscale --
+// plain scale=1/sqrt(HEAD_DIM), verified from qwen3_moe.py's `self.scale = head_dim**-0.5`).
+// NUMERIC VERIFICATION EXPLICITLY DEFERRED to Phase 4 sub-part 3 Step 3.2 (first real GQA
+// model's reference capture) -- this function is structurally complete and gated
+// byte-identical on DeepSeek (unreachable there), but has never run against a real GQA model
+// or MLX reference yet. Do not treat as verified until that gate passes.
 static void moe_gqa_attention(const uint8_t *af, MoeLayerTensors *t, int l, int pos,
                                const float *h, float *x_residual) {
-    (void)af; (void)t; (void)l; (void)h;
-    // Step 2.6: exercises moe_rope_neox_apply()'s real signature ahead of Step 2.7 replacing
-    // this whole stub with the actual per-head q/k rotation loop -- keeps the seam
-    // type-checked and referenced (not dead code) rather than a bare FATAL. Discarded by the
-    // exit(1) below either way, so which buffer it touches is inconsequential here.
-    moe_rope_neox_apply(x_residual, MOE_HEAD_DIM, pos);
-    fprintf(stderr, "FATAL: moe_gqa_attention: ATTN_KIND=gqa not implemented yet -- see Phase 4 sub-part 2 Step 2.7\n");
-    exit(1);
+    float *q = g_mgqa_q, *k = g_mgqa_k, *v = g_mgqa_v;
+    float *attn_out = g_mgqa_attn_out, *o_out = g_mgqa_o_out;
+    moe_matvec_af_mt(af, t->q_proj, 0, h, q);
+    moe_matvec_af_mt(af, t->k_proj, 0, h, k);
+    moe_matvec_af_mt(af, t->v_proj, 0, h, v);
+
+    if (t->q_norm) {
+        float *w_qnorm = (float *)(g_moe_f32_blob + t->q_norm->off);
+        for (int hh = 0; hh < MOE_N_HEADS; hh++) {
+            float *qh = q + hh*MOE_HEAD_DIM;
+            moe_rmsnorm(qh, w_qnorm, qh, MOE_HEAD_DIM);
+        }
+    }
+    if (t->k_norm) {
+        float *w_knorm = (float *)(g_moe_f32_blob + t->k_norm->off);
+        for (int kh = 0; kh < MOE_N_KV_HEADS; kh++) {
+            float *khv = k + kh*MOE_HEAD_DIM;
+            moe_rmsnorm(khv, w_knorm, khv, MOE_HEAD_DIM);
+        }
+    }
+    for (int hh = 0; hh < MOE_N_HEADS; hh++) moe_rope_neox_apply(q + hh*MOE_HEAD_DIM, MOE_HEAD_DIM, pos);
+    for (int kh = 0; kh < MOE_N_KV_HEADS; kh++) moe_rope_neox_apply(k + kh*MOE_HEAD_DIM, MOE_HEAD_DIM, pos);
+
+    memcpy(moe_K_row(l,pos), k, (size_t)MOE_KROW*sizeof(float));
+    memcpy(moe_V_row(l,pos), v, (size_t)MOE_VROW*sizeof(float));
+
+    int group = MOE_N_HEADS / MOE_N_KV_HEADS;
+    double scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
+    for (int hh = 0; hh < MOE_N_HEADS; hh++) {
+        int kvh = hh / group;
+        float *qh = q + hh*MOE_HEAD_DIM;
+        float scores[MOE_MAXPOS];
+        for (int j = 0; j <= pos; j++) {
+            float *kj = moe_K_row(l,j) + (long)kvh*MOE_HEAD_DIM;
+            double dot = 0.0;
+            for (int d = 0; d < MOE_HEAD_DIM; d++) dot += (double)qh[d]*kj[d];
+            scores[j] = (float)(dot * scale);
+        }
+        float mx_s = scores[0]; for (int j=1;j<=pos;j++) if (scores[j]>mx_s) mx_s=scores[j];
+        double sum = 0.0;
+        for (int j=0;j<=pos;j++) { scores[j] = expf(scores[j]-mx_s); sum += scores[j]; }
+        for (int j=0;j<=pos;j++) scores[j] = (float)(scores[j]/sum);
+        float *oh = attn_out + hh*MOE_HEAD_DIM;
+        for (int d = 0; d < MOE_HEAD_DIM; d++) {
+            double acc = 0.0;
+            for (int j = 0; j <= pos; j++) {
+                float *vj = moe_V_row(l,j) + (long)kvh*MOE_HEAD_DIM;
+                acc += (double)scores[j]*vj[d];
+            }
+            oh[d] = (float)acc;
+        }
+    }
+    moe_matvec_af_mt(af, t->o_proj, 0, attn_out, o_out);
+    for (int c = 0; c < MOE_HIDDEN; c++) x_residual[c] += o_out[c];
 }
+// Verbatim structural mirror of moe_gqa_attention() -- only difference is reading/writing
+// g_moe_cK/cV[layer][slot][pos] (via moe_cK_row/moe_cV_row) instead of the single-sequence
+// g_moe_K/V[layer][pos], same relationship moe_mla_attention_ragged() has to moe_mla_attention().
 static void moe_gqa_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int slot, int l, int pos,
                                       const float *h, float *x_residual) {
-    (void)af; (void)t; (void)slot; (void)l; (void)h;
-    moe_rope_neox_apply(x_residual, MOE_HEAD_DIM, pos);
-    fprintf(stderr, "FATAL: moe_gqa_attention_ragged: ATTN_KIND=gqa not implemented yet -- see Phase 4 sub-part 2 Step 2.7\n");
-    exit(1);
+    float *q = g_mgqar_q, *k = g_mgqar_k, *v = g_mgqar_v;
+    float *attn_out = g_mgqar_attn_out, *o_out = g_mgqar_o_out;
+    moe_matvec_af_mt(af, t->q_proj, 0, h, q);
+    moe_matvec_af_mt(af, t->k_proj, 0, h, k);
+    moe_matvec_af_mt(af, t->v_proj, 0, h, v);
+
+    if (t->q_norm) {
+        float *w_qnorm = (float *)(g_moe_f32_blob + t->q_norm->off);
+        for (int hh = 0; hh < MOE_N_HEADS; hh++) {
+            float *qh = q + hh*MOE_HEAD_DIM;
+            moe_rmsnorm(qh, w_qnorm, qh, MOE_HEAD_DIM);
+        }
+    }
+    if (t->k_norm) {
+        float *w_knorm = (float *)(g_moe_f32_blob + t->k_norm->off);
+        for (int kh = 0; kh < MOE_N_KV_HEADS; kh++) {
+            float *khv = k + kh*MOE_HEAD_DIM;
+            moe_rmsnorm(khv, w_knorm, khv, MOE_HEAD_DIM);
+        }
+    }
+    for (int hh = 0; hh < MOE_N_HEADS; hh++) moe_rope_neox_apply(q + hh*MOE_HEAD_DIM, MOE_HEAD_DIM, pos);
+    for (int kh = 0; kh < MOE_N_KV_HEADS; kh++) moe_rope_neox_apply(k + kh*MOE_HEAD_DIM, MOE_HEAD_DIM, pos);
+
+    memcpy(moe_cK_row(l,slot,pos), k, (size_t)MOE_KROW*sizeof(float));
+    memcpy(moe_cV_row(l,slot,pos), v, (size_t)MOE_VROW*sizeof(float));
+
+    int group = MOE_N_HEADS / MOE_N_KV_HEADS;
+    double scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
+    for (int hh = 0; hh < MOE_N_HEADS; hh++) {
+        int kvh = hh / group;
+        float *qh = q + hh*MOE_HEAD_DIM;
+        float scores[MOE_CBATCH_MAXPOS];
+        for (int j = 0; j <= pos; j++) {
+            float *kj = moe_cK_row(l,slot,j) + (long)kvh*MOE_HEAD_DIM;
+            double dot = 0.0;
+            for (int d = 0; d < MOE_HEAD_DIM; d++) dot += (double)qh[d]*kj[d];
+            scores[j] = (float)(dot * scale);
+        }
+        float mx_s = scores[0]; for (int j=1;j<=pos;j++) if (scores[j]>mx_s) mx_s=scores[j];
+        double sum = 0.0;
+        for (int j=0;j<=pos;j++) { scores[j] = expf(scores[j]-mx_s); sum += scores[j]; }
+        for (int j=0;j<=pos;j++) scores[j] = (float)(scores[j]/sum);
+        float *oh = attn_out + hh*MOE_HEAD_DIM;
+        for (int d = 0; d < MOE_HEAD_DIM; d++) {
+            double acc = 0.0;
+            for (int j = 0; j <= pos; j++) {
+                float *vj = moe_cV_row(l,slot,j) + (long)kvh*MOE_HEAD_DIM;
+                acc += (double)scores[j]*vj[d];
+            }
+            oh[d] = (float)acc;
+        }
+    }
+    moe_matvec_af_mt(af, t->o_proj, 0, attn_out, o_out);
+    for (int c = 0; c < MOE_HIDDEN; c++) x_residual[c] += o_out[c];
 }
+// Batched GQA attention, one batch slot at a time (caller loops b=0..B-1). Every slot is
+// independently at sequence position 0, same as moe_mla_attention_batched() -- RoPE at pos=0
+// is the identity rotation regardless of convention (traditional or NEOX), so it's skipped
+// entirely rather than computed and discarded. Single-key softmax is exactly 1.0 for the same
+// reason moe_mla_attention_batched() skips it: only one key exists at pos=0.
 static void moe_gqa_attention_batched(const uint8_t *af, MoeLayerTensors *t, int l, int b,
                                        const float *h, float *x_residual) {
-    (void)af; (void)t; (void)l; (void)b; (void)h; (void)x_residual;
-    fprintf(stderr, "FATAL: moe_gqa_attention_batched: ATTN_KIND=gqa not implemented yet -- see Phase 4 sub-part 2 Step 2.7\n");
-    exit(1);
+    float *q = g_mgqab_q, *k = g_mgqab_k, *v = g_mgqab_v;
+    float *attn_out = g_mgqab_attn_out, *o_out = g_mgqab_o_out;
+    moe_matvec_af(af, t->q_proj, 0, h, q);
+    moe_matvec_af(af, t->k_proj, 0, h, k);
+    moe_matvec_af(af, t->v_proj, 0, h, v);
+
+    if (t->q_norm) {
+        float *w_qnorm = (float *)(g_moe_f32_blob + t->q_norm->off);
+        for (int hh = 0; hh < MOE_N_HEADS; hh++) {
+            float *qh = q + hh*MOE_HEAD_DIM;
+            moe_rmsnorm(qh, w_qnorm, qh, MOE_HEAD_DIM);
+        }
+    }
+    if (t->k_norm) {
+        float *w_knorm = (float *)(g_moe_f32_blob + t->k_norm->off);
+        for (int kh = 0; kh < MOE_N_KV_HEADS; kh++) {
+            float *khv = k + kh*MOE_HEAD_DIM;
+            moe_rmsnorm(khv, w_knorm, khv, MOE_HEAD_DIM);
+        }
+    }
+    // rope_neox_apply(..., pos=0) intentionally skipped: identity rotation at pos=0.
+
+    memcpy(moe_bK_row(l,b), k, (size_t)MOE_KROW*sizeof(float));
+    memcpy(moe_bV_row(l,b), v, (size_t)MOE_VROW*sizeof(float));
+
+    int group = MOE_N_HEADS / MOE_N_KV_HEADS;
+    for (int hh = 0; hh < MOE_N_HEADS; hh++) {
+        int kvh = hh / group;
+        float *vh = moe_bV_row(l,b) + (long)kvh*MOE_HEAD_DIM;
+        float *oh = attn_out + hh*MOE_HEAD_DIM;
+        for (int d = 0; d < MOE_HEAD_DIM; d++) oh[d] = vh[d];
+    }
+    moe_matvec_af(af, t->o_proj, 0, attn_out, o_out);
+    for (int c = 0; c < MOE_HIDDEN; c++) x_residual[c] += o_out[c];
 }
 static inline void moe_attention(const uint8_t *af, MoeLayerTensors *t, int l, int pos,
                                   const float *h, float *x_residual) {
@@ -4950,6 +5122,19 @@ static void alloc_moe_buffers(void) {
     g_mlab_kv_b = malloc((size_t)MOE_KVB_OUT*sizeof(float)); g_mlab_normed_kv = malloc((size_t)MOE_KV_LORA_RANK*sizeof(float));
     g_mlab_attn_out = malloc((size_t)MOE_ATTN_OUT*sizeof(float)); g_mlab_o_out = malloc((size_t)MOE_HIDDEN*sizeof(float));
 
+    // Step 2.7: GQA per-call scratch, one set per function (Rule 3), harmless to allocate even
+    // for MLA models (never read in that case, same reasoning as g_moe_rope_inv above).
+    int gqa_q_sz = MOE_N_HEADS * MOE_HEAD_DIM, gqa_kv_sz = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    g_mgqa_q = malloc((size_t)gqa_q_sz*sizeof(float)); g_mgqa_k = malloc((size_t)gqa_kv_sz*sizeof(float));
+    g_mgqa_v = malloc((size_t)gqa_kv_sz*sizeof(float)); g_mgqa_attn_out = malloc((size_t)gqa_q_sz*sizeof(float));
+    g_mgqa_o_out = malloc((size_t)MOE_HIDDEN*sizeof(float));
+    g_mgqar_q = malloc((size_t)gqa_q_sz*sizeof(float)); g_mgqar_k = malloc((size_t)gqa_kv_sz*sizeof(float));
+    g_mgqar_v = malloc((size_t)gqa_kv_sz*sizeof(float)); g_mgqar_attn_out = malloc((size_t)gqa_q_sz*sizeof(float));
+    g_mgqar_o_out = malloc((size_t)MOE_HIDDEN*sizeof(float));
+    g_mgqab_q = malloc((size_t)gqa_q_sz*sizeof(float)); g_mgqab_k = malloc((size_t)gqa_kv_sz*sizeof(float));
+    g_mgqab_v = malloc((size_t)gqa_kv_sz*sizeof(float)); g_mgqab_attn_out = malloc((size_t)gqa_q_sz*sizeof(float));
+    g_mgqab_o_out = malloc((size_t)MOE_HIDDEN*sizeof(float));
+
     // Step 4 (Group B): the 4 K/V cache families, one malloc per flat array -- NOT calloc, and
     // never memset (Rule 6): ~1.54GB total today, must stay lazily-faulted exactly as the BSS
     // arrays these replace were. Leading dims (MOE_MAXLAYERS/MOE_MAXPOS/MOE_BATCH_MAX/
@@ -5057,6 +5242,9 @@ static void alloc_moe_buffers(void) {
     g_mfob_xn1          = malloc((size_t)MOE_HIDDEN*sizeof(float));
 
     if (!g_moe_yarn_freqs || !g_moe_topk_used || !g_moe_rope_inv ||
+        !g_mgqa_q || !g_mgqa_k || !g_mgqa_v || !g_mgqa_attn_out || !g_mgqa_o_out ||
+        !g_mgqar_q || !g_mgqar_k || !g_mgqar_v || !g_mgqar_attn_out || !g_mgqar_o_out ||
+        !g_mgqab_q || !g_mgqab_k || !g_mgqab_v || !g_mgqab_attn_out || !g_mgqab_o_out ||
         !g_mla_q || !g_mla_kv_ap || !g_mla_kv_b || !g_mla_normed_kv || !g_mla_attn_out || !g_mla_o_out ||
         !g_mlar_q || !g_mlar_kv_ap || !g_mlar_kv_b || !g_mlar_normed_kv || !g_mlar_attn_out || !g_mlar_o_out ||
         !g_mlab_q || !g_mlab_kv_ap || !g_mlab_kv_b || !g_mlab_normed_kv || !g_mlab_attn_out || !g_mlab_o_out ||
