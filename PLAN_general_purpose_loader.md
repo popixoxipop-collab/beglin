@@ -522,6 +522,26 @@ no new kernel family. Phase 3 fully complete.
    live-transcodes, ~179s/~11GB peak RSS; `GgufCacheEntry.E` already
    anticipates it).
 
+**Post-Phase-4 axis-table follow-on (2026-08-28, same day)** — not a
+numbered phase, small closed increments working through the 12-axis
+generality table now that Phase 4's structured plan is exhausted:
+- safetensors container parser + verification (`safetensors_load.h/.c`,
+  `safetensors_verify.c`) -- weight-file-format axis, container-parsing
+  only (dense/MoE registration + config.json parsing + dequant-to-engine-
+  precision explicitly NOT done, real work remains here).
+- MQA (`N_KV_HEADS=1`) synthetic numeric self-test
+  (`run_moe_mqa_selftest_mode()`) -- attention-mechanism axis, closes the
+  gap code-inspection-alone left open for the degenerate GQA case.
+- Quantization-scheme axis: all 8 GGUF dtypes `gguf_quants.c` vendors now
+  confirmed against real downloaded files (`Q4_0` was the last gap,
+  closed via a real TinyLlama Q4_0 GGUF).
+- ALiBi/NoPE (positional-encoding axis): researched, found blocked --
+  `mlx_lm` has zero ALiBi architecture support, so this project's
+  established MLX-reference-generation methodology has no path forward
+  without adopting a different (transformers-based) reference toolchain.
+  Deprioritized, not attempted.
+Full writeup: `RESULTS.md`'s entries following "Phase 4 sub-part 4".
+
 ### Phase 5 — Generalized export pipeline (Path B) + the bl=32 experiment (~2 weeks)
 
 1. Ship the converter *in the npm package* (currently isn't). Generalize
