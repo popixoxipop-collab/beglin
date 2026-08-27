@@ -5545,8 +5545,29 @@ static int run_moe_verify_mode(int argc, char **argv) {
     float *w_finalnorm = (float *)(g_moe_f32_blob + t_finalnorm->off);
     if (t_lmhead->out != MOE_VOCAB || t_lmhead->in != MOE_HIDDEN) { fprintf(stderr,"FATAL: lm_head shape mismatch\n"); exit(1); }
 
-    int prompt_ids[] = {100000, 549, 4345, 280, 8204, 317, 245, 1234};
-    int N = sizeof(prompt_ids) / sizeof(prompt_ids[0]);
+    // Phase 4 sub-part 3, Step 3.9: the literal prompt_ids[] below is DeepSeek's own
+    // tokenizer's IDs for this project's fixed 8-token prompt text -- meaningless as vocab
+    // indices for a second model with a different tokenizer (still in-bounds since
+    // MOE_VOCAB is larger, just not the same text). QWEN_MOE_PROMPT_IDS lets a second
+    // model's real reference-capture script supply ITS tokenizer's IDs for the same prompt
+    // text, so the C engine and the MLX reference are actually processing the same input.
+    // Absent (the default) -> byte-identical to before this step, DeepSeek's own gate is
+    // untouched.
+    static int prompt_ids_default[] = {100000, 549, 4345, 280, 8204, 317, 245, 1234};
+    static int prompt_ids_override[MOE_MAXPOS];
+    int *prompt_ids = prompt_ids_default;
+    int N = sizeof(prompt_ids_default) / sizeof(prompt_ids_default[0]);
+    const char *prompt_ids_env = getenv("QWEN_MOE_PROMPT_IDS");
+    if (prompt_ids_env && prompt_ids_env[0]) {
+        char buf[1024];
+        strncpy(buf, prompt_ids_env, sizeof buf - 1);
+        buf[sizeof buf - 1] = '\0';
+        int n = 0;
+        char *tok = strtok(buf, ",");
+        while (tok && n < MOE_MAXPOS) { prompt_ids_override[n++] = atoi(tok); tok = strtok(NULL, ","); }
+        prompt_ids = prompt_ids_override;
+        N = n;
+    }
     if (N > MOE_MAXPOS) { fprintf(stderr, "FATAL: N=%d > MOE_MAXPOS=%d\n", N, MOE_MAXPOS); exit(1); }
 
     FILE *logits_out = fopen("moe3a_c_logits.bin", "wb");
