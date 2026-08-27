@@ -5994,7 +5994,9 @@ static void gguf_write_cache(const char *cache_path, const char *src_gguf_path) 
             fprintf(stderr, "FATAL: gguf_write_cache: unexpected kind %d for '%s'\n", t->kind, t->name);
             exit(1);
         }
-        gguf_cache_writer_add(w, t->name, t->kind, t->out, t->in, t->ng, data_ptr, data_bytes, scales_ptr, scales_bytes);
+        // E=1: every WT-sourced (dense-model) tensor is a plain 2-D matrix, never expert-stacked
+        // -- see GgufCacheEntry's own comment.
+        gguf_cache_writer_add(w, t->name, t->kind, t->out, t->in, t->ng, 1, data_ptr, data_bytes, scales_ptr, scales_bytes);
     }
     gguf_cache_writer_close(w);
     fprintf(stderr, "[engine] gguf cache: wrote %d tensors to %s\n", g_nwt, cache_path);

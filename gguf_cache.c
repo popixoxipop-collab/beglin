@@ -32,7 +32,11 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define GGUF_CACHE_MAGIC "BEGLINC1"
+// Phase 4 sub-part 4: bumped C1->C2 for GgufCacheEntry's new `E` field -- a stale C1 cache
+// written before this change fails the magic check in gguf_cache_is_valid() (returns 0, "no
+// valid cache", same as "doesn't exist") and gets rebuilt, rather than being misread with a
+// garbage/uninitialized E value.
+#define GGUF_CACHE_MAGIC "BEGLINC2"
 
 typedef struct {
     char magic[8];
@@ -172,13 +176,13 @@ static void write_aligned(GgufCacheWriter *w, const void *buf, uint64_t nbytes, 
     w->cursor += padded;
 }
 
-void gguf_cache_writer_add(GgufCacheWriter *w, const char *name, int kind, int out, int in, int ng,
+void gguf_cache_writer_add(GgufCacheWriter *w, const char *name, int kind, int out, int in, int ng, int E,
                             const void *data, uint64_t data_bytes,
                             const void *scales, uint64_t scales_bytes) {
     if (w->n_written >= w->n_tensors) { fprintf(stderr, "FATAL: gguf_cache writer: too many tensors added\n"); exit(1); }
     GgufCacheEntry *e = &w->entries[w->n_written++];
     snprintf(e->name, sizeof e->name, "%s", name);
-    e->kind = kind; e->out = out; e->in = in; e->ng = ng;
+    e->kind = kind; e->out = out; e->in = in; e->ng = ng; e->E = E;
     write_aligned(w, data, data_bytes, &e->data_offset);
     e->data_bytes = data_bytes;
     if (scales_bytes) write_aligned(w, scales, scales_bytes, &e->scales_offset);

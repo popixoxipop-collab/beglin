@@ -19,6 +19,10 @@
 typedef struct {
     char name[96];
     int32_t kind, out, in, ng;
+    int32_t E;   // Phase 4 sub-part 4: expert-stacked tensor count. 1 for every dense-model
+                 // entry (existing 2-D path, unchanged) -- >1 only for a GGUF-MoE expert-stacked
+                 // tensor, where `data`/`scales` hold all E experts' rows back-to-back (same
+                 // expert-slowest-varying layout MoeAFTensor already uses for the AF-blob path).
     uint64_t data_offset, data_bytes;      // packed nibbles / int8 codes / raw f32, per `kind`
     uint64_t scales_offset, scales_bytes;  // 0/0 when this tensor has no scales (K_F32)
 } GgufCacheEntry;
@@ -43,7 +47,7 @@ const uint8_t *gguf_cache_base(const GgufCacheFile *c);  // mmap base; entry off
 // (fwrite) into the cache file -- no aliasing with the caller's buffers afterward. ----
 typedef struct GgufCacheWriter GgufCacheWriter;
 GgufCacheWriter *gguf_cache_writer_open(const char *cache_path, const char *src_gguf_path, uint32_t n_tensors);
-void gguf_cache_writer_add(GgufCacheWriter *w, const char *name, int kind, int out, int in, int ng,
+void gguf_cache_writer_add(GgufCacheWriter *w, const char *name, int kind, int out, int in, int ng, int E,
                             const void *data, uint64_t data_bytes,
                             const void *scales, uint64_t scales_bytes);
 void gguf_cache_writer_close(GgufCacheWriter *w);
