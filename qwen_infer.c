@@ -34,6 +34,9 @@
 #include "gguf_quants.h"   // general-purpose-loader Phase 1: vendored dequant (own TU, same reason)
 #include "gguf_transcode.h" // general-purpose-loader Phase 2: RTN(+EF) transcode to K_Q4G64/K_Q8G64 (own TU, same reason)
 #include "gguf_cache.h"     // general-purpose-loader Phase 2 sub-step 2: on-disk transcode cache (own TU, same reason)
+#include "safetensors_load.h"   // safetensors dense-model loader: container parser (own TU, same reason)
+#include "safetensors_quants.h" // safetensors dense-model loader: F32/F16/BF16 widening (own TU, same reason)
+#include "hf_config.h"           // safetensors dense-model loader: config.json reader (own TU, same reason)
 
 // D1/D2 (structural generalization): NL/NH/NKV/D/HD/KVD/QD/IM/VOCAB/THETA/EPS/MAXSEQ/GROUP/
 // KVG/QG used to be compile-time #defines for Qwen2.5-1.5B only. They are now loaded once at
@@ -6311,6 +6314,13 @@ static const char *ROLE_PATTERN_GGUF[N_LAYER_ROLES] = {
     [ROLE_POST_ATTN_LN] = "blk.%d.ffn_norm.weight",
 };
 
+// Shared by load_gguf_arch() and load_safetensors_arch(): both dequant-then-quantize dense
+// loaders exist to run the same forward-pass code, so one architecture allowlist for both
+// instead of two that could silently drift apart. "qwen2" was the Phase 1 GGUF fixture; "llama"
+// added for Phase 2 sub-step 3 (Mistral-7B-v0.3 -- GGUF tags it general.architecture="llama").
+// Extending this list is the D-gen-4 architecture-priority work either loader would need.
+static const char *SUPPORTED_ARCH_DENSE[] = { "qwen2", "llama" };
+
 // Sets every g_cfg.* field load_arch_cfg() would have, from GGUF metadata instead of
 // arch_config.txt -- deliberately does NOT touch arch_config.txt or its parser (qwen_score.c/
 // qwen_spec.c each FATAL on an unrecognized key in that file; adding GGUF-only concepts to it
@@ -6329,11 +6339,11 @@ static void load_gguf_arch(const char *path) {
     // unrecognized-kind FATAL). "qwen2" was the Phase 1 fixture; "llama" added for Phase 2
     // sub-step 3 (D-gen-4 #1, Mistral-7B-v0.3 -- GGUF tags it general.architecture="llama",
     // not "mistral"). Extending this list further is exactly the D-gen-4 architecture-priority
-    // work.
-    static const char *SUPPORTED_ARCH[] = { "qwen2", "llama" };
+    // work. File-scope (SUPPORTED_ARCH_DENSE, below) since the safetensors loader's
+    // load_safetensors_arch() needs the identical allowlist and shouldn't drift from this one.
     int arch_ok = 0;
-    for (size_t i = 0; i < sizeof(SUPPORTED_ARCH)/sizeof(SUPPORTED_ARCH[0]); i++) {
-        if (arch_len == strlen(SUPPORTED_ARCH[i]) && !memcmp(arch_ptr, SUPPORTED_ARCH[i], arch_len)) { arch_ok = 1; break; }
+    for (size_t i = 0; i < sizeof(SUPPORTED_ARCH_DENSE)/sizeof(SUPPORTED_ARCH_DENSE[0]); i++) {
+        if (arch_len == strlen(SUPPORTED_ARCH_DENSE[i]) && !memcmp(arch_ptr, SUPPORTED_ARCH_DENSE[i], arch_len)) { arch_ok = 1; break; }
     }
     if (!arch_ok) {
         fprintf(stderr, "FATAL: gguf architecture '%.*s' not validated by this engine; supported: qwen2, llama\n",
@@ -6642,6 +6652,267 @@ static void load_gguf_weights_from_cache(const char *cache_path) {
     fprintf(stderr, "[engine] gguf cache: loaded %u tensors from %s (mmap, zero transcode)\n", n, cache_path);
 }
 
+// ============================================================================
+// safetensors dense-model loader: third weight-loading path alongside the custom AF-blob format
+// (load_fp32/load_int4) and GGUF (load_gguf_arch/load_gguf_weights above). Reads a real,
+// unmodified HuggingFace `safetensors` checkpoint (container parser: safetensors_load.h/.c;
+// F32/F16/BF16 widening: safetensors_quants.h/.c; config.json: hf_config.h/.c) directly into the
+// same g_wt[]/g_cfg the other two loaders populate -- init_qkv_bias()/init_tensor_roles() and
+// every forward-pass function downstream of them run completely unmodified.
+//
+// Unlike GGUF, a real safetensors checkpoint's own tensor names are ALREADY byte-identical to
+// this engine's ROLE_PATTERN_HF convention (verified against a real downloaded Qwen2.5-0.5B
+// checkpoint this session) -- so there is no ROLE_PATTERN_GGUF-style second table to translate
+// through; st_register_*_as() take the safetensors name directly as the engine registration name.
+//
+// Dense-only, single safetensors FILE only (no *.safetensors.index.json multi-shard merging, no
+// on-disk transcode cache) -- explicitly deferred, matching how GGUF itself staged multi-shard
+// support well after single-file support was solid.
+// ============================================================================
+
+static SafetensorsFile *g_st = NULL;
+
+// Mirrors load_gguf_arch()'s structure: populates every g_cfg.* field, but from a sibling
+// config.json (via hf_config.h) instead of GGUF KV metadata. g_st must already be open (see
+// main()'s QWEN_SAFETENSORS branch) -- vocab is derived from the embedding tensor's real shape,
+// not trusted blindly from config.json's own vocab_size scalar.
+static void load_safetensors_arch(const char *config_path) {
+    HfConfig *c = hf_config_open(config_path);
+
+    const char *model_type;
+    if (!hf_config_get_str(c, "model_type", &model_type)) {
+        fprintf(stderr, "FATAL: %s missing 'model_type'\n", config_path); exit(1);
+    }
+    int arch_ok = 0;
+    for (size_t i = 0; i < sizeof(SUPPORTED_ARCH_DENSE)/sizeof(SUPPORTED_ARCH_DENSE[0]); i++) {
+        if (!strcmp(model_type, SUPPORTED_ARCH_DENSE[i])) { arch_ok = 1; break; }
+    }
+    if (!arch_ok) {
+        fprintf(stderr, "FATAL: safetensors model_type '%s' not validated by this engine; supported: qwen2, llama\n", model_type);
+        exit(1);
+    }
+    g_rope_norm = !strcmp(model_type, "llama") ? 1 : 0;
+
+    // NTK/YaRN rope_scaling is not implemented for this loader -- detect and FATAL rather than
+    // silently serving unscaled RoPE (same "silently-wrong is worse than a crash" doctrine
+    // load_gguf_arch()'s rope_freqs.weight handling exists to enforce on the GGUF side; this
+    // loader doesn't implement the safetensors-side equivalent yet).
+    if (hf_config_has_key(c, "rope_scaling")) {
+        fprintf(stderr, "FATAL: %s has a 'rope_scaling' key -- NTK/YaRN scaling is not implemented "
+                        "for the safetensors loader yet; this checkpoint needs it, not supported\n", config_path);
+        exit(1);
+    }
+
+    int64_t iv; double fv;
+    if (!hf_config_get_i64(c, "num_hidden_layers", &iv)) { fprintf(stderr, "FATAL: %s missing 'num_hidden_layers'\n", config_path); exit(1); } g_cfg.nl = (int)iv;
+    if (!hf_config_get_i64(c, "hidden_size", &iv)) { fprintf(stderr, "FATAL: %s missing 'hidden_size'\n", config_path); exit(1); } g_cfg.d = (int)iv;
+    if (!hf_config_get_i64(c, "intermediate_size", &iv)) { fprintf(stderr, "FATAL: %s missing 'intermediate_size'\n", config_path); exit(1); } g_cfg.im = (int)iv;
+    if (!hf_config_get_i64(c, "num_attention_heads", &iv)) { fprintf(stderr, "FATAL: %s missing 'num_attention_heads'\n", config_path); exit(1); } g_cfg.nh = (int)iv;
+    if (!hf_config_get_i64(c, "num_key_value_heads", &iv)) { fprintf(stderr, "FATAL: %s missing 'num_key_value_heads'\n", config_path); exit(1); } g_cfg.nkv = (int)iv;
+    if (!hf_config_get_f64(c, "rope_theta", &fv)) { fprintf(stderr, "FATAL: %s missing 'rope_theta'\n", config_path); exit(1); } g_cfg.theta = (float)fv;
+    if (!hf_config_get_f64(c, "rms_norm_eps", &fv)) { fprintf(stderr, "FATAL: %s missing 'rms_norm_eps'\n", config_path); exit(1); } g_cfg.eps = (float)fv;
+
+    // MAXSEQ: same deliberate non-use of the model's own trained context length as
+    // load_gguf_arch()'s QWEN_GGUF_MAXSEQ -- a small, override-able cap.
+    const char *ov = getenv("QWEN_SAFETENSORS_MAXSEQ");
+    g_cfg.maxseq = (ov && ov[0]) ? atoi(ov) : 2048;
+
+    // vocab: derived from the embedding tensor's real shape (defensive, matches
+    // load_gguf_arch()'s own "the embed tensor's own shape can't disagree with how many rows it
+    // actually has" design), cross-checked against config.json's vocab_size when present rather
+    // than trusting either source alone.
+    const SafetensorsInfo *embed_t = safetensors_find_tensor(g_st, "model.embed_tokens.weight");
+    if (!embed_t) { fprintf(stderr, "FATAL: safetensors model missing model.embed_tokens.weight\n"); exit(1); }
+    g_cfg.vocab = (int)embed_t->shape[0];
+    if (hf_config_get_i64(c, "vocab_size", &iv) && (int)iv != g_cfg.vocab) {
+        fprintf(stderr, "FATAL: %s vocab_size=%lld disagrees with model.embed_tokens.weight's real "
+                        "shape[0]=%d\n", config_path, (long long)iv, g_cfg.vocab);
+        exit(1);
+    }
+
+    // qkv_bias is a presence fact, not a config.json scalar: this checkpoint's own tensor list
+    // simply includes self_attn.q_proj.bias etc. when the source architecture has them (true for
+    // Qwen2, false for Llama-3) -- mirrors load_gguf_arch()'s identical GGUF-side check.
+    g_cfg.qkv_bias = safetensors_find_tensor(g_st, "model.layers.0.self_attn.q_proj.bias") ? 1 : 0;
+
+    // o_proj never carries a bias in any architecture this loader supports -- its bias argument
+    // is hardcoded NULL at every matvec call site in this file (every "g_role_wt[ROLE_ATTN_O]"
+    // call), never consulted. A checkpoint that DOES ship one would silently produce wrong
+    // output with no error if this weren't checked, so FATAL rather than silently drop it.
+    if (safetensors_find_tensor(g_st, "model.layers.0.self_attn.o_proj.bias")) {
+        fprintf(stderr, "FATAL: safetensors model has 'model.layers.0.self_attn.o_proj.bias' -- "
+                        "o_proj bias is never consulted anywhere in this engine's forward pass "
+                        "(hardcoded NULL at every matvec call site), so silently loading it would "
+                        "silently produce wrong output; not supported\n");
+        exit(1);
+    }
+
+    if (g_cfg.nh <= 0 || g_cfg.nkv <= 0 || g_cfg.nh % g_cfg.nkv != 0) {
+        fprintf(stderr,"FATAL: safetensors NH=%d not a positive multiple of NKV=%d\n",g_cfg.nh,g_cfg.nkv); exit(1); }
+    if (g_cfg.d <= 0 || g_cfg.d % g_cfg.nh != 0) {
+        fprintf(stderr,"FATAL: safetensors D=%d not evenly divisible by NH=%d (cannot derive HD)\n",g_cfg.d,g_cfg.nh); exit(1); }
+    g_cfg.hd = g_cfg.d / g_cfg.nh;
+    if (g_cfg.hd % 2 != 0) { fprintf(stderr,"FATAL: safetensors HD=%d (D/NH) is odd\n",g_cfg.hd); exit(1); }
+    g_cfg.kvd = g_cfg.nkv * g_cfg.hd;
+    g_cfg.qd  = g_cfg.nh  * g_cfg.hd;
+    g_cfg.group = g_cfg.nh / g_cfg.nkv;
+    if (g_cfg.kvd % 64 != 0) { fprintf(stderr,"FATAL: safetensors KVD=%d not a multiple of 64\n",g_cfg.kvd); exit(1); }
+    if (g_cfg.qd  % 64 != 0) { fprintf(stderr,"FATAL: safetensors QD=%d not a multiple of 64\n",g_cfg.qd); exit(1); }
+    g_cfg.kvg = g_cfg.kvd / 64;
+    g_cfg.qg  = g_cfg.qd  / 64;
+    if (g_cfg.nl <= 0 || g_cfg.maxseq <= 0) { fprintf(stderr,"FATAL: safetensors NL=%d MAXSEQ=%d must be positive\n",g_cfg.nl,g_cfg.maxseq); exit(1); }
+
+    fprintf(stderr,"[engine] safetensors arch config (%s, model_type=%s): NL=%d NH=%d NKV=%d D=%d HD=%d IM=%d VOCAB=%d THETA=%.1f EPS=%g MAXSEQ=%d QKV_BIAS=%d GROUP=%d\n",
+        config_path, model_type, g_cfg.nl,g_cfg.nh,g_cfg.nkv,g_cfg.d,g_cfg.hd,g_cfg.im,g_cfg.vocab,g_cfg.theta,g_cfg.eps,g_cfg.maxseq,g_cfg.qkv_bias,g_cfg.group);
+
+    hf_config_close(c);
+}
+
+// Widens one safetensors tensor to F32 and registers it in g_wt[] under `name` -- the
+// safetensors tensor's own name IS the engine registration name here (see the header comment
+// above load_safetensors_weights() for why no name-mapping table is needed, unlike GGUF).
+static WT *st_register_f32_as(const char *name) {
+    const SafetensorsInfo *t = safetensors_find_tensor(g_st, name);
+    if (!t) { fprintf(stderr, "FATAL: safetensors model missing tensor '%s'\n", name); exit(1); }
+    if (!safetensors_dequant_supported(t->dtype)) {
+        fprintf(stderr, "FATAL: safetensors tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
+        exit(1);
+    }
+    check_no_dup_name(name);
+    if (g_nwt >= 512) { fprintf(stderr, "FATAL: >512 tensors loading safetensors model\n"); exit(1); }
+    WT *w = &g_wt[g_nwt++];
+    snprintf(w->name, sizeof w->name, "%s", name);
+    w->kind = K_F32; w->ng = 0;
+    // safetensors shape[] is [out, in] (row-major, slowest-varying-first) for a 2D weight
+    // matrix -- shape[0] = row count = this engine's "out", shape[1] = row length = "in". 1D
+    // tensors (biases, norms) have n_dims==1; "in" stays 0, harmless since those are only ever
+    // read via ->f32 directly, never through W->out/W->in in a matvec call (same convention
+    // GGUF's own 1D handling relies on).
+    w->out = (int)t->shape[0];
+    w->in = t->n_dims >= 2 ? (int)t->shape[1] : 0;
+    w->packed = NULL; w->scales = NULL; w->sub = NULL;
+    w->kai_rhs = NULL; w->kai_rhs_bytes = 0; w->kai_lazy_failed = 0;
+    float *buf = malloc(sizeof(float) * (size_t)t->n_elements);
+    if (!buf) { fprintf(stderr, "FATAL: safetensors dequant alloc failed for '%s' (%llu elements)\n",
+                        name, (unsigned long long)t->n_elements); exit(1); }
+    safetensors_dequant_row(t->dtype, safetensors_tensor_data(g_st, t), buf, t->n_elements);
+    w->f32 = buf;
+    return w;
+}
+
+// Widens+RTN(+EF)-transcodes one safetensors tensor to K_Q4G64, reusing
+// gguf_quantize_q4g64_error_feedback() completely unmodified (confirmed generic: the function
+// only ever consumes a plain row-major F32 array, zero GGUF-specific coupling). Falls back to
+// K_F32 when in%64!=0, same hard SME2 group-size requirement load_gguf_weights()'s equivalent
+// already enforces.
+static WT *st_register_q4g64_as(const char *name) {
+    const SafetensorsInfo *t = safetensors_find_tensor(g_st, name);
+    if (!t) { fprintf(stderr, "FATAL: safetensors model missing tensor '%s'\n", name); exit(1); }
+    int out = (int)t->shape[0], in = (int)t->shape[1];
+    if (in % 64 != 0) {
+        fprintf(stderr, "[engine] safetensors: %s in=%d not a multiple of 64 -> K_F32 fallback (not K_Q4G64)\n", name, in);
+        return st_register_f32_as(name);
+    }
+    if (!safetensors_dequant_supported(t->dtype)) {
+        fprintf(stderr, "FATAL: safetensors tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
+        exit(1);
+    }
+    check_no_dup_name(name);
+    if (g_nwt >= 512) { fprintf(stderr, "FATAL: >512 tensors loading safetensors model\n"); exit(1); }
+    float *deq = malloc(sizeof(float) * (size_t)t->n_elements);
+    if (!deq) { fprintf(stderr, "FATAL: safetensors dequant alloc failed for '%s'\n", name); exit(1); }
+    safetensors_dequant_row(t->dtype, safetensors_tensor_data(g_st, t), deq, t->n_elements);
+
+    int ng = in / 64;
+    uint8_t *packed = malloc((size_t)out * (in / 2));
+    float *scales = malloc(sizeof(float) * (size_t)out * ng);
+    if (!packed || !scales) { fprintf(stderr, "FATAL: safetensors transcode alloc failed for '%s'\n", name); exit(1); }
+    gguf_quantize_q4g64_error_feedback(deq, out, in, packed, scales);
+    free(deq);
+
+    WT *w = &g_wt[g_nwt++];
+    snprintf(w->name, sizeof w->name, "%s", name);
+    w->kind = K_Q4G64; w->in = in; w->out = out; w->ng = ng;
+    w->f32 = NULL; w->packed = packed; w->scales = scales; w->sub = NULL;
+    w->kai_rhs = NULL; w->kai_rhs_bytes = 0; w->kai_lazy_failed = 0;
+    return w;
+}
+
+// Symmetric int8 group-64 RTN, reusing gguf_quantize_q8g64() unmodified -- used only for an
+// untied lm_head, matching load_gguf_weights()'s output.weight policy exactly.
+static WT *st_register_q8g64_as(const char *name) {
+    const SafetensorsInfo *t = safetensors_find_tensor(g_st, name);
+    if (!t) { fprintf(stderr, "FATAL: safetensors model missing tensor '%s'\n", name); exit(1); }
+    int out = (int)t->shape[0], in = (int)t->shape[1];
+    if (in % 64 != 0) {
+        fprintf(stderr, "[engine] safetensors: %s in=%d not a multiple of 64 -> K_F32 fallback (not K_Q8G64)\n", name, in);
+        return st_register_f32_as(name);
+    }
+    if (!safetensors_dequant_supported(t->dtype)) {
+        fprintf(stderr, "FATAL: safetensors tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
+        exit(1);
+    }
+    check_no_dup_name(name);
+    if (g_nwt >= 512) { fprintf(stderr, "FATAL: >512 tensors loading safetensors model\n"); exit(1); }
+    float *deq = malloc(sizeof(float) * (size_t)t->n_elements);
+    if (!deq) { fprintf(stderr, "FATAL: safetensors dequant alloc failed for '%s'\n", name); exit(1); }
+    safetensors_dequant_row(t->dtype, safetensors_tensor_data(g_st, t), deq, t->n_elements);
+
+    int ng = in / 64;
+    int8_t *codes = malloc((size_t)out * in);
+    float *scales = malloc(sizeof(float) * (size_t)out * ng);
+    if (!codes || !scales) { fprintf(stderr, "FATAL: safetensors transcode alloc failed for '%s'\n", name); exit(1); }
+    gguf_quantize_q8g64(deq, out, in, codes, scales);
+    free(deq);
+
+    WT *w = &g_wt[g_nwt++];
+    snprintf(w->name, sizeof w->name, "%s", name);
+    w->kind = K_Q8G64; w->in = in; w->out = out; w->ng = ng;
+    w->f32 = NULL; w->packed = (const uint8_t *)codes; w->scales = scales; w->sub = NULL;
+    w->kai_rhs = NULL; w->kai_rhs_bytes = 0; w->kai_lazy_failed = 0;
+    return w;
+}
+
+// Populates g_wt[] using the safetensors tensors' OWN names directly as both the lookup key and
+// the engine registration name -- unlike GGUF, a real HF safetensors checkpoint's tensor names
+// are already byte-identical to ROLE_PATTERN_HF (verified against a real downloaded Qwen2.5-0.5B
+// checkpoint this session), so there is no second name-translation table to maintain. Same D7
+// per-role quantize policy as load_gguf_weights(): 7 projection roles -> K_Q4G64, 2 norm roles ->
+// K_F32, biases/embed/final-norm -> K_F32, an untied lm_head (if present) -> K_Q8G64.
+static void load_safetensors_weights(void) {
+    int n_q4 = 0, n_f32 = 0;
+    for (int r = 0; r < N_LAYER_ROLES; r++) {
+        int is_norm = (r == ROLE_INPUT_LN || r == ROLE_POST_ATTN_LN);
+        for (int l = 0; l < g_cfg.nl; l++) {
+            char name[96];
+            snprintf(name, sizeof name, ROLE_PATTERN_HF[r], l);
+            if (is_norm) { st_register_f32_as(name); n_f32++; }
+            else         { st_register_q4g64_as(name); n_q4++; }
+        }
+    }
+    if (g_cfg.qkv_bias) {
+        for (int l = 0; l < g_cfg.nl; l++) {
+            char eq[96], ek[96], ev[96];
+            snprintf(eq,sizeof eq,"model.layers.%d.self_attn.q_proj.bias",l);
+            snprintf(ek,sizeof ek,"model.layers.%d.self_attn.k_proj.bias",l);
+            snprintf(ev,sizeof ev,"model.layers.%d.self_attn.v_proj.bias",l);
+            st_register_f32_as(eq); n_f32++;
+            st_register_f32_as(ek); n_f32++;
+            st_register_f32_as(ev); n_f32++;
+        }
+    }
+    st_register_f32_as("model.embed_tokens.weight"); n_f32++;
+    st_register_f32_as("model.norm.weight"); n_f32++;
+    // A separate lm_head.weight tensor means untied embeddings -> K_Q8G64, matching
+    // load_gguf_weights()'s output.weight handling. Absent (tied embeddings, e.g. the
+    // Qwen2.5-0.5B base checkpoint) -> this engine's existing tied-embedding fallback
+    // (wt_opt("lm_head.weight") returning NULL) takes over unchanged, same as every other loader.
+    int n_q8 = 0;
+    if (safetensors_find_tensor(g_st, "lm_head.weight")) { st_register_q8g64_as("lm_head.weight"); n_q8++; }
+    fprintf(stderr, "[engine] safetensors: registered %d tensors (%d K_Q4G64, %d K_Q8G64, %d K_F32)\n",
+            g_nwt, n_q4, n_q8, n_f32);
+}
+
 // Phase 2 sub-step 4: startup log naming which tier each tensor landed in. This is an
 // ELIGIBILITY classification, not a guarantee of what actually ran: kai_sme2_shape_ok()
 // already internally gates on kai_sme2_available() (see sme2_kai.h's own safety-contract
@@ -6650,7 +6921,7 @@ static void load_gguf_weights_from_cache(const char *cache_path) {
 // qualifies, batched serve/cbatch calls might), so an SME2-eligible tensor can still run on
 // NEON for any individual call. Named honestly as eligibility, not overclaimed as a fact about
 // any specific run.
-static void log_gguf_dispatch_tiers(void) {
+static void log_dispatch_tiers(void) {
     int n_sme2_eligible = 0, n_neon_q4g64 = 0, n_neon_q8g64 = 0, n_blas_f32 = 0;
     for (int i = 0; i < g_nwt; i++) {
         WT *t = &g_wt[i];
@@ -6663,7 +6934,7 @@ static void log_gguf_dispatch_tiers(void) {
             n_blas_f32++;
         }
     }
-    fprintf(stderr, "[engine] gguf dispatch tiers: %d SME2-eligible, %d NEON-q4g64, %d NEON-q8g64, %d BLAS-f32 "
+    fprintf(stderr, "[engine] dispatch tiers: %d SME2-eligible, %d NEON-q4g64, %d NEON-q8g64, %d BLAS-f32 "
             "(SME2-eligible tensors still fall back to NEON per-call below the kernel's row-tile minimum, e.g. M=1 decode)\n",
             n_sme2_eligible, n_neon_q4g64, n_neon_q8g64, n_blas_f32);
 }
@@ -6690,7 +6961,29 @@ int main(int argc, char **argv) {
     const char *base = (base_env && base_env[0]) ? base_env : "/Volumes/D50/vdsp/llm_engine";
     const char *gguf_path = getenv("QWEN_GGUF");   // general-purpose-loader Phase 1: 4th loader,
                                                      // additive, byte-identical-when-absent (R2)
+    // safetensors dense loader: 5th loader, same additive/byte-identical-when-absent property.
+    // QWEN_SAFETENSORS points at the .safetensors FILE itself; the sibling config.json is
+    // expected in the same directory by default (matching how HF ships them side by side),
+    // QWEN_HF_CONFIG overrides that default explicitly.
+    const char *st_path = getenv("QWEN_SAFETENSORS");
+    char st_config_path[560];
+    if (st_path && st_path[0]) {
+        const char *cfg_ov = getenv("QWEN_HF_CONFIG");
+        if (cfg_ov && cfg_ov[0]) snprintf(st_config_path, sizeof st_config_path, "%s", cfg_ov);
+        else {
+            const char *slash = strrchr(st_path, '/');
+            if (slash) snprintf(st_config_path, sizeof st_config_path, "%.*s/config.json", (int)(slash - st_path), st_path);
+            else snprintf(st_config_path, sizeof st_config_path, "config.json");
+        }
+    }
     if (gguf_path && gguf_path[0]) load_gguf_arch(gguf_path);
+    else if (st_path && st_path[0]) {
+        // g_st must be open before load_safetensors_arch() runs -- it derives VOCAB from the
+        // embedding tensor's real shape, not a config.json scalar alone (see that function's
+        // own comment).
+        g_st = safetensors_open(st_path);
+        load_safetensors_arch(st_config_path);
+    }
     else load_arch_cfg(base);      // D1/D2: must run before anything below reads g_cfg
     load_rope_scale_cfg(base);// M43: needs nothing but base; no ordering dependency on g_cfg
     alloc_arch_buffers();     // D2: heap-allocate every buffer g_cfg.* now sizes
@@ -6778,7 +7071,7 @@ int main(int argc, char **argv) {
         WT *gguf_lmh = wt_opt("lm_head.weight");
         g_int8_head = (gguf_lmh && gguf_lmh->kind == K_Q8G64 && !(fp32h && fp32h[0])) ? 1 : 0;
         fprintf(stderr,"[engine] gguf Q4_THREADS=%d, lm_head=%s\n", T, g_int8_head?"int8":"fp32");
-        log_gguf_dispatch_tiers();
+        log_dispatch_tiers();
     } else if (int4bin && int4bin[0]) {
         g_int4=1; int T = getenv("Q4_THREADS")?atoi(getenv("Q4_THREADS")):detect_q4_threads();  // M51: per-chip tuned table, see detect_q4_threads() above
         q4pool_init(&g_pool, T, g_cfg.im);
@@ -6810,6 +7103,24 @@ int main(int argc, char **argv) {
         WT *lmh = wt_opt("lm_head.weight");
         if (lmh && lmh->kind == K_Q8G64 && !(fp32h && fp32h[0])) g_int8_head = 1;
         fprintf(stderr,"[engine] int4 GEMV, Q4_THREADS=%d, lm_head=%s\n", T, g_int8_head?"int8":"fp32");
+    } else if (st_path && st_path[0]) {
+        // Same q4pool setup + default-on lazy SME2 repack the GGUF arm above uses, for the same
+        // reason: this path also registers K_Q4G64 tensors via st_register_q4g64_as(), so the
+        // exact same downstream consumers (q4pool, kai_route()) need it initialized identically.
+        if (!getenv("QWEN_SME2_LAZY_REPACK")) g_sme2_lazy = 1;
+        int T = getenv("Q4_THREADS")?atoi(getenv("Q4_THREADS")):detect_q4_threads();
+        q4pool_init(&g_pool, T, g_cfg.im);
+        { const char *e = getenv("Q4_POOL_SPIN"); int m = e ? atoi(e) : 1; g_pool.spin = m ? 1 : 0; }
+        { const char *e = getenv("Q4_POOL_QOS");  g_pool.qos  = (e && atoi(e)) ? 1 : 0; }
+        { const char *e = getenv("Q4_POOL_SPIN_ITERS"); if (e && atoi(e) > 0) g_pool.spin_iters = atoi(e); }
+        q4pool_start(&g_pool);
+        load_safetensors_weights();
+        // Same D14 (M49) kind-check the other two K_Q4G64/K_Q8G64-producing loaders use.
+        const char *fp32h = getenv("QWEN_FP32_HEAD");
+        WT *st_lmh = wt_opt("lm_head.weight");
+        g_int8_head = (st_lmh && st_lmh->kind == K_Q8G64 && !(fp32h && fp32h[0])) ? 1 : 0;
+        fprintf(stderr,"[engine] safetensors Q4_THREADS=%d, lm_head=%s\n", T, g_int8_head?"int8":"fp32");
+        log_dispatch_tiers();
     } else load_fp32(base);
     init_qkv_bias();          // D4: must run before init_fused_dispatch() (build_fused_qkv reads
                                // g_qbias_l/g_kbias_l/g_vbias_l) and before any forward pass
