@@ -529,6 +529,16 @@ generality table now that Phase 4's structured plan is exhausted:
   `safetensors_verify.c`) -- weight-file-format axis, container-parsing
   only (dense/MoE registration + config.json parsing + dequant-to-engine-
   precision explicitly NOT done, real work remains here).
+- **safetensors dense-model engine wiring** (`load_safetensors_arch()`/
+  `load_safetensors_weights()`, `hf_config.h/.c`, `safetensors_quants.h/.c`)
+  -- the follow-on to the item above: a third dense-model weight-loading
+  path (`QWEN_SAFETENSORS=<path>`), verified end-to-end on the real
+  `Qwen2.5-0.5B` checkpoint against an MLX fp32-forced reference (6/8 exact
+  match under a teacher-forced comparison, the 2 mismatches being
+  immediately-recovering near-ties). Dense-only, single-file only, no
+  on-disk cache -- MoE safetensors, multi-shard merging, and `rope_scaling`
+  support explicitly deferred. Full writeup: `RESULTS.md` "safetensors
+  dense-model engine wiring".
 - MQA (`N_KV_HEADS=1`) synthetic numeric self-test
   (`run_moe_mqa_selftest_mode()`) -- attention-mechanism axis, closes the
   gap code-inspection-alone left open for the degenerate GQA case.

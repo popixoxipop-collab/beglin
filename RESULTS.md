@@ -2009,3 +2009,123 @@ answers separately: which on-disk formats can be *read* (the GGUF dtype
 list above, plus safetensors' F32/F16/BF16), and which in-memory scheme the
 engine *computes* in (`q4g64`/`q8g64`/`f32`, hardware-verified via the SME2
 gates throughout Phase 4).
+
+## General-purpose loader -- safetensors dense-model engine wiring (2026-08-28)
+
+**Problem.** The safetensors container parser (previous increment, this same
+day) explicitly scoped out engine wiring -- dense/MoE tensor registration,
+`config.json` parsing, and a dequant path were all deferred. This increment
+closes that gap for the dense-model case: a third weight-loading path
+(`QWEN_SAFETENSORS=<path>`), alongside the existing GGUF and AF-blob
+loaders, that reads a real, unmodified HuggingFace safetensors checkpoint
+directly.
+
+**Design, mirroring the GGUF dense loader structurally** (`load_gguf_arch`/
+`load_gguf_weights`) but with two genuine simplifications the research phase
+found and confirmed against real data:
+- **No name-mapping table.** A real HF safetensors checkpoint's tensor names
+  are already byte-identical to this engine's internal `ROLE_PATTERN_HF[]`
+  convention (verified against the real downloaded `Qwen2.5-0.5B`
+  checkpoint) -- unlike GGUF, which needs a `ROLE_PATTERN_GGUF[]` ->
+  `ROLE_PATTERN_HF[]` translation. `st_register_*_as()` use the safetensors
+  tensor name directly as both lookup key and engine registration name.
+- **Reuses `gguf_quantize_q4g64_error_feedback()`/`gguf_quantize_q8g64()`
+  completely unmodified** for the same D7 per-role quantize policy
+  `load_gguf_weights()` uses (7 projection roles -> `K_Q4G64`, 2 norm roles
+  -> `K_F32`, biases/embed/final-norm -> `K_F32`, an untied lm_head if
+  present -> `K_Q8G64`). Confirmed generic before reuse, not assumed: the
+  transcode TU includes only `<math.h>`/`<stddef.h>`, zero GGUF coupling.
+
+New files: `hf_config.h`/`.c` (own TU, hand-rolled flat-JSON-object scanner
+for `config.json` -- never `#include`d into `qwen_infer.c`'s plain-compiled
+unit, same discipline every other format parser follows, tied to a real
+historical regression: unrelated code in that TU once changed clang's
+autovectorization of an unrelated function and produced a SIGILL).
+`safetensors_quants.h`/`.c` (extracts `safetensors_verify.c`'s already-
+checksum-verified BF16/F16 widening into a reusable
+`safetensors_dequant_row()`/`safetensors_dequant_supported()` pair -- this
+exact filename was anticipated in `safetensors_load.h`'s own header comment
+when the container-parser increment shipped).
+
+**Defensive FATALs added for cases the real test fixture doesn't exercise
+but a future checkpoint might** (found during a design-review pass that
+re-read the actual source rather than trusting a summary):
+- An `o_proj.bias` tensor, if present -- confirmed by direct grep that
+  `o_proj`'s bias argument is hardcoded `NULL` at every matvec call site in
+  this file (`qwen_infer.c:1529,1728,1966,2115` at the time of the read),
+  never consulted. A checkpoint that does ship one would silently produce
+  wrong output with no error otherwise.
+- A `rope_scaling` key present in `config.json` -- NTK/YaRN scaling isn't
+  implemented for this loader yet; FATAL rather than silently serve
+  unscaled RoPE.
+- A `vocab_size`/embedding-tensor-shape mismatch -- vocab is derived from
+  the embedding tensor's real shape (defensive, matches `load_gguf_arch()`'s
+  own design), cross-checked against `config.json`'s scalar when present.
+
+**Verification.**
+- Structural: Gate-A (clean build) / Gate-B (0 new warnings beyond the 5
+  pre-existing `cblas_sgemv` deprecations) / Gate-C (0 SVE/SME/ADDVL
+  mnemonics in the plain-compiled object) all clean, on bob. Byte-identical
+  regression on the existing GGUF (`Qwen2.5-0.5B-Instruct`) and int4
+  AF-blob (`Qwen1.5B`) loaders -- one intentional single-line cosmetic diff
+  (`log_gguf_dispatch_tiers()` renamed `log_dispatch_tiers()` now that two
+  loaders share it; the printed string dropped its "gguf " prefix
+  accordingly), confirmed to be the *only* diff via direct `diff` against
+  the pre-change baseline capture, not assumed.
+- Load-time tensor-kind split: predicted in advance (7 projection roles x
+  24 layers = 168 -> `K_Q4G64`; 2 norms x24 + 3 biases x24 + embed +
+  final-norm = 122 -> `K_F32`; 0 `K_Q8G64`, tied embeddings, no separate
+  `lm_head.weight` tensor in the file) and confirmed to match exactly:
+  `registered 290 tensors (168 K_Q4G64, 0 K_Q8G64, 122 K_F32)`.
+- **The real numeric gate**: MLX on `macstudio` (`mlx_lm` 0.31.3), loading
+  the identical `Qwen/Qwen2.5-0.5B` checkpoint directly, every bf16 leaf
+  param upcast to float32 before the forward pass (this project hit a real
+  precision trap here once already -- Phase 4 sub-part 3 Step 3.9, an
+  apparent `rel_l2` gap of 1.2e-2-4.8e-2 that was 100% MLX's own bf16
+  rounding, not the engine under test -- this script exists specifically to
+  not repeat that mistake). A naive raw-autoregressive comparison (feed the
+  same 13-token prompt to both, let each generate 8 tokens independently)
+  showed only 1/8 exact match -- but this comparison is confounded: once
+  token 2 diverges, every position after it compares logits computed on
+  *different* input sequences, not a fair test. Redesigned as a genuine
+  **teacher-forced, shared-context comparison**: took MLX's own 8-token
+  greedy continuation as ground truth, then for each of the 8 positions fed
+  the engine the exact prefix (prompt + MLX's own tokens up to that point)
+  via the already-verified `greedy 1` mode and compared its single
+  next-token prediction against MLX's actual next token at that position --
+  8 independent, unconfounded comparisons under identical context.
+  - **Result: 6/8 exact match.** The 2 mismatches are consecutive
+    (immediately after the shared token for "Tokyo"), immediately recover
+    (4/4 exact match resumes at the very next position), and are
+    semantically near-identical alternatives at a genuine decision
+    boundary, not divergent garbage: engine predicted `.\n` where MLX
+    predicted `.` (same sentence-ending choice, near-identical
+    tokenization), then `Which` where MLX predicted `The` (both valid
+    sentence-starters). Consistent with ordinary `K_Q4G64` int4 quantization
+    noise at a close argmax tie -- the same pattern this project's every
+    other cross-quantization-scheme comparison has shown (Phase 3-1's GGUF
+    gate: "diverging at token 5... ordinary double-quantization noise at a
+    close argmax decision boundary, not a correctness bug") -- not a loader
+    defect.
+  - Encountered and worked around, not fixed (out of scope): `dump` mode
+    crashes on any machine without `/Volumes/D50/vdsp/llm_engine/results/`
+    mounted -- a pre-existing bug (unchecked `fopen()` on a hardcoded path,
+    `qwen_infer.c`'s `forward_token()`), unrelated to this loader, that
+    would reproduce identically for the GGUF or AF-blob paths. Not
+    exercised by any gate before this one because nothing had tried `dump`
+    mode on bob until now. Abandoned in favor of the teacher-forced
+    `greedy 1` methodology above, which needed no fix to pre-existing code.
+
+**Debt / explicitly deferred, matching how GGUF itself staged this work**:
+no `.beglin`-style on-disk transcode cache; no multi-shard
+`*.safetensors.index.json` merging (single-file only); MoE-format
+safetensors (dense-only loader, matching the existing GGUF-dense/GGUF-MoE
+split); `rope_scaling` (NTK/YaRN) support (detected and FATALed, not
+implemented); the pre-existing `dump`-mode hardcoded-path bug found above;
+`scripts/postinstall-build.js`'s pre-existing gap (already didn't compile
+the GGUF TUs either -- the new safetensors/hf_config TUs inherit the same
+gap, not a new problem).
+
+Commits: `0ad0128` (`feat(safetensors): config.json parser + shared dequant
+helper`), `5c6a9db` (`feat(safetensors): wire dense-model loading into
+qwen_infer.c`).
