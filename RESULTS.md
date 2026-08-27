@@ -1839,3 +1839,71 @@ embedding table -- no real checkpoint has exercised this yet.
 fix) `20708a6`(4.A: GgufCacheEntry E field) `694b724`(4.D: GGUF-MoE loader)
 `432e6f0`(4.D security fixes) `01167a7`(4.2c: Gate 4.2 self-test) + this
 final document/commit.
+
+## General-purpose loader — safetensors container parser (2026-08-28)
+
+**Problem.** The "weight file format" axis of the generality table has two
+formats covered (this project's bespoke AF blob, and GGUF) but not the
+format most HF checkpoints actually ship in: plain safetensors. Before this
+increment there was no way to open a `model.safetensors` file at all.
+
+**Scope, deliberately bounded.** This increment is a container parser only
+-- open/enumerate/get-raw-bytes -- not a full loader. Role-name mapping,
+dequant, and engine wiring (dense/MoE tensor registration, `config.json`
+parsing) are out of scope, left for a future increment.
+
+**Format, verified against a real file, not assumed from the spec.**
+Range-fetched and inspected `Qwen/Qwen2.5-0.5B`'s `model.safetensors`
+directly with Python (`struct`+`json`) before writing any C: 8-byte
+little-endian u64 header length, then a UTF-8 JSON header
+(`{"tensor.name": {"dtype","shape","data_offsets"}, ..., "__metadata__"}`),
+then raw tensor data with offsets relative to the end of the header
+section. **Key finding**: tensor names in a real HF safetensors checkpoint
+already match this engine's existing HF-style logical names exactly
+(e.g. `model.layers.0.self_attn.q_proj.weight`) -- unlike GGUF's
+`blk.N.attn_q.weight` convention, a future wiring step needs no
+role-mapping table.
+
+**Implementation.** `safetensors_load.h`/`.c` -- own translation unit, same
+"caller-plain convention" as `gguf_load.c` (never included by
+`qwen_infer.c`'s build unit). Hand-rolled JSON cursor scanner scoped to
+safetensors' exact narrow grammar (one level of nesting, plain-identifier
+keys, string/int/int-array values, standard escapes, `\uXXXX` FATALs since
+it's never expected in a real machine-generated header) -- same
+"hand-parse the exact format actually encountered" discipline `gguf_load.c`
+already uses for GGUF's binary KV format, not a vendored general JSON
+library. Every read is bounds-checked against the mmap'd file length;
+malformed/truncated input is a FATAL with a specific reason, never a
+best-effort partial parse.
+
+**Verification.** `safetensors_verify.c`, a checksum-oracle CLI tool
+mirroring `gguf_dequant_checksums.c`'s exact weighted-checksum pattern
+(hand-written BF16/F16->FP32 conversion; BF16 is exactly the top 16 bits of
+an FP32 value, no lookup table needed). Diffed against an independent
+Python reference using the real `safetensors` pip package (not a
+hand-rolled re-implementation -- same "independent implementation as
+ground truth" discipline `gguf-py` served for every GGUF gate this
+project). Both run on bob against the real, full `Qwen2.5-0.5B`
+`model.safetensors` (988,097,824 bytes, downloaded fresh for this test).
+
+- **Result: 290/290 tensor checksums byte-exact, 0 diff** (`__metadata__`
+  correctly skipped, not counted as a tensor).
+- One dependency snag along the way, not a parser bug: numpy has no BF16
+  dtype, so `safe_open(..., framework="numpy").get_tensor()` on any BF16
+  tensor raised `TypeError` until `ml_dtypes` (which registers `bfloat16`
+  with numpy) was `pip install`ed on bob and imported before `safe_open` --
+  the parser output was correct throughout, only the oracle script needed
+  the fix.
+- One cosmetic bug found and fixed before commit (not caught by the
+  checksum gate, since it only affects an error-path string): `cur_expect`'s
+  FATAL message computed a byte offset via an expression that always
+  evaluated to zero (`c->p - (c->end - (c->end - c->p))`); fixed by
+  threading a `start` pointer through the cursor. Re-verified 290/290
+  byte-exact after the fix.
+
+**Debt / explicitly deferred**: dense/MoE registration wiring, `config.json`
+parsing, and a dequant path (F32/F16/BF16 -> engine's working precision)
+are not built here -- next increment if this axis item is picked up again.
+
+Commit: `b1cc035` (`feat(safetensors): add container parser + verification
+oracle`).
