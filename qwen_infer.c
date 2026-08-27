@@ -2961,6 +2961,19 @@ static void moe_top_k_select(const float *scores, int n, int k, int *out_idx) {
     }
 }
 
+// Phase 4 sub-part 3, Step 3.4 (B-4/C-2): Qwen3-MoE renormalizes the k selected post-softmax
+// scores to sum to 1 (verified from mlx_lm qwen3_moe.py, Qwen3MoeSparseMoeBlock.__call__:
+// scores /= mx.sum(scores, axis=-1, keepdims=True), only when norm_topk_prob). DeepSeek-V2-Lite
+// does NOT -- gated on MOE_NORM_TOPK_PROB (default 0), so this is never called on the existing
+// golden path. In-place on the k selected entries only, so every downstream reader (the
+// weight-sum AND the routing dump) sees the same renormalized value MLX itself uses.
+static void moe_topk_renorm(float *scores, const int *idx, int k) {
+    double s = 0.0;
+    for (int i = 0; i < k; i++) s += scores[idx[i]];
+    if (!(s > 0.0)) return;
+    for (int i = 0; i < k; i++) scores[idx[i]] = (float)(scores[idx[i]] / s);
+}
+
 typedef struct {
     MoeAFTensor *q_proj, *kv_a_proj, *kv_b_proj, *o_proj;
     MoeF32Tensor *input_ln, *post_attn_ln, *kv_a_ln;
@@ -3255,6 +3268,7 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
             moe_softmax_full(router_scores, MOE_N_EXPERTS);
             int *top_idx = g_mft_top_idx;
             moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
+            if (MOE_NORM_TOPK_PROB) moe_topk_renorm(router_scores, top_idx, MOE_TOP_K);
 
             for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] = 0.0f;
             // Task#102 2nd pass ("다 해봐" -- small-call consolidation): gate_v/up_v (both read
@@ -3359,6 +3373,7 @@ static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, 
             moe_softmax_full(router_scores, MOE_N_EXPERTS);
             int *top_idx = g_mcs_top_idx;
             moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
+            if (MOE_NORM_TOPK_PROB) moe_topk_renorm(router_scores, top_idx, MOE_TOP_K);
 
             for (int c = 0; c < MOE_HIDDEN; c++) mlp_out[c] = 0.0f;
             // Task#102 2nd pass, same batching as moe_forward_token()'s mirror block above --
@@ -4024,6 +4039,7 @@ static void moe_ffn_batched(const uint8_t *af, MoeLayerTensors *t, int l, int B,
         moe_softmax_full(router_scores, MOE_N_EXPERTS);
         int *top_idx = g_mfb_top_idx;
         moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
+        if (MOE_NORM_TOPK_PROB) moe_topk_renorm(router_scores, top_idx, MOE_TOP_K);
         for (int k = 0; k < MOE_TOP_K; k++) {
             int e = top_idx[k];
             MoeExpertBucket *bk = &g_moe_bucket[e];
@@ -4092,6 +4108,7 @@ static void moe_ffn_naive_batched(const uint8_t *af, MoeLayerTensors *t, int B,
         moe_softmax_full(router_scores, MOE_N_EXPERTS);
         int *top_idx = g_mfnb_top_idx;
         moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
+        if (MOE_NORM_TOPK_PROB) moe_topk_renorm(router_scores, top_idx, MOE_TOP_K);
         for (int k = 0; k < MOE_TOP_K; k++) {
             long e = top_idx[k];
             float wgt = router_scores[e];
