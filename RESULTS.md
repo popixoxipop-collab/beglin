@@ -1907,3 +1907,53 @@ are not built here -- next increment if this axis item is picked up again.
 
 Commit: `b1cc035` (`feat(safetensors): add container parser + verification
 oracle`).
+
+## MQA (N_KV_HEADS=1) degenerate-GQA numeric self-test (2026-08-28)
+
+**Problem.** The "attention mechanism" axis had MLA (sub-part 1-2) and real GQA
+(sub-part 3, group=8, verified end-to-end against MLX) covered, but MQA
+(Multi-Query Attention, N_KV_HEADS=1 -- one shared K/V head for all query
+heads) had only been reasoned about by code inspection: `moe_gqa_attention()`'s
+`kvh = hh / group` formula with `group = MOE_N_HEADS/MOE_N_KV_HEADS` provably
+degenerates to `kvh=0` for every `hh` when `N_KV_HEADS=1`, since `group` then
+equals `MOE_N_HEADS`. That inspection covers the grouping arithmetic but not
+whether `MOE_KROW`/`MOE_VROW` (== exactly one head's worth of columns at
+N_KV_HEADS=1) still address `moe_K_row()`/`moe_V_row()` correctly across
+positions, or whether every query head really reads the identical K/V row
+rather than an aliased/off-by-one one.
+
+**Design.** No real MQA-architecture model was readily available, so rather
+than defer this axis item, built a synthetic self-test in the same style as
+Gate 4.2's sym-selftest: `run_moe_mqa_selftest_mode()`
+(`QWEN_MOE_MQA_SELFTEST=1`). Config: 2 query heads sharing 1 KV head
+(`HIDDEN=64, N_HEADS=2, N_KV_HEADS=1, HEAD_DIM=64`), all-sym synthetic AF
+weight tensors (deterministic nibble/scale pattern, decorrelated per tensor),
+3 sequential positions (not just pos=0's trivial single-token case -- this
+exercises the K/V-cache row read across positions, where an addressing bug
+would actually show up). Dimensions deliberately kept as multiples of 64:
+`moe_matvec_af_row()` always processes exactly 64 columns per group
+regardless of `in` (confirmed by reading the function -- `row_words = in/8`,
+inner loop is a hardcoded `for (ci=0;ci<64;ci++)`), so a non-multiple-of-64
+`in` would read out of bounds rather than merely being untested. No SME2
+hardware requirement: `moe_gqa_attention()`'s q/k/v/o_proj matvecs always go
+through `moe_matvec_af_mt()` -> `moe_matvec_af()` (the plain scalar/vDSP
+thread pool), never `moe_matvec_af_group_smart()`'s SME2 dispatch -- attention
+projections and the expert-FFN SME2 path are structurally separate.
+
+**Verification.** Diffed against `mqa_selftest_reference.py`, an independent
+numpy reimplementation of the same dequant+RoPE+attention formulas (not
+copy-pasted from the C source), run on bob.
+
+- **Result: rel_l2 6.3e-8 - 8.8e-8 across all 3 positions** (float32 noise
+  floor, not a meaningful discrepancy), **argmax match 3/3**.
+- Confirms the MQA degenerate case is correct end-to-end, not just provable
+  by formula inspection -- closes the remaining gap the inspection alone left
+  open (K/V-cache row addressing, cross-position reads, no off-by-one in the
+  single-shared-head case).
+- Regression: Gate 4.2's sym-selftest re-run against the same rebuilt binary,
+  still 64/64 bit-identical. Gate-A (clean build) / Gate-B (0 new warnings,
+  only the 5 pre-existing `cblas_sgemv` deprecation notices) / Gate-C (0
+  SVE/SME mnemonics in the plain-compiled object) all clean.
+
+Commit: `d04d44d` (`feat(moe): MQA (N_KV_HEADS=1) degenerate-GQA numeric
+self-test`).
