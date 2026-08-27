@@ -5403,6 +5403,118 @@ static void alloc_moe_buffers(void) {
 // that export's output directory. Dummy-but-valid values fill every MLA/FFN/router
 // config field moe_cfg_validate()/alloc_moe_buffers() require positive but which this
 // attention-only path never reads.
+// Phase 4 sub-part 4, Gate 4.2 (symmetric-path equivalence): tests F-2's claim directly rather
+// than assuming it -- constructs a synthetic tensor that is affine-but-numerically-symmetric
+// (bias == exactly -8*scale for every group), then runs moe_matvec_af_group_smart() twice on
+// IDENTICAL packed nibbles/scale: once with sym=0 (forces moe_sme2_ensure_ready() to build
+// adj_bias and moe_matvec_af_group_smart() to apply the correction loop) and once with sym=1
+// (skips both entirely). x+(-x)==0 exactly under IEEE754 for any finite x, so
+// adj_bias[row,g]=8*scale+bias=8*scale+(-8*scale) is EXACTLY 0.0 for every entry when
+// constructed this way -- the two runs share the identical KleidiAI-repacked symmetric RHS
+// (moe_sme2_ensure_ready() always repacks into sym_packed/sym_scales regardless of `sym`) and
+// differ ONLY in whether an exactly-zero correction is added vs skipped, so the final output
+// must be bit-identical. Gated by QWEN_MOE_SYM_SELFTEST=1; requires real SME2 hardware (bob) --
+// this is testing the group_smart dispatch path, not falling back to it being unreachable.
+static int run_moe_sym_selftest_mode(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *env = getenv("QWEN_MOE_SYM_SELFTEST");
+    if (!env || !env[0]) return 0;
+
+    fprintf(stderr, "[sym selftest] QWEN_MOE_SYM_SELFTEST=1 -- Gate 4.2 symmetric-path equivalence check\n");
+
+    // Minimal dummy-but-valid config, same pattern as run_moe_gqa_selftest_mode() above -- this
+    // test never reads most of these, they exist only to satisfy moe_cfg_validate()/
+    // alloc_moe_buffers()'s positivity requirements.
+    MOE_HIDDEN = 64; MOE_N_HEADS = 1; MOE_N_KV_HEADS = 1; MOE_HEAD_DIM = 64;
+    MOE_ROPE_THETA = 1000000.0; MOE_RMS_EPS = 1e-6; MOE_ATTN_KIND = MOE_ATTN_GQA;
+    MOE_ROPE_STYLE = MOE_ROPE_NEOX; MOE_NORM_TOPK_PROB = 0;
+    MOE_KV_LORA_RANK = 2; MOE_QK_ROPE_HD = 2; MOE_QK_NOPE_HD = 2; MOE_V_HD = 2;
+    MOE_Q_HEAD_DIM = MOE_QK_ROPE_HD + MOE_QK_NOPE_HD;
+    MOE_NL = 1; MOE_FIRST_DENSE_LAYERS = 1; MOE_N_EXPERTS = 1; MOE_N_SHARED = 1;
+    MOE_TOP_K = 1; MOE_IM_DIM = 64; MOE_DENSE_IM = 64; MOE_VOCAB = 8;
+    MOE_YARN_FACTOR = 1.0; MOE_YARN_BETA_FAST = 1.0; MOE_YARN_BETA_SLOW = 1.0;
+    MOE_YARN_MSCALE = 1.0; MOE_YARN_MSCALE_ALL_DIM = 1.0; MOE_YARN_ORIG_MAX_POS = 4096.0;
+    moe_cfg_validate();
+    MOE_QDIM = MOE_N_HEADS * MOE_Q_HEAD_DIM; MOE_KVA_OUT = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
+    MOE_KVB_OUT = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD); MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
+    MOE_SH_IM = MOE_IM_DIM * MOE_N_SHARED; MOE_KROW = MOE_VROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    MOE_MAX_IN = 64; MOE_MAX_NG = 1;
+    MOE_SME2_SLOT_DENSE = MOE_N_EXPERTS; MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
+    MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2; MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
+    alloc_moe_buffers();
+
+    if (!kai_sme2_available()) {
+        fprintf(stderr, "[sym selftest] SME2 not available on this hardware -- nothing to test, skipping\n");
+        return 1;
+    }
+
+#define SYMTEST_OUT 64
+#define SYMTEST_IN 64
+#define SYMTEST_NG 1
+    const int out_n = SYMTEST_OUT, in_n = SYMTEST_IN, ng_n = SYMTEST_NG;
+    // Deterministic synthetic pattern: nibble(row,col) = (row*7+col) & 0xF, packed 2-per-byte
+    // matching moe_decode_af()'s own low-nibble/even-col, high-nibble/odd-col convention.
+    uint8_t packed[SYMTEST_OUT * (SYMTEST_IN / 2)];
+    for (int row = 0; row < out_n; row++) {
+        for (int byte_i = 0; byte_i < in_n / 2; byte_i++) {
+            int col_lo = byte_i * 2, col_hi = byte_i * 2 + 1;
+            int nib_lo = (row * 7 + col_lo) & 0xF, nib_hi = (row * 7 + col_hi) & 0xF;
+            packed[row * (in_n / 2) + byte_i] = (uint8_t)(nib_lo | (nib_hi << 4));
+        }
+    }
+    float scales[SYMTEST_OUT];
+    for (int row = 0; row < out_n; row++) scales[row] = 0.01f * (float)(row + 1);   // varied, nonzero
+    float bias_affine[SYMTEST_OUT];
+    for (int row = 0; row < out_n; row++) bias_affine[row] = -8.0f * scales[row];   // exactly symmetric
+
+    // Two MoeAFTensor views over the SAME packed/scale bytes: t_affine (sym=0, real bias) and
+    // t_sym (sym=1, no bias) -- one buffer holds [packed][scale] shared by both, plus a separate
+    // [bias] region only t_affine's bias_off points at.
+    size_t packed_bytes = (size_t)out_n * (in_n / 2), scale_bytes = (size_t)out_n * ng_n * sizeof(float);
+    size_t bias_bytes = (size_t)out_n * ng_n * sizeof(float);
+    uint8_t *blob = malloc(packed_bytes + scale_bytes + bias_bytes);
+    memcpy(blob, packed, packed_bytes);
+    memcpy(blob + packed_bytes, scales, scale_bytes);
+    memcpy(blob + packed_bytes + scale_bytes, bias_affine, bias_bytes);
+
+    MoeAFTensor t_affine = {0}, t_sym = {0};
+    snprintf(t_affine.name, sizeof t_affine.name, "sym_selftest_affine");
+    t_affine.E = 1; t_affine.out = out_n; t_affine.in = in_n; t_affine.ng = ng_n;
+    t_affine.packed_off = 0; t_affine.packed_bytes = (long)packed_bytes;
+    t_affine.scale_off = (long)packed_bytes; t_affine.bias_off = (long)(packed_bytes + scale_bytes);
+    t_affine.base = blob; t_affine.sym = 0;
+
+    t_sym = t_affine;
+    snprintf(t_sym.name, sizeof t_sym.name, "sym_selftest_sym");
+    t_sym.bias_off = -1;   // never dereferenced: sym=1
+    t_sym.sym = 1;
+
+    float x[SYMTEST_IN]; for (int c = 0; c < in_n; c++) x[c] = 0.1f * (float)(c + 1) - 0.5f;   // varied input
+    float y_affine[SYMTEST_OUT], y_sym[SYMTEST_OUT];
+    memset(y_affine, 0, sizeof y_affine); memset(y_sym, 0, sizeof y_sym);
+    // Distinct cache_e slots (0 and 1) so the two runs occupy different g_moe_sme2[] entries --
+    // otherwise the second call would just reuse the first's cached rhs_packed/adj_bias and this
+    // would test nothing.
+    moe_matvec_af_group_smart(NULL, &t_affine, 0, 0, 0, 0, x, 1, y_affine);
+    moe_matvec_af_group_smart(NULL, &t_sym,    0, 1, 0, 0, x, 1, y_sym);
+
+    int mismatches = 0;
+    for (int row = 0; row < out_n; row++) {
+        if (memcmp(&y_affine[row], &y_sym[row], sizeof(float)) != 0) {
+            if (mismatches < 5) fprintf(stderr, "[sym selftest] MISMATCH row=%d affine=%.9g sym=%.9g\n",
+                                        row, (double)y_affine[row], (double)y_sym[row]);
+            mismatches++;
+        }
+    }
+    fprintf(stderr, "[sym selftest] %d/%d rows exactly bit-identical\n", out_n - mismatches, out_n);
+    fprintf(stderr, "RESULT: GATE 4.2 %s\n", mismatches == 0 ? "PASS" : "FAIL");
+    free(blob);
+    return 1;
+}
+#undef SYMTEST_OUT
+#undef SYMTEST_IN
+#undef SYMTEST_NG
+
 static int run_moe_gqa_selftest_mode(int argc, char **argv) {
     (void)argc; (void)argv;
     const char *dir = getenv("QWEN_MOE_GQA_SELFTEST");
@@ -6443,6 +6555,7 @@ int main(int argc, char **argv) {
     // since it's gated by its own env var (not weights_moe/ file presence) -- absent
     // QWEN_MOE_GQA_SELFTEST (every existing run), this is one getenv() call and falls
     // through, byte-identical to before this self-test existed.
+    if (run_moe_sym_selftest_mode(argc, argv)) return 0;
     if (run_moe_gqa_selftest_mode(argc, argv)) return 0;
     if (run_gguf_moe_verify_mode(argc, argv)) return 0;
     if (run_moe_verify_mode(argc, argv)) return 0;
