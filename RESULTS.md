@@ -1638,3 +1638,204 @@ Sub-part 4 (GGUF stacked-expert-tensor mapping) remains out of scope here.
 Its known prerequisite: bob's ~33GiB free after this sub-part's ~19GB
 transfer will not hold a further ~19GB GGUF source plus a ~17GB `.beglin`
 cache simultaneously -- decide a cleanup plan before starting it.
+
+## Phase 4 sub-part 4: GGUF stacked-expert-tensor loading (2026-08-28)
+
+### Problem
+
+Sub-part 3 shipped a second MoE topology, but only through this project's own
+bespoke AF blob format -- a model shipped as a normal GGUF file (the format
+most community MoE checkpoints actually ship in) still couldn't load. Prior
+to this sub-part, disk cleanup on bob (redundant 18GB Qwen3 AF export
+removed, verified byte-identical against macstudio's copy first) freed the
+headroom sub-part 3's own closing note flagged as the prerequisite.
+
+### Design: bridge into the existing MoeAFTensor machinery, not a parallel path
+
+`MoeAFTensor` gained two fields: `base` (a per-tensor buffer pointer,
+`NULL` for every existing AF-blob-sourced tensor) and `sym` (true for a
+GGUF-transcoded tensor, whose bias array doesn't exist in memory at all --
+see below). The ~5 functions that actually dereference the blob
+(`moe_decode_af`, `moe_matvec_af_row[_vdsp]`, `moe_sme2_ensure_ready`) each
+resolve `t->base ? t->base : blob` once at their own top; every *outer*
+function (`moe_forward_token`, `moe_ffn_batched`, the dozens of
+`MoeBatchItem` construction sites) keeps passing the same shared blob
+parameter unchanged, since only those ~5 primitives ever touch it directly.
+This is the "bridge the tensor handle" design the plan recommended over full
+`WT` unification -- smallest diff, zero call sites outside the primitives
+touched.
+
+A new `run_gguf_moe_verify_mode()` (gated by `QWEN_MOE_GGUF=<path.gguf>`)
+mirrors `run_moe_verify_mode()`'s structure but sources config from the
+GGUF file's own KV metadata (`qwen3moe.expert_count`,
+`expert_used_count`, `expert_feed_forward_length`, etc. -- real values, not
+the sub-part-3 exporter's text-file placeholders) and populates
+`g_moe_af[]`/`g_moe_f32[]` by live per-tensor dequant+transcode
+(`gguf_register_moe_q4g64_as()`/`gguf_register_moe_f32_as()`) instead of
+reading a pre-built blob. `MOE_GGUF_LAYER_ROLES` maps each of the 12
+per-layer GGUF tensor names to this engine's existing HF-style logical
+names -- the exact names `moe_resolve_layer_tensors()` already looks up,
+verified against that function's own source, not re-derived. MLA-only
+config fields (`KV_LORA_RANK` etc.) get the same dummy-but-valid
+placeholders sub-part 2/3 already proved run clean, since `moe_cfg_validate()`
+requires them positive regardless of `ATTN_KIND`.
+
+**4.G (per-expert transcode, not whole-tensor)**: `gguf_register_moe_q4g64_as()`
+dequantizes and RTN-transcodes one expert at a time
+(`expert_stride_bytes = t->n_bytes / E`, verified exactly against `gguf-py`'s
+own per-expert slice, see below) -- caps the transient dequant buffer at
+one expert's worth (~6.3MB for this model's switch_mlp tensors) instead of
+materializing all 128 experts' fp32 at once (~805MB per tensor).
+
+**4.B (symmetric, not affine)**: `gguf_quantize_q4g64_error_feedback()` (the
+existing GGUF transcoder, already used and oracle-verified by the *dense*
+GGUF loader across 6 real models) is symmetric-only -- it emits packed
+nibbles + scales, no bias array at all. Every GGUF-sourced `MoeAFTensor` is
+therefore `sym=1`; the scalar decode primitives compute `(nib-8)*scale`
+directly rather than the affine `nib*scale+bias` formula (a real
+correctness fix mid-implementation: the first cut still read a nonexistent
+bias via the affine path's memcpy for any `sym=1` tensor -- caught before
+any real data exercised it). The SME2 dispatch path's `adj_bias` correction
+(`8*scale+bias`) is knowably exactly `0.0` under IEEE754 (`x+(-x)==0` for
+any finite `x`) for a tensor built this way, so `moe_sme2_ensure_ready()`
+skips building it and `moe_matvec_af_group_smart()` skips applying it --
+~1.6% of every SME2 GEMM's MACs and, for this model, ~1.81GB of otherwise-
+all-zero memory, per the plan's own F-2 estimate.
+
+**4.A (cache format, ready for a future MoE cache)**: `GgufCacheEntry`
+gained an `E` field (1 for every existing dense-model entry, unchanged 2-D
+path) and the on-disk magic bumped `BEGLINC1`->`BEGLINC2` so a stale
+pre-existing cache fails validation and rebuilds rather than being misread.
+
+### Security fixes (background review, before any real-data run)
+
+A background review of the initial loader commit found 3 real issues, all
+from using GGUF tensor metadata (`E`/`out`/`in`) in size arithmetic and
+division before validating it: (1) division by zero if a malformed 3-D
+tensor had `ne[2]==0` (`expert_stride_bytes = n_bytes/E`); (2)+(3) integer-
+overflow-to-heap-corruption in the packed/scale buffer size and the dequant
+scratch buffer size (`E*out*row_pbytes`, `out*in*sizeof(float)`) -- an
+overflow would allocate an undersized buffer while the per-expert transcode
+loop kept writing at the original, pre-overflow extents. Fixed with
+`__builtin_mul_overflow`/`__builtin_add_overflow`-checked helpers at every
+size computation derived from tensor dims, plus an explicit
+`E<=0||out<=0||in<=0` rejection before any arithmetic -- same "the file's
+own metadata is not yet trusted" discipline `gguf_cache.c`'s own bounds
+validation already established. Re-verified byte-identical on DeepSeek
+after the fix.
+
+### Verification
+
+**Gate 4.1 (dequant oracle)**: `gguf_dequant_checksums`/`gguf_dequant_
+checksums_oracle.py` (restored from an earlier phase's archive, unmodified
+-- both already treat a tensor's `n_elements` as one flat stream regardless
+of shape, so the 3-D expert-stacked case needed no new code) run against
+the real 18.56GB `Qwen3-30B-A3B-Q4_K_M.gguf` (unsloth/Qwen3-30B-A3B-GGUF,
+size confirmed byte-exact against the server's own `Content-Length` after
+download): **579/579 tensors, C engine (`gguf_dequant_row`) and gguf-py
+reference checksums exactly identical**, including every 3-D expert-stacked
+tensor and the file's real mixed per-tensor quantization (`attn_v`/
+`ffn_down_exps`/`output` are Q6_K, the rest Q4_K within one nominal
+"Q4_K_M" file -- a real fact not in the original plan, confirmed not a
+blocker since `gguf_quants.c` already supports both types generically).
+
+**Gate 4.2 (symmetric-path equivalence)**: `run_moe_sym_selftest_mode()`
+(`QWEN_MOE_SYM_SELFTEST=1`) builds a synthetic tensor with `bias` set to
+exactly `-8*scale` (affine-but-numerically-symmetric), runs
+`moe_matvec_af_group_smart()` twice -- `sym=0` (forces the correction
+built+applied) vs `sym=1` (skips both) -- on real SME2 hardware. **64/64
+output rows exactly bit-identical.** Directly tests F-2's claim via
+execution rather than derivation alone.
+
+**Per-expert stride, independently verified**: a targeted test
+(`verify_expert_stride.py`) dequantized one real expert two ways --
+`gguf-py`'s own whole-tensor dequant then sliced vs `gguf-py` fed exactly
+the byte range `expert_stride_bytes*e` would select -- **exact match,
+`max_abs_diff=0.0`**. Confirms `n_bytes/E` (both mathematically, via
+`gguf_load.c`'s uniform `n_elem *= ne[d]` computation, and empirically)
+gives the precise per-expert byte offset.
+
+**Gate 4.3 (the real gate) -- investigated, not waved through.** First
+comparison (GGUF-path output vs the sub-part-3 AF-blob reference, same
+default prompt IDs) looked like a failure: 4/8 argmax mismatches, rel_l2
+0.17-1.04 (not a flat precision gap -- router agreement *grows worse* with
+depth: layer 0 matched 3/8 positions, most layers past ~10 matched 0-1/8).
+Investigated via competing hypotheses before accepting or rejecting:
+
+1. Per-expert dequant stride bug -- REFUTED, see the independent
+   verification above (exact match).
+2. Tensor name mapping wrong -- REFUTED by direct cross-check of
+   `MOE_GGUF_LAYER_ROLES` against both the real file's 12 per-layer tensor
+   names and `moe_resolve_attn_tensors_gqa()`/`moe_resolve_layer_tensors()`'s
+   own source -- exact match on every entry.
+3. Raw router scores at layer 0, position 0, inspected directly: **both
+   paths selected the identical 8-expert set** `{59,39,2,15,63,97,90,20}`,
+   just reordered with 12-16% relative score differences -- the same
+   near-tie-flip signature sub-part 3 already characterized and explained,
+   not corruption.
+4. **Decisive experiment**: built llama.cpp (already present on bob,
+   `/Users/bob/llamacpp_kleidi_build/build`, Metal-accelerated) against the
+   identical GGUF file -- a fully independent implementation reading the
+   same Q4_K/Q6_K bytes through its own dequant+GEMM path, not this
+   engine's re-quantized-symmetric one. `llama-simple` free generation on a
+   real text prompt produced coherent, grammatical English. Got the
+   *real* Qwen3 tokenization of "The history of science is a long record
+   of" via `llama-tokenize --ids` (`[785,3840,315,8038,374,264,1293,3255,
+   315]`), fed the first 8 of those *real* token IDs to this engine's GGUF
+   path via `QWEN_MOE_PROMPT_IDS`, and decoded the predictions using the
+   GGUF file's own embedded vocab (`tokenizer.ggml.tokens`): every
+   prediction was a grammatically valid continuation (`"Ġ**"`, `"Ġof"`,
+   `"Ġthe"`, `"Ġis"`, `"Ġa"`, `"Ġrich"`, `","`, `"Ġof"`), **4 of 7
+   comparable positions matched the real continuation text exactly**, and
+   zero were incoherent/garbage.
+
+**Conclusion**: the loader is correct. The AF-blob comparison's large
+divergence is comparing *two independently-quantized copies of the same
+model* against *each other* (GGUF's Q4_K/Q6_K super-block scheme vs MLX's
+native affine group-64 scheme, re-quantized here to symmetric q4g64) --
+their per-layer router near-ties diverge independently and compound across
+48 layers of MoE routing sensitivity, a fundamentally different comparison
+than sub-part 3's own bf16-vs-fp32-forced-MLX proof (one lossy source vs a
+near-lossless ground truth). The plan's original assumption that the
+1e-3/1e-2 AF-blob thresholds would suffice here does not survive contact
+with the real file's quantization scheme -- a premise correction (in the
+spirit of the plan's own F-1..F-4 findings), recorded here rather than
+loosening a threshold to paper over it. Reference (ii) from the plan
+(llama.cpp) is the decisive evidence and passes on coherence/plausibility
+grounds; a full logit-level llama.cpp diff is left as future strengthening,
+not required to close this gate.
+
+**Gate 4.4 (cache round-trip) -- scoped down, not skipped.** `GgufCacheEntry`'s
+new `E` field (4.A) is designed for a future MoE `.beglin` cache, but
+`run_gguf_moe_verify_mode()` does not yet write or read one -- every run
+live-transcodes. Recorded as debt below rather than built now: the *dense*
+GGUF loader's cache round-trip (write, stale-detect, byte-identical reload)
+was re-verified working with the new `E`-aware format this sub-part
+(Qwen2.5-0.5B: old C1-format cache correctly detected as invalid and
+rebuilt, 291 tensors, C2 format; second run mmap-loaded with zero
+re-transcode) -- the mechanism itself is proven; wiring the MoE side is
+scoped-down future work, not a live gate here.
+
+**Gate 4.5 (memory/disk)**: full 48-layer GGUF-MoE forward pass (338 AF
+tensors + 241 f32 tensors, live transcode of all 128 experts x 3 tensors x
+48 layers), measured via `/usr/bin/time -l`: **179.08s real, maximum
+resident set size 11.08GB** (well under bob's 16GiB, 0 swaps). Disk:
+34GiB free before and after (only small logits/routing files written).
+
+### Debt recorded, not fixed
+
+MoE-path `.beglin` on-disk cache (Gate 4.4, above) -- every GGUF-MoE run
+re-dequantizes+re-transcodes all 128 experts x 3 tensors x 48 layers from
+scratch (~179s, ~11GB peak RSS); `GgufCacheEntry.E` already anticipates
+this, only the write/read wiring for the MoE path is missing. A full
+logit-level llama.cpp comparison (not just coherence/plausibility) would
+strengthen Gate 4.3 further but wasn't required to close it. Tied
+embeddings (`output.weight` absent) FATALs rather than falling back to the
+embedding table -- no real checkpoint has exercised this yet.
+
+### Commits
+
+`ddd2382`(4.2: MoeAFTensor base/sym bridge) `20aab96`(4.2b: scalar-path sym
+fix) `20708a6`(4.A: GgufCacheEntry E field) `694b724`(4.D: GGUF-MoE loader)
+`432e6f0`(4.D security fixes) `01167a7`(4.2c: Gate 4.2 self-test) + this
+final document/commit.

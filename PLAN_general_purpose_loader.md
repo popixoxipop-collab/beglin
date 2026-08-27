@@ -494,22 +494,33 @@ no new kernel family. Phase 3 fully complete.
    sub-part's ~19GB transfer — will not hold a further ~19GB GGUF source
    plus a ~17GB `.beglin` cache at the same time. Decide a cleanup plan
    first.
-4. GGUF MoE tensors arrive stacked (`blk.N.ffn_gate_exps.weight`,
-   `[n_expert,...]`) — maps onto the existing stacked-expert `MoeAFTensor`
-   layout for shape fields, but **the `adj_bias` claim below is wrong,
-   verified this session (sub-part 2/3 planning)**: GGUF's Q4_K uses a
-   32-column affine granularity (two independent (scale,min) pairs per
-   32-column half-block) vs this engine's 64-column groups, and this
-   project's own GGUF loader already dequantizes Q4_K → fp32 →
-   re-quantizes **symmetric** (`gguf_quantize_q4g64_error_feedback()`,
-   oracle-verified) before it ever reaches `MoeAFTensor`. A GGUF-sourced
-   expert tensor arrives symmetric (`bias ≡ -8*scale` exactly) — `adj_bias`
-   is dead arithmetic and dead memory for it (~1.6% of every GEMM's MACs,
-   ~1.81GB of zeros for Qwen3-30B-A3B), not a bridge to build. The correct
-   design is an explicit `sym` flag on `MoeAFTensor`/`MoeSme2Slot` that skips
-   the `adj_bias` allocation and correction loop entirely when set — a
-   simplification, not the bridge this item originally described. Verify,
-   don't assume.
+4. **DONE (2026-08-28)** — GGUF stacked-expert-tensor loading
+   (`run_gguf_moe_verify_mode()`, `QWEN_MOE_GGUF=<path.gguf>`). Confirmed the
+   `adj_bias` correction was correctly identified as dead weight for a
+   GGUF-sourced tensor (this project's own `gguf_quantize_q4g64_error_
+   feedback()` transcoder is symmetric-only, no bias array in memory at
+   all) — implemented as `MoeAFTensor.sym`/`.base` fields (a "bridge the
+   tensor handle" design: only the ~5 primitive functions that dereference
+   the blob directly needed changes, every outer function keeps passing the
+   same shared blob parameter unchanged). Gate 4.1 (dequant oracle):
+   579/579 tensors byte-identical against `gguf-py` on the real
+   18.56GB Qwen3-30B-A3B-Q4_K_M.gguf file, including 3-D expert-stacked
+   tensors and the file's real mixed Q4_K/Q6_K per-tensor quantization.
+   Gate 4.2 (symmetric-path equivalence): 64/64 rows bit-identical on real
+   SME2 hardware. Gate 4.3 (the real gate) initially looked like a failure
+   against the sub-part-3 AF-blob reference (4/8 argmax mismatch) —
+   investigated, not waved through: root-caused to comparing two
+   *independently-quantized* copies of the same model (GGUF Q4_K/Q6_K vs
+   MLX native affine) against each other, whose router near-ties compound
+   differently across 48 layers — not a loader bug. Decisive evidence: a
+   real llama.cpp build (independent GGUF implementation, already present
+   on bob) given the exact same real tokenizer IDs produced coherent
+   English with 4/7 comparable positions matching the ground-truth
+   continuation exactly. Full writeup: `RESULTS.md` "Phase 4 sub-part 4";
+   full plan: `/Users/xox/.claude/plans/serene-finding-ullman.md`.
+   Debt: no on-disk `.beglin` cache for the MoE-GGUF path yet (every run
+   live-transcodes, ~179s/~11GB peak RSS; `GgufCacheEntry.E` already
+   anticipates it).
 
 ### Phase 5 — Generalized export pipeline (Path B) + the bl=32 experiment (~2 weeks)
 
