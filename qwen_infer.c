@@ -2338,6 +2338,33 @@ typedef struct {
     char name[128];
     long E, out, in, ng;
     long packed_off, packed_bytes, scale_off, bias_off;
+    // Phase 4 sub-part 4 (GGUF stacked-expert loading), 4.C "bridge the tensor handle": every
+    // AF-blob-sourced tensor (DeepSeek/Qwen3-MLX-export, both sub-parts before this one) shares
+    // ONE mmap'd blob, passed as an explicit `blob`/`af` parameter to every function below --
+    // packed_off/scale_off/bias_off are byte offsets INTO that shared blob. A GGUF-MoE model has
+    // no such shared blob: each expert-stacked tensor is individually dequantized+transcoded (per
+    // gguf_register_q4g64_as()'s existing per-tensor pattern) into its own malloc'd buffer. Rather
+    // than thread a per-tensor base pointer through every outer function's signature (moe_forward_
+    // token, moe_ffn_batched, the MoeBatchItem construction sites, etc. -- dozens of call sites,
+    // all of which only ever forward `af` opaquely without touching it), `base` lets the handful of
+    // functions that actually DEREFERENCE the blob (moe_decode_af/moe_matvec_af_row[_vdsp]/
+    // moe_sme2_ensure_ready) resolve `t->base ? t->base : blob` once at their own top and otherwise
+    // proceed completely unchanged -- every existing call site keeps passing the same shared `af`
+    // it always did, and it is simply ignored for tensors that carry their own base. NULL for every
+    // AF-blob-sourced tensor (set explicitly in moe_load_layout_af()), so this is a no-op there --
+    // byte-identical on DeepSeek and Qwen3-MLX-export.
+    const uint8_t *base;
+    // 4.B: true for a GGUF-transcoded tensor whose bias is set to exactly -8*scale per group (the
+    // existing gguf_transcode.c symmetric RTN path, not a new quantization scheme) -- i.e.
+    // adj_bias = 8*scale+bias is knowably 0 for every group, so moe_sme2_ensure_ready() can skip
+    // building it (and moe_matvec_af_group_smart() skips applying it) entirely: ~1.6% of every
+    // SME2 GEMM's MACs and (for Qwen3-30B-A3B) ~1.81GB of otherwise-all-zero memory, per F-2's
+    // measurement. Does NOT change moe_decode_af()/moe_matvec_af_row()'s own arithmetic at all --
+    // those always compute nib*scale+bias directly, and a symmetric tensor's bias already IS
+    // -8*scale, so the existing unmodified formula already produces the right answer; `sym` is
+    // purely a memory/GEMM-correction-loop optimization, not a correctness path. 0 (not symmetric)
+    // for every AF-blob-sourced tensor -- byte-identical when unset.
+    int sym;
 } MoeAFTensor;
 
 static uint8_t *moe_mmap_file(const char *path, long *out_bytes) {
@@ -2366,6 +2393,10 @@ static void moe_load_layout_af(const char *path) {
         strncpy(t->name, name, sizeof t->name - 1);
         t->E = E; t->out = out; t->in = in; t->ng = ng;
         t->packed_off = po; t->packed_bytes = pb; t->scale_off = so; t->bias_off = bo;
+        // Every tensor loaded from an AF blob's layout file shares that blob (passed as `blob`/
+        // `af` at every call site) and is affine (real bias, not GGUF-symmetric-transcoded) --
+        // see MoeAFTensor's own base/sym comment.
+        t->base = NULL; t->sym = 0;
     }
     fclose(f);
 }
@@ -2374,18 +2405,21 @@ static MoeAFTensor *moe_find_af(const char *name) {
     fprintf(stderr, "FATAL: moe af tensor not found: %s\n", name); exit(1);
 }
 static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row, long col) {
+    // 4.C bridge: a GGUF-sourced tensor carries its own buffer (t->base); every AF-blob-sourced
+    // tensor (t->base==NULL) uses the shared blob exactly as before -- see MoeAFTensor's comment.
+    const uint8_t *base = t->base ? t->base : blob;
     long row_words = t->in / 8;
     long word_idx = col / 8;
     long byte_in_word = (col % 8) / 2;
     long byte_idx = t->packed_off + ((e * t->out + row) * row_words + word_idx) * 4 + byte_in_word;
-    uint8_t byte = blob[byte_idx];
+    uint8_t byte = base[byte_idx];
     int nib = (col % 2 == 0) ? (byte & 0xF) : ((byte >> 4) & 0xF);
     long group = col / 64;
     long scale_idx = t->scale_off + ((e * t->out + row) * t->ng + group) * 4;
     long bias_idx = t->bias_off + ((e * t->out + row) * t->ng + group) * 4;
     float scale, bias;
-    memcpy(&scale, blob + scale_idx, 4);
-    memcpy(&bias, blob + bias_idx, 4);
+    memcpy(&scale, base + scale_idx, 4);
+    memcpy(&bias, base + bias_idx, 4);
     return (float)nib * scale + bias;
 }
 
@@ -2401,6 +2435,7 @@ static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row
 // headroom -- threading parallelizes the same wasteful per-element work across cores, it doesn't
 // remove the waste itself).
 static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, long row, const float *x) {
+    const uint8_t *base = t->base ? t->base : blob;   // 4.C bridge, see moe_decode_af()
     long row_words = t->in / 8;
     long ng = t->ng;
     long row_base = e * t->out + row;
@@ -2409,15 +2444,15 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
         long scale_idx = t->scale_off + (row_base * ng + g) * 4;
         long bias_idx = t->bias_off + (row_base * ng + g) * 4;
         float scale, bias;
-        memcpy(&scale, blob + scale_idx, 4);
-        memcpy(&bias, blob + bias_idx, 4);
+        memcpy(&scale, base + scale_idx, 4);
+        memcpy(&bias, base + bias_idx, 4);
         long col0 = g * 64;
         for (long ci = 0; ci < 64; ci++) {
             long col = col0 + ci;
             long word_idx = col / 8;
             long byte_in_word = (col % 8) / 2;
             long byte_idx = t->packed_off + (row_base * row_words + word_idx) * 4 + byte_in_word;
-            uint8_t byte = blob[byte_idx];
+            uint8_t byte = base[byte_idx];
             int nib = (col % 2 == 0) ? (byte & 0xF) : ((byte >> 4) & 0xF);
             float w = (float)nib * scale + bias;
             acc += (double)w * x[col];
@@ -2441,6 +2476,7 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
 // (moe4a_ref_generation.json / mlx_lm), not just compared token-for-token against the exact path,
 // before ever being considered for promotion to default.
 static double moe_matvec_af_row_vdsp(const uint8_t *blob, MoeAFTensor *t, long e, long row, const float *x) {
+    const uint8_t *base = t->base ? t->base : blob;   // 4.C bridge, see moe_decode_af()
     long row_words = t->in / 8;
     long ng = t->ng;
     long row_base = e * t->out + row;
@@ -2450,15 +2486,15 @@ static double moe_matvec_af_row_vdsp(const uint8_t *blob, MoeAFTensor *t, long e
         long scale_idx = t->scale_off + (row_base * ng + g) * 4;
         long bias_idx = t->bias_off + (row_base * ng + g) * 4;
         float scale, bias;
-        memcpy(&scale, blob + scale_idx, 4);
-        memcpy(&bias, blob + bias_idx, 4);
+        memcpy(&scale, base + scale_idx, 4);
+        memcpy(&bias, base + bias_idx, 4);
         long col0 = g * 64;
         for (long ci = 0; ci < 64; ci++) {
             long col = col0 + ci;
             long word_idx = col / 8;
             long byte_in_word = (col % 8) / 2;
             long byte_idx = t->packed_off + (row_base * row_words + word_idx) * 4 + byte_in_word;
-            uint8_t byte = blob[byte_idx];
+            uint8_t byte = base[byte_idx];
             int nib = (col % 2 == 0) ? (byte & 0xF) : ((byte >> 4) & 0xF);
             wbuf[ci] = (float)nib * scale + bias;
         }
@@ -3920,6 +3956,10 @@ static void moe_sme2_ensure_scratch(int max_in) {
 // their cache entry never collides with a routed expert's entry at the same layer even though
 // blob_e is always 0 for both.
 static void moe_sme2_ensure_ready(const uint8_t *af, MoeAFTensor *tsr, long blob_e, long cache_e, int layer, int proj_idx) {
+    // 4.C bridge, see moe_decode_af(). 4.B: tsr->sym skips adj_bias entirely (see below) --
+    // knowably 8*scale+bias==0 for a GGUF-symmetric-transcoded tensor (F-2), not computed and
+    // discarded.
+    const uint8_t *base = tsr->base ? tsr->base : af;
     int f16lhs = moe_sme2_f16lhs_mode();
     MoeSme2Slot *slot = f16lhs ? moe_sme2_f16lhs_slot(layer,cache_e,proj_idx) : moe_sme2_slot(layer,cache_e,proj_idx);
     if (slot->ready != 0) return;
@@ -3933,19 +3973,22 @@ static void moe_sme2_ensure_ready(const uint8_t *af, MoeAFTensor *tsr, long blob
     size_t row_pbytes = (size_t)(in / 2);
     uint8_t *sym_packed = malloc((size_t)out * row_pbytes);
     float *sym_scales = malloc((size_t)out * ng * sizeof(float));
-    float *adj_bias = malloc((size_t)out * ng * sizeof(float));
+    float *adj_bias = tsr->sym ? NULL : malloc((size_t)out * ng * sizeof(float));
     long row_words = in / 8;
     for (int row = 0; row < out; row++) {
-        const uint8_t *src = af + tsr->packed_off + ((size_t)blob_e * tsr->out + row) * row_words * 4;
+        const uint8_t *src = base + tsr->packed_off + ((size_t)blob_e * tsr->out + row) * row_words * 4;
         memcpy(sym_packed + (size_t)row * row_pbytes, src, row_pbytes);
         for (int g = 0; g < ng; g++) {
             long sidx = tsr->scale_off + (((size_t)blob_e * tsr->out + row) * ng + g) * 4;
-            long bidx = tsr->bias_off + (((size_t)blob_e * tsr->out + row) * ng + g) * 4;
-            float scale, bias;
-            memcpy(&scale, af + sidx, 4);
-            memcpy(&bias, af + bidx, 4);
+            float scale;
+            memcpy(&scale, base + sidx, 4);
             sym_scales[row*ng+g] = scale;
-            adj_bias[row*ng+g] = 8.0f*scale + bias;
+            if (adj_bias) {
+                long bidx = tsr->bias_off + (((size_t)blob_e * tsr->out + row) * ng + g) * 4;
+                float bias;
+                memcpy(&bias, base + bidx, 4);
+                adj_bias[row*ng+g] = 8.0f*scale + bias;
+            }
         }
     }
     size_t rhs_bytes = f16lhs ? kai_sme2_f16lhs_rhs_packed_bytes(out, in) : kai_sme2_rhs_packed_bytes(out, in);
@@ -4006,7 +4049,11 @@ static void moe_matvec_af_group_smart(const uint8_t *af, MoeAFTensor *tsr, long 
         float *yr = y_group + (size_t)m*out;
         for (int row = 0; row < out; row++) {
             double corr = 0.0;
-            for (int g = 0; g < ng; g++) corr += (double)slot->adj_bias[row*ng+g] * groupsum[g];
+            // 4.B: NULL for a sym tensor (moe_sme2_ensure_ready() skipped building it -- the
+            // correction is knowably 0 for every group, see that function's own comment).
+            if (slot->adj_bias) {
+                for (int g = 0; g < ng; g++) corr += (double)slot->adj_bias[row*ng+g] * groupsum[g];
+            }
             yr[row] += (float)corr;
         }
     }
