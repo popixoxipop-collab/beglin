@@ -5511,6 +5511,32 @@ static int run_moe_gqa_selftest_mode(int argc, char **argv) {
 
 static const char *SUPPORTED_ARCH_MOE_GGUF[] = { "qwen3moe" };
 
+// GGUF tensor dims (E/out/in, ng derived from in) come directly from the file's own metadata --
+// this project's established discipline for any file-derived count/offset (see gguf_cache.c's
+// own bounds-validation comment: "not a source this process already trusts") is to validate it
+// before using it in size arithmetic, not after. Two things a corrupt/malformed tensor entry
+// could otherwise cause: E==0 (or out/in==0) divides by zero downstream (expert_stride_bytes);
+// and E*out*in-scale multiplications silently wrapping size_t would allocate an
+// undersized buffer while the per-expert transcode loop still writes at the ORIGINAL (huge,
+// pre-overflow) out/in/E extents -- classic integer-overflow-to-heap-corruption, not just a
+// crash. __builtin_mul_overflow catches the second class exactly; this function catches both.
+static size_t moe_gguf_mul_checked(const char *what, size_t a, size_t b) {
+    size_t r;
+    if (__builtin_mul_overflow(a, b, &r)) {
+        fprintf(stderr, "FATAL: gguf moe: %s size computation overflows (dims too large or corrupt file)\n", what);
+        exit(1);
+    }
+    return r;
+}
+static size_t moe_gguf_add_checked(const char *what, size_t a, size_t b) {
+    size_t r;
+    if (__builtin_add_overflow(a, b, &r)) {
+        fprintf(stderr, "FATAL: gguf moe: %s size computation overflows (dims too large or corrupt file)\n", what);
+        exit(1);
+    }
+    return r;
+}
+
 // GGUF tensor name pattern -> this engine's existing logical name pattern (moe_find_af()/
 // moe_find_f32()'s key -- the SAME names moe_resolve_layer_tensors()/moe_resolve_attn_tensors_gqa()
 // already look up for the AF-blob path, verified against their real call sites above, not
@@ -5556,6 +5582,14 @@ static MoeAFTensor *gguf_register_moe_q4g64_as(const char *gguf_name, const char
     // llama.cpp source alone.
     long E = (t->n_dims >= 3) ? (long)t->ne[2] : 1;
     long out = (long)t->ne[1], in = (long)t->ne[0];
+    // Validate before any size arithmetic or division below -- E==0 (or out/in==0) would
+    // divide by zero at expert_stride_bytes; a corrupt/malformed dim otherwise flows straight
+    // into the malloc size computations further down.
+    if (E <= 0 || out <= 0 || in <= 0) {
+        fprintf(stderr, "FATAL: gguf moe: %s has non-positive dims (E=%ld out=%ld in=%ld)\n",
+                gguf_name, E, out, in);
+        exit(1);
+    }
     if (in % 64 != 0) {
         fprintf(stderr, "FATAL: gguf moe: %s in=%ld not a multiple of 64 (SME2_KAI_BL requirement)\n",
                 gguf_name, in);
@@ -5570,23 +5604,33 @@ static MoeAFTensor *gguf_register_moe_q4g64_as(const char *gguf_name, const char
 
     long ng = in / 64;
     size_t row_pbytes = (size_t)(in / 2);
-    size_t packed_bytes = (size_t)E * (size_t)out * row_pbytes;
-    size_t scale_bytes  = (size_t)E * (size_t)out * (size_t)ng * sizeof(float);
+    // Overflow-checked: E/out/ng come from the file's own metadata (untrusted), and an
+    // undersized allocation here would corrupt the heap once the per-expert loop below writes
+    // at the ORIGINAL (pre-overflow) extents -- see moe_gguf_mul_checked()'s own comment.
+    size_t packed_bytes = moe_gguf_mul_checked("packed_bytes",
+                             moe_gguf_mul_checked("packed_bytes", (size_t)E, (size_t)out), row_pbytes);
+    size_t scale_bytes = moe_gguf_mul_checked("scale_bytes",
+                            moe_gguf_mul_checked("scale_bytes",
+                              moe_gguf_mul_checked("scale_bytes", (size_t)E, (size_t)out), (size_t)ng),
+                            sizeof(float));
+    size_t total_bytes = moe_gguf_add_checked("packed+scale_bytes total", packed_bytes, scale_bytes);
     // 4.B: gguf_quantize_q4g64_error_feedback() is symmetric-only (packed nibbles + scales, no
     // bias) -- one buffer holds both, back-to-back, nothing else needed.
-    uint8_t *base = malloc(packed_bytes + scale_bytes);
+    uint8_t *base = malloc(total_bytes);
     if (!base) {
         fprintf(stderr, "FATAL: gguf moe transcode alloc failed for '%s' (%zu bytes)\n",
-                gguf_name, packed_bytes + scale_bytes);
+                gguf_name, total_bytes);
         exit(1);
     }
     uint8_t *packed_all = base;
     float *scales_all = (float *)(base + packed_bytes);
 
-    float *deq = malloc((size_t)out * (size_t)in * sizeof(float));
+    size_t deq_bytes = moe_gguf_mul_checked("deq_bytes",
+                          moe_gguf_mul_checked("deq_bytes", (size_t)out, (size_t)in), sizeof(float));
+    float *deq = malloc(deq_bytes);
     if (!deq) { fprintf(stderr, "FATAL: gguf moe dequant scratch alloc failed for '%s'\n", gguf_name); exit(1); }
     const uint8_t *raw = (const uint8_t *)gguf_tensor_data(g_gguf_moe, t);
-    size_t expert_stride_bytes = (size_t)t->n_bytes / (size_t)E;
+    size_t expert_stride_bytes = (size_t)t->n_bytes / (size_t)E;   // E>0 guaranteed by the check above
     for (long e = 0; e < E; e++) {
         gguf_dequant_row(t->type, raw + (size_t)e * expert_stride_bytes, deq, out * in);
         gguf_quantize_q4g64_error_feedback(deq, (int)out, (int)in,
@@ -5620,10 +5664,14 @@ static MoeF32Tensor *gguf_register_moe_f32_as(const char *gguf_name, const char 
     }
     if (g_moe_nf32 >= 512) { fprintf(stderr, "FATAL: >512 moe f32 tensors (gguf)\n"); exit(1); }
     size_t numel = (size_t)t->n_elements;
-    size_t need_bytes = numel * sizeof(float);
-    if (g_moe_f32_blob_used + need_bytes > g_moe_f32_blob_cap) {
-        size_t new_cap = g_moe_f32_blob_cap ? g_moe_f32_blob_cap * 2 : (1u << 20);
-        while (new_cap < g_moe_f32_blob_used + need_bytes) new_cap *= 2;
+    if (numel == 0) { fprintf(stderr, "FATAL: gguf moe: %s has 0 elements\n", gguf_name); exit(1); }
+    // Overflow-checked (same reasoning as gguf_register_moe_q4g64_as()'s own comment): numel
+    // comes from the file's own metadata.
+    size_t need_bytes = moe_gguf_mul_checked("f32 need_bytes", numel, sizeof(float));
+    size_t needed_total = moe_gguf_add_checked("f32 needed_total", g_moe_f32_blob_used, need_bytes);
+    if (needed_total > g_moe_f32_blob_cap) {
+        size_t new_cap = g_moe_f32_blob_cap ? g_moe_f32_blob_cap : (1u << 20);
+        while (new_cap < needed_total) new_cap = moe_gguf_mul_checked("f32 blob growth", new_cap, 2);
         uint8_t *grown = realloc(g_moe_f32_blob, new_cap);
         if (!grown) { fprintf(stderr, "FATAL: gguf moe f32 blob realloc failed\n"); exit(1); }
         g_moe_f32_blob = grown;
