@@ -1413,14 +1413,16 @@ differences). No low-rank KV compression: separate `k_proj`/`v_proj`, only
 key, softmax≡1.0), same simplifications `moe_mla_attention_batched()` already
 uses.
 
-### **NUMERIC VERIFICATION EXPLICITLY DEFERRED**
+### **NUMERIC VERIFICATION: CLOSED (Phase 4 sub-part 3)**
 
-`moe_gqa_attention()` and its siblings have never run against a real GQA model
-or an MLX reference. There is no second model's `arch_config_moe.txt` yet, so
-the GQA branch is structurally complete but numerically unverified -- Phase 4
-sub-part 3 Step 3.2 (first Qwen3-30B-A3B token vs MLX reference capture) is
-the named gate that closes this. Do not treat this code as verified before
-that gate passes.
+`moe_gqa_attention()` and its siblings had never run against a real GQA model
+or an MLX reference as of this writing. Closed in two stages by sub-part 3:
+attention-only against real Qwen3-30B-A3B layer-0 weights (the
+`QWEN_MOE_GQA_SELFTEST` harness, rel_l2 3.1e-3-4.7e-3 across 8 positions),
+then full 48-layer end-to-end against MLX's real forward pass (Step 3.9,
+which also fixed a real bug this code depended on -- see sub-part 3's own
+section below). Do not treat this note as still live; see "Phase 4 sub-part
+3" for the full closure evidence.
 
 ### Verification
 
@@ -1453,5 +1455,186 @@ numeric proof is sub-part 3's job.
 `93a14a3`(2.7: moe_gqa_attention + siblings) + this final document/commit.
 
 Full plan: `/Users/xox/.claude/plans/serene-finding-ullman.md`. Sub-part 3
-(ship Qwen3-30B-A3B, the model recommended in that plan with rationale) and
-sub-part 4 (GGUF stacked-expert-tensor mapping) remain out of scope here.
+(ship Qwen3-30B-A3B) is documented in its own section below. Sub-part 4
+(GGUF stacked-expert-tensor mapping) remains out of scope.
+
+## Phase 4 sub-part 3: ship Qwen3-30B-A3B as a second MoE topology (2026-08-28)
+
+### Problem
+
+Sub-part 2 built the GQA attention seam but explicitly deferred its numeric
+verification -- no second model existed yet. Sub-part 3's job: export a real
+GQA MoE model into this engine's AF format, load it, and prove the full
+48-layer forward pass agrees with an independent MLX reference. Chose
+Qwen3-30B-A3B over Mixtral-8x7B: already downloaded, `hidden_size=2048`
+matches DeepSeek-V2-Lite exactly (bring-up changes expert count/top-k/
+depth/vocab/attention-kind without also changing the hidden dim), and a prior
+routing-concentration study on this exact checkpoint predicted its narrower
+expert shape (768 vs DeepSeek's 1408) would favor the SME2 gather path more.
+
+### What sub-part 2 actually shipped with -- a real bug, found here
+
+`run_moe_verify_mode()`'s derived-dims block still set `MOE_KROW`/`MOE_VROW`
+to the MLA-only formula *unconditionally*, despite Step 2.2's own comment
+promising the `ATTN_KIND` branch would land at Step 2.7. It never did. Any
+real GQA load would have `moe_gqa_attention()` memcpy/read a truncated K/V
+row -- silent wrong-neighbour reads, no crash. The GQA mini self-test
+(`QWEN_MOE_GQA_SELFTEST`, committed alongside sub-part 2) could not catch
+this: it sets `MOE_KROW`/`MOE_VROW` by hand, bypassing this exact code path.
+Fixed at Step 3.2, with a load-time assertion added since both wrong-direction
+failures here (too small -> OOB reads, too large -> wasted memory) are
+silent.
+
+### Design
+
+**Exporter** (`mlx_moe_to_q4g64af.py`, forked from Phase MoE-1's
+`mlx_deepseek_to_q4g64af.py`, lives outside the repo per this project's
+export-tooling convention): same AF byte format, generalized for GQA
+attention tensors, a dequantized (not raw-quantized) router -- this
+checkpoint's `mlp.gate` is itself MLX-quantized, unlike DeepSeek's plain-fp32
+router -- and a streaming writer (opens both output files up front, tracks
+an offset per tensor, never accumulates a Python `bytearray`) so a ~19GB
+export can't risk the 16+32GB transient an accumulate-then-write pattern
+would on a 64GiB box.
+
+**Engine changes**, each independently gated byte-identical on DeepSeek
+before moving to the next: `MOE_MAXLAYERS` 32->64 and the f32 tensor-layout
+cap 256->512 (Qwen3 needs NL=48 and 241 f32 tensors); the K/V-geometry fix
+above; `if (MOE_N_SHARED > 0)` guards at all 12 shared-expert resolve/
+consume/allocate sites (Qwen3 has none -- DeepSeek's `N_SHARED=2` means every
+guard is exercised as taken on every single existing gate run, an unusually
+strong check for a change of this shape); `MOE_NORM_TOPK_PROB` top-k
+renormalization wiring (Qwen3 renormalizes its selected router scores to sum
+to 1, DeepSeek doesn't); and `QWEN_MOE_PROMPT_IDS` (env-var override for the
+sequential gate's literal token IDs, which were DeepSeek-tokenizer-specific
+and meaningless as a second model's vocab indices).
+
+### Verification
+
+**Export correctness**: a nibble-order oracle (`mx.dequantize()` cross-check)
+on the dequantized router hit a real, live bug on first attempt --
+`mx.dequantize()`'s *output* dtype follows its scale/bias *argument* dtype,
+so feeding native bf16 scale/bias rounds the reference itself to bf16 before
+the comparison ever runs (confirmed: bf16-in vs fp32-in dequantize differ by
+up to 1.953e-3, exactly bf16's ULP at this scale). Fixed by upcasting
+scale/bias to fp32 before the oracle call; exact 0.0 match confirmed after
+for both the router (2D) and a switch_mlp expert tensor (3D, tested on
+expert 0 and expert 5 independently). Full 48-layer export: 19,074,580,480 B
+AF / 51,175,424 B f32, exactly matching hand-computed predictions; 338/241
+tensors, matching `2+7*NL`/`1+5*NL` exactly. Peak export RSS 17.65GB (not the
+originally guessed "well under 8GB" -- root-caused to the shard-loader cache
+never evicting a shard once touched, i.e. effectively the whole ~19-20GB
+source model stays resident by the last layer; a different memory source
+than the R-4 concern the streaming *output* writer already closed, non-fatal
+on this 64GiB box, recorded as debt rather than fixed since the original
+agent-drafted plan explicitly flagged this exact trade-off as "not
+load-bearing, don't over-engineer it"). Transfer to bob: all 5 files'
+`shasum -a 256` matched exactly on both ends. Layer-0 pre-check on the real
+full export (symlinking the self-test's 4 expected filenames into it, no new
+code): rel_l2 3.14e-3-4.71e-3, byte-for-byte the same band the mini export
+produced -- proves the full export's layer-0 bytes, 64-bit offsets past
+2GiB, and 512-entry layout cap are all correct at full scale.
+
+**THE GATE (Step 3.9)**: full 48-layer C-engine forward vs a real MLX
+Qwen3-30B-A3B forward pass, same 8-token prompt as every prior gate in this
+project, tokenized with Qwen3's own tokenizer via the new
+`QWEN_MOE_PROMPT_IDS`. First attempt: 7/8 argmax match, rel_l2 1.2e-2 to
+4.8e-2 (an order of magnitude above the attention-only band), 15 router
+expert-set "hard mismatches" out of 384 (layer,position) decisions -- this
+did not pass at face value, and was investigated rather than waved through:
+
+1. Nibble-order oracle re-run on the switch_mlp (3D expert) tensors: exact
+   0.0 match for two different experts. Ruled out an export/addressing bug.
+2. NL=1 bisection (compare a 1-layer-truncated MLX forward against the same
+   1-layer C config): error was already elevated at a single layer, ruling
+   out "depth accumulation" as the sole explanation and pointing at the
+   FFN/router path specifically (attention alone, at the same real weights,
+   was already proven clean by the mini self-test).
+3. Direct inspection of the 8th-vs-9th router score boundary gap (this
+   checkpoint's gate output is confirmed bf16; `qwen3moe_reference_capture.py`
+   records this gap for every (layer,position) specifically because R-12
+   flagged exactly this risk in advance) at every one of the 15 "hard"
+   mismatches: every single one had a boundary gap <=1.7e-3, several exactly
+   0.0 (a genuine, irreducible tie). The comparison script's near-tie
+   classifier was itself carrying a key-order bug (`(pos,layer)` vs the
+   data's `(layer,pos)`) that misclassified 14 of these as "hard" when they
+   were the same near-tie phenomenon as 34 others already correctly
+   classified; fixing it left exactly 1 mismatch, at a boundary gap of
+   1.7e-3 -- continuous with, not distinct from, the rest of the (smooth,
+   0.0-to-2.5e-2) gap distribution. `NEAR_TIE_ABS_TOL` was deliberately
+   *not* raised to swallow this last case -- that would be fitting the
+   threshold to the answer, exactly what this project's own convention
+   (and the plan's explicit instruction for this gate) forbids.
+4. **Decisive experiment**: re-ran the MLX reference with every bf16 leaf
+   parameter upcast to float32 before the forward pass. This fp32-forced
+   MLX run matched the C engine's own output at **rel_l2 1.7e-7 to 5.4e-6
+   (machine precision) and 8/8 argmax**, including the exact position that
+   originally mismatched. Separately, bf16-MLX vs fp32-MLX (same MLX code,
+   only precision differs) showed rel_l2 of 7.7e-3 to 4.9e-2 -- matching the
+   original "C vs bf16-MLX" gap almost exactly, position for position. This
+   is conclusive: 100% of the original gap was MLX's own bf16 rounding, none
+   of it this engine's arithmetic. The C engine (fp32/double throughout) is
+   correct to the limits of measurement.
+
+### Batched/ragged paths and memory ceiling (Step 3.10)
+
+Walked `QWEN_MOE_BATCH` = 1/8/16/32/64 on real weights: 100% argmax match at
+every B, `worst_rel_l2` 3.2e-3 (B=1) to 6.1e-3 (B=64, the expected "pure
+dispatch-order change" noise floor, same class already characterized for
+DeepSeek), peak RSS climbing smoothly from 3.56GB to 5.03GB -- far under the
+~12GB stop condition this step planned for, and *lower* than DeepSeek's own
+B=64 RSS (5.67GB) despite Qwen3 having 2x the experts, consistent with its
+narrower per-expert shape. Offline ragged (`QWEN_MOE_CBATCH=1`): 10.66GB,
+completes cleanly (no reference exists for this path's own hardcoded
+DeepSeek-tokenizer prompt IDs -- R-17, valid-but-arbitrary vocab indices --
+so this checks dispatch mechanics and clean completion, not cross-model
+logit correctness, which Step 3.9 already covers). Online + check: 11.12GB.
+Online + Tier2 reverify: 12.06GB, 18 Tier1 checks all "agree" (no Tier2
+escalation needed this run) -- the practical ceiling measured this session.
+ASan+UBSan (rebuilt against current HEAD after discovering the archived
+Step-3.0 binary predated Steps 3.1-3.4): 0 reports on both Qwen3 G1 and a
+small-batch (B=8) run.
+
+### Throughput (Step 3.11)
+
+| B | naive | gather | speedup |
+|---|---|---|---|
+| 1 | 5674.90ms | 1739.42ms | 3.263x |
+| 8 | 22925.15ms | 7852.81ms | 2.919x |
+| 16 | 44963.31ms | 14809.39ms | **3.036x** |
+| 32 | 89485.57ms | 28474.07ms | 3.143x |
+| 64 | 179198.09ms | 56076.40ms | 3.196x |
+
+At B=16 (the point DeepSeek's own headline number was measured at),
+Qwen3-30B-A3B's 3.036x beats DeepSeek's 2.38x by ~27% -- confirming the prior
+routing-concentration study's prediction that this model's narrower expert
+shape would favor the SME2 gather path more. The differentiator generalizes
+to a second, mainstream MoE topology, not just to the one model it was
+originally built against.
+
+### Debt recorded, not fixed
+
+Blob filenames stay `deepseek_moe_af.bin`/`deepseek_moe_f32.bin` for the
+Qwen3 export too (zero engine diff; a neutral rename is Phase-5-generalization
+work). `arch_config_moe.txt` carries 11 MLA/YaRN placeholder keys Qwen3 never
+uses (`moe_cfg_get()` FATALs on a missing key regardless of `ATTN_KIND`;
+converting those 12 call sites to `moe_cfg_get_opt()` is deferred cleanup,
+not required now). The exporter's shard cache never evicts (17.65GB export
+peak RSS, see above). The SME2 repack cache has no eviction (`moe_sme2_
+ensure_ready()` never frees) -- this is what makes the memory-ceiling numbers
+above a hard ceiling rather than a soft one; out of scope here, but the
+measured ceiling is the evidence a future model will need it fixed.
+
+### Commits
+
+`b014488`(3.1: capacity bumps) `6632e1b`(3.2: K/V geometry fix, B-0)
+`b12ac6e`(3.3: N_SHARED==0 guards) `84e39d4`(3.4: NORM_TOPK_PROB wiring)
+`f9a3c3c`(3.9 prep: QWEN_MOE_PROMPT_IDS) + this final document/commit.
+Exporter and reference-capture scripts live outside the repo at
+`~/Desktop/vdsp_v2_design/trackb_moe3_qwen3_results/` per this project's
+export-tooling-out-of-scope convention.
+
+Sub-part 4 (GGUF stacked-expert-tensor mapping) remains out of scope here.
+Its known prerequisite: bob's ~33GiB free after this sub-part's ~19GB
+transfer will not hold a further ~19GB GGUF source plus a ~17GB `.beglin`
+cache simultaneously -- decide a cleanup plan before starting it.

@@ -3605,10 +3605,16 @@ static void moe_mla_attention_batched(const uint8_t *af, MoeLayerTensors *t, int
 // per-head q_norm/k_norm applied before RoPE (Qwen3-MoE has it, Mixtral doesn't -- t->q_norm
 // NULL check). NEOX RoPE across the FULL head_dim (no nope/rope split, no YaRN mscale --
 // plain scale=1/sqrt(HEAD_DIM), verified from qwen3_moe.py's `self.scale = head_dim**-0.5`).
-// NUMERIC VERIFICATION EXPLICITLY DEFERRED to Phase 4 sub-part 3 Step 3.2 (first real GQA
-// model's reference capture) -- this function is structurally complete and gated
-// byte-identical on DeepSeek (unreachable there), but has never run against a real GQA model
-// or MLX reference yet. Do not treat as verified until that gate passes.
+// NUMERIC VERIFICATION: CLOSED, Phase 4 sub-part 3. Two stages -- attention-only against
+// real Qwen3-30B-A3B layer-0 weights via the QWEN_MOE_GQA_SELFTEST harness (rel_l2
+// 3.1e-3-4.7e-3 across 8 positions, commit 9a100e4), then full 48-layer end-to-end against
+// MLX's real forward pass (Step 3.9): C engine vs an MLX reference forced to float32
+// throughout matched to ~1e-6 relative precision (8/8 argmax) -- the ~1e-2-5e-2 gap
+// initially seen against MLX's OWN bf16-precision output was proven, by that same fp32-vs-
+// bf16 MLX A/B, to be 100% MLX's own bf16 rounding, not this function. Step 3.2 also fixed a
+// real, silent bug this function depended on: MOE_KROW/MOE_VROW weren't actually wired to
+// the GQA formula until that step (see its own commit) -- the mini self-test above couldn't
+// catch it because it sets those globals by hand.
 static void moe_gqa_attention(const uint8_t *af, MoeLayerTensors *t, int l, int pos,
                                const float *h, float *x_residual) {
     float *q = g_mgqa_q, *k = g_mgqa_k, *v = g_mgqa_v;

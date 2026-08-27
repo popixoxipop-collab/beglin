@@ -478,13 +478,38 @@ no new kernel family. Phase 3 fully complete.
    is deferred to sub-part 3 Step 3.2 (no second model exists yet to test
    against). Full writeup: `RESULTS.md` "Phase 4 sub-part 2"; full plan:
    `/Users/xox/.claude/plans/serene-finding-ullman.md`.
-3. Ship Mixtral-8x7B or Qwen3-30B-A3B — puts the 2.38×-at-B=16 SME2
-   result on a second, mainstream topology (this is what makes the
-   *differentiator* generalize, not just the loader).
+3. **DONE (2026-08-28)** — Shipped Qwen3-30B-A3B (chosen over Mixtral-8x7B:
+   already downloaded, `hidden_size=2048` matches DeepSeek exactly, and a
+   prior routing-concentration study predicted its narrower expert shape
+   would favor the SME2 gather path more — confirmed: 3.036× at B=16 vs
+   DeepSeek's 2.38×, ~27% better). Found and fixed a real bug sub-part 2 had
+   shipped with (`MOE_KROW`/`MOE_VROW` never actually wired to the GQA
+   branch its own comment promised). Full 48-layer forward vs a real MLX
+   reference verified to machine precision (rel_l2 1.7e-7-5.4e-6 against an
+   MLX run forced to float32) after tracing an initial ~1e-2-5e-2 gap
+   entirely to MLX's own bf16 rounding, not this engine. Full writeup:
+   `RESULTS.md` "Phase 4 sub-part 3"; full plan:
+   `/Users/xox/.claude/plans/serene-finding-ullman.md`.
+   **Prerequisite for item 4 below**: bob has ~33GiB free after this
+   sub-part's ~19GB transfer — will not hold a further ~19GB GGUF source
+   plus a ~17GB `.beglin` cache at the same time. Decide a cleanup plan
+   first.
 4. GGUF MoE tensors arrive stacked (`blk.N.ffn_gate_exps.weight`,
    `[n_expert,...]`) — maps onto the existing stacked-expert `MoeAFTensor`
-   layout, and both are affine, so the existing `adj_bias` decomposition
-   is the bridge. Verify, don't assume.
+   layout for shape fields, but **the `adj_bias` claim below is wrong,
+   verified this session (sub-part 2/3 planning)**: GGUF's Q4_K uses a
+   32-column affine granularity (two independent (scale,min) pairs per
+   32-column half-block) vs this engine's 64-column groups, and this
+   project's own GGUF loader already dequantizes Q4_K → fp32 →
+   re-quantizes **symmetric** (`gguf_quantize_q4g64_error_feedback()`,
+   oracle-verified) before it ever reaches `MoeAFTensor`. A GGUF-sourced
+   expert tensor arrives symmetric (`bias ≡ -8*scale` exactly) — `adj_bias`
+   is dead arithmetic and dead memory for it (~1.6% of every GEMM's MACs,
+   ~1.81GB of zeros for Qwen3-30B-A3B), not a bridge to build. The correct
+   design is an explicit `sym` flag on `MoeAFTensor`/`MoeSme2Slot` that skips
+   the `adj_bias` allocation and correction loop entirely when set — a
+   simplification, not the bridge this item originally described. Verify,
+   don't assume.
 
 ### Phase 5 — Generalized export pipeline (Path B) + the bl=32 experiment (~2 weeks)
 
