@@ -2368,6 +2368,15 @@ typedef struct {
     // purely a memory/GEMM-correction-loop optimization, not a correctness path. 0 (not symmetric)
     // for every AF-blob-sourced tensor -- byte-identical when unset.
     int sym;
+    // Step 3 divergence fix (this round): int4 group-64 RTN on attention/FFN weights, measured
+    // against a true fp32 MLX reference (not the looser quantized-vs-quantized comparisons every
+    // earlier MoE gate used), showed real-data rel-L2 well above this round's hard-fail threshold.
+    // bits selects the packed encoding moe_decode_af()/moe_matvec_af_row[_vdsp]() use: 4 (default,
+    // EVERY existing constructor site sets this explicitly) reproduces the exact nibble-pair
+    // addressing all three MoE loaders always used; 8 reads gguf_quantize_q8g64()'s one-signed-
+    // byte-per-element codes (16x finer than int4's 16 levels) instead. Only this round's own
+    // st_register_moe_*_q8g64_as() set bits=8; GGUF-MoE/AF-blob never do.
+    int bits;
 } MoeAFTensor;
 
 static uint8_t *moe_mmap_file(const char *path, long *out_bytes) {
@@ -2386,7 +2395,7 @@ static int g_moe_naf = 0;
 static void moe_load_layout_af(const char *path) {
     FILE *f = fopen(path, "r");
     if (!f) { perror(path); exit(1); }
-    g_moe_af = malloc(sizeof(MoeAFTensor) * 512);
+    g_moe_af = calloc(512, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
     char name[128];
     long E, out, in, ng, po, pb, so, bo;
     while (fscanf(f, "%127s %ld %ld %ld %ld %ld %ld %ld %ld",
@@ -2399,7 +2408,7 @@ static void moe_load_layout_af(const char *path) {
         // Every tensor loaded from an AF blob's layout file shares that blob (passed as `blob`/
         // `af` at every call site) and is affine (real bias, not GGUF-symmetric-transcoded) --
         // see MoeAFTensor's own base/sym comment.
-        t->base = NULL; t->sym = 0;
+        t->base = NULL; t->sym = 0; t->bits = 4;
     }
     fclose(f);
 }
@@ -2411,16 +2420,25 @@ static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row
     // 4.C bridge: a GGUF-sourced tensor carries its own buffer (t->base); every AF-blob-sourced
     // tensor (t->base==NULL) uses the shared blob exactly as before -- see MoeAFTensor's comment.
     const uint8_t *base = t->base ? t->base : blob;
+    long group = col / 64;
+    long scale_idx = t->scale_off + ((e * t->out + row) * t->ng + group) * 4;
+    float scale;
+    memcpy(&scale, base + scale_idx, 4);
+    // bits==8 (this round's own st_register_moe_*_q8g64_as() only): gguf_quantize_q8g64() packs
+    // one SIGNED int8 code per element, row-major, no nibble split -- see its own header comment
+    // ("Direct division... crow[g*64+p] = (int8_t)qf") for the exact convention this mirrors.
+    // codes_out ~ [-127,127], symmetric (value = code*scale, no offset -- unlike int4's nib-8).
+    if (t->bits == 8) {
+        long byte_idx = t->packed_off + (e * t->out + row) * t->in + col;
+        int8_t code = (int8_t)base[byte_idx];
+        return (float)code * scale;
+    }
     long row_words = t->in / 8;
     long word_idx = col / 8;
     long byte_in_word = (col % 8) / 2;
     long byte_idx = t->packed_off + ((e * t->out + row) * row_words + word_idx) * 4 + byte_in_word;
     uint8_t byte = base[byte_idx];
     int nib = (col % 2 == 0) ? (byte & 0xF) : ((byte >> 4) & 0xF);
-    long group = col / 64;
-    long scale_idx = t->scale_off + ((e * t->out + row) * t->ng + group) * 4;
-    float scale;
-    memcpy(&scale, base + scale_idx, 4);
     // 4.B: gguf_quantize_q4g64_error_feedback() (the existing GGUF symmetric transcoder) emits
     // ONLY packed nibbles + scales -- no bias array exists in memory for a sym tensor, so
     // bias_off must never be dereferenced here. (nib-8)*scale is the exact symmetric-kernel
@@ -2450,6 +2468,21 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
     long ng = t->ng;
     long row_base = e * t->out + row;
     double acc = 0.0;
+    if (t->bits == 8) {   // see moe_decode_af()'s own bits==8 comment for the exact convention
+        long row_byte0 = t->packed_off + row_base * t->in;
+        for (long g = 0; g < ng; g++) {
+            long scale_idx = t->scale_off + (row_base * ng + g) * 4;
+            float scale;
+            memcpy(&scale, base + scale_idx, 4);
+            long col0 = g * 64;
+            for (long ci = 0; ci < 64; ci++) {
+                long col = col0 + ci;
+                int8_t code = (int8_t)base[row_byte0 + col];
+                acc += (double)((float)code * scale) * x[col];
+            }
+        }
+        return acc;
+    }
     for (long g = 0; g < ng; g++) {
         long scale_idx = t->scale_off + (row_base * ng + g) * 4;
         float scale;
@@ -2490,6 +2523,7 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
 // (moe4a_ref_generation.json / mlx_lm), not just compared token-for-token against the exact path,
 // before ever being considered for promotion to default.
 static double moe_matvec_af_row_vdsp(const uint8_t *blob, MoeAFTensor *t, long e, long row, const float *x) {
+    if (t->bits == 8) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==8 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for int8 tensors)\n"); exit(1); }
     const uint8_t *base = t->base ? t->base : blob;   // 4.C bridge, see moe_decode_af()
     long row_words = t->in / 8;
     long ng = t->ng;
@@ -3292,12 +3326,34 @@ static inline void moe_attention_ragged(const uint8_t *af, MoeLayerTensors *t, i
 // 8-token prompt (same one used throughout Phase MoE-2a/2b), dumping logits/routing exactly
 // like moe2b_verify.c did, so compare_moe2b.py works unmodified against this production
 // binary's output.
+// t_embed_f32/t_lmhead_f32 (added for the safetensors-MoE loader's higher-precision embed/lm_head
+// path): optional F32-sourced alternates to t_embed/t_lmhead, NULL for every pre-existing call
+// site (byte-identical then -- the AF/int4 path below is completely unchanged). When non-NULL,
+// read directly from g_moe_f32_blob instead of moe_decode_af()/moe_matvec_af_mt(), bypassing
+// int4 quantization noise on the embedding table and lm_head, which real-data testing found to
+// be a much larger error source for these two tensors than for ordinary matrix weights (int4
+// RTN on a 102400-row embedding table showed ~29% rel-L2 on a single row -- the dense loaders
+// already keep embed_tokens/lm_head in F32 for exactly this reason; this brings the MoE
+// safetensors loader in line with that, without touching the AF path GGUF-MoE/AF-blob still use).
 static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
                                float *w_finalnorm, int token_id, int pos, float *logits_out,
-                               FILE *routing_out) {
+                               FILE *routing_out, MoeF32Tensor *t_embed_f32, MoeF32Tensor *t_lmhead_f32) {
     float *x = g_mft_x, *h = g_mft_h, *h2 = g_mft_h2;   // g_mft_x persists across calls (was static)
     if (pos == 0) memset(x, 0, (size_t)MOE_HIDDEN*sizeof(float));   // silence-only; overwritten below regardless
-    for (int c = 0; c < MOE_HIDDEN; c++) x[c] = moe_decode_af(af, t_embed, 0, token_id, c);
+    if (t_embed_f32) {
+        const float *erow = (const float *)(g_moe_f32_blob + t_embed_f32->off) + (size_t)token_id * MOE_HIDDEN;
+        for (int c = 0; c < MOE_HIDDEN; c++) x[c] = erow[c];
+    } else {
+        for (int c = 0; c < MOE_HIDDEN; c++) x[c] = moe_decode_af(af, t_embed, 0, token_id, c);
+    }
+
+    if (pos == 0) {
+        const char *embdbg = getenv("QWEN_MOE_DEBUG_EMBEDDUMP");
+        if (embdbg && embdbg[0]) {
+            FILE *ef = fopen(embdbg, "wb");
+            if (ef) { fwrite(x, sizeof(float), MOE_HIDDEN, ef); fclose(ef); }
+        }
+    }
 
     for (int l = 0; l < MOE_NL; l++) {
         MoeLayerTensors *t = &g_moe_lt[l];
@@ -3374,11 +3430,33 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
             }
         }
         for (int c = 0; c < MOE_HIDDEN; c++) x[c] += mlp_out[c];
+
+        // Step-3 divergence debug aid (added 2026-08-28, kept as a reusable tool): dump
+        // post-residual hidden state after each layer at one configurable position (default 0,
+        // override via QWEN_MOE_DEBUG_LAYERDUMP_POS -- e.g. "4" for pos4's int8 residual-noise
+        // investigation), gated by env var so this is a no-op unless explicitly enabled. Kept
+        // in place (not stripped) since Steps 4-6 (Qwen3-30B-A3B, OLMoE) will likely need the
+        // same layer-level divergence localization this round's pos4 root-cause relied on.
+        int dbg_target_pos = 0;
+        { const char *p = getenv("QWEN_MOE_DEBUG_LAYERDUMP_POS"); if (p && p[0]) dbg_target_pos = atoi(p); }
+        if (pos == dbg_target_pos) {
+            const char *dbgpath = getenv("QWEN_MOE_DEBUG_LAYERDUMP");
+            if (dbgpath && dbgpath[0]) {
+                static FILE *dbgf = NULL;
+                if (l == 0) dbgf = fopen(dbgpath, "wb");
+                if (dbgf) { fwrite(x, sizeof(float), MOE_HIDDEN, dbgf); if (l == MOE_NL - 1) { fclose(dbgf); dbgf = NULL; } }
+            }
+        }
     }
 
     float *xn = g_mft_xn;
     moe_rmsnorm(x, w_finalnorm, xn, MOE_HIDDEN);
-    moe_matvec_af_mt(af, t_lmhead, 0, xn, logits_out);
+    if (t_lmhead_f32) {
+        const float *lw = (const float *)(g_moe_f32_blob + t_lmhead_f32->off);
+        moe_matvec_f32(lw, xn, logits_out, MOE_VOCAB, MOE_HIDDEN);
+    } else {
+        moe_matvec_af_mt(af, t_lmhead, 0, xn, logits_out);
+    }
 }
 
 // Phase MoE-4c, Tier1: re-verify ONE ragged-batch column's current step fully scalar, reading/
@@ -4426,7 +4504,7 @@ static int run_moe_batch_verify_mode(int argc, char **argv, const char *dir) {
         for (int b = 0; b < B; b++) {
             if (margin_g[b] < threshold) {
                 n_reverified++;
-                moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, token_ids[b], 0, logits_hybrid + (size_t)b*MOE_VOCAB, NULL);
+                moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, token_ids[b], 0, logits_hybrid + (size_t)b*MOE_VOCAB, NULL, NULL, NULL);
             }
         }
         clock_gettime(CLOCK_MONOTONIC, &rt1);
@@ -4652,7 +4730,7 @@ static void moe_reverify_exact(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTen
     float *logits_tmp = g_mre_logits_tmp;
     int n_scalar = 0;
     for (int p = start; p <= pos; p++) {
-        moe_forward_token(af, t_embed, t_lmhead, w_finalnorm, rq_hist[req][p], p, logits_tmp, NULL);
+        moe_forward_token(af, t_embed, t_lmhead, w_finalnorm, rq_hist[req][p], p, logits_tmp, NULL, NULL, NULL);
         n_scalar++;
     }
     memcpy(logits_out, logits_tmp, MOE_VOCAB * sizeof(float));
@@ -4859,7 +4937,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     for (int s = 0; s < MOE_CBATCH_N; s++) {
         float *logits1 = g_rmcv_logits1;
         for (int p = 0; p < prompt_len[s]; p++) {
-            moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, prompt_ids[s][p], p, logits1, NULL);
+            moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, prompt_ids[s][p], p, logits1, NULL, NULL, NULL);
             n_prefill_tok++;
         }
         // Copy this slot's freshly-prefilled single-sequence KV (moe_forward_token()'s own
@@ -5034,7 +5112,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
             if (prefill_mode == 0) {
                 float *logits1 = g_rmcv_logits1;
                 for (int p = 0; p < rq_plen[r]; p++)
-                    moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, prompt_ids[r % MOE_CBATCH_N][p], p, logits1, NULL);
+                    moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, prompt_ids[r % MOE_CBATCH_N][p], p, logits1, NULL, NULL, NULL);
                 for (int l = 0; l < MOE_NL; l++)
                     for (int p = 0; p < rq_plen[r]; p++) {
                         memcpy(moe_cK_row(l,s,p), moe_K_row(l,p), (size_t)MOE_KROW*sizeof(float));
@@ -5565,7 +5643,7 @@ static uint8_t *mqa_build_sym_tensor(MoeAFTensor *t, int out_n, int in_n,
     t->E = 1; t->out = out_n; t->in = in_n; t->ng = ng;
     t->packed_off = 0; t->packed_bytes = (long)packed_bytes;
     t->scale_off = (long)packed_bytes; t->bias_off = -1;   // never dereferenced: sym=1
-    t->base = blob; t->sym = 1;
+    t->base = blob; t->sym = 1; t->bits = 4;
     return blob;
 }
 static int run_moe_mqa_selftest_mode(int argc, char **argv) {
@@ -6024,7 +6102,7 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     moe_init_rope_gqa();
     fprintf(stderr, "[gguf moe yarn] rope_mscale=%.10f attn_scale=%.10f\n", g_moe_rope_mscale, g_moe_attn_scale);
 
-    g_moe_af = malloc(sizeof(MoeAFTensor) * 512);
+    g_moe_af = calloc(512, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
     g_moe_f32 = malloc(sizeof(MoeF32Tensor) * 512);
 
     for (int l = 0; l < MOE_NL; l++) {
@@ -6098,7 +6176,7 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     // own base/sym comment, Step 4.2).
     float *logits = malloc((size_t)MOE_VOCAB * sizeof(float));
     for (int pos = 0; pos < N; pos++) {
-        moe_forward_token(NULL, t_embed, t_lmhead, w_finalnorm, prompt_ids[pos], pos, logits, routing_out);
+        moe_forward_token(NULL, t_embed, t_lmhead, w_finalnorm, prompt_ids[pos], pos, logits, routing_out, NULL, NULL);
         fwrite(logits, sizeof(float), MOE_VOCAB, logits_out);
         int argmax = 0; float best = logits[0];
         for (int v = 1; v < MOE_VOCAB; v++) if (logits[v] > best) { best = logits[v]; argmax = v; }
@@ -6262,7 +6340,7 @@ static int run_moe_verify_mode(int argc, char **argv) {
 
     float *logits = malloc((size_t)MOE_VOCAB * sizeof(float));
     for (int pos = 0; pos < N; pos++) {
-        moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, prompt_ids[pos], pos, logits, routing_out);
+        moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, prompt_ids[pos], pos, logits, routing_out, NULL, NULL);
         fwrite(logits, sizeof(float), MOE_VOCAB, logits_out);
         int argmax = 0; float best = logits[0];
         for (int v = 1; v < MOE_VOCAB; v++) if (logits[v] > best) { best = logits[v]; argmax = v; }
@@ -6273,6 +6351,734 @@ static int run_moe_verify_mode(int argc, char **argv) {
     fclose(routing_out);
     fprintf(stderr, "RESULT: MoE-3a production-binary forward complete for %d positions\n", N);
     return 1;   // signal: MoE mode ran, caller should exit without touching GQA main() logic
+}
+
+// ============================================================================================
+// General-purpose loader follow-on: MoE-format safetensors, a third architecture family
+// (deepseek_v2 MLA / qwen3_moe GQA / olmoe GQA) on top of the dense safetensors loader's
+// multi-shard infrastructure. Closes the last named weight-format gap: real HF MoE checkpoints
+// store one SEPARATE 2-D tensor per expert (confirmed live against DeepSeek-V2-Lite's and
+// Qwen3-30B-A3B's real weight_maps), structurally different from GGUF's single stacked 3-D
+// tensor -- this needs its own per-expert registration design, reusing gguf_register_moe_q4g64_as()'s
+// algorithm (one malloc'd buffer per role/layer sized for all E experts, one expert's dequant
+// scratch at a time) but sourcing each expert's raw bytes from N separate
+// safetensors_multi_find_tensor() calls instead of slicing one pre-existing 3-D GGUF tensor.
+// ============================================================================================
+
+static const char *SUPPORTED_ARCH_MOE_SAFETENSORS[] = { "deepseek_v2", "qwen3_moe", "olmoe" };
+
+// Mirrors run_gguf_moe_verify_mode()'s config-population block structurally, but sources from a
+// real HF config.json via hf_config.h instead of GGUF KV metadata. Deliberately does NOT open
+// g_st_moe or cross-check MOE_VOCAB against the real embed tensor shape here -- that would
+// require eagerly opening every shard of a (potentially 61GB) multi-shard checkpoint just to
+// validate a few scalars. Kept config.json-only so this function is gate-testable with nothing
+// but a few-KB file. The vocab/lm_head shape cross-check happens later, in
+// run_moe_safetensors_verify_mode(), right after embed/lm_head registration -- the same point
+// run_moe_verify_mode() already does its own lm_head shape check.
+static void load_moe_safetensors_arch(const char *config_path) {
+    HfConfig *c = hf_config_open(config_path);
+
+    const char *model_type;
+    if (!hf_config_get_str(c, "model_type", &model_type)) {
+        fprintf(stderr, "FATAL: %s missing 'model_type'\n", config_path); exit(1);
+    }
+    int arch_ok = 0;
+    for (size_t i = 0; i < sizeof(SUPPORTED_ARCH_MOE_SAFETENSORS)/sizeof(SUPPORTED_ARCH_MOE_SAFETENSORS[0]); i++) {
+        if (!strcmp(model_type, SUPPORTED_ARCH_MOE_SAFETENSORS[i])) { arch_ok = 1; break; }
+    }
+    if (!arch_ok) {
+        fprintf(stderr, "FATAL: MoE safetensors model_type '%s' not validated by this engine; "
+                        "supported: deepseek_v2, qwen3_moe, olmoe\n", model_type);
+        exit(1);
+    }
+    int is_deepseek = !strcmp(model_type, "deepseek_v2");
+    int is_olmoe = !strcmp(model_type, "olmoe");
+
+    int64_t iv; double fv; int bv;
+
+    // Shared across all three families.
+    if (!hf_config_get_i64(c, "num_hidden_layers", &iv)) { fprintf(stderr, "FATAL: %s missing 'num_hidden_layers'\n", config_path); exit(1); } MOE_NL = (int)iv;
+    if (!hf_config_get_i64(c, "hidden_size", &iv)) { fprintf(stderr, "FATAL: %s missing 'hidden_size'\n", config_path); exit(1); } MOE_HIDDEN = (int)iv;
+    if (!hf_config_get_i64(c, "num_attention_heads", &iv)) { fprintf(stderr, "FATAL: %s missing 'num_attention_heads'\n", config_path); exit(1); } MOE_N_HEADS = (int)iv;
+    if (!hf_config_get_f64(c, "rope_theta", &fv)) { fprintf(stderr, "FATAL: %s missing 'rope_theta'\n", config_path); exit(1); } MOE_ROPE_THETA = fv;
+    // rms_norm_eps is required for deepseek_v2/qwen3_moe (both real config.jsons always ship it,
+    // 1e-06 in both cases) but genuinely absent from OLMoE's own real config.json (confirmed
+    // live this round) -- OLMoE's own transformers modeling class default is 1e-05 (confirmed
+    // live against configuration_olmoe.py's own source, not guessed), so that's the fallback
+    // here rather than reusing some other model's default value.
+    MOE_RMS_EPS = hf_config_get_f64(c, "rms_norm_eps", &fv) ? fv : 1e-05;
+    if (!hf_config_get_i64(c, "vocab_size", &iv)) { fprintf(stderr, "FATAL: %s missing 'vocab_size'\n", config_path); exit(1); } MOE_VOCAB = (int)iv;
+
+    // Routed-expert fields. Count key differs by family: n_routed_experts (deepseek_v2) vs
+    // num_experts (qwen3_moe/olmoe) -- confirmed live against all three real config.jsons.
+    const char *experts_key = is_deepseek ? "n_routed_experts" : "num_experts";
+    if (!hf_config_get_i64(c, experts_key, &iv)) { fprintf(stderr, "FATAL: %s missing '%s'\n", config_path, experts_key); exit(1); } MOE_N_EXPERTS = (int)iv;
+    if (!hf_config_get_i64(c, "num_experts_per_tok", &iv)) { fprintf(stderr, "FATAL: %s missing 'num_experts_per_tok'\n", config_path); exit(1); } MOE_TOP_K = (int)iv;
+    MOE_N_SHARED = hf_config_get_i64(c, "n_shared_experts", &iv) ? (int)iv : 0;
+    MOE_FIRST_DENSE_LAYERS = hf_config_get_i64(c, "first_k_dense_replace", &iv) ? (int)iv : 0;
+    if (!hf_config_get_bool(c, "norm_topk_prob", &bv)) { fprintf(stderr, "FATAL: %s missing 'norm_topk_prob'\n", config_path); exit(1); } MOE_NORM_TOPK_PROB = bv;
+
+    // Expert FFN width: moe_intermediate_size for deepseek_v2/qwen3_moe; olmoe has no such key
+    // at all (confirmed live against its real config.json) -- its experts use plain
+    // intermediate_size directly.
+    const char *im_key = is_olmoe ? "intermediate_size" : "moe_intermediate_size";
+    if (!hf_config_get_i64(c, im_key, &iv)) { fprintf(stderr, "FATAL: %s missing '%s'\n", config_path, im_key); exit(1); } MOE_IM_DIM = (int)iv;
+    // Dense-layer FFN width -- only meaningfully read for deepseek_v2 (layers < FIRST_DENSE_LAYERS
+    // use it); qwen3_moe/olmoe have no dense layers, so this is never consulted downstream, but
+    // moe_cfg_validate() still requires it positive -- mirrors run_gguf_moe_verify_mode()'s own
+    // dummy-but-valid placeholder pattern for fields a given path doesn't use.
+    if (is_deepseek) {
+        if (!hf_config_get_i64(c, "intermediate_size", &iv)) { fprintf(stderr, "FATAL: %s missing 'intermediate_size'\n", config_path); exit(1); } MOE_DENSE_IM = (int)iv;
+    } else {
+        MOE_DENSE_IM = MOE_IM_DIM;
+    }
+
+    if (is_deepseek) {
+        // Scope-guard FATALs: this engine's router (moe_forward_token()'s routing block) is
+        // unconditional softmax + unrestricted top-K -- no n_group/topk_group grouped
+        // restriction, no routed_scaling_factor multiply, no sigmoid-scoring path exist anywhere
+        // in this file (confirmed by direct grep this round). DeepSeek-V2-Lite's real values
+        // happen to make every one of these a no-op; FATAL rather than silently trust a future
+        // checkpoint with real (non-default) values into a silent mis-route.
+        const char *scoring_func;
+        if (hf_config_get_str(c, "scoring_func", &scoring_func) && strcmp(scoring_func, "softmax")) {
+            fprintf(stderr, "FATAL: %s scoring_func='%s' -- only 'softmax' is implemented\n", config_path, scoring_func); exit(1);
+        }
+        const char *topk_method;
+        if (hf_config_get_str(c, "topk_method", &topk_method) && strcmp(topk_method, "greedy")) {
+            fprintf(stderr, "FATAL: %s topk_method='%s' -- only 'greedy' is implemented\n", config_path, topk_method); exit(1);
+        }
+        if (hf_config_get_i64(c, "n_group", &iv) && iv > 1) {
+            fprintf(stderr, "FATAL: %s n_group=%lld -- grouped top-k restriction is not implemented\n", config_path, (long long)iv); exit(1);
+        }
+        if (hf_config_get_i64(c, "topk_group", &iv) && iv > 1) {
+            fprintf(stderr, "FATAL: %s topk_group=%lld -- grouped top-k restriction is not implemented\n", config_path, (long long)iv); exit(1);
+        }
+        if (hf_config_get_f64(c, "routed_scaling_factor", &fv) && fabs(fv - 1.0) > 1e-9) {
+            fprintf(stderr, "FATAL: %s routed_scaling_factor=%.6g -- only 1.0 (no-op) is implemented\n", config_path, fv); exit(1);
+        }
+        HfValType qlora_type = hf_config_key_type(c, "q_lora_rank");
+        if (qlora_type != HF_TYPE_NULL && qlora_type != HF_TYPE_ABSENT) {
+            fprintf(stderr, "FATAL: %s has a non-null q_lora_rank -- two-stage low-rank query projection is not implemented\n", config_path); exit(1);
+        }
+
+        MOE_ATTN_KIND = MOE_ATTN_MLA;
+        MOE_ROPE_STYLE = MOE_ROPE_TRADITIONAL;
+        if (!hf_config_get_i64(c, "kv_lora_rank", &iv)) { fprintf(stderr, "FATAL: %s missing 'kv_lora_rank'\n", config_path); exit(1); } MOE_KV_LORA_RANK = (int)iv;
+        if (!hf_config_get_i64(c, "qk_rope_head_dim", &iv)) { fprintf(stderr, "FATAL: %s missing 'qk_rope_head_dim'\n", config_path); exit(1); } MOE_QK_ROPE_HD = (int)iv;
+        if (!hf_config_get_i64(c, "qk_nope_head_dim", &iv)) { fprintf(stderr, "FATAL: %s missing 'qk_nope_head_dim'\n", config_path); exit(1); } MOE_QK_NOPE_HD = (int)iv;
+        if (!hf_config_get_i64(c, "v_head_dim", &iv)) { fprintf(stderr, "FATAL: %s missing 'v_head_dim'\n", config_path); exit(1); } MOE_V_HD = (int)iv;
+        MOE_Q_HEAD_DIM = MOE_QK_ROPE_HD + MOE_QK_NOPE_HD;
+        MOE_N_KV_HEADS = MOE_N_HEADS;
+        MOE_HEAD_DIM = MOE_Q_HEAD_DIM;
+
+        // rope_scaling (YaRN) -- required for deepseek_v2 (DeepSeek-V2-Lite always ships one);
+        // field names confirmed live against the real checkpoint's own config.json this round.
+        HfValType rs_type = hf_config_key_type(c, "rope_scaling");
+        if (rs_type != HF_TYPE_OBJECT) {
+            fprintf(stderr, "FATAL: %s missing a 'rope_scaling' object (deepseek_v2 always ships YaRN scaling)\n", config_path); exit(1);
+        }
+        const HfConfig *rs = hf_config_get_object(c, "rope_scaling");
+        const char *yarn_type;
+        if (!hf_config_get_str(rs, "type", &yarn_type) || strcmp(yarn_type, "yarn")) {
+            fprintf(stderr, "FATAL: %s rope_scaling.type is not 'yarn' -- only YaRN is implemented for deepseek_v2\n", config_path); exit(1);
+        }
+        if (!hf_config_get_f64(rs, "factor", &fv)) { fprintf(stderr, "FATAL: %s rope_scaling missing 'factor'\n", config_path); exit(1); } MOE_YARN_FACTOR = fv;
+        if (!hf_config_get_f64(rs, "beta_fast", &fv)) { fprintf(stderr, "FATAL: %s rope_scaling missing 'beta_fast'\n", config_path); exit(1); } MOE_YARN_BETA_FAST = fv;
+        if (!hf_config_get_f64(rs, "beta_slow", &fv)) { fprintf(stderr, "FATAL: %s rope_scaling missing 'beta_slow'\n", config_path); exit(1); } MOE_YARN_BETA_SLOW = fv;
+        if (!hf_config_get_f64(rs, "mscale", &fv)) { fprintf(stderr, "FATAL: %s rope_scaling missing 'mscale'\n", config_path); exit(1); } MOE_YARN_MSCALE = fv;
+        if (!hf_config_get_f64(rs, "mscale_all_dim", &fv)) { fprintf(stderr, "FATAL: %s rope_scaling missing 'mscale_all_dim'\n", config_path); exit(1); } MOE_YARN_MSCALE_ALL_DIM = fv;
+        if (!hf_config_get_i64(rs, "original_max_position_embeddings", &iv)) { fprintf(stderr, "FATAL: %s rope_scaling missing 'original_max_position_embeddings'\n", config_path); exit(1); } MOE_YARN_ORIG_MAX_POS = (double)iv;
+    } else {
+        // qwen3_moe / olmoe: GQA family. Both real config.jsons ship q_norm/k_norm tensors
+        // (confirmed live via each checkpoint's own weight_map), so MOE_ST_ATTN_ROLES_GQA (Part
+        // 3, added in the next step) is shared unchanged between them -- no per-family variant.
+        if (is_olmoe) {
+            // clip_qkv: confirmed live as a real (currently-null) key in OLMoE's config.json --
+            // a present-non-null value would mean a QKV-clipping mechanism this engine doesn't
+            // implement; FATAL rather than silently ignore it.
+            HfValType clip_type = hf_config_key_type(c, "clip_qkv");
+            if (clip_type != HF_TYPE_NULL && clip_type != HF_TYPE_ABSENT) {
+                fprintf(stderr, "FATAL: %s has a non-null clip_qkv -- QKV clipping is not implemented\n", config_path); exit(1);
+            }
+        }
+        MOE_ATTN_KIND = MOE_ATTN_GQA;
+        MOE_ROPE_STYLE = MOE_ROPE_NEOX;
+        if (!hf_config_get_i64(c, "num_key_value_heads", &iv)) { fprintf(stderr, "FATAL: %s missing 'num_key_value_heads'\n", config_path); exit(1); } MOE_N_KV_HEADS = (int)iv;
+        // head_dim is required for qwen3_moe (its real config.json always ships it, 128) but
+        // genuinely absent from OLMoE's own real config.json (confirmed live). OLMoE's own
+        // transformers modeling class falls back to hidden_size // num_attention_heads when
+        // absent (confirmed live against modeling_olmoe.py's own source: "getattr(config,
+        // 'head_dim', None) or config.hidden_size // config.num_attention_heads") -- reused
+        // verbatim here, not guessed.
+        if (hf_config_get_i64(c, "head_dim", &iv)) MOE_HEAD_DIM = (int)iv;
+        else {
+            if (MOE_N_HEADS <= 0 || MOE_HIDDEN % MOE_N_HEADS != 0) {
+                fprintf(stderr, "FATAL: %s missing 'head_dim' and hidden_size=%d not evenly divisible by num_attention_heads=%d\n", config_path, MOE_HIDDEN, MOE_N_HEADS); exit(1);
+            }
+            MOE_HEAD_DIM = MOE_HIDDEN / MOE_N_HEADS;
+        }
+        MOE_Q_HEAD_DIM = MOE_HEAD_DIM;
+        // MLA-only fields this GQA path never reads -- same dummy-but-valid placeholders
+        // run_gguf_moe_verify_mode() already uses for the identical reason.
+        MOE_KV_LORA_RANK = 2; MOE_QK_ROPE_HD = 2; MOE_QK_NOPE_HD = 2; MOE_V_HD = 2;
+        MOE_YARN_FACTOR = 1.0; MOE_YARN_BETA_FAST = 1.0; MOE_YARN_BETA_SLOW = 1.0;
+        MOE_YARN_MSCALE = 1.0; MOE_YARN_MSCALE_ALL_DIM = 1.0; MOE_YARN_ORIG_MAX_POS = 4096.0;
+        // rope_scaling not implemented for the GQA-family MoE path -- FATAL if present rather
+        // than silently serve unscaled RoPE (both real targets confirm null today, so this is a
+        // real-but-currently-inert guard, not dead code).
+        HfValType rs_type = hf_config_key_type(c, "rope_scaling");
+        if (rs_type != HF_TYPE_NULL && rs_type != HF_TYPE_ABSENT) {
+            fprintf(stderr, "FATAL: %s has a 'rope_scaling' key -- not implemented for the GQA-family MoE safetensors loader\n", config_path); exit(1);
+        }
+    }
+
+    fprintf(stderr, "[moe safetensors cfg] model_type=%s NL=%d N_EXPERTS=%d TOP_K=%d MOE_IM=%d "
+                    "DENSE_IM=%d N_SHARED=%d FIRST_DENSE_LAYERS=%d VOCAB=%d ATTN_KIND=%d "
+                    "N_KV_HEADS=%d HEAD_DIM=%d\n",
+            model_type, MOE_NL, MOE_N_EXPERTS, MOE_TOP_K, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_SHARED,
+            MOE_FIRST_DENSE_LAYERS, MOE_VOCAB, MOE_ATTN_KIND, MOE_N_KV_HEADS, MOE_HEAD_DIM);
+
+    moe_cfg_validate();
+    hf_config_close(c);
+}
+
+static SafetensorsMulti *g_st_moe = NULL;   // separate from the dense loader's g_st
+
+// Builds ONE E-stacked MoeAFTensor from E separate safetensors tensors (name_pattern's 2 %d
+// slots: layer, expert). Mirrors gguf_register_moe_q4g64_as() exactly: one malloc'd buffer sized
+// for all E experts, one expert's dequant scratch at a time (never all E simultaneously),
+// gguf_quantize_q4g64_error_feedback() per expert into the shared buffer -- the exact
+// expert-major/row-minor layout moe_decode_af() requires (reuses moe_gguf_mul_checked()/
+// moe_gguf_add_checked(), confirmed generic pure size_t overflow-checked math despite the
+// "gguf_" prefix). (out,in) derived from expert 0's own real tensor shape; every subsequent
+// expert validated to match exactly, FATAL naming the offending index otherwise. No F32
+// fallback on in%64!=0 -- FATAL instead (no AF-family MoE consumer supports F32, unlike the
+// dense safetensors loader's soft fallback).
+static MoeAFTensor *st_register_moe_experts_q4g64_as(const char *name_pattern, int layer, int E, const char *engine_name) {
+    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (safetensors)\n"); exit(1); }
+
+    char name0[160];
+    snprintf(name0, sizeof name0, name_pattern, layer, 0);
+    SafetensorsFile *shard0 = NULL;
+    const SafetensorsInfo *t0 = safetensors_multi_find_tensor(g_st_moe, name0, &shard0);
+    if (!t0) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name0); exit(1); }
+    long out = (long)t0->shape[0], in = (long)t0->shape[1];
+    if (out <= 0 || in <= 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s has non-positive dims (out=%ld in=%ld)\n", name0, out, in);
+        exit(1);
+    }
+    if (in % 64 != 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s in=%ld not a multiple of 64 (SME2_KAI_BL requirement)\n", name0, in);
+        exit(1);
+    }
+    if (!safetensors_dequant_supported(t0->dtype)) {
+        fprintf(stderr, "FATAL: safetensors moe tensor '%s' has unsupported dtype %s\n", name0, safetensors_type_name(t0->dtype));
+        exit(1);
+    }
+
+    long ng = in / 64;
+    size_t row_pbytes = (size_t)(in / 2);
+    size_t packed_bytes = moe_gguf_mul_checked("packed_bytes",
+                             moe_gguf_mul_checked("packed_bytes", (size_t)E, (size_t)out), row_pbytes);
+    size_t scale_bytes = moe_gguf_mul_checked("scale_bytes",
+                            moe_gguf_mul_checked("scale_bytes",
+                              moe_gguf_mul_checked("scale_bytes", (size_t)E, (size_t)out), (size_t)ng),
+                            sizeof(float));
+    size_t total_bytes = moe_gguf_add_checked("packed+scale_bytes total", packed_bytes, scale_bytes);
+    uint8_t *base = malloc(total_bytes);
+    if (!base) { fprintf(stderr, "FATAL: safetensors moe transcode alloc failed for '%s' (%zu bytes)\n", engine_name, total_bytes); exit(1); }
+    uint8_t *packed_all = base;
+    float *scales_all = (float *)(base + packed_bytes);
+
+    size_t deq_bytes = moe_gguf_mul_checked("deq_bytes",
+                          moe_gguf_mul_checked("deq_bytes", (size_t)out, (size_t)in), sizeof(float));
+    float *deq = malloc(deq_bytes);
+    if (!deq) { fprintf(stderr, "FATAL: safetensors moe dequant scratch alloc failed for '%s'\n", engine_name); exit(1); }
+
+    for (long e = 0; e < E; e++) {
+        char name[160];
+        snprintf(name, sizeof name, name_pattern, layer, (int)e);
+        SafetensorsFile *shard = NULL;
+        const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
+        if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
+        if ((long)t->shape[0] != out || (long)t->shape[1] != in) {
+            fprintf(stderr, "FATAL: safetensors moe: %s shape [%llu,%llu] disagrees with expert 0's [%ld,%ld]\n",
+                    name, (unsigned long long)t->shape[0], (unsigned long long)t->shape[1], out, in);
+            exit(1);
+        }
+        if (!safetensors_dequant_supported(t->dtype)) {
+            fprintf(stderr, "FATAL: safetensors moe tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
+            exit(1);
+        }
+        safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), deq, (uint64_t)(out * in));
+        gguf_quantize_q4g64_error_feedback(deq, (int)out, (int)in,
+                                            packed_all + (size_t)e * (size_t)out * row_pbytes,
+                                            scales_all + (size_t)e * (size_t)out * (size_t)ng);
+    }
+    free(deq);
+
+    MoeAFTensor *w = &g_moe_af[g_moe_naf++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->E = E; w->out = out; w->in = in; w->ng = ng;
+    w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
+    w->scale_off = (long)packed_bytes; w->bias_off = -1;  // never dereferenced: sym=1
+    w->base = base; w->sym = 1;
+    return w;
+}
+
+// E=1 sibling of st_register_moe_experts_q4g64_as() -- same algorithm, one-iteration case.
+// Serves: DeepSeek's shared_experts.{gate,up,down}_proj (one pre-merged wide 2-D tensor, always
+// addressed at expert index 0 -- confirmed via moe_forward_token()'s own call site), DeepSeek's
+// dense-layer mlp.*_proj (layers < MOE_FIRST_DENSE_LAYERS), model.embed_tokens.weight,
+// lm_head.weight (both real targets use this q4g64 path for embed/lm_head, matching
+// gguf_register_moe_q4g64_as()'s identical calls for "token_embd.weight"/"output.weight").
+static MoeAFTensor *st_register_moe_dense_af_q4g64_as(const char *name, const char *engine_name) {
+    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (safetensors)\n"); exit(1); }
+    SafetensorsFile *shard = NULL;
+    const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
+    if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
+    long out = (long)t->shape[0], in = t->n_dims >= 2 ? (long)t->shape[1] : 0;
+    if (out <= 0 || in <= 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s has non-positive dims (out=%ld in=%ld)\n", name, out, in);
+        exit(1);
+    }
+    if (in % 64 != 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s in=%ld not a multiple of 64 (SME2_KAI_BL requirement)\n", name, in);
+        exit(1);
+    }
+    if (!safetensors_dequant_supported(t->dtype)) {
+        fprintf(stderr, "FATAL: safetensors moe tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
+        exit(1);
+    }
+
+    long ng = in / 64;
+    size_t row_pbytes = (size_t)(in / 2);
+    size_t packed_bytes = moe_gguf_mul_checked("packed_bytes", (size_t)out, row_pbytes);
+    size_t scale_bytes = moe_gguf_mul_checked("scale_bytes", moe_gguf_mul_checked("scale_bytes", (size_t)out, (size_t)ng), sizeof(float));
+    size_t total_bytes = moe_gguf_add_checked("packed+scale_bytes total", packed_bytes, scale_bytes);
+    uint8_t *base = malloc(total_bytes);
+    if (!base) { fprintf(stderr, "FATAL: safetensors moe transcode alloc failed for '%s' (%zu bytes)\n", engine_name, total_bytes); exit(1); }
+    uint8_t *packed_all = base;
+    float *scales_all = (float *)(base + packed_bytes);
+
+    size_t deq_bytes = moe_gguf_mul_checked("deq_bytes", moe_gguf_mul_checked("deq_bytes", (size_t)out, (size_t)in), sizeof(float));
+    float *deq = malloc(deq_bytes);
+    if (!deq) { fprintf(stderr, "FATAL: safetensors moe dequant scratch alloc failed for '%s'\n", engine_name); exit(1); }
+    safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), deq, (uint64_t)(out * in));
+    gguf_quantize_q4g64_error_feedback(deq, (int)out, (int)in, packed_all, scales_all);
+    free(deq);
+
+    MoeAFTensor *w = &g_moe_af[g_moe_naf++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->E = 1; w->out = out; w->in = in; w->ng = ng;
+    w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
+    w->scale_off = (long)packed_bytes; w->bias_off = -1;
+    w->base = base; w->sym = 1;
+    return w;
+}
+
+// int8 sibling of st_register_moe_experts_q4g64_as() (Step 3 divergence fix, this round): same
+// per-expert loop and shape/dtype checks, but row_pbytes==in (1 signed byte/element, not in/2
+// nibble-packed) and gguf_quantize_q8g64() instead of the error-feedback int4 transcoder. Sets
+// bits=8 so moe_decode_af()/moe_matvec_af_row() take their bits==8 branch.
+static MoeAFTensor *st_register_moe_experts_q8g64_as(const char *name_pattern, int layer, int E, const char *engine_name) {
+    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (safetensors)\n"); exit(1); }
+
+    char name0[160];
+    snprintf(name0, sizeof name0, name_pattern, layer, 0);
+    SafetensorsFile *shard0 = NULL;
+    const SafetensorsInfo *t0 = safetensors_multi_find_tensor(g_st_moe, name0, &shard0);
+    if (!t0) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name0); exit(1); }
+    long out = (long)t0->shape[0], in = (long)t0->shape[1];
+    if (out <= 0 || in <= 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s has non-positive dims (out=%ld in=%ld)\n", name0, out, in);
+        exit(1);
+    }
+    if (in % 64 != 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s in=%ld not a multiple of 64 (SME2_KAI_BL requirement)\n", name0, in);
+        exit(1);
+    }
+    if (!safetensors_dequant_supported(t0->dtype)) {
+        fprintf(stderr, "FATAL: safetensors moe tensor '%s' has unsupported dtype %s\n", name0, safetensors_type_name(t0->dtype));
+        exit(1);
+    }
+
+    long ng = in / 64;
+    size_t row_pbytes = (size_t)in;   // 1 signed byte per element (q8g64), not in/2
+    size_t packed_bytes = moe_gguf_mul_checked("packed_bytes",
+                             moe_gguf_mul_checked("packed_bytes", (size_t)E, (size_t)out), row_pbytes);
+    size_t scale_bytes = moe_gguf_mul_checked("scale_bytes",
+                            moe_gguf_mul_checked("scale_bytes",
+                              moe_gguf_mul_checked("scale_bytes", (size_t)E, (size_t)out), (size_t)ng),
+                            sizeof(float));
+    size_t total_bytes = moe_gguf_add_checked("packed+scale_bytes total", packed_bytes, scale_bytes);
+    uint8_t *base = malloc(total_bytes);
+    if (!base) { fprintf(stderr, "FATAL: safetensors moe transcode alloc failed for '%s' (%zu bytes)\n", engine_name, total_bytes); exit(1); }
+    uint8_t *packed_all = base;
+    float *scales_all = (float *)(base + packed_bytes);
+
+    size_t deq_bytes = moe_gguf_mul_checked("deq_bytes",
+                          moe_gguf_mul_checked("deq_bytes", (size_t)out, (size_t)in), sizeof(float));
+    float *deq = malloc(deq_bytes);
+    if (!deq) { fprintf(stderr, "FATAL: safetensors moe dequant scratch alloc failed for '%s'\n", engine_name); exit(1); }
+
+    for (long e = 0; e < E; e++) {
+        char name[160];
+        snprintf(name, sizeof name, name_pattern, layer, (int)e);
+        SafetensorsFile *shard = NULL;
+        const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
+        if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
+        if ((long)t->shape[0] != out || (long)t->shape[1] != in) {
+            fprintf(stderr, "FATAL: safetensors moe: %s shape [%llu,%llu] disagrees with expert 0's [%ld,%ld]\n",
+                    name, (unsigned long long)t->shape[0], (unsigned long long)t->shape[1], out, in);
+            exit(1);
+        }
+        if (!safetensors_dequant_supported(t->dtype)) {
+            fprintf(stderr, "FATAL: safetensors moe tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
+            exit(1);
+        }
+        safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), deq, (uint64_t)(out * in));
+        gguf_quantize_q8g64(deq, (int)out, (int)in,
+                             (int8_t *)(packed_all + (size_t)e * (size_t)out * row_pbytes),
+                             scales_all + (size_t)e * (size_t)out * (size_t)ng);
+    }
+    free(deq);
+
+    MoeAFTensor *w = &g_moe_af[g_moe_naf++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->E = E; w->out = out; w->in = in; w->ng = ng;
+    w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
+    w->scale_off = (long)packed_bytes; w->bias_off = -1;  // never dereferenced: sym=1
+    w->base = base; w->sym = 1; w->bits = 8;
+    return w;
+}
+
+// int8 sibling of st_register_moe_dense_af_q4g64_as() -- E=1 case, same relationship as the
+// experts pair above. Used for this round's attention (q_proj/kv_a_proj_with_mqa/kv_b_proj/
+// o_proj), dense-layer FFN, and shared_experts FFN registrations.
+static MoeAFTensor *st_register_moe_dense_af_q8g64_as(const char *name, const char *engine_name) {
+    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (safetensors)\n"); exit(1); }
+    SafetensorsFile *shard = NULL;
+    const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
+    if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
+    long out = (long)t->shape[0], in = t->n_dims >= 2 ? (long)t->shape[1] : 0;
+    if (out <= 0 || in <= 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s has non-positive dims (out=%ld in=%ld)\n", name, out, in);
+        exit(1);
+    }
+    if (in % 64 != 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s in=%ld not a multiple of 64 (SME2_KAI_BL requirement)\n", name, in);
+        exit(1);
+    }
+    if (!safetensors_dequant_supported(t->dtype)) {
+        fprintf(stderr, "FATAL: safetensors moe tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
+        exit(1);
+    }
+
+    long ng = in / 64;
+    size_t row_pbytes = (size_t)in;   // 1 signed byte per element (q8g64), not in/2
+    size_t packed_bytes = moe_gguf_mul_checked("packed_bytes", (size_t)out, row_pbytes);
+    size_t scale_bytes = moe_gguf_mul_checked("scale_bytes", moe_gguf_mul_checked("scale_bytes", (size_t)out, (size_t)ng), sizeof(float));
+    size_t total_bytes = moe_gguf_add_checked("packed+scale_bytes total", packed_bytes, scale_bytes);
+    uint8_t *base = malloc(total_bytes);
+    if (!base) { fprintf(stderr, "FATAL: safetensors moe transcode alloc failed for '%s' (%zu bytes)\n", engine_name, total_bytes); exit(1); }
+    uint8_t *packed_all = base;
+    float *scales_all = (float *)(base + packed_bytes);
+
+    size_t deq_bytes = moe_gguf_mul_checked("deq_bytes", moe_gguf_mul_checked("deq_bytes", (size_t)out, (size_t)in), sizeof(float));
+    float *deq = malloc(deq_bytes);
+    if (!deq) { fprintf(stderr, "FATAL: safetensors moe dequant scratch alloc failed for '%s'\n", engine_name); exit(1); }
+    safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), deq, (uint64_t)(out * in));
+    gguf_quantize_q8g64(deq, (int)out, (int)in, (int8_t *)packed_all, scales_all);
+    free(deq);
+
+    MoeAFTensor *w = &g_moe_af[g_moe_naf++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->E = 1; w->out = out; w->in = in; w->ng = ng;
+    w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
+    w->scale_off = (long)packed_bytes; w->bias_off = -1;
+    w->base = base; w->sym = 1; w->bits = 8;
+    return w;
+}
+
+// Mirrors gguf_register_moe_f32_as() (growable, realloc-safe g_moe_f32_blob -- the SAME shared
+// global buffer/counters every MoE loader writes into) but sources from
+// safetensors_multi_find_tensor()+safetensors_dequant_row() instead of gguf_find_tensor()+
+// gguf_dequant_row(). Used for every norm-family tensor and the router gate weight (never
+// quantized, same policy every existing MoE loader already uses for the router).
+static MoeF32Tensor *st_register_moe_f32_as(const char *name, const char *engine_name) {
+    SafetensorsFile *shard = NULL;
+    const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
+    if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
+    if (!safetensors_dequant_supported(t->dtype)) {
+        fprintf(stderr, "FATAL: safetensors moe tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
+        exit(1);
+    }
+    if (g_moe_nf32 >= 512) { fprintf(stderr, "FATAL: >512 moe f32 tensors (safetensors)\n"); exit(1); }
+    size_t numel = (size_t)t->n_elements;
+    if (numel == 0) { fprintf(stderr, "FATAL: safetensors moe: %s has 0 elements\n", name); exit(1); }
+    size_t need_bytes = moe_gguf_mul_checked("f32 need_bytes", numel, sizeof(float));
+    size_t needed_total = moe_gguf_add_checked("f32 needed_total", g_moe_f32_blob_used, need_bytes);
+    if (needed_total > g_moe_f32_blob_cap) {
+        size_t new_cap = g_moe_f32_blob_cap ? g_moe_f32_blob_cap : (1u << 20);
+        while (new_cap < needed_total) new_cap = moe_gguf_mul_checked("f32 blob growth", new_cap, 2);
+        uint8_t *grown = realloc(g_moe_f32_blob, new_cap);
+        if (!grown) { fprintf(stderr, "FATAL: safetensors moe f32 blob realloc failed\n"); exit(1); }
+        g_moe_f32_blob = grown;
+        g_moe_f32_blob_cap = new_cap;
+    }
+    safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t),
+                             (float *)(g_moe_f32_blob + g_moe_f32_blob_used), numel);
+    MoeF32Tensor *w = &g_moe_f32[g_moe_nf32++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->off = (long)g_moe_f32_blob_used; w->numel = (long)numel;
+    g_moe_f32_blob_used += need_bytes;
+    return w;
+}
+
+// Role tables -- safetensors tensor names already match this engine's HF-style logical names
+// (same fact the dense safetensors loader established), so st_pattern==engine_pattern for every
+// entry; kept as two columns anyway to mirror MOE_GGUF_LAYER_ROLES's shape. Split into 6 small
+// tables rather than one flat table with an is_expert flag (unlike MOE_GGUF_LAYER_ROLES) --
+// the E>1 expert lookup genuinely needs a different pattern shape ((layer,expert), not just
+// (layer)), so it naturally gets its own function+table type (MoeStExpertRole) rather than
+// reusing MoeStRole.
+typedef struct { const char *st_pattern; const char *engine_pattern; int is_af; } MoeStRole;
+static const MoeStRole MOE_ST_ROLES_COMMON[] = {
+    { "model.layers.%d.input_layernorm.weight",          "model.layers.%d.input_layernorm.weight",          0 },
+    { "model.layers.%d.post_attention_layernorm.weight", "model.layers.%d.post_attention_layernorm.weight", 0 },
+};
+static const MoeStRole MOE_ST_ATTN_ROLES_MLA[] = {   // deepseek_v2 only
+    { "model.layers.%d.self_attn.q_proj.weight",            "model.layers.%d.self_attn.q_proj",    1 },
+    { "model.layers.%d.self_attn.kv_a_proj_with_mqa.weight", "model.layers.%d.self_attn.kv_a_proj_with_mqa", 1 },
+    { "model.layers.%d.self_attn.kv_b_proj.weight",          "model.layers.%d.self_attn.kv_b_proj", 1 },
+    { "model.layers.%d.self_attn.o_proj.weight",             "model.layers.%d.self_attn.o_proj",    1 },
+    { "model.layers.%d.self_attn.kv_a_layernorm.weight",     "model.layers.%d.self_attn.kv_a_layernorm.weight", 0 },
+};
+static const MoeStRole MOE_ST_ATTN_ROLES_GQA[] = {   // qwen3_moe/olmoe -- both real config.jsons
+                                                       // ship q_norm/k_norm (confirmed live against
+                                                       // each checkpoint's own weight_map), so this
+                                                       // one table is shared unchanged.
+    { "model.layers.%d.self_attn.q_proj.weight", "model.layers.%d.self_attn.q_proj", 1 },
+    { "model.layers.%d.self_attn.k_proj.weight", "model.layers.%d.self_attn.k_proj", 1 },
+    { "model.layers.%d.self_attn.v_proj.weight", "model.layers.%d.self_attn.v_proj", 1 },
+    { "model.layers.%d.self_attn.o_proj.weight", "model.layers.%d.self_attn.o_proj", 1 },
+    { "model.layers.%d.self_attn.q_norm.weight", "model.layers.%d.self_attn.q_norm.weight", 0 },
+    { "model.layers.%d.self_attn.k_norm.weight", "model.layers.%d.self_attn.k_norm.weight", 0 },
+};
+static const MoeStRole MOE_ST_DENSE_ROLES[] = {   // only l < MOE_FIRST_DENSE_LAYERS (deepseek_v2)
+    { "model.layers.%d.mlp.gate_proj.weight", "model.layers.%d.mlp.gate_proj", 1 },
+    { "model.layers.%d.mlp.up_proj.weight",   "model.layers.%d.mlp.up_proj",   1 },
+    { "model.layers.%d.mlp.down_proj.weight", "model.layers.%d.mlp.down_proj", 1 },
+};
+static const MoeStRole MOE_ST_SHARED_ROLES[] = {   // only MOE_N_SHARED > 0 (deepseek_v2) -- one
+                                                     // pre-merged wide tensor per projection, NOT
+                                                     // per-shared-expert-indexed (confirmed live).
+    { "model.layers.%d.mlp.shared_experts.gate_proj.weight", "model.layers.%d.mlp.shared_experts.gate_proj", 1 },
+    { "model.layers.%d.mlp.shared_experts.up_proj.weight",   "model.layers.%d.mlp.shared_experts.up_proj",   1 },
+    { "model.layers.%d.mlp.shared_experts.down_proj.weight", "model.layers.%d.mlp.shared_experts.down_proj", 1 },
+};
+typedef struct { const char *st_pattern; const char *engine_pattern; } MoeStExpertRole;  // st_pattern: 2 %d (layer, expert); engine_pattern: 1 %d (layer -- E is baked into the one registered MoeAFTensor)
+static const MoeStExpertRole MOE_ST_EXPERT_ROLES[] = {   // always 3, every routed-expert layer
+    { "model.layers.%d.mlp.experts.%d.gate_proj.weight", "model.layers.%d.mlp.switch_mlp.gate_proj" },
+    { "model.layers.%d.mlp.experts.%d.up_proj.weight",   "model.layers.%d.mlp.switch_mlp.up_proj" },
+    { "model.layers.%d.mlp.experts.%d.down_proj.weight", "model.layers.%d.mlp.switch_mlp.down_proj" },
+};
+
+// Step 1 scope: config + derived dims only, no g_st_moe open yet -- gate-testable with nothing
+// but a few-KB config.json, no checkpoint download needed. Registration/resolution/forward-pass
+// wiring lands in later steps of this same round.
+static int run_moe_safetensors_verify_mode(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *path = getenv("QWEN_MOE_SAFETENSORS");
+    if (!path || !path[0]) return 0;   // not this mode -- byte-identical fallthrough
+
+    fprintf(stderr, "[engine] QWEN_MOE_SAFETENSORS=%s -- MoE safetensors verification mode\n", path);
+
+    // config.json resolution: sibling directory by default, QWEN_HF_CONFIG override -- reuses
+    // the same env var name the dense safetensors path uses (qwen_infer.c's QWEN_SAFETENSORS
+    // branch); the two gating env vars are mutually exclusive per run, no collision.
+    char config_path[560];
+    const char *cfg_ov = getenv("QWEN_HF_CONFIG");
+    if (cfg_ov && cfg_ov[0]) snprintf(config_path, sizeof config_path, "%s", cfg_ov);
+    else {
+        const char *slash = strrchr(path, '/');
+        if (slash) snprintf(config_path, sizeof config_path, "%.*s/config.json", (int)(slash - path), path);
+        else snprintf(config_path, sizeof config_path, "config.json");
+    }
+    load_moe_safetensors_arch(config_path);
+
+    // Derived dims -- verbatim mirror of run_moe_verify_mode()'s own block (same formulas, same
+    // order, same GQA/MLA KROW/VROW branch + R-6 geometry assertion); kept as an intentional
+    // duplicate rather than a shared helper so this new, unproven code path cannot alter the
+    // other two MoE entry points' own already-gated behavior by definition.
+    MOE_QDIM     = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_KVA_OUT  = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
+    MOE_KVB_OUT  = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD);
+    MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
+    MOE_SH_IM    = MOE_IM_DIM * MOE_N_SHARED;
+    if (MOE_ATTN_KIND == MOE_ATTN_GQA) {
+        MOE_KROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+        MOE_VROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    } else {
+        MOE_KROW = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+        MOE_VROW = MOE_N_HEADS * MOE_V_HD;
+    }
+    if (MOE_ATTN_KIND == MOE_ATTN_GQA &&
+        (MOE_KROW != MOE_N_KV_HEADS * MOE_HEAD_DIM || MOE_VROW != MOE_N_KV_HEADS * MOE_HEAD_DIM)) {
+        fprintf(stderr, "FATAL: GQA K/V row geometry mismatch (KROW=%d VROW=%d, expected %d)\n",
+                MOE_KROW, MOE_VROW, MOE_N_KV_HEADS * MOE_HEAD_DIM);
+        exit(1);
+    }
+    MOE_MAX_IN = MOE_HIDDEN;
+    if (MOE_IM_DIM   > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
+    if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
+    if (MOE_DENSE_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_DENSE_IM;
+    MOE_MAX_NG = (MOE_MAX_IN + 63) / 64;
+    MOE_SME2_SLOT_DENSE  = MOE_N_EXPERTS;
+    MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
+    MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2;
+    MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
+
+    alloc_moe_buffers();
+    moe_init_yarn();
+    if (MOE_ATTN_KIND == MOE_ATTN_GQA) moe_init_rope_gqa();
+    fprintf(stderr, "[moe safetensors yarn] rope_mscale=%.10f attn_scale=%.10f\n", g_moe_rope_mscale, g_moe_attn_scale);
+
+    g_st_moe = safetensors_open_multi(path);   // eager multi-shard open -- every real target is sharded
+    g_moe_af = calloc(512, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
+    g_moe_f32 = malloc(sizeof(MoeF32Tensor) * 512);
+
+    char name[160], ename[160];
+    for (int l = 0; l < MOE_NL; l++) {
+        for (size_t r = 0; r < sizeof(MOE_ST_ROLES_COMMON)/sizeof(MOE_ST_ROLES_COMMON[0]); r++) {
+            const MoeStRole *role = &MOE_ST_ROLES_COMMON[r];
+            snprintf(name, sizeof name, role->st_pattern, l);
+            snprintf(ename, sizeof ename, role->engine_pattern, l);
+            if (role->is_af) st_register_moe_dense_af_q4g64_as(name, ename); else st_register_moe_f32_as(name, ename);
+        }
+        const MoeStRole *attn_roles = (MOE_ATTN_KIND == MOE_ATTN_MLA) ? MOE_ST_ATTN_ROLES_MLA : MOE_ST_ATTN_ROLES_GQA;
+        size_t n_attn_roles = (MOE_ATTN_KIND == MOE_ATTN_MLA)
+            ? sizeof(MOE_ST_ATTN_ROLES_MLA)/sizeof(MOE_ST_ATTN_ROLES_MLA[0])
+            : sizeof(MOE_ST_ATTN_ROLES_GQA)/sizeof(MOE_ST_ATTN_ROLES_GQA[0]);
+        for (size_t r = 0; r < n_attn_roles; r++) {
+            const MoeStRole *role = &attn_roles[r];
+            snprintf(name, sizeof name, role->st_pattern, l);
+            snprintf(ename, sizeof ename, role->engine_pattern, l);
+            // Step 3 divergence fix (this round): q8g64, not q4g64 -- attention weights showed
+            // real-data rel-L2 divergence against a true fp32 MLX reference, same reasoning as
+            // embed_tokens/lm_head's own F32 upgrade just above (see MoeAFTensor's bits comment).
+            if (role->is_af) st_register_moe_dense_af_q8g64_as(name, ename); else st_register_moe_f32_as(name, ename);
+        }
+        if (l < MOE_FIRST_DENSE_LAYERS) {
+            for (size_t r = 0; r < sizeof(MOE_ST_DENSE_ROLES)/sizeof(MOE_ST_DENSE_ROLES[0]); r++) {
+                const MoeStRole *role = &MOE_ST_DENSE_ROLES[r];
+                snprintf(name, sizeof name, role->st_pattern, l);
+                snprintf(ename, sizeof ename, role->engine_pattern, l);
+                st_register_moe_dense_af_q8g64_as(name, ename);
+            }
+        } else {
+            snprintf(name, sizeof name, "model.layers.%d.mlp.gate.weight", l);
+            st_register_moe_f32_as(name, name);
+            if (MOE_N_SHARED > 0) {
+                for (size_t r = 0; r < sizeof(MOE_ST_SHARED_ROLES)/sizeof(MOE_ST_SHARED_ROLES[0]); r++) {
+                    const MoeStRole *role = &MOE_ST_SHARED_ROLES[r];
+                    snprintf(name, sizeof name, role->st_pattern, l);
+                    snprintf(ename, sizeof ename, role->engine_pattern, l);
+                    st_register_moe_dense_af_q8g64_as(name, ename);
+                }
+            }
+            for (size_t r = 0; r < sizeof(MOE_ST_EXPERT_ROLES)/sizeof(MOE_ST_EXPERT_ROLES[0]); r++) {
+                const MoeStExpertRole *role = &MOE_ST_EXPERT_ROLES[r];
+                snprintf(ename, sizeof ename, role->engine_pattern, l);
+                st_register_moe_experts_q8g64_as(role->st_pattern, l, MOE_N_EXPERTS, ename);
+            }
+        }
+        if ((l+1) % 8 == 0 || l+1 == MOE_NL)
+            fprintf(stderr, "[moe st load] layer %d/%d\n", l+1, MOE_NL);
+    }
+    // embed_tokens/lm_head registered as F32 (not int4 AF, unlike every other AF-family tensor
+    // this loader registers): real-data testing this round found int4 RTN on the embedding table
+    // specifically produces ~29% rel-L2 error on a single row -- far higher than ordinary matrix
+    // weights, likely because embedding rows don't share the same per-64-group numeric redundancy
+    // that projection/expert matrices do. The dense loaders (GGUF/safetensors) already keep
+    // embed_tokens/lm_head in F32 for this reason; this brings the MoE safetensors loader in
+    // line with that. moe_forward_token()'s AF path (used by GGUF-MoE/AF-blob) is untouched.
+    st_register_moe_f32_as("model.embed_tokens.weight", "model.embed_tokens");
+    st_register_moe_f32_as("model.norm.weight", "model.norm.weight");
+    if (!safetensors_multi_find_tensor(g_st_moe, "lm_head.weight", NULL)) {
+        fprintf(stderr, "FATAL: safetensors moe: tied embeddings (no lm_head.weight) not yet supported\n");
+        exit(1);
+    }
+    st_register_moe_f32_as("lm_head.weight", "lm_head");
+    fprintf(stderr, "[moe st load] registered %d af tensors, %d f32 tensors\n", g_moe_naf, g_moe_nf32);
+
+    moe_resolve_layer_tensors();   // UNCHANGED, loader-agnostic
+    fprintf(stderr, "[moe st check] all %d layers' tensors resolved\n", MOE_NL);
+
+    // Deferred vocab/lm_head shape cross-check (see load_moe_safetensors_arch()'s own comment):
+    // now that the real embed/lm_head tensors are registered, confirm their shapes actually
+    // agree with config.json's own vocab_size scalar -- same "the file's own shape can't
+    // disagree with how many rows it actually has" discipline the dense loaders already use.
+    // MoeF32Tensor only stores total element count (no separate out/in dims), so the check is
+    // against numel == VOCAB*HIDDEN rather than a per-axis compare.
+    MoeF32Tensor *t_embed_f32 = moe_find_f32("model.embed_tokens");
+    MoeF32Tensor *t_lmhead_f32 = moe_find_f32("lm_head");
+    long expect_numel = (long)MOE_VOCAB * (long)MOE_HIDDEN;
+    if (t_embed_f32->numel != expect_numel) {
+        fprintf(stderr, "FATAL: model.embed_tokens.weight numel=%ld disagrees with config.json VOCAB*HIDDEN=%ld\n", t_embed_f32->numel, expect_numel);
+        exit(1);
+    }
+    if (t_lmhead_f32->numel != expect_numel) {
+        fprintf(stderr, "FATAL: lm_head.weight numel=%ld disagrees with config.json VOCAB*HIDDEN=%ld\n", t_lmhead_f32->numel, expect_numel);
+        exit(1);
+    }
+
+    // Step 3: teacher-forced single-sequence numeric gate -- verbatim mirror of
+    // run_moe_verify_mode()'s own tail (line ~6233 onward), with distinct output filenames
+    // (moe_st_c_* vs moe3a_c_*) so both loaders' gate artifacts can coexist. af_blob passed as
+    // NULL: every MoeAFTensor this loader registers carries a non-NULL t->base (4.C bridge,
+    // same as the GGUF-MoE loader's own tail at line 6101), so moe_decode_af()/moe_matvec_af_mt()
+    // never dereference the af_blob parameter -- confirmed by reading moe_decode_af() itself.
+    MoeF32Tensor *t_finalnorm = moe_find_f32("model.norm.weight");
+    float *w_finalnorm = (float *)(g_moe_f32_blob + t_finalnorm->off);
+
+    static int prompt_ids_default[] = {100000, 549, 4345, 280, 8204, 317, 245, 1234};
+    static int prompt_ids_override[MOE_MAXPOS];
+    int *prompt_ids = prompt_ids_default;
+    int N = sizeof(prompt_ids_default) / sizeof(prompt_ids_default[0]);
+    const char *prompt_ids_env = getenv("QWEN_MOE_PROMPT_IDS");
+    if (prompt_ids_env && prompt_ids_env[0]) {
+        char buf[1024];
+        strncpy(buf, prompt_ids_env, sizeof buf - 1);
+        buf[sizeof buf - 1] = '\0';
+        int n = 0;
+        char *tok = strtok(buf, ",");
+        while (tok && n < MOE_MAXPOS) { prompt_ids_override[n++] = atoi(tok); tok = strtok(NULL, ","); }
+        prompt_ids = prompt_ids_override;
+        N = n;
+    }
+    if (N > MOE_MAXPOS) { fprintf(stderr, "FATAL: N=%d > MOE_MAXPOS=%d\n", N, MOE_MAXPOS); exit(1); }
+
+    FILE *logits_out = fopen("moe_st_c_logits.bin", "wb");
+    if (!logits_out) { perror("moe_st_c_logits.bin"); exit(1); }
+    FILE *routing_out = fopen("moe_st_c_routing.txt", "w");
+    if (!routing_out) { perror("moe_st_c_routing.txt"); exit(1); }
+
+    float *logits = malloc((size_t)MOE_VOCAB * sizeof(float));
+    for (int pos = 0; pos < N; pos++) {
+        moe_forward_token(NULL, NULL, NULL, w_finalnorm, prompt_ids[pos], pos, logits, routing_out, t_embed_f32, t_lmhead_f32);
+        fwrite(logits, sizeof(float), MOE_VOCAB, logits_out);
+        int argmax = 0; float best = logits[0];
+        for (int v = 1; v < MOE_VOCAB; v++) if (logits[v] > best) { best = logits[v]; argmax = v; }
+        fprintf(stderr, "[moe st verify] pos %d token %d -> argmax next-token %d (logit %.4f)\n",
+                pos, prompt_ids[pos], argmax, best);
+    }
+    fclose(logits_out);
+    fclose(routing_out);
+    fprintf(stderr, "RESULT: MoE safetensors Step 3 forward complete for %d positions\n", N);
+    return 1;
 }
 
 // ============================================================================================
@@ -7013,6 +7819,7 @@ int main(int argc, char **argv) {
     if (run_moe_mqa_selftest_mode(argc, argv)) return 0;
     if (run_moe_gqa_selftest_mode(argc, argv)) return 0;
     if (run_gguf_moe_verify_mode(argc, argv)) return 0;
+    if (run_moe_safetensors_verify_mode(argc, argv)) return 0;
     if (run_moe_verify_mode(argc, argv)) return 0;
 
     const char *mode = argc>1?argv[1]:"greedy";
