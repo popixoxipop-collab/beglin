@@ -11,14 +11,17 @@
 #include <sys/stat.h>
 #include <errno.h>
 
-typedef enum { HFV_STR, HFV_NUM, HFV_BOOL, HFV_NULL, HFV_OTHER } HfValType;
+// Internal per-entry type (distinct from the public HfValType in hf_config.h, which also has
+// HF_TYPE_ABSENT -- not meaningful for a stored entry, only for a lookup miss).
+typedef enum { HFV_STR, HFV_NUM, HFV_BOOL, HFV_NULL, HFV_OBJECT, HFV_ARRAY } HfEntryType;
 
 typedef struct {
     char *key;          // malloc'd, NUL-terminated
-    HfValType type;
+    HfEntryType type;
     char *str_val;       // malloc'd, HFV_STR only
     double num_val;       // HFV_NUM only
     int bool_val;          // HFV_BOOL only
+    HfConfig *obj_val;    // HFV_OBJECT only, and only when materialized (depth<=1); else NULL
 } HfEntry;
 
 struct HfConfig {
@@ -167,6 +170,57 @@ static void cur_skip_value(Cur *c) {
     cur_number(c);
 }
 
+// Parses a `{ "key": value, ... }` object starting at c->p (which must be positioned at the
+// opening '{'), consuming through the matching '}'. `depth` is the depth of THIS object being
+// parsed (0 for the top-level document). A nested object value is materialized recursively via a
+// nested parse_object() call only when its own depth (depth+1) is <=1 -- i.e. only direct
+// children of the top-level document get their fields read; a grandchild object is still typed
+// correctly (HFV_OBJECT) but its content is skipped, matching every real shape found in this
+// project (rope_scaling/weight_map leaves are scalars/strings, never a further nested object).
+// Returned HfConfig's `raw` is left NULL (it doesn't own a separate copy of the file bytes --
+// the top-level caller, hf_config_open(), fills in the real owning buffer after this returns).
+static HfConfig *parse_object(Cur *c, int depth) {
+    cur_expect(c, '{');
+
+    HfConfig *cfg = malloc(sizeof *cfg);
+    cfg->raw = NULL;
+    cfg->n_entries = 0;
+    size_t cap = 16;
+    cfg->entries = malloc(cap * sizeof(HfEntry));
+
+    if (!cur_peek_is(c, '}')) {
+        while (1) {
+            char *key = cur_string(c);
+            cur_expect(c, ':');
+            cur_skip_ws(c);
+            if (cfg->n_entries >= cap) { cap *= 2; cfg->entries = realloc(cfg->entries, cap * sizeof(HfEntry)); }
+            HfEntry *e = &cfg->entries[cfg->n_entries++];
+            e->key = key;
+            e->str_val = NULL;
+            e->obj_val = NULL;
+            char ch = c->p < c->end ? *c->p : '\0';
+            if (ch == '"') { e->type = HFV_STR; e->str_val = cur_string(c); }
+            else if (ch == '{') {
+                e->type = HFV_OBJECT;
+                if (depth <= 0) e->obj_val = parse_object(c, depth + 1);
+                else cur_skip_value(c);
+            }
+            else if (ch == '[') { e->type = HFV_ARRAY; cur_skip_value(c); }
+            else if (ch == 't' || ch == 'f') { e->type = HFV_BOOL; e->bool_val = cur_bool(c); }
+            else if (ch == 'n') {
+                if (c->p + 4 <= c->end && !memcmp(c->p, "null", 4)) { c->p += 4; e->type = HFV_NULL; }
+                else { fprintf(stderr, "FATAL: hf_config: %s: expected null at offset %ld\n", c->path, (long)(c->p - c->start)); exit(1); }
+            }
+            else { e->type = HFV_NUM; e->num_val = cur_number(c); }
+            cur_skip_ws(c);
+            if (cur_peek_is(c, ',')) { c->p++; continue; }
+            break;
+        }
+    }
+    cur_expect(c, '}');
+    return cfg;
+}
+
 HfConfig *hf_config_open(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "FATAL: hf_config: could not open %s (%s)\n", path, strerror(errno)); exit(1); }
@@ -182,48 +236,21 @@ HfConfig *hf_config_open(const char *path) {
     }
     raw[nread] = '\0';
 
-    HfConfig *cfg = malloc(sizeof *cfg);
-    cfg->raw = raw;
-    cfg->entries = NULL;
-    cfg->n_entries = 0;
-
     Cur c = { raw, raw + nread, raw, path };
-    cur_expect(&c, '{');
-
-    size_t cap = 32;
-    cfg->entries = malloc(cap * sizeof(HfEntry));
-    if (!cur_peek_is(&c, '}')) {
-        while (1) {
-            char *key = cur_string(&c);
-            cur_expect(&c, ':');
-            cur_skip_ws(&c);
-            if (cfg->n_entries >= cap) { cap *= 2; cfg->entries = realloc(cfg->entries, cap * sizeof(HfEntry)); }
-            HfEntry *e = &cfg->entries[cfg->n_entries++];
-            e->key = key;
-            e->str_val = NULL;
-            char ch = c.p < c.end ? *c.p : '\0';
-            if (ch == '"') { e->type = HFV_STR; e->str_val = cur_string(&c); }
-            else if (ch == '{' || ch == '[') { e->type = HFV_OTHER; cur_skip_value(&c); }
-            else if (ch == 't' || ch == 'f') { e->type = HFV_BOOL; e->bool_val = cur_bool(&c); }
-            else if (ch == 'n') {
-                if (c.p + 4 <= c.end && !memcmp(c.p, "null", 4)) { c.p += 4; e->type = HFV_NULL; }
-                else { fprintf(stderr, "FATAL: hf_config: %s: expected null at offset %ld\n", path, (long)(c.p - c.start)); exit(1); }
-            }
-            else { e->type = HFV_NUM; e->num_val = cur_number(&c); }
-            cur_skip_ws(&c);
-            if (cur_peek_is(&c, ',')) { c.p++; continue; }
-            break;
-        }
-    }
-    cur_expect(&c, '}');
+    HfConfig *cfg = parse_object(&c, 0);
+    cfg->raw = raw;
     return cfg;
 }
 
 void hf_config_close(HfConfig *c) {
     if (!c) return;
-    for (size_t i = 0; i < c->n_entries; i++) { free(c->entries[i].key); free(c->entries[i].str_val); }
+    for (size_t i = 0; i < c->n_entries; i++) {
+        free(c->entries[i].key);
+        free(c->entries[i].str_val);
+        if (c->entries[i].type == HFV_OBJECT && c->entries[i].obj_val) hf_config_close(c->entries[i].obj_val);
+    }
     free(c->entries);
-    free(c->raw);
+    free(c->raw);   // NULL for nested (non-top-level) configs -- free(NULL) is a documented no-op
     free(c);
 }
 
@@ -233,6 +260,34 @@ static const HfEntry *find(const HfConfig *c, const char *key) {
 }
 
 int hf_config_has_key(const HfConfig *c, const char *key) { return find(c, key) != NULL; }
+
+HfValType hf_config_key_type(const HfConfig *c, const char *key) {
+    const HfEntry *e = find(c, key);
+    if (!e) return HF_TYPE_ABSENT;
+    switch (e->type) {
+        case HFV_STR:    return HF_TYPE_STR;
+        case HFV_NUM:    return HF_TYPE_NUM;
+        case HFV_BOOL:   return HF_TYPE_BOOL;
+        case HFV_NULL:   return HF_TYPE_NULL;
+        case HFV_OBJECT: return HF_TYPE_OBJECT;
+        case HFV_ARRAY:  return HF_TYPE_ARRAY;
+    }
+    return HF_TYPE_ABSENT; // unreachable, silences -Wreturn-type on some compilers
+}
+
+size_t hf_config_n_entries(const HfConfig *c) { return c->n_entries; }
+const char *hf_config_entry_key(const HfConfig *c, size_t i) { return c->entries[i].key; }
+
+const HfConfig *hf_config_get_object(const HfConfig *c, const char *key) {
+    const HfEntry *e = find(c, key);
+    if (!e) return NULL;
+    if (e->type != HFV_OBJECT) { fprintf(stderr, "FATAL: hf_config: key '%s' is not an object\n", key); exit(1); }
+    if (!e->obj_val) {
+        fprintf(stderr, "FATAL: hf_config: key '%s' is an object nested too deep to read (depth>=2 unsupported)\n", key);
+        exit(1);
+    }
+    return e->obj_val;
+}
 
 int hf_config_get_i64(const HfConfig *c, const char *key, int64_t *out) {
     const HfEntry *e = find(c, key);

@@ -7,11 +7,14 @@
 // parsing looks harmless).
 //
 // Format: a single top-level `{ "key": value, ... }` object. Values this file materializes:
-// string, number (stored as double; callers needing an integer cast it), bool, null. Nested
-// objects/arrays (e.g. `"architectures": [...]`, a present `"rope_scaling": {...}`) are correctly
-// skipped over so parsing can reach later keys, but their content is NOT materialized --
-// hf_config_has_key() still reports their presence (needed so a caller can FATAL on an
-// unsupported-but-present key like `rope_scaling`, rather than silently ignoring it).
+// string, number (stored as double; callers needing an integer cast it), bool, null, and nested
+// objects up to depth 1 (e.g. a present `"rope_scaling": {...}` or an index.json's
+// `"weight_map": {...}`) via hf_config_get_object(), which returns another HfConfig scoped to
+// just that nested object's own fields. Arrays (e.g. `"architectures": [...]`) and objects
+// nested deeper than depth 1 are correctly skipped over so parsing can reach later keys, but
+// their content is NOT materialized -- hf_config_key_type()/hf_config_has_key() still report
+// their presence and type (needed so a caller can FATAL on an unsupported-but-present key,
+// rather than silently ignoring it).
 //
 // SAFETY CONTRACT (mirrors gguf_load.h/safetensors_load.h verbatim): every read is bounds-
 // checked against the loaded file's length. A truncated/malformed config.json is a FATAL with a
@@ -22,11 +25,36 @@
 #define HF_CONFIG_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 typedef struct HfConfig HfConfig;
 
+typedef enum {
+    HF_TYPE_ABSENT = 0,
+    HF_TYPE_NULL,
+    HF_TYPE_STR,
+    HF_TYPE_NUM,
+    HF_TYPE_BOOL,
+    HF_TYPE_OBJECT,
+    HF_TYPE_ARRAY,
+} HfValType;
+
 HfConfig *hf_config_open(const char *path);
+// Recursively closes every nested HfConfig returned by hf_config_get_object() along the way --
+// callers must not separately close a pointer obtained from hf_config_get_object().
 void hf_config_close(HfConfig *c);
+
+// Classifies `key`'s JSON value type; HF_TYPE_ABSENT if `key` doesn't exist at this level. Works
+// even for an object nested deeper than depth 1 (reports HF_TYPE_OBJECT, just not readable via
+// hf_config_get_object() -- check this first if the nesting depth isn't already known).
+HfValType hf_config_key_type(const HfConfig *c, const char *key);
+// Returns the nested object's own HfConfig scoped to just that object's fields (e.g.
+// `rope_scaling`'s leaf fields, or an index.json's `weight_map`). Only objects up to depth 1 are
+// materialized -- FATALs if `key` is an object nested deeper than that (no shape found in this
+// project needs a grandchild object). FATALs if `key` is present but not an object type. Returns
+// NULL if `key` is absent. The returned pointer's lifetime is tied to `c` -- do not close it
+// separately (see hf_config_close()).
+const HfConfig *hf_config_get_object(const HfConfig *c, const char *key);
 
 // Each getter returns 1 and sets *out if `key` is present with a matching type; returns 0 if
 // `key` is absent. FATALs if `key` is present but holds a different JSON value type (a type
@@ -42,5 +70,12 @@ int hf_config_get_str(const HfConfig *c, const char *key, const char **out_ptr);
 // null/array/object) -- the one query that also sees keys whose value this parser doesn't
 // materialize.
 int hf_config_has_key(const HfConfig *c, const char *key);
+
+// Iterates c's own DIRECT entries (not recursive) by position -- for an object whose leaf keys
+// aren't known ahead of time, unlike config.json's fixed field names (e.g. an index.json's
+// weight_map, whose keys are tensor names). The returned key is a borrowed pointer into `c`'s
+// own storage, valid until hf_config_close(). `i` must be < hf_config_n_entries(c).
+size_t hf_config_n_entries(const HfConfig *c);
+const char *hf_config_entry_key(const HfConfig *c, size_t i);
 
 #endif // HF_CONFIG_H

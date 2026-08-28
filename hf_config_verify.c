@@ -24,7 +24,23 @@ int main(int argc, char **argv) {
     if (hf_config_get_bool(c, "tie_word_embeddings", &b)) printf("tie_word_embeddings=%s\n", b ? "true" : "false");
     if (hf_config_get_str(c, "model_type", &s)) printf("model_type=%s\n", s);
     if (hf_config_get_i64(c, "max_position_embeddings", &i)) printf("max_position_embeddings=%lld\n", (long long)i);
-    printf("has_rope_scaling=%s\n", hf_config_has_key(c, "rope_scaling") ? "true" : "false");
+
+    HfValType rs_type = hf_config_key_type(c, "rope_scaling");
+    switch (rs_type) {
+        case HF_TYPE_ABSENT: printf("rope_scaling=ABSENT\n"); break;
+        case HF_TYPE_NULL:   printf("rope_scaling=NULL\n"); break;
+        case HF_TYPE_OBJECT: {
+            printf("rope_scaling=OBJECT\n");
+            const HfConfig *rs = hf_config_get_object(c, "rope_scaling");
+            if (hf_config_get_str(rs, "rope_type", &s)) printf("rope_scaling.rope_type=%s\n", s);
+            if (hf_config_get_f64(rs, "factor", &f)) printf("rope_scaling.factor=%.9g\n", f);
+            if (hf_config_get_f64(rs, "low_freq_factor", &f)) printf("rope_scaling.low_freq_factor=%.9g\n", f);
+            if (hf_config_get_f64(rs, "high_freq_factor", &f)) printf("rope_scaling.high_freq_factor=%.9g\n", f);
+            if (hf_config_get_i64(rs, "original_max_position_embeddings", &i)) printf("rope_scaling.original_max_position_embeddings=%lld\n", (long long)i);
+            break;
+        }
+        default: printf("rope_scaling=OTHER(type=%d)\n", (int)rs_type); break;
+    }
 
     hf_config_close(c);
     return 0;
