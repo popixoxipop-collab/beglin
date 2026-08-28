@@ -2476,3 +2476,63 @@ pre-quantized-reference methodology) doesn't account for this failure mode.
 
 Commits: `7b2cd36` (`feat(moe-safetensors): int8 hybrid precision,
 DeepSeek-V2-Lite gate`).
+
+## Addendum: shard corruption discovery, gate re-validation, and the
+## int4-hybrid-experts follow-up (2026-08-29)
+
+**Corrupted shard, found and fixed.** Attempting the hybrid-precision
+follow-up (revert routed-expert weights to q4g64 int4, keep attention/
+dense/shared at q8g64 int8) hit `FATAL: safetensors_load: ... tensor
+'model.layers.23.mlp.experts.57.down_proj.weight' data_offsets [...] out
+of bounds`. Root cause: bob's local `model-00004-of-000004.safetensors`
+had been truncated to 1.88GB (should be 5.64GB) -- confirmed by comparing
+against both macstudio's own copy (`/Volumes/D50/vdsp/deepseek_v2_lite_hf/`)
+and a dated backup (`/Volumes/WD_BLACK/bob_backup_2026-08-28_deepseek_v2_lite/`),
+both showing the correct 5,636,263,200-byte size. Exact cause of the
+truncation not root-caused (bob's disk was at 92% -- 18GB free -- a
+plausible but unconfirmed trigger); not pursued further since a verified-
+correct replacement was directly available. Fixed via a checksummed
+relay copy (macstudio -> local scratch -> bob, SHA-256
+`cfb51658f67ce...` matched at every hop) replacing the truncated file.
+
+**Re-validation: the originally-documented gate stands, unchanged.**
+Because the corrupted shard raised the question of whether the "near-
+perfect gate" result above was itself computed against incomplete data,
+the int8-everywhere binary (this round's actual shipped commit, `7b2cd36`)
+was re-run against the now-verified-correct checkpoint. Result: **byte-for-
+byte identical** to what's documented above -- argmax 8/8 match, router
+agreement perfect with the exact same 10 near-tie flips (including the
+identical layer-11/pos-4 near-tie: ref expert 52 score 0.035782 vs C
+expert 13 score 0.035634, gap 1.48e-4), full-logits rel-L2 range
+0.0026-0.0115, same single marginal miss at position 4. The shipped
+result was never at risk -- shard corruption must have occurred sometime
+after the original gate run.
+
+**The int4-hybrid-experts experiment: real result, real negative.** With
+the checkpoint now trustworthy, the actual follow-up (routed experts back
+to q4g64 int4, attention/dense/shared kept at q8g64 int8) was re-run for
+real. Result: **substantially worse, not competitive**. Argmax regressed
+to 7/8 (position 0 flipped: C=185 vs ref=2 -- the reference's own argmax,
+previously matched under int8-everywhere, is lost). Full-logits rel-L2
+jumped to **0.028-0.27** (every position HARD FAIL against the same 1e-2
+threshold the int8-everywhere build clears). Router expert-set agreement
+degraded from 0 hard mismatches to **31 hard mismatches** across the same
+208 checks (27 additional near-tie flips also appeared, consistent with
+int4's coarser router-adjacent hidden states pushing more borderline
+routing decisions across the boundary). **Conclusion: routed-expert
+precision is NOT the cheap corner to cut.** The intuition that routed
+experts (the dominant parameter count -- 64 experts x 3 projections x 26
+layers) would tolerate int4 better than the comparatively small attention/
+dense/shared tensors was wrong for this checkpoint: routed-expert int4
+noise compounds across 26 sequential MoE layers, each layer's already-
+quantization-perturbed hidden state feeding the next layer's routing
+decision, in a way that plain per-tensor rel-L2 intuition doesn't capture.
+The per-tensor `bits` field's structural flexibility (confirmed working --
+the hybrid build itself compiled/linked/ran with zero code changes beyond
+the one registration-call swap) doesn't imply every hybrid split is a good
+one; this specific split isn't. Blanket int8 (the shipped `7b2cd36`
+config) remains the round's actual result.
+
+Commits: none (negative result, no shipped code change -- the hybrid
+registration-call edit was tested uncommitted and left unmerged,
+`git stash` on the local worktree).
