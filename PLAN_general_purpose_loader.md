@@ -566,6 +566,25 @@ generality table now that Phase 4's structured plan is exhausted:
   on-disk transcode cache re-deferred with fresh evidence (both still real
   gaps, neither newly tractable). Full writeup: `RESULTS.md` "safetensors
   rope_scaling + multi-shard".
+- **MoE-format safetensors, Steps 1-3 of 7 (`deepseek_v2`/`qwen3_moe`/
+  `olmoe` 3-way arch-config allowlist; DeepSeek-V2-Lite registration +
+  numeric gate)** -- per-expert registration loop (mirrors
+  `gguf_register_moe_q4g64_as()`'s one-expert-at-a-time transcode
+  discipline) closes the structural side of the last named gap. The
+  numeric gate surfaced a real, previously-invisible precision issue (both
+  existing MoE loaders quantize `embed_tokens`/`lm_head` to int4, unlike
+  the dense loaders' F32 treatment -- ~29% rel-L2 on an isolated embedding
+  row) and fixed it two ways: F32 embed/lm_head (dense-loader parity) plus
+  a new additive per-tensor `bits` field on `MoeAFTensor` enabling an int8
+  hybrid-precision path for attention/dense/shared/routed-expert weights
+  (zero behavior change to GGUF-MoE/AF-blob, which stay int4 by default).
+  Result: argmax 8/8, router agreement perfect, full-logits rel-L2
+  0.0026-0.0115 (30-100x tighter than pre-fix) -- one position marginally
+  misses the borrowed 1e-2 hard threshold, root-caused to a genuine
+  near-tie router flip at layer 11, an inherent property of discrete
+  top-k MoE routing under finite precision, not a defect. Steps 4-7
+  (Qwen3-30B-A3B, OLMoE, final writeup) remain. Full writeup: `RESULTS.md`
+  "MoE-format safetensors -- DeepSeek-V2-Lite Steps 1-3".
 Full writeup: `RESULTS.md`'s entries following "Phase 4 sub-part 4".
 
 ### Phase 5 — Generalized export pipeline (Path B) + the bl=32 experiment (~2 weeks)

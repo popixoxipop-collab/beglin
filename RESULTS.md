@@ -2308,3 +2308,171 @@ revisited):
 Commits: `0fa1d7d` (`feat(hf-config): add nested-object parsing + entry
 enumeration API`), `8142b4d` (`feat(safetensors): rope_scaling (NTK-by-parts)
 + multi-shard support`).
+
+## MoE-format safetensors -- DeepSeek-V2-Lite Steps 1-3 (arch-config,
+## registration, numeric gate) (2026-08-28/29)
+
+**Problem.** The one remaining named gap from the safetensors round above:
+real HF MoE checkpoints store one *separate* 2-D tensor per expert
+(`model.layers.{L}.mlp.experts.{E}.{gate,up,down}_proj.weight`),
+structurally different from GGUF's single stacked 3-D tensor that
+`gguf_register_moe_q4g64_as()` already handles -- a new per-expert
+registration-loop design, deferred until multi-shard (a hard prerequisite,
+every real MoE safetensors target is sharded) landed. Scope this round:
+Steps 1-3 of the 7-step plan (`~/.claude/plans/serene-finding-ullman.md`)
+against the first of three named targets, `deepseek-ai/DeepSeek-V2-Lite`
+(31.4GB, 4 shards, MLA attention, 2 shared experts, dense layer 0).
+
+**Design -- Steps 1-2 (arch-config reader + registration, structural).**
+- `load_moe_safetensors_arch()`, gated by `SUPPORTED_ARCH_MOE_SAFETENSORS[]
+  = {"deepseek_v2","qwen3_moe","olmoe"}`, mirrors `run_gguf_moe_verify_mode()`'s
+  config-population block but reads `hf_config_get_i64/f64/bool/str()`
+  instead of GGUF KV keys. Per-architecture field-mapping branches handle
+  real, live-confirmed divergences across the three targets (routed-expert
+  count key `n_routed_experts` vs `num_experts`; expert FFN width
+  `moe_intermediate_size` vs OLMoE's plain `intermediate_size` -- OLMoE's
+  config.json has no `moe_intermediate_size` key at all). Scope-guard
+  FATALs added for fields this engine's routing math doesn't implement
+  (`n_group>1`, `topk_group>1`, non-softmax `scoring_func`, non-1.0
+  `routed_scaling_factor`, non-null `q_lora_rank`) -- DeepSeek-V2-Lite's
+  real values happen to make every one a no-op today, but a future
+  checkpoint with real values here would otherwise silently mis-route.
+- Three new registration functions (`st_register_moe_experts_q4g64_as()`,
+  `st_register_moe_dense_af_q4g64_as()`, `st_register_moe_f32_as()`) as
+  direct structural mirrors of `gguf_register_moe_q4g64_as()`/
+  `gguf_register_moe_f32_as()`: one malloc'd buffer sized for all E
+  experts, one expert's dequant scratch at a time (never all E
+  simultaneously -- for the 128-expert Qwen3-30B-A3B target that's the
+  difference between a few MB and hundreds of MB per tensor), reusing the
+  already-generic `gguf_quantize_q4g64_error_feedback()`/
+  `gguf_quantize_q8g64()` transcode functions unmodified. Six small
+  `MoeStRole`/`MoeStExpertRole` tables (common/MLA-attn/GQA-attn/dense/
+  shared/expert roles) drive the per-layer registration loop in
+  `run_moe_safetensors_verify_mode()`. Zero changes to `MoeAFTensor`,
+  `moe_find_af`, `moe_resolve_layer_tensors`, `moe_forward_token`, or any
+  existing loader's code path at this stage -- confirmed via byte-identical
+  regression on all 6 existing loader paths.
+- Registered tensor count matched the hand-derived prediction exactly:
+  269 AF + 108 F32 for DeepSeek-V2-Lite.
+
+**Design -- Step 3 (numeric gate; the actual content of this round).**
+Wired the teacher-forced single-sequence forward pass (same fixed 8-token
+prompt `{100000,549,4345,280,8204,317,245,1234}` established in MoE-3a),
+built a real MLX bf16-forced-to-fp32 reference loaded directly from the raw
+HF checkpoint (`moe_st_reference_capture.py`, not a pre-quantized MLX
+conversion -- a stricter reference than MoE-2b's own methodology used), and
+ran `compare_moe_st.py` (argmax agreement + full-logits rel-L2 + per-layer
+router expert-set agreement, mirroring `compare_moe2b.py`'s protocol).
+
+**First result: a severe, unexpected divergence** -- argmax mismatched at
+6/8 positions, full-logits rel-L2 in the 0.076-0.35 range, nowhere close to
+passing. Root-caused via the investigation-protocol discipline (competing
+hypotheses in order, not jumping to the first plausible fix):
+1. **New-loader bug?** Ruled out -- the already-shipped, already-gated
+   GGUF-MoE loader shows a similar divergence pattern when probed the same
+   way, meaning the bug (if any) predates this round's new code.
+2. **Reference-script bug?** Ruled out via a line-by-line audit of the
+   real MLX `deepseek_v2.py` source against every formula/config field the
+   reference-capture script uses -- no discrepancy found.
+3. **Genuine quantization-precision limit -- confirmed.** Both existing MoE
+   loaders (GGUF-MoE and the AF-blob loader) have always quantized
+   `embed_tokens`/`lm_head` to int4 via `gguf_register_moe_q4g64_as()`,
+   unlike the dense loaders (GGUF and safetensors), which have always kept
+   these two tensors in F32. A direct isolated comparison of one real
+   2048-dim embedding row showed **~29% rel-L2** under q4g64 int4 RTN
+   quantization alone -- a much larger error than typical for projection/
+   expert matrices, plausibly because embedding rows lack the same
+   per-64-group numeric redundancy ordinary weight matrices have. This gap
+   was invisible in the earlier MoE-2b round because that round's reference
+   was itself a pre-quantized 4-bit MLX model, not a true fp32 reference --
+   both sides carried similar quantization noise that happened to partly
+   cancel, masking the real cost until this round's stricter methodology
+   exposed it.
+
+**Fix 1 -- F32 embed_tokens/lm_head.** Brought the new safetensors-MoE
+loader in line with the dense-loader precedent for these two tensors only
+(`moe_forward_token()` signature extended additively with two trailing
+optional `MoeF32Tensor*` params, defaulting `NULL` at all 6 pre-existing
+call sites -- confirmed byte-identical regression on GGUF-MoE and AF-blob).
+Real, but insufficient: argmax improved but full-logits rel-L2 stayed above
+the 1e-2 hard threshold -- attention/FFN's own int4 noise was still too
+large once the embedding-level noise floor dropped.
+
+**Fix 2 -- int8 hybrid-precision path for attention/FFN.** Added a `bits`
+field to `MoeAFTensor` (last field, defaults to 0/4-bit via `g_moe_af`'s
+`malloc`->`calloc` switch at all 3 sites -- additive, zero risk to existing
+loaders since nothing else ever sets a non-4 value), parallel `bits==8`
+addressing branches in `moe_decode_af()`/`moe_matvec_af_row()` (byte-per-
+element, signed int8 codes, no offset -- confirmed against
+`gguf_quantize_q8g64()`'s real source), and `_q8g64_as` siblings of the
+q4g64 registration functions. Switched 4 registration call sites
+(attention, dense-FFN, shared-experts, routed-experts) from `_q4g64_as` to
+`_q8g64_as`. `moe_matvec_af_row_vdsp()` (the opt-in `QWEN_MOE_SCALAR_VDSP=1`
+throughput path, unreachable by this gate) and the SME2 hot path
+(`moe_sme2_ensure_ready()`, confirmed via `moe_forward_token()` read-through
+not to be reached at all here) were correctly left untouched.
+
+**Result: near-perfect gate.** Argmax **8/8 MATCH** (including positions 0
+and 6, which never matched under any prior int4-based attempt). Router
+expert-set agreement **PERFECT** (0 hard mismatches across 208
+position x layer checks; 10 benign near-tie flips, correctly classified
+PASS). Full-logits rel-L2 range **0.0026-0.0115**, a 30-100x improvement.
+Only **position 4** (rel_l2=1.1474e-2) marginally exceeds the borrowed
+1e-2 `HARD_THRESHOLD` (by ~15%), so `compare_moe_st.py`'s strict boolean
+verdict reads `FINAL GATE: FAIL` despite every other metric being
+essentially perfect.
+
+**Position 4, fully root-caused (not left as an unexplained miss).** A
+layer-by-layer hidden-state rel-L2 sweep (`moe_st_layerdump_ref_pos.py`,
+teacher-forced with a real KV cache through position 4) found: layers 0-10
+sit in a tight ~0.4-0.85% baseline (ordinary quantization noise); a sharp
+6.4x jump occurs exactly at **layer 11** (0.64%->4.08%); thereafter
+relative divergence gradually *decreases* through layer 26 (down to ~1.1%)
+even as the *absolute* max-abs-diff keeps growing (0.098->1.31) --
+consistent with the residual stream's own growing norm diluting an
+early-injected perturbation's relative weight while its absolute magnitude
+persists. Cross-referencing the routing log at layer 11 found the cause: a
+genuine **near-tie router flip** (6th/last top-k slot -- ref selects expert
+52, score 0.035782; the engine selects expert 13, score 0.035634; gap
+1.48e-4), with the other 5/6 selected experts matching exactly. The
+insight: a near-tie in *router score* does not imply a near-tie in
+*expert output* -- two arbitrary experts are independently-trained weight
+matrices that can produce substantially different FFN transforms even at
+near-equal gating affinity. This is an inherent property of discrete
+top-k MoE routing under any finite quantization precision, not a bug --
+and the borrowed 1e-2 threshold (carried over from MoE-2b's own looser,
+pre-quantized-reference methodology) doesn't account for this failure mode.
+
+**Verification.**
+- Gate-A (clean build) / Gate-B (0 new warnings beyond the 5 pre-existing
+  `cblas_sgemv` deprecations) / Gate-C (0 SVE/SME/ADDVL mnemonics) all
+  clean at every edit cycle.
+- Full 6-path regression battery (GGUF dense, GGUF-MoE, int4 AF-blob
+  dense, AF-blob-MoE, safetensors dense single-file, safetensors dense
+  multi-shard) byte-identical throughout -- including a direct AF-blob-MoE
+  re-run confirming the `moe_forward_token()` signature extension and the
+  `bits`-field/`calloc` change have zero effect on existing loaders.
+- Registration count shift with F32 embed/lm_head confirmed exact:
+  267 AF + 110 F32 (was 269/108 -- embed_tokens and lm_head moved from the
+  AF count to the F32 count, -2/+2 as expected).
+
+**Explicitly deferred, re-confirmed with evidence:**
+- Steps 4-7 of the plan (Qwen3-30B-A3B structural + numeric gate, OLMoE
+  structural + numeric gate) -- unstarted, next round.
+- `QWEN_MOE_BATCH`/`QWEN_MOE_CBATCH` support for this loader -- deferred
+  per the original plan (signature mismatch with the existing batch/cbatch
+  entry points; the single-sequence teacher-forced path is sufficient for
+  this gate).
+- **Selective/hybrid precision by tensor role, not blanket int8.** The new
+  per-tensor `bits` field already makes this structurally trivial (each
+  `MoeAFTensor` independently carries its own bit-width -- choosing a
+  different registration function per role is the entire mechanism). Not
+  attempted this round since blanket int8 already closed the gate to
+  near-perfection; a follow-up could revert the numerically-dominant
+  routed-expert weights specifically back to int4 (64 experts x 3
+  projections x 26 layers dwarfs attention/dense/shared's parameter count)
+  while keeping attention/dense/shared at int8, to check whether a
+  cheaper-memory hybrid still passes as strongly.
+
+Commits: `7b2cd36` (`feat(moe-safetensors): int8 hybrid precision,
+DeepSeek-V2-Lite gate`).
