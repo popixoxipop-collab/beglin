@@ -82,4 +82,28 @@ const void *safetensors_tensor_data(const SafetensorsFile *f, const SafetensorsI
 // ST_TYPE_UNKNOWN or an out-of-range value.
 const char *safetensors_type_name(SafetensorsType t);
 
+// Shard-aware wrapper on top of the (unchanged) SafetensorsFile above -- transparently supports
+// both a single .safetensors file and a multi-shard HuggingFace checkpoint split across several
+// .safetensors files plus a *.safetensors.index.json manifest. Detected purely by `path`'s
+// suffix: ".index.json" opens every distinct shard the manifest's "weight_map" references
+// (eagerly, at open time -- fails fast on a missing/truncated shard rather than deferring the
+// error to first use); any other path wraps a single safetensors_open() with zero behavioral
+// difference from calling safetensors_open()/safetensors_find_tensor()/safetensors_tensor_data()
+// directly (this is how every pre-multi-shard call site keeps working unmodified).
+typedef struct SafetensorsMulti SafetensorsMulti;   // opaque
+
+SafetensorsMulti *safetensors_open_multi(const char *path);
+void safetensors_multi_close(SafetensorsMulti *f);
+
+// Resolves `name` to the specific shard file that holds it (via the index's "weight_map" in
+// multi-shard mode, or the sole wrapped file otherwise) and returns that tensor's info, writing
+// the resolved shard into *out_file -- pass that same pointer to safetensors_tensor_data() to
+// read the tensor's bytes. Returns NULL (and leaves *out_file untouched) if `name` isn't in the
+// weight_map at all. FATALs (not NULL) if the weight_map claims `name` lives in a given shard but
+// that shard's own header disagrees -- a real integrity mismatch between the manifest and its
+// shards, not a "tensor doesn't exist" case. `out_file` may be NULL if the caller only needs an
+// existence check.
+const SafetensorsInfo *safetensors_multi_find_tensor(const SafetensorsMulti *f, const char *name,
+                                                       SafetensorsFile **out_file);
+
 #endif // SAFETENSORS_LOAD_H

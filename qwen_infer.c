@@ -6670,7 +6670,18 @@ static void load_gguf_weights_from_cache(const char *cache_path) {
 // support well after single-file support was solid.
 // ============================================================================
 
-static SafetensorsFile *g_st = NULL;
+// SafetensorsMulti (not SafetensorsFile directly) -- transparently supports both a single
+// .safetensors file and a multi-shard *.safetensors.index.json checkpoint (see
+// safetensors_load.h's own header comment for the full contract). Every lookup goes through
+// safetensors_multi_find_tensor(), which resolves the specific shard a tensor lives in and hands
+// that shard's SafetensorsFile* back via out_file -- pass that same pointer to
+// safetensors_tensor_data(), never g_st itself (that call takes a SafetensorsFile*, not a
+// SafetensorsMulti*).
+static SafetensorsMulti *g_st = NULL;
+// Populated by load_safetensors_arch() (below), applied by main()'s post-init_rope_scale()
+// override block -- see that function's rope_scaling comment for why this is a separate global
+// from g_rope_cfg rather than reusing it.
+static RopeScaleCfg g_rope_cfg_st;
 
 // Mirrors load_gguf_arch()'s structure: populates every g_cfg.* field, but from a sibling
 // config.json (via hf_config.h) instead of GGUF KV metadata. g_st must already be open (see
@@ -6693,13 +6704,59 @@ static void load_safetensors_arch(const char *config_path) {
     }
     g_rope_norm = !strcmp(model_type, "llama") ? 1 : 0;
 
-    // NTK/YaRN rope_scaling is not implemented for this loader -- detect and FATAL rather than
-    // silently serving unscaled RoPE (same "silently-wrong is worse than a crash" doctrine
-    // load_gguf_arch()'s rope_freqs.weight handling exists to enforce on the GGUF side; this
-    // loader doesn't implement the safetensors-side equivalent yet).
-    if (hf_config_has_key(c, "rope_scaling")) {
-        fprintf(stderr, "FATAL: %s has a 'rope_scaling' key -- NTK/YaRN scaling is not implemented "
-                        "for the safetensors loader yet; this checkpoint needs it, not supported\n", config_path);
+    // NTK-by-parts rope_scaling ("rope_scaling": {"rope_type": "llama3", ...} in the HF config,
+    // e.g. Llama-3.1's config.json). Populates a SEPARATE g_rope_cfg_st (not g_rope_cfg) because
+    // load_rope_scale_cfg() runs unconditionally right after this function returns (see main())
+    // and would silently reset g_rope_cfg to disabled=0 -- no rope_scaling.txt sidecar exists for
+    // a safetensors run. main()'s post-init_rope_scale() override block applies g_rope_cfg_st,
+    // mirroring the GGUF path's own g_rope_freqs_gguf override exactly (see that block's comment).
+    // "rope_scaling": null and an absent key are the SAME real HF convention (confirmed live on
+    // NousResearch/Llama-2-7b-hf: null) and both mean "no scaling", not an error -- only an
+    // OBJECT value is scaling config; anything else (a string/number/bool/array) is a real error.
+    g_rope_cfg_st.enabled = 0;
+    HfValType rs_type = hf_config_key_type(c, "rope_scaling");
+    if (rs_type == HF_TYPE_OBJECT) {
+        const HfConfig *rs = hf_config_get_object(c, "rope_scaling");
+        const char *rope_type_str;
+        if (!hf_config_get_str(rs, "rope_type", &rope_type_str)) {
+            fprintf(stderr, "FATAL: %s rope_scaling missing 'rope_type'\n", config_path); exit(1);
+        }
+        if (strcmp(rope_type_str, "llama3")) {
+            fprintf(stderr, "FATAL: %s rope_scaling.rope_type='%s' -- only 'llama3' (NTK-by-parts) "
+                            "is implemented for the safetensors loader\n", config_path, rope_type_str);
+            exit(1);
+        }
+        double rs_factor, rs_low, rs_high;
+        int64_t rs_omp;
+        if (!hf_config_get_f64(rs, "factor", &rs_factor) ||
+            !hf_config_get_f64(rs, "low_freq_factor", &rs_low) ||
+            !hf_config_get_f64(rs, "high_freq_factor", &rs_high) ||
+            !hf_config_get_i64(rs, "original_max_position_embeddings", &rs_omp)) {
+            fprintf(stderr, "FATAL: %s rope_scaling missing required field(s) (need factor, "
+                            "low_freq_factor, high_freq_factor, original_max_position_embeddings)\n", config_path);
+            exit(1);
+        }
+        if (rs_high == rs_low) {
+            fprintf(stderr, "FATAL: %s rope_scaling has high_freq_factor==low_freq_factor (%.6g) -- "
+                            "the smooth-blend denominator would be zero\n", config_path, rs_low);
+            exit(1);
+        }
+        if (rs_factor <= 0 || rs_omp <= 0) {
+            fprintf(stderr, "FATAL: %s rope_scaling has non-positive factor=%.6g or "
+                            "original_max_position_embeddings=%lld\n", config_path, rs_factor, (long long)rs_omp);
+            exit(1);
+        }
+        g_rope_cfg_st.enabled = 1;
+        g_rope_cfg_st.factor = (float)rs_factor;
+        g_rope_cfg_st.low_freq_factor = (float)rs_low;
+        g_rope_cfg_st.high_freq_factor = (float)rs_high;
+        g_rope_cfg_st.orig_max_pos = (float)rs_omp;
+        fprintf(stderr, "[engine] safetensors rope_scaling: type=llama3 factor=%g low_freq_factor=%g "
+                        "high_freq_factor=%g orig_max_pos=%g\n", g_rope_cfg_st.factor,
+                        g_rope_cfg_st.low_freq_factor, g_rope_cfg_st.high_freq_factor, g_rope_cfg_st.orig_max_pos);
+    } else if (rs_type != HF_TYPE_ABSENT && rs_type != HF_TYPE_NULL) {
+        fprintf(stderr, "FATAL: %s has a 'rope_scaling' key that is neither an object nor null -- "
+                        "not a recognized rope_scaling shape\n", config_path);
         exit(1);
     }
 
@@ -6721,7 +6778,7 @@ static void load_safetensors_arch(const char *config_path) {
     // load_gguf_arch()'s own "the embed tensor's own shape can't disagree with how many rows it
     // actually has" design), cross-checked against config.json's vocab_size when present rather
     // than trusting either source alone.
-    const SafetensorsInfo *embed_t = safetensors_find_tensor(g_st, "model.embed_tokens.weight");
+    const SafetensorsInfo *embed_t = safetensors_multi_find_tensor(g_st, "model.embed_tokens.weight", NULL);
     if (!embed_t) { fprintf(stderr, "FATAL: safetensors model missing model.embed_tokens.weight\n"); exit(1); }
     g_cfg.vocab = (int)embed_t->shape[0];
     if (hf_config_get_i64(c, "vocab_size", &iv) && (int)iv != g_cfg.vocab) {
@@ -6733,13 +6790,13 @@ static void load_safetensors_arch(const char *config_path) {
     // qkv_bias is a presence fact, not a config.json scalar: this checkpoint's own tensor list
     // simply includes self_attn.q_proj.bias etc. when the source architecture has them (true for
     // Qwen2, false for Llama-3) -- mirrors load_gguf_arch()'s identical GGUF-side check.
-    g_cfg.qkv_bias = safetensors_find_tensor(g_st, "model.layers.0.self_attn.q_proj.bias") ? 1 : 0;
+    g_cfg.qkv_bias = safetensors_multi_find_tensor(g_st, "model.layers.0.self_attn.q_proj.bias", NULL) ? 1 : 0;
 
     // o_proj never carries a bias in any architecture this loader supports -- its bias argument
     // is hardcoded NULL at every matvec call site in this file (every "g_role_wt[ROLE_ATTN_O]"
     // call), never consulted. A checkpoint that DOES ship one would silently produce wrong
     // output with no error if this weren't checked, so FATAL rather than silently drop it.
-    if (safetensors_find_tensor(g_st, "model.layers.0.self_attn.o_proj.bias")) {
+    if (safetensors_multi_find_tensor(g_st, "model.layers.0.self_attn.o_proj.bias", NULL)) {
         fprintf(stderr, "FATAL: safetensors model has 'model.layers.0.self_attn.o_proj.bias' -- "
                         "o_proj bias is never consulted anywhere in this engine's forward pass "
                         "(hardcoded NULL at every matvec call site), so silently loading it would "
@@ -6772,7 +6829,8 @@ static void load_safetensors_arch(const char *config_path) {
 // safetensors tensor's own name IS the engine registration name here (see the header comment
 // above load_safetensors_weights() for why no name-mapping table is needed, unlike GGUF).
 static WT *st_register_f32_as(const char *name) {
-    const SafetensorsInfo *t = safetensors_find_tensor(g_st, name);
+    SafetensorsFile *shard = NULL;
+    const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st, name, &shard);
     if (!t) { fprintf(stderr, "FATAL: safetensors model missing tensor '%s'\n", name); exit(1); }
     if (!safetensors_dequant_supported(t->dtype)) {
         fprintf(stderr, "FATAL: safetensors tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
@@ -6795,7 +6853,7 @@ static WT *st_register_f32_as(const char *name) {
     float *buf = malloc(sizeof(float) * (size_t)t->n_elements);
     if (!buf) { fprintf(stderr, "FATAL: safetensors dequant alloc failed for '%s' (%llu elements)\n",
                         name, (unsigned long long)t->n_elements); exit(1); }
-    safetensors_dequant_row(t->dtype, safetensors_tensor_data(g_st, t), buf, t->n_elements);
+    safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), buf, t->n_elements);
     w->f32 = buf;
     return w;
 }
@@ -6806,7 +6864,8 @@ static WT *st_register_f32_as(const char *name) {
 // K_F32 when in%64!=0, same hard SME2 group-size requirement load_gguf_weights()'s equivalent
 // already enforces.
 static WT *st_register_q4g64_as(const char *name) {
-    const SafetensorsInfo *t = safetensors_find_tensor(g_st, name);
+    SafetensorsFile *shard = NULL;
+    const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st, name, &shard);
     if (!t) { fprintf(stderr, "FATAL: safetensors model missing tensor '%s'\n", name); exit(1); }
     int out = (int)t->shape[0], in = (int)t->shape[1];
     if (in % 64 != 0) {
@@ -6821,7 +6880,7 @@ static WT *st_register_q4g64_as(const char *name) {
     if (g_nwt >= 512) { fprintf(stderr, "FATAL: >512 tensors loading safetensors model\n"); exit(1); }
     float *deq = malloc(sizeof(float) * (size_t)t->n_elements);
     if (!deq) { fprintf(stderr, "FATAL: safetensors dequant alloc failed for '%s'\n", name); exit(1); }
-    safetensors_dequant_row(t->dtype, safetensors_tensor_data(g_st, t), deq, t->n_elements);
+    safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), deq, t->n_elements);
 
     int ng = in / 64;
     uint8_t *packed = malloc((size_t)out * (in / 2));
@@ -6841,7 +6900,8 @@ static WT *st_register_q4g64_as(const char *name) {
 // Symmetric int8 group-64 RTN, reusing gguf_quantize_q8g64() unmodified -- used only for an
 // untied lm_head, matching load_gguf_weights()'s output.weight policy exactly.
 static WT *st_register_q8g64_as(const char *name) {
-    const SafetensorsInfo *t = safetensors_find_tensor(g_st, name);
+    SafetensorsFile *shard = NULL;
+    const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st, name, &shard);
     if (!t) { fprintf(stderr, "FATAL: safetensors model missing tensor '%s'\n", name); exit(1); }
     int out = (int)t->shape[0], in = (int)t->shape[1];
     if (in % 64 != 0) {
@@ -6856,7 +6916,7 @@ static WT *st_register_q8g64_as(const char *name) {
     if (g_nwt >= 512) { fprintf(stderr, "FATAL: >512 tensors loading safetensors model\n"); exit(1); }
     float *deq = malloc(sizeof(float) * (size_t)t->n_elements);
     if (!deq) { fprintf(stderr, "FATAL: safetensors dequant alloc failed for '%s'\n", name); exit(1); }
-    safetensors_dequant_row(t->dtype, safetensors_tensor_data(g_st, t), deq, t->n_elements);
+    safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), deq, t->n_elements);
 
     int ng = in / 64;
     int8_t *codes = malloc((size_t)out * in);
@@ -6908,7 +6968,7 @@ static void load_safetensors_weights(void) {
     // Qwen2.5-0.5B base checkpoint) -> this engine's existing tied-embedding fallback
     // (wt_opt("lm_head.weight") returning NULL) takes over unchanged, same as every other loader.
     int n_q8 = 0;
-    if (safetensors_find_tensor(g_st, "lm_head.weight")) { st_register_q8g64_as("lm_head.weight"); n_q8++; }
+    if (safetensors_multi_find_tensor(g_st, "lm_head.weight", NULL)) { st_register_q8g64_as("lm_head.weight"); n_q8++; }
     fprintf(stderr, "[engine] safetensors: registered %d tensors (%d K_Q4G64, %d K_Q8G64, %d K_F32)\n",
             g_nwt, n_q4, n_q8, n_f32);
 }
@@ -6980,8 +7040,10 @@ int main(int argc, char **argv) {
     else if (st_path && st_path[0]) {
         // g_st must be open before load_safetensors_arch() runs -- it derives VOCAB from the
         // embedding tensor's real shape, not a config.json scalar alone (see that function's
-        // own comment).
-        g_st = safetensors_open(st_path);
+        // own comment). safetensors_open_multi() transparently handles both a single
+        // .safetensors file and a *.safetensors.index.json multi-shard manifest (see
+        // safetensors_load.h) -- st_path itself decides which, no separate flag needed.
+        g_st = safetensors_open_multi(st_path);
         load_safetensors_arch(st_config_path);
     }
     else load_arch_cfg(base);      // D1/D2: must run before anything below reads g_cfg
@@ -6994,6 +7056,19 @@ int main(int argc, char **argv) {
     // (g_rope_freqs_gguf stays NULL) for every model without a rope_freqs.weight tensor.
     if (g_rope_freqs_gguf) {
         for (int i = 0; i < g_cfg.hd/2; i++) g_rope_scale[i] = 1.0f / g_rope_freqs_gguf[i];
+    }
+    // safetensors-sourced rope_scaling override -- same reasoning and structure as the
+    // g_rope_freqs_gguf block directly above (init_rope_scale()'s own output, driven only by
+    // g_rope_cfg, is necessarily disabled here since no rope_scaling.txt sidecar exists for a
+    // safetensors run). g_rope_cfg_st was populated by load_safetensors_arch() above, or left
+    // enabled=0 (no-op) for every model without a real rope_scaling object. Calls the same
+    // already-verified rope_llama3_scale() init_rope_scale() itself uses -- no new formula code.
+    if (g_rope_cfg_st.enabled) {
+        for (int i = 0; i < g_cfg.hd/2; i++)
+            g_rope_scale[i] = rope_llama3_scale(g_cfg.theta, g_cfg.hd, g_rope_cfg_st.factor,
+                g_rope_cfg_st.low_freq_factor, g_rope_cfg_st.high_freq_factor, g_rope_cfg_st.orig_max_pos, i);
+        fprintf(stderr, "[engine] safetensors rope_scaling applied: g_rope_scale[0]=%.6f g_rope_scale[%d]=%.6f\n",
+            g_rope_scale[0], g_cfg.hd/2 - 1, g_rope_scale[g_cfg.hd/2 - 1]);
     }
     // D2 bug fix 2: KV4_NB = g_cfg.maxseq/KV4_W silently floored with no divisibility guard --
     // exact only by luck for MAXSEQ=2048 (2048/64=32 exactly). A future MAXSEQ not a multiple

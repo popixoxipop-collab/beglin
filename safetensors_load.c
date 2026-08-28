@@ -6,6 +6,7 @@
 // malformed header is a FATAL with a specific reason, matching gguf_load.c's own doctrine.
 
 #include "safetensors_load.h"
+#include "hf_config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -302,4 +303,150 @@ const SafetensorsInfo *safetensors_find_tensor(const SafetensorsFile *f, const c
 
 const void *safetensors_tensor_data(const SafetensorsFile *f, const SafetensorsInfo *t) {
     return f->base + t->data_offset;
+}
+
+// ============================================================================
+// SafetensorsMulti -- shard-aware wrapper (see safetensors_load.h for the full contract). Built
+// entirely on top of the SafetensorsFile API above, unmodified: opens each distinct shard via the
+// same safetensors_open(), routes safetensors_tensor_data() calls straight through. The only new
+// logic here is resolving a tensor name to its shard via a *.index.json manifest's "weight_map",
+// reusing hf_config.h's flat-object parser + Step 1's hf_config_get_object()/hf_config_n_entries()
+// (an index.json's {"metadata":{...},"weight_map":{...}} is exactly the shape that parser reads).
+// ============================================================================
+
+struct SafetensorsMulti {
+    SafetensorsFile **files;
+    int n_files;
+    // Populated only in multi-shard mode (parsed from a *.index.json manifest). A single-file
+    // wrap (n_files==1, from a bare .safetensors path) leaves this NULL/0 and routes every lookup
+    // straight to files[0] via safetensors_find_tensor() -- zero behavioral difference from
+    // calling the plain SafetensorsFile API directly, matching every pre-multi-shard call site.
+    char **map_names;    // malloc'd array of malloc'd NUL-terminated tensor names, n_map entries
+    int *map_shard;      // parallel array: files[] index each name resolves to
+    int n_map;
+};
+
+static int st_has_suffix(const char *s, const char *suf) {
+    size_t ls = strlen(s), lf = strlen(suf);
+    return ls >= lf && !strcmp(s + ls - lf, suf);
+}
+
+// index.json is untrusted external input (same hardening doctrine this project applies to every
+// file-derived metadata path) -- a real HuggingFace-generated manifest never legitimately needs
+// '/' or ".." in a shard basename, so reject before path-concatenating rather than trust it.
+static void st_check_safe_shard_basename(const char *path, const char *tname, const char *basename) {
+    if (strchr(basename, '/') || strstr(basename, "..")) {
+        fprintf(stderr, "FATAL: safetensors_load: %s: weight_map['%s']='%s' is not a safe shard "
+                        "basename (contains '/' or '..')\n", path, tname, basename);
+        exit(1);
+    }
+}
+
+SafetensorsMulti *safetensors_open_multi(const char *path) {
+    SafetensorsMulti *m = malloc(sizeof *m);
+    m->map_names = NULL; m->map_shard = NULL; m->n_map = 0;
+
+    if (!st_has_suffix(path, ".index.json")) {
+        m->files = malloc(sizeof(SafetensorsFile *));
+        m->files[0] = safetensors_open(path);
+        m->n_files = 1;
+        return m;
+    }
+
+    HfConfig *idx = hf_config_open(path);
+    const HfConfig *wm = hf_config_get_object(idx, "weight_map");
+    if (!wm) { fprintf(stderr, "FATAL: safetensors_load: %s missing 'weight_map'\n", path); exit(1); }
+    size_t n_entries = hf_config_n_entries(wm);
+    if (n_entries == 0) { fprintf(stderr, "FATAL: safetensors_load: %s has an empty 'weight_map'\n", path); exit(1); }
+
+    char dir[900];
+    const char *slash = strrchr(path, '/');
+    if (slash) {
+        size_t dl = (size_t)(slash - path);
+        if (dl >= sizeof dir) dl = sizeof dir - 1;
+        memcpy(dir, path, dl); dir[dl] = '\0';
+    } else { dir[0] = '.'; dir[1] = '\0'; }
+
+    m->map_names = malloc(n_entries * sizeof(char *));
+    m->map_shard = malloc(n_entries * sizeof(int));
+    m->n_map = 0;
+
+    // Distinct shard basenames -> files[] index, deduped by linear search over shard_names --
+    // real checkpoints have a handful of shards (e.g. 4-64), trivially cheap next to the
+    // mmap+header-parse cost of actually opening each one.
+    size_t shard_cap = 8;
+    char **shard_names = malloc(shard_cap * sizeof(char *));
+    m->files = malloc(shard_cap * sizeof(SafetensorsFile *));
+    m->n_files = 0;
+
+    for (size_t i = 0; i < n_entries; i++) {
+        const char *tname = hf_config_entry_key(wm, i);
+        const char *basename;
+        if (!hf_config_get_str(wm, tname, &basename)) {
+            fprintf(stderr, "FATAL: safetensors_load: %s: weight_map['%s'] is not a string\n", path, tname);
+            exit(1);
+        }
+        st_check_safe_shard_basename(path, tname, basename);
+
+        int shard_idx = -1;
+        for (int s = 0; s < m->n_files; s++) if (!strcmp(shard_names[s], basename)) { shard_idx = s; break; }
+        if (shard_idx < 0) {
+            if ((size_t)m->n_files >= shard_cap) {
+                shard_cap *= 2;
+                shard_names = realloc(shard_names, shard_cap * sizeof(char *));
+                m->files = realloc(m->files, shard_cap * sizeof(SafetensorsFile *));
+            }
+            char shard_path[1024];
+            snprintf(shard_path, sizeof shard_path, "%s/%s", dir, basename);
+            shard_names[m->n_files] = strdup(basename);
+            m->files[m->n_files] = safetensors_open(shard_path);   // eager, fail-fast
+            shard_idx = m->n_files;
+            m->n_files++;
+        }
+
+        m->map_names[m->n_map] = strdup(tname);
+        m->map_shard[m->n_map] = shard_idx;
+        m->n_map++;
+    }
+
+    for (int s = 0; s < m->n_files; s++) free(shard_names[s]);
+    free(shard_names);
+    hf_config_close(idx);
+
+    fprintf(stderr, "[engine] safetensors_load: %s: %d tensors across %d shards\n", path, m->n_map, m->n_files);
+    return m;
+}
+
+void safetensors_multi_close(SafetensorsMulti *f) {
+    if (!f) return;
+    for (int i = 0; i < f->n_files; i++) safetensors_close(f->files[i]);
+    free(f->files);
+    for (int i = 0; i < f->n_map; i++) free(f->map_names[i]);
+    free(f->map_names);
+    free(f->map_shard);
+    free(f);
+}
+
+const SafetensorsInfo *safetensors_multi_find_tensor(const SafetensorsMulti *f, const char *name,
+                                                       SafetensorsFile **out_file) {
+    if (f->n_map == 0) {
+        // Single-file wrap -- no weight_map, route straight to the one wrapped file.
+        const SafetensorsInfo *t = safetensors_find_tensor(f->files[0], name);
+        if (t && out_file) *out_file = f->files[0];
+        return t;
+    }
+    for (int i = 0; i < f->n_map; i++) {
+        if (!strcmp(f->map_names[i], name)) {
+            SafetensorsFile *shard = f->files[f->map_shard[i]];
+            const SafetensorsInfo *t = safetensors_find_tensor(shard, name);
+            if (!t) {
+                fprintf(stderr, "FATAL: safetensors_load: weight_map claims '%s' is in a shard "
+                                "whose own header does not actually contain it (manifest/shard mismatch)\n", name);
+                exit(1);
+            }
+            if (out_file) *out_file = shard;
+            return t;
+        }
+    }
+    return NULL;
 }
