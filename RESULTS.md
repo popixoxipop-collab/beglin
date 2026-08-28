@@ -2129,3 +2129,182 @@ gap, not a new problem).
 Commits: `0ad0128` (`feat(safetensors): config.json parser + shared dequant
 helper`), `5c6a9db` (`feat(safetensors): wire dense-model loading into
 qwen_infer.c`).
+
+## General-purpose loader -- safetensors rope_scaling + multi-shard (2026-08-28)
+
+**Problem.** The safetensors dense loader (previous increment, this same
+day) explicitly deferred `rope_scaling` (NTK-by-parts) support and
+multi-shard `*.safetensors.index.json` merging (FATAL/single-file-only
+respectively). Both are real gaps: any Llama-3.1-class checkpoint ships
+`rope_scaling` in its `config.json`, and any model too large for one
+`.safetensors` file (essentially everything above ~7-10B) ships as a
+sharded checkpoint with an index manifest. A third deferred item from that
+same round (an on-disk transcode cache) and a fourth (MoE-format
+safetensors) were re-evaluated and re-deferred with evidence -- see
+"Explicitly deferred" below.
+
+**Design.**
+- **rope_scaling.** `hf_config.h`/`.c` gained a `HfValType` enum,
+  `hf_config_key_type()`, and `hf_config_get_object()` (depth-bounded
+  recursive nested-object parsing -- materializes depth<=1 objects,
+  correctly still *types* anything deeper without materializing it) plus an
+  enumeration pair (`hf_config_n_entries()`/`hf_config_entry_key()`) needed
+  by the multi-shard work below. `load_safetensors_arch()` now
+  type-dispatches on `rope_scaling`: an `{...}` object requires
+  `rope_type=="llama3"` and all 4 numeric fields (validated with the same
+  guards `load_rope_scale_cfg()`'s custom-sidecar reader already has --
+  `high_freq_factor==low_freq_factor` and non-positive `factor`/
+  `orig_max_pos` both FATAL), populating a **new, separate** static
+  `g_rope_cfg_st` rather than the pre-existing `g_rope_cfg` -- a real
+  ordering hazard found by re-reading `main()`: `load_rope_scale_cfg(base)`
+  runs unconditionally right after arch-loading and unconditionally
+  disables `g_rope_cfg` when no sidecar file exists (true for every
+  safetensors run), so writing directly into it would get silently
+  clobbered. `NULL` or absent is a no-op (both mean "no scaling" -- the
+  `null` case confirmed live on a real `NousResearch/Llama-2-7b-hf`
+  `config.json`); anything else FATALs. `main()` applies `g_rope_cfg_st`
+  in a new override block placed right after the existing
+  `g_rope_freqs_gguf` (GGUF `rope_freqs.weight`) override, calling the
+  same already-3.2e-7-verified `rope_llama3_scale()` `init_rope_scale()`
+  itself uses -- no new formula code, only new wiring.
+- **Multi-shard.** A new `SafetensorsMulti` opaque type in
+  `safetensors_load.h`/`.c`, built entirely on top of the unmodified
+  `SafetensorsFile` API. `safetensors_open_multi()` detects mode by
+  filename suffix (`.index.json` -> multi-shard; anything else -> a
+  single-file wrap with zero behavioral difference from calling
+  `safetensors_open()` directly). Multi-shard open parses the manifest via
+  `hf_config_open()` + `hf_config_get_object(idx, "weight_map")` (the same
+  primitives `rope_scaling` needed -- no third hand-rolled JSON scanner),
+  enumerates every entry, opens each distinct shard basename **eagerly**
+  (fail-fast on a missing/truncated shard), and rejects any basename
+  containing `/` or `..` before path-concatenating (the manifest is
+  untrusted external input). `safetensors_multi_find_tensor()` resolves a
+  name via the manifest then calls the existing `safetensors_find_tensor()`
+  on that specific shard -- which also catches a real integrity class this
+  design deliberately doesn't paper over: the manifest claiming a tensor
+  lives in a shard whose own header doesn't actually contain it, FATALing
+  with a named mismatch rather than silently trusting either source alone.
+  `qwen_infer.c`'s `g_st` global changed type from `SafetensorsFile *` to
+  `SafetensorsMulti *`; all 10 call sites (7x `safetensors_find_tensor` ->
+  `safetensors_multi_find_tensor`, 3x `safetensors_tensor_data(g_st,...)`
+  -> `safetensors_tensor_data(shard,...)`) updated mechanically, `main()`'s
+  `safetensors_open()` -> `safetensors_open_multi()`.
+- **Decision: real in-engine multi-shard support, not GGUF's
+  external-merge precedent.** GGUF's own multi-file case
+  (`Qwen2.5-7B`, Phase 3-4) was solved entirely by `llama-gguf-split
+  --merge`, a pre-existing, zero-maintenance, first-party llama.cpp tool --
+  no code was written for it. Safetensors has no equivalent; an "external
+  merge" step here would mean writing and maintaining a new Python script
+  anyway, with three real costs the in-engine wrapper avoids: 2x peak disk
+  (~32GB for the 16GB fixture below), a throwaway artifact to regenerate on
+  every model update, and zero progress toward the multi-shard prerequisite
+  a future MoE-safetensors round would need regardless. Confirmed small
+  before building: exactly 10 call sites touch `g_st`, and the core
+  `SafetensorsFile`/`safetensors_find_tensor()`/`safetensors_tensor_data()`
+  needed zero changes (protects `safetensors_verify.c`, which still uses
+  `SafetensorsFile*` directly).
+
+**Verification.**
+- Structural: Gate-A (clean build) / Gate-B (0 new warnings beyond the 5
+  pre-existing `cblas_sgemv` deprecations) / Gate-C (0 SVE/SME/ADDVL
+  mnemonics) all clean on bob, at every step (hf_config nested-object
+  capability, rope_scaling wiring, `SafetensorsMulti`, the `g_st` type
+  migration).
+- `hf_config_get_object()`/`hf_config_key_type()` oracle-checked (extended
+  `hf_config_verify.c`) against 3 real `config.json` files, each exercising
+  a different `rope_scaling` shape: `Qwen2.5-0.5B` (absent),
+  `NousResearch/Llama-2-7b-hf` (`null`, fetched live), and the real
+  Llama-3.1-8B config (full object, all 5 fields) -- all matched Python
+  `json.load()` semantics exactly.
+- rope_scaling wiring, isolated from the (already-verified) formula: a
+  synthetic config (`Qwen2.5-0.5B`'s real config.json with a hand-added
+  `rope_scaling` object, `factor=2 low=1 high=4 orig_max_pos=2048`) drove
+  `g_rope_scale[0]=1.000000` and `g_rope_scale[31]=0.500000` -- exactly the
+  hand-derived expected values (`i=0` hits the high-frequency boundary
+  unconditionally-1.0; `i=31` hits the low-frequency boundary
+  unconditionally-`1/factor`). Byte-identical regression confirmed
+  separately on `Qwen2.5-0.5B` proper (no `rope_scaling` key ->
+  `g_rope_cfg_st.enabled` stays 0 -> zero behavior change).
+- `SafetensorsMulti` shard-routing, independently oracle-checked (new
+  `safetensors_multi_verify.c`): a real 2-shard fixture (built with the
+  actual `safetensors` 0.8.0 Python package, not hand-crafted bytes) --
+  5 tensors across 2 shards all resolved with dtype/shape/byte-count
+  matching an independent Python `safetensors.safe_open()` read exactly.
+  Two negative tests also confirmed: a shard basename containing `../..`
+  FATALs before any path is touched; a manifest entry pointing at a shard
+  that doesn't actually contain that tensor FATALs with the named
+  mismatch, not a silent wrong read.
+- Byte-identical regression at every step: `Qwen2.5-0.5B` via the
+  single-file safetensors path (`SafetensorsMulti` wrapping `n_files==1`
+  produces identical output to calling `SafetensorsFile` directly, at
+  every intermediate binary along the way).
+- **The combined real gate**: the real, already-local (zero-download)
+  `Llama-3.1-8B` checkpoint at `macstudio:/Volumes/D50/vdsp/
+  llm_engine_llama31_8b/hf_snapshot/` (4 real shards + index.json, ~16GB,
+  real `rope_scaling.factor=8.0`) -- relayed to bob via a background
+  transfer (macstudio and bob reach each other directly over Tailscale, so
+  the transfer ran shard-to-shard through this session's own SSH access to
+  both, not a double local hop) and checksum-spot-checked identical to the
+  macstudio source before use. This single fixture exercises multi-shard
+  AND rope_scaling together -- neither item alone would even load it.
+  - Startup log matched config.json exactly: `NL=32 NH=32 NKV=8 D=4096
+    HD=128 IM=14336 VOCAB=128256 THETA=500000.0 EPS=1e-05 MAXSEQ=2048
+    QKV_BIAS=0 GROUP=4`, plus `rope_scaling: type=llama3 factor=8
+    low_freq_factor=1 high_freq_factor=4 orig_max_pos=8192` and
+    `g_rope_scale[0]=1.000000 g_rope_scale[63]=0.125000` (`1/8`, the exact
+    expected low-frequency-boundary value for this model's real `hd=128`).
+  - **Tensor split matched the hand-predicted count exactly**: `registered
+    291 tensors (224 K_Q4G64, 1 K_Q8G64, 66 K_F32)` -- 7 projection roles x
+    32 layers = 224; 2 norms x32 + embed + final-norm = 66 (no qkv-bias
+    tensors, `attention_bias:false`); 1 untied `lm_head.weight`
+    (`tie_word_embeddings:false`, `in=4096` a multiple of 64 -> no F32
+    fallback).
+  - **Real numeric gate**: same teacher-forced, shared-context methodology
+    as the dense-loader's own Step 6 (MLX `mlx_lm` 0.31.3 on macstudio,
+    every bf16 leaf param upcast to float32, real `Llama-3.1-8B-Instruct`
+    weights, real prompt "The capital of France is Paris, and the capital
+    of Japan is"). **Result: 7/8 exact match** -- stronger than the
+    dense-loader's own 6/8. The one mismatch (position 5) is a single-token
+    near-tie, not divergent: MLX predicts ` France` (9822), the engine
+    predicts ` Japan` (6457) -- both valid entity completions of the
+    freshly-repeated "The capital of X is" template the model itself just
+    generated, decoded and confirmed via the real tokenizer. The very next
+    position (6, "is") recovers to exact match immediately, confirming the
+    mismatch didn't cascade -- the same "adjacent, immediately-recovering,
+    not divergent" pattern this project's every prior cross-quantization
+    comparison has shown, consistent with ordinary `K_Q4G64` int4
+    quantization noise at a close argmax tie.
+  - Full loader-path regression re-run on this final binary: GGUF
+    (`Qwen2.5-0.5B-Instruct`) and int4 AF-blob (`Qwen1.5B`) both
+    byte-identical against the Step-0 baseline captures (GGUF showed 2
+    log-line differences, both pre-existing/explained -- a `.beglin`
+    on-disk-cache hit from a prior run on the same fixture, and the
+    already-documented `log_gguf_dispatch_tiers()` -> `log_dispatch_tiers()`
+    rename from the prior round -- the computed tensor counts and greedy
+    token sequences were identical in both cases).
+
+**Explicitly deferred, re-confirmed with evidence** (not silently
+revisited):
+- **MoE-format safetensors.** Every real MoE safetensors target is huge and
+  multi-shard-dependent regardless (`DeepSeek-V2-Lite` 31.4GB/4 shards,
+  `Qwen3-30B-A3B` 61GB/16 shards) -- the only small toy model
+  (`hf-internal-testing/Mixtral-tiny`) has randomly-initialized weights,
+  useless for a real numeric gate. Real HF MoE checkpoints also store one
+  *separate* 2-D tensor per expert (confirmed via real `weight_map` data
+  from both models above, 5,291 and 18,867 keys respectively) --
+  structurally different from GGUF's single stacked 3-D tensor, a new
+  per-expert registration-loop design, not a small follow-on.
+- **`.beglin`-style on-disk transcode cache for safetensors.**
+  `gguf_cache_is_valid()`'s signature itself is single-file by construction
+  (`src_gguf_path` as one `const char *`), so a safetensors-side cache
+  needs a real staleness-key redesign (combine N shard stat pairs, or hash
+  the index.json content) that's premature before multi-shard was proven
+  working -- and it's a pure startup-time optimization, not a correctness
+  gap.
+- `g_wt[512]`'s fixed capacity (fine for the 291-tensor Llama-3.1-8B
+  fixture; a much larger model would need this raised -- separate,
+  unrelated debt axis, unchanged by this round).
+
+Commits: `0fa1d7d` (`feat(hf-config): add nested-object parsing + entry
+enumeration API`), `8142b4d` (`feat(safetensors): rope_scaling (NTK-by-parts)
++ multi-shard support`).

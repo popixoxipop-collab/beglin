@@ -550,6 +550,22 @@ generality table now that Phase 4's structured plan is exhausted:
   established MLX-reference-generation methodology has no path forward
   without adopting a different (transformers-based) reference toolchain.
   Deprioritized, not attempted.
+- **safetensors `rope_scaling` (NTK-by-parts) + multi-shard
+  `*.safetensors.index.json` support** -- closes 2 of the 4 items deferred
+  above. `hf_config.h/.c` gained nested-object read capability
+  (`hf_config_get_object()`, an entry-enumeration pair) reused by both
+  items; a new `SafetensorsMulti` wrapper type
+  (`safetensors_load.h/.c`) transparently handles single-file or
+  multi-shard checkpoints with zero call-site behavior change for the
+  single-file case. Verified end-to-end on the real, already-local
+  `Llama-3.1-8B` checkpoint (4 shards + real `rope_scaling.factor=8.0`) --
+  the tensor-registration split (291: 224/1/66) matched a hand-derived
+  prediction exactly, and the teacher-forced MLX comparison scored 7/8
+  exact match (stronger than the dense-loader's own 6/8), the one mismatch
+  an immediately-recovering near-tie. MoE-format safetensors and the
+  on-disk transcode cache re-deferred with fresh evidence (both still real
+  gaps, neither newly tractable). Full writeup: `RESULTS.md` "safetensors
+  rope_scaling + multi-shard".
 Full writeup: `RESULTS.md`'s entries following "Phase 4 sub-part 4".
 
 ### Phase 5 — Generalized export pipeline (Path B) + the bl=32 experiment (~2 weeks)
