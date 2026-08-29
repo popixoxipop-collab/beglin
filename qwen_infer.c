@@ -2433,6 +2433,13 @@ static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row
     // 4.C bridge: a GGUF-sourced tensor carries its own buffer (t->base); every AF-blob-sourced
     // tensor (t->base==NULL) uses the shared blob exactly as before -- see MoeAFTensor's comment.
     const uint8_t *base = t->base ? t->base : blob;
+    // D-qknorm-1 follow-up: bits==32 (st_register_moe_f32_as_af()) is a raw, unquantized
+    // passthrough -- no scale/bias/group exist for it, so this must short-circuit BEFORE the
+    // scale read just below (which would otherwise dereference t->scale_off==-1).
+    if (t->bits == 32) {
+        long idx = t->packed_off + (e * t->out + row) * t->in + col;
+        float v; memcpy(&v, base + idx * 4, 4); return v;
+    }
     long group = col / 64;
     long scale_idx = t->scale_off + ((e * t->out + row) * t->ng + group) * 4;
     float scale;
@@ -2487,6 +2494,17 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
     long ng = t->ng;
     long row_base = e * t->out + row;   // scale/bias addressing only -- bit-width-independent (see MoeAFTensor's ebits comment)
     int bits = t->ebits ? t->ebits[e] : t->bits;
+    // D-qknorm-1 follow-up: bits==32 raw passthrough (st_register_moe_f32_as_af()) -- no
+    // scale/bias/group, so this short-circuits before eoff (which assumes a packed layout).
+    if (bits == 32) {
+        long row_byte0 = t->packed_off + row * t->in * 4;
+        double acc32 = 0.0;
+        for (long col = 0; col < t->in; col++) {
+            float w; memcpy(&w, base + row_byte0 + col * 4, 4);
+            acc32 += (double)w * x[col];
+        }
+        return acc32;
+    }
     long eoff = t->ebits ? (long)t->epacked_off[e]
                          : (bits == 8 ? e * t->out * t->in : e * t->out * row_words * 4);
     double acc = 0.0;
@@ -2546,6 +2564,7 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
 // before ever being considered for promotion to default.
 static double moe_matvec_af_row_vdsp(const uint8_t *blob, MoeAFTensor *t, long e, long row, const float *x) {
     if (t->bits == 8) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==8 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for int8 tensors)\n"); exit(1); }
+    if (t->bits == 32) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==32 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for F32-as-AF tensors)\n"); exit(1); }
     if (t->ebits) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: per-expert mixed precision not implemented (QWEN_MOE_SCALAR_VDSP unsupported for mixed tensors)\n"); exit(1); }
     const uint8_t *base = t->base ? t->base : blob;   // 4.C bridge, see moe_decode_af()
     long row_words = t->in / 8;
@@ -2672,6 +2691,22 @@ static int MOE_ATTN_KIND;
 #define MOE_ROPE_TRADITIONAL 0
 #define MOE_ROPE_NEOX 1
 static int MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_NORM_TOPK_PROB, MOE_ROPE_STYLE;
+// D-qknorm-1: q_norm/k_norm's normalization AXIS differs by family even though both ship a
+// same-named tensor and this engine shares one role table (MOE_ST_ATTN_ROLES_GQA) between them.
+// WHY: found by real numeric gate failure (OLMoE Step 6, rel_l2 0.07-0.51, layer-0 router
+// expert-sets already <50% overlapping) -- Qwen3-MoE's q_norm.weight is [head_dim] (128),
+// applied per-head AFTER reshape (confirmed live: mlx_lm.models.qwen3_moe reshapes q_proj's
+// output into (heads,head_dim) before calling q_norm); OLMoE's q_norm.weight is [n_heads*
+// head_dim] (2048), applied as ONE normalization over the WHOLE concatenated vector BEFORE
+// reshape (confirmed live against mlx_lm.models.olmoe.Attention.__call__'s own source: q_norm
+// is called on q_proj's raw (B,L,2048) output, reshape happens after). MOE_QKNORM_WHOLE_VECTOR
+// absent -> 0 (per-head) keeps every existing arch/regression path byte-identical; only
+// load_moe_safetensors_arch() sets it to 1, only for is_olmoe.
+// COST: two code paths through moe_qknorm_apply() instead of one -- but both are simple loops
+// over the same moe_rmsnorm(), no real complexity added.
+// EXIT: if a future model family needs a third QK-norm axis convention, extend
+// MOE_QKNORM_WHOLE_VECTOR from a bool to an enum and add a third branch in moe_qknorm_apply().
+static int MOE_QKNORM_WHOLE_VECTOR;
 static double MOE_RMS_EPS;
 // Phase 4 sub-part 1, Step 2: heap, MOE_QK_ROPE_HD/2 doubles -- alloc_moe_buffers(), written by
 // moe_init_yarn() (called after alloc_moe_buffers() in run_moe_verify_mode() specifically so this
@@ -2801,6 +2836,22 @@ static void moe_rmsnorm(const float *x, const float *g, float *y, int n) {
     double ss = 0.0; for (int i = 0; i < n; i++) ss += (double)x[i]*x[i];
     double inv = 1.0 / sqrt(ss/n + MOE_RMS_EPS);
     for (int i = 0; i < n; i++) y[i] = (float)(x[i]*inv*g[i]);
+}
+// See D-qknorm-1 (near MOE_QKNORM_WHOLE_VECTOR's declaration) for why this branches. whole_vector=0
+// (every existing arch): w has unit_dim entries, reused identically for each of the n_units heads,
+// each head normalized independently -- byte-identical to the pre-fix per-head loop this replaces.
+// whole_vector=1 (OLMoE only): w has n_units*unit_dim entries, ONE normalization over the entire
+// concatenated vector, reshape into heads happens only AFTER (by the caller, via q+hh*MOE_HEAD_DIM
+// indexing further down in moe_gqa_attention() -- this function only writes the flat buffer).
+static void moe_qknorm_apply(float *v, const float *w, int n_units, int unit_dim, int whole_vector) {
+    if (whole_vector) {
+        moe_rmsnorm(v, w, v, n_units * unit_dim);
+    } else {
+        for (int u = 0; u < n_units; u++) {
+            float *vu = v + u*unit_dim;
+            moe_rmsnorm(vu, w, vu, unit_dim);
+        }
+    }
 }
 static void moe_matvec_af(const uint8_t *blob, MoeAFTensor *t, long e, const float *x, float *y) {
     for (long r = 0; r < t->out; r++) y[r] = (float)g_moe_row_fn(blob, t, e, r, x);
@@ -3780,17 +3831,11 @@ static void moe_gqa_attention(const uint8_t *af, MoeLayerTensors *t, int l, int 
 
     if (t->q_norm) {
         float *w_qnorm = (float *)(g_moe_f32_blob + t->q_norm->off);
-        for (int hh = 0; hh < MOE_N_HEADS; hh++) {
-            float *qh = q + hh*MOE_HEAD_DIM;
-            moe_rmsnorm(qh, w_qnorm, qh, MOE_HEAD_DIM);
-        }
+        moe_qknorm_apply(q, w_qnorm, MOE_N_HEADS, MOE_HEAD_DIM, MOE_QKNORM_WHOLE_VECTOR);
     }
     if (t->k_norm) {
         float *w_knorm = (float *)(g_moe_f32_blob + t->k_norm->off);
-        for (int kh = 0; kh < MOE_N_KV_HEADS; kh++) {
-            float *khv = k + kh*MOE_HEAD_DIM;
-            moe_rmsnorm(khv, w_knorm, khv, MOE_HEAD_DIM);
-        }
+        moe_qknorm_apply(k, w_knorm, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_QKNORM_WHOLE_VECTOR);
     }
     for (int hh = 0; hh < MOE_N_HEADS; hh++) moe_rope_neox_apply(q + hh*MOE_HEAD_DIM, MOE_HEAD_DIM, pos);
     for (int kh = 0; kh < MOE_N_KV_HEADS; kh++) moe_rope_neox_apply(k + kh*MOE_HEAD_DIM, MOE_HEAD_DIM, pos);
@@ -3840,17 +3885,11 @@ static void moe_gqa_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int 
 
     if (t->q_norm) {
         float *w_qnorm = (float *)(g_moe_f32_blob + t->q_norm->off);
-        for (int hh = 0; hh < MOE_N_HEADS; hh++) {
-            float *qh = q + hh*MOE_HEAD_DIM;
-            moe_rmsnorm(qh, w_qnorm, qh, MOE_HEAD_DIM);
-        }
+        moe_qknorm_apply(q, w_qnorm, MOE_N_HEADS, MOE_HEAD_DIM, MOE_QKNORM_WHOLE_VECTOR);
     }
     if (t->k_norm) {
         float *w_knorm = (float *)(g_moe_f32_blob + t->k_norm->off);
-        for (int kh = 0; kh < MOE_N_KV_HEADS; kh++) {
-            float *khv = k + kh*MOE_HEAD_DIM;
-            moe_rmsnorm(khv, w_knorm, khv, MOE_HEAD_DIM);
-        }
+        moe_qknorm_apply(k, w_knorm, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_QKNORM_WHOLE_VECTOR);
     }
     for (int hh = 0; hh < MOE_N_HEADS; hh++) moe_rope_neox_apply(q + hh*MOE_HEAD_DIM, MOE_HEAD_DIM, pos);
     for (int kh = 0; kh < MOE_N_KV_HEADS; kh++) moe_rope_neox_apply(k + kh*MOE_HEAD_DIM, MOE_HEAD_DIM, pos);
@@ -3902,17 +3941,11 @@ static void moe_gqa_attention_batched(const uint8_t *af, MoeLayerTensors *t, int
 
     if (t->q_norm) {
         float *w_qnorm = (float *)(g_moe_f32_blob + t->q_norm->off);
-        for (int hh = 0; hh < MOE_N_HEADS; hh++) {
-            float *qh = q + hh*MOE_HEAD_DIM;
-            moe_rmsnorm(qh, w_qnorm, qh, MOE_HEAD_DIM);
-        }
+        moe_qknorm_apply(q, w_qnorm, MOE_N_HEADS, MOE_HEAD_DIM, MOE_QKNORM_WHOLE_VECTOR);
     }
     if (t->k_norm) {
         float *w_knorm = (float *)(g_moe_f32_blob + t->k_norm->off);
-        for (int kh = 0; kh < MOE_N_KV_HEADS; kh++) {
-            float *khv = k + kh*MOE_HEAD_DIM;
-            moe_rmsnorm(khv, w_knorm, khv, MOE_HEAD_DIM);
-        }
+        moe_qknorm_apply(k, w_knorm, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_QKNORM_WHOLE_VECTOR);
     }
     // rope_neox_apply(..., pos=0) intentionally skipped: identity rotation at pos=0.
 
@@ -6527,6 +6560,10 @@ static void load_moe_safetensors_arch(const char *config_path) {
         }
         MOE_ATTN_KIND = MOE_ATTN_GQA;
         MOE_ROPE_STYLE = MOE_ROPE_NEOX;
+        // See D-qknorm-1: OLMoE's q_norm/k_norm normalize the whole pre-reshape vector, not
+        // per-head -- confirmed live against mlx_lm.models.olmoe's own source and the real
+        // checkpoint's q_norm.weight shape ([2048]=n_heads*head_dim, not [128]=head_dim).
+        MOE_QKNORM_WHOLE_VECTOR = is_olmoe ? 1 : 0;
         if (!hf_config_get_i64(c, "num_key_value_heads", &iv)) { fprintf(stderr, "FATAL: %s missing 'num_key_value_heads'\n", config_path); exit(1); } MOE_N_KV_HEADS = (int)iv;
         // head_dim is required for qwen3_moe (its real config.json always ships it, 128) but
         // genuinely absent from OLMoE's own real config.json (confirmed live). OLMoE's own
@@ -6926,6 +6963,45 @@ static MoeAFTensor *st_register_moe_dense_af_q8g64_as(const char *name, const ch
     return w;
 }
 
+// D-qknorm-1 follow-up (2026-08-29): F32 registered as an MoeAFTensor (bits=32), not a
+// MoeF32Tensor -- unlike embed_tokens/lm_head (single global tensors, MoeLayerTensors never
+// points at them), attention roles (q_proj/k_proj/v_proj/o_proj) MUST live in MoeAFTensor* slots
+// because that's the pointer type moe_gqa_attention() etc. already dereference; wrapping F32 data
+// inside that same struct (no scale/bias/group fields used, moe_decode_af()/moe_matvec_af_row()
+// short-circuit on bits==32 before touching them) means the forward-pass functions and
+// moe_resolve_layer_tensors() need ZERO changes -- only the decode layer and this registration
+// function are new. No dequant/RTN-quantize step at all: safetensors_dequant_row() already
+// produces float32 (its normal job for every dtype), this just keeps that output as-is instead
+// of feeding it into gguf_quantize_q8g64()/q4g64_error_feedback() afterward.
+static MoeAFTensor *st_register_moe_f32_as_af(const char *name, const char *engine_name) {
+    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (safetensors)\n"); exit(1); }
+    SafetensorsFile *shard = NULL;
+    const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
+    if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
+    long out = (long)t->shape[0], in = t->n_dims >= 2 ? (long)t->shape[1] : 0;
+    if (out <= 0 || in <= 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s has non-positive dims (out=%ld in=%ld)\n", name, out, in);
+        exit(1);
+    }
+    if (!safetensors_dequant_supported(t->dtype)) {
+        fprintf(stderr, "FATAL: safetensors moe tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
+        exit(1);
+    }
+    size_t need_bytes = moe_gguf_mul_checked("f32-as-af need_bytes",
+                             moe_gguf_mul_checked("f32-as-af need_bytes", (size_t)out, (size_t)in), sizeof(float));
+    uint8_t *base = malloc(need_bytes);
+    if (!base) { fprintf(stderr, "FATAL: safetensors moe f32-as-af alloc failed for '%s' (%zu bytes)\n", engine_name, need_bytes); exit(1); }
+    safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), (float *)base, (uint64_t)(out * in));
+
+    MoeAFTensor *w = &g_moe_af[g_moe_naf++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->E = 1; w->out = out; w->in = in; w->ng = 0;
+    w->packed_off = 0; w->packed_bytes = (long)need_bytes;
+    w->scale_off = -1; w->bias_off = -1;   // unused for bits==32, never dereferenced
+    w->base = base; w->sym = 0; w->bits = 32;
+    return w;
+}
+
 // Mirrors gguf_register_moe_f32_as() (growable, realloc-safe g_moe_f32_blob -- the SAME shared
 // global buffer/counters every MoE loader writes into) but sources from
 // safetensors_multi_find_tensor()+safetensors_dequant_row() instead of gguf_find_tensor()+
@@ -7010,14 +7086,21 @@ static int moe_role_bits(const char *role, int layer, int default_bits) {
 }
 
 // Dispatches to F32 / q8g64 / q4g64 registration by bits -- consolidates the 3-way branch
-// every per-role call site below needs instead of duplicating it inline.
-static void st_register_moe_role(const char *name, const char *engine_name, int bits, const char *role, int allow_f32) {
+// every per-role call site below needs instead of duplicating it inline. f32_as_af (D-qknorm-1
+// follow-up, 2026-08-29): embed_tokens/lm_head are single global tensors with their own
+// MoeF32Tensor/moe_find_f32() path (moe_forward_token() branches on embed_is_f32/lmhead_is_f32
+// already) -- f32_as_af=0 keeps that. Attention roles (q_proj/k_proj/v_proj/o_proj) instead need
+// an MoeAFTensor* (that's the pointer type MoeLayerTensors/moe_gqa_attention() etc. expect) even
+// when the underlying data is F32 -- f32_as_af=1 registers via st_register_moe_f32_as_af()
+// (bits=32, raw passthrough, see its own comment) so the forward-pass code needs zero changes.
+static void st_register_moe_role(const char *name, const char *engine_name, int bits, const char *role, int allow_f32, int f32_as_af) {
     if (bits == 32) {
         if (!allow_f32) {
-            fprintf(stderr, "FATAL: QWEN_MOE_ROLE_BITS: role '%s' requested bits=32 (F32), only embed_tokens/lm_head support F32 here\n", role);
+            fprintf(stderr, "FATAL: QWEN_MOE_ROLE_BITS: role '%s' requested bits=32 (F32), not enabled for this role\n", role);
             exit(1);
         }
-        st_register_moe_f32_as(name, engine_name);
+        if (f32_as_af) st_register_moe_f32_as_af(name, engine_name);
+        else st_register_moe_f32_as(name, engine_name);
     } else if (bits == 8) {
         st_register_moe_dense_af_q8g64_as(name, engine_name);
     } else {
@@ -7206,7 +7289,21 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
             // Per-role/per-layer override follow-up (2026-08-29): each of q_proj/k_proj/v_proj/
             // o_proj (or MLA's q_proj/kv_a_proj_with_mqa/kv_b_proj/o_proj) is independently
             // selectable via QWEN_MOE_ROLE_BITS, not bundled -- see moe_role_bits()'s own comment.
-            if (role->is_af) st_register_moe_role(name, ename, moe_role_bits(role->role, l, 8), role->role, 0);
+            // allow_f32=1 (2026-08-29, OLMoE near-tie-router-flip investigation): int8
+            // quantization noise in attention output accumulates layer-over-layer until it
+            // flips a borderline top-k router decision (real example found: layer 13, score
+            // gap 1.87e-05) -- once flipped, the wrong expert's entire output substitutes for
+            // the right one, and that perturbation is amplified by the following layer's own
+            // nonlinearity plus the final layer's naturally small activation norm (confirmed
+            // via a real per-layer hidden-state dump: absolute divergence roughly doubles the
+            // layer right after the flip). Only-F32-for-embed/lm_head was this round's earlier
+            // assumption ("only two roles this loader has real evidence F32 matters for" --
+            // see that comment below, now also stale) -- this is the second, concrete case:
+            // attention precision gates every downstream router decision, so letting
+            // QWEN_MOE_ROLE_BITS request bits=32 here is how this project's own per-role engine
+            // (built specifically for this) suppresses the divergence, not by silently
+            // tolerating it as unavoidable quantization noise.
+            if (role->is_af) st_register_moe_role(name, ename, moe_role_bits(role->role, l, 8), role->role, 1, 1);
             else st_register_moe_f32_as(name, ename);
         }
         if (l < MOE_FIRST_DENSE_LAYERS) {
@@ -7217,7 +7314,7 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
                 // dense-layer gate/up/down each independently selectable (QWEN_MOE_ROLE_BITS) --
                 // there is only ever one real dense layer (l < MOE_FIRST_DENSE_LAYERS), but the
                 // per-layer key still applies generically, not hardcoded to l==0.
-                st_register_moe_role(name, ename, moe_role_bits(role->role, l, 8), role->role, 0);
+                st_register_moe_role(name, ename, moe_role_bits(role->role, l, 8), role->role, 0, 0);
             }
         } else {
             snprintf(name, sizeof name, "model.layers.%d.mlp.gate.weight", l);
@@ -7228,7 +7325,7 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
                     snprintf(name, sizeof name, role->st_pattern, l);
                     snprintf(ename, sizeof ename, role->engine_pattern, l);
                     // shared-experts gate/up/down each independently selectable, per layer.
-                    st_register_moe_role(name, ename, moe_role_bits(role->role, l, 8), role->role, 0);
+                    st_register_moe_role(name, ename, moe_role_bits(role->role, l, 8), role->role, 0, 0);
                 }
             }
             for (size_t r = 0; r < sizeof(MOE_ST_EXPERT_ROLES)/sizeof(MOE_ST_EXPERT_ROLES[0]); r++) {
@@ -7249,16 +7346,17 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
     // (GGUF/safetensors) already keep embed_tokens/lm_head in F32 for this reason; this
     // brings the MoE safetensors loader in line with that default. Independently overridable
     // via QWEN_MOE_ROLE_BITS ("embed_tokens"/"lm_head", layer=-1 since neither has a real
-    // layer index) -- allow_f32=1 since these are the only two roles this loader has real
-    // evidence F32 matters for. moe_forward_token()'s AF path (used by GGUF-MoE/AF-blob) is
-    // untouched either way.
-    st_register_moe_role("model.embed_tokens.weight", "model.embed_tokens", moe_role_bits("embed_tokens", -1, 32), "embed_tokens", 1);
+    // layer index) -- allow_f32=1 for the same "real evidence F32 matters" reasoning as the
+    // attention roles above (no longer the only two such roles, see that comment for the
+    // second case found 2026-08-29). moe_forward_token()'s AF path (used by GGUF-MoE/AF-blob)
+    // is untouched either way.
+    st_register_moe_role("model.embed_tokens.weight", "model.embed_tokens", moe_role_bits("embed_tokens", -1, 32), "embed_tokens", 1, 0);
     st_register_moe_f32_as("model.norm.weight", "model.norm.weight");
     if (!safetensors_multi_find_tensor(g_st_moe, "lm_head.weight", NULL)) {
         fprintf(stderr, "FATAL: safetensors moe: tied embeddings (no lm_head.weight) not yet supported\n");
         exit(1);
     }
-    st_register_moe_role("lm_head.weight", "lm_head", moe_role_bits("lm_head", -1, 32), "lm_head", 1);
+    st_register_moe_role("lm_head.weight", "lm_head", moe_role_bits("lm_head", -1, 32), "lm_head", 1, 0);
     fprintf(stderr, "[moe st load] registered %d af tensors, %d f32 tensors\n", g_moe_naf, g_moe_nf32);
 
     moe_resolve_layer_tensors();   // UNCHANGED, loader-agnostic
