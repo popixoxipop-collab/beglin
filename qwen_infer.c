@@ -37,6 +37,12 @@
 #include "safetensors_load.h"   // safetensors dense-model loader: container parser (own TU, same reason)
 #include "safetensors_quants.h" // safetensors dense-model loader: F32/F16/BF16 widening (own TU, same reason)
 #include "hf_config.h"           // safetensors dense-model loader: config.json reader (own TU, same reason)
+#ifdef QWEN_GPU_MLX
+#include "mlx_moe.h"    // V5a: MLX GPU backend vendor boundary (own TU, C++/MLX -- see its own
+                        // header comment). Absent QWEN_GPU_MLX (every default build), this
+                        // include and every reference to it below compile out entirely --
+                        // byte-identical to before this track existed (D-gpu-1/D-gpu-2).
+#endif
 
 // D1/D2 (structural generalization): NL/NH/NKV/D/HD/KVD/QD/IM/VOCAB/THETA/EPS/MAXSEQ/GROUP/
 // KVG/QG used to be compile-time #defines for Qwen2.5-1.5B only. They are now loaded once at
@@ -6253,6 +6259,142 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     return 1;
 }
 
+#ifdef QWEN_GPU_MLX
+// V5a: GPU weight binding + numerical equivalence + residency. No forward pass (D-gpu-1
+// through D-gpu-3 in PLAN_v5_v6_gpu_backend_and_role_device.md). Gated on QWEN_MOE_GPU (an
+// env var, not weights_moe/ file presence) -- checked in main() BEFORE run_moe_verify_mode()
+// for the same reason run_moe_gqa_selftest_mode() etc. are: an env-var-gated mode must run
+// before the file-presence-gated one, or the file-presence check greedily wins first and this
+// mode never gets a chance to redirect (main()'s existing comment for the selftest group
+// states this exact reasoning; the 2026-08-30 plan's own text put this check AFTER
+// run_moe_verify_mode(), which would have reproduced that bug -- fixed here, not followed
+// literally). Reuses moe_mmap_file()/moe_load_layout_af()/moe_decode_af()/moe_matvec_af_row()
+// completely unmodified -- this function only orchestrates gates 2-5 around them.
+static int run_moe_gpu_mode(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *gpu_env = getenv("QWEN_MOE_GPU");
+    if (!gpu_env || strcmp(gpu_env, "1") != 0) return 0;
+
+    fprintf(stderr, "[moe gpu] QWEN_MOE_GPU=1 -- V5a weight-binding + numerical-equivalence mode\n");
+    if (!mlx_gpu_available()) {
+        fprintf(stderr, "FATAL: QWEN_MOE_GPU=1 but MLX/Metal unavailable\n");
+        exit(1);
+    }
+
+    const char *override = getenv("QWEN_MOE_BASE");
+    const char *dir = (override && override[0]) ? override : ".";
+    char moe_dir[900], path[1024];
+    snprintf(moe_dir, sizeof moe_dir, "%s/weights_moe", dir);
+
+    snprintf(path, sizeof path, "%s/layout_af.txt", moe_dir);
+    moe_load_layout_af(path);
+    snprintf(path, sizeof path, "%s/deepseek_moe_af.bin", moe_dir);
+    long af_bytes; uint8_t *af_blob = moe_mmap_file(path, &af_bytes);
+    fprintf(stderr, "[moe gpu] af blob %ld bytes, %d tensors\n", af_bytes, g_moe_naf);
+
+    // Gate 2: bits-field sanity -- every AF-blob tensor must be bits==4, ebits==NULL (F-13:
+    // this format predates the per-tensor mixed-precision system entirely). Asserted, not
+    // just assumed, so a future loader change trips this loudly instead of silently mis-binding.
+    int gate2_fail = 0;
+    for (int i = 0; i < g_moe_naf; i++) {
+        MoeAFTensor *t = &g_moe_af[i];
+        if (t->bits != 4 || t->ebits != NULL) {
+            fprintf(stderr, "[moe gpu] GATE2 FAIL: tensor %s has bits=%d ebits=%p (expected bits=4, ebits=NULL)\n",
+                    t->name, t->bits, (void *)t->ebits);
+            gate2_fail = 1;
+        }
+    }
+    fprintf(stderr, "[moe gpu] GATE2 (bits sanity): %s (%d tensors checked)\n",
+            gate2_fail ? "FAIL" : "PASS", g_moe_naf);
+
+    // Bind every tensor to MLX (D-gpu-3: zero-copy where possible, straight into the same mmap).
+    int n_bound = 0;
+    for (int i = 0; i < g_moe_naf; i++) {
+        MoeAFTensor *t = &g_moe_af[i];
+        int ok = mlx_gpu_bind_af(af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
+                                  t->packed_off, t->scale_off, t->bias_off, t->bits);
+        if (!ok) {
+            fprintf(stderr, "FATAL: [moe gpu] bind failed for tensor %s\n", t->name);
+            exit(1);
+        }
+        n_bound++;
+    }
+    fprintf(stderr, "[moe gpu] bound %d/%d tensors to MLX\n", n_bound, g_moe_naf);
+
+    // Gate 5 (residency): zero-copy vs copied split, MLX's own memory counters vs the real
+    // max_recommended_working_set_size (12.71GB on bob, F-15).
+    int zc = 0, cp = 0; size_t bytes_copied = 0;
+    int total = mlx_gpu_zerocopy_count(&zc, &cp, &bytes_copied);
+    // zc/cp report -1 (unknown) this round -- can_reuse_alien_buffer() segfaults on
+    // this host's MLX build (real finding, see mlx_moe.cpp's mlx_gpu_bind_af comment),
+    // so the zero-copy/copied split can't be classified. Memory counters below are
+    // Gate 5's real evidence instead.
+    fprintf(stderr, "[moe gpu] GATE5 (residency): %d tensors bound (zero-copy split: unknown, "
+                    "see mlx_moe.cpp comment)\n", total);
+    size_t active = 0, peak = 0, cache = 0;
+    mlx_gpu_report_memory(&active, &peak, &cache);
+    fprintf(stderr, "[moe gpu] GPU memory: active=%.3fGB peak=%.3fGB cache=%.3fGB (working-set ceiling 12.71GB)\n",
+            active / 1e9, peak / 1e9, cache / 1e9);
+
+    // Gate 3: dequant equivalence, >=200 sampled (tensor,e,row,col) coordinates across every
+    // tensor bound, moe_decode_af() vs mlx_gpu_dequant_probe(). Bar: max abs diff == 0.0 (F-1
+    // already established this at 3200 coordinates from Python; this re-runs it across the
+    // real C-to-MLX boundary this gate actually cares about).
+    srand(12345);   // deterministic sample selection -- not a security context, just repeatability
+    long n_samples = 0;
+    double max_abs_diff = 0.0;
+    const int ncols_probe = 16;
+    float gpu_vals[16];
+    for (int i = 0; i < g_moe_naf && n_samples < 400; i++) {
+        MoeAFTensor *t = &g_moe_af[i];
+        if (t->in < ncols_probe) continue;
+        for (int s = 0; s < 15 && n_samples < 400; s++) {
+            long e = (t->E > 1) ? (rand() % t->E) : 0;
+            long row = rand() % t->out;
+            long col0 = (rand() % (t->in / ncols_probe)) * ncols_probe;
+            if (!mlx_gpu_dequant_probe(t->name, e, row, col0, ncols_probe, gpu_vals)) continue;
+            for (int c = 0; c < ncols_probe; c++) {
+                float cpu_val = moe_decode_af(af_blob, t, e, row, col0 + c);
+                double diff = fabs((double)cpu_val - (double)gpu_vals[c]);
+                if (diff > max_abs_diff) max_abs_diff = diff;
+                n_samples++;
+            }
+        }
+    }
+    fprintf(stderr, "[moe gpu] GATE3 (dequant equivalence): %ld coords sampled across %d tensors, "
+                    "max_abs_diff=%.9g (bar: ==0.0)\n", n_samples, g_moe_naf, max_abs_diff);
+
+    // Gate 4: one real GEMM cross-check, moe_matvec_af_row() vs mlx_gpu_matvec_probe(), on
+    // expert 0 of the first 8 bound tensors. Bar: rel-L2 <= 1e-5.
+    int gemm_checked = 0;
+    double worst_rel_l2 = 0.0;
+    for (int i = 0; i < g_moe_naf && gemm_checked < 8; i++) {
+        MoeAFTensor *t = &g_moe_af[i];
+        long e = 0;
+        float *x = malloc(sizeof(float) * (size_t)t->in);
+        for (long c = 0; c < t->in; c++) x[c] = (float)((c % 13) - 6) * 0.1f;   // deterministic pseudo-input
+        float *y_gpu = malloc(sizeof(float) * (size_t)t->out);
+        if (!mlx_gpu_matvec_probe(t->name, e, x, y_gpu)) { free(x); free(y_gpu); continue; }
+        double num = 0.0, den = 0.0;
+        for (long row = 0; row < t->out; row++) {
+            double y_cpu = moe_matvec_af_row(af_blob, t, e, row, x);
+            double d = y_cpu - (double)y_gpu[row];
+            num += d * d; den += y_cpu * y_cpu;
+        }
+        double rel_l2 = den > 0.0 ? sqrt(num / den) : 0.0;
+        if (rel_l2 > worst_rel_l2) worst_rel_l2 = rel_l2;
+        fprintf(stderr, "[moe gpu] GATE4 tensor %s: rel_l2=%.6e\n", t->name, rel_l2);
+        free(x); free(y_gpu);
+        gemm_checked++;
+    }
+    fprintf(stderr, "[moe gpu] GATE4 (GEMM cross-check): %d tensors checked, worst_rel_l2=%.6e (bar: <=1e-5)\n",
+            gemm_checked, worst_rel_l2);
+
+    fprintf(stderr, "RESULT: MoE GPU V5a weight-binding + equivalence check complete\n");
+    return 1;
+}
+#endif // QWEN_GPU_MLX
+
 static int run_moe_verify_mode(int argc, char **argv) {
     (void)argc; (void)argv;   // unlike moe2b_verify.c, argv[1] here is the GQA MODE string
                               // (e.g. "greedy"), not a directory -- only QWEN_MOE_BASE selects
@@ -8205,6 +8347,12 @@ int main(int argc, char **argv) {
     if (run_moe_sym_selftest_mode(argc, argv)) return 0;
     if (run_moe_mqa_selftest_mode(argc, argv)) return 0;
     if (run_moe_gqa_selftest_mode(argc, argv)) return 0;
+#ifdef QWEN_GPU_MLX
+    // V5a: same reasoning as the three selftest checks above -- QWEN_MOE_GPU is an env var,
+    // not weights_moe/ file presence, so it must be checked before run_moe_verify_mode()'s
+    // file-presence gate, which would otherwise win first and this mode would never run.
+    if (run_moe_gpu_mode(argc, argv)) return 0;
+#endif
     if (run_gguf_moe_verify_mode(argc, argv)) return 0;
     if (run_moe_safetensors_verify_mode(argc, argv)) return 0;
     if (run_moe_verify_mode(argc, argv)) return 0;

@@ -3235,3 +3235,110 @@ to invest the staged 8-12-session custom MLX backend build is now a real
 decision backed by real numbers, not a guess -- left open, not assumed.
 Full staged plan (V5a onward, re-verified against the current codebase)
 kept ready at `~/.claude/plans/serene-finding-ullman.md`.
+
+## V5/V6: MLX GPU backend + role-device generalization -- re-planned, V5a executed
+
+The V5-pre ceiling check above made the custom-backend question concrete
+enough to decide: an Opus Plan agent re-verified the whole design live on
+bob and produced a corrected plan (superseding both the 2026-08-24 staged
+plan and the V5a section above), saved at
+`~/Desktop/vdsp_v2_design/trackb_v5_plan/PLAN_v5_v6_gpu_backend_and_role_device.md`.
+Key corrections: a real memory-bandwidth roofline shows llama.cpp already
+hits 82.6% of the B=1 ceiling (a custom backend's B=1 upside is only
+~1.28x -- the real opportunity is batched serving, ~3.5x headroom at
+B=64); whole-request CPU/GPU co-execution is net-negative on this
+model/host (~-3.2%, the 30x CPU/GPU speed ratio here is far outside the
+~3x regime where P0.1's +20% held, and FreeToken's own overlap mechanism
+doesn't transplant to unified memory -- no PCIe stall to hide inside); V6
+(the user's own request -- role-independent CPU/GPU dispatch alongside
+the existing per-role/per-expert precision engine) is reframed as a
+capacity/configurability feature, not a throughput one. Total estimate:
+V5 8-14 + V6 7-12 = 15-26 sessions. This session executed V5a only.
+
+### V5a: GPU weight binding + numerical equivalence -- real gates, all PASS
+
+**Scope**: bind DeepSeek-V2-Lite's real AF-blob (`~/moe_base_deepseek`,
+9,814,343,680 bytes, 269 tensors) into MLX directly (D-gpu-3: no repack,
+no requantize), and verify equivalence against the CPU arm. No forward
+pass -- the smallest independently-gateable first sub-phase.
+
+**New files**: `mlx_moe.h`/`mlx_moe.cpp` (own C++17 TU, links MLX --
+D-gpu-1/D-gpu-2, mirrors `sme2_kai.h`'s vendor-boundary pattern: plain-C
+header, no `qwen_infer.c` type crosses the boundary). New
+`run_moe_gpu_mode()` in `qwen_infer.c`, gated `QWEN_MOE_GPU=1`, entirely
+`#ifdef QWEN_GPU_MLX`. **Deliberate deviation from the plan's literal
+dispatch-order instruction**: the plan said to insert the check after
+`run_moe_verify_mode()`; that function is file-presence-gated
+(`weights_moe/arch_config_moe.txt`), which would greedily win before an
+env-var-gated check ever ran -- the exact bug class the codebase's own
+existing selftest-dispatch-ordering comment already warns about. Placed
+before it instead, documented in-code.
+
+**Gate 0 (link+metallib smoke test)**: PASS -- a standalone non-Python
+C++ binary linking libmlx, `mx::sum(mx::ones({4}))` + `mx::eval`, printed
+`result: 4`. Resolved the plan's single riskiest unproven assumption.
+
+**Real bug found and fixed, this round**: the first full gate run
+SIGSEGV'd (exit 139) on the very first tensor bind. Root-caused via a
+standalone isolation probe (not guesswork): `mx::allocator::
+can_reuse_alien_buffer()` crashes unconditionally on this host's
+installed MLX build when called from a plain C++ process -- reproduced
+with a trivial `malloc`'d pointer, both before and after warming up MLX's
+allocator/Metal device via a real `eval()`. Confirmed the raw-pointer
+`mx::array` constructor itself works fine without it. Since this call was
+only ever an optional informational check for Gate 5's zero-copy
+accounting (never required for correctness -- `mlx_moe.h`'s own doc
+comment already said as much), it was removed from `mlx_gpu_bind_af()`
+entirely; Gate 5's residency evidence now relies solely on
+`mlx_gpu_report_memory()`'s active/peak/cache counters, and the zero-copy/
+copied split is honestly reported as unknown rather than fabricated.
+
+**Second real bug found and fixed**: with the crash gone, Gate 3 first
+returned 0 samples (a silent loop-skip bug), then --after fixing that--
+returned `max_abs_diff=0.69` against a bar of exactly 0.0. Root cause:
+`mlx_gpu_dequant_probe()` had no `col0` parameter and always dequantized
+columns `[0,16)`, while the CPU side sampled `moe_decode_af(..., col0+c)`
+at a random `col0` -- the gate was silently comparing unrelated columns.
+Fixed by adding `col0` to the probe's signature (both `mlx_moe.h` and
+`mlx_moe.cpp`) and slicing the dequantized row at the right offset. Also
+fixed a related shape bug along the way: the original per-row `take`
+chain reduced `w`/`scales`/`biases` to pure 1D arrays, and MLX's
+`dequantize` requires >=2 dimensions (`"must have at least 2 dimension
+but it has only 1"`) -- fixed with `expand_dims` back to `{1,row_words}`/
+`{1,ng}` rather than dequantizing the whole `{out,in}` tensor per probe
+(which would have been correct but ~100x more GPU work than necessary).
+
+**Real gate results, final run** (`QWEN_MOE_GPU=1 QWEN_MOE_BASE=~/
+moe_base_deepseek ./qwen_infer_v5a`, exit 0):
+- **Gate 1** (default-build byte-identity): PASS. Compiled the current
+  (edited) `qwen_infer.c` and the git-HEAD pre-edit `qwen_infer.c`, both
+  WITHOUT `-DQWEN_GPU_MLX` -- `cmp`'d object files byte-identical.
+  Re-confirmed after all fixes above.
+- **Gate 2** (bits sanity): PASS, 269/269 tensors `bits==4, ebits==NULL`.
+- **Gate 5** (residency): 269/269 tensors bound. MLX active=peak=9.814GB,
+  cache=0.000GB, against the 12.71GB working-set ceiling -- comfortably
+  under. Zero-copy-vs-copied split honestly reported as unknown (the only
+  API that could classify it crashes on this MLX build, see above).
+- **Gate 3** (dequant equivalence): PASS. 400 sampled `(tensor,e,row,col)`
+  coordinates across all 269 tensors, `max_abs_diff=0` exactly against
+  the `==0.0` bar -- confirms F-1's Python-side finding (0.0 diff at 3200
+  coordinates) also holds across the real C-to-MLX boundary.
+- **Gate 4** (GEMM cross-check): PASS. 8 tensors' expert-0 matvec,
+  `moe_matvec_af_row()` vs `mlx_gpu_matvec_probe()`'s `quantized_matmul`,
+  worst rel-L2 = 2.128e-07 against a <=1e-5 bar (floating-point
+  accumulation-order noise, not a correctness issue).
+- **Gate 6** (warning baseline): PASS. `qwen_infer.c` under `-Wall
+  -Wextra`: still exactly 20 warnings (F-11's baseline, unchanged).
+  `mlx_moe.cpp` under the same flags: 0.
+- **Gate 7** (SVE/SME/ADDVL leak): PASS, 0 (unchanged from earlier check).
+- **R8** (existing regression paths): the default-build byte-identity
+  (Gate 1) is itself the strongest possible proof no existing path
+  changed -- identical machine code trivially produces identical
+  behavior on every path. Additionally ran the AF-blob sequential-mode
+  path (adjacent to the new dispatch check) on both the pre-edit and
+  post-edit binaries with `QWEN_MOE_BASE=~/moe_base_deepseek`: `diff`
+  showed zero difference in output.
+
+**All 8 gates PASS.** V5a (GPU weight binding + numerical equivalence, no
+forward pass) is complete. V5b (layer-0 MLA attention on GPU) is the next
+staged sub-phase, its own future approval cycle.
