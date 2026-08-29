@@ -3143,3 +3143,95 @@ reference is lower-rigor than the others, where a residual divergence
 was diagnosed but not chased further -- are recorded in-line above,
 not smoothed over. `D-expert-promo-1` remains open as scoped future work,
 not a defect in what shipped.
+
+## V5-pre: llama.cpp+Metal GPU ceiling check on bob (2026-08-30)
+
+### Problem
+
+The vdsp v2 design doc's last open validation item, `V5` ("end-to-end A/B on
+a real MoE model, GPU-only vs CPU/SME2 router-assigned"), has an existing
+staged plan (`~/Desktop/vdsp_v2_design/trackb_moe4c_plan/PLAN_v5_gpu_mlx_backend.md`,
+2026-08-24) for a custom in-process MLX C++ backend, self-estimated 8-12
+sessions. Before committing to that investment, asked (by the user): does
+llama.cpp's already-mature Metal GPU backend already answer "is GPU worth
+it" cheaply, without building anything new?
+
+### Attempt 1: Qwen3-30B-A3B (wrong model for this hardware, real finding
+### anyway)
+
+Tried the already-on-disk `Qwen3-30B-A3B-Q4_K_M.gguf` (18.5GB) first, since
+its CPU/SME2 baseline already existed (Step 3.11 above). bob was under real
+memory pressure at the time (a live Finance-repo job + accumulated ambient
+swap use, free pages ~66MB, swap 5.8/6GB used) -- paused the Finance job on
+explicit user approval, memory did not meaningfully improve (swap usage rose,
+not fell, indicating ambient rather than single-process pressure), resumed
+it immediately. User then explicitly accepted the risk and asked to proceed.
+
+Full Metal offload (`llama-batched`, default `-ngl`=all layers) loaded to
+~7.4GB RSS, then failed cleanly mid-generation: `error: Insufficient Memory
+(kIOGPUCommandBufferCallbackErrorOutOfMemory)`, controlled abort, no hang.
+Confirms bob's real `max_recommended_working_set_size` (12.71GB, from
+`mx.device_info()`) is a hard ceiling, not a soft recommendation -- an
+18.5GB model exceeds it by 46%. A partial-offload retry (`-ngl 16`, ~1/3 of
+48 layers) avoided the OOM but became so I/O-bound (mmap page faults against
+bob's still-tight free-page state) it produced only ~5 tokens in 4.5 minutes
+-- not a usable number, killed rather than let it keep degrading.
+
+**Real conclusion**: Qwen3-30B-A3B is too large for *any* full-GPU path on
+bob's 16GB unified memory -- a hardware ceiling, not a software limitation,
+that would apply identically to a custom MLX backend on the same GPU. This
+also retroactively confirms why the 2026-08-24 staged plan picked
+DeepSeek-V2-Lite (9.1-9.8GB, comfortably under 12.71GB) as its actual V5
+target -- Qwen3-30B-A3B was the wrong model choice for this specific check,
+even though its existing CPU baseline made it a reasonable-looking shortcut.
+
+### Attempt 2: DeepSeek-V2-Lite (real GGUF, fits the ceiling) -- clean result
+
+Found `mradermacher/DeepSeek-V2-Lite-GGUF` on HuggingFace (the base model,
+matching this project's actual target -- not a Coder/Chat variant).
+`Q4_K_M` = 10,364,416,736 bytes (~9.65GiB), comfortably under the 12.71GB
+ceiling with ~2.7GB margin. Downloaded to bob (`~/models_gguf_moe/`, a D50
+symlink; 57GB free disk, no constraint). Memory had recovered by this point
+(1.3GB free, swap down to 413MB) -- no repeat of Attempt 1's conditions.
+
+**GPU (Metal), real**: `llama-batched -m DeepSeek-V2-Lite.Q4_K_M.gguf -p
+"The history of artificial intelligence began" -n 64 -np 1 --perf`, default
+(full) `-ngl`. Loaded cleanly, generated coherent, factually-sound text, and
+printed a real internal perf stat: **`decoded 57 tokens in 1.18 s, speed:
+48.34 t/s`**. No OOM, no thrash -- fitting the working-set ceiling was the
+decisive difference from Attempt 1.
+
+**CPU/SME2, real, freshly measured this session** (not a reused citation):
+`QWEN_MOE_BASE=~/moe_base_deepseek QWEN_MOE_CBATCH=1 ./qwen_infer` -- this
+fixture's real 9.1GB AF-blob, the MoE-4a/4b ragged continuous-batching path.
+`QWEN_MOE_CB_REQS`/`QWEN_MOE_CB_SLOTS` don't override this entry point's
+workload -- it's hardcoded to 8 concurrent prompts (a real, previously-
+undocumented property of this entry point, not chased further given time
+already spent), so this measures 8-way concurrent serving, not a single
+matched sequence:
+- Prefill: 437.03ms/token scalar rate (8 slots, 45 tokens, 19666.33ms).
+- Decode: 12 ragged steps, wall=23084.12ms, 57 total tokens across 8
+  concurrent sequences -- **aggregate 2.47 tok/s across 8 simultaneous
+  users**.
+
+**Honest comparison** (not matched on concurrency, but still decisive):
+llama.cpp+Metal serving ONE user hits 48.34 tok/s; this engine's CPU/SME2
+path serving EIGHT concurrent users totals only 2.47 tok/s in aggregate --
+**GPU wins by ~19.6x even after crediting the CPU arm with 8x the
+simultaneous users**. The true single-sequence gap is larger still (not
+isolated this session -- this entry point's hardcoded 8-prompt design
+didn't yield a clean B=1 number without further code changes; left for a
+real controlled V5d/V5f-style comparison later). This matches the
+2026-08-24 staged plan's own prediction almost exactly ("Decode A/B will
+likely be a blowout... gap is 1-2 orders of magnitude"), now backed by two
+real numbers on the actual target model instead of an estimate.
+
+### What this decides
+
+llama.cpp+Metal already demonstrates the scale of the gap a custom MLX
+backend would be trying to close, cheaply -- this whole retry (including
+the download) took well under the "1 session" budget the plan set. Whether
+to invest the staged 8-12-session custom MLX backend build is now a real
+decision backed by real numbers, not a guess -- left open, not assumed.
+Full staged plan (V5a onward, re-verified against the current codebase)
+kept ready at `~/.claude/plans/serene-finding-ullman.md`.
