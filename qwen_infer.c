@@ -6560,6 +6560,248 @@ static int run_moe_gpu_mla_gate(int argc, char **argv) {
     free(h_raw); free(h_normed); free(residual_cpu); free(o_gpu); free(ref_hidden);
     return 1;
 }
+
+// V5c: full 27-layer single-token GPU forward, gated against CPU moe_forward_token() and a
+// real MLX ground-truth capture (moe2b_reference_capture.py, MoE-2b, 8 real prompt positions
+// -- the same corpus as V5b's mla_ref_dump.json and P0.2). Independently gated
+// (QWEN_MOE_GPU_FULL=1), self-contained (does its own config/tensor-loading setup, same as
+// run_moe_gpu_mla_gate()), does not touch run_moe_gpu_mode()/run_moe_verify_mode()'s state.
+static int run_moe_gpu_full_gate(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *gate_env = getenv("QWEN_MOE_GPU_FULL");
+    if (!gate_env || strcmp(gate_env, "1") != 0) return 0;
+
+    fprintf(stderr, "[moe gpu full] QWEN_MOE_GPU_FULL=1 -- V5c full 27-layer forward gate\n");
+    if (!mlx_gpu_available()) {
+        fprintf(stderr, "FATAL: QWEN_MOE_GPU_FULL=1 but MLX/Metal unavailable\n");
+        exit(1);
+    }
+
+    const char *override = getenv("QWEN_MOE_BASE");
+    const char *dir = (override && override[0]) ? override : ".";
+    char moe_dir[900], path[1024];
+    snprintf(moe_dir, sizeof moe_dir, "%s/weights_moe", dir);
+    snprintf(path, sizeof path, "%s/arch_config_moe.txt", moe_dir);
+
+    // Same self-contained config-loading sequence as run_moe_gpu_mla_gate()/run_moe_verify_mode().
+    MOE_HIDDEN = (int)moe_cfg_get(path,"HIDDEN"); MOE_N_HEADS = (int)moe_cfg_get(path,"N_HEADS");
+    MOE_KV_LORA_RANK = (int)moe_cfg_get(path,"KV_LORA_RANK"); MOE_QK_ROPE_HD = (int)moe_cfg_get(path,"QK_ROPE_HEAD_DIM");
+    MOE_QK_NOPE_HD = (int)moe_cfg_get(path,"QK_NOPE_HEAD_DIM"); MOE_V_HD = (int)moe_cfg_get(path,"V_HEAD_DIM");
+    MOE_Q_HEAD_DIM = MOE_QK_ROPE_HD + MOE_QK_NOPE_HD;
+    MOE_NL = (int)moe_cfg_get(path,"NL"); MOE_FIRST_DENSE_LAYERS = (int)moe_cfg_get(path,"FIRST_DENSE_LAYERS");
+    MOE_N_EXPERTS = (int)moe_cfg_get(path,"N_EXPERTS"); MOE_N_SHARED = (int)moe_cfg_get(path,"N_SHARED");
+    MOE_TOP_K = (int)moe_cfg_get(path,"TOP_K"); MOE_IM_DIM = (int)moe_cfg_get(path,"MOE_IM");
+    MOE_DENSE_IM = (int)moe_cfg_get(path,"DENSE_IM"); MOE_VOCAB = (int)moe_cfg_get(path,"VOCAB");
+    MOE_ROPE_THETA = moe_cfg_get(path,"ROPE_THETA"); MOE_YARN_FACTOR = moe_cfg_get(path,"YARN_FACTOR");
+    MOE_YARN_BETA_FAST = moe_cfg_get(path,"YARN_BETA_FAST"); MOE_YARN_BETA_SLOW = moe_cfg_get(path,"YARN_BETA_SLOW");
+    MOE_YARN_MSCALE = moe_cfg_get(path,"YARN_MSCALE"); MOE_YARN_MSCALE_ALL_DIM = moe_cfg_get(path,"YARN_MSCALE_ALL_DIM");
+    MOE_YARN_ORIG_MAX_POS = moe_cfg_get(path,"YARN_ORIG_MAX_POS");
+    MOE_ATTN_KIND = (int)moe_cfg_get_opt(path,"ATTN_KIND",(double)MOE_ATTN_MLA);
+    MOE_N_KV_HEADS = (int)moe_cfg_get_opt(path,"N_KV_HEADS",(double)MOE_N_HEADS);
+    MOE_HEAD_DIM = (int)moe_cfg_get_opt(path,"HEAD_DIM",(double)MOE_Q_HEAD_DIM);
+    MOE_RMS_EPS = moe_cfg_get_opt(path,"RMS_EPS",1e-6);
+    MOE_NORM_TOPK_PROB = (int)moe_cfg_get_opt(path,"NORM_TOPK_PROB",0.0);
+    MOE_ROPE_STYLE = (int)moe_cfg_get_opt(path,"ROPE_STYLE",(double)MOE_ROPE_TRADITIONAL);
+    moe_cfg_validate();
+    MOE_QDIM     = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_KVA_OUT  = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
+    MOE_KVB_OUT  = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD);
+    MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
+    MOE_SH_IM    = MOE_IM_DIM * MOE_N_SHARED;
+    MOE_KROW = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_VROW = MOE_N_HEADS * MOE_V_HD;
+    MOE_MAX_IN = MOE_HIDDEN;
+    if (MOE_IM_DIM   > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
+    if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
+    if (MOE_DENSE_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_DENSE_IM;
+    MOE_MAX_NG = (MOE_MAX_IN + 63) / 64;
+    MOE_SME2_SLOT_DENSE  = MOE_N_EXPERTS;
+    MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
+    MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2;
+    MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
+    alloc_moe_buffers();
+    moe_init_yarn();
+
+    snprintf(path, sizeof path, "%s/layout_af.txt", moe_dir); moe_load_layout_af(path);
+    snprintf(path, sizeof path, "%s/deepseek_moe_af.bin", moe_dir);
+    long af_bytes; uint8_t *af_blob = moe_mmap_file(path, &af_bytes);
+    snprintf(path, sizeof path, "%s/layout_f32.txt", moe_dir); moe_load_layout_f32(path);
+    snprintf(path, sizeof path, "%s/deepseek_moe_f32.bin", moe_dir);
+    long f32_bytes; g_moe_f32_blob = moe_mmap_file(path, &f32_bytes);
+    moe_resolve_layer_tensors();
+    fprintf(stderr, "[moe gpu full] af blob %ld bytes, f32 blob %ld bytes, %d layers resolved\n",
+            af_bytes, f32_bytes, MOE_NL);
+
+    MoeAFTensor *t_embed = moe_find_af("model.embed_tokens");
+    MoeAFTensor *t_lmhead = moe_find_af("lm_head");
+    MoeF32Tensor *t_finalnorm = moe_find_f32("model.norm.weight");
+    float *w_finalnorm = (float *)(g_moe_f32_blob + t_finalnorm->off);
+
+    int n_bound = 0;
+    for (int i = 0; i < g_moe_naf; i++) {
+        MoeAFTensor *t = &g_moe_af[i];
+        if (!mlx_gpu_bind_af(af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
+                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+            fprintf(stderr, "FATAL: [moe gpu full] bind failed for tensor %s\n", t->name);
+            exit(1);
+        }
+        n_bound++;
+    }
+    fprintf(stderr, "[moe gpu full] bound %d/%d tensors to MLX\n", n_bound, g_moe_naf);
+
+    if (!mlx_gpu_mla_config(MOE_N_HEADS, MOE_Q_HEAD_DIM, MOE_QK_NOPE_HD, MOE_QK_ROPE_HD,
+                            MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
+                            g_moe_yarn_freqs, MOE_RMS_EPS) ||
+        !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
+                               MOE_TOP_K, 64)) {
+        fprintf(stderr, "FATAL: [moe gpu full] mlx_gpu_*_config failed\n");
+        exit(1);
+    }
+
+    // Real prompt_ids + real predicted next-token ids from moe2b_reference_capture.py's actual
+    // capture (MoE-2b, macstudio, /Users/eoe/vdsp_moe_weights/moe2b_ref_routing.json) -- same
+    // real-text corpus as V5b/P0.2, not synthetic. Ground-truth full logits (8*VOCAB float32)
+    // loaded from a binary sidecar (QWEN_MOE2B_REF_LOGITS_BIN).
+    static const int prompt_ids[8] = {100000, 549, 4345, 280, 8204, 317, 245, 1234};
+    static const int truth_pred_ids[8] = {185, 207, 280, 254, 317, 8148, 1234, 12};
+    const char *ref_bin_override = getenv("QWEN_MOE2B_REF_LOGITS_BIN");
+    const char *ref_bin_path = (ref_bin_override && ref_bin_override[0])
+        ? ref_bin_override : "moe2b_ref_logits.bin";
+    FILE *reff = fopen(ref_bin_path, "rb");
+    if (!reff) {
+        fprintf(stderr, "FATAL: [moe gpu full] cannot open ground-truth logits bin '%s'\n", ref_bin_path);
+        exit(1);
+    }
+    float *ref_logits = (float *)malloc(sizeof(float) * (size_t)8 * MOE_VOCAB);
+    if (fread(ref_logits, sizeof(float), (size_t)8 * MOE_VOCAB, reff) != (size_t)8 * MOE_VOCAB) {
+        fprintf(stderr, "FATAL: [moe gpu full] short read on ground-truth logits bin\n");
+        exit(1);
+    }
+    fclose(reff);
+
+    float *x_gpu = (float *)malloc(sizeof(float) * MOE_HIDDEN);
+    float *x_gpu_next = (float *)malloc(sizeof(float) * MOE_HIDDEN);
+    float *x_normed = (float *)malloc(sizeof(float) * MOE_HIDDEN);
+    float *cpu_logits = (float *)malloc(sizeof(float) * MOE_VOCAB);
+    float *gpu_logits = (float *)malloc(sizeof(float) * MOE_VOCAB);
+    int argmax_match = 0;
+    double worst_gpu_vs_cpu = 0.0, worst_gpu_vs_truth = 0.0, worst_cpu_vs_truth = 0.0;
+
+    for (int pos = 0; pos < 8; pos++) {
+        int token = prompt_ids[pos];
+
+        // CPU reference: moe_forward_token() maintains its own residual stream (g_mft_x)
+        // across calls, matching a real sequential decode over the 8-token prompt.
+        moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, token, pos, cpu_logits,
+                           NULL, NULL, NULL);
+
+        // GPU: this gate's own residual stream, updated in place layer by layer.
+        for (int c = 0; c < MOE_HIDDEN; c++) x_gpu[c] = moe_decode_af(af_blob, t_embed, 0, token, c);
+        for (int l = 0; l < MOE_NL; l++) {
+            MoeLayerTensors *t = &g_moe_lt[l];
+            float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
+            float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
+            int is_dense = (l < MOE_FIRST_DENSE_LAYERS);
+            float *w_kvaln = (float *)(g_moe_f32_blob + t->kv_a_ln->off);  // MLA: every layer has this
+            float *w_gate = is_dense ? NULL : (float *)(g_moe_f32_blob + t->gate_w->off);
+            if (!mlx_gpu_layer_step(l, pos, is_dense, x_gpu, w_inln, w_postln, w_kvaln, w_gate,
+                                     x_gpu_next, NULL, NULL)) {
+                fprintf(stderr, "FATAL: [moe gpu full] mlx_gpu_layer_step failed at pos %d layer %d\n", pos, l);
+                exit(1);
+            }
+            memcpy(x_gpu, x_gpu_next, sizeof(float) * MOE_HIDDEN);
+        }
+        moe_rmsnorm(x_gpu, w_finalnorm, x_normed, MOE_HIDDEN);
+        if (!mlx_gpu_matvec_probe("lm_head", 0, x_normed, gpu_logits)) {
+            fprintf(stderr, "FATAL: [moe gpu full] lm_head matvec failed at pos %d\n", pos);
+            exit(1);
+        }
+
+        int cpu_argmax = 0, gpu_argmax = 0;
+        for (int v = 1; v < MOE_VOCAB; v++) {
+            if (cpu_logits[v] > cpu_logits[cpu_argmax]) cpu_argmax = v;
+            if (gpu_logits[v] > gpu_logits[gpu_argmax]) gpu_argmax = v;
+        }
+        int gpu_match_truth = (gpu_argmax == truth_pred_ids[pos]);
+        if (gpu_match_truth) argmax_match++;
+
+        double num_gc=0.0, den_gc=0.0, num_gt=0.0, den_gt=0.0, num_ct=0.0, den_ct=0.0;
+        for (int v = 0; v < MOE_VOCAB; v++) {
+            double c=cpu_logits[v], g=gpu_logits[v], t2=ref_logits[pos*MOE_VOCAB+v];
+            double dgc=g-c; num_gc+=dgc*dgc; den_gc+=c*c;
+            double dgt=g-t2; num_gt+=dgt*dgt; den_gt+=t2*t2;
+            double dct=c-t2; num_ct+=dct*dct; den_ct+=t2*t2;
+        }
+        double rel_gc = den_gc>0.0 ? sqrt(num_gc/den_gc) : 0.0;
+        double rel_gt = den_gt>0.0 ? sqrt(num_gt/den_gt) : 0.0;
+        double rel_ct = den_ct>0.0 ? sqrt(num_ct/den_ct) : 0.0;
+        if (rel_gc > worst_gpu_vs_cpu) worst_gpu_vs_cpu = rel_gc;
+        if (rel_gt > worst_gpu_vs_truth) worst_gpu_vs_truth = rel_gt;
+        if (rel_ct > worst_cpu_vs_truth) worst_cpu_vs_truth = rel_ct;
+        fprintf(stderr, "[moe gpu full] pos %d: cpu_argmax=%d gpu_argmax=%d truth_pred=%d "
+                        "gpu_vs_truth_match=%d gpu_vs_cpu_rel_l2=%.6e gpu_vs_truth_rel_l2=%.6e "
+                        "cpu_vs_truth_rel_l2=%.6e\n",
+                pos, cpu_argmax, gpu_argmax, truth_pred_ids[pos], gpu_match_truth,
+                rel_gc, rel_gt, rel_ct);
+    }
+    fprintf(stderr, "[moe gpu full] argmax parity vs real MLX ground truth: %d/8 (bar 8/8)\n", argmax_match);
+    fprintf(stderr, "[moe gpu full] WORST across 8 positions: gpu_vs_cpu=%.6e (bar <=1e-4) "
+                    "gpu_vs_truth=%.6e (bar <=1e-2) cpu_vs_truth=%.6e (bar <=1e-2)\n",
+            worst_gpu_vs_cpu, worst_gpu_vs_truth, worst_cpu_vs_truth);
+
+    // KILL-GATE: steady-state single-token GPU decode throughput, GPU-only (no CPU compute
+    // alongside, so this arm's own number isn't skewed by the correctness loop's CPU work).
+    // Continues the SAME residual stream past the real 8-token prompt with a deterministic
+    // synthetic continuation (cycling the same real token ids -- MLA_L0_MAXPOS=32 caps how far
+    // this process's GPU K/V cache can go, so pos 8..31 is what's available this run).
+    // Reference: llama.cpp+Metal measured 48.34 tok/s on this exact model (V5-pre, RESULTS.md).
+    int warmup_n = 8, measure_n = 32 - 8 - 8;   // 32 = mlx_moe.cpp's MLA_L0_MAXPOS, this process's cache ceiling
+    for (int i = 0; i < warmup_n; i++) {
+        int pos = 8 + i;
+        int token = prompt_ids[pos % 8];
+        for (int c = 0; c < MOE_HIDDEN; c++) x_gpu[c] = moe_decode_af(af_blob, t_embed, 0, token, c);
+        for (int l = 0; l < MOE_NL; l++) {
+            MoeLayerTensors *t = &g_moe_lt[l];
+            float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
+            float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
+            int is_dense = (l < MOE_FIRST_DENSE_LAYERS);
+            float *w_kvaln = (float *)(g_moe_f32_blob + t->kv_a_ln->off);
+            float *w_gate = is_dense ? NULL : (float *)(g_moe_f32_blob + t->gate_w->off);
+            mlx_gpu_layer_step(l, pos, is_dense, x_gpu, w_inln, w_postln, w_kvaln, w_gate,
+                               x_gpu_next, NULL, NULL);
+            memcpy(x_gpu, x_gpu_next, sizeof(float) * MOE_HIDDEN);
+        }
+    }
+    double kg_t0 = nowt();
+    for (int i = 0; i < measure_n; i++) {
+        int pos = 8 + warmup_n + i;
+        int token = prompt_ids[pos % 8];
+        for (int c = 0; c < MOE_HIDDEN; c++) x_gpu[c] = moe_decode_af(af_blob, t_embed, 0, token, c);
+        for (int l = 0; l < MOE_NL; l++) {
+            MoeLayerTensors *t = &g_moe_lt[l];
+            float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
+            float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
+            int is_dense = (l < MOE_FIRST_DENSE_LAYERS);
+            float *w_kvaln = (float *)(g_moe_f32_blob + t->kv_a_ln->off);
+            float *w_gate = is_dense ? NULL : (float *)(g_moe_f32_blob + t->gate_w->off);
+            mlx_gpu_layer_step(l, pos, is_dense, x_gpu, w_inln, w_postln, w_kvaln, w_gate,
+                               x_gpu_next, NULL, NULL);
+            memcpy(x_gpu, x_gpu_next, sizeof(float) * MOE_HIDDEN);
+        }
+        moe_rmsnorm(x_gpu, w_finalnorm, x_normed, MOE_HIDDEN);
+        mlx_gpu_matvec_probe("lm_head", 0, x_normed, gpu_logits);   // real serving includes lm_head every step
+    }
+    double kg_t1 = nowt();
+    double kg_toksec = measure_n / (kg_t1 - kg_t0);
+    fprintf(stderr, "[moe gpu full] KILL-GATE: %d positions warm-up (excluded), %d measured, "
+                    "%.3fs wall, %.3f tok/s (bar: >=48.34 tok/s = llama.cpp+Metal parity, "
+                    "target >=55 tok/s = 89%% of the 61.8 tok/s roofline)\n",
+            warmup_n, measure_n, kg_t1 - kg_t0, kg_toksec);
+
+    fprintf(stderr, "RESULT: MoE GPU V5c full 27-layer forward gate complete\n");
+    free(x_gpu); free(x_gpu_next); free(x_normed); free(cpu_logits); free(gpu_logits); free(ref_logits);
+    return 1;
+}
 #endif // QWEN_GPU_MLX
 
 static int run_moe_verify_mode(int argc, char **argv) {
@@ -8521,6 +8763,8 @@ int main(int argc, char **argv) {
     if (run_moe_gpu_mode(argc, argv)) return 0;
     // V5b: same reasoning, QWEN_MOE_GPU_MLA is its own independent env var.
     if (run_moe_gpu_mla_gate(argc, argv)) return 0;
+    // V5c: same reasoning, QWEN_MOE_GPU_FULL is its own independent env var.
+    if (run_moe_gpu_full_gate(argc, argv)) return 0;
 #endif
     if (run_gguf_moe_verify_mode(argc, argv)) return 0;
     if (run_moe_safetensors_verify_mode(argc, argv)) return 0;

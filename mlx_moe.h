@@ -79,6 +79,24 @@ int mlx_gpu_mla_config(int n_heads, int q_head_dim, int qk_nope_hd, int qk_rope_
 // missing.
 int mlx_gpu_mla_layer0(const float *h, int pos, const float *kv_a_ln_w, float *o_out);
 
+// V5c: full-layer config -- call once, after mlx_gpu_mla_config(), before any
+// mlx_gpu_layer_step() call.
+int mlx_gpu_layer_config(int hidden, int im_dim, int dense_im, int n_experts, int n_shared,
+                          int top_k, int group_size);
+
+// V5c: full transformer block (attention + FFN) for layer `l`, one token position, on GPU.
+// Mirrors moe_forward_token()'s per-layer loop body. w_inln/w_postln/w_kvaln/w_gate are raw
+// F32 weight pointers (same convention as mlx_gpu_mla_layer0's kv_a_ln_w -- read directly from
+// qwen_infer.c's own F32 blob, not bound into MLX). is_dense selects the dense MLP path
+// (l < first_dense_layers) vs the routed+shared-expert path; w_gate/out_top_idx/out_top_wgt
+// are ignored (may be NULL) when is_dense=1. x_in/x_out are the residual stream, [hidden]
+// floats each (x_out may alias x_in). Returns 1 on success, 0 if config wasn't called or a
+// required tensor is missing.
+int mlx_gpu_layer_step(int l, int pos, int is_dense,
+                        const float *x_in, const float *w_inln, const float *w_postln,
+                        const float *w_kvaln, const float *w_gate,
+                        float *x_out, int *out_top_idx, float *out_top_wgt);
+
 #ifdef __cplusplus
 }
 #endif

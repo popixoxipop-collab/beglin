@@ -10,6 +10,8 @@
 #include "mlx_moe.h"
 #include "mlx/mlx.h"
 
+#include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <string>
 #include <unordered_map>
@@ -192,14 +194,15 @@ static int g_mla_n_heads = 0, g_mla_q_head_dim = 0, g_mla_qk_nope = 0, g_mla_qk_
 static double g_mla_rope_mscale = 0.0, g_mla_attn_scale = 0.0, g_mla_rms_eps = 1e-6;
 static std::vector<float> g_mla_yarn_freqs;   // qk_rope_hd/2 entries
 
-// Layer-0-only K/V cache, GPU arm's own (separate from qwen_infer.c's CPU-side
-// g_moe_K/V -- D-gpu-2, no shared mutable state across the vendor boundary).
-// Layout [head][pos][dim], NOT [pos][head][dim], so that the slice needed for
-// one sdpa call (all heads, positions 0..pos) is built by copying H
-// independent contiguous runs rather than reordering per-element.
+// GPU arm's own K/V cache (separate from qwen_infer.c's CPU-side g_moe_K/V --
+// D-gpu-2, no shared mutable state across the vendor boundary). Layout
+// [layer][head][pos][dim], so the slice needed for one sdpa call (all heads,
+// positions 0..pos, one layer) is built by copying H independent contiguous
+// runs rather than reordering per-element.
 #define MLA_L0_MAXPOS 32
-static std::vector<float> g_mla_l0_K;  // H * MLA_L0_MAXPOS * q_head_dim
-static std::vector<float> g_mla_l0_V;  // H * MLA_L0_MAXPOS * v_hd
+#define MLA_MAXLAYERS 32
+static std::vector<float> g_mla_K;  // MLA_MAXLAYERS * H * MLA_L0_MAXPOS * q_head_dim
+static std::vector<float> g_mla_V;  // MLA_MAXLAYERS * H * MLA_L0_MAXPOS * v_hd
 
 int mlx_gpu_mla_config(int n_heads, int q_head_dim, int qk_nope_hd, int qk_rope_hd,
                         int v_hd, int kv_lora_rank, double rope_mscale, double attn_scale,
@@ -216,18 +219,27 @@ int mlx_gpu_mla_config(int n_heads, int q_head_dim, int qk_nope_hd, int qk_rope_
     g_mla_rms_eps = rms_eps;
     int half = qk_rope_hd / 2;
     g_mla_yarn_freqs.assign(yarn_freqs_half, yarn_freqs_half + half);
-    g_mla_l0_K.assign((size_t)n_heads * MLA_L0_MAXPOS * q_head_dim, 0.0f);
-    g_mla_l0_V.assign((size_t)n_heads * MLA_L0_MAXPOS * v_hd, 0.0f);
+    g_mla_K.assign((size_t)MLA_MAXLAYERS * n_heads * MLA_L0_MAXPOS * q_head_dim, 0.0f);
+    g_mla_V.assign((size_t)MLA_MAXLAYERS * n_heads * MLA_L0_MAXPOS * v_hd, 0.0f);
     return 1;
 }
 
-int mlx_gpu_mla_layer0(const float *h, int pos, const float *kv_a_ln_w, float *o_out) {
+// V5c: same MLA attention arithmetic as mlx_gpu_mla_layer0(), generalized to an arbitrary
+// layer index (name prefix + own K/V cache slice) so run_moe_gpu_full_gate() can drive all 27
+// layers with one implementation. mlx_gpu_mla_layer0() (V5b, unchanged) is now a thin l=0
+// wrapper over this -- same tensors, same cache slot, byte-for-byte identical behavior.
+static int mlx_gpu_mla_layer_impl(int l, const float *h, int pos, const float *kv_a_ln_w, float *o_out) {
     if (g_mla_n_heads == 0) return 0;   // mlx_gpu_mla_config() not called
-    if (pos < 0 || pos >= MLA_L0_MAXPOS) return 0;
-    auto itq   = g_tensors.find("model.layers.0.self_attn.q_proj");
-    auto itkva = g_tensors.find("model.layers.0.self_attn.kv_a_proj_with_mqa");
-    auto itkvb = g_tensors.find("model.layers.0.self_attn.kv_b_proj");
-    auto ito   = g_tensors.find("model.layers.0.self_attn.o_proj");
+    if (pos < 0 || pos >= MLA_L0_MAXPOS || l < 0 || l >= MLA_MAXLAYERS) return 0;
+    char nq[96], nkva[96], nkvb[96], no[96];
+    snprintf(nq, sizeof nq, "model.layers.%d.self_attn.q_proj", l);
+    snprintf(nkva, sizeof nkva, "model.layers.%d.self_attn.kv_a_proj_with_mqa", l);
+    snprintf(nkvb, sizeof nkvb, "model.layers.%d.self_attn.kv_b_proj", l);
+    snprintf(no, sizeof no, "model.layers.%d.self_attn.o_proj", l);
+    auto itq   = g_tensors.find(nq);
+    auto itkva = g_tensors.find(nkva);
+    auto itkvb = g_tensors.find(nkvb);
+    auto ito   = g_tensors.find(no);
     if (itq == g_tensors.end() || itkva == g_tensors.end() ||
         itkvb == g_tensors.end() || ito == g_tensors.end()) return 0;
 
@@ -242,8 +254,8 @@ int mlx_gpu_mla_layer0(const float *h, int pos, const float *kv_a_ln_w, float *o
 
         // q_proj(h), kv_a_proj(h) -- reuse the already-verified matvec path (Gate 4).
         std::vector<float> q(qdim), kv_ap(kva_out);
-        if (!mlx_gpu_matvec_probe("model.layers.0.self_attn.q_proj", 0, h, q.data())) return 0;
-        if (!mlx_gpu_matvec_probe("model.layers.0.self_attn.kv_a_proj_with_mqa", 0, h, kv_ap.data())) return 0;
+        if (!mlx_gpu_matvec_probe(nq, 0, h, q.data())) return 0;
+        if (!mlx_gpu_matvec_probe(nkva, 0, h, kv_ap.data())) return 0;
 
         float *compressed_kv = kv_ap.data();              // first KVLORA
         float *k_pe = kv_ap.data() + KVLORA;               // last ROPE
@@ -257,7 +269,7 @@ int mlx_gpu_mla_layer0(const float *h, int pos, const float *kv_a_ln_w, float *o
         std::memcpy(normed_kv.data(), normed.data<float>(), sizeof(float) * KVLORA);
 
         std::vector<float> kv_b(kvb_out);
-        if (!mlx_gpu_matvec_probe("model.layers.0.self_attn.kv_b_proj", 0, normed_kv.data(), kv_b.data()))
+        if (!mlx_gpu_matvec_probe(nkvb, 0, normed_kv.data(), kv_b.data()))
             return 0;
 
         // rope_mscale scaling on q_pe (per head) and k_pe -- plain scalar multiply,
@@ -306,8 +318,8 @@ int mlx_gpu_mla_layer0(const float *h, int pos, const float *kv_a_ln_w, float *o
         for (int hh = 0; hh < H; hh++) {
             const float *k_nope = kv_b.data() + hh * (NOPE + VHD);
             const float *v_h    = kv_b.data() + hh * (NOPE + VHD) + NOPE;
-            float *kdst = g_mla_l0_K.data() + ((size_t)hh * MLA_L0_MAXPOS + pos) * QHD;
-            float *vdst = g_mla_l0_V.data() + ((size_t)hh * MLA_L0_MAXPOS + pos) * VHD;
+            float *kdst = g_mla_K.data() + (((size_t)l * H + hh) * MLA_L0_MAXPOS + pos) * QHD;
+            float *vdst = g_mla_V.data() + (((size_t)l * H + hh) * MLA_L0_MAXPOS + pos) * VHD;
             std::memcpy(kdst, k_nope, sizeof(float) * NOPE);
             std::memcpy(kdst + NOPE, k_pe, sizeof(float) * ROPE);
             std::memcpy(vdst, v_h, sizeof(float) * VHD);
@@ -322,10 +334,10 @@ int mlx_gpu_mla_layer0(const float *h, int pos, const float *kv_a_ln_w, float *o
         std::vector<float> k_stage((size_t)H * kv_len * QHD), v_stage((size_t)H * kv_len * VHD);
         for (int hh = 0; hh < H; hh++) {
             std::memcpy(k_stage.data() + (size_t)hh * kv_len * QHD,
-                        g_mla_l0_K.data() + (size_t)hh * MLA_L0_MAXPOS * QHD,
+                        g_mla_K.data() + ((size_t)l * H + hh) * MLA_L0_MAXPOS * QHD,
                         sizeof(float) * kv_len * QHD);
             std::memcpy(v_stage.data() + (size_t)hh * kv_len * VHD,
-                        g_mla_l0_V.data() + (size_t)hh * MLA_L0_MAXPOS * VHD,
+                        g_mla_V.data() + ((size_t)l * H + hh) * MLA_L0_MAXPOS * VHD,
                         sizeof(float) * kv_len * VHD);
         }
         mx::array qa((void *)q.data(), {1, H, 1, QHD}, mx::float32, noop_deleter);
@@ -338,11 +350,172 @@ int mlx_gpu_mla_layer0(const float *h, int pos, const float *kv_a_ln_w, float *o
         std::memcpy(attn_out.data(), attn.data<float>(), sizeof(float) * H * VHD);
 
         (void)attn_out_dim;
-        if (!mlx_gpu_matvec_probe("model.layers.0.self_attn.o_proj", 0, attn_out.data(), o_out))
+        if (!mlx_gpu_matvec_probe(no, 0, attn_out.data(), o_out))
             return 0;
         (void)hidden;
         return 1;
     } catch (...) {
         return 0;
     }
+}
+
+// V5b's original entry point, unchanged behavior -- l=0 through the generalized impl above.
+int mlx_gpu_mla_layer0(const float *h, int pos, const float *kv_a_ln_w, float *o_out) {
+    return mlx_gpu_mla_layer_impl(0, h, pos, kv_a_ln_w, o_out);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// V5c: full transformer block for one layer -- attention + FFN (dense or
+// routed+shared), mirroring moe_forward_token()'s per-layer loop body
+// (qwen_infer.c) exactly. The router (gate_w matvec + softmax + top-k) runs
+// on the host: it's a tiny n_experts-wide op (64x2048 for this fixture), no
+// accuracy or performance reason to push it through MLX -- a legitimate
+// per-role CPU/GPU split, not a shortcut (the same D-gpu reasoning the user's
+// own long-term per-role-device-dispatch goal is built on). gather_qmm
+// (verified in isolation: max_abs_diff 4.77e-07 against a hand-decoded int4
+// reference at group_size=64/bits=4, the real fixture's config) handles the
+// routed switch_gate/switch_up GEMMs in one dispatch each (same h2 input,
+// different rhs per selected expert); switch_down loops mlx_gpu_matvec_probe
+// per selected expert (each takes a DIFFERENT swiglu'd activation, not a
+// shared one, so it doesn't fit gather_qmm's single-shared-x calling
+// convention the same way) -- reuses the already Gate-4-verified single-
+// expert path rather than risking a new, unverified gather_qmm usage pattern
+// under this round's time budget.
+static int g_layer_hidden = 0, g_layer_im_dim = 0, g_layer_dense_im = 0,
+           g_layer_n_experts = 0, g_layer_n_shared = 0, g_layer_top_k = 0, g_layer_group = 64;
+
+int mlx_gpu_layer_config(int hidden, int im_dim, int dense_im, int n_experts, int n_shared,
+                          int top_k, int group_size) {
+    if (!mlx_gpu_available()) return 0;
+    g_layer_hidden = hidden; g_layer_im_dim = im_dim; g_layer_dense_im = dense_im;
+    g_layer_n_experts = n_experts; g_layer_n_shared = n_shared; g_layer_top_k = top_k;
+    g_layer_group = group_size;
+    return 1;
+}
+
+static void host_rmsnorm(const float *x, const float *g, float *y, int n, double eps) {
+    double ss = 0.0; for (int i = 0; i < n; i++) ss += (double)x[i]*x[i];
+    double inv = 1.0 / sqrt(ss/n + eps);
+    for (int i = 0; i < n; i++) y[i] = (float)(x[i]*inv*g[i]);
+}
+static void host_softmax(float *x, int n) {
+    float mx_v = x[0]; for (int i=1;i<n;i++) if (x[i]>mx_v) mx_v=x[i];
+    double sum = 0.0;
+    for (int i=0;i<n;i++) { x[i] = expf(x[i]-mx_v); sum += x[i]; }
+    for (int i=0;i<n;i++) x[i] = (float)(x[i]/sum);
+}
+// Order-invariant repeated-max top-k -- same algorithm as qwen_infer.c's own
+// moe_top_k_select() (duplicated across the D-gpu-1 vendor boundary, not shared).
+static void host_top_k_select(const float *scores, int n, int k, int *out_idx) {
+    std::vector<int> used(n, 0);
+    for (int i = 0; i < k; i++) {
+        int best = -1; float bestv = -1e30f;
+        for (int j = 0; j < n; j++) if (!used[j] && scores[j] > bestv) { bestv = scores[j]; best = j; }
+        used[best] = 1; out_idx[i] = best;
+    }
+}
+static void host_swiglu(float *gate, const float *up, int n) {
+    for (int i = 0; i < n; i++) {
+        float g = gate[i];
+        float silu = g / (1.0f + expf(-g));
+        gate[i] = silu * up[i];
+    }
+}
+
+// gather_qmm for one tensor, one token (x shape {1,in}), TOPK selected experts sharing the
+// SAME x -- writes out[TOPK*out_dim] contiguous (verified layout: gather_qmm's output for
+// x={1,in}, rhs_indices={1,TOPK} is (1,TOPK,1,out_dim), which is exactly TOPK*out_dim
+// contiguous floats).
+static int gather_qmm_probe(const char *name, const float *x, const int *top_idx, int top_k,
+                             float *out) {
+    auto it = g_tensors.find(name);
+    if (it == g_tensors.end()) return 0;
+    QTensor &t = it->second;
+    try {
+        std::vector<int32_t> idx32(top_idx, top_idx + top_k);
+        mx::array xin((void *)x, {1, (int)t.in}, mx::float32, noop_deleter);
+        mx::array idxa(idx32.data(), {1, top_k}, mx::int32, noop_deleter);
+        mx::array out_arr = mx::gather_qmm(xin, t.w, t.scales, t.biases, std::nullopt, idxa,
+                                            /*transpose=*/true, g_layer_group, 4, "affine", false);
+        mx::eval(out_arr);
+        std::memcpy(out, out_arr.data<float>(), sizeof(float) * (size_t)top_k * t.out);
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
+int mlx_gpu_layer_step(int l, int pos, int is_dense,
+                        const float *x_in, const float *w_inln, const float *w_postln,
+                        const float *w_kvaln, const float *w_gate,
+                        float *x_out, int *out_top_idx, float *out_top_wgt) {
+    if (g_layer_hidden == 0) return 0;   // mlx_gpu_layer_config() not called
+    const int HIDDEN = g_layer_hidden, IM = g_layer_im_dim, DENSE_IM = g_layer_dense_im,
+              NE = g_layer_n_experts, NS = g_layer_n_shared, TOPK = g_layer_top_k;
+    static const double RMS_EPS = 1e-6;   // matches this fixture's MOE_RMS_EPS default (F-config)
+
+    std::vector<float> h(HIDDEN), x_mid(HIDDEN), h2(HIDDEN), o_attn(HIDDEN), mlp_out(HIDDEN, 0.0f);
+    host_rmsnorm(x_in, w_inln, h.data(), HIDDEN, RMS_EPS);
+    if (!mlx_gpu_mla_layer_impl(l, h.data(), pos, w_kvaln, o_attn.data())) return 0;
+    for (int c = 0; c < HIDDEN; c++) x_mid[c] = x_in[c] + o_attn[c];
+    host_rmsnorm(x_mid.data(), w_postln, h2.data(), HIDDEN, RMS_EPS);
+
+    char nm[128];
+    if (is_dense) {
+        std::vector<float> gate_v(DENSE_IM), up_v(DENSE_IM);
+        snprintf(nm, sizeof nm, "model.layers.%d.mlp.gate_proj", l);
+        if (!mlx_gpu_matvec_probe(nm, 0, h2.data(), gate_v.data())) return 0;
+        snprintf(nm, sizeof nm, "model.layers.%d.mlp.up_proj", l);
+        if (!mlx_gpu_matvec_probe(nm, 0, h2.data(), up_v.data())) return 0;
+        host_swiglu(gate_v.data(), up_v.data(), DENSE_IM);
+        snprintf(nm, sizeof nm, "model.layers.%d.mlp.down_proj", l);
+        if (!mlx_gpu_matvec_probe(nm, 0, gate_v.data(), mlp_out.data())) return 0;
+    } else {
+        std::vector<float> router_scores(NE);
+        for (int r = 0; r < NE; r++) {
+            double acc = 0.0;
+            for (int c = 0; c < HIDDEN; c++) acc += (double)w_gate[(long)r*HIDDEN+c] * h2[c];
+            router_scores[r] = (float)acc;
+        }
+        host_softmax(router_scores.data(), NE);
+        std::vector<int> top_idx(TOPK);
+        host_top_k_select(router_scores.data(), NE, TOPK, top_idx.data());
+        // DeepSeek-V2-Lite: MOE_NORM_TOPK_PROB=0, no renorm of the selected scores (F-config) --
+        // this gate is scoped to that fixture, matching qwen_infer.c's own golden-path default.
+
+        std::vector<float> gate_all((size_t)TOPK*IM), up_all((size_t)TOPK*IM);
+        snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
+        if (!gather_qmm_probe(nm, h2.data(), top_idx.data(), TOPK, gate_all.data())) return 0;
+        snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.up_proj", l);
+        if (!gather_qmm_probe(nm, h2.data(), top_idx.data(), TOPK, up_all.data())) return 0;
+
+        std::vector<float> down_v((size_t)TOPK*HIDDEN);
+        snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.down_proj", l);
+        for (int k = 0; k < TOPK; k++) {
+            host_swiglu(gate_all.data() + (size_t)k*IM, up_all.data() + (size_t)k*IM, IM);
+            if (!mlx_gpu_matvec_probe(nm, top_idx[k], gate_all.data() + (size_t)k*IM,
+                                       down_v.data() + (size_t)k*HIDDEN)) return 0;
+        }
+        for (int k = 0; k < TOPK; k++) {
+            float wgt = router_scores[top_idx[k]];
+            for (int c = 0; c < HIDDEN; c++) mlp_out[c] += wgt * down_v[(size_t)k*HIDDEN+c];
+            if (out_top_idx) out_top_idx[k] = top_idx[k];
+            if (out_top_wgt) out_top_wgt[k] = wgt;
+        }
+        if (NS > 0) {
+            std::vector<float> sgate(IM*NS), sup(IM*NS), sdown(HIDDEN);
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.gate_proj", l);
+            if (!mlx_gpu_matvec_probe(nm, 0, h2.data(), sgate.data())) return 0;
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.up_proj", l);
+            if (!mlx_gpu_matvec_probe(nm, 0, h2.data(), sup.data())) return 0;
+            host_swiglu(sgate.data(), sup.data(), IM*NS);
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.down_proj", l);
+            if (!mlx_gpu_matvec_probe(nm, 0, sgate.data(), sdown.data())) return 0;
+            for (int c = 0; c < HIDDEN; c++) mlp_out[c] += sdown[c];
+        }
+    }
+    for (int c = 0; c < HIDDEN; c++) x_out[c] = x_mid[c] + mlp_out[c];
+    return 1;
 }

@@ -3407,3 +3407,111 @@ Functional output on the adjacent AF-blob sequential path unchanged.
 **V5b complete.** V5c (full 27-layer single-token GPU forward vs `mlx_lm`
 greedy decode -- contains the plan's kill-gate) is next, its own future
 approval cycle.
+
+### V5c: full 27-layer GPU forward -- correctness gates all PASS, KILL-GATE FAILS
+
+**Scope**: `mlx_gpu_layer_step()` -- extends V5b's per-layer MLA attention
+(`mlx_gpu_mla_layer_impl()`, generalized from layer-0-only to any layer index
++ its own per-layer K/V cache slice, V5b's `mlx_gpu_mla_layer0()` now a thin
+l=0 wrapper, unchanged behavior) with the full FFN: dense MLP for layer 0,
+router + routed-expert + shared-expert FFN for layers 1-26. The router
+(gate_w matvec + softmax + top-6 select) runs on the host -- a tiny
+64-wide op, no accuracy or performance reason to push it through MLX, a
+legitimate per-role CPU/GPU split rather than a shortcut.
+
+**New MLX primitive verified in isolation before wiring**: `mx::gather_qmm`
+(matrix-level gather -- the routed-expert GEMM). First attempt at
+group_size=8 threw `[metal::Device] Unable to load kernel
+affine_gather_qmv_float_gs_8_b_4` (no precompiled kernel for that group
+size) -- re-tested at group_size=64 (this fixture's real config) against a
+hand-decoded int4 reference (8 experts, 3 selected, distinct random data):
+**max_abs_diff 4.77e-07**. Output layout confirmed empirically:
+`x={1,in}, rhs_indices={1,TOPK}` produces `(1,TOPK,1,out)`, i.e. TOPK*out
+contiguous floats.
+
+**Design choice on `switch_down`**: gate/up share the same h2 input across
+all TOPK selected experts (one `gather_qmm` call each), but each selected
+expert's down-projection consumes a *different* swiglu'd activation --
+doesn't fit gather_qmm's single-shared-x calling convention the same way.
+Looped `mlx_gpu_matvec_probe()` per selected expert instead (already
+Gate-4-verified single-expert path) rather than risk an unverified
+gather_qmm usage pattern under this round's time budget.
+
+**Real gate results** (`QWEN_MOE_GPU_FULL=1`, gated against
+`moe2b_reference_capture.py`'s actual MLX capture -- same real-text corpus,
+prompt_ids `[100000,549,4345,280,8204,317,245,1234]`, pred_ids
+`[185,207,280,254,317,8148,1234,12]`):
+
+| pos | gpu_vs_cpu (bar<=1e-4) | gpu_vs_truth (bar<=1e-2) | cpu_vs_truth (bar<=1e-2) | argmax match |
+|---|---|---|---|---|
+| 0 | 4.840e-07 | 3.910e-03 | 3.910e-03 | yes |
+| 1 | 2.310e-07 | 1.502e-03 | 1.502e-03 | yes |
+| 2 | 2.055e-07 | 1.256e-03 | 1.256e-03 | yes |
+| 3 | 1.560e-07 | 2.107e-03 | 2.107e-03 | yes |
+| 4 | 3.511e-07 | 2.523e-03 | 2.523e-03 | yes |
+| 5 | 3.793e-07 | 2.254e-03 | 2.254e-03 | yes |
+| 6 | 3.942e-07 | 1.494e-03 | 1.494e-03 | yes |
+| 7 | 4.772e-07 | 2.144e-03 | 2.144e-03 | yes |
+
+**All correctness gates PASS on the first real run -- no bugs found this
+round** (unlike V5a's two real bugs): argmax parity **8/8** against real MLX
+ground truth; worst gpu_vs_cpu rel-L2 **4.84e-07** (bar 1e-4, matches the
+plan's own prediction almost exactly); worst gpu_vs_truth **3.91e-03** (bar
+1e-2) tracks worst cpu_vs_truth **3.91e-03** to 6 significant figures at
+every position -- and that worst value matches this project's own
+previously-recorded MoE-2b CPU-side finding ("logits rel-L2
+1.25e-3~3.91e-3") almost exactly, strong transitive confirmation the whole
+new pipeline (router, gather_qmm, shared experts, dense layer) is correct,
+not just individually-plausible pieces. Router expert-set agreement was
+**not independently re-verified against MLX's own routing.json this round**
+(would need a JSON parser in C; skipped under this round's time budget) --
+given argmax+full-logits already match this closely, routing almost
+certainly does too (deterministic top-k over near-identical softmax
+scores), but this is a real, explicitly-flagged gap, not silently assumed
+closed. Regression: default-build byte-identity re-confirmed against the
+pre-V5-track baseline (V5a+V5b+V5c combined).
+
+**KILL-GATE: FAIL.** Steady-state single-token GPU decode throughput
+(8 positions warm-up excluded, 16 measured, 3 reps):
+
+| rep | wall time | tok/s |
+|---|---|---|
+| 1 | 2.059s | 7.771 |
+| 2 | 2.054s | 7.789 |
+| 3 | 2.048s | 7.812 |
+
+**~7.8 tok/s vs the 48.34 tok/s bar (llama.cpp+Metal parity) -- only ~13% of
+the 61.8 tok/s roofline (F-2), against llama.cpp's own 82.6%.** `vm_stat`
+pageout delta during a full run: 27 (148100->148127) -- small and likely
+ambient OS memory management, not the gate's own working set spilling.
+
+**Root cause, quantitatively consistent, not guessed**: this implementation
+dispatches roughly 19 separate MLX `eval()` calls per routed layer (4 for
+MLA attention's matvecs + kv_a_layernorm + 2 RoPE calls + 1 sdpa = 8, plus
+2 `gather_qmm` + 6 looped single-expert `switch_down` matvecs + 3 shared-
+expert matvecs = 11) and 11 for layer 0's dense path -- **~505 total GPU
+dispatches per token** across 27 layers. 128.7ms measured per token / ~505
+dispatches ~= 0.25ms/dispatch, a plausible, self-consistent number for
+Metal command-buffer submit+wait overhead on M=1 (single-token) GEMMs whose
+actual FLOP count is tiny relative to that fixed per-dispatch cost. This is
+exactly the failure mode the plan's own D-gpu-4 design principle ("**one**
+`mx::eval()` per token") was written to avoid -- this implementation,
+built by composing already-isolation-verified small primitives (each
+eval()'d immediately, for correctness confidence first, given every new
+primitive this round needed independent verification before combining),
+did not build one lazy computation graph across all 27 layers and
+`mx::eval()` once at the end. **The gap sits in this implementation's
+eager-eval dispatch pattern, not in gather_qmm's per-call compute cost, MLX
+on this hardware in general, or the model/architecture** -- V5b's isolated
+building-block numbers (rope/rms_norm/sdpa all sub-microsecond-precision
+matches) show the underlying primitives are correct and fast; the tax is
+purely dispatch-count overhead from composing them eagerly rather than
+lazily.
+
+**Per the plan's own kill-gate protocol: stop and re-scope here.** Not
+continuing into V5d/V5e without this decision -- rearchitecting
+`mlx_gpu_layer_step()` into one lazy per-token graph (deferring every
+`mx::eval()` to a single call after all 27 layers are composed) is the
+concrete, identified fix, but is real, nontrivial engineering (likely
+its own session) with no guarantee of clearing the bar until measured --
+not assumed here.
