@@ -2433,12 +2433,18 @@ static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row
     // 4.C bridge: a GGUF-sourced tensor carries its own buffer (t->base); every AF-blob-sourced
     // tensor (t->base==NULL) uses the shared blob exactly as before -- see MoeAFTensor's comment.
     const uint8_t *base = t->base ? t->base : blob;
-    // D-qknorm-1 follow-up: bits==32 (st_register_moe_f32_as_af()) is a raw, unquantized
-    // passthrough -- no scale/bias/group exist for it, so this must short-circuit BEFORE the
-    // scale read just below (which would otherwise dereference t->scale_off==-1).
-    if (t->bits == 32) {
-        long idx = t->packed_off + (e * t->out + row) * t->in + col;
-        float v; memcpy(&v, base + idx * 4, 4); return v;
+    // bits resolved per-expert FIRST (D-expert-promo-1 follow-up): a mixed tensor
+    // (st_register_moe_experts_mixed_as()) can have some experts at bits==32 and others at 4/8,
+    // so this can't be a single t->bits check -- must match eoff's own ebits-vs-uniform branch.
+    int bits0 = t->ebits ? t->ebits[e] : t->bits;
+    // bits==32 (st_register_moe_f32_as_af() for E=1 attention tensors, or a promoted expert
+    // inside a mixed E>1 tensor) is a raw, unquantized passthrough -- no scale/bias/group exist
+    // for it, so this must short-circuit BEFORE the scale read just below (which would otherwise
+    // dereference t->scale_off==-1 for an E=1 F32-as-AF tensor).
+    if (bits0 == 32) {
+        long eoff32 = t->ebits ? (long)t->epacked_off[e] : (e * t->out * t->in * 4);
+        long byte_idx = t->packed_off + eoff32 + (row * t->in + col) * 4;
+        float v; memcpy(&v, base + byte_idx, 4); return v;
     }
     long group = col / 64;
     long scale_idx = t->scale_off + ((e * t->out + row) * t->ng + group) * 4;
@@ -2448,7 +2454,7 @@ static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row
     // one SIGNED int8 code per element, row-major, no nibble split -- see its own header comment
     // ("Direct division... crow[g*64+p] = (int8_t)qf") for the exact convention this mirrors.
     // codes_out ~ [-127,127], symmetric (value = code*scale, no offset -- unlike int4's nib-8).
-    int bits = t->ebits ? t->ebits[e] : t->bits;
+    int bits = bits0;
     // eoff: byte offset where expert e's packed data begins. Uniform tensors (ebits==NULL)
     // reproduce the exact old per-tensor-bits formula; mixed tensors use the precomputed
     // non-uniform prefix-sum table (see MoeAFTensor's own ebits/epacked_off comment).
@@ -2494,10 +2500,13 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
     long ng = t->ng;
     long row_base = e * t->out + row;   // scale/bias addressing only -- bit-width-independent (see MoeAFTensor's ebits comment)
     int bits = t->ebits ? t->ebits[e] : t->bits;
-    // D-qknorm-1 follow-up: bits==32 raw passthrough (st_register_moe_f32_as_af()) -- no
-    // scale/bias/group, so this short-circuits before eoff (which assumes a packed layout).
+    // D-expert-promo-1 follow-up: bits==32 raw passthrough (st_register_moe_f32_as_af() for E=1
+    // attention tensors, or a promoted expert inside a mixed E>1 tensor) -- no scale/bias/group,
+    // so this short-circuits before the shared eoff formula below (which assumes a packed
+    // layout). eoff32 mirrors the shared eoff's own ebits-vs-uniform branch.
     if (bits == 32) {
-        long row_byte0 = t->packed_off + row * t->in * 4;
+        long eoff32 = t->ebits ? (long)t->epacked_off[e] : (e * t->out * t->in * 4);
+        long row_byte0 = t->packed_off + eoff32 + row * t->in * 4;
         double acc32 = 0.0;
         for (long col = 0; col < t->in; col++) {
             float w; memcpy(&w, base + row_byte0 + col * 4, 4);
@@ -6851,8 +6860,11 @@ static MoeAFTensor *st_register_moe_experts_mixed_as(const char *name_pattern, i
     size_t off = 0;
     for (long e = 0; e < E; e++) {
         int b = ebits_in[e];
-        if (b != 4 && b != 8) { fprintf(stderr, "FATAL: st_register_moe_experts_mixed_as: expert %ld has invalid bits=%d (must be 4 or 8)\n", e, b); exit(1); }
-        size_t row_pbytes = (size_t)(b == 8 ? in : in / 2);
+        if (b != 4 && b != 8 && b != 32) { fprintf(stderr, "FATAL: st_register_moe_experts_mixed_as: expert %ld has invalid bits=%d (must be 4, 8, or 32)\n", e, b); exit(1); }
+        // D-expert-promo-1: bits==32 is raw unquantized float (4 bytes/element, no packing) --
+        // the prefix-sum epacked_off table already generalizes to a third byte-width the same
+        // way it generalizes from one (4/8) to two.
+        size_t row_pbytes = (size_t)(b == 32 ? in * 4 : (b == 8 ? in : in / 2));
         epacked_off[e] = off;
         off = moe_gguf_add_checked("mixed packed_bytes running total", off,
                  moe_gguf_mul_checked("mixed row bytes", (size_t)out, row_pbytes));
@@ -6890,7 +6902,13 @@ static MoeAFTensor *st_register_moe_experts_mixed_as(const char *name_pattern, i
             exit(1);
         }
         safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), deq, (uint64_t)(out * in));
-        if (ebits_in[e] == 8) {
+        if (ebits_in[e] == 32) {
+            // No quantize step at all: safetensors_dequant_row() already produced float32 --
+            // this expert's scale slot is allocated but never written/read (moe_decode_af()/
+            // moe_matvec_af_row()'s bits==32 branch never touches scale), harmless per this
+            // engine's own dummy-placeholder convention used elsewhere.
+            memcpy(packed_all + epacked_off[e], deq, (size_t)out * (size_t)in * sizeof(float));
+        } else if (ebits_in[e] == 8) {
             gguf_quantize_q8g64(deq, (int)out, (int)in,
                                  (int8_t *)(packed_all + epacked_off[e]),
                                  scales_all + (size_t)e * (size_t)out * (size_t)ng);
@@ -7226,35 +7244,46 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
     g_moe_af = calloc(512, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
     g_moe_f32 = malloc(sizeof(MoeF32Tensor) * 512);
 
-    // Per-expert mixed-precision expert promotion (profiling-driven follow-up, 2026-08-29):
-    // QWEN_MOE_EXPERT_BITS points at a "layer expert_id" list (one pair per line, from
-    // moe_st_expert_profiler.py's *_promoted.txt output) naming which (layer,expert) pairs stay
-    // at q8g64 int8; every other expert drops to q4g64 int4. Unset (default): byte-identical to
-    // this round's shipped blanket-int8 behavior via the existing st_register_moe_experts_q8g64_as()
-    // call below -- this whole block is additive and only activates the mixed path when explicitly requested.
-    int **g_promo_ebits = NULL;   // g_promo_ebits[l][e] in {4,8}, l=0..MOE_NL-1, e=0..MOE_N_EXPERTS-1
+    // Per-expert mixed-precision expert promotion (profiling-driven follow-up, 2026-08-29;
+    // D-expert-promo-1 extended this to a 3rd tier the same day). QWEN_MOE_EXPERT_BITS points
+    // at a "<layer> <expert_id> <bits>" list (one triple per line, bits in {4,8,32}) naming an
+    // explicit precision override for that (layer,expert); every other expert stays at this
+    // loader's shipped int8 default (matching the blanket-int8 behavior when this env var is
+    // unset entirely -- st_register_moe_experts_q8g64_as() below). bits=32 (F32, no quantize
+    // step at all) is for a small, evidence-selected top-k subset per layer -- see
+    // moe_st_expert_profiler.py and D-expert-promo-1's own reasoning for why this is deliberately
+    // NOT "promote everything": the expert FFN's parameter count dwarfs attention's, so blanket
+    // F32 here would cost far more than the targeted attention fix already shipped. This format
+    // is a breaking change from the file's original 2-field "<layer> <expert_id>" (implicit
+    // "promote to int8, default int4") -- safe because QWEN_MOE_EXPERT_BITS was never adopted as
+    // a shipped default (this round's own DeepSeek-V2-Lite profiling round said so explicitly).
+    int **g_promo_ebits = NULL;   // g_promo_ebits[l][e] in {4,8,32}, l=0..MOE_NL-1, e=0..MOE_N_EXPERTS-1
     const char *promo_path = getenv("QWEN_MOE_EXPERT_BITS");
     if (promo_path && promo_path[0]) {
         g_promo_ebits = malloc(sizeof(int *) * (size_t)MOE_NL);
         for (int l = 0; l < MOE_NL; l++) {
             g_promo_ebits[l] = malloc(sizeof(int) * (size_t)MOE_N_EXPERTS);
-            for (int e = 0; e < MOE_N_EXPERTS; e++) g_promo_ebits[l][e] = 4;   // default: cheap
+            for (int e = 0; e < MOE_N_EXPERTS; e++) g_promo_ebits[l][e] = 8;   // default: this loader's own shipped blanket default
         }
         FILE *pf = fopen(promo_path, "r");
         if (!pf) { fprintf(stderr, "FATAL: QWEN_MOE_EXPERT_BITS: cannot open '%s'\n", promo_path); exit(1); }
-        int pl, pe, npromoted = 0;
-        while (fscanf(pf, "%d %d", &pl, &pe) == 2) {
+        int pl, pe, pb, noverride = 0;
+        while (fscanf(pf, "%d %d %d", &pl, &pe, &pb) == 3) {
             if (pl < 0 || pl >= MOE_NL || pe < 0 || pe >= MOE_N_EXPERTS) {
                 fprintf(stderr, "FATAL: QWEN_MOE_EXPERT_BITS: out-of-range (layer=%d, expert=%d) for MOE_NL=%d MOE_N_EXPERTS=%d\n",
                         pl, pe, MOE_NL, MOE_N_EXPERTS);
                 exit(1);
             }
-            g_promo_ebits[pl][pe] = 8;
-            npromoted++;
+            if (pb != 4 && pb != 8 && pb != 32) {
+                fprintf(stderr, "FATAL: QWEN_MOE_EXPERT_BITS: (layer=%d, expert=%d) bits=%d invalid (must be 4, 8, or 32)\n", pl, pe, pb);
+                exit(1);
+            }
+            g_promo_ebits[pl][pe] = pb;
+            noverride++;
         }
         fclose(pf);
-        fprintf(stderr, "[moe st load] QWEN_MOE_EXPERT_BITS=%s -- %d/%d (layer,expert) pairs promoted to int8, rest int4\n",
-                promo_path, npromoted, MOE_NL * MOE_N_EXPERTS);
+        fprintf(stderr, "[moe st load] QWEN_MOE_EXPERT_BITS=%s -- %d/%d (layer,expert) overrides loaded, rest at int8 default\n",
+                promo_path, noverride, MOE_NL * MOE_N_EXPERTS);
     }
 
     // Full per-role precision override (see moe_load_role_bits()'s own comment for the config
