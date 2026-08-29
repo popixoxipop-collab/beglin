@@ -188,6 +188,48 @@ rationale, the two hybrid attempts that motivated per-individual rather
 than per-category granularity, and `PLAN_general_purpose_loader.md`'s
 `D-gen-6` for why this is a plain text format rather than JSON/YAML.
 
+## The open question this engine exists to make experimentable
+
+Every fix documented above works the same way: promote a specific tensor's
+precision until a specific divergence closes. That points at a bigger,
+unanswered question this repo deliberately does not try to answer itself:
+for a given architecture, is there a *minimal* set of tensors -- which
+`(layer, expert_id)` pairs, which attention projections, which layers'
+dense/shared-expert internals -- that has to stay above int4/int8 to keep
+the model's output within tolerance, with everything else free to drop as
+low as the hardware budget demands? Ship-of-Theseus terms fit: how much of
+a model can be replaced with a cheaper part before its numerical identity
+changes, and what's the smallest set of parts that has to stay original
+for that not to happen?
+
+That's a real combinatorial search, not a one-shot measurement, and it's
+architecture-specific -- not a single answer to transplant across models.
+For OLMoE alone, "which experts can drop precision" is a search over
+`C(64, k)` candidate subsets *per layer* (16 layers), crossed with however
+many precision tiers are on the table (int4/int8/F32); brute force isn't
+viable for any real model, and this round already found the "obvious"
+heuristic doesn't transfer cleanly -- OLMoE's top-8-by-router-frequency
+subset alone reproduced almost none of what combining it with attention
+F32 achieved (see `RESULTS.md`'s `D-expert-promo-1`), so frequency-ranked
+selection isn't sufficient on its own, and a different expert count,
+sparsity pattern, or hidden size would need its own search from scratch,
+not this one's answer copy-pasted in.
+
+Running that search -- heuristic-guided, most likely by an agent trying
+candidate assignments and scoring each one, since the space is too large
+to hand-enumerate -- is future work, and deliberately not this repo's job.
+What this repo *is*: the substrate that makes each candidate assignment
+actually testable in an afternoon instead of a rewrite -- independently
+addressable precision per attention projection, per dense-layer internal,
+per shared-expert internal, and per individual `(layer, expert_id)`, plus
+a real numeric-gate harness (teacher-forced comparison against a genuine
+MLX reference, the same protocol `compare_moe_st_olmoe.py` already runs)
+to score any candidate honestly rather than by intuition. Whoever runs
+that search next -- another researcher, another LLM agent, not
+necessarily this project -- inherits a place to plug a `(role/tensor,
+bits)` assignment in and get a real pass/fail number back, not a rewrite
+of the loader first.
+
 ## Scope, honestly
 
 This is **not** a general-purpose loader like llama.cpp yet — it's
