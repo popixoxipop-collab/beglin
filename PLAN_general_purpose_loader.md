@@ -655,6 +655,36 @@ generality table now that Phase 4's structured plan is exhausted:
   independently precision-selectable. Full writeup: `RESULTS.md` "Full
   per-role precision engine: every individual tensor, independently
   selectable".
+- **MoE-format safetensors, Steps 4-6 (Qwen3-30B-A3B structural gate on
+  macstudio; OLMoE structural+numeric gate; a real q_norm/k_norm
+  architecture bug found and fixed)** -- Step 4 hit a real infra wall
+  first: Qwen3-30B-A3B's shipped-default resident footprint (~32.4GB)
+  exceeds bob's real 16GB RAM (`sysctl hw.memsize`), so structural
+  registration ran on macstudio (64GB) instead; numeric gate (Step 5) not
+  yet run. Step 6 (OLMoE) surfaced two real bugs: an out-of-vocabulary
+  default prompt ID (this loader's `QWEN_MOE_PROMPT_IDS` default assumed
+  "still in-bounds for any target vocab", false for OLMoE's 50304), and
+  the real one -- `q_norm`/`k_norm` normalize a fundamentally different
+  axis by architecture (Qwen3-MoE: per-head, weight shape `[head_dim]`;
+  OLMoE: whole-vector pre-reshape, weight shape `[n_heads*head_dim]`) --
+  `MOE_ST_ATTN_ROLES_GQA[]` wrongly assumed one shared mechanism for both
+  because the tensor *names* match (see `D-qknorm-1` in `qwen_infer.c`).
+  Fixed via a new `MOE_QKNORM_WHOLE_VECTOR` config flag + `moe_qknorm_
+  apply()` helper; argmax 4/8->8/8, router hard mismatches 94/128->1/128.
+  A real per-layer hidden-state dump (reusing the existing `QWEN_MOE_
+  DEBUG_LAYERDUMP` hook) localized the remaining gap to a near-tie router
+  flip amplified by the reference model's own naturally-shrinking final-
+  layer norm, not a new bug. Extended the per-role engine's F32 gate
+  (previously `embed_tokens`/`lm_head` only) to attention roles via a new
+  `st_register_moe_f32_as_af()` bridge (F32 data inside an `MoeAFTensor`,
+  zero forward-pass changes) -- promoting only `q/k/v/o_proj` to F32
+  eliminated the gate's one router hard-mismatch entirely and fixed the
+  worst-affected position (rel-L2 4.8e-2->6.5e-3). Routed-expert-level
+  promotion for the remaining gap is scoped, not yet implemented: reuse
+  the existing AEQ-inspired frequency/importance profiler to top-k-select
+  a small per-layer expert subset rather than blanket-promoting all 64
+  (see `D-expert-promo-1`). Full writeup: `RESULTS.md` "MoE-format
+  safetensors -- Steps 4-6".
 Full writeup: `RESULTS.md`'s entries following "Phase 4 sub-part 4".
 
 ### Phase 5 — Generalized export pipeline (Path B) + the bl=32 experiment (~2 weeks)

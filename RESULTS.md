@@ -2785,3 +2785,219 @@ bundled category.
 
 Commits: `4b07ae6` (`feat(moe-safetensors): full per-role precision
 override`).
+
+## MoE-format safetensors -- Steps 4-6: Qwen3-30B-A3B structural gate,
+## OLMoE structural+numeric gate, and a real q_norm/k_norm axis bug
+## (2026-08-29)
+
+### Step 4 -- Qwen3-30B-A3B structural registration (macstudio, not bob)
+
+**Real infra constraint found before any code ran.** Qwen3-30B-A3B's real
+config.json (`hidden_size=2048`, `num_hidden_layers=48`, `num_experts=128`,
+`moe_intermediate_size=768`) works out to ~29.9B attention+expert
+parameters (hand-derived, matches the "30B" naming). At this loader's
+shipped default (int8 attn/experts, F32 embed/lm_head, `tie_word_
+embeddings=false`) that's **~32.4GB resident** -- bob's real total RAM is
+exactly 16GB (`sysctl hw.memsize`), with only 1GB swap. No precision
+squeeze closes that gap (even int4-everywhere + int8 embed/lm_head is
+still ~15.6GB, i.e. bob's *entire* RAM with zero headroom for the OS or
+runtime scratch -- and this project already has a real, reproduced SIGKILL
+precedent at far smaller memory pressure this same round). macstudio (real
+`sysctl hw.memsize` = 64GB) was used instead. Structural registration
+(336 AF + 243 F32 tensors, 48 layers resolved) and the 8-position
+teacher-forced forward pass both completed cleanly (`exit 0`) -- numeric
+gate against a real MLX reference (Step 5) not yet run.
+
+### Step 6 -- OLMoE structural + numeric gate (bob; small enough to stay there)
+
+Real config.json check before assuming anything: OLMoE-1B-7B-0924 works
+out to ~6.9B attention+expert parameters (matches "7B" naming) -- at
+default bits, ~7.5GB resident, comfortably inside bob's 16GB. Structural
+registration (112 AF + 83 F32, 16 layers resolved) and forward pass both
+ran cleanly first try.
+
+**Bug 1 -- out-of-vocabulary prompt ID, both sides.** This project's
+existing `QWEN_MOE_PROMPT_IDS` default (`{100000, 549, 4345, 280, 8204,
+317, 245, 1234}`) has a comment claiming it's "still in-bounds" for any
+target vocab -- true for DeepSeek-V2-Lite (vocab 102400) and Qwen3-30B-A3B
+(vocab 151936), false for OLMoE (**vocab_size=50304**). Token ID 100000 is
+out of range for OLMoE's embedding table. Symptom: position 0's entire
+logit vector was *exactly* zero on both the C engine and the MLX
+reference (`min=max=mean=0.0`, confirmed by directly inspecting the raw
+`.bin` dump, not just eyeballing argmax) -- both sides' embedding lookups
+degenerated on the same out-of-range index, for the same reason, making
+this easy to miss as "the two sides agree." Fixed by overriding
+`QWEN_MOE_PROMPT_IDS='100,549,4345,280,8204,317,245,1234'` (only the
+first ID changed; the rest were already `<50304`) on both the C side and
+the MLX reference-capture script.
+
+**Bug 2 -- q_norm/k_norm's normalization axis differs by architecture
+(the real bug; see `D-qknorm-1` in `qwen_infer.c` for the code-level
+WHY/COST/EXIT).** With Bug 1 fixed, the gate still failed badly: argmax
+4/8, 94/128 router (position,layer) decisions disagreeing outright. Real
+safetensors shape inspection (`safetensors.safe_open` on the actual
+checkpoints, not assumed) found the smoking gun:
+
+| | Qwen3-30B-A3B `q_norm.weight` shape | OLMoE `q_norm.weight` shape |
+|---|---|---|
+| | `[128]` (=`head_dim`) | `[2048]` (=`n_heads*head_dim`) |
+
+`MOE_ST_ATTN_ROLES_GQA[]` was built as one shared table for `qwen3_moe`/
+`olmoe` on the assumption both ship "the same" q_norm/k_norm mechanism --
+true for the tensor *names*, false for what they actually normalize.
+Reading `mlx_lm.models.qwen3_moe`/`mlx_lm.models.olmoe`'s real source
+confirmed why the shapes differ: Qwen3-MoE's q_norm is applied *after*
+`q_proj`'s output is reshaped into `(heads, head_dim)` -- genuinely
+per-head, one small (128-element) weight reused identically across every
+head, which is exactly what this engine's existing `moe_gqa_attention()`
+already implemented. OLMoE's q_norm is applied to the *raw, pre-reshape*
+`(hidden,)`-shaped `q_proj` output -- one normalization over the whole
+2048-element vector, with a 2048-element weight, reshape into heads
+happening only afterward. The engine was running OLMoE through the
+Qwen3-shaped per-head loop regardless.
+
+**Fix.** A new `MOE_QKNORM_WHOLE_VECTOR` config flag (0 = per-head,
+matching every existing arch unchanged; 1 = OLMoE's whole-vector-before-
+reshape), set from `is_olmoe` in `load_moe_safetensors_arch()`. A new
+`moe_qknorm_apply(v, w, n_units, unit_dim, whole_vector)` helper
+consolidates what were 3 duplicated per-head loops (single-token/ragged/
+batched GQA attention) into one function with a 2-way branch --
+`whole_vector=0` is a byte-identical refactor of the pre-existing loop
+(same math, same order), `whole_vector=1` is the new single-normalization-
+over-the-whole-vector path. Zero changes needed to the attention
+forward-pass call sites themselves beyond swapping the inline loop for
+the new helper call.
+
+**Impact (real numbers, before -> after this one fix, same OLMoE
+checkpoint, same 8-position teacher-forced sequence):**
+
+| | before | after |
+|---|---|---|
+| argmax agreement | 4/8 | **8/8** |
+| router (position,layer) hard mismatches | 94/128 | **1/128** (+8 near-tie, classified PASS) |
+| full-logits rel-L2, worst position | 0.514 | 0.072 |
+
+### Root-causing the still-remaining gap: a real per-layer hidden-state dump, not guessing
+
+Even after Bug 2's fix, 4-5/8 positions still exceeded the hard rel-L2
+threshold. Reused this project's existing `QWEN_MOE_DEBUG_LAYERDUMP`/
+`QWEN_MOE_DEBUG_LAYERDUMP_POS` C-side hook (built for exactly this purpose
+in the DeepSeek-V2-Lite round) plus a new MLX-side counterpart
+(`moe_st_layerdump_ref_pos_olmoe.py`, patches
+`OlmoeSparseMoeBlock.__call__`/`TransformerBlock.__call__` to record
+post-residual hidden state after each of the 16 layers) to compare C-vs-
+reference layer by layer at the worst position (pos 0). Result: rel-L2
+stayed flat and small (2.7e-3 to 7.1e-3, ordinary quantization-noise
+range) through layer 13, then jumped -- absolute `||c-r||` roughly doubled
+right after layer 13 (0.346 -> ~0.63 by layer 14), continuing to grow
+through layer 15. This lines up exactly with a near-tie router flip
+*already found* at pos 0, layer 13 (`ref_expert=29` vs `C_expert=17`,
+score gap 1.87e-05) -- once a near-tie flips, the substituted expert's
+entire output stands in for the real one, and that perturbation
+propagates and grows through the remaining layers. Separately, the
+reference's *own* activation norm crashes at the final layer (56.2 ->
+8.25, a real property of this model's own late-layer dynamics, confirmed
+present in the reference's own numbers, not a C-side artifact) -- dividing
+a moderately-larger absolute error by a much smaller denominator is most
+of why the *relative* rel-L2 spikes 19x at the final layer specifically,
+not a new divergence appearing there. Conclusion, with evidence, not
+assumption: the remaining gap is the same near-tie-router-flip phenomenon
+this project already has vocabulary and tolerance for elsewhere (DeepSeek-
+V2-Lite's Step 3 gate), just landing harder here because OLMoE's smaller
+hidden size (2048) and expert count (64) give each individual expert
+proportionally more influence over the aggregate output than a larger
+model would.
+
+### Turning the finding into a real fix: extending the per-role engine to attention F32
+
+The per-role precision engine (`QWEN_MOE_ROLE_BITS`, see the entry above)
+previously gated F32 to only `embed_tokens`/`lm_head` -- "the only two
+roles this loader has real evidence F32 matters for." This round found
+real evidence for a third case: attention precision gates every
+downstream router decision, so it's exactly the right lever for
+suppressing a near-tie flip whose cause traces back through the hidden
+state. Extending F32 to attention roles needed one real design problem
+solved: `q_proj`/`k_proj`/`v_proj`/`o_proj` live in `MoeLayerTensors` as
+`MoeAFTensor*` pointers (that's what every GQA attention forward function
+already dereferences), so registering them as a separate `MoeF32Tensor`
+(the mechanism `embed_tokens`/`lm_head` use) would have required rewriting
+every attention forward function to branch on tensor type -- real, hot-
+path code, not a one-off. Instead: a new `st_register_moe_f32_as_af()`
+registers F32 data *inside* an `MoeAFTensor` (bits=32, no dequant/quantize
+step at all -- `safetensors_dequant_row()` already produces float32,
+this just keeps it as-is), and `moe_decode_af()`/`moe_matvec_af_row()`
+gained a `bits==32` raw-passthrough branch that short-circuits before
+touching scale/bias/group (which don't exist for this tensor). Zero
+changes to any attention forward-pass function. `st_register_moe_role()`
+gained an `f32_as_af` parameter so `embed_tokens`/`lm_head` keep their
+existing `MoeF32Tensor` path unchanged while attention roles get the new
+AF-wrapped path.
+
+**Real result, same OLMoE checkpoint, `QWEN_MOE_ROLE_BITS` promoting only
+`q_proj -1 32`/`k_proj -1 32`/`v_proj -1 32`/`o_proj -1 32` (nothing else
+touched):**
+
+| | int8 attention (post-Bug-2-fix) | F32 attention |
+|---|---|---|
+| argmax agreement | 8/8 | 8/8 |
+| router hard mismatches | 1/128 (pos 6, layer 12) | **0/128 -- perfect** |
+| pos 6 full-logits rel-L2 | 4.8e-2 (HARD FAIL) | **6.5e-3 (PASS)** |
+| pos 7 full-logits rel-L2 | 3.5e-2 | 1.9e-2 (improved, still fails) |
+| positions still above hard threshold | 5/8 (pos 0,2,3,6,7) | 4/8 (pos 0,2,3,7) |
+
+This is a real, targeted demonstration of the point of this engine: a
+concrete divergence, localized to specific tensors via real per-layer
+evidence, suppressed by promoting *only* those tensors -- not a blanket
+F32 upgrade of the whole model (which would cost far more: attention is
+4 tensors x 16 layers, the expert FFN is 3 tensors x 64 experts x 16
+layers, over an order of magnitude more parameters).
+
+### D-expert-promo-1: routed-expert-level promotion should reuse the existing
+### frequency/importance profiler, top-k per layer -- not blanket F32
+
+**WHY.** The remaining rel-L2 gap (pos 0,2,3,7) traces to the same near-
+tie-flip mechanism reached through routed-expert quantization noise
+instead of attention noise (per the layer-dump investigation above --
+attention promotion fixed exactly the flips it could reach, pos 6's, and
+left the ones caused upstream by expert noise untouched). Blanket-
+promoting all 64 experts x 3 projections x 16 layers to F32 would close
+this the same way attention promotion did, but at a cost disproportionate
+to the actual problem: the expert FFN already dwarfs attention in
+parameter count for this architecture (~6.4B vs ~0.27B, a ~24x ratio), so
+full F32 promotion multiplies the model's memory footprint by roughly
+that same disproportion for a fix that (per DeepSeek-V2-Lite's own prior
+profiling round, "Per-individual-expert mixed precision, profiling-
+driven" above) only a small, identifiable subset of experts actually need.
+This project already built and shipped exactly the right tool for that
+subset-identification job this round: the AEQ-inspired profiler
+(`moe_st_expert_profiler.py`, hooks the router, tallies per-(layer,expert)
+frequency and average routing weight, ranks by `importance = freq_norm *
+weight_avg_norm`) that produced `QWEN_MOE_EXPERT_BITS`'s int8-promotion
+lists in the DeepSeek-V2-Lite round. The natural extension is: rerun that
+same profiler against real OLMoE router traffic, take each layer's actual
+top-k most-frequently-and-heavily-routed experts (not all 64), and extend
+`QWEN_MOE_EXPERT_BITS`'s registration path (`st_register_moe_experts_
+mixed_as()`) to accept bits=32 for just that promoted subset -- the same
+"selective, evidence-driven promotion" shape as the attention fix above,
+applied to the other tensor family the remaining divergence points at.
+
+**COST.** Not yet implemented this round -- this is the next, separately-
+scoped increment, not a corollary of what's already shipped. Needs: (1)
+`QWEN_MOE_EXPERT_BITS`'s per-`(layer,expert)` bits value to accept 32 (its
+loader currently FATALs on anything but 4/8, matching `st_register_moe_
+experts_mixed_as()`'s own current 4/8-only assumption -- both need a third
+branch, mirroring the `st_register_moe_f32_as_af()` pattern used for
+attention above but per-expert instead of per-whole-tensor); (2) a real
+profiling run against OLMoE specifically (the DeepSeek-V2-Lite round's own
+profiling data doesn't transfer -- different model, different router).
+Top-k-per-layer (not all 64) means most experts stay at their current
+precision, so the memory/compute cost stays proportional to how many
+experts actually need it, not the full expert count.
+
+**EXIT.** If a future architecture's routing noise doesn't respond to
+targeted top-k promotion the way this round's attention fix did (unlike
+attention, expert selection is discrete -- promoting the *wrong* expert
+in the top-k list wouldn't help a flip involving a *different* expert),
+the fallback is the already-shipped, already-verified attention-only fix
+plus documenting the residual gap as inherent to a given precision floor,
+same as this round's own honest reporting above.

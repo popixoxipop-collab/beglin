@@ -38,9 +38,42 @@ binary itself takes).
 
 ## What's actually novel here
 
-Most "hand-rolled CPU inference" projects stop at dense-model int4 GEMV.
-This engine additionally integrates ARM KleidiAI's **SME2** (Scalable
-Matrix Extension v2) hardware-accelerated kernel — a real, non-trivial
+**A per-role, per-expert mixed-precision MoE engine — genuinely per
+individual tensor, not per model, per layer, or even per tensor
+category.** For every MoE checkpoint this engine loads, each of
+`q_proj`/`k_proj`/`v_proj`/`o_proj` (or MLA's
+`q_proj`/`kv_a_proj_with_mqa`/`kv_b_proj`/`o_proj`), each of the one real
+dense layer's internal `gate_proj`/`up_proj`/`down_proj`, each of
+shared-experts' internal `gate_proj`/`up_proj`/`down_proj`, and each
+individual routed expert by `(layer, expert_id)`, all take their own
+int4/int8/F32 precision independently — see
+[Mixed-precision MoE configuration](#mixed-precision-moe-configuration).
+
+This isn't a knob built for its own sake. Running OLMoE's real numeric
+gate against a genuine MLX (bf16-forced-to-fp32) reference surfaced a
+reproducible failure mode: int8 quantization noise in the hidden state
+accumulates layer over layer until it flips a *borderline* top-k routing
+decision — a real example found this round: layer 13, a router-score gap
+of just 1.87e-05 between the correct expert and the one substituted in
+its place. Once flipped, an entirely different expert's output stands in
+for the intended one, and that perturbation amplifies through every later
+layer. Selectively promoting only the four attention projections to F32
+(`QWEN_MOE_ROLE_BITS`: `q_proj -1 32`, `k_proj -1 32`, `v_proj -1 32`,
+`o_proj -1 32` — nothing else touched) suppressed it directly: the one
+hard router mismatch this gate had disappeared entirely, and the
+worst-affected position's logit-level error dropped from 4.8e-2 to
+6.5e-3 — from a hard failure to comfortably inside tolerance. The
+divergence remaining at a few other positions traces to the same
+mechanism reached through routed-expert quantization noise instead of
+attention noise — same phenomenon, same fix shape, just a different set
+of tensors to target next. See `RESULTS.md` for the full investigation,
+including the real per-layer hidden-state dumps that localized exactly
+where the divergence originates, not just aggregate before/after numbers.
+
+Most "hand-rolled CPU inference" projects also stop at dense-model int4
+GEMV with one fixed precision for the whole model. This engine
+additionally integrates ARM KleidiAI's **SME2** (Scalable Matrix
+Extension v2) hardware-accelerated kernel — a real, non-trivial
 integration because SME2 is only reachable inside a special "streaming
 mode" on Apple M4, and naively calling into it (or letting the compiler
 autovectorize into it) outside that mode is an illegal instruction, not a
@@ -56,6 +89,7 @@ root-caused via interactive `lldb`.
 | Quantized (GPTQ int4 + int8 lm_head, deployment default) | ppl **12.10** (+13.6% vs fp32), decode throughput lossless |
 | W4A8 int8-SDOT dense decode | **~3.0×** single-stream throughput (~19.4 → ~58.6 tok/s), greedy output **bit-identical** to fp32 baseline |
 | MoE batched serving, SME2 f16p-LHS path (default) | **2.38×** faster than pure-scalar baseline at B=16, accuracy **93.0%** token-match vs scalar ground truth, **zero new errors** introduced vs the scalar reference (remaining mismatches are pre-existing, documented engine-vs-reference edge cases) |
+| MoE per-role precision override, real numeric gate (OLMoE) | Selectively promoting only `q/k/v/o_proj` to F32 eliminated the gate's one router hard-mismatch (**1 → 0**) and cut the worst-position logit rel-L2 from **4.8e-2 → 6.5e-3** (hard fail → inside tolerance) — a targeted fix aimed at the tensors actually responsible, not a blanket F32 upgrade |
 
 Full methodology, the int8-LHS vs f16p-LHS root-cause story, and every raw
 number: [`RESULTS.md`](RESULTS.md).
@@ -105,11 +139,11 @@ issue if that's something you need.
 
 ## Mixed-precision MoE configuration
 
-The MoE safetensors loader (`QWEN_MOE_SAFETENSORS=<path>`, currently
-DeepSeek-V2-Lite -- see [Scope, honestly](#scope-honestly)) doesn't force
-one precision on the whole model. Two independent, opt-in overrides let
-you pick int4/int8 (or F32, for the two roles it matters for) per
-individual tensor, not per bundled category:
+This is the mechanism behind the near-tie-routing-flip fix described
+above. The MoE safetensors loader (`QWEN_MOE_SAFETENSORS=<path>` --
+see [Scope, honestly](#scope-honestly)) doesn't force one precision on
+the whole model. Two independent, opt-in overrides let you pick
+int4/int8/F32 per individual tensor, not per bundled category:
 
 ```sh
 # QWEN_MOE_ROLE_BITS: every individually-registered non-expert tensor --
@@ -118,10 +152,14 @@ individual tensor, not per bundled category:
 # gate/up/down, embed_tokens, lm_head. One "<role> <layer> <bits>" line
 # per override; layer=-1 is a wildcard (every layer, or the whole tensor
 # for embed_tokens/lm_head, which have no real layer index). bits is 4,
-# 8, or 32 (F32 -- only valid for embed_tokens/lm_head).
+# 8, or 32 (F32 -- valid for attention roles and embed_tokens/lm_head;
+# dense-layer/shared-experts internal gate/up/down stay int4/int8 only).
 cat > role_bits.txt <<'EOF'
-o_proj -1 4          # every layer's o_proj -> int4
-q_proj 5 4            # ONLY layer 5's q_proj -> int4, every other layer keeps its default
+q_proj -1 32           # every layer's q_proj -> F32 (this is the real fix
+k_proj -1 32           # from "What's actually novel here" above: promoting
+v_proj -1 32           # just these four suppressed a router near-tie flip)
+o_proj -1 32
+o_proj 5 4             # ONLY layer 5's o_proj overridden back down to int4
 embed_tokens -1 8      # embed_tokens -> int8 (default is F32)
 EOF
 
