@@ -58,6 +58,27 @@ int mlx_gpu_matvec_probe(const char *name, long e, const float *x, float *y);
 // etc.) for the residency gate.
 void mlx_gpu_report_memory(size_t *active, size_t *peak, size_t *cache);
 
+// V5b: layer-0 MLA attention config -- call once, after V5a's mlx_gpu_bind_af()
+// calls, before any mlx_gpu_mla_layer0() call. yarn_freqs_half has qk_rope_hd/2
+// entries (moe_init_yarn()'s g_moe_yarn_freqs, the real per-model YaRN table --
+// distinct values, not synthetic, per the plan's RoPE-sanity requirement).
+// Returns 1 on success, 0 if MLX is unavailable.
+int mlx_gpu_mla_config(int n_heads, int q_head_dim, int qk_nope_hd, int qk_rope_hd,
+                       int v_hd, int kv_lora_rank, double rope_mscale, double attn_scale,
+                       const double *yarn_freqs_half, double rms_eps);
+
+// V5b: layer-0 MLA attention for one token position, on GPU. Looks up
+// "model.layers.0.self_attn.{q_proj,kv_a_proj_with_mqa,kv_b_proj,o_proj}" from
+// tensors already bound by mlx_gpu_bind_af() (V5a) -- mlx_gpu_mla_config() must
+// have been called first. Maintains its own internal layer-0 K/V cache
+// (position-indexed, separate from qwen_infer.c's own CPU-side g_moe_K/V) --
+// call sequentially with pos=0,1,2,... exactly like the CPU moe_mla_attention()
+// path. Writes o_proj's raw output (NOT accumulated into a residual -- the
+// caller decides how to combine it) into o_out[hidden]. Returns 1 on success,
+// 0 if config wasn't called, pos is out of range, or a required tensor is
+// missing.
+int mlx_gpu_mla_layer0(const float *h, int pos, const float *kv_a_ln_w, float *o_out);
+
 #ifdef __cplusplus
 }
 #endif

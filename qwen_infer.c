@@ -6393,6 +6393,173 @@ static int run_moe_gpu_mode(int argc, char **argv) {
     fprintf(stderr, "RESULT: MoE GPU V5a weight-binding + equivalence check complete\n");
     return 1;
 }
+
+// V5b: layer-0 MLA attention on GPU, gated against the CPU moe_mla_attention() and a real
+// MLX ground-truth capture (mla_reference_capture.py, MoE-2a, 8 real prompt positions --
+// same real-text corpus as P0.2, prompt_ids/post_attn_hidden below are that exact capture's
+// output, not synthetic). Independently gated (QWEN_MOE_GPU_MLA=1) and self-contained --
+// does its own config/tensor-loading setup, purely additive, does not touch run_moe_gpu_mode()
+// or run_moe_verify_mode()'s state.
+static int run_moe_gpu_mla_gate(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *gate_env = getenv("QWEN_MOE_GPU_MLA");
+    if (!gate_env || strcmp(gate_env, "1") != 0) return 0;
+
+    fprintf(stderr, "[moe gpu mla] QWEN_MOE_GPU_MLA=1 -- V5b layer-0 MLA attention gate\n");
+    if (!mlx_gpu_available()) {
+        fprintf(stderr, "FATAL: QWEN_MOE_GPU_MLA=1 but MLX/Metal unavailable\n");
+        exit(1);
+    }
+
+    const char *override = getenv("QWEN_MOE_BASE");
+    const char *dir = (override && override[0]) ? override : ".";
+    char moe_dir[900], path[1024];
+    snprintf(moe_dir, sizeof moe_dir, "%s/weights_moe", dir);
+    snprintf(path, sizeof path, "%s/arch_config_moe.txt", moe_dir);
+
+    // Same config-loading sequence as run_moe_verify_mode() (duplicated, not shared -- this
+    // gate is self-contained by design so it can't perturb run_moe_verify_mode()'s own state).
+    MOE_HIDDEN = (int)moe_cfg_get(path,"HIDDEN"); MOE_N_HEADS = (int)moe_cfg_get(path,"N_HEADS");
+    MOE_KV_LORA_RANK = (int)moe_cfg_get(path,"KV_LORA_RANK"); MOE_QK_ROPE_HD = (int)moe_cfg_get(path,"QK_ROPE_HEAD_DIM");
+    MOE_QK_NOPE_HD = (int)moe_cfg_get(path,"QK_NOPE_HEAD_DIM"); MOE_V_HD = (int)moe_cfg_get(path,"V_HEAD_DIM");
+    MOE_Q_HEAD_DIM = MOE_QK_ROPE_HD + MOE_QK_NOPE_HD;
+    MOE_NL = (int)moe_cfg_get(path,"NL"); MOE_FIRST_DENSE_LAYERS = (int)moe_cfg_get(path,"FIRST_DENSE_LAYERS");
+    MOE_N_EXPERTS = (int)moe_cfg_get(path,"N_EXPERTS"); MOE_N_SHARED = (int)moe_cfg_get(path,"N_SHARED");
+    MOE_TOP_K = (int)moe_cfg_get(path,"TOP_K"); MOE_IM_DIM = (int)moe_cfg_get(path,"MOE_IM");
+    MOE_DENSE_IM = (int)moe_cfg_get(path,"DENSE_IM"); MOE_VOCAB = (int)moe_cfg_get(path,"VOCAB");
+    MOE_ROPE_THETA = moe_cfg_get(path,"ROPE_THETA"); MOE_YARN_FACTOR = moe_cfg_get(path,"YARN_FACTOR");
+    MOE_YARN_BETA_FAST = moe_cfg_get(path,"YARN_BETA_FAST"); MOE_YARN_BETA_SLOW = moe_cfg_get(path,"YARN_BETA_SLOW");
+    MOE_YARN_MSCALE = moe_cfg_get(path,"YARN_MSCALE"); MOE_YARN_MSCALE_ALL_DIM = moe_cfg_get(path,"YARN_MSCALE_ALL_DIM");
+    MOE_YARN_ORIG_MAX_POS = moe_cfg_get(path,"YARN_ORIG_MAX_POS");
+    MOE_ATTN_KIND = (int)moe_cfg_get_opt(path,"ATTN_KIND",(double)MOE_ATTN_MLA);
+    MOE_N_KV_HEADS = (int)moe_cfg_get_opt(path,"N_KV_HEADS",(double)MOE_N_HEADS);
+    MOE_HEAD_DIM = (int)moe_cfg_get_opt(path,"HEAD_DIM",(double)MOE_Q_HEAD_DIM);
+    MOE_RMS_EPS = moe_cfg_get_opt(path,"RMS_EPS",1e-6);
+    MOE_NORM_TOPK_PROB = (int)moe_cfg_get_opt(path,"NORM_TOPK_PROB",0.0);
+    MOE_ROPE_STYLE = (int)moe_cfg_get_opt(path,"ROPE_STYLE",(double)MOE_ROPE_TRADITIONAL);
+    moe_cfg_validate();
+    MOE_QDIM     = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_KVA_OUT  = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
+    MOE_KVB_OUT  = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD);
+    MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
+    MOE_SH_IM    = MOE_IM_DIM * MOE_N_SHARED;
+    MOE_KROW = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_VROW = MOE_N_HEADS * MOE_V_HD;
+    MOE_MAX_IN = MOE_HIDDEN;
+    if (MOE_IM_DIM   > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
+    if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
+    if (MOE_DENSE_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_DENSE_IM;
+    MOE_MAX_NG = (MOE_MAX_IN + 63) / 64;
+    MOE_SME2_SLOT_DENSE  = MOE_N_EXPERTS;
+    MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
+    MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2;
+    MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
+    alloc_moe_buffers();
+    moe_init_yarn();
+    fprintf(stderr, "[moe gpu mla] rope_mscale=%.10f attn_scale=%.10f\n", g_moe_rope_mscale, g_moe_attn_scale);
+
+    snprintf(path, sizeof path, "%s/layout_af.txt", moe_dir); moe_load_layout_af(path);
+    snprintf(path, sizeof path, "%s/deepseek_moe_af.bin", moe_dir);
+    long af_bytes; uint8_t *af_blob = moe_mmap_file(path, &af_bytes);
+    snprintf(path, sizeof path, "%s/layout_f32.txt", moe_dir); moe_load_layout_f32(path);
+    snprintf(path, sizeof path, "%s/deepseek_moe_f32.bin", moe_dir);
+    long f32_bytes; g_moe_f32_blob = moe_mmap_file(path, &f32_bytes);
+    moe_resolve_layer_tensors();
+    fprintf(stderr, "[moe gpu mla] af blob %ld bytes, f32 blob %ld bytes, %d layers resolved\n",
+            af_bytes, f32_bytes, MOE_NL);
+
+    MoeAFTensor *t_embed = moe_find_af("model.embed_tokens");
+    MoeLayerTensors *t0 = &g_moe_lt[0];
+
+    // Bind every AF tensor into MLX (same loop as run_moe_gpu_mode(), duplicated per this
+    // gate's self-contained design).
+    int n_bound = 0;
+    for (int i = 0; i < g_moe_naf; i++) {
+        MoeAFTensor *t = &g_moe_af[i];
+        if (!mlx_gpu_bind_af(af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
+                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+            fprintf(stderr, "FATAL: [moe gpu mla] bind failed for tensor %s\n", t->name);
+            exit(1);
+        }
+        n_bound++;
+    }
+    fprintf(stderr, "[moe gpu mla] bound %d/%d tensors to MLX\n", n_bound, g_moe_naf);
+
+    if (!mlx_gpu_mla_config(MOE_N_HEADS, MOE_Q_HEAD_DIM, MOE_QK_NOPE_HD, MOE_QK_ROPE_HD,
+                            MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
+                            g_moe_yarn_freqs, MOE_RMS_EPS)) {
+        fprintf(stderr, "FATAL: [moe gpu mla] mlx_gpu_mla_config failed\n");
+        exit(1);
+    }
+
+    // Real prompt_ids from mla_reference_capture.py's actual capture (MoE-2a, macstudio,
+    // /Users/eoe/vdsp_moe_weights/mla_ref_dump.json) -- the same real-text corpus as P0.2's
+    // REAL_TEXTS[0], not synthetic. Ground-truth post_attn_hidden (8*HIDDEN float32) loaded
+    // from a binary sidecar (QWEN_MLA_REF_BIN, default alongside the binary) rather than
+    // embedded as a huge literal.
+    static const int prompt_ids[8] = {100000, 549, 4345, 280, 8204, 317, 245, 1234};
+    const char *ref_bin_override = getenv("QWEN_MLA_REF_BIN");
+    const char *ref_bin_path = (ref_bin_override && ref_bin_override[0])
+        ? ref_bin_override : "mla_ref_post_attn_hidden.bin";
+    FILE *reff = fopen(ref_bin_path, "rb");
+    if (!reff) {
+        fprintf(stderr, "FATAL: [moe gpu mla] cannot open ground-truth ref bin '%s'\n", ref_bin_path);
+        exit(1);
+    }
+    float *ref_hidden = (float *)malloc(sizeof(float) * 8 * MOE_HIDDEN);
+    if (fread(ref_hidden, sizeof(float), (size_t)8 * MOE_HIDDEN, reff) != (size_t)8 * MOE_HIDDEN) {
+        fprintf(stderr, "FATAL: [moe gpu mla] short read on ground-truth ref bin\n");
+        exit(1);
+    }
+    fclose(reff);
+
+    float *h_raw = (float *)malloc(sizeof(float) * MOE_HIDDEN);
+    float *h_normed = (float *)malloc(sizeof(float) * MOE_HIDDEN);
+    float *residual_cpu = (float *)malloc(sizeof(float) * MOE_HIDDEN);
+    float *o_gpu = (float *)malloc(sizeof(float) * MOE_HIDDEN);
+    float *w_inln = (float *)(g_moe_f32_blob + t0->input_ln->off);
+    float *w_kvaln = (float *)(g_moe_f32_blob + t0->kv_a_ln->off);
+
+    double worst_cpu_vs_gpu = 0.0, worst_cpu_vs_truth = 0.0, worst_gpu_vs_truth = 0.0;
+    for (int pos = 0; pos < 8; pos++) {
+        int token = prompt_ids[pos];
+        for (int c = 0; c < MOE_HIDDEN; c++) h_raw[c] = moe_decode_af(af_blob, t_embed, 0, token, c);
+        moe_rmsnorm(h_raw, w_inln, h_normed, MOE_HIDDEN);
+
+        memcpy(residual_cpu, h_raw, sizeof(float) * MOE_HIDDEN);
+        moe_mla_attention(af_blob, t0, 0, pos, h_normed, residual_cpu);   // CPU, writes K/V[pos]
+
+        if (!mlx_gpu_mla_layer0(h_normed, pos, w_kvaln, o_gpu)) {
+            fprintf(stderr, "FATAL: [moe gpu mla] mlx_gpu_mla_layer0 failed at pos %d\n", pos);
+            exit(1);
+        }
+
+        double num_cg = 0.0, den_cg = 0.0, num_ct = 0.0, den_ct = 0.0, num_gt = 0.0, den_gt = 0.0;
+        for (int c = 0; c < MOE_HIDDEN; c++) {
+            double cpu_v = residual_cpu[c];
+            double gpu_v = (double)h_raw[c] + (double)o_gpu[c];
+            double truth_v = (double)ref_hidden[pos * MOE_HIDDEN + c];
+            double d_cg = cpu_v - gpu_v;   num_cg += d_cg*d_cg;   den_cg += cpu_v*cpu_v;
+            double d_ct = cpu_v - truth_v; num_ct += d_ct*d_ct;   den_ct += truth_v*truth_v;
+            double d_gt = gpu_v - truth_v; num_gt += d_gt*d_gt;   den_gt += truth_v*truth_v;
+        }
+        double rel_cg = den_cg > 0.0 ? sqrt(num_cg/den_cg) : 0.0;
+        double rel_ct = den_ct > 0.0 ? sqrt(num_ct/den_ct) : 0.0;
+        double rel_gt = den_gt > 0.0 ? sqrt(num_gt/den_gt) : 0.0;
+        if (rel_cg > worst_cpu_vs_gpu) worst_cpu_vs_gpu = rel_cg;
+        if (rel_ct > worst_cpu_vs_truth) worst_cpu_vs_truth = rel_ct;
+        if (rel_gt > worst_gpu_vs_truth) worst_gpu_vs_truth = rel_gt;
+        fprintf(stderr, "[moe gpu mla] pos %d: cpu_vs_gpu=%.6e cpu_vs_truth=%.6e gpu_vs_truth=%.6e\n",
+                pos, rel_cg, rel_ct, rel_gt);
+    }
+    fprintf(stderr, "[moe gpu mla] WORST across 8 positions: cpu_vs_gpu=%.6e (bar <=1e-4) "
+                    "cpu_vs_truth=%.6e (bar <=1e-2, MoE-2a's own hard bar) "
+                    "gpu_vs_truth=%.6e (bar <=1e-2)\n",
+            worst_cpu_vs_gpu, worst_cpu_vs_truth, worst_gpu_vs_truth);
+    fprintf(stderr, "RESULT: MoE GPU V5b layer-0 MLA attention gate complete\n");
+    free(h_raw); free(h_normed); free(residual_cpu); free(o_gpu); free(ref_hidden);
+    return 1;
+}
 #endif // QWEN_GPU_MLX
 
 static int run_moe_verify_mode(int argc, char **argv) {
@@ -8352,6 +8519,8 @@ int main(int argc, char **argv) {
     // not weights_moe/ file presence, so it must be checked before run_moe_verify_mode()'s
     // file-presence gate, which would otherwise win first and this mode would never run.
     if (run_moe_gpu_mode(argc, argv)) return 0;
+    // V5b: same reasoning, QWEN_MOE_GPU_MLA is its own independent env var.
+    if (run_moe_gpu_mla_gate(argc, argv)) return 0;
 #endif
     if (run_gguf_moe_verify_mode(argc, argv)) return 0;
     if (run_moe_safetensors_verify_mode(argc, argv)) return 0;

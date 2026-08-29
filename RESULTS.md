@@ -3342,3 +3342,68 @@ moe_base_deepseek ./qwen_infer_v5a`, exit 0):
 **All 8 gates PASS.** V5a (GPU weight binding + numerical equivalence, no
 forward pass) is complete. V5b (layer-0 MLA attention on GPU) is the next
 staged sub-phase, its own future approval cycle.
+
+### V5b: layer-0 MLA attention on GPU -- real gates, all PASS
+
+**Scope**: `mlx_gpu_mla_layer0()` -- q_proj/kv_a_proj_with_mqa/kv_b_proj/o_proj
+GEMMs (reusing V5a's already-bound tensors and verified `mlx_gpu_matvec_probe`),
+`kv_a_layernorm` RMSNorm, RoPE (traditional=true, interleaved pairing, YaRN
+freqs-as-divisor), and causal self-attention -- all on GPU, for DeepSeek-V2-Lite's
+layer 0, gated against both the CPU `moe_mla_attention()` and a real MLX
+ground-truth capture (`mla_reference_capture.py`, MoE-2a, 8 real prompt
+positions from the same real-text corpus as P0.2 -- not synthetic).
+
+**Building blocks verified in isolation before wiring anything together**
+(hw-kernel-vendoring discipline: verify via execution, not by reading a header
+signature and assuming):
+- `mx::fast::rope(..., freqs=<override array>)`: tested against
+  `moe_rope_traditional_apply()`'s exact arithmetic (`ang = pos/freqs[i]`,
+  interleaved-pair rotation) using the REAL DeepSeek-V2-Lite YaRN table (32
+  distinct values, computed from the real `ROPE_THETA=10000, YARN_FACTOR=40,
+  BETA_FAST=32, BETA_SLOW=1, ORIG_MAX_POS=4096` config) -- **max_abs_diff
+  4.77e-07**. Confirms MLX's `freqs` override uses the same divisor convention
+  our CPU arm's hard-won finding (F-16) established, not a different
+  multiplier semantic that would have silently produced wrong angles.
+- `mx::fast::scaled_dot_product_attention(..., mask_mode="")`: tested against
+  a hand-written CPU softmax(QK^T*scale)V (2 heads, 3 KV positions, distinct
+  values) -- **max_abs_diff 1.49e-08**. No mask needed since the K/V cache
+  passed in is already trimmed to exactly the valid history (0..pos) --
+  functionally equivalent to a causal mask for this single-new-query case,
+  confirmed rather than assumed.
+- `mx::fast::rms_norm`: tested against `moe_rmsnorm()`'s exact arithmetic (512
+  dims, eps=1e-6) -- **max_abs_diff 1.19e-07**.
+
+**Real gate results** (`QWEN_MOE_GPU_MLA=1 QWEN_MOE_BASE=~/moe_base_deepseek
+./qwen_infer_v5b`, exit 0, 8 real prompt positions, prompt_ids
+`[100000, 549, 4345, 280, 8204, 317, 245, 1234]` from the actual MoE-2a
+capture, not re-chosen):
+
+| pos | cpu_vs_gpu (bar <=1e-4) | cpu_vs_truth (bar <=1e-2) | gpu_vs_truth (bar <=1e-2) |
+|---|---|---|---|
+| 0 | 2.460141e-07 | 1.299128e-03 | 1.299144e-03 |
+| 1 | 1.786716e-07 | 8.759538e-04 | 8.759937e-04 |
+| 2 | 1.830859e-07 | 7.812100e-04 | 7.811720e-04 |
+| 3 | 2.779448e-07 | 8.924865e-04 | 8.924021e-04 |
+| 4 | 2.487606e-07 | 7.934832e-04 | 7.935098e-04 |
+| 5 | 1.659511e-07 | 7.346574e-04 | 7.346641e-04 |
+| 6 | 1.852872e-07 | 7.882763e-04 | 7.883007e-04 |
+| 7 | 1.698166e-07 | 8.017023e-04 | 8.016938e-04 |
+
+**Worst across all 8**: cpu_vs_gpu=2.779448e-07, cpu_vs_truth=1.299128e-03,
+gpu_vs_truth=1.299144e-03. All three well inside their bars. cpu_vs_gpu lands
+almost exactly where the plan predicted ("expect ~1e-6-1e-7, not ~3.9e-3");
+cpu_vs_truth reproduces MoE-2a's own original finding (was documented as
+"≤1.3e-3") to 6 significant figures, confirming this gate's harness itself is
+correct (same computation, independently re-run); gpu_vs_truth tracks
+cpu_vs_truth almost identically at every position, exactly the transitive
+relationship the plan's own reasoning predicted (GPU~CPU to ~1e-7, so
+GPU-vs-truth ≈ CPU-vs-truth up to that negligible additional term).
+
+**Regression**: default-build byte-identity re-confirmed against the
+pre-V5-track baseline (`qwen_infer.o.pre_gpu_backup`) -- still byte-identical
+after both V5a's and V5b's additions combined. Warning baseline unchanged (20).
+Functional output on the adjacent AF-blob sequential path unchanged.
+
+**V5b complete.** V5c (full 27-layer single-token GPU forward vs `mlx_lm`
+greedy decode -- contains the plan's kill-gate) is next, its own future
+approval cycle.
