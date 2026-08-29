@@ -585,6 +585,24 @@ generality table now that Phase 4's structured plan is exhausted:
   top-k MoE routing under finite precision, not a defect. Steps 4-7
   (Qwen3-30B-A3B, OLMoE, final writeup) remain. Full writeup: `RESULTS.md`
   "MoE-format safetensors -- DeepSeek-V2-Lite Steps 1-3".
+- **Per-expert (not just per-role) mixed-precision infrastructure**
+  (`MoeAFTensor.ebits`/`.epacked_off`, `st_register_moe_experts_mixed_as()`,
+  `QWEN_MOE_EXPERT_BITS`) -- generalizes the `bits` field above from
+  per-tensor to per-individual-expert, modeled on a real prior-art design
+  (`popixoxipop-collab/AEQ`'s profiling-driven expert promotion). Two
+  blind category-level hybrids (routed-experts-only int4; attention/dense/
+  shared-only int4) were tried first and both failed worse than blanket
+  int8 (7/8 and 6/8 argmax respectively, 31 and 52 router hard mismatches).
+  A profiling-driven top-16-per-layer promotion (real DeepSeek-V2-Lite
+  router traffic, 30 prompts/676 tokens) did meaningfully better (8/8
+  argmax, 16 hard mismatches -- roughly half of either blind hybrid) but
+  still didn't match blanket int8's near-perfect gate, traced to the
+  profiling sample being too sparse (63-64/64 experts touched per layer)
+  to cleanly separate cold from hot experts. Mechanism shipped (additive,
+  opt-in, byte-identical when `QWEN_MOE_EXPERT_BITS` is unset); this
+  round's specific promotion list is not adopted as default. Full
+  writeup: `RESULTS.md` "Per-individual-expert mixed precision,
+  profiling-driven".
 Full writeup: `RESULTS.md`'s entries following "Phase 4 sub-part 4".
 
 ### Phase 5 — Generalized export pipeline (Path B) + the bl=32 experiment (~2 weeks)

@@ -2577,3 +2577,136 @@ reverse-hybrid edit was tested uncommitted then reverted via
 `git checkout -- qwen_infer.c`, not stashed, since the first hybrid's
 stash already captures the "experiment, not adopted" pattern for this
 feature and a second stash entry would only add clutter).
+
+## Per-individual-expert mixed precision, profiling-driven (2026-08-29)
+
+**Motivation.** Both hybrids above split precision by *category* (all
+routed experts, or all attention/dense/shared) -- a coarse, all-or-nothing
+cut. The user pointed at a real prior-art pattern instead: `popixoxipop-
+collab/AEQ` (private repo, "Adaptive Expert Quantization" research
+direction), which profiles real router traffic per individual `(layer,
+expert)` pair and promotes only the highest-importance experts to higher
+precision, leaving the long tail at lower precision. `aeq/profiling/
+expert_profiler.py` hooks the router, tallies `freq`/`weight_avg` per
+expert, and ranks by `importance = freq_norm * weight_avg_norm`;
+`aeq/kernels/aeq_moe.py` dispatches per-token to a promoted set. This is a
+PyTorch/vLLM/CUDA stack (GPT-OSS-120B, FusedMoE Triton kernels) -- not
+portable code, but the design transplants directly onto this round's
+`bits`-per-tensor mechanism, generalized to bits-per-*individual-expert*.
+
+**Design -- per-expert mixed precision (structural).** `MoeAFTensor`
+gained two more fields: `int *ebits` (per-expert bit-width, length E,
+`NULL` for every existing uniform tensor) and `size_t *epacked_off` (a
+prefix-sum byte-offset table, since int4 and int8 experts occupy different
+row byte counts within the same packed buffer -- the uniform `e*out*
+row_pbytes` stride `moe_decode_af()`/`moe_matvec_af_row()` otherwise use
+no longer applies once experts differ in bit-width). Scale/bias addressing
+is untouched (bit-width-independent, confirmed against both existing
+registration functions' identical `scale_bytes` formula). A new
+`st_register_moe_experts_mixed_as()` mirrors the existing q4g64/q8g64
+expert-registration functions' per-expert dequant loop, choosing
+`gguf_quantize_q4g64_error_feedback()` or `gguf_quantize_q8g64()` per
+expert from a caller-supplied `ebits_in[]` array and building the
+`epacked_off` prefix sum. `run_moe_safetensors_verify_mode()` reads a new
+`QWEN_MOE_EXPERT_BITS` env var (a `"layer expert_id"` list, one promoted
+pair per line) at startup, defaults every expert to 4-bit, and switches to
+`st_register_moe_experts_mixed_as()` only when the list is present --
+unset (every existing invocation), the code takes the exact same
+`st_register_moe_experts_q8g64_as()` path as before, byte-identical.
+Regression-confirmed on the shared, now-touched `moe_decode_af()`/
+`moe_matvec_af_row()` addressing functions: AF-blob-MoE (`QWEN_MOE_BASE`)
+re-run byte-identical against its own saved baseline; GGUF-MoE
+(`QWEN_MOE_GGUF`, Qwen3-30B-A3B) load-tested through layer 40/48 before
+being killed for an unrelated resource-contention reason (see below) --
+not a completed byte-identical regression, a gap explicitly flagged, not
+silently skipped.
+
+**Profiling run.** `moe_st_expert_profiler.py` (new script, not committed
+-- same disposition as `moe_st_reference_capture.py` and this round's
+other Python tooling, lives on the work machines only): loads DeepSeek-V2-
+Lite via MLX, hooks `MoEGate.__call__` at all 26 MoE layers, and runs 30
+short self-written natural-language prompts (topically diverse, not
+sourced from any corpus) through the real model, tallying per-`(layer,
+expert)` selection frequency and average routing weight -- the same
+`importance = freq_norm * weight_avg_norm` formula AEQ's own
+`compute_ranking()` uses. Promotes the per-layer top-16 (of 64) by
+importance to int8; the remaining 48/layer default to int4.
+
+**Two real infrastructure bugs found and fixed while getting this to run
+(macstudio):**
+1. `mlx_lm.utils.load()` hung indefinitely (confirmed via an isolated
+   `load()`-only test: 22+ minutes stalled at flat ~59MB RSS, vs. 12.2s to
+   completion once fixed) -- root cause: an implicit HuggingFace Hub
+   network call despite the model path being purely local.
+   `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` fixed it immediately.
+2. Forcing fp32 (this round's own established numeric-gate methodology)
+   pushed DeepSeek-V2-Lite's real memory footprint (~64GB at full fp32)
+   into severe swap/compression thrash on a real, live-confirmed
+   memory-constrained machine (vm_stat: ~239MB genuinely free out of 64GB
+   at the time, `brain.selfplay` and several other processes resident).
+   Fixed by keeping the profiling pass at native bf16 -- profiling only
+   needs *which* experts see traffic, not byte-exact logits, so the
+   stricter fp32 methodology this round's actual numeric gate requires was
+   never necessary here. (A follow-on bf16-vs-numpy dtype bug --
+   `RuntimeError: Item size 2 ... does not match ... item size 1` --
+   needed an explicit `.astype(mx.float32)` cast before `np.array()`,
+   since numpy has no native bf16 type.)
+
+A third, separate resource issue hit on bob during the actual C-engine
+run: launching the int8-hybrid gate concurrently with the GGUF-MoE
+regression check (above) on bob's real 16GB RAM produced a silent,
+message-less process death (matches a SIGKILL/jetsam signature -- log cut
+off cleanly mid-run, no error text, `vm_stat` showed ~64MB genuinely free
+at the time). Fixed by killing the concurrent regression job and re-running
+the gate alone (confirmed real: `vm_stat` free jumped to ~8.7GB immediately
+after, and the re-run completed cleanly).
+
+**Result: real improvement over blind category hybrids, still short of
+blanket int8.**
+
+| config | argmax | full-logits rel-L2 | router hard mismatches |
+|---|---|---|---|
+| blanket int8 (shipped, `7b2cd36`) | 8/8 | 0.0026-0.0115 | 0 |
+| routed-experts-only int4 (1st hybrid) | 7/8 | 0.028-0.27 | 31 |
+| attn/dense/shared-only int4 (2nd hybrid) | 6/8 | 0.053-0.18 | 52 |
+| **profiling-driven top-16/layer promotion** | **8/8** | **0.0065-0.057** | **16** |
+
+Argmax is perfect (8/8, matching blanket int8) and router hard mismatches
+roughly halved-to-thirded versus either blind hybrid (16 vs. 31/52) --
+concrete evidence that importance-driven selective promotion is a real,
+meaningfully better direction than category-blind bundling. The gate still
+formally FAILs (positions 1-7 all exceed the 1e-2 hard rel-L2 threshold;
+only position 0 clears it), so this specific promotion list is not a
+drop-in replacement for blanket int8.
+
+**Why it falls short: the profiling sample was too sparse to cleanly
+separate "cold" from "hot" experts.** The profiling run's own per-layer
+coverage stat (logged directly, not inferred): **63-64 of 64 experts were
+activated at least once per layer**, across only 676 total tokens (30
+short prompts, single forward pass each, no multi-token generation). With
+~156 routing decisions per layer spread across 64 experts, many "bottom-
+16" experts were plausibly ranked there by sampling noise rather than
+genuine low importance -- AEQ's own reference numbers (R01 importance=0.81
+vs. R64=0.05, a real long-tail) come from a much larger, generation-based
+profiling corpus on a different model (GPT-OSS-120B). A larger, more
+diverse profiling pass (more prompts, real multi-token generation so later
+positions' routing gets sampled too, not just first-token routing) would
+plausibly narrow this gap further -- not attempted this round given
+effort/scope, and given blanket int8 already comfortably fits DeepSeek-V2-
+Lite's real memory budget, so chasing a marginal further memory reduction
+here has limited practical payoff for this specific model size.
+
+**Disposition: mechanism kept, promotion list not adopted as default.**
+The per-expert mixed-precision machinery (`ebits`/`epacked_off` fields,
+`st_register_moe_experts_mixed_as()`, `QWEN_MOE_EXPERT_BITS` wiring) is
+committed -- it is purely additive, opt-in via an unset-by-default env
+var, confirmed byte-identical to the shipped blanket-int8 behavior when
+that var is unset, and is real, reusable infrastructure for a future
+larger-scale profiling round (or for Qwen3-30B-A3B/OLMoE's own Steps 4-6,
+which will have a much longer natural prompt/generation history to profile
+against once serving). The specific 30-prompt/676-token promotion list
+generated this round is not adopted as a default and is not shipped as
+a checked-in artifact.
+
+Commits: `8887295` (`feat(moe-safetensors): per-expert mixed precision
+(ebits/epacked_off)`).
