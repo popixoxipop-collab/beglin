@@ -185,6 +185,40 @@ Phases 1-5 ship a small Node helper that reads the GGUF's own vocab and
 emits the `.i32` file ("one command, then run"); a real in-engine
 tokenizer is Phase 6, scoped and measured separately.
 
+### D-gen-6: mixed-precision config is a plain "<key> <int...> <bits>" text
+### list read at startup, not a structured (JSON/YAML) config format
+
+**WHY.** The MoE safetensors loader's two mixed-precision mechanisms --
+`QWEN_MOE_EXPERT_BITS` (`"<layer> <expert_id>"`, promotes an individual
+routed expert to int8) and `QWEN_MOE_ROLE_BITS` (`"<role> <layer> <bits>"`,
+independently selects 4/8/32-bit for every other individually-registered
+tensor: q/k/v/o_proj, dense-layer gate/up/down, shared-experts gate/up/
+down, embed_tokens/lm_head) -- both use `fscanf()` over a whitespace-
+separated text file, matching every other config surface this engine
+already has (`QWEN_ARCH_CONFIG`, `QWEN_MOE_PROMPT_IDS`'s comma list, the
+GGUF-MoE cache's own plain layout files). Adding a JSON/YAML parser for
+this one feature would be the first structured-format dependency in a
+codebase that has deliberately stayed free of them (see D-gen-1's own
+"vendoring C++ is a real cost" reasoning) -- for a config shape this
+simple (one entry per line, three-to-four whitespace-separated fields, no
+nesting), a real parser buys nothing a `fscanf()` loop with a strict field
+count doesn't already give.
+
+**COST.** No comments, no per-model presets/inheritance, no way to express
+"every layer except N" other than listing every other layer explicitly.
+Every entry line is independent -- last-match-wins ordering isn't even
+defined (`moe_role_bits()`/expert-bits lookup returns the *first* matching
+entry, so a generator script must not emit conflicting duplicate lines for
+the same key).
+
+**EXIT.** If Steps 4-6 (Qwen3-30B-A3B, OLMoE) or real serving usage ever
+need conditionals, per-architecture presets, or non-int bit values (e.g. a
+future MXFP4/NF4 tier), swap `moe_load_role_bits()`/the expert-bits
+loader's `fscanf()` body for a real parser -- the lookup functions
+(`moe_role_bits()`, the expert `g_promo_ebits[][]` table) and every call
+site are already decoupled from the file format itself, so this is a
+localized change.
+
 ## 2. Regression and safety story (every phase, not just at the end)
 
 **R1 — Golden-output lock**, captured on bob before any code changes: all

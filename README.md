@@ -103,6 +103,53 @@ the weight-directory environment variables at your own exported/quantized
 model. Export/quantization tooling isn't part of this package; open an
 issue if that's something you need.
 
+## Mixed-precision MoE configuration
+
+The MoE safetensors loader (`QWEN_MOE_SAFETENSORS=<path>`, currently
+DeepSeek-V2-Lite -- see [Scope, honestly](#scope-honestly)) doesn't force
+one precision on the whole model. Two independent, opt-in overrides let
+you pick int4/int8 (or F32, for the two roles it matters for) per
+individual tensor, not per bundled category:
+
+```sh
+# QWEN_MOE_ROLE_BITS: every individually-registered non-expert tensor --
+# q_proj/k_proj/v_proj/o_proj (or MLA's q_proj/kv_a_proj_with_mqa/
+# kv_b_proj/o_proj), the dense layer's gate/up/down, shared-experts'
+# gate/up/down, embed_tokens, lm_head. One "<role> <layer> <bits>" line
+# per override; layer=-1 is a wildcard (every layer, or the whole tensor
+# for embed_tokens/lm_head, which have no real layer index). bits is 4,
+# 8, or 32 (F32 -- only valid for embed_tokens/lm_head).
+cat > role_bits.txt <<'EOF'
+o_proj -1 4          # every layer's o_proj -> int4
+q_proj 5 4            # ONLY layer 5's q_proj -> int4, every other layer keeps its default
+embed_tokens -1 8      # embed_tokens -> int8 (default is F32)
+EOF
+
+# QWEN_MOE_EXPERT_BITS: routed experts specifically, individually, by
+# (layer, expert_id) rather than by role -- "<layer> <expert_id>" per
+# promoted-to-int8 line; every other expert defaults to int4. Typically
+# generated from real router traffic (see moe_st_expert_profiler.py in
+# RESULTS.md's per-expert mixed-precision writeup), not hand-written.
+cat > expert_bits.txt <<'EOF'
+11 52
+11 13
+EOF
+
+QWEN_MOE_SAFETENSORS=/path/to/model.safetensors.index.json \
+QWEN_MOE_ROLE_BITS=role_bits.txt \
+QWEN_MOE_EXPERT_BITS=expert_bits.txt \
+./qwen_infer
+```
+
+Both are unset by default (every tensor keeps its shipped default -- int8
+for attention/dense/shared-experts, F32 for embed_tokens/lm_head, int8 for
+routed experts), and confirmed byte-identical to the un-configured binary
+when left unset. See `RESULTS.md`'s "Full per-role precision engine" and
+"Per-individual-expert mixed precision" entries for the full design
+rationale, the two hybrid attempts that motivated per-individual rather
+than per-category granularity, and `PLAN_general_purpose_loader.md`'s
+`D-gen-6` for why this is a plain text format rather than JSON/YAML.
+
 ## Scope, honestly
 
 This is **not** a general-purpose loader like llama.cpp yet — it's
