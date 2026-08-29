@@ -2981,23 +2981,69 @@ mixed_as()`) to accept bits=32 for just that promoted subset -- the same
 "selective, evidence-driven promotion" shape as the attention fix above,
 applied to the other tensor family the remaining divergence points at.
 
-**COST.** Not yet implemented this round -- this is the next, separately-
-scoped increment, not a corollary of what's already shipped. Needs: (1)
-`QWEN_MOE_EXPERT_BITS`'s per-`(layer,expert)` bits value to accept 32 (its
-loader currently FATALs on anything but 4/8, matching `st_register_moe_
-experts_mixed_as()`'s own current 4/8-only assumption -- both need a third
-branch, mirroring the `st_register_moe_f32_as_af()` pattern used for
-attention above but per-expert instead of per-whole-tensor); (2) a real
-profiling run against OLMoE specifically (the DeepSeek-V2-Lite round's own
-profiling data doesn't transfer -- different model, different router).
-Top-k-per-layer (not all 64) means most experts stay at their current
-precision, so the memory/compute cost stays proportional to how many
-experts actually need it, not the full expert count.
+**COST.** Implemented and measured this round (was "not yet implemented"
+in an earlier draft of this entry -- updated with real numbers below).
+`QWEN_MOE_EXPERT_BITS`'s file format changed from 2-field (`<layer>
+<expert_id>`, implicit int8-promotion) to 3-field (`<layer> <expert_id>
+<bits>`, bits in {4,8,32}) -- an intentional breaking change, this feature
+was never adopted as a shipped default. `st_register_moe_experts_mixed_as()`
+gained a third branch (`ebits_in[e]==32`: raw `memcpy` of the dequantized
+float32 data into the packed buffer, no quantize step), and both
+`moe_decode_af()`/`moe_matvec_af_row()` were fixed to resolve `bits`
+*per-expert* (`t->ebits[e]`, not `t->bits`) before branching on it --
+required because, unlike the attention-only F32 case (always E=1), mixed
+per-expert promotion has some experts at int4/int8 and others at F32
+*within the same tensor* (E=64).
 
-**EXIT.** If a future architecture's routing noise doesn't respond to
-targeted top-k promotion the way this round's attention fix did (unlike
-attention, expert selection is discrete -- promoting the *wrong* expert
-in the top-k list wouldn't help a flip involving a *different* expert),
-the fallback is the already-shipped, already-verified attention-only fix
-plus documenting the residual gap as inherent to a given precision floor,
-same as this round's own honest reporting above.
+`moe_st_expert_profiler_olmoe.py` (60 hand-written diverse prompts, double
+the DeepSeek-V2-Lite round's 30, specifically trying to reduce sparsity)
+reproduced that round's own sparsity finding almost exactly: **63-64 of 64
+experts touched at least once per layer**, even with double the prompt
+count and native bf16 (no quantization noise of its own in the profiling
+pass). This confirms the top-k ranking is picking "marginally
+higher-frequency/weight among a near-uniformly-touched set," not a
+genuinely sparse top-k signal -- the concern flagged when this entry was
+first written was real, not resolved by more prompts.
+
+**Real result, same OLMoE checkpoint + same 8 teacher-forced positions,
+top-8-per-layer (128 total `(layer,expert)` promotions) tested alone and
+combined with the already-verified attention F32 fix:**
+
+| | int8 baseline | attn F32 only | expert top-8 only | **attn F32 + expert top-8** |
+|---|---|---|---|---|
+| argmax agreement | 8/8 | 8/8 | 8/8 | 8/8 |
+| router hard mismatches | 1/128 (pos 6, layer 12) | 0/128 | 1/128 (pos 6, layer 12 -- different set) | **0/128** |
+| positions above hard rel-L2 threshold | 5/8 (0,2,3,6,7) | 4/8 (0,2,3,7) | 4/8 (2,3,6,7) | **1/8 (7 only)** |
+| worst position rel-L2 | 4.8e-2 (pos 6) | 3.5e-2 (pos 7) | 4.9e-2 (pos 6) | 1.9e-2 (pos 7) |
+
+Expert-top-8 promotion *alone* (no attention fix) is not clearly better
+than doing nothing -- same 4/8 failing-position count as attention-only,
+different positions, and it didn't even eliminate the one router hard
+mismatch (still 1/128, just a different `(layer,expert)` pair than
+baseline). This is the honest downside the sparsity finding above
+predicts: with 63-64/64 experts touched per layer, "top-8" is a fairly
+arbitrary cut through a nearly-flat distribution, so it's not guaranteed
+to include whichever expert actually matters for a given position's flip.
+
+**Combined with the attention fix, though, the result is clearly better
+than either alone**: router mismatches go to a clean 0/128 (matching
+attention-only) *and* the failing-position count drops from attention-
+only's 4/8 down to 1/8 -- meaning expert promotion closed real divergence
+(positions 0, 2, 3) that attention promotion alone could not reach, even
+though the expert list wasn't a clean top-k in the sparse sense. Position
+7 remains the one holdout (1.9e-2, down from 3.5e-2 attention-only but
+still over the 1e-2 hard threshold) -- most likely caused by an expert
+that mattered for position 7 specifically but didn't rank in that layer's
+top-8 by aggregate frequency/weight across all 60 profiling prompts.
+
+**EXIT.** Confirmed, not hypothetical: expert-level routing noise does
+respond to selective promotion, but only as a complement to the attention
+fix, not a substitute for it, and top-k-by-aggregate-frequency is an
+imperfect proxy for "the expert that matters for this specific input" when
+the underlying activation pattern is this dense. The path to closing
+position 7 fully would be a per-position (not aggregate) importance signal
+or a larger top-k -- not pursued further this round since the combined
+result (1/8 failing, down from 5/8 baseline) already demonstrates the
+engine's real value: selective, evidence-driven promotion measurably
+closing divergence the un-promoted baseline can't, at a fraction of
+blanket F32's cost.

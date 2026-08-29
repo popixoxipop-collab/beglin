@@ -680,11 +680,16 @@ generality table now that Phase 4's structured plan is exhausted:
   zero forward-pass changes) -- promoting only `q/k/v/o_proj` to F32
   eliminated the gate's one router hard-mismatch entirely and fixed the
   worst-affected position (rel-L2 4.8e-2->6.5e-3). Routed-expert-level
-  promotion for the remaining gap is scoped, not yet implemented: reuse
-  the existing AEQ-inspired frequency/importance profiler to top-k-select
-  a small per-layer expert subset rather than blanket-promoting all 64
-  (see `D-expert-promo-1`). Full writeup: `RESULTS.md` "MoE-format
-  safetensors -- Steps 4-6".
+  promotion for the remaining gap: implemented and measured (`QWEN_MOE_
+  EXPERT_BITS` 3-field format now accepts bits=32 per-expert; profiler
+  top-8-per-layer run against real OLMoE traffic). Expert promotion alone
+  wasn't clearly better than baseline (profiler found 63-64/64 experts
+  touched per layer even with 60 diverse prompts -- top-8 is a fairly
+  arbitrary cut through a near-flat distribution), but combined with the
+  attention F32 fix, failing positions dropped from attention-only's 4/8
+  to 1/8 -- expert promotion closed real divergence attention alone
+  couldn't reach. See `D-expert-promo-1`. Full writeup: `RESULTS.md`
+  "MoE-format safetensors -- Steps 4-6".
 Full writeup: `RESULTS.md`'s entries following "Phase 4 sub-part 4".
 
 ### Phase 5 — Generalized export pipeline (Path B) + the bl=32 experiment (~2 weeks)
