@@ -2536,3 +2536,44 @@ config) remains the round's actual result.
 Commits: none (negative result, no shipped code change -- the hybrid
 registration-call edit was tested uncommitted and left unmerged,
 `git stash` on the local worktree).
+
+**The reverse hybrid (attention/dense/shared -> int4, routed experts kept
+at int8): also tested, also worse -- and worse than the first hybrid.**
+The intuition motivating this direction was that attention/dense/shared
+are the smaller parameter mass, so downgrading them should be the safer
+cut. Result against the same verified-correct checkpoint: argmax
+regressed to **6/8** (both position 0 AND position 6 flipped -- position 6
+previously matched under every int8-involving config tried this round).
+Full-logits rel-L2 **0.053-0.18** (worse range than the first hybrid's
+0.028-0.27 lower bound, and no position clears even the soft threshold).
+Router expert-set agreement degraded further still: **52 hard mismatches**
+(vs. 31 for the routed-experts-int4 hybrid, vs. 0 for blanket int8),
+starting as early as layer 1-2 rather than concentrating in later layers.
+
+**Why this direction is worse, not just also-bad: attention feeds the
+router's own input.** `moe_forward_token()`'s per-layer routing block
+computes `router_scores` from `h2` (`moe_rmsnorm(x, w_postln, h2, ...)`,
+itself derived from `x` after `moe_attention()` has already run) --
+degrading attention precision therefore corrupts the router's *input* at
+every one of the 26 MoE layers from layer 1 onward, compounding
+immediately. Degrading only the routed-expert *output* weights (the first
+hybrid) leaves the router's own input path (attention + the always-F32
+gate weight) undisturbed, so routing decisions stay accurate for several
+layers before FFN-output noise accumulates enough to matter -- consistent
+with the first hybrid's hard mismatches concentrating later (first one at
+layer 4) versus this one's (first one at layer 1).
+
+**Conclusion, both directions tested: there is no cheap corner in this
+split.** Blanket int8 (`7b2cd36`, shipped) remains the only tested
+configuration that passes. Untested and out of scope for now: finer-
+grained splits (e.g. only the router-adjacent `o_proj`/final attention
+projection at higher precision while other attention sub-tensors drop to
+int4), which would need per-role rather than per-category bit assignment
+and a real reason to believe compute/memory savings justify the added
+registration-table complexity.
+
+Commits: none (second negative result, same disposition as above -- the
+reverse-hybrid edit was tested uncommitted then reverted via
+`git checkout -- qwen_infer.c`, not stashed, since the first hybrid's
+stash already captures the "experiment, not adopted" pattern for this
+feature and a second stash entry would only add clutter).
