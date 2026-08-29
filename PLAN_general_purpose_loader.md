@@ -660,8 +660,17 @@ generality table now that Phase 4's structured plan is exhausted:
   architecture bug found and fixed)** -- Step 4 hit a real infra wall
   first: Qwen3-30B-A3B's shipped-default resident footprint (~32.4GB)
   exceeds bob's real 16GB RAM (`sysctl hw.memsize`), so structural
-  registration ran on macstudio (64GB) instead; numeric gate (Step 5) not
-  yet run. Step 6 (OLMoE) surfaced two real bugs: an out-of-vocabulary
+  registration ran on macstudio (64GB) instead. Step 5's numeric gate hit
+  a second infra wall: this checkpoint's raw bf16 (61GB) needs ~122GB
+  fp32-forced for an MLX reference the way the other two gates did --
+  infeasible on the only 64GB box available, so the gate instead used
+  llama.cpp reading the already-on-disk Q4_K_M GGUF (`llama-cpp-python`,
+  mmap-backed, runs fine on bob's 16GB) -- explicitly weaker rigor
+  (independently-quantized reference, not pristine fp32) but honestly
+  labeled as such. Result: 7/8 argmax match, the one mismatch (pos 6) a
+  confirmed near-tie on both sides (same top-2 tokens, gap ~0.10-0.11 on
+  each), effectively 8/8 under this project's own near-tie convention.
+  Step 6 (OLMoE) surfaced two real bugs: an out-of-vocabulary
   default prompt ID (this loader's `QWEN_MOE_PROMPT_IDS` default assumed
   "still in-bounds for any target vocab", false for OLMoE's 50304), and
   the real one -- `q_norm`/`k_norm` normalize a fundamentally different

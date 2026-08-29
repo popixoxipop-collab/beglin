@@ -2808,6 +2808,77 @@ precedent at far smaller memory pressure this same round). macstudio (real
 teacher-forced forward pass both completed cleanly (`exit 0`) -- numeric
 gate against a real MLX reference (Step 5) not yet run.
 
+### Step 5 -- Qwen3-30B-A3B numeric gate: llama.cpp reference, not MLX
+
+**Real infra constraint found again, this time on the reference side.**
+The raw HF checkpoint is bf16, 61GB on disk (`torch_dtype: "bfloat16"`
+confirmed in `config.json`). Every prior gate in this series (DeepSeek-
+V2-Lite, OLMoE) used a real MLX forward pass with every bf16 leaf
+parameter upcast to float32 -- a pristine, near-ground-truth reference.
+For this checkpoint that upcast needs **~122GB** (61GB doubled), and
+macstudio's real free memory at the time (`top`: `PhysMem: 37G used ...
+26G unused` out of 64GB total) was nowhere close, even before accounting
+for other live work already running on the same machine (a Finance-repo
+BRAIN alpha-evaluation job, `llama-completion`, ~10GB RSS, actively
+computing -- not something to pause without asking; it finished on its
+own moments later, freeing ~3GB, still far short). Even native bf16 (no
+upcast, 61GB) doesn't comfortably fit the ~26-34GB actually free without
+asking the user to close their own active browser/session work, which is
+out of scope to do unilaterally.
+
+**Chosen alternative: llama.cpp reading the already-on-disk Q4_K_M GGUF**
+(`~/models_gguf_moe/Qwen3-30B-A3B-Q4_K_M.gguf`, 18.5GB, physically on
+D50, symlinked from bob -- the same fixture Phase 4-3's GGUF-loader gate
+used) via `llama-cpp-python` (`pip install llama-cpp-python`, built clean
+on bob). mmap-backed, so it runs fine even on bob's 16GB -- no memory
+negotiation needed at all. **Honest methodology caveat, stated plainly
+rather than buried**: this is *not* a pristine ground truth like the
+other two gates. Q4_K_M carries its own real, independently-chosen
+quantization noise -- a close match is evidence this engine's new
+safetensors-registration code wires the real checkpoint's tensors into
+the shared, already-fp32-proven forward-pass math (Step 3.9's `THE GATE`
+established that math is correct to machine precision) correctly; it is
+not itself a near-fp32 correctness proof the way the other two gates are.
+No per-layer router-agreement check either -- the simple `llm.eval()`
+API doesn't expose per-layer routing the way the patched-gate MLX scripts
+did.
+
+**Real result** (same 8 teacher-forced positions, same default
+`QWEN_MOE_PROMPT_IDS`, valid here since Qwen3's vocab_size=151936 far
+exceeds every ID used):
+
+| pos | C argmax | llama.cpp argmax | match | rel-L2 |
+|---|---|---|---|---|
+| 0 | 1154 | 1154 | ✓ | 3.77e-1 |
+| 1 | 220 | 220 | ✓ | 4.94e-2 |
+| 2 | 220 | 220 | ✓ | 5.66e-2 |
+| 3 | 220 | 220 | ✓ | 3.87e-2 |
+| 4 | 8 | 8 | ✓ | 1.14e-1 |
+| 5 | 7 | 7 | ✓ | 3.31e-2 |
+| 6 | 198 | 271 | ✗ | 6.01e-2 |
+| 7 | 220 | 220 | ✓ | 9.74e-2 |
+
+7/8 argmax agreement. Rel-L2 is reported for context, not scored against
+the other gates' 1e-2 hard-fail bar -- these numbers reflect two
+*different* quantization recipes (this engine's int8 default vs Q4_K_M),
+not a correctness signal on their own; per-position vector norms match
+within 1-5% and Pearson correlation is 0.96-0.996 at every position
+(checked explicitly, not assumed), confirming the elevated rel-L2 is
+diffuse tail-of-vocab noise, not a systematic scale or shape mismatch.
+
+**Pos 6's one mismatch, checked rather than waved through**: both
+engines' top-2 candidates are the *same two tokens* (198, 271), just
+reordered -- C: 198 (16.733) > 271 (16.619), gap 0.115; llama.cpp: 271
+(16.969) > 198 (16.865), gap 0.103. A genuine near-tie on both sides,
+the same class of phenomenon this whole investigation has been about,
+not a new bug. Effectively 8/8 under this project's own established
+near-tie convention.
+
+**Step 5 closed.** Both originally-named Step 4/5 targets (structural +
+numeric gate) are done for Qwen3-30B-A3B, using a deliberately
+lower-rigor-but-honestly-labeled reference given the real hardware
+ceiling this specific checkpoint's size runs into.
+
 ### Step 6 -- OLMoE structural + numeric gate (bob; small enough to stay there)
 
 Real config.json check before assuming anything: OLMoE-1B-7B-0924 works
