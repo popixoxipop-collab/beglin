@@ -2710,3 +2710,78 @@ a checked-in artifact.
 
 Commits: `8887295` (`feat(moe-safetensors): per-expert mixed precision
 (ebits/epacked_off)`).
+
+## Full per-role precision engine: every individual tensor, independently
+## selectable (2026-08-29)
+
+**What was actually asked for.** A correction from the user: the point was
+never "measure and find a better promotion list" -- it was "build an
+engine where q_proj/k_proj/v_proj/o_proj (or MLA's q_proj/kv_a_proj_with_
+mqa/kv_b_proj/o_proj) are each independently configurable, the one real
+dense layer's gate/up/down are each independently configurable, and
+shared-experts' gate/up/down are each independently configurable" --
+i.e. generalize precision selection from per-tensor-*category* (this
+round's earlier `bits` field, which bundles e.g. "all of attention" as one
+knob) to per-individual-*role*, matching the granularity the per-expert
+mechanism above already has for routed experts.
+
+**Design.** `MoeStRole` (the existing role-table struct used by the attn/
+dense/shared registration loops) gained a `role` name string (e.g.
+`"q_proj"`, `"kv_a_proj_with_mqa"`, `"dense_gate_proj"`,
+`"shared_down_proj"`) -- NULL for the always-F32 entries (layernorms,
+q_norm/k_norm) that never need a bits choice. A new `QWEN_MOE_ROLE_BITS`
+env var loads a `"<role> <layer> <bits>"` list (`layer=-1` = wildcard, used
+for `embed_tokens`/`lm_head` which have no real layer index); `bits` is 4,
+8, or 32 (F32 -- gated to only `embed_tokens`/`lm_head` via an explicit
+`allow_f32` flag, FATALing if requested anywhere else, since those are the
+only two roles this loader has real evidence F32 matters for). Every
+per-role call site (`MOE_ST_ATTN_ROLES_MLA/GQA`, `MOE_ST_DENSE_ROLES`,
+`MOE_ST_SHARED_ROLES`, plus `embed_tokens`/`lm_head`'s own registration)
+now calls `moe_role_bits(role, layer, default)` to decide, then
+`st_register_moe_role()` dispatches to F32/q8g64/q4g64 accordingly.
+Unset (default): every role keeps its pre-existing hardcoded default (8
+for every AF role, 32 for embed/lm_head) -- byte-identical to this round's
+shipped behavior, confirmed via a fresh regression run.
+
+**A real bug found and fixed getting embed_tokens/lm_head's override
+actually working.** The deferred vocab-shape cross-check and the tail's
+`moe_forward_token()` call both unconditionally called `moe_find_f32(
+"model.embed_tokens")`/`moe_find_f32("lm_head")` -- correct only while
+those two tensors were always F32. Overriding `embed_tokens` to int8 via
+`QWEN_MOE_ROLE_BITS` moved it into the AF registry instead, and the
+still-F32-only lookup FATALed (`moe f32 tensor not found`). Fixed by
+branching on the role's own resolved bits: `moe_find_f32()` when F32,
+`moe_find_af()` when not, threading both possible pointers down to
+`moe_forward_token()` (which already had the right `if (t_embed_f32) ...
+else ...` branch from this round's earlier F32 fix -- only the *caller's*
+lookup was still hardcoded).
+
+**Verification (bob, real DeepSeek-V2-Lite).**
+- Gate-A/B/C clean.
+- Default path (no `QWEN_MOE_ROLE_BITS`): logits/routing byte-identical
+  against the shipped int8-everywhere baseline -- the whole mechanism is
+  provably a no-op until explicitly configured.
+- Smoke test (`o_proj -1 4`, every other role at its default): logits
+  changed at the float level (e.g. position 0's logit 8.0204 -> 8.0212)
+  while argmax stayed stable for this single-role change -- confirms the
+  override reaches the actual computation, not just the registration count.
+- FATAL-guard test (`q_proj -1 32`): correctly refused ("only embed_tokens/
+  lm_head support F32 here") rather than silently misregistering.
+  Structural test (`embed_tokens -1 8` + `dense_up_proj -1 4` +
+  `shared_down_proj -1 4` combined): registered-tensor counts shifted
+  exactly as expected (`267->268` af, `110->109` f32, embed_tokens moved
+  registries), ran to completion post-fix, and changed the actual decode
+  output (position 6's argmax flipped from 1234 to 4345) -- proof the
+  three independent overrides all took effect together, not just
+  individually.
+
+**Scope note.** Routed experts keep their own separate, already more-
+granular-than-role-level mechanism (`QWEN_MOE_EXPERT_BITS`, per individual
+`(layer,expert)` pair) untouched -- `QWEN_MOE_ROLE_BITS` covers every
+*other* individually-registered tensor in the model. Between the two
+mechanisms, every weight this loader registers is now independently
+precision-selectable: no remaining tensor is only adjustable as part of a
+bundled category.
+
+Commits: `4b07ae6` (`feat(moe-safetensors): full per-role precision
+override`).

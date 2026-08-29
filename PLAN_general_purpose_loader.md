@@ -603,6 +603,24 @@ generality table now that Phase 4's structured plan is exhausted:
   round's specific promotion list is not adopted as default. Full
   writeup: `RESULTS.md` "Per-individual-expert mixed precision,
   profiling-driven".
+- **Full per-role precision engine (`QWEN_MOE_ROLE_BITS`)** -- generalizes
+  precision selection from per-tensor-category to per-individual-role:
+  q_proj/k_proj/v_proj/o_proj (or MLA's q_proj/kv_a_proj_with_mqa/
+  kv_b_proj/o_proj), the one real dense layer's gate/up/down, shared-
+  experts' gate/up/down, and embed_tokens/lm_head are each independently
+  4/8/32-bit-selectable, not bundled per category as the earlier `bits`
+  field left them. `MoeStRole` gained a role-name field; every per-role
+  registration call site resolves its own bits via `moe_role_bits()` and
+  dispatches through a new `st_register_moe_role()`. Unset: byte-identical
+  to the shipped blanket-int8 default (regression-confirmed). Also fixed a
+  real bug found while testing embed_tokens/lm_head overrides:
+  `moe_find_f32()` was hardcoded at two call sites that needed to branch
+  on the role's own resolved bits once embed_tokens could move into the
+  AF registry. Combined with the existing per-expert `QWEN_MOE_EXPERT_
+  BITS` mechanism, every tensor this loader registers is now
+  independently precision-selectable. Full writeup: `RESULTS.md` "Full
+  per-role precision engine: every individual tensor, independently
+  selectable".
 Full writeup: `RESULTS.md`'s entries following "Phase 4 sub-part 4".
 
 ### Phase 5 — Generalized export pipeline (Path B) + the bl=32 experiment (~2 weeks)
