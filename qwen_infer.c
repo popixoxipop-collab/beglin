@@ -6961,6 +6961,70 @@ static MoeF32Tensor *st_register_moe_f32_as(const char *name, const char *engine
     return w;
 }
 
+// Full per-role, per-layer precision override (2026-08-29 follow-up to this round's per-
+// tensor `bits` and per-expert `ebits`/`epacked_off` mechanisms): every individually-
+// registered role below -- attention's own q/k/v/o (or MLA's q/kv_a/kv_b/o) projections,
+// dense-layer's gate/up/down, shared-experts' gate/up/down, and embed_tokens/lm_head -- is
+// independently selectable, not bundled per role-category the way earlier attempts this round
+// were. QWEN_MOE_ROLE_BITS points at a "<role> <layer> <bits>" list (one override per line;
+// layer=-1 is a wildcard, used for embed_tokens/lm_head which have no real layer index and for
+// "every layer" overrides); bits is 4, 8, or 32 (F32 -- only valid for embed_tokens/lm_head,
+// the two tensors this loader has real evidence F32 matters for, see MoeAFTensor's own bits
+// comment; st_register_moe_role() FATALs if 32 is requested anywhere else). Unset (default):
+// every role keeps its pre-existing hardcoded default (8 for every AF role, 32 for
+// embed_tokens/lm_head) -- byte-identical to this round's shipped behavior.
+typedef struct { char role[48]; int layer; int bits; } MoeRoleBitsEntry;
+static MoeRoleBitsEntry *g_role_bits = NULL;
+static int g_role_bits_n = 0;
+
+static void moe_load_role_bits(const char *path) {
+    FILE *f = fopen(path, "r");
+    if (!f) { fprintf(stderr, "FATAL: QWEN_MOE_ROLE_BITS: cannot open '%s'\n", path); exit(1); }
+    int cap = 4096;
+    g_role_bits = malloc(sizeof(MoeRoleBitsEntry) * (size_t)cap);
+    char role[48]; int layer, bits;
+    while (fscanf(f, "%47s %d %d", role, &layer, &bits) == 3) {
+        if (bits != 4 && bits != 8 && bits != 32) {
+            fprintf(stderr, "FATAL: QWEN_MOE_ROLE_BITS: role '%s' layer %d has invalid bits=%d (must be 4, 8, or 32)\n",
+                    role, layer, bits);
+            exit(1);
+        }
+        if (g_role_bits_n >= cap) { fprintf(stderr, "FATAL: >%d QWEN_MOE_ROLE_BITS entries\n", cap); exit(1); }
+        MoeRoleBitsEntry *e = &g_role_bits[g_role_bits_n++];
+        strncpy(e->role, role, sizeof e->role - 1);
+        e->layer = layer; e->bits = bits;
+    }
+    fclose(f);
+}
+
+// First matching entry wins (role match required; layer==-1 in the entry matches any layer).
+// Falls back to `default_bits` (the role's own pre-existing hardcoded default) when no
+// QWEN_MOE_ROLE_BITS file was loaded, or none of its entries match this (role,layer).
+static int moe_role_bits(const char *role, int layer, int default_bits) {
+    for (int i = 0; i < g_role_bits_n; i++) {
+        if (g_role_bits[i].layer != -1 && g_role_bits[i].layer != layer) continue;
+        if (strcmp(g_role_bits[i].role, role) != 0) continue;
+        return g_role_bits[i].bits;
+    }
+    return default_bits;
+}
+
+// Dispatches to F32 / q8g64 / q4g64 registration by bits -- consolidates the 3-way branch
+// every per-role call site below needs instead of duplicating it inline.
+static void st_register_moe_role(const char *name, const char *engine_name, int bits, const char *role, int allow_f32) {
+    if (bits == 32) {
+        if (!allow_f32) {
+            fprintf(stderr, "FATAL: QWEN_MOE_ROLE_BITS: role '%s' requested bits=32 (F32), only embed_tokens/lm_head support F32 here\n", role);
+            exit(1);
+        }
+        st_register_moe_f32_as(name, engine_name);
+    } else if (bits == 8) {
+        st_register_moe_dense_af_q8g64_as(name, engine_name);
+    } else {
+        st_register_moe_dense_af_q4g64_as(name, engine_name);
+    }
+}
+
 // Role tables -- safetensors tensor names already match this engine's HF-style logical names
 // (same fact the dense safetensors loader established), so st_pattern==engine_pattern for every
 // entry; kept as two columns anyway to mirror MOE_GGUF_LAYER_ROLES's shape. Split into 6 small
@@ -6968,40 +7032,45 @@ static MoeF32Tensor *st_register_moe_f32_as(const char *name, const char *engine
 // the E>1 expert lookup genuinely needs a different pattern shape ((layer,expert), not just
 // (layer)), so it naturally gets its own function+table type (MoeStExpertRole) rather than
 // reusing MoeStRole.
-typedef struct { const char *st_pattern; const char *engine_pattern; int is_af; } MoeStRole;
+// `role` (added 2026-08-29, full per-role precision follow-up): a short stable name used to
+// key QWEN_MOE_ROLE_BITS lookups (see moe_role_bits()). Only meaningful for is_af==1 entries
+// -- the is_af==0 (F32) entries below never look it up, left NULL. Existing 3-field
+// initializers below (MOE_ST_ROLES_COMMON) are still valid C: the added trailing field
+// zero-initializes to NULL for any initializer that doesn't set it explicitly.
+typedef struct { const char *st_pattern; const char *engine_pattern; int is_af; const char *role; } MoeStRole;
 static const MoeStRole MOE_ST_ROLES_COMMON[] = {
     { "model.layers.%d.input_layernorm.weight",          "model.layers.%d.input_layernorm.weight",          0 },
     { "model.layers.%d.post_attention_layernorm.weight", "model.layers.%d.post_attention_layernorm.weight", 0 },
 };
 static const MoeStRole MOE_ST_ATTN_ROLES_MLA[] = {   // deepseek_v2 only
-    { "model.layers.%d.self_attn.q_proj.weight",            "model.layers.%d.self_attn.q_proj",    1 },
-    { "model.layers.%d.self_attn.kv_a_proj_with_mqa.weight", "model.layers.%d.self_attn.kv_a_proj_with_mqa", 1 },
-    { "model.layers.%d.self_attn.kv_b_proj.weight",          "model.layers.%d.self_attn.kv_b_proj", 1 },
-    { "model.layers.%d.self_attn.o_proj.weight",             "model.layers.%d.self_attn.o_proj",    1 },
+    { "model.layers.%d.self_attn.q_proj.weight",            "model.layers.%d.self_attn.q_proj",    1, "q_proj" },
+    { "model.layers.%d.self_attn.kv_a_proj_with_mqa.weight", "model.layers.%d.self_attn.kv_a_proj_with_mqa", 1, "kv_a_proj_with_mqa" },
+    { "model.layers.%d.self_attn.kv_b_proj.weight",          "model.layers.%d.self_attn.kv_b_proj", 1, "kv_b_proj" },
+    { "model.layers.%d.self_attn.o_proj.weight",             "model.layers.%d.self_attn.o_proj",    1, "o_proj" },
     { "model.layers.%d.self_attn.kv_a_layernorm.weight",     "model.layers.%d.self_attn.kv_a_layernorm.weight", 0 },
 };
 static const MoeStRole MOE_ST_ATTN_ROLES_GQA[] = {   // qwen3_moe/olmoe -- both real config.jsons
                                                        // ship q_norm/k_norm (confirmed live against
                                                        // each checkpoint's own weight_map), so this
                                                        // one table is shared unchanged.
-    { "model.layers.%d.self_attn.q_proj.weight", "model.layers.%d.self_attn.q_proj", 1 },
-    { "model.layers.%d.self_attn.k_proj.weight", "model.layers.%d.self_attn.k_proj", 1 },
-    { "model.layers.%d.self_attn.v_proj.weight", "model.layers.%d.self_attn.v_proj", 1 },
-    { "model.layers.%d.self_attn.o_proj.weight", "model.layers.%d.self_attn.o_proj", 1 },
+    { "model.layers.%d.self_attn.q_proj.weight", "model.layers.%d.self_attn.q_proj", 1, "q_proj" },
+    { "model.layers.%d.self_attn.k_proj.weight", "model.layers.%d.self_attn.k_proj", 1, "k_proj" },
+    { "model.layers.%d.self_attn.v_proj.weight", "model.layers.%d.self_attn.v_proj", 1, "v_proj" },
+    { "model.layers.%d.self_attn.o_proj.weight", "model.layers.%d.self_attn.o_proj", 1, "o_proj" },
     { "model.layers.%d.self_attn.q_norm.weight", "model.layers.%d.self_attn.q_norm.weight", 0 },
     { "model.layers.%d.self_attn.k_norm.weight", "model.layers.%d.self_attn.k_norm.weight", 0 },
 };
 static const MoeStRole MOE_ST_DENSE_ROLES[] = {   // only l < MOE_FIRST_DENSE_LAYERS (deepseek_v2)
-    { "model.layers.%d.mlp.gate_proj.weight", "model.layers.%d.mlp.gate_proj", 1 },
-    { "model.layers.%d.mlp.up_proj.weight",   "model.layers.%d.mlp.up_proj",   1 },
-    { "model.layers.%d.mlp.down_proj.weight", "model.layers.%d.mlp.down_proj", 1 },
+    { "model.layers.%d.mlp.gate_proj.weight", "model.layers.%d.mlp.gate_proj", 1, "dense_gate_proj" },
+    { "model.layers.%d.mlp.up_proj.weight",   "model.layers.%d.mlp.up_proj",   1, "dense_up_proj" },
+    { "model.layers.%d.mlp.down_proj.weight", "model.layers.%d.mlp.down_proj", 1, "dense_down_proj" },
 };
 static const MoeStRole MOE_ST_SHARED_ROLES[] = {   // only MOE_N_SHARED > 0 (deepseek_v2) -- one
                                                      // pre-merged wide tensor per projection, NOT
                                                      // per-shared-expert-indexed (confirmed live).
-    { "model.layers.%d.mlp.shared_experts.gate_proj.weight", "model.layers.%d.mlp.shared_experts.gate_proj", 1 },
-    { "model.layers.%d.mlp.shared_experts.up_proj.weight",   "model.layers.%d.mlp.shared_experts.up_proj",   1 },
-    { "model.layers.%d.mlp.shared_experts.down_proj.weight", "model.layers.%d.mlp.shared_experts.down_proj", 1 },
+    { "model.layers.%d.mlp.shared_experts.gate_proj.weight", "model.layers.%d.mlp.shared_experts.gate_proj", 1, "shared_gate_proj" },
+    { "model.layers.%d.mlp.shared_experts.up_proj.weight",   "model.layers.%d.mlp.shared_experts.up_proj",   1, "shared_up_proj" },
+    { "model.layers.%d.mlp.shared_experts.down_proj.weight", "model.layers.%d.mlp.shared_experts.down_proj", 1, "shared_down_proj" },
 };
 typedef struct { const char *st_pattern; const char *engine_pattern; } MoeStExpertRole;  // st_pattern: 2 %d (layer, expert); engine_pattern: 1 %d (layer -- E is baked into the one registered MoeAFTensor)
 static const MoeStExpertRole MOE_ST_EXPERT_ROLES[] = {   // always 3, every routed-expert layer
@@ -7105,6 +7174,16 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
                 promo_path, npromoted, MOE_NL * MOE_N_EXPERTS);
     }
 
+    // Full per-role precision override (see moe_load_role_bits()'s own comment for the config
+    // format). Unset: g_role_bits_n stays 0, moe_role_bits() always falls through to each call
+    // site's own default -- byte-identical to this round's shipped behavior.
+    const char *role_bits_path = getenv("QWEN_MOE_ROLE_BITS");
+    if (role_bits_path && role_bits_path[0]) {
+        moe_load_role_bits(role_bits_path);
+        fprintf(stderr, "[moe st load] QWEN_MOE_ROLE_BITS=%s -- %d role/layer overrides loaded\n",
+                role_bits_path, g_role_bits_n);
+    }
+
     char name[160], ename[160];
     for (int l = 0; l < MOE_NL; l++) {
         for (size_t r = 0; r < sizeof(MOE_ST_ROLES_COMMON)/sizeof(MOE_ST_ROLES_COMMON[0]); r++) {
@@ -7121,17 +7200,24 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
             const MoeStRole *role = &attn_roles[r];
             snprintf(name, sizeof name, role->st_pattern, l);
             snprintf(ename, sizeof ename, role->engine_pattern, l);
-            // Step 3 divergence fix (this round): q8g64, not q4g64 -- attention weights showed
+            // Step 3 divergence fix (this round): default 8, not 4 -- attention weights showed
             // real-data rel-L2 divergence against a true fp32 MLX reference, same reasoning as
             // embed_tokens/lm_head's own F32 upgrade just above (see MoeAFTensor's bits comment).
-            if (role->is_af) st_register_moe_dense_af_q8g64_as(name, ename); else st_register_moe_f32_as(name, ename);
+            // Per-role/per-layer override follow-up (2026-08-29): each of q_proj/k_proj/v_proj/
+            // o_proj (or MLA's q_proj/kv_a_proj_with_mqa/kv_b_proj/o_proj) is independently
+            // selectable via QWEN_MOE_ROLE_BITS, not bundled -- see moe_role_bits()'s own comment.
+            if (role->is_af) st_register_moe_role(name, ename, moe_role_bits(role->role, l, 8), role->role, 0);
+            else st_register_moe_f32_as(name, ename);
         }
         if (l < MOE_FIRST_DENSE_LAYERS) {
             for (size_t r = 0; r < sizeof(MOE_ST_DENSE_ROLES)/sizeof(MOE_ST_DENSE_ROLES[0]); r++) {
                 const MoeStRole *role = &MOE_ST_DENSE_ROLES[r];
                 snprintf(name, sizeof name, role->st_pattern, l);
                 snprintf(ename, sizeof ename, role->engine_pattern, l);
-                st_register_moe_dense_af_q8g64_as(name, ename);
+                // dense-layer gate/up/down each independently selectable (QWEN_MOE_ROLE_BITS) --
+                // there is only ever one real dense layer (l < MOE_FIRST_DENSE_LAYERS), but the
+                // per-layer key still applies generically, not hardcoded to l==0.
+                st_register_moe_role(name, ename, moe_role_bits(role->role, l, 8), role->role, 0);
             }
         } else {
             snprintf(name, sizeof name, "model.layers.%d.mlp.gate.weight", l);
@@ -7141,7 +7227,8 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
                     const MoeStRole *role = &MOE_ST_SHARED_ROLES[r];
                     snprintf(name, sizeof name, role->st_pattern, l);
                     snprintf(ename, sizeof ename, role->engine_pattern, l);
-                    st_register_moe_dense_af_q8g64_as(name, ename);
+                    // shared-experts gate/up/down each independently selectable, per layer.
+                    st_register_moe_role(name, ename, moe_role_bits(role->role, l, 8), role->role, 0);
                 }
             }
             for (size_t r = 0; r < sizeof(MOE_ST_EXPERT_ROLES)/sizeof(MOE_ST_EXPERT_ROLES[0]); r++) {
@@ -7154,20 +7241,24 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
         if ((l+1) % 8 == 0 || l+1 == MOE_NL)
             fprintf(stderr, "[moe st load] layer %d/%d\n", l+1, MOE_NL);
     }
-    // embed_tokens/lm_head registered as F32 (not int4 AF, unlike every other AF-family tensor
-    // this loader registers): real-data testing this round found int4 RTN on the embedding table
-    // specifically produces ~29% rel-L2 error on a single row -- far higher than ordinary matrix
-    // weights, likely because embedding rows don't share the same per-64-group numeric redundancy
-    // that projection/expert matrices do. The dense loaders (GGUF/safetensors) already keep
-    // embed_tokens/lm_head in F32 for this reason; this brings the MoE safetensors loader in
-    // line with that. moe_forward_token()'s AF path (used by GGUF-MoE/AF-blob) is untouched.
-    st_register_moe_f32_as("model.embed_tokens.weight", "model.embed_tokens");
+    // embed_tokens/lm_head default to F32 (not int4/int8 AF, unlike every other AF-family
+    // tensor this loader registers): real-data testing this round found int4 RTN on the
+    // embedding table specifically produces ~29% rel-L2 error on a single row -- far higher
+    // than ordinary matrix weights, likely because embedding rows don't share the same
+    // per-64-group numeric redundancy that projection/expert matrices do. The dense loaders
+    // (GGUF/safetensors) already keep embed_tokens/lm_head in F32 for this reason; this
+    // brings the MoE safetensors loader in line with that default. Independently overridable
+    // via QWEN_MOE_ROLE_BITS ("embed_tokens"/"lm_head", layer=-1 since neither has a real
+    // layer index) -- allow_f32=1 since these are the only two roles this loader has real
+    // evidence F32 matters for. moe_forward_token()'s AF path (used by GGUF-MoE/AF-blob) is
+    // untouched either way.
+    st_register_moe_role("model.embed_tokens.weight", "model.embed_tokens", moe_role_bits("embed_tokens", -1, 32), "embed_tokens", 1);
     st_register_moe_f32_as("model.norm.weight", "model.norm.weight");
     if (!safetensors_multi_find_tensor(g_st_moe, "lm_head.weight", NULL)) {
         fprintf(stderr, "FATAL: safetensors moe: tied embeddings (no lm_head.weight) not yet supported\n");
         exit(1);
     }
-    st_register_moe_f32_as("lm_head.weight", "lm_head");
+    st_register_moe_role("lm_head.weight", "lm_head", moe_role_bits("lm_head", -1, 32), "lm_head", 1);
     fprintf(stderr, "[moe st load] registered %d af tensors, %d f32 tensors\n", g_moe_naf, g_moe_nf32);
 
     moe_resolve_layer_tensors();   // UNCHANGED, loader-agnostic
@@ -7177,17 +7268,27 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
     // now that the real embed/lm_head tensors are registered, confirm their shapes actually
     // agree with config.json's own vocab_size scalar -- same "the file's own shape can't
     // disagree with how many rows it actually has" discipline the dense loaders already use.
-    // MoeF32Tensor only stores total element count (no separate out/in dims), so the check is
-    // against numel == VOCAB*HIDDEN rather than a per-axis compare.
-    MoeF32Tensor *t_embed_f32 = moe_find_f32("model.embed_tokens");
-    MoeF32Tensor *t_lmhead_f32 = moe_find_f32("lm_head");
+    // QWEN_MOE_ROLE_BITS follow-up (2026-08-29): embed_tokens/lm_head may now be registered as
+    // either F32 (moe_find_f32, default) or AF int4/int8 (moe_find_af, if overridden) depending
+    // on their own role-bits choice -- look up whichever one actually happened and validate
+    // shape against that. moe_forward_token()'s own branching (see its "if (t_embed_f32)"
+    // comment) already handles either combination: F32 pointer non-NULL takes priority, AF
+    // pointer is only dereferenced when the F32 one is NULL.
+    int embed_is_f32 = (moe_role_bits("embed_tokens", -1, 32) == 32);
+    int lmhead_is_f32 = (moe_role_bits("lm_head", -1, 32) == 32);
+    MoeF32Tensor *t_embed_f32 = embed_is_f32 ? moe_find_f32("model.embed_tokens") : NULL;
+    MoeAFTensor  *t_embed_af  = embed_is_f32 ? NULL : moe_find_af("model.embed_tokens");
+    MoeF32Tensor *t_lmhead_f32 = lmhead_is_f32 ? moe_find_f32("lm_head") : NULL;
+    MoeAFTensor  *t_lmhead_af  = lmhead_is_f32 ? NULL : moe_find_af("lm_head");
     long expect_numel = (long)MOE_VOCAB * (long)MOE_HIDDEN;
-    if (t_embed_f32->numel != expect_numel) {
-        fprintf(stderr, "FATAL: model.embed_tokens.weight numel=%ld disagrees with config.json VOCAB*HIDDEN=%ld\n", t_embed_f32->numel, expect_numel);
+    long embed_numel = embed_is_f32 ? t_embed_f32->numel : (long)t_embed_af->out * (long)t_embed_af->in;
+    if (embed_numel != expect_numel) {
+        fprintf(stderr, "FATAL: model.embed_tokens.weight numel=%ld disagrees with config.json VOCAB*HIDDEN=%ld\n", embed_numel, expect_numel);
         exit(1);
     }
-    if (t_lmhead_f32->numel != expect_numel) {
-        fprintf(stderr, "FATAL: lm_head.weight numel=%ld disagrees with config.json VOCAB*HIDDEN=%ld\n", t_lmhead_f32->numel, expect_numel);
+    long lmhead_numel = lmhead_is_f32 ? t_lmhead_f32->numel : (long)t_lmhead_af->out * (long)t_lmhead_af->in;
+    if (lmhead_numel != expect_numel) {
+        fprintf(stderr, "FATAL: lm_head.weight numel=%ld disagrees with config.json VOCAB*HIDDEN=%ld\n", lmhead_numel, expect_numel);
         exit(1);
     }
 
@@ -7197,6 +7298,9 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
     // NULL: every MoeAFTensor this loader registers carries a non-NULL t->base (4.C bridge,
     // same as the GGUF-MoE loader's own tail at line 6101), so moe_decode_af()/moe_matvec_af_mt()
     // never dereference the af_blob parameter -- confirmed by reading moe_decode_af() itself.
+    // t_embed_af/t_lmhead_af (QWEN_MOE_ROLE_BITS follow-up): only dereferenced by
+    // moe_forward_token() when the corresponding _f32 pointer is NULL (its own "if
+    // (t_embed_f32)" branch), so passing both is always safe regardless of which one is real.
     MoeF32Tensor *t_finalnorm = moe_find_f32("model.norm.weight");
     float *w_finalnorm = (float *)(g_moe_f32_blob + t_finalnorm->off);
 
@@ -7224,7 +7328,7 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
 
     float *logits = malloc((size_t)MOE_VOCAB * sizeof(float));
     for (int pos = 0; pos < N; pos++) {
-        moe_forward_token(NULL, NULL, NULL, w_finalnorm, prompt_ids[pos], pos, logits, routing_out, t_embed_f32, t_lmhead_f32);
+        moe_forward_token(NULL, t_embed_af, t_lmhead_af, w_finalnorm, prompt_ids[pos], pos, logits, routing_out, t_embed_f32, t_lmhead_f32);
         fwrite(logits, sizeof(float), MOE_VOCAB, logits_out);
         int argmax = 0; float best = logits[0];
         for (int v = 1; v < MOE_VOCAB; v++) if (logits[v] > best) { best = logits[v]; argmax = v; }
