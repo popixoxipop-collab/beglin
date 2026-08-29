@@ -699,6 +699,13 @@ generality table now that Phase 4's structured plan is exhausted:
   to 1/8 -- expert promotion closed real divergence attention alone
   couldn't reach. See `D-expert-promo-1`. Full writeup: `RESULTS.md`
   "MoE-format safetensors -- Steps 4-6".
+- **MoE-format safetensors, Steps 1-7: CLOSED.** All three originally-
+  scoped architectures (`deepseek_v2`, `qwen3_moe`, `olmoe`) have both
+  structural registration and a real numeric gate now. Byproduct: the
+  full per-role + per-individual-expert mixed-precision engine, motivated
+  directly by these gates' own near-tie-routing-flip findings, now the
+  README's lead framing. Full writeup: `RESULTS.md` "MoE-format
+  safetensors: Steps 1-7 CLOSED".
 Full writeup: `RESULTS.md`'s entries following "Phase 4 sub-part 4".
 
 ### Phase 5 — Generalized export pipeline (Path B) + the bl=32 experiment (~2 weeks)

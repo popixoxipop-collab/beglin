@@ -3118,3 +3118,28 @@ result (1/8 failing, down from 5/8 baseline) already demonstrates the
 engine's real value: selective, evidence-driven promotion measurably
 closing divergence the un-promoted baseline can't, at a fraction of
 blanket F32's cost.
+
+### **MoE-format safetensors: Steps 1-7 CLOSED**
+
+All three originally-scoped architectures (`deepseek_v2`, `qwen3_moe`,
+`olmoe`) now have both structural registration and a real numeric gate:
+
+| Model | Attention | Structural | Numeric gate | Reference used |
+|---|---|---|---|---|
+| DeepSeek-V2-Lite | MLA + shared experts | ✓ | ✓ | MLX, fp32-forced |
+| Qwen3-30B-A3B | GQA, no shared/dense | ✓ | ✓ | llama.cpp Q4_K_M GGUF (see Step 5 -- fp32-forced infeasible, ~122GB) |
+| OLMoE-1B-7B-0924 | GQA (MHA-shaped) | ✓ | ✓ | MLX, native bf16 (fp32-forced infeasible at that point too, smaller margin) |
+
+Two real, previously-unknown bugs found and fixed along the way (not
+present at plan-writing time): the OLMoE `q_norm`/`k_norm` whole-vector-
+vs-per-head axis mismatch (`D-qknorm-1`) and an out-of-vocabulary default
+prompt ID. One genuinely new engine capability shipped as a byproduct,
+not originally scoped: the full per-role + per-individual-expert
+mixed-precision override (`QWEN_MOE_ROLE_BITS`/`QWEN_MOE_EXPERT_BITS`),
+motivated directly by these gates' own near-tie-routing-flip findings and
+now the README's lead framing (see "The open question this engine exists
+to make experimentable"). Every gate's honest caveats -- where a
+reference is lower-rigor than the others, where a residual divergence
+was diagnosed but not chased further -- are recorded in-line above,
+not smoothed over. `D-expert-promo-1` remains open as scoped future work,
+not a defect in what shipped.
