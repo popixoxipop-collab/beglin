@@ -97,6 +97,41 @@ int mlx_gpu_layer_step(int l, int pos, int is_dense,
                         const float *w_kvaln, const float *w_gate,
                         float *x_out, int *out_top_idx, float *out_top_wgt);
 
+// TEMPORARY debug aid: identical to mlx_gpu_layer_step() above, but also writes
+// the post-attention residual (dbg_xmid_out, [hidden] floats) and the combined
+// FFN output before the final residual add (dbg_routed_out, [hidden] floats) --
+// either pointer may be NULL to skip that write. Used to bisect exactly where
+// the per-layer lazy rewrite first diverges from this proven eager path.
+int mlx_gpu_layer_step_dbg(int l, int pos, int is_dense,
+                            const float *x_in, const float *w_inln, const float *w_postln,
+                            const float *w_kvaln, const float *w_gate,
+                            float *x_out, int *out_top_idx, float *out_top_wgt,
+                            float *dbg_xmid_out, float *dbg_routed_out);
+
+// V5c-fused: one-eval-per-LAYER rewrite. STATUS: pos=0 verified correct
+// (matches the golden eager path exactly, rel-L2 5.22e-07); pos>=1 (any
+// nonempty K/V history) still produces WRONG logits -- an unresolved bug,
+// NOT yet safe to treat as a working replacement for mlx_gpu_layer_step().
+// Full account of what was tried (two real bugs found+fixed, a third left
+// unresolved after extensive bisection) is in mlx_moe.cpp's comment above
+// mlx_gpu_layer_step_lazy(). Call mlx_gpu_layer_step_lazy() once per layer,
+// in order (l=0..NL-1), for the SAME token/pos. Each call builds that ONE
+// layer's ops as a single lazy graph (with one exception, documented in the
+// .cpp), evaluates it (this layer's x_out + new K/V together, inside this
+// same call -- not deferred across calls), persists the new K/V into the
+// same cache mlx_gpu_layer_step()/mlx_gpu_mla_layer0() read, and keeps the
+// (already-evaluated) x_out as the next layer's input. x_in_host is only
+// read on l==0 (the token's embedding); for l>0 it is ignored (the previous
+// call's own x_out is used instead). After all layers, call
+// mlx_gpu_forward_finalize() exactly once to append the final norm + lm_head
+// and evaluate that (small) remaining piece, writing logits_out. Returns 1 on
+// success, 0 on failure (aborts the pending state on failure -- next l==0 call
+// starts fresh).
+int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
+                             const float *x_in_host, const float *w_inln, const float *w_postln,
+                             const float *w_kvaln, const float *w_gate);
+int mlx_gpu_forward_finalize(const float *w_finalnorm, float *logits_out);
+
 #ifdef __cplusplus
 }
 #endif

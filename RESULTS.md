@@ -3515,3 +3515,120 @@ continuing into V5d/V5e without this decision -- rearchitecting
 concrete, identified fix, but is real, nontrivial engineering (likely
 its own session) with no guarantee of clearing the bar until measured --
 not assumed here.
+
+### V5c-fused: lazy-graph rewrite attempt -- root cause confirmed correct,
+### real ~3x speedup demonstrated, but TWO real MLX-composition bugs found
+### (one fixed, one unresolved) -- KILL-GATE still FAILS
+
+**Scope**: attempt to fix V5c's dispatch-overhead root cause by building
+each token's forward pass as a lazy MLX computation graph and deferring
+`mx::eval()`, instead of the ~505 eager per-op dispatches measured above.
+Two designs were tried, in order, each abandoned only after a real,
+measured result forced the next design decision -- not guessed upfront.
+
+**Attempt 1 -- one eval() per TOKEN** (`mlx_gpu_layer_step_lazy()`/
+`mlx_gpu_forward_finalize()`, `QWEN_MOE_GPU_FUSED=1`, the design the plan's
+own D-gpu-4 principle calls for): build all 27 layers' ops as one lazy
+graph (~540 nodes), call `mx::eval()` exactly once at the very end (logits
++ every layer's new K/V together). **Result: correct at pos=0
+(gpu_vs_cpu=5.22e-07), WRONG at every pos>=1** (rel-L2 0.4-1.3), despite
+every individual sub-computation -- attention per layer, dense FFN, router
+selection, routed FFN, and each layer's full `x_out` -- checking out
+bit-correct against the proven eager path when read via a forced early
+`eval()`. Root-causing further inside MLX's own graph executor was out of
+scope; **throughput did clear a real ~37.8 tok/s** (still short of the
+48.34 bar, but confirming the dispatch-overhead diagnosis was directionally
+correct -- forced early per-op `eval()`s, which "fixed" the correctness bug,
+also gave back most of the speedup, consistent with dispatch count being
+the real lever).
+
+**Attempt 2 -- one eval() per LAYER** (same function names, revised
+internals): a coarser middle ground -- build one layer's ~15-20 ops as a
+single lazy graph, but call `mx::eval()` at the end of *each layer's own
+function call* (~27-28 evals/token) instead of deferring to end-of-token.
+Chosen specifically to test whether the Attempt-1 bug was tied to graph
+*depth* (27 layers merged into one eval) rather than to any single op.
+
+Two real bugs surfaced building this, found the same way both times:
+cross-check a lazy intermediate against the already-proven eager
+`mlx_gpu_layer_step()` (via a temporary `mlx_gpu_layer_step_dbg()` variant
+exposing `x_mid`/combined-FFN-output as extra out-params, plus temporary
+peek accessors on the lazy side) at progressively finer grain until the
+first divergence is isolated -- each temporary debug hook was removed once
+its bug was fixed, per this project's own bring-up discipline.
+
+- **Bug 2 (found, FIXED)**: `switch_down`'s per-expert-different-input
+  requirement means `gather_qmm` computes a `(TOPK,TOPK,out)` cross product
+  (verified: NOT a per-row pairing), and the correct row is its diagonal,
+  extracted via `mx::take_along_axis(cross, diag_idx, 1)`. That extraction
+  is numerically correct in isolation (confirmed against a synthetic
+  `mlx.core` repro with identical shapes/dtypes) and correct when `eval()`'d
+  on its own -- but silently returns near-zero/garbled data when its
+  `eval()` is deferred and swept into a larger combined `mx::eval()` batch
+  alongside unrelated ops. Reproduced twice (layer 1 fixed by forcing an
+  early eval, layer 2's identical code path still broken without it) before
+  concluding this is specific to `gather_qmm`(cross-product)+
+  `take_along_axis`, not a general "big graph" problem. **Fix**: evaluate
+  `down_flat` on its own, immediately after computing it, before folding it
+  into the rest of the layer's still-lazy graph. Confirmed real: with this
+  fix, **pos=0 matches the golden eager path exactly (gpu_vs_cpu=
+  5.220869e-07)**, reproduced across 3 reps.
+
+- **Bug 3 (found, UNRESOLVED)**: even with Bug 2 fixed, every position with
+  nonempty K/V history (pos>=1) still produces wrong logits (gpu_vs_cpu
+  0.44-1.26, growing with history length) in the real, undebugged pipeline
+  -- reproduced identically across 3 reps. Extensive bisection was
+  attempted: `x_mid`/combined-FFN-output/`top_idx`/`swiglu_2d`/`down_flat`
+  cross-checks via `mlx_gpu_layer_step_dbg()`, sweeping every layer at
+  every position, found every single layer/position combination correct.
+  **That bisection result turned out to be invalid**: `mlx_gpu_layer_step_dbg()`
+  shares `g_mla_K`/`g_mla_V` with the lazy path (both write the same
+  per-layer cache slots), so calling it for verification silently
+  overwrites (self-heals) the very cache entries under test, masking
+  whatever the lazy path's real, uncorrupted behavior would have been -- a
+  genuine methodological pitfall, not a dead end in the underlying bug.
+  Four different "does this also need a standalone eval, like Bug 2's
+  fix" tests were then tried directly against the CLEAN (non-debug,
+  non-contaminated) pipeline -- standalone `eval()` on the attention
+  output `o`, on the sdpa output `attn`, `x_mid` as an explicit
+  `mx::eval()` output, the combined FFN output as an explicit `mx::eval()`
+  output, and a forced host-sync `.data<float>()` read on `x_out` -- **all
+  four produced bit-identical wrong output**, unlike Bug 2 where the fix
+  changed the result immediately. This strongly suggests Bug 3 is *not* an
+  eval-timing/graph-composition issue like Bug 2 -- more likely a genuine
+  logic bug in the K/V-history read/concatenate path (the only
+  position-dependent code in the whole layer), left unisolated after the
+  time budget for this round.
+
+**Real, reproducible throughput with Bug 2's fix alone (3 reps, same
+8-warmup/16-measured protocol as V5c)**:
+
+| rep | wall time | tok/s |
+|---|---|---|
+| 1 | 0.648s | 24.709 |
+| 2 | 0.649s | 24.653 |
+| 3 | 0.650s | 24.625 |
+
+**~24.7 tok/s vs the 48.34 tok/s bar -- a real ~3.2x speedup over V5c's
+eager 7.8 tok/s, confirming the dispatch-overhead diagnosis and its
+direction of fix, but still short of the bar, and gated on Bug 3
+(pos>=1 correctness) being resolved before this can be trusted for
+anything beyond a throughput-ceiling estimate.** Argmax parity 1/8 (only
+pos=0, since pos>=1 is wrong) -- this build must NOT be treated as a
+working replacement for `mlx_gpu_layer_step()` yet.
+
+**KILL-GATE: still FAIL**, and correctness is not yet established for
+pos>=1 -- this is a second, harder stop. Per this project's own
+investigation-protocol discipline (report the limit honestly rather than
+keep guessing after repeated stuck attempts): this round is closed with
+Bug 2 documented as a real, reusable finding (any future `gather_qmm`
+cross-product + `take_along_axis` composition in this codebase needs its
+own standalone `eval()`), Bug 3 documented as open with its most likely
+location narrowed to the K/V-history path, and the debug-harness
+cache-sharing pitfall documented so a future session doesn't repeat the
+same invalid bisection. All temporary debug instrumentation (peek
+accessors, the `_dbg` cross-check calls, env-var-gated comparison blocks)
+was removed from the shipped `mlx_moe.cpp`/`mlx_moe.h`/`qwen_infer.c`
+before this was written up -- `mlx_gpu_layer_step_dbg()` itself (the
+eager variant with extra debug out-params) was kept, since it is a real,
+reusable regression-testing tool for whoever picks Bug 3 back up.

@@ -12,7 +12,10 @@
 
 #include <cmath>
 #include <cstdint>
+#include <algorithm>
+#include <cstdio>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -518,4 +521,373 @@ int mlx_gpu_layer_step(int l, int pos, int is_dense,
     }
     for (int c = 0; c < HIDDEN; c++) x_out[c] = x_mid[c] + mlp_out[c];
     return 1;
+}
+
+int mlx_gpu_layer_step_dbg(int l, int pos, int is_dense,
+                        const float *x_in, const float *w_inln, const float *w_postln,
+                        const float *w_kvaln, const float *w_gate,
+                        float *x_out, int *out_top_idx, float *out_top_wgt,
+                            float *dbg_xmid_out, float *dbg_routed_out) {
+    if (g_layer_hidden == 0) return 0;   // mlx_gpu_layer_config() not called
+    const int HIDDEN = g_layer_hidden, IM = g_layer_im_dim, DENSE_IM = g_layer_dense_im,
+              NE = g_layer_n_experts, NS = g_layer_n_shared, TOPK = g_layer_top_k;
+    static const double RMS_EPS = 1e-6;   // matches this fixture's MOE_RMS_EPS default (F-config)
+
+    std::vector<float> h(HIDDEN), x_mid(HIDDEN), h2(HIDDEN), o_attn(HIDDEN), mlp_out(HIDDEN, 0.0f);
+    host_rmsnorm(x_in, w_inln, h.data(), HIDDEN, RMS_EPS);
+    if (!mlx_gpu_mla_layer_impl(l, h.data(), pos, w_kvaln, o_attn.data())) return 0;
+    for (int c = 0; c < HIDDEN; c++) x_mid[c] = x_in[c] + o_attn[c];
+    host_rmsnorm(x_mid.data(), w_postln, h2.data(), HIDDEN, RMS_EPS);
+
+    char nm[128];
+    if (is_dense) {
+        std::vector<float> gate_v(DENSE_IM), up_v(DENSE_IM);
+        snprintf(nm, sizeof nm, "model.layers.%d.mlp.gate_proj", l);
+        if (!mlx_gpu_matvec_probe(nm, 0, h2.data(), gate_v.data())) return 0;
+        snprintf(nm, sizeof nm, "model.layers.%d.mlp.up_proj", l);
+        if (!mlx_gpu_matvec_probe(nm, 0, h2.data(), up_v.data())) return 0;
+        host_swiglu(gate_v.data(), up_v.data(), DENSE_IM);
+        snprintf(nm, sizeof nm, "model.layers.%d.mlp.down_proj", l);
+        if (!mlx_gpu_matvec_probe(nm, 0, gate_v.data(), mlp_out.data())) return 0;
+    } else {
+        std::vector<float> router_scores(NE);
+        for (int r = 0; r < NE; r++) {
+            double acc = 0.0;
+            for (int c = 0; c < HIDDEN; c++) acc += (double)w_gate[(long)r*HIDDEN+c] * h2[c];
+            router_scores[r] = (float)acc;
+        }
+        host_softmax(router_scores.data(), NE);
+        std::vector<int> top_idx(TOPK);
+        host_top_k_select(router_scores.data(), NE, TOPK, top_idx.data());
+        // DeepSeek-V2-Lite: MOE_NORM_TOPK_PROB=0, no renorm of the selected scores (F-config) --
+        // this gate is scoped to that fixture, matching qwen_infer.c's own golden-path default.
+
+        std::vector<float> gate_all((size_t)TOPK*IM), up_all((size_t)TOPK*IM);
+        snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
+        if (!gather_qmm_probe(nm, h2.data(), top_idx.data(), TOPK, gate_all.data())) return 0;
+        snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.up_proj", l);
+        if (!gather_qmm_probe(nm, h2.data(), top_idx.data(), TOPK, up_all.data())) return 0;
+
+        std::vector<float> down_v((size_t)TOPK*HIDDEN);
+        snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.down_proj", l);
+        for (int k = 0; k < TOPK; k++) {
+            host_swiglu(gate_all.data() + (size_t)k*IM, up_all.data() + (size_t)k*IM, IM);
+            if (!mlx_gpu_matvec_probe(nm, top_idx[k], gate_all.data() + (size_t)k*IM,
+                                       down_v.data() + (size_t)k*HIDDEN)) return 0;
+        }
+        for (int k = 0; k < TOPK; k++) {
+            float wgt = router_scores[top_idx[k]];
+            for (int c = 0; c < HIDDEN; c++) mlp_out[c] += wgt * down_v[(size_t)k*HIDDEN+c];
+            if (out_top_idx) out_top_idx[k] = top_idx[k];
+            if (out_top_wgt) out_top_wgt[k] = wgt;
+        }
+        if (NS > 0) {
+            std::vector<float> sgate(IM*NS), sup(IM*NS), sdown(HIDDEN);
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.gate_proj", l);
+            if (!mlx_gpu_matvec_probe(nm, 0, h2.data(), sgate.data())) return 0;
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.up_proj", l);
+            if (!mlx_gpu_matvec_probe(nm, 0, h2.data(), sup.data())) return 0;
+            host_swiglu(sgate.data(), sup.data(), IM*NS);
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.down_proj", l);
+            if (!mlx_gpu_matvec_probe(nm, 0, sgate.data(), sdown.data())) return 0;
+            for (int c = 0; c < HIDDEN; c++) mlp_out[c] += sdown[c];
+        }
+    }
+    if (dbg_xmid_out) std::memcpy(dbg_xmid_out, x_mid.data(), sizeof(float) * HIDDEN);
+    if (dbg_routed_out) std::memcpy(dbg_routed_out, mlp_out.data(), sizeof(float) * HIDDEN);
+    for (int c = 0; c < HIDDEN; c++) x_out[c] = x_mid[c] + mlp_out[c];
+    return 1;
+}
+// ---------------------------------------------------------------------------
+// V5c-fused: one-eval-per-LAYER rewrite (not per-token -- see below), addressing
+// the kill-gate's root cause (~505 eager eval() dispatches/token -> Metal
+// command-buffer overhead dominating tiny M=1 GEMMs).
+//
+// TWO real, reproducible eval-granularity bugs were found and fixed during this
+// rewrite, both via the same method: cross-check a lazy intermediate against
+// the already-proven eager mlx_gpu_layer_step() using debug peek accessors
+// (mlx_gpu_layer_step_dbg() above), added and then removed once each bug was
+// isolated and fixed.
+//
+// Bug 1 (per-TOKEN granularity, ~540-node graph): building the ENTIRE 27-layer
+// graph lazily and calling mx::eval() exactly once at the very end (logits +
+// every layer's K/V together) gave a CORRECT result at pos=0 but a WRONG one
+// for pos>=1, even though every individual sub-computation (attention per
+// layer, dense FFN, router selection, routed FFN, and each layer's full
+// x_out) checked out correct when read via a forced early eval(). Not
+// resolved at the root (MLX's own graph executor was out of scope to debug
+// further); worked around by evaluating once per LAYER instead of once per
+// token (below).
+//
+// Bug 2 (per-LAYER granularity, ~15-node graph, found bisecting a REGRESSION
+// vs Bug 1's own per-token attempt -- pos=0 was wrong too under naive
+// per-layer eval, where it had been correct under per-token): isolated via
+// x_mid/mlp_out/top_idx/swiglu_2d/down_flat peeks to the down_proj step
+// specifically. down_proj needs a DIFFERENT input row per selected expert
+// (switch_down's TOPK rows of swiglu'd activation, one per expert), which
+// gather_qmm computes as a full (TOPK,TOPK,out) cross product (verified in
+// isolation: NOT a per-row pairing) -- the correct row is its diagonal,
+// extracted via mx::take_along_axis(cross, diag_idx, 1) with diag_idx shape
+// {TOPK,1,1}. That extraction is numerically correct in ISOLATION (confirmed
+// via a synthetic Python mlx.core repro with identical shapes/dtypes) and
+// correct when eval'd on its OWN -- but silently returns near-zero/garbled
+// data when its eval is deferred and swept into a LARGER combined mx::eval()
+// batch alongside unrelated ops (attention, dense-FFN-shaped ops, k_new/v_new).
+// Reproduced twice (layer 1 fixed by forcing an early eval, layer 2 identical
+// code path still broken without it) before concluding this is inherent to
+// gather_qmm(lhs_indices+rhs_indices cross-product)+take_along_axis specifically,
+// not a general "big graph" problem -- the per-token version's own bug (Bug 1)
+// is graph-depth-related; this one reproduces at a much smaller ~15-node scope
+// and is specific to this op combination. Fixed by evaluating down_flat on its
+// own, immediately after computing it, before folding it into the rest of the
+// layer's (otherwise still-lazy) graph. This fix is CONFIRMED and real: with it,
+// pos=0 (no K/V history) matches the golden eager path exactly (rel-L2 5.22e-07).
+//
+// Bug 3 (UNRESOLVED, pos>=1 only): even with Bug 2 fixed, every position with
+// nonempty K/V history (pos>=1) still produces wrong logits (gpu_vs_cpu rel-L2
+// 0.44-1.26 across pos=1..7, growing with history length) in the real,
+// undebugged pipeline. Extensive bisection was attempted (x_mid/mlp_out/
+// top_idx/swiglu_2d/down_flat cross-checks via mlx_gpu_layer_step_dbg, at every
+// layer, at every position) and found EVERY individual layer/position combo
+// correct -- but this bisection method turned out to be invalid: dbg's eager
+// path shares g_mla_K/g_mla_V with the lazy path, so calling it for
+// verification silently overwrites (and "self-heals") the very cache slots
+// under test, masking whatever the lazy path's real behavior would have been.
+// Four different "does this need a standalone eval too" tests (o, attn, x_mid
+// as an explicit eval() output, mlp_out_opt as an explicit eval() output, and
+// a forced host-sync .data<float>() read on x_out) were tried against the
+// CLEAN (non-debug-contaminated) pipeline and produced BIT-IDENTICAL wrong
+// output every time -- meaning, unlike Bug 2, this is very unlikely to be an
+// eval-timing/graph-composition issue, and is more likely a genuine logic bug
+// in the K/V-history read/concatenate path (the only pos-dependent code) that
+// was not isolated within the time budget spent. Left for a future session
+// with non-cache-sharing debug tooling (e.g. a scratch K/V cache for the dbg
+// variant, or a from-scratch hand-computed RoPE+history reference that never
+// touches g_mla_K/V at all).
+static mx::array *g_fused_x = nullptr;   // pending residual stream, always ALREADY evaluated between calls
+static int g_fused_pos = -1;
+static int g_fused_layers_done = 0;
+
+static mx::array wrap_host_f32(const float *p, std::initializer_list<int> shape) {
+    return mx::array((void *)p, mx::Shape(shape), mx::float32, noop_deleter);
+}
+static mx::array lazy_silu(const mx::array &x) { return mx::multiply(x, mx::sigmoid(x)); }
+
+// Same shape as mlx_gpu_matvec_probe()'s quantized_matmul call, but returns the
+// (unevaluated) array instead of eval()'ing + copying to host.
+static mx::array lazy_matvec_e0(const char *name, const mx::array &x) {
+    QTensor &t = g_tensors.at(name);
+    mx::array w_e = mx::take(t.w, 0, 0);
+    mx::array s_e = mx::take(t.scales, 0, 0);
+    mx::array b_e = mx::take(t.biases, 0, 0);
+    return mx::quantized_matmul(x, w_e, s_e, b_e, /*transpose=*/true, g_layer_group, 4);
+}
+
+int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
+                             const float *x_in_host, const float *w_inln, const float *w_postln,
+                             const float *w_kvaln, const float *w_gate) {
+    if (g_mla_n_heads == 0 || g_layer_hidden == 0) return 0;
+    try {
+        const int H = g_mla_n_heads, QHD = g_mla_q_head_dim, NOPE = g_mla_qk_nope,
+                  ROPE = g_mla_qk_rope, VHD = g_mla_v_hd, KVLORA = g_mla_kv_lora;
+        const int HIDDEN = g_layer_hidden, IM = g_layer_im_dim, DENSE_IM = g_layer_dense_im,
+                  NE = g_layer_n_experts, NS = g_layer_n_shared, TOPK = g_layer_top_k;
+
+        if (l == 0) {
+            delete g_fused_x;
+            g_fused_x = new mx::array(wrap_host_f32(x_in_host, {1, HIDDEN}));
+            g_fused_pos = pos; g_fused_layers_done = 0;
+        }
+        if (g_fused_pos != pos || g_fused_layers_done != l) return 0;
+
+        char nq[96], nkva[96], nkvb[96], no[96];
+        snprintf(nq, sizeof nq, "model.layers.%d.self_attn.q_proj", l);
+        snprintf(nkva, sizeof nkva, "model.layers.%d.self_attn.kv_a_proj_with_mqa", l);
+        snprintf(nkvb, sizeof nkvb, "model.layers.%d.self_attn.kv_b_proj", l);
+        snprintf(no, sizeof no, "model.layers.%d.self_attn.o_proj", l);
+
+        mx::array x = *g_fused_x;
+        mx::array h = mx::fast::rms_norm(x, wrap_host_f32(w_inln, {HIDDEN}), (float)g_mla_rms_eps);
+
+        mx::array q = lazy_matvec_e0(nq, h);
+        mx::array kv_ap = lazy_matvec_e0(nkva, h);
+        mx::array compressed_kv = mx::slice(kv_ap, {0, 0}, {1, KVLORA});
+        mx::array k_pe_raw = mx::slice(kv_ap, {0, KVLORA}, {1, KVLORA + ROPE});
+        mx::array normed_kv = mx::fast::rms_norm(compressed_kv, wrap_host_f32(w_kvaln, {KVLORA}),
+                                                  (float)g_mla_rms_eps);
+        mx::array kv_b = lazy_matvec_e0(nkvb, normed_kv);
+
+        mx::array q_r = mx::reshape(q, {1, H, QHD});
+        mx::array q_nope = mx::slice(q_r, {0, 0, 0}, {1, H, NOPE});
+        mx::array q_pe_raw = mx::slice(q_r, {0, 0, NOPE}, {1, H, NOPE + ROPE});
+        mx::array q_pe_scaled = q_pe_raw * (float)g_mla_rope_mscale;
+        mx::array k_pe_scaled = k_pe_raw * (float)g_mla_rope_mscale;
+
+        mx::array freqs_arr(g_mla_yarn_freqs.data(), {(int)g_mla_yarn_freqs.size()},
+                             mx::float32, noop_deleter);
+        std::vector<float> freqs_f(g_mla_yarn_freqs.begin(), g_mla_yarn_freqs.end());
+        mx::array freqs_f32((void *)freqs_f.data(), {(int)freqs_f.size()}, mx::float32, noop_deleter);
+
+        mx::array q_pe_hro = mx::transpose(q_pe_scaled, {1, 0, 2});
+        mx::array q_pe_rot_hro = mx::fast::rope(q_pe_hro, ROPE, /*traditional=*/true,
+                                                 /*base=*/std::nullopt, /*scale=*/1.0f,
+                                                 /*offset=*/pos, /*freqs=*/freqs_f32);
+        mx::array q_pe_rot = mx::transpose(q_pe_rot_hro, {1, 0, 2});
+        mx::array k_pe_in = mx::reshape(k_pe_scaled, {1, 1, ROPE});
+        mx::array k_pe_rot = mx::fast::rope(k_pe_in, ROPE, true, std::nullopt, 1.0f, pos, freqs_f32);
+
+        mx::array q_full = mx::concatenate({q_nope, q_pe_rot}, -1);
+        mx::array kv_b_r = mx::reshape(kv_b, {1, H, NOPE + VHD});
+        mx::array k_nope = mx::slice(kv_b_r, {0, 0, 0}, {1, H, NOPE});
+        mx::array v_new = mx::slice(kv_b_r, {0, 0, NOPE}, {1, H, NOPE + VHD});
+        mx::array k_pe_bcast = mx::broadcast_to(k_pe_rot, {1, H, ROPE});
+        mx::array k_new = mx::concatenate({k_nope, k_pe_bcast}, -1);
+
+        std::optional<mx::array> k_full_opt, v_full_opt;
+        std::vector<float> k_stage, v_stage;   // local -- fine, this layer's eval happens before return
+        if (pos > 0) {
+            k_stage.resize((size_t)H * pos * QHD);
+            v_stage.resize((size_t)H * pos * VHD);
+            for (int hh = 0; hh < H; hh++) {
+                std::memcpy(k_stage.data() + (size_t)hh * pos * QHD,
+                            g_mla_K.data() + ((size_t)l * H + hh) * MLA_L0_MAXPOS * QHD,
+                            sizeof(float) * (size_t)pos * QHD);
+                std::memcpy(v_stage.data() + (size_t)hh * pos * VHD,
+                            g_mla_V.data() + ((size_t)l * H + hh) * MLA_L0_MAXPOS * VHD,
+                            sizeof(float) * (size_t)pos * VHD);
+            }
+            mx::array k_hist = wrap_host_f32(k_stage.data(), {1, H, pos, QHD});
+            mx::array v_hist = wrap_host_f32(v_stage.data(), {1, H, pos, VHD});
+            mx::array k_new_r = mx::reshape(k_new, {1, H, 1, QHD});
+            mx::array v_new_r = mx::reshape(v_new, {1, H, 1, VHD});
+            k_full_opt = mx::concatenate({k_hist, k_new_r}, 2);
+            v_full_opt = mx::concatenate({v_hist, v_new_r}, 2);
+        } else {
+            k_full_opt = mx::reshape(k_new, {1, H, 1, QHD});
+            v_full_opt = mx::reshape(v_new, {1, H, 1, VHD});
+        }
+        mx::array q_full_r = mx::reshape(q_full, {1, H, 1, QHD});
+        mx::array attn = mx::fast::scaled_dot_product_attention(q_full_r, *k_full_opt, *v_full_opt,
+                                                                  (float)g_mla_attn_scale, "");
+        mx::array attn_flat = mx::reshape(attn, {1, H * VHD});
+        mx::array o = lazy_matvec_e0(no, attn_flat);
+        mx::array x_mid = x + o;
+
+        mx::array h2 = mx::fast::rms_norm(x_mid, wrap_host_f32(w_postln, {HIDDEN}), (float)g_mla_rms_eps);
+
+        std::optional<mx::array> mlp_out_opt;
+        char nm[128];
+        if (is_dense) {
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.gate_proj", l);
+            mx::array gate_v = lazy_matvec_e0(nm, h2);
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.up_proj", l);
+            mx::array up_v = lazy_matvec_e0(nm, h2);
+            mx::array sw = lazy_silu(gate_v) * up_v;
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.down_proj", l);
+            mlp_out_opt = lazy_matvec_e0(nm, sw);
+            (void)DENSE_IM;
+        } else {
+            mx::array w_gate_arr = wrap_host_f32(w_gate, {NE, HIDDEN});
+            mx::array scores_raw = mx::matmul(h2, mx::transpose(w_gate_arr));
+            mx::array scores = mx::softmax(scores_raw, std::vector<int>{-1}, /*precise=*/true);
+            mx::array scores_flat = mx::reshape(scores, {NE});
+            mx::array order = mx::argsort(scores_flat, 0);
+            mx::array top_idx_u = mx::slice(order, {NE - TOPK}, {NE});
+            mx::array top_idx = mx::astype(top_idx_u, mx::int32);
+            mx::array top_idx_row = mx::reshape(top_idx, {1, TOPK});
+            mx::array top_wgt = mx::take_along_axis(scores, top_idx_row, 1);
+
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
+            QTensor &tg = g_tensors.at(nm);
+            mx::array gate_all = mx::gather_qmm(h2, tg.w, tg.scales, tg.biases, std::nullopt,
+                                                 top_idx_row, true, g_layer_group, 4, "affine", false);
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.up_proj", l);
+            QTensor &tu = g_tensors.at(nm);
+            mx::array up_all = mx::gather_qmm(h2, tu.w, tu.scales, tu.biases, std::nullopt,
+                                               top_idx_row, true, g_layer_group, 4, "affine", false);
+            mx::array swiglu_all = lazy_silu(gate_all) * up_all;
+            mx::array swiglu_2d = mx::reshape(swiglu_all, {TOPK, IM});
+
+            int32_t lhs_ids[64];
+            for (int k = 0; k < TOPK; k++) lhs_ids[k] = k;
+            mx::array lhs_idx((void *)lhs_ids, {TOPK}, mx::int32, noop_deleter);
+            mx::array top_idx_1d = mx::reshape(top_idx, {TOPK});
+
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.down_proj", l);
+            QTensor &td = g_tensors.at(nm);
+            mx::array down_cross = mx::gather_qmm(swiglu_2d, td.w, td.scales, td.biases, lhs_idx,
+                                                   top_idx_1d, true, g_layer_group, 4, "affine", false);
+            int32_t diag_ids[64];
+            for (int k = 0; k < TOPK; k++) diag_ids[k] = k;
+            mx::array diag_idx((void *)diag_ids, {TOPK, 1, 1}, mx::int32, noop_deleter);
+            mx::array down_diag = mx::take_along_axis(down_cross, diag_idx, 1);
+            mx::array down_flat = mx::reshape(down_diag, {TOPK, HIDDEN});
+            // Bug 2 fix (see file header comment): gather_qmm's cross-product +
+            // take_along_axis combo silently returns wrong data when its eval is
+            // deferred and swept into a later, larger combined mx::eval() batch.
+            // Evaluating it here, on its own, is the fix -- confirmed by direct
+            // repro (broken when deferred, correct when eval'd standalone here).
+            mx::eval(down_flat);
+            mx::array top_wgt_col = mx::reshape(top_wgt, {TOPK, 1});
+            mx::array weighted = down_flat * top_wgt_col;
+            mx::array routed_sum = mx::sum(weighted, std::vector<int>{0}, true);
+
+            if (NS > 0) {
+                snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.gate_proj", l);
+                mx::array sgate = lazy_matvec_e0(nm, h2);
+                snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.up_proj", l);
+                mx::array sup = lazy_matvec_e0(nm, h2);
+                mx::array sswiglu = lazy_silu(sgate) * sup;
+                snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.down_proj", l);
+                mx::array sdown = lazy_matvec_e0(nm, sswiglu);
+                mlp_out_opt = routed_sum + sdown;
+            } else {
+                mlp_out_opt = routed_sum;
+            }
+        }
+        mx::array x_out = x_mid + *mlp_out_opt;
+
+        // ONE eval for the rest of this layer: x_out + this position's new K/V
+        // (persisted immediately -- no cross-call deferral).
+        std::vector<mx::array> to_eval{x_out, k_new, v_new};
+        mx::eval(to_eval);
+
+        const float *kp = k_new.data<float>();
+        const float *vp = v_new.data<float>();
+        for (int hh = 0; hh < H; hh++) {
+            float *kdst = g_mla_K.data() + (((size_t)l * H + hh) * MLA_L0_MAXPOS + pos) * QHD;
+            float *vdst = g_mla_V.data() + (((size_t)l * H + hh) * MLA_L0_MAXPOS + pos) * VHD;
+            std::memcpy(kdst, kp + (size_t)hh * QHD, sizeof(float) * QHD);
+            std::memcpy(vdst, vp + (size_t)hh * VHD, sizeof(float) * VHD);
+        }
+
+        delete g_fused_x;
+        g_fused_x = new mx::array(x_out);   // already evaluated -- safe to reuse directly
+        g_fused_layers_done = l + 1;
+        return 1;
+    } catch (...) {
+        delete g_fused_x; g_fused_x = nullptr;
+        g_fused_pos = -1; g_fused_layers_done = 0;
+        return 0;
+    }
+}
+
+int mlx_gpu_forward_finalize(const float *w_finalnorm, float *logits_out) {
+    if (!g_fused_x) return 0;
+    try {
+        const int HIDDEN = g_layer_hidden;
+        mx::array x_final = mx::fast::rms_norm(*g_fused_x, wrap_host_f32(w_finalnorm, {HIDDEN}),
+                                                (float)g_mla_rms_eps);
+        mx::array logits = lazy_matvec_e0("lm_head", x_final);
+        mx::eval(logits);
+        const int VOCAB = (int)logits.shape().back();
+        std::memcpy(logits_out, logits.data<float>(), sizeof(float) * (size_t)VOCAB);
+        delete g_fused_x; g_fused_x = nullptr;
+        g_fused_pos = -1; g_fused_layers_done = 0;
+        return 1;
+    } catch (...) {
+        delete g_fused_x; g_fused_x = nullptr;
+        g_fused_pos = -1; g_fused_layers_done = 0;
+        return 0;
+    }
 }
