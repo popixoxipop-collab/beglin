@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-08-31T23:35:00.000Z
+  modified: 2026-09-01T00:35:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -1866,3 +1866,27 @@ vs GPU 214.7 — 기존 세션 기록(V5f/V5h)과 일치하는 이미 알려진
 (`run_moe_cbatch_verify_mode()`의 online분기). 상세: `RESULTS.md`
 §"V5l GQA CPU twin: manifest support for the CPU ground-truth
 scheduler".
+
+★V5l MLA CPU twin(마지막 갭, 사용자 명시요청 "MLA CPU twin에도
+매니페스트 이식"): 대상은 `run_moe_cbatch_verify_mode()`(MoE-4a/4b/4c
+통합함수, static+online+reverify 전부 한 함수)의 online 브랜치.
+★구조적으로 이전 3라운드와 다른 발견: 이 함수(그리고 그 앞으로
+옮겨야 했던 로더)가 **`#ifdef QWEN_GPU_MLX` 가드 밖**에 있음(6000줄
+이전엔 헤더 include용 가드 1개뿐, 이 함수는 4999에서 시작) — 즉
+"GPU 빌드에만 영향, dense 기본 빌드는 완전 무관"이라는 이전
+3라운드의 안전장치가 이번엔 구조적으로 성립 안 함. dense-only
+컴파일(`-DQWEN_GPU_MLX` 없이)을 직접 실행해 클린 확인. 로더 함수를
+**두 번째로** 재이동(GQA-CPU-twin 앞→이번엔 이 함수 앞, 파일에서
+가장 이른 위치). EOS는 이번엔 손대지 않기로 판단(이 함수는 config를
+스스로 안 읽고 caller가 이미 로드했다는 설계 — EOS_TOKEN_ID 하나를
+위해 이 원칙 깨고 파일 재오픈하는 건 스코프 확장, 값(100001) 자체는
+이미 실측재확인+이 함수가 DeepSeek 전용 리터럴이라 실질 안전 —
+정확성 문제 없이 문서에만 명시). **검증 5개 전부 통과**, (4)가
+GQA CPU twin과 마찬가지로 GPU게이트 실제결과와 직접대조(steps=37/
+admitted_after_evict=16/queue_wait_events=16/queue_wait_max_steps=31
+전부일치), (5) ASan pre-fix 재현(`run_moe_cbatch_verify_mode.rq_out`)
++post-fix 클린(R=64 전부). **V5l `QWEN_MOE_CB_PROMPT_MANIFEST`가 이제
+4개 온라인게이트(GQA GPU/GQA CPU/MLA GPU/MLA CPU) 전부 커버 —
+CPU/GPU × GQA/MLA 매트릭스 완결**. 남은 공통갭: `load_ids()` 입력검증
+(4곳 전부 미해결). 상세: `RESULTS.md` §"V5l MLA CPU twin: manifest
+support for the MLA CPU ground-truth scheduler".

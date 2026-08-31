@@ -4996,6 +4996,52 @@ static void moe_cb4c_maybe_reverify(const uint8_t *af, MoeAFTensor *t_embed, Moe
 static float *g_rmcv_logits_step;
 static float *g_rmcv_logits1;
 
+// V5l: QWEN_MOE_CB_PROMPT_MANIFEST=<path> -- manifest format: one non-blank, non-'#'-comment
+// line per entry, "<i32-token-file-path> <max_new_tokens>" whitespace-separated. Prompt tokens
+// loaded via load_ids() (:2156), the same raw-int32 convention QWEN_MOE_PROMPT already
+// established (V5k). FATAL (not skip) on any per-line failure -- unlike moe_load_layout_f32()'s
+// tolerant blank-line skip, a manifest line the caller wrote is not incidental config noise.
+// Topology-agnostic (raw int arrays only) -- shared verbatim by both the GQA (V5l) and MLA
+// (V5l MLA mirror) online scheduler gates below, not duplicated per Rule 3's own "genuinely
+// shared infra gets one helper" precedent (matches moe_load_gqa_cbatch_config()'s own history).
+static int moe_cbatch_load_manifest(const char *path, int *mf_plen, int *mf_maxnew,
+                                         int mf_ids[][MOE_CBATCH_MAXPOS], int cap) {
+    FILE *f = fopen(path, "r");
+    if (!f) { fprintf(stderr, "FATAL: [moe cbatch manifest] could not open manifest '%s'\n", path); exit(1); }
+    char line[1024];
+    int n = 0, lineno = 0;
+    while (fgets(line, sizeof line, f)) {
+        lineno++;
+        char *p = line; while (*p == ' ' || *p == '\t') p++;
+        if (*p == '\0' || *p == '\n' || *p == '#') continue;
+        char fpath[1024]; int maxnew;
+        if (sscanf(line, "%1023s %d", fpath, &maxnew) != 2) {
+            fprintf(stderr, "FATAL: [moe cbatch manifest] malformed manifest line %d in '%s'\n", lineno, path);
+            exit(1);
+        }
+        if (n >= cap) {
+            fprintf(stderr, "FATAL: [moe cbatch manifest] manifest '%s' has more than %d entries\n", path, cap);
+            exit(1);
+        }
+        if (maxnew <= 0)
+            fprintf(stderr, "[moe cbatch manifest] WARNING: manifest line %d maxnew=%d <= 0\n", lineno, maxnew);
+        int N = load_ids(fpath, mf_ids[n], MOE_CBATCH_MAXPOS);
+        if (N <= 0) {
+            fprintf(stderr, "FATAL: [moe cbatch manifest] could not load prompt ids from '%s' (manifest line %d)\n", fpath, lineno);
+            exit(1);
+        }
+        if (N >= MOE_CBATCH_MAXPOS) {
+            fprintf(stderr, "FATAL: [moe cbatch manifest] manifest entry '%s' prompt length %d >= MOE_CBATCH_MAXPOS=%d\n",
+                    fpath, N, MOE_CBATCH_MAXPOS);
+            exit(1);
+        }
+        mf_plen[n] = N; mf_maxnew[n] = maxnew; n++;
+    }
+    fclose(f);
+    if (n == 0) { fprintf(stderr, "FATAL: [moe cbatch manifest] manifest '%s' has zero valid entries\n", path); exit(1); }
+    return n;
+}
+
 static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     (void)argc; (void)argv;
     const char *cb_env = getenv("QWEN_MOE_CBATCH");
@@ -5176,9 +5222,32 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     if (B < 1 || B > MOE_BATCH_MAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS=%d out of [1,%d]\n", B, MOE_BATCH_MAX); exit(1); }
     if (R < 1 || R > MOE_CB4B_RMAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_REQS=%d out of [1,%d]\n", R, MOE_CB4B_RMAX); exit(1); }
 
+    // V5l MLA CPU twin: QWEN_MOE_CB_PROMPT_MANIFEST, same design as the GQA CPU twin (and both
+    // GPU gates). This function's own corpus (prompt_len/moe_cbatch_gen/prompt_ids above) is
+    // ALSO used by the static (!online) scheduler above -- that branch stays untouched, reading
+    // the literals directly. Only the online branch below is manifest-aware; the else-branch
+    // just copies those same literals so unset manifest is a true no-op for this branch too.
+    static int mf_plen[MOE_CB4B_RMAX], mf_maxnew[MOE_CB4B_RMAX];
+    static int mf_ids[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS];
+    int mf_n;
+    const char *manifest_path = getenv("QWEN_MOE_CB_PROMPT_MANIFEST");
+    if (manifest_path && manifest_path[0]) {
+        mf_n = moe_cbatch_load_manifest(manifest_path, mf_plen, mf_maxnew, mf_ids, MOE_CB4B_RMAX);
+        fprintf(stderr, "[moe cb4b] loaded %d-entry prompt manifest from '%s'\n", mf_n, manifest_path);
+    } else {
+        for (int i = 0; i < MOE_CBATCH_N; i++) {
+            mf_plen[i] = prompt_len[i];
+            mf_maxnew[i] = moe_cbatch_gen[i];
+            for (int c = 0; c < prompt_len[i]; c++)
+                mf_ids[i][c] = prompt_ids[i][c];
+        }
+        mf_n = MOE_CBATCH_N;
+    }
+    const int MCN = mf_n;
+
     static int    rq_plen[MOE_CB4B_RMAX], rq_maxnew[MOE_CB4B_RMAX], rq_arrive[MOE_CB4B_RMAX];
     static int    rq_slot_of[MOE_CB4B_RMAX], rq_admit_step[MOE_CB4B_RMAX];
-    static int    rq_out[MOE_CB4B_RMAX][MOE_CBATCH_KNEW], rq_nout[MOE_CB4B_RMAX];
+    static int    rq_out[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS], rq_nout[MOE_CB4B_RMAX];
     static double rq_t_admit[MOE_CB4B_RMAX], rq_t_first[MOE_CB4B_RMAX];
 
     for (int r = 0; r < R; r++) rq_arrive[r] = 0;
@@ -5192,8 +5261,8 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
         }
     }
     for (int r = 0; r < R; r++) {
-        int sp = r % MOE_CBATCH_N;
-        rq_plen[r] = prompt_len[sp]; rq_maxnew[r] = moe_cbatch_gen[sp];
+        int sp = r % MCN;
+        rq_plen[r] = mf_plen[sp]; rq_maxnew[r] = mf_maxnew[sp];
         rq_nout[r] = 0; rq_slot_of[r] = -1; rq_admit_step[r] = -1;
         rq_t_admit[r] = 0.0; rq_t_first[r] = 0.0;
         moe_cb4b_admit_guard(rq_plen, rq_maxnew, r);
@@ -5235,12 +5304,12 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
 
             // Phase MoE-4c 조정2: 요청ID로 키잉되는 Tier2 replay가 필요로 하는 실제 토큰열.
             // prompt 구간은 두 PREFILL_MODE 모두 admission 시점에 이미 확정돼있음.
-            for (int p = 0; p < rq_plen[r]; p++) rq_hist[r][p] = prompt_ids[r % MOE_CBATCH_N][p];
+            for (int p = 0; p < rq_plen[r]; p++) rq_hist[r][p] = mf_ids[r % MCN][p];
 
             if (prefill_mode == 0) {
                 float *logits1 = g_rmcv_logits1;
                 for (int p = 0; p < rq_plen[r]; p++)
-                    moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, prompt_ids[r % MOE_CBATCH_N][p], p, logits1, NULL, NULL, NULL);
+                    moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, mf_ids[r % MCN][p], p, logits1, NULL, NULL, NULL);
                 for (int l = 0; l < MOE_NL; l++)
                     for (int p = 0; p < rq_plen[r]; p++) {
                         memcpy(moe_cK_row(l,s,p), moe_K_row(l,p), (size_t)MOE_KROW*sizeof(float));
@@ -5278,7 +5347,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
                 int r = mcb_req[s];
                 int take = rq_plen[r] - mcb_pref[s]; if (take > budget) take = budget;
                 for (int i = 0; i < take; i++) {
-                    ids[A] = prompt_ids[r % MOE_CBATCH_N][mcb_pref[s]+i];
+                    ids[A] = mf_ids[r % MCN][mcb_pref[s]+i];
                     slots[A] = s; sposs[A] = mcb_pref[s]+i; A++;
                 }
                 mcb_pref[s] += take; budget -= take;
@@ -5336,7 +5405,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
         if (ttft_ms > ttft_max) ttft_max = ttft_ms;
         ttft_sum += ttft_ms; ttft_n++;
         fprintf(stderr, "[moe cb4b] req %d prompt %d slot %d arrive %d admit_step %d ttft_ms %.2f nout %d tokens:",
-                r, r % MOE_CBATCH_N, rq_slot_of[r], rq_arrive[r], rq_admit_step[r], ttft_ms, rq_nout[r]);
+                r, r % MCN, rq_slot_of[r], rq_arrive[r], rq_admit_step[r], ttft_ms, rq_nout[r]);
         for (int k = 0; k < rq_nout[r]; k++) fprintf(stderr, " %d", rq_out[r][k]);
         fprintf(stderr, "\n");
     }
@@ -9458,52 +9527,6 @@ static int run_moe_gpu_gqa_cbatch_prefill_gate(int argc, char **argv) {
 // scheduling logic, nothing more; the MoE-4c margin-gated reverify layer is intentionally omitted
 // here too, same reasoning as the GPU gate below (no SME2 numerical noise to guard against in a
 // ground-truth reference run).
-// V5l: QWEN_MOE_CB_PROMPT_MANIFEST=<path> -- manifest format: one non-blank, non-'#'-comment
-// line per entry, "<i32-token-file-path> <max_new_tokens>" whitespace-separated. Prompt tokens
-// loaded via load_ids() (:2156), the same raw-int32 convention QWEN_MOE_PROMPT already
-// established (V5k). FATAL (not skip) on any per-line failure -- unlike moe_load_layout_f32()'s
-// tolerant blank-line skip, a manifest line the caller wrote is not incidental config noise.
-// Topology-agnostic (raw int arrays only) -- shared verbatim by both the GQA (V5l) and MLA
-// (V5l MLA mirror) online scheduler gates below, not duplicated per Rule 3's own "genuinely
-// shared infra gets one helper" precedent (matches moe_load_gqa_cbatch_config()'s own history).
-static int moe_cbatch_load_manifest(const char *path, int *mf_plen, int *mf_maxnew,
-                                         int mf_ids[][MOE_CBATCH_MAXPOS], int cap) {
-    FILE *f = fopen(path, "r");
-    if (!f) { fprintf(stderr, "FATAL: [moe cbatch manifest] could not open manifest '%s'\n", path); exit(1); }
-    char line[1024];
-    int n = 0, lineno = 0;
-    while (fgets(line, sizeof line, f)) {
-        lineno++;
-        char *p = line; while (*p == ' ' || *p == '\t') p++;
-        if (*p == '\0' || *p == '\n' || *p == '#') continue;
-        char fpath[1024]; int maxnew;
-        if (sscanf(line, "%1023s %d", fpath, &maxnew) != 2) {
-            fprintf(stderr, "FATAL: [moe cbatch manifest] malformed manifest line %d in '%s'\n", lineno, path);
-            exit(1);
-        }
-        if (n >= cap) {
-            fprintf(stderr, "FATAL: [moe cbatch manifest] manifest '%s' has more than %d entries\n", path, cap);
-            exit(1);
-        }
-        if (maxnew <= 0)
-            fprintf(stderr, "[moe cbatch manifest] WARNING: manifest line %d maxnew=%d <= 0\n", lineno, maxnew);
-        int N = load_ids(fpath, mf_ids[n], MOE_CBATCH_MAXPOS);
-        if (N <= 0) {
-            fprintf(stderr, "FATAL: [moe cbatch manifest] could not load prompt ids from '%s' (manifest line %d)\n", fpath, lineno);
-            exit(1);
-        }
-        if (N >= MOE_CBATCH_MAXPOS) {
-            fprintf(stderr, "FATAL: [moe cbatch manifest] manifest entry '%s' prompt length %d >= MOE_CBATCH_MAXPOS=%d\n",
-                    fpath, N, MOE_CBATCH_MAXPOS);
-            exit(1);
-        }
-        mf_plen[n] = N; mf_maxnew[n] = maxnew; n++;
-    }
-    fclose(f);
-    if (n == 0) { fprintf(stderr, "FATAL: [moe cbatch manifest] manifest '%s' has zero valid entries\n", path); exit(1); }
-    return n;
-}
-
 static int run_moe_gqa_cbatch_online_cpu_gate(int argc, char **argv) {
     (void)argc; (void)argv;
     const char *gate_env = getenv("QWEN_MOE_GQA_CBATCH_ONLINE_CPU");

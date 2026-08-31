@@ -5581,3 +5581,84 @@ GQA CPU (this round), and MLA GPU. MLA CPU twin
 open gap for full CPU/GPU × GQA/MLA coverage, and is now the most
 natural next round given the loader is already positioned to serve
 it.
+
+## V5l MLA CPU twin: manifest support for the MLA CPU ground-truth scheduler
+
+**Scope**: the last remaining gap in V5l's CPU/GPU × GQA/MLA matrix --
+`run_moe_cbatch_verify_mode()`'s online branch (Phase MoE-4a/4b/4c's
+original combined function: static scheduler, online scheduler, and
+margin-gated reverify all in one, with MLA/DeepSeek's own literal
+8-prompt corpus, distinct from GQA's own tables). Same
+`QWEN_MOE_CB_PROMPT_MANIFEST` mechanism as the other three gates.
+
+**A structural fact this round surfaced that the other three didn't
+have to deal with**: this function -- and therefore the manifest
+loader relocated to sit just above it -- lives *outside*
+`#ifdef QWEN_GPU_MLX` (confirmed by grepping for the guard: none
+appear before line 6000, `run_moe_cbatch_verify_mode()` starts at
+4999). Every other V5l change this session landed entirely inside
+that guard, so "GPU build only, dense/no-GPU build untouched" was a
+free correctness argument by construction. Not this time: this
+function's own dispatch (`main()` -> `run_moe_verify_mode()` ->
+`run_moe_cbatch_verify_mode()`) is reachable in a plain dense-only
+build. Verified directly rather than assumed: `clang -O3 -w -c
+qwen_infer.c -o ...` (no `-DQWEN_GPU_MLX`) compiles clean, alongside
+the usual `-DQWEN_GPU_MLX` build.
+
+**Design notes specific to this function**:
+- The manifest loader (`moe_cbatch_load_manifest()`) was relocated a
+  *second* time -- from just above the GQA CPU twin to just above
+  *this* function, since this function is even earlier in the file.
+  Same underlying reason as the GQA CPU twin round: a call site
+  declared before the loader's old position hits a real
+  `implicit-function-declaration` -> `static redeclaration` compile
+  error, not a style problem.
+- This function's static (`!online`) scheduler branch reads the same
+  `prompt_len`/`moe_cbatch_gen`/`prompt_ids` literals the online
+  branch's corpus fallback copies from -- the manifest-aware block is
+  inserted *after* the `if (!online) { ...; return 1; }` block closes,
+  so the static branch is untouched by construction, not just by
+  convention.
+- EOS is **not** switched to `MOE_EOS_TOKEN_ID` in this round, unlike
+  the MLA GPU gate's own round. This function's own header comment
+  states its config (`MOE_NL`/`MOE_N_EXPERTS`/etc.) is "already loaded
+  by the caller" (`run_moe_verify_mode()`) -- it never opens
+  `arch_config_moe.txt` itself. Reading `EOS_TOKEN_ID` here would mean
+  re-opening that file inside a function whose own design explicitly
+  delegates config loading elsewhere, for a value (100001) already
+  independently reconfirmed against the real model in V5k and baked
+  into this function's own DeepSeek-tokenizer-specific literals (which
+  make it inherently non-reusable for any other model already). Left
+  as the existing hardcoded literal; noted here rather than silently
+  left inconsistent.
+
+**Verification** (real DeepSeek-V2-Lite weights, `~/moe_base_deepseek`):
+1. Dense-only build (`clang -O3 -w -c qwen_infer.c`, no GPU macro) and
+   `-DQWEN_GPU_MLX` build both compile clean.
+2. Manifest unset, before/after -- stderr diff (wall-clock/timing
+   fields filtered, including `wall_ms=` which this function's own
+   summary line also carries) completely empty.
+3. Manifest reconstructing the exact 8-prompt corpus at default
+   `R=12` -- diff against the no-manifest run empty except the new
+   manifest-load log line.
+4. `MC=10`/`R=20` wraparound, `PREFILL_MODE=1` (default, the
+   budget-chunked mode structurally matching the GPU gate's own
+   packing) -- **directly diffed against the MLA GPU gate's own run of
+   the identical manifest+config**: every `req`/`prompt`/`slot`/
+   `admit_step`/`tokens:` line and every summary counter
+   (`steps=37`/`admitted_after_evict=16`/`queue_wait_events=16`/
+   `queue_wait_max_steps=31`) matched exactly. This closes the last
+   gap in the CPU=GPU proof across both topologies: GQA CPU=GPU (prior
+   round) and now MLA CPU=GPU, both on manifest workloads, not just
+   the fixed synthetic corpus.
+5. `rq_out` widening, same ASan protocol: pre-fix (function-scoped
+   revert) hit the identical `global-buffer-overflow` shape at
+   `run_moe_cbatch_verify_mode.rq_out` under the `R=64,B=8,plen=1,
+   maxnew=31` worst case; post-fix ran all 64 requests clean.
+
+**Status**: V5l's `QWEN_MOE_CB_PROMPT_MANIFEST` mechanism now covers
+all four online-scheduler gates -- GQA GPU, GQA CPU, MLA GPU, MLA CPU
+-- completing the full CPU/GPU × GQA/MLA matrix for the online
+admission scheduler. `load_ids()` input validation (no format/magic-
+number check) remains the one open gap across all four, noted in the
+earlier V5l sections above.
