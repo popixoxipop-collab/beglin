@@ -1753,3 +1753,264 @@ int mlx_gpu_gqa_forward_finalize(const float *w_finalnorm, float *logits_out) {
         return 0;
     }
 }
+
+// V5j-ragged Phase B: GQA-equivalent of mlx_gpu_cbatch_layer_step_lazy() (V5e, MLA-only) --
+// generalizes mlx_gpu_gqa_layer_step_lazy()'s single shared `pos` to A independent (slot,pos)
+// pairs. Attention math is GQA's own (q/k/v_proj, whole-vector qknorm, NeoX rope) restructured
+// with MLA cbatch's own proven scatter-write/take-read/per-row-mask addressing convention
+// (mlx_moe.cpp:1364-1384) plus D1's proven KVH->H group-broadcast -- the combination of
+// ragged take() + group-broadcast was probe-verified before this function was written
+// (probe_gqa_cbatch_broadcast.cpp, max_abs_diff=0.0e+00, Phase A of this round's plan).
+// Per-row NeoX rope uses an explicit host-computed frequency array (matching
+// moe_init_rope_gqa()'s own `1/theta^(2i/dim)` CPU formula exactly) passed via mx::fast::rope's
+// freqs= parameter, reusing MLA ragged's own already-proven array-offset+explicit-freqs call
+// pattern verbatim rather than assuming array offset composes with a bare base= scalar
+// (untested combination, not used here).
+static std::vector<mx::array> g_fused_gqa_cK;   // {N_SLOTS, KVH, GQA_L0_MAXPOS, HD}, ragged
+static std::vector<mx::array> g_fused_gqa_cV;   // persistent -- separate storage from both the
+                                                  // MLA cbatch pair and the lockstep GQA pair.
+static int g_fused_gqa_ck_inited = 0;
+static int g_fused_gqa_ck_inited_B = 0;
+
+static void ensure_fused_gqa_cbatch_kv_init() {
+    if (g_fused_gqa_ck_inited && g_fused_gqa_ck_inited_B == g_fused_B) return;
+    const int KVH = g_gqa_n_kv_heads, HD = g_gqa_head_dim, B = g_fused_B;
+    g_fused_gqa_cK.clear(); g_fused_gqa_cV.clear();
+    for (int l = 0; l < GQA_MAXLAYERS; l++) {
+        g_fused_gqa_cK.push_back(mx::zeros({B, KVH, GQA_L0_MAXPOS, HD}, mx::float32));
+        g_fused_gqa_cV.push_back(mx::zeros({B, KVH, GQA_L0_MAXPOS, HD}, mx::float32));
+    }
+    g_fused_gqa_ck_inited = 1; g_fused_gqa_ck_inited_B = B;
+}
+
+int mlx_gpu_gqa_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spos, int is_dense,
+                                         const float *x_in_host, const float *w_inln,
+                                         const float *w_postln, const float *w_qnorm,
+                                         const float *w_knorm, const float *w_gate) {
+    if (g_gqa_n_heads == 0 || g_layer_hidden == 0) return 0;
+    if (A < 1 || A > 64 || l < 0 || l >= GQA_MAXLAYERS) return 0;
+    try {
+        const int H = g_gqa_n_heads, KVH = g_gqa_n_kv_heads, HD = g_gqa_head_dim;
+        const int group = H / KVH;
+        const int HIDDEN = g_layer_hidden, IM = g_layer_im_dim, DENSE_IM = g_layer_dense_im,
+                  NE = g_layer_n_experts, NS = g_layer_n_shared, TOPK = g_layer_top_k;
+        const int B = A;   // post-attention MoE block below reads `B` as its row-count name
+
+        ensure_fused_gqa_cbatch_kv_init();   // sizes g_fused_gqa_cK/cV to {g_fused_B,KVH,
+                                               // GQA_L0_MAXPOS,HD} -- caller must have set
+                                               // g_fused_B=N_SLOTS via mlx_gpu_set_batch()
+                                               // before the first step of a cbatch run.
+        for (int i = 0; i < A; i++) {
+            if (spos[i] < 0 || spos[i] >= GQA_L0_MAXPOS) return 0;
+        }
+        if (l == 0) {
+            delete g_cbatch_x;
+            g_cbatch_x = new mx::array(wrap_host_f32(x_in_host, {A, HIDDEN}));
+            g_cbatch_A = A; g_cbatch_layers_done = 0;
+        }
+        if (g_cbatch_A != A || g_cbatch_layers_done != l) return 0;
+
+        mx::array slot_arr(slot, {A}, mx::int32);   // copying ctor
+        mx::array pos_arr(spos, {A}, mx::int32);
+
+        char nq[96], nk[96], nv[96], no[96];
+        snprintf(nq, sizeof nq, "model.layers.%d.self_attn.q_proj", l);
+        snprintf(nk, sizeof nk, "model.layers.%d.self_attn.k_proj", l);
+        snprintf(nv, sizeof nv, "model.layers.%d.self_attn.v_proj", l);
+        snprintf(no, sizeof no, "model.layers.%d.self_attn.o_proj", l);
+
+        mx::array x = *g_cbatch_x;
+        mx::array h = mx::fast::rms_norm(x, wrap_host_f32(w_inln, {HIDDEN}), (float)g_gqa_rms_eps);
+
+        mx::array q = lazy_matvec_e0(nq, h);   // {A, H*HD}
+        mx::array k = lazy_matvec_e0(nk, h);   // {A, KVH*HD}
+        mx::array v = lazy_matvec_e0(nv, h);   // {A, KVH*HD}
+
+        mx::array q_normed = mx::fast::rms_norm(q, wrap_host_f32(w_qnorm, {H * HD}), (float)g_gqa_rms_eps);
+        mx::array k_normed = mx::fast::rms_norm(k, wrap_host_f32(w_knorm, {KVH * HD}), (float)g_gqa_rms_eps);
+
+        mx::array q_r = mx::reshape(q_normed, {A, H, HD});
+        mx::array k_r = mx::reshape(k_normed, {A, KVH, HD});
+        mx::array v_r = mx::reshape(v, {A, KVH, HD});
+
+        // Per-row NeoX rope: array offset + base=theta (NOT an explicit freqs= array).
+        // A dedicated probe (probe_gqa_rope_equivalence.cpp) found these are NOT
+        // interchangeable for traditional=false -- base=+array-offset matches D5's own
+        // proven scalar-offset+base= path exactly (max_abs_diff=0.0), while array-offset+
+        // explicit-freqs (MLA ragged's own convention, wrongly assumed transferable here)
+        // produces a completely different, WRONG rotation (max_abs_diff=1.12) -- this was
+        // the root cause of this function's first real-workload run failing 0/56 tokens.
+        // Q: flatten-(A,H)-into-one-axis treatment (array offset keys off axis -2 as an
+        // incrementing sequence axis, so H cannot sit there or every head silently gets a
+        // different rotation -- this part of MLA ragged's own reasoning still applies).
+        std::vector<int32_t> pos_ah((size_t)A * H);
+        for (int m = 0; m < A; m++) for (int hh = 0; hh < H; hh++) pos_ah[(size_t)m * H + hh] = spos[m];
+        mx::array pos_ah_arr(pos_ah.data(), {A * H}, mx::int32);
+        mx::array q_flat = mx::reshape(q_r, {A * H, 1, HD});
+        mx::array q_rot_flat = mx::fast::rope(q_flat, HD, /*traditional=*/false,
+                                                /*base=*/(double)g_gqa_rope_theta,
+                                                /*scale=*/1.0f, /*offset=*/pos_ah_arr);
+        mx::array q_rot = mx::reshape(q_rot_flat, {A, H, HD});
+
+        std::vector<int32_t> pos_ak((size_t)A * KVH);
+        for (int m = 0; m < A; m++) for (int kvh = 0; kvh < KVH; kvh++) pos_ak[(size_t)m * KVH + kvh] = spos[m];
+        mx::array pos_ak_arr(pos_ak.data(), {A * KVH}, mx::int32);
+        mx::array k_flat = mx::reshape(k_r, {A * KVH, 1, HD});
+        mx::array k_rot_flat = mx::fast::rope(k_flat, HD, false, (double)g_gqa_rope_theta, 1.0f, pos_ak_arr);
+        mx::array k_rot = mx::reshape(k_rot_flat, {A, KVH, HD});
+
+        // Scatter this step's K/V into each column's own (slot,pos) -- same window-write
+        // convention as MLA's own ragged cbatch (mlx_moe.cpp:1364-1371), KVH in place of
+        // MLA's full H (GQA stores/reads at KV-head granularity, not query-head granularity).
+        mx::array k_new_win = mx::reshape(k_rot, {A, 1, KVH, 1, HD});
+        mx::array v_new_win = mx::reshape(v_r, {A, 1, KVH, 1, HD});
+        g_fused_gqa_cK[l] = mx::scatter(g_fused_gqa_cK[l], {slot_arr, pos_arr}, k_new_win, std::vector<int>{0, 2});
+        g_fused_gqa_cV[l] = mx::scatter(g_fused_gqa_cV[l], {slot_arr, pos_arr}, v_new_win, std::vector<int>{0, 2});
+
+        // Take + group-broadcast -- Phase A's own probe-verified combination.
+        mx::array k_win_kv = mx::take(g_fused_gqa_cK[l], slot_arr, 0);   // {A,KVH,GQA_L0_MAXPOS,HD}
+        mx::array v_win_kv = mx::take(g_fused_gqa_cV[l], slot_arr, 0);
+        mx::array k_win = mx::reshape(
+            mx::broadcast_to(mx::reshape(k_win_kv, {A, KVH, 1, GQA_L0_MAXPOS, HD}),
+                              {A, KVH, group, GQA_L0_MAXPOS, HD}),
+            {A, H, GQA_L0_MAXPOS, HD});
+        mx::array v_win = mx::reshape(
+            mx::broadcast_to(mx::reshape(v_win_kv, {A, KVH, 1, GQA_L0_MAXPOS, HD}),
+                              {A, KVH, group, GQA_L0_MAXPOS, HD}),
+            {A, H, GQA_L0_MAXPOS, HD});
+
+        // Per-column causal mask -- MLA ragged's own proven convention (mlx_moe.cpp:1380-1384).
+        std::vector<uint8_t> mask_bytes((size_t)A * GQA_L0_MAXPOS);
+        for (int m = 0; m < A; m++)
+            for (int j = 0; j < GQA_L0_MAXPOS; j++)
+                mask_bytes[(size_t)m * GQA_L0_MAXPOS + j] = (j <= spos[m]) ? 1 : 0;
+        mx::array mask_arr(mask_bytes.data(), {A, 1, 1, GQA_L0_MAXPOS}, mx::bool_);   // copying ctor
+
+        mx::array q_full_r = mx::reshape(q_rot, {A, H, 1, HD});
+        mx::array attn = mx::fast::scaled_dot_product_attention(q_full_r, k_win, v_win,
+                                                                  (float)g_gqa_attn_scale, "array", mask_arr);
+        mx::array attn_flat = mx::reshape(attn, {A, H * HD});
+        mx::array o = lazy_matvec_e0(no, attn_flat);
+        mx::array x_mid = x + o;
+
+        mx::array h2 = mx::fast::rms_norm(x_mid, wrap_host_f32(w_postln, {HIDDEN}), (float)g_gqa_rms_eps);
+
+        // ---- generic post-attention block: VERBATIM copy of mlx_gpu_gqa_layer_step_lazy()'s
+        // own (confirmed zero g_mla_* references there), `A` playing the row-count role `B`
+        // plays in every sibling -- same reuse this codebase applies for every ragged/batch
+        // sibling pair (mlx_gpu_cbatch_layer_step_lazy() already applies it for its own). ----
+        std::optional<mx::array> mlp_out_opt;
+        char nm[128];
+        if (is_dense) {
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.gate_proj", l);
+            mx::array gate_v = lazy_matvec_e0(nm, h2);
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.up_proj", l);
+            mx::array up_v = lazy_matvec_e0(nm, h2);
+            mx::array sw = lazy_silu(gate_v) * up_v;
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.down_proj", l);
+            mlp_out_opt = lazy_matvec_e0(nm, sw);
+            (void)DENSE_IM;
+        } else {
+            mx::array w_gate_arr = wrap_host_f32(w_gate, {NE, HIDDEN});
+            mx::array scores_raw = mx::matmul(h2, mx::transpose(w_gate_arr));       // {B,NE}
+            mx::array scores = mx::softmax(scores_raw, std::vector<int>{-1}, /*precise=*/true);
+            mx::array order = mx::argsort(scores, -1);                              // {B,NE}, per-row
+            mx::array top_idx_u = mx::slice(order, {0, NE - TOPK}, {B, NE});         // {B,TOPK}
+            mx::array top_idx = mx::astype(top_idx_u, mx::int32);
+            mx::array top_wgt = mx::take_along_axis(scores, top_idx, 1);             // {B,TOPK}
+
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
+            QTensor &tg = g_tensors.at(nm);
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.up_proj", l);
+            QTensor &tu = g_tensors.at(nm);
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.down_proj", l);
+            QTensor &td = g_tensors.at(nm);
+
+            std::optional<mx::array> down_flat_opt;
+            if ((long)B * TOPK >= g_gpu_sort_threshold) {
+                mx::array x_flat3 = mx::reshape(h2, {B, 1, HIDDEN});
+                mx::array flat_idx = mx::reshape(top_idx, {B * TOPK});
+                mx::array order2 = mx::argsort(flat_idx, 0);
+                mx::array inv_order = mx::argsort(order2, 0);
+                mx::array topk_arr(TOPK, mx::int32);
+                mx::array row_sel = mx::floor_divide(order2, topk_arr);
+                mx::array x_sorted = mx::take(x_flat3, row_sel, 0);      // {B*TOPK,1,HIDDEN}
+                mx::array idx_sorted = mx::take(flat_idx, order2);       // {B*TOPK}
+
+                mx::array gate_all_s = mx::gather_qmm(x_sorted, tg.w, tg.scales, tg.biases, std::nullopt,
+                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                mx::array up_all_s = mx::gather_qmm(x_sorted, tu.w, tu.scales, tu.biases, std::nullopt,
+                                                     idx_sorted, true, g_layer_group, 4, "affine", true);
+                mx::array swiglu_3d_s = mx::reshape(lazy_silu(gate_all_s) * up_all_s, {B * TOPK, 1, IM});
+                mx::array down_all_s = mx::gather_qmm(swiglu_3d_s, td.w, td.scales, td.biases, std::nullopt,
+                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                mx::array down_flat_s = mx::reshape(down_all_s, {B * TOPK, HIDDEN});
+                mx::array down_unsorted = mx::take(down_flat_s, inv_order, 0);
+                down_flat_opt = mx::reshape(down_unsorted, {B, TOPK, HIDDEN});
+            } else {
+                mx::array h2_expanded = mx::expand_dims(h2, std::vector<int>{-2, -3});   // {B,1,1,HIDDEN}
+                mx::array gate_all = mx::gather_qmm(h2_expanded, tg.w, tg.scales, tg.biases, std::nullopt,
+                                                     top_idx, true, g_layer_group, 4, "affine", false);
+                mx::array up_all = mx::gather_qmm(h2_expanded, tu.w, tu.scales, tu.biases, std::nullopt,
+                                                   top_idx, true, g_layer_group, 4, "affine", false);
+                mx::array swiglu_3d = mx::reshape(lazy_silu(gate_all) * up_all, {B * TOPK, 1, IM});
+                mx::array top_idx_1d = mx::reshape(top_idx, {B * TOPK});
+                mx::array down_all = mx::gather_qmm(swiglu_3d, td.w, td.scales, td.biases, std::nullopt,
+                                                     top_idx_1d, true, g_layer_group, 4, "affine", false);
+                down_flat_opt = mx::reshape(down_all, {B, TOPK, HIDDEN});
+            }
+            mx::array down_flat = *down_flat_opt;
+            mx::array top_wgt_col = mx::reshape(top_wgt, {B, TOPK, 1});
+            mx::array weighted = down_flat * top_wgt_col;
+            mx::array routed_sum = mx::sum(weighted, std::vector<int>{1}, false);    // {B,HIDDEN}
+
+            if (NS > 0) {
+                snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.gate_proj", l);
+                mx::array sgate = lazy_matvec_e0(nm, h2);
+                snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.up_proj", l);
+                mx::array sup = lazy_matvec_e0(nm, h2);
+                mx::array sswiglu = lazy_silu(sgate) * sup;
+                snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.down_proj", l);
+                mx::array sdown = lazy_matvec_e0(nm, sswiglu);
+                mlp_out_opt = routed_sum + sdown;
+            } else {
+                mlp_out_opt = routed_sum;
+            }
+        }
+        mx::array x_out = x_mid + *mlp_out_opt;
+        delete g_cbatch_x;
+        g_cbatch_x = new mx::array(x_out);   // still LAZY -- NOT evaluated until finalize()
+        g_cbatch_layers_done = l + 1;
+        return 1;
+    } catch (...) {
+        delete g_cbatch_x; g_cbatch_x = nullptr;
+        g_cbatch_A = 0; g_cbatch_layers_done = 0;
+        return 0;
+    }
+}
+
+// GQA-equivalent of mlx_gpu_cbatch_forward_finalize() -- uses g_gqa_rms_eps and evals the
+// ragged GQA K/V arrays (g_fused_gqa_cK/cV), not the lockstep pair.
+int mlx_gpu_gqa_cbatch_forward_finalize(const float *w_finalnorm, float *logits_out) {
+    if (!g_cbatch_x) return 0;
+    try {
+        const int HIDDEN = g_layer_hidden;
+        const int A = g_cbatch_A;
+        mx::array x_final = mx::fast::rms_norm(*g_cbatch_x, wrap_host_f32(w_finalnorm, {HIDDEN}),
+                                                (float)g_gqa_rms_eps);
+        mx::array logits = lazy_matvec_e0("lm_head", x_final);   // {A,VOCAB}
+        std::vector<mx::array> all{logits};
+        for (auto &a : g_fused_gqa_cK) all.push_back(a);
+        for (auto &a : g_fused_gqa_cV) all.push_back(a);
+        mx::eval(all);
+        const int VOCAB = (int)logits.shape().back();
+        std::memcpy(logits_out, logits.data<float>(), sizeof(float) * (size_t)A * (size_t)VOCAB);
+        delete g_cbatch_x; g_cbatch_x = nullptr;
+        g_cbatch_A = 0; g_cbatch_layers_done = 0;
+        return 1;
+    } catch (...) {
+        delete g_cbatch_x; g_cbatch_x = nullptr;
+        g_cbatch_A = 0; g_cbatch_layers_done = 0;
+        return 0;
+    }
+}

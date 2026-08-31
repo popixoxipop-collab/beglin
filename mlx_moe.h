@@ -233,6 +233,24 @@ int mlx_gpu_gqa_layer_step_lazy(int l, int pos, int is_dense,
                                  const float *w_qnorm, const float *w_knorm, const float *w_gate);
 int mlx_gpu_gqa_forward_finalize(const float *w_finalnorm, float *logits_out);
 
+// V5j-ragged: GQA-equivalent of mlx_gpu_cbatch_layer_step_lazy()/
+// mlx_gpu_cbatch_forward_finalize() above -- generalizes
+// mlx_gpu_gqa_layer_step_lazy()'s single shared `pos` to A independent
+// (slot,pos) pairs, one per active column, same (token_ids, slot, spos, A)
+// naming moe_cbatch_step() (qwen_infer.c) uses. Reuses mlx_gpu_set_batch(N)
+// to size its own persistent per-slot GQA K/V arrays (separate storage from
+// the MLA cbatch pair and from the lockstep GQA pair -- distinct shapes:
+// {N_SLOTS,KVH,GQA_L0_MAXPOS,HD} here vs MLA's {N_SLOTS,H,MLA_L0_MAXPOS,*}
+// vs the lockstep GQA pair's {B,KVH,GQA_L0_MAXPOS,HD}). Call
+// mlx_gpu_gqa_cbatch_layer_step_lazy() once per layer (l=0..NL-1) for the
+// SAME step's A columns, then mlx_gpu_gqa_cbatch_forward_finalize() once
+// per step. Returns 1 on success, 0 on failure.
+int mlx_gpu_gqa_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spos, int is_dense,
+                                        const float *x_in_host, const float *w_inln,
+                                        const float *w_postln, const float *w_qnorm,
+                                        const float *w_knorm, const float *w_gate);
+int mlx_gpu_gqa_cbatch_forward_finalize(const float *w_finalnorm, float *logits_out);
+
 #ifdef __cplusplus
 }
 #endif

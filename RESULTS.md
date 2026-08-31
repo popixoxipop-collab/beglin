@@ -5040,3 +5040,114 @@ digit both times).
 equivalents) is the natural next follow-on, deferred per the
 established staged dependency order -- same reasoning V5d->V5e used
 for MLA.
+
+## V5j-ragged: ragged/online GQA batching for OLMoE (GQA V5e/V5g/V5h equivalents)
+
+Follow-on to V5j-batch, per its own deferred next-step note. GQA
+equivalents of the MLA track's V5e (ragged multi-step decode,
+prefill+decode unified), V5g (true batched-causal prefill), and V5h
+(GPU online admission scheduler).
+
+**Phase A -- ground truth + isolated probe**:
+1. `olmoe4a_reference_capture.py` (macstudio, real `mlx_lm` greedy
+   generation, same `REAL_TEXTS`/`PROMPT_LENS=[4,5,6,7,8,5,6,4]`/
+   `K_NEW=12` design as MLA's own `moe4a_reference_capture.py`)
+   captured 8 slots' real generated token sequences plus OLMoE's real
+   EOS token id (**50279**, not DeepSeek's 100001).
+2. `probe_gqa_cbatch_broadcast.cpp`: the exact combination this round
+   needed -- ragged scatter-write + take-read + GQA's own KVH->H
+   group-broadcast, never combined before -- verified against a
+   host-loop reference at synthetic shape. **max_abs_diff=0.0, PASS.**
+
+**Phase B -- ragged multi-step decode (V5e equivalent)**: new
+`mlx_gpu_gqa_cbatch_layer_step_lazy()`/`mlx_gpu_gqa_cbatch_forward_finalize()`
+(`mlx_moe.cpp`) + `run_moe_gpu_gqa_cbatch_gate()` (`QWEN_MOE_GPU_GQA_CBATCH=1`).
+
+**Bug found and fixed**: first real-workload run scored **0/56**
+(every generated token wrong). Root cause, isolated via a dedicated
+probe (`probe_gqa_rope_equivalence.cpp`): `mx::fast::rope()`'s
+`freqs=` parameter (explicit host-computed frequency array, MLA
+ragged's own convention) does **not** produce the same result as its
+`base=` parameter (scalar rope base, D5's own already-proven
+convention) when combined with a per-row ARRAY offset, for
+`traditional=false` (NeoX-style) rope -- `max_abs_diff=1.12`
+(completely different). Array-offset + `base=` (no explicit freqs
+needed at all) gave `max_abs_diff=0.0`, exact match to the
+scalar-offset+base= path. Fixed by dropping the freqs-array
+computation entirely. After the fix: **56/56 match**, exactly V5e's
+own MLA bar.
+
+**Phase C -- batched-causal prefill (V5g equivalent)**: new
+`run_moe_gpu_gqa_cbatch_prefill_gate()`
+(`QWEN_MOE_GPU_GQA_CBATCH_PREFILL=1`), reusing Phase B's lazy pair
+with **zero further `mlx_moe.cpp` changes** -- matching V5g's own
+proven MLA precedent exactly, re-confirmed empirically this round (not
+just assumed from the plan). Same accuracy gate as Phase B (whole-
+prompt-packed, one combined `A=45` step) + an untimed warmup pass at
+that shape (V5g's own MLX shape-JIT cold-start lesson applies here
+too). **56/56 match**, throughput **211.4 tok/s** vs Phase B's own
+decode-only baseline of 111.9 tok/s (~1.9x, same direction as V5g's
+own MLA speedup from batched-causal prefill).
+
+**Phase D -- GPU online admission scheduler (V5h equivalent)**: two
+new functions.
+- `run_moe_gqa_cbatch_online_cpu_gate()` (`QWEN_MOE_GQA_CBATCH_ONLINE_CPU=1`):
+  CPU ground truth. A new function was required rather than reusing
+  `run_moe_cbatch_verify_mode()`'s own `online` branch directly (Rule
+  3) because that function's `prompt_ids[]`/EOS are DeepSeek-tokenizer
+  literals hardcoded in its body -- feeding those into OLMoE's own
+  vocab would be nonsense, not just a different value. This new
+  function is the GQA-workload twin of that same scheduling logic,
+  reusing `moe_cbatch_step()` verbatim (already confirmed 100%
+  attention-kind-agnostic).
+- `run_moe_gpu_gqa_cbatch_online_gate()` (`QWEN_MOE_GPU_GQA_CBATCH_ONLINE=1`):
+  GPU scheduler, structural mirror of `run_moe_gpu_cbatch_online_gate()`
+  (V5h) -- request table, FIFO step-indexed arrival
+  (`QWEN_MOE_CB_ARRIVE`), slot reuse on eviction, budget-chunked
+  prefill mixed with decode columns. **Zero further `mlx_moe.cpp`
+  changes needed**, reusing Phase B/C's own lazy pair unchanged --
+  matching V5h's own proven MLA precedent, re-confirmed empirically.
+
+**Verification, two independent workloads** (default all-arrive-at-0,
+and staggered arrival `0,1,2,3,5,7,9,11,13,15,17,19`), CPU vs GPU,
+`B=4 R=12` each:
+
+| workload | requests matched | scheduling invariants | determinism (2x rerun) |
+|---|---|---|---|
+| default arrival    | 12/12 (85 tokens, byte-identical) | steps/queue_wait/idle all identical | byte-identical (timing-only diff) |
+| staggered arrival   | 12/12 (byte-identical)            | steps/queue_wait/idle all identical | -- |
+
+Both workloads: every request's full generated token sequence,
+`admit_step`, slot assignment, `admitted_after_evict`,
+`queue_wait_events`, `queue_wait_max_steps`, and total step count are
+byte-identical between the CPU ground-truth run and the GPU run.
+Throughput: default-arrival GPU 171.6 tok/s vs CPU 7.3 tok/s (~23.5x);
+staggered-arrival timings tracked the same pattern.
+
+**Post-hoc generalization pass** (user request, after Phase D landed):
+the four GQA cbatch-family gates (Phase B/C/D-CPU/D-GPU) had each
+independently duplicated a byte-identical ~65-line config-loading
+block, a byte-identical 8-prompt workload literal table, and (Phase D)
+a hardcoded EOS magic number (`50279`). Factored into shared
+infrastructure, scoped to this round's own new code only -- D5 and
+every MLA V5e/V5f/V5g/V5h gate stay untouched (Rule 3: already
+shipped/verified, different model's workload anyway):
+- `MoeGqaCbatchCtx` + `moe_load_gqa_cbatch_config()`: one config-loading
+  helper instead of four copies.
+- `g_moe_gqa_cbatch_prompt_len/_gen/_prompt_ids/_ref_generated`: one
+  real-workload table instead of four hand-transcribed copies.
+- `MOE_EOS_TOKEN_ID`: read from `arch_config_moe.txt`'s new
+  `EOS_TOKEN_ID` field (appended to both the live weights on bob and
+  the `mlx_olmoe_full_to_q4g64af.py` exporter, sourced from
+  `tokenizer.eos_token_id` for reproducibility) instead of a magic
+  number scattered across gates.
+
+All Phase B/C/D-CPU/D-GPU results re-verified byte-identical after the
+refactor (56/56, 56/56, and the full CPU/GPU token+schedule match all
+reproduced exactly), plus D5 and V5j-batch B=8 regressions still clean
+(13/13 argmax parity n/a this round -- ref bin unavailable, deferred;
+flipped=0/8).
+
+**Status**: V5j-ragged is COMPLETE (Phase A/B/C/D all verified). V5a-j
+full GQA/OLMoE track (B=1 through online-scheduled ragged batching) is
+now feature-complete, matching the MLA track's own V5a-h scope.
