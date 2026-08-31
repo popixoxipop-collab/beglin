@@ -4966,8 +4966,77 @@ never been benchmarked in this project): 3 runs, 5 positions warm-up
 numbers' own perfect run-to-run determinism).
 
 **Status**: V5j is COMPLETE. Full 16-layer OLMoE forward on GPU,
-correctness-verified against real MLX ground truth. Batched/ragged/
-online GQA on GPU (V5d-h-equivalents), a real llama.cpp OLMoE
-throughput baseline, and root-causing the CPU-embedded-cross-check
-anomaly above all remain explicitly out of scope / open follow-ups
-for a future round, per the plan's own staged dependency order.
+correctness-verified against real MLX ground truth, root cause of the
+CPU-embedded-cross-check anomaly found and fixed (see above). Ragged/
+online GQA on GPU (V5e-h-equivalents) and a real llama.cpp OLMoE
+throughput baseline remain explicit follow-ups. Batched B-independent-
+sequence decode (V5d-equivalent) is now done too -- see "V5j-batch"
+immediately below.
+
+## V5j-batch: batched B-token GPU decode for OLMoE (GQA V5d equivalent)
+
+Natural next step after V5j's own B=1 full-model correctness proof,
+matching the MLA track's own V5c->V5d precedent. User confirmed after
+being offered this as the recommended next direction.
+
+**Scope finding that shrank this round significantly**: unlike V5d's
+original MLA round (which had to ADD a batch axis B to previously
+B=1-only C++ code), V5j's own D3/D4 lazy GPU functions
+(`mlx_gpu_gqa_layer_step_lazy()`/`mlx_gpu_gqa_forward_finalize()`)
+were confirmed via direct code read to already be fully batch-generic
+-- every array shape already uses `const int B = g_fused_B;`
+throughout, including the post-attention MoE block's `{B,NE}`/
+`{B,TOPK}` sort-unsort logic (a verbatim copy of the already-batched
+MLA post-attention block, per D3's own reuse design). CPU-side,
+`moe_attention_batched()` already dispatches to
+`moe_gqa_attention_batched()` for GQA models, so `moe_forward_batch()`
+was already GQA-capable too. **Zero mlx_moe.cpp/mlx_moe.h changes
+needed this round** -- confirmed by grep before writing any GPU-side
+code, not assumed.
+
+**What was actually built**:
+1. A real 64-token OLMoE first-token corpus (macstudio, Python):
+   same REAL_TEXTS corpus + sliding-window sampling method
+   `run_moe_gpu_batch_gate()`'s own DeepSeek `real_first_tokens[]`
+   uses, but tokenized with OLMoE's real tokenizer
+   (`mlx-community/OLMoE-1B-7B-0125-4bit`) instead of reusing
+   DeepSeek's array verbatim (wrong vocab/tokenizer -- the same Bug 1
+   class `QWEN_MOE_PROMPT_IDS` exists to avoid). 55/64 distinct
+   tokens, all confirmed `<50304`.
+2. New `run_moe_gpu_gqa_batch_gate()` (`QWEN_MOE_GPU_GQA_BATCH=<B>`),
+   structural mirror of `run_moe_gpu_batch_gate()` (V5d) merged with
+   `run_moe_gpu_gqa_fused_gate()`'s (D5) own GQA config block --
+   including this session's own `moe_init_rope_gqa()` fix, present
+   from the start so this sibling never reintroduces that bug. Since
+   `moe_forward_batch()`'s GQA dispatch path had never been
+   independently validated the way MLA's was before V5d ever ran, this
+   gate bakes a naive-vs-gather CPU cross-check directly into itself
+   (MoE-3b's own pattern) as a hard FATAL gate before ever comparing
+   against GPU -- the real risk this round's own plan flagged as
+   needing to be checked first.
+
+**Results, full B sweep** (all real, all measured):
+
+| B | CPU naive-vs-gather | GPU vs CPU flipped | worst rel_l2 | throughput |
+|---|---|---|---|---|
+| 1  | 1/1   | 0/1   | 1.235e-03 | 105.8 tok/s |
+| 8  | 8/8   | 0/8   | 1.353e-03 | 194.2 tok/s |
+| 16 | 16/16 | 0/16  | 1.353e-03 | 277.3 tok/s |
+| 24 | 24/24 | 0/24  | 1.353e-03 | 318.0 tok/s |
+| 32 | 32/32 | 0/32  | 2.225e-02 | 334.3 tok/s |
+| 48 | 48/48 | 0/48  | 2.225e-02 | 397.4 tok/s |
+| 64 | 64/64 | 0/64  | 2.225e-02 | 472.6 tok/s |
+
+**Zero flipped argmax at every single B value**, and the CPU naive-vs-
+gather cross-check (the round's own key validation risk) passes 100%
+at every B too -- `moe_gqa_attention_batched()` is confirmed correct,
+not just assumed. Throughput scales monotonically with B (105.8 ->
+472.6 tok/s, ~4.5x from B=1 to B=64), matching V5d's own MLA
+precedent of strong batch scaling. **Determinism**: B=64 repeated
+twice, byte-identical (`rel_l2` values matched to the last printed
+digit both times).
+
+**Status**: V5j-batch is COMPLETE. Ragged/online GQA batching (V5e-h
+equivalents) is the natural next follow-on, deferred per the
+established staged dependency order -- same reasoning V5d->V5e used
+for MLA.

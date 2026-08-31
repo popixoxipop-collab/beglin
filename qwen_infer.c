@@ -7831,6 +7831,289 @@ static int run_moe_gpu_batch_gate(int argc, char **argv) {
     return 1;
 }
 
+// V5j-batch: GQA/OLMoE equivalent of run_moe_gpu_batch_gate() above (Rule 3 -- this project's
+// own established convention, a new sibling rather than a shared helper). Unlike V5d's own MLA
+// round, the C++ GPU backend needed ZERO new work: mlx_gpu_gqa_layer_step_lazy()/
+// mlx_gpu_gqa_forward_finalize() (D3/D4, V5j) already use `const int B = g_fused_B;` throughout
+// (confirmed by direct read of mlx_moe.cpp before this round started), and moe_attention_batched()
+// (qwen_infer.c) already dispatches to moe_gqa_attention_batched() for GQA models -- so
+// moe_forward_batch() is already GQA-capable too. This function is purely new C-driver wiring.
+//
+// Since moe_forward_batch()'s GQA dispatch path was never independently validated before this
+// round (unlike MLA's, already proven by MoE-3b's own naive-vs-gather work before V5d ever
+// ran), this gate bakes that same naive-vs-gather CPU cross-check in directly rather than
+// assuming it -- the real risk this round's own plan flagged as needing to be checked "first
+// thing, before writing any GPU-side code."
+static int run_moe_gpu_gqa_batch_gate(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *gate_env = getenv("QWEN_MOE_GPU_GQA_BATCH");
+    if (!gate_env || !gate_env[0]) return 0;
+    int B = atoi(gate_env);
+    if (B < 1 || B > MOE_BATCH_MAX) {
+        fprintf(stderr, "FATAL: QWEN_MOE_GPU_GQA_BATCH=%d out of [1,%d]\n", B, MOE_BATCH_MAX);
+        exit(1);
+    }
+
+    fprintf(stderr, "[moe gpu gqa batch] QWEN_MOE_GPU_GQA_BATCH=%d -- V5j-batch GQA batched GPU gate\n", B);
+    if (!mlx_gpu_available()) {
+        fprintf(stderr, "FATAL: QWEN_MOE_GPU_GQA_BATCH set but MLX/Metal unavailable\n");
+        exit(1);
+    }
+
+    const char *override = getenv("QWEN_MOE_BASE");
+    const char *dir = (override && override[0]) ? override : ".";
+    char moe_dir[900], path[1024];
+    snprintf(moe_dir, sizeof moe_dir, "%s/weights_moe", dir);
+    snprintf(path, sizeof path, "%s/arch_config_moe.txt", moe_dir);
+
+    // Config block: verbatim copy of run_moe_gpu_gqa_fused_gate()'s (D5) own -- including the
+    // V5j-anomaly fix (moe_init_rope_gqa() right after moe_init_yarn()), present here from the
+    // start so this sibling never reintroduces that bug.
+    MOE_HIDDEN = (int)moe_cfg_get(path,"HIDDEN"); MOE_N_HEADS = (int)moe_cfg_get(path,"N_HEADS");
+    MOE_KV_LORA_RANK = (int)moe_cfg_get(path,"KV_LORA_RANK"); MOE_QK_ROPE_HD = (int)moe_cfg_get(path,"QK_ROPE_HEAD_DIM");
+    MOE_QK_NOPE_HD = (int)moe_cfg_get(path,"QK_NOPE_HEAD_DIM"); MOE_V_HD = (int)moe_cfg_get(path,"V_HEAD_DIM");
+    MOE_Q_HEAD_DIM = MOE_QK_ROPE_HD + MOE_QK_NOPE_HD;
+    MOE_NL = (int)moe_cfg_get(path,"NL"); MOE_FIRST_DENSE_LAYERS = (int)moe_cfg_get(path,"FIRST_DENSE_LAYERS");
+    MOE_N_EXPERTS = (int)moe_cfg_get(path,"N_EXPERTS"); MOE_N_SHARED = (int)moe_cfg_get(path,"N_SHARED");
+    MOE_TOP_K = (int)moe_cfg_get(path,"TOP_K"); MOE_IM_DIM = (int)moe_cfg_get(path,"MOE_IM");
+    MOE_DENSE_IM = (int)moe_cfg_get(path,"DENSE_IM"); MOE_VOCAB = (int)moe_cfg_get(path,"VOCAB");
+    MOE_ROPE_THETA = moe_cfg_get(path,"ROPE_THETA"); MOE_YARN_FACTOR = moe_cfg_get(path,"YARN_FACTOR");
+    MOE_YARN_BETA_FAST = moe_cfg_get(path,"YARN_BETA_FAST"); MOE_YARN_BETA_SLOW = moe_cfg_get(path,"YARN_BETA_SLOW");
+    MOE_YARN_MSCALE = moe_cfg_get(path,"YARN_MSCALE"); MOE_YARN_MSCALE_ALL_DIM = moe_cfg_get(path,"YARN_MSCALE_ALL_DIM");
+    MOE_YARN_ORIG_MAX_POS = moe_cfg_get(path,"YARN_ORIG_MAX_POS");
+    MOE_ATTN_KIND = (int)moe_cfg_get_opt(path,"ATTN_KIND",(double)MOE_ATTN_MLA);
+    MOE_N_KV_HEADS = (int)moe_cfg_get_opt(path,"N_KV_HEADS",(double)MOE_N_HEADS);
+    MOE_HEAD_DIM = (int)moe_cfg_get_opt(path,"HEAD_DIM",(double)MOE_Q_HEAD_DIM);
+    MOE_RMS_EPS = moe_cfg_get_opt(path,"RMS_EPS",1e-6);
+    MOE_NORM_TOPK_PROB = (int)moe_cfg_get_opt(path,"NORM_TOPK_PROB",0.0);
+    MOE_ROPE_STYLE = (int)moe_cfg_get_opt(path,"ROPE_STYLE",(double)MOE_ROPE_TRADITIONAL);
+    MOE_QKNORM_WHOLE_VECTOR = (int)moe_cfg_get_opt(path,"QKNORM_WHOLE_VECTOR",0.0);
+    if (MOE_ATTN_KIND != MOE_ATTN_GQA) {
+        fprintf(stderr, "FATAL: [moe gpu gqa batch] arch_config_moe.txt ATTN_KIND is not GQA -- "
+                        "this gate is GQA-only, use run_moe_gpu_batch_gate() for MLA models\n");
+        exit(1);
+    }
+    moe_cfg_validate();
+    MOE_QDIM     = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_KVA_OUT  = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
+    MOE_KVB_OUT  = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD);
+    MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
+    MOE_SH_IM    = MOE_IM_DIM * MOE_N_SHARED;
+    MOE_KROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    MOE_VROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    MOE_MAX_IN = MOE_HIDDEN;
+    if (MOE_IM_DIM   > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
+    if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
+    if (MOE_DENSE_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_DENSE_IM;
+    MOE_MAX_NG = (MOE_MAX_IN + 63) / 64;
+    MOE_SME2_SLOT_DENSE  = MOE_N_EXPERTS;
+    MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
+    MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2;
+    MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
+    alloc_moe_buffers();
+    moe_init_yarn();
+    moe_init_rope_gqa();
+
+    snprintf(path, sizeof path, "%s/layout_af.txt", moe_dir); moe_load_layout_af(path);
+    snprintf(path, sizeof path, "%s/deepseek_moe_af.bin", moe_dir);
+    long af_bytes; uint8_t *af_blob = moe_mmap_file(path, &af_bytes);
+    snprintf(path, sizeof path, "%s/layout_f32.txt", moe_dir); moe_load_layout_f32(path);
+    snprintf(path, sizeof path, "%s/deepseek_moe_f32.bin", moe_dir);
+    long f32_bytes; g_moe_f32_blob = moe_mmap_file(path, &f32_bytes);
+    moe_resolve_layer_tensors();
+    fprintf(stderr, "[moe gpu gqa batch] af blob %ld bytes, f32 blob %ld bytes, %d layers resolved\n",
+            af_bytes, f32_bytes, MOE_NL);
+
+    MoeAFTensor *t_embed = moe_find_af("model.embed_tokens");
+    MoeAFTensor *t_lmhead = moe_find_af("lm_head");
+    MoeF32Tensor *t_finalnorm = moe_find_f32("model.norm.weight");
+    float *w_finalnorm = (float *)(g_moe_f32_blob + t_finalnorm->off);
+
+    int n_bound = 0;
+    for (int i = 0; i < g_moe_naf; i++) {
+        MoeAFTensor *t = &g_moe_af[i];
+        if (!mlx_gpu_bind_af(af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
+                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+            fprintf(stderr, "FATAL: [moe gpu gqa batch] bind failed for tensor %s\n", t->name);
+            exit(1);
+        }
+        n_bound++;
+    }
+    fprintf(stderr, "[moe gpu gqa batch] bound %d/%d tensors to MLX\n", n_bound, g_moe_naf);
+
+    double attn_scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
+    if (!mlx_gpu_gqa_config(MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_ROPE_THETA,
+                             attn_scale, MOE_RMS_EPS) ||
+        !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
+                               MOE_TOP_K, 64) ||
+        !mlx_gpu_set_batch(B)) {
+        fprintf(stderr, "FATAL: [moe gpu gqa batch] mlx_gpu_*_config/mlx_gpu_set_batch failed\n");
+        exit(1);
+    }
+    const char *sort_thr_env = getenv("QWEN_MOE_GPU_SORT_THRESHOLD");
+    int sort_thr = sort_thr_env && sort_thr_env[0] ? atoi(sort_thr_env) : moe_gpu_sort_threshold(B, MOE_TOP_K);
+    mlx_gpu_set_sort_threshold(sort_thr);
+    fprintf(stderr, "[moe gpu gqa batch] sort_threshold=%d (B*top_k >= this uses the sorted path; B=%d top_k=%d)\n",
+            sort_thr, B, MOE_TOP_K);
+
+    // Real OLMoE first-token corpus: 64 real token IDs from the same REAL_TEXTS corpus
+    // run_moe_gpu_batch_gate()'s own real_first_tokens[] draws from (P0.2's corpus, sliding-
+    // window strided sampling, same anti-fabrication standard) -- but tokenized with OLMoE's
+    // own real tokenizer (mlx-community/OLMoE-1B-7B-0125-4bit, the checkpoint V5i/V5j already
+    // use), NOT DeepSeek's array reused verbatim (wrong vocab/tokenizer, the same Bug 1 class
+    // QWEN_MOE_PROMPT_IDS exists to avoid). Generated via a one-off script on macstudio;
+    // 55/64 distinct, all <50304 (OLMoE's real vocab_size).
+    static const int real_first_tokens_olmoe[MOE_BATCH_MAX] = {
+        510,15,39372,15,66,352,2584,8352,1643,4944,697,9100,275,273,432,1010,
+        1561,22909,285,5486,534,29209,407,846,8460,14870,34110,2406,36858,8014,5931,13,
+        13,10182,39341,8214,6384,323,407,7952,13,1941,253,2403,1190,2439,1016,281,
+        5195,7170,13,4484,275,13,342,37726,11410,2728,34110,4142,14,23048,273,36256,
+    };
+    int token_ids[MOE_BATCH_MAX];
+    for (int b = 0; b < B; b++) token_ids[b] = real_first_tokens_olmoe[b];
+
+    // CPU-side naive-vs-gather cross-check (MoE-3b's own pattern) -- baked in here since GQA's
+    // batched dispatch path (moe_gqa_attention_batched(), via moe_attention_batched()) was never
+    // independently validated before this round the way MLA's was.
+    float *cpu_logits_naive  = (float *)malloc(sizeof(float) * (size_t)B * MOE_VOCAB);
+    float *cpu_logits_gather = (float *)malloc(sizeof(float) * (size_t)B * MOE_VOCAB);
+    moe_forward_batch(af_blob, t_embed, t_lmhead, w_finalnorm, token_ids, B, cpu_logits_naive, 0);
+    moe_forward_batch(af_blob, t_embed, t_lmhead, w_finalnorm, token_ids, B, cpu_logits_gather, 1);
+    int naive_gather_match = 0;
+    for (int b = 0; b < B; b++) {
+        float *ln = cpu_logits_naive + (size_t)b*MOE_VOCAB, *lg = cpu_logits_gather + (size_t)b*MOE_VOCAB;
+        int am_n = 0; float bm_n = ln[0];
+        int am_g = 0; float bm_g = lg[0];
+        for (int v = 1; v < MOE_VOCAB; v++) {
+            if (ln[v] > bm_n) { bm_n = ln[v]; am_n = v; }
+            if (lg[v] > bm_g) { bm_g = lg[v]; am_g = v; }
+        }
+        if (am_n == am_g) naive_gather_match++;
+    }
+    fprintf(stderr, "[moe gpu gqa batch] CPU naive-vs-gather cross-check: %d/%d argmax match "
+                    "(this IS the GQA batched-dispatch validation MLA already had before V5d ran)\n",
+            naive_gather_match, B);
+    if (naive_gather_match != B) {
+        fprintf(stderr, "FATAL: [moe gpu gqa batch] CPU naive vs gather batched dispatch mismatch -- "
+                        "moe_gqa_attention_batched() is not producing correct results, GPU comparison "
+                        "would be meaningless against a broken reference. Stopping here.\n");
+        exit(1);
+    }
+    float *cpu_logits = cpu_logits_gather;   // trusted reference for the GPU comparison below
+
+    float *x_embed_batch = (float *)malloc(sizeof(float) * (size_t)B * MOE_HIDDEN);
+    float *gpu_logits = (float *)malloc(sizeof(float) * (size_t)B * MOE_VOCAB);
+    for (int b = 0; b < B; b++)
+        for (int c = 0; c < MOE_HIDDEN; c++)
+            x_embed_batch[(size_t)b*MOE_HIDDEN + c] = moe_decode_af(af_blob, t_embed, 0, token_ids[b], c);
+
+    // Accuracy gate: B sequences lockstep at pos=0 (same explicit scope V5d's own gate uses).
+    for (int l = 0; l < MOE_NL; l++) {
+        MoeLayerTensors *t = &g_moe_lt[l];
+        float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
+        float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
+        int is_dense = (l < MOE_FIRST_DENSE_LAYERS);
+        if (!t->q_norm || !t->k_norm) {
+            fprintf(stderr, "FATAL: [moe gpu gqa batch] layer %d missing q_norm/k_norm\n", l);
+            exit(1);
+        }
+        float *w_qnorm = (float *)(g_moe_f32_blob + t->q_norm->off);
+        float *w_knorm = (float *)(g_moe_f32_blob + t->k_norm->off);
+        float *w_gate = is_dense ? NULL : (float *)(g_moe_f32_blob + t->gate_w->off);
+        if (!mlx_gpu_gqa_layer_step_lazy(l, /*pos=*/0, is_dense, x_embed_batch, w_inln, w_postln,
+                                          w_qnorm, w_knorm, w_gate)) {
+            fprintf(stderr, "FATAL: [moe gpu gqa batch] mlx_gpu_gqa_layer_step_lazy failed at layer %d\n", l);
+            exit(1);
+        }
+    }
+    if (!mlx_gpu_gqa_forward_finalize(w_finalnorm, gpu_logits)) {
+        fprintf(stderr, "FATAL: [moe gpu gqa batch] mlx_gpu_gqa_forward_finalize failed\n");
+        exit(1);
+    }
+
+    int argmax_match = 0, n_flipped = 0;
+    double worst_rel_l2 = 0.0;
+    for (int b = 0; b < B; b++) {
+        float *lg = gpu_logits + (size_t)b*MOE_VOCAB, *lc = cpu_logits + (size_t)b*MOE_VOCAB;
+        int am_g = 0; float bm_g = lg[0];
+        int am_c = 0; float bm_c = lc[0];
+        double sse = 0.0, ssref = 0.0;
+        for (int v = 0; v < MOE_VOCAB; v++) {
+            if (lg[v] > bm_g) { bm_g = lg[v]; am_g = v; }
+            if (lc[v] > bm_c) { bm_c = lc[v]; am_c = v; }
+            double d = (double)lg[v] - (double)lc[v];
+            sse += d*d; ssref += (double)lc[v]*(double)lc[v];
+        }
+        double rel = ssref > 0 ? sqrt(sse/ssref) : (sse == 0 ? 0.0 : 1.0);
+        if (rel > worst_rel_l2) worst_rel_l2 = rel;
+        int match = (am_g == am_c);
+        if (match) argmax_match++; else n_flipped++;
+        fprintf(stderr, "[moe gpu gqa batch] slot %2d token %6d: cpu_argmax=%d gpu_argmax=%d rel_l2=%.6e %s\n",
+                b, token_ids[b], am_c, am_g, rel, match ? "[MATCH]" : "[FLIP]");
+    }
+    fprintf(stderr, "[moe gpu gqa batch] ACCURACY TABLE: B=%d flipped=%d/%d worst_rel_l2=%.6e\n",
+            B, n_flipped, B, worst_rel_l2);
+
+    // Throughput: repeated steps at increasing `pos` (real K/V history growth), matching
+    // run_moe_gpu_batch_gate()'s own approach. MOE_MAXPOS (qwen_infer.c's own constant, 32) used
+    // instead of mlx_moe.cpp's GQA_L0_MAXPOS -- numerically equal but not visible across the C/
+    // C++ TU boundary (same substitution D5's own throughput loop already established).
+    int warmup_steps = 4, measure_steps = 16;
+    for (int i = 0; i < warmup_steps; i++) {
+        int pos = 1 + i;
+        if (pos >= MOE_MAXPOS) break;
+        for (int b = 0; b < B; b++) {
+            int tok = real_first_tokens_olmoe[(b + i) % MOE_BATCH_MAX];
+            for (int c = 0; c < MOE_HIDDEN; c++)
+                x_embed_batch[(size_t)b*MOE_HIDDEN + c] = moe_decode_af(af_blob, t_embed, 0, tok, c);
+        }
+        for (int l = 0; l < MOE_NL; l++) {
+            MoeLayerTensors *t = &g_moe_lt[l];
+            float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
+            float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
+            int is_dense = (l < MOE_FIRST_DENSE_LAYERS);
+            float *w_qnorm = (float *)(g_moe_f32_blob + t->q_norm->off);
+            float *w_knorm = (float *)(g_moe_f32_blob + t->k_norm->off);
+            float *w_gate = is_dense ? NULL : (float *)(g_moe_f32_blob + t->gate_w->off);
+            mlx_gpu_gqa_layer_step_lazy(l, pos, is_dense, x_embed_batch, w_inln, w_postln, w_qnorm, w_knorm, w_gate);
+        }
+        mlx_gpu_gqa_forward_finalize(w_finalnorm, gpu_logits);
+    }
+    double kg_t0 = nowt();
+    int steps_done = 0;
+    for (int i = 0; i < measure_steps; i++) {
+        int pos = 1 + warmup_steps + i;
+        if (pos >= MOE_MAXPOS) break;
+        for (int b = 0; b < B; b++) {
+            int tok = real_first_tokens_olmoe[(b + warmup_steps + i) % MOE_BATCH_MAX];
+            for (int c = 0; c < MOE_HIDDEN; c++)
+                x_embed_batch[(size_t)b*MOE_HIDDEN + c] = moe_decode_af(af_blob, t_embed, 0, tok, c);
+        }
+        for (int l = 0; l < MOE_NL; l++) {
+            MoeLayerTensors *t = &g_moe_lt[l];
+            float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
+            float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
+            int is_dense = (l < MOE_FIRST_DENSE_LAYERS);
+            float *w_qnorm = (float *)(g_moe_f32_blob + t->q_norm->off);
+            float *w_knorm = (float *)(g_moe_f32_blob + t->k_norm->off);
+            float *w_gate = is_dense ? NULL : (float *)(g_moe_f32_blob + t->gate_w->off);
+            mlx_gpu_gqa_layer_step_lazy(l, pos, is_dense, x_embed_batch, w_inln, w_postln, w_qnorm, w_knorm, w_gate);
+        }
+        mlx_gpu_gqa_forward_finalize(w_finalnorm, gpu_logits);
+        steps_done++;
+    }
+    double kg_t1 = nowt();
+    double toksec = (double)B * steps_done / (kg_t1 - kg_t0);
+    fprintf(stderr, "[moe gpu gqa batch] THROUGHPUT: B=%d, %d steps warm-up (excluded), %d steps "
+                    "measured, %.3fs wall, %.3f tok/s aggregate (observed only, no external "
+                    "baseline claimed)\n",
+            B, warmup_steps, steps_done, kg_t1 - kg_t0, toksec);
+
+    fprintf(stderr, "RESULT: MoE GPU V5j-batch GQA batched gate complete, B=%d\n", B);
+    free(x_embed_batch); free(cpu_logits_naive); free(cpu_logits_gather); free(gpu_logits);
+    return 1;
+}
+
 // V5e: ragged multi-step GPU decode gate. Verbatim structural mirror of
 // run_moe_gpu_batch_gate() above (Rule 3, this codebase's own established convention)
 // rather than a shared helper -- config-loading/tensor-binding boilerplate is duplicated
@@ -11003,6 +11286,8 @@ int main(int argc, char **argv) {
     if (run_moe_gpu_fused_gate(argc, argv)) return 0;
     // V5j: same reasoning, QWEN_MOE_GPU_GQA_FUSED is its own independent env var.
     if (run_moe_gpu_gqa_fused_gate(argc, argv)) return 0;
+    // V5j-batch: same reasoning, QWEN_MOE_GPU_GQA_BATCH is its own independent env var.
+    if (run_moe_gpu_gqa_batch_gate(argc, argv)) return 0;
     // V5d: same reasoning, QWEN_MOE_GPU_BATCH is its own independent env var.
     if (run_moe_gpu_batch_gate(argc, argv)) return 0;
     // V5e: same reasoning, QWEN_MOE_GPU_CBATCH is its own independent env var.
