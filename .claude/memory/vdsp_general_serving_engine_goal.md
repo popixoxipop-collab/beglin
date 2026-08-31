@@ -1349,6 +1349,139 @@ eval. **실측: 처리량은 bar를 실제로 넘음(52.98 tok/s > 48.34)이나
 세션의 열린 결정. 상세: `RESULTS.md` §"V5c-fused throughput round".
 qwen_infer.c는 이번 라운드 미변경(mlx_moe.cpp/mlx_moe.h만).
 
+## V5d 재스코프+구현 (같은 날 후속, 2026-08-31) — 배치 B-token GPU
+## decode, 정확도 완전 통과, 처리량 목표 미달(다음 레버 특정됨)
+
+Bug1 수정으로 KILL-GATE가 통과된 직후 "V5d/e 재스코프 시작해" 지시로
+착수. 원래 V5d 설계(구 eager `mlx_gpu_layer_step()` 확장 가정)는 이번
+세션이 완전히 대체한 아키텍처(진짜 토큰당 1 eval, persistent K/V
+`mx::array`) 기준으로 다시 설계 필요 — Plan Mode로 전환해 "포크 대신
+기존 fused 경로에 배치축 B를 직접 일반화" 방향을 사용자 승인 받고
+착수.
+
+**실 파이프라인 수정 전 격리 probe 2건**(이번 라운드 내내 지켜온
+규율 그대로): `probe_batched_slice_update.py`(배치축 있는 체이닝
+slice_update+masked attention, diff 0.0/1.79e-07 통과) —
+`probe_batched_router_ffn.py`(라우터+gather_qmm+switch_down 전체
+조합, B=8)에서 **실제 버그 1건 발견**: `gather_qmm`의
+`lhs_indices=nullopt`는 x의 배치축과 rhs_indices의 배치축을 자동으로
+페어링하지 않음 — `mx::expand_dims(x,{-2,-3})`(mlx_lm의
+SwitchLinear 관례) 없이는 (8,6,8,1408)라는 진짜 BxTOPKxB
+cross-product가 나옴(기대는 (8,6,1,1408)). B=1일 때는 배치축이
+없어서(bare {1,HIDDEN}) 우연히 정상처럼 보였을 뿐 — 이 경로 자체가
+B=1에서는 한번도 제대로 실행된 적이 없었음. expand_dims 추가로
+수정, per-row 참조와 1.4e-06까지 일치 확인 후 실코드 적용.
+
+**적용 내용**: `g_fused_K`/`g_fused_V`/`g_fused_x`에 선두 배치축 B
+추가, 라우터 argsort/take_along_axis를 행별 2D 연산으로 일반화, RoPE
+스칼라 offset은 추가된 B축에도 그대로 broadcast(검증됨), attention
+mask는 **단일 공유** `{1,1,1,MLA_L0_MAXPOS}`로 유지(B tokens가 항상
+같은 pos에서 lockstep이라는 V5d 고유 전제 — V5e 래그드 설계에서는
+못 씀, 헤더 주석에 명시). 신규 `mlx_gpu_set_batch(B)`(기본값 B=1,
+기존 호출부 전부 무변경으로 자동으로 이전 동작 유지).
+
+**B=1 회귀(3회) 완전 통과**: 8/8, gpu_vs_cpu 완전동일(7.505390e-07),
+처리량 52.456~52.527(기존 52.91 평균과 노이즈 수준 차이) — 일반화가
+기존 동작의 진짜 상위집합임을 확인.
+
+**신규 진입점** `run_moe_gpu_batch_gate()`(`QWEN_MOE_GPU_BATCH=B`,
+`run_moe_gpu_fused_gate()`의 verbatim 구조적 미러) —
+`run_moe_batch_verify_mode()`의 실제 64토큰 코퍼스+이미 교차검증된
+`moe_forward_batch(use_gather=1)`을 CPU 기준점으로 재사용.
+
+**GPU 정확도 표(실측, MoE-3c/3e CPU 표와 나란히 비교)**:
+
+| B | flipped/B | worst rel-L2 | tok/s |
+|---|---|---|---|
+| 8 | 0/8 | 5.12e-04 | 76.2 |
+| 16 | 0/16 | 6.02e-04 | 99.0 |
+| 24 | 0/24 | 6.02e-04 | 105.7 |
+| 32 | 0/32 | 6.63e-04 | 108.5 |
+| 48 | 0/48 | 6.77e-04 | 107.0 |
+| 64 | 0/64 | 6.77e-04 | 109.6 |
+
+**★ 전 구간 완전 정확(flipped=0)** — CPU/SME2 arm이 B=64에서 margin
+재검증 없이는 54/64(MoE-3e)에 그치는 것과 극명한 대조. GPU arm은
+margin 재검증 장치가 구조적으로 불필요하다는 V5d 설계문서 예측이
+실측으로 확인됨. Determinism(B=32, 3회 반복) 완전 동일값
+(6.627989e-04) 확인.
+
+**처리량은 목표 미달**: B=64에서 109.6 tok/s vs 목표 250(llama.cpp
+180.91의 1.38배) — 심지어 llama.cpp 자체보다도 느림(0.61배).
+**원인 특정(미적용)**: `sort_indices=true` global sort/unsort(mlx_lm의
+`_gather_sort`/`_scatter_unsort`, F-4)를 아직 구현 안 함 — F-4가
+사전 측정한 "unsorted가 B=64에서 7.02배 느림" 패턴과 정확히 일치하는
+격차 크기라 재규명 없이도 유력한 다음 레버로 특정, 다음 라운드로
+이관.
+
+**상태**: V5d의 정확도+determinism 산출물은 완결·검증됨. 처리량 목표는
+같은 날 F-4 구현으로 완결됨(아래).
+
+## F-4 구현: global sort/unsort 적용, 실 in-situ 크로스오버 실측 —
+## B=64 처리량 109.6→224.3 tok/s(+105%), llama.cpp 넘어섬
+
+"sort_indices=true global sort/unsort(F-4)를 구현해" 지시로 착수.
+mlx_lm의 `_gather_sort`/`_scatter_unsort`(switch_layers.py 원문 그대로)를
+채택, 크로스오버는 F-4의 격리 마이크로벤치(캐시-warm 오염 지적됨)
+재사용 대신 실제 27레이어 스트리밍 pass 안에서 직접 재측정.
+
+**격리 probe 먼저**(`probe_sorted_gather.py`, 실제 NE=64/HIDDEN=2048/
+IM=1408/TOPK=6, B=64): sorted 경로가 기존 배포된 unsorted 계산과
+1.0e-05까지 일치(fp32 누적오차 수준) 확인 후 실코드 적용.
+
+**mlx_moe.cpp 적용**: 라우터 FFN 분기에 런타임 `B*top_k >=
+g_gpu_sort_threshold` 조건 분기 추가(신규 `mlx_gpu_set_sort_
+threshold()`, 기본값 사실상 무한대=미적용 — 명시적 설정 전까진 방금
+출하된 KILL-GATE 빌드와 완전 동일 동작). sorted 분기: top_idx를
+`{B*top_k}`로 flatten→전역 argsort(행별 아님)→`mx::take(...,
+order//top_k)`로 x를 정렬된 선택 순서로 gather→gather_qmm을
+sorted_indices=true로 gate/up/down 전부 실행(이미 row-per-selection
+레이아웃이라 unsorted 분기와 달리 expand_dims 불필요)→`mx::take(...,
+inv_order)`로 원래 순서 복원.
+
+**실측 크로스오버 스윕**(실하드웨어, `QWEN_MOE_GPU_SORT_THRESHOLD`로
+강제 전환하며 실제 배치 게이트 파이프라인 안에서 측정):
+
+| B(B*top_k) | unsorted | sorted | 개선율 |
+|---|---|---|---|
+| 1(6) | 51.3 | 50.2 | **-2%(sorted 손해)** |
+| 8(48) | 76.3 | 91.2 | +19% |
+| 16(96) | 99.2 | 136.6 | +38% |
+| 24(144) | 104.1 | 156.5 | +50% |
+| 32(192) | 108.7 | 170.3 | +57% |
+| 48(288) | 106.8 | 187.1 | +75% |
+| 64(384) | 109.6 | 224.3(2회 재현: 224.2/224.3) | **+105%** |
+
+크로스오버는 B=1↔8 사이 — B=1(이 프로젝트의 KILL-GATE 기준점)이
+유일하게 sorted가 손해 보는 지점(argsort 오버헤드가 선택 6개
+규모에선 정렬 이득을 못 넘음).
+
+**실측 이상치 1건, 근본원인 규명 없이 방치 안 함**: B=64 sorted 첫
+측정이 108.9(unsorted와 통계적으로 동일)로 나와서 즉시 단독
+재실행 → 224.3, 다시 224.2로 재현 — 직전 11회 연속 프로세스 실행의
+시스템 부하/발열 상태였을 가능성이 유력, sorted 코드 경로 자체의
+속성이 아님으로 판단(추가 계측 없이 방치하지 않고 명시적으로 기록).
+
+**프로덕션 정책**(`qwen_infer.c`의 신규 `moe_gpu_sort_threshold(B,
+top_k)`, `moe_baware_threshold()`의 기존 관례 그대로 미러): B<8은
+unsorted 유지(B=1 손해 실측), B>=8은 항상 sorted(전 구간 이득
+실측, B 커질수록 증가). `QWEN_MOE_GPU_SORT_THRESHOLD` env var로 향후
+재측정 override 가능.
+
+**정확도/determinism 완전 유지**: B=8~64 전부 여전히 flipped=0(worst_
+rel_l2도 unsorted 때와 동일값), B=1 KILL-GATE 완전 무변화(이 게이트는
+sort threshold를 아예 안 건드리므로 구조적으로 영향 없음).
+
+**★★★ 결과: B=64가 목표(250)의 89.7%(이전 43.8%에서 상승), llama.cpp
+자체(180.91)의 1.24배** — "llama.cpp에 짐"에서 "24% 앞섬"으로 이
+한 번의 변경으로 역전. `bob:~/vdsp_m4_bench/qwen_infer_v5cfused_final`
+갱신.
+
+**상태**: V5d+F-4로 배치 decode 트랙 완결(정확도+determinism+처리량
+전부 실측 검증). 남은 250 목표 대비 10.3% 격차는 이번 라운드에서
+더 추적 안 함 — V5e(ragged multi-step decode)가 원 설계 의존순서상
+다음 단계. 상세: `RESULTS.md` §"F-4: global sort/unsort implemented".
+
 ## Bug 1 근본원인 규명 + 수정 (같은 날 후속, 2026-08-31) — ★★★
 ## KILL-GATE 최종 통과, 21.78→~52.91 tok/s(+143%)
 

@@ -687,24 +687,82 @@ static int g_fused_layers_done = 0;
 // affirmatively for slice_update specifically (as opposed to bare mx::slice(), which needed
 // mx::contiguous() -- slice_update's output is not subject to the same bug, confirmed by
 // this probe, not assumed from the analogy).
+//
+// V5d rescope: gained a leading BATCH dimension B (mlx_gpu_set_batch()). B tokens are
+// lockstep -- every sequence in the batch shares the SAME position `pos` every call, which
+// is why the attention mask below can stay a single shared {1,1,1,MLA_L0_MAXPOS} array
+// (broadcasts across B) instead of needing its own per-sequence copy; this assumption does
+// NOT hold for a future ragged (V5e) design and must be revisited there, not reused.
+// Verified safe for B>1 by two isolated probes before this generalization was applied:
+// probe_batched_slice_update.py (chained slice_update + masked sdpa read, both with a
+// leading B axis, still bit-exact/1.79e-07 vs a numpy reference) and
+// probe_batched_router_ffn.py (the full router+gather_qmm+switch_down composition at
+// B=8, matched a per-row B=1-style loop to 1.4e-06 AND selected identical experts --
+// this caught a real gap: gather_qmm with lhs_indices=nullopt does NOT automatically pair
+// x's own leading batch dim with rhs_indices' batch dim unless x is first expanded via
+// mx::expand_dims(x, {-2,-3}), matching mlx_lm's own SwitchLinear convention exactly --
+// omitting that expand silently computes a B x TOPK CROSS PRODUCT instead of the intended
+// per-token selection, confirmed via the probe's own shape printout before the fix).
 static std::vector<mx::array> g_fused_K;
 static std::vector<mx::array> g_fused_V;
 static bool g_fused_kv_inited = false;
+static int g_fused_kv_inited_B = 0;   // B the current g_fused_K/V were sized for
+static int g_fused_B = 1;             // current batch size; mlx_gpu_layer_step_lazy()'s
+                                       // x_in_host is B*HIDDEN floats, one row per sequence
+
+// V5d: set the batch size for subsequent mlx_gpu_layer_step_lazy()/mlx_gpu_forward_finalize()
+// calls. B=1 (the default) reproduces the exact single-token behavior this file shipped with
+// before V5d -- callers that never call this function get byte-identical B=1 behavior.
+// Bounded to MOE_BATCH_MAX=64 to match the CPU/SME2 arm's own ceiling (qwen_infer.c).
+int mlx_gpu_set_batch(int B) {
+    if (!mlx_gpu_available()) return 0;
+    if (B < 1 || B > 64) return 0;
+    g_fused_B = B;
+    return 1;
+}
+
+// D-sort-1: adopt mlx_lm's own global flatten+argsort+gather (_gather_sort/_scatter_unsort,
+// switch_layers.py) for the routed-FFN's gate/up/down gather_qmm calls, gated on a runtime
+// B*TOPK threshold -- NOT mx.gather_qmm's own naive `indices.size >= 64` default, which F-4
+// (this project's plan doc) found gives only 2.57x of the real 7.02x available at B=64
+// (per-row sort vs a genuine GLOBAL sort). Verified correct via an isolated probe
+// (probe_sorted_gather.py, real NE=64/HIDDEN=2048/IM=1408/TOPK=6 dims, B=64) before being
+// applied here: sorted-path routed_sum matched the already-shipped unsorted path to 1.0e-05
+// (fp32 accumulation noise, not a discrepancy).
+//   WHY : the naive/default threshold is wrong for this workload (F-4 measured it costs
+//         throughput below B~=16 and underdelivers above it); a runtime-tunable threshold
+//         lets the real crossover be measured IN the actual 27-layer streaming pass
+//         (mlx_gpu_set_sort_threshold()), not assumed from an isolated, partially
+//         cache-warm microbenchmark (F-4's own stated caveat about its own prior number).
+//   COST: two extra argsort() + two extra take()-based gathers per routed layer when the
+//         sorted branch is taken -- only pays off above the real measured crossover, which
+//         is why this stays a runtime branch, not an unconditional replacement.
+//   EXIT: mlx_gpu_set_sort_threshold(INT32_MAX) (or never calling it -- this is the default)
+//         disables the sorted branch entirely, reverting byte-for-byte to the unsorted code
+//         path this file shipped the KILL-GATE with.
+static int g_gpu_sort_threshold = 2147483647;   // default: OFF, matches pre-F-4 shipped behavior
+
+int mlx_gpu_set_sort_threshold(int threshold) {
+    if (!mlx_gpu_available()) return 0;
+    g_gpu_sort_threshold = threshold;
+    return 1;
+}
 
 static void ensure_fused_kv_init() {
-    if (g_fused_kv_inited) return;
-    const int H = g_mla_n_heads, QHD = g_mla_q_head_dim, VHD = g_mla_v_hd;
+    if (g_fused_kv_inited && g_fused_kv_inited_B == g_fused_B) return;
+    const int H = g_mla_n_heads, QHD = g_mla_q_head_dim, VHD = g_mla_v_hd, B = g_fused_B;
     g_fused_K.clear();
     g_fused_V.clear();
     std::vector<mx::array> all;
     for (int l = 0; l < MLA_MAXLAYERS; l++) {
-        g_fused_K.push_back(mx::zeros({1, H, MLA_L0_MAXPOS, QHD}, mx::float32));
-        g_fused_V.push_back(mx::zeros({1, H, MLA_L0_MAXPOS, VHD}, mx::float32));
+        g_fused_K.push_back(mx::zeros({B, H, MLA_L0_MAXPOS, QHD}, mx::float32));
+        g_fused_V.push_back(mx::zeros({B, H, MLA_L0_MAXPOS, VHD}, mx::float32));
         all.push_back(g_fused_K.back());
         all.push_back(g_fused_V.back());
     }
     mx::eval(all);   // one-time materialization at first use, not part of the per-token cost
     g_fused_kv_inited = true;
+    g_fused_kv_inited_B = B;
 }
 
 static mx::array wrap_host_f32(const float *p, std::initializer_list<int> shape) {
@@ -713,7 +771,10 @@ static mx::array wrap_host_f32(const float *p, std::initializer_list<int> shape)
 static mx::array lazy_silu(const mx::array &x) { return mx::multiply(x, mx::sigmoid(x)); }
 
 // Same shape as mlx_gpu_matvec_probe()'s quantized_matmul call, but returns the
-// (unevaluated) array instead of eval()'ing + copying to host.
+// (unevaluated) array instead of eval()'ing + copying to host. x may carry a leading
+// batch dim (B or B*TOPK); this single weight matrix (expert 0, shared/dense role)
+// naturally batches via quantized_matmul's own broadcasting -- no expand_dims needed
+// here, only for gather_qmm's per-expert-selection calls below.
 static mx::array lazy_matvec_e0(const char *name, const mx::array &x) {
     QTensor &t = g_tensors.at(name);
     mx::array w_e = mx::take(t.w, 0, 0);
@@ -732,11 +793,12 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
                   ROPE = g_mla_qk_rope, VHD = g_mla_v_hd, KVLORA = g_mla_kv_lora;
         const int HIDDEN = g_layer_hidden, IM = g_layer_im_dim, DENSE_IM = g_layer_dense_im,
                   NE = g_layer_n_experts, NS = g_layer_n_shared, TOPK = g_layer_top_k;
+        const int B = g_fused_B;
 
         ensure_fused_kv_init();
         if (l == 0) {
             delete g_fused_x;
-            g_fused_x = new mx::array(wrap_host_f32(x_in_host, {1, HIDDEN}));
+            g_fused_x = new mx::array(wrap_host_f32(x_in_host, {B, HIDDEN}));
             g_fused_pos = pos; g_fused_layers_done = 0;
         }
         if (g_fused_pos != pos || g_fused_layers_done != l) return 0;
@@ -750,20 +812,20 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
         mx::array x = *g_fused_x;
         mx::array h = mx::fast::rms_norm(x, wrap_host_f32(w_inln, {HIDDEN}), (float)g_mla_rms_eps);
 
-        // ---- Stage A: this position's OWN K/V (shape depends only on H/QHD/
+        // ---- Stage A: this position's OWN K/V (shape depends only on B/H/QHD/
         // VHD -- constants -- never on pos or on history). Eval + persist
         // immediately, before the fixed-shape attention window is built.
         mx::array q = lazy_matvec_e0(nq, h);
         mx::array kv_ap = lazy_matvec_e0(nkva, h);
-        mx::array compressed_kv = mx::slice(kv_ap, {0, 0}, {1, KVLORA});
-        mx::array k_pe_raw = mx::slice(kv_ap, {0, KVLORA}, {1, KVLORA + ROPE});
+        mx::array compressed_kv = mx::slice(kv_ap, {0, 0}, {B, KVLORA});
+        mx::array k_pe_raw = mx::slice(kv_ap, {0, KVLORA}, {B, KVLORA + ROPE});
         mx::array normed_kv = mx::fast::rms_norm(compressed_kv, wrap_host_f32(w_kvaln, {KVLORA}),
                                                   (float)g_mla_rms_eps);
         mx::array kv_b = lazy_matvec_e0(nkvb, normed_kv);
 
-        mx::array q_r = mx::reshape(q, {1, H, QHD});
-        mx::array q_nope = mx::slice(q_r, {0, 0, 0}, {1, H, NOPE});
-        mx::array q_pe_raw = mx::slice(q_r, {0, 0, NOPE}, {1, H, NOPE + ROPE});
+        mx::array q_r = mx::reshape(q, {B, H, QHD});
+        mx::array q_nope = mx::slice(q_r, {0, 0, 0}, {B, H, NOPE});
+        mx::array q_pe_raw = mx::slice(q_r, {0, 0, NOPE}, {B, H, NOPE + ROPE});
         mx::array q_pe_scaled = q_pe_raw * (float)g_mla_rope_mscale;
         mx::array k_pe_scaled = k_pe_raw * (float)g_mla_rope_mscale;
 
@@ -771,57 +833,69 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
         mx::array freqs_f32((void *)g_mla_yarn_freqs_f32.data(),
                              {(int)g_mla_yarn_freqs_f32.size()}, mx::float32, noop_deleter);
 
-        mx::array q_pe_hro = mx::transpose(q_pe_scaled, {1, 0, 2});
-        mx::array q_pe_rot_hro = mx::fast::rope(q_pe_hro, ROPE, /*traditional=*/true,
+        // RoPE's offset=pos is a single scalar, applied identically over every leading
+        // "batch-like" axis regardless of how many precede the rotated axis (already true
+        // of the B=1 design's own H leading axis; adding B ahead of it changes nothing
+        // about how the scalar offset broadcasts).
+        mx::array q_pe_hbo = mx::transpose(q_pe_scaled, {1, 0, 2});   // {H,B,ROPE}
+        mx::array q_pe_rot_hbo = mx::fast::rope(q_pe_hbo, ROPE, /*traditional=*/true,
                                                  /*base=*/std::nullopt, /*scale=*/1.0f,
                                                  /*offset=*/pos, /*freqs=*/freqs_f32);
-        mx::array q_pe_rot = mx::transpose(q_pe_rot_hro, {1, 0, 2});
-        mx::array k_pe_in = mx::reshape(k_pe_scaled, {1, 1, ROPE});
+        mx::array q_pe_rot = mx::transpose(q_pe_rot_hbo, {1, 0, 2});   // {B,H,ROPE}
+        mx::array k_pe_in = mx::reshape(k_pe_scaled, {B, 1, ROPE});
         mx::array k_pe_rot = mx::fast::rope(k_pe_in, ROPE, true, std::nullopt, 1.0f, pos, freqs_f32);
 
         mx::array q_full = mx::concatenate({q_nope, q_pe_rot}, -1);
-        mx::array kv_b_r = mx::reshape(kv_b, {1, H, NOPE + VHD});
-        mx::array k_nope = mx::slice(kv_b_r, {0, 0, 0}, {1, H, NOPE});
+        mx::array kv_b_r = mx::reshape(kv_b, {B, H, NOPE + VHD});
+        mx::array k_nope = mx::slice(kv_b_r, {0, 0, 0}, {B, H, NOPE});
         // v_new: mx::contiguous() forces genuine materialization of this bare slice --
         // see the Bug 3 header comment above for why this is required (k_nope avoids
         // the same issue only because it flows into concatenate() below, which
         // compacts as a side effect; v_new has no such follow-up op).
-        mx::array v_new = mx::contiguous(mx::slice(kv_b_r, {0, 0, NOPE}, {1, H, NOPE + VHD}));
-        mx::array k_pe_bcast = mx::broadcast_to(k_pe_rot, {1, H, ROPE});
+        mx::array v_new = mx::contiguous(mx::slice(kv_b_r, {0, 0, NOPE}, {B, H, NOPE + VHD}));
+        mx::array k_pe_bcast = mx::broadcast_to(k_pe_rot, {B, H, ROPE});
         mx::array k_new = mx::concatenate({k_nope, k_pe_bcast}, -1);
 
         // Persist this position's K/V into the FUSED path's own persistent device arrays
         // via slice_update -- NO eval() here (throughput round: this used to be a forced
         // standalone eval + host memcpy into g_mla_K/g_mla_V; verified via
-        // probe_slice_update_chain.py that deferring this is safe). pos_start is built with
-        // the VALUE-constructing array(T) ctor (copies at construction time), not a host-
-        // pointer wrap, so it stays valid regardless of this function's stack lifetime.
-        mx::array k_new_win = mx::reshape(k_new, {1, H, 1, QHD});
-        mx::array v_new_win = mx::reshape(v_new, {1, H, 1, VHD});
+        // probe_slice_update_chain.py, and its B>1 sibling probe_batched_slice_update.py,
+        // that deferring this is safe with or without a batch axis). pos_start is built
+        // with the VALUE-constructing array(T) ctor (copies at construction time), not a
+        // host-pointer wrap, so it stays valid regardless of this function's stack lifetime.
+        mx::array k_new_win = mx::reshape(k_new, {B, H, 1, QHD});
+        mx::array v_new_win = mx::reshape(v_new, {B, H, 1, VHD});
         mx::array pos_start(pos, mx::int32);
         g_fused_K[l] = mx::slice_update(g_fused_K[l], k_new_win, pos_start, std::vector<int>{2});
         g_fused_V[l] = mx::slice_update(g_fused_V[l], v_new_win, pos_start, std::vector<int>{2});
 
         // ---- Stage B: fixed-shape attention. k_win/v_win wrap the FULL
         // per-layer window at a CONSTANT pointer and CONSTANT shape
-        // {1,H,MLA_L0_MAXPOS,*} on every call, for every position -- the
+        // {B,H,MLA_L0_MAXPOS,*} on every call, for every position -- the
         // window's per-head blocks are contiguous by construction, so no
-        // copy is needed, just a raw wrap of g_mla_K/g_mla_V's own
-        // persistent storage (which now includes this position's own K/V,
-        // just written above). A boolean causal mask (true for j<=pos, false
-        // otherwise) replaces "array length" as the way of encoding how much
-        // of the fixed window is valid -- positions beyond `pos` still hold
-        // stale/zero data but are masked out of the softmax entirely.
-        // k_win/v_win: the SAME lazy arrays slice_update() just produced above -- no host
-        // wrap, no separate eval boundary between the write (Stage A) and this windowed
-        // read (Stage B) anymore; both live in one graph, evaluated together below.
+        // copy is needed, just the SAME lazy arrays slice_update() just
+        // produced above (no host wrap, no separate eval boundary between
+        // the write (Stage A) and this windowed read (Stage B) -- both live
+        // in one graph, evaluated together below). A boolean causal mask
+        // (true for j<=pos, false otherwise) replaces "array length" as the
+        // way of encoding how much of the fixed window is valid -- positions
+        // beyond `pos` still hold stale/zero data but are masked out of the
+        // softmax entirely. The mask stays a SINGLE shared {1,1,1,MLA_L0_MAXPOS}
+        // array (not {B,1,1,MLA_L0_MAXPOS}) because V5d's B tokens are
+        // lockstep at the same `pos` -- every sequence has identical valid
+        // history length this call, so the mask broadcasts correctly across
+        // B (verified: probe_batched_slice_update.py's masked-attention test
+        // used this exact shared-mask/batched-window combination). This
+        // assumption breaks for a future ragged (V5e) design, where different
+        // slots can be at different positions simultaneously -- that design
+        // will need a per-sequence mask, not this one.
         mx::array k_win = g_fused_K[l];
         mx::array v_win = g_fused_V[l];
         static bool s_mask_buf[MLA_L0_MAXPOS];   // static: fixed address across calls
         for (int j = 0; j < MLA_L0_MAXPOS; j++) s_mask_buf[j] = (j <= pos);
         mx::array mask_arr((void *)s_mask_buf, {1, 1, 1, MLA_L0_MAXPOS}, mx::bool_, noop_deleter);
 
-        mx::array q_full_r = mx::reshape(q_full, {1, H, 1, QHD});
+        mx::array q_full_r = mx::reshape(q_full, {B, H, 1, QHD});
         // mask_mode MUST be "array" (not "") when passing an explicit mask_arr --
         // confirmed against libmlx.dylib's own validation strings ("mask_mode must
         // be 'causal', 'array' or ''"; passing an array with mode "" throws
@@ -832,7 +906,7 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
         // the source of Bug 3, despite substantial early suspicion.
         mx::array attn = mx::fast::scaled_dot_product_attention(q_full_r, k_win, v_win,
                                                                   (float)g_mla_attn_scale, "array", mask_arr);
-        mx::array attn_flat = mx::reshape(attn, {1, H * VHD});
+        mx::array attn_flat = mx::reshape(attn, {B, H * VHD});
         mx::array o = lazy_matvec_e0(no, attn_flat);
         mx::array x_mid = x + o;
 
@@ -851,50 +925,86 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
             (void)DENSE_IM;
         } else {
             mx::array w_gate_arr = wrap_host_f32(w_gate, {NE, HIDDEN});
-            mx::array scores_raw = mx::matmul(h2, mx::transpose(w_gate_arr));
+            mx::array scores_raw = mx::matmul(h2, mx::transpose(w_gate_arr));       // {B,NE}
             mx::array scores = mx::softmax(scores_raw, std::vector<int>{-1}, /*precise=*/true);
-            mx::array scores_flat = mx::reshape(scores, {NE});
-            mx::array order = mx::argsort(scores_flat, 0);
-            mx::array top_idx_u = mx::slice(order, {NE - TOPK}, {NE});
+            mx::array order = mx::argsort(scores, -1);                              // {B,NE}, per-row
+            mx::array top_idx_u = mx::slice(order, {0, NE - TOPK}, {B, NE});         // {B,TOPK}
             mx::array top_idx = mx::astype(top_idx_u, mx::int32);
-            mx::array top_idx_row = mx::reshape(top_idx, {1, TOPK});
-            mx::array top_wgt = mx::take_along_axis(scores, top_idx_row, 1);
+            mx::array top_wgt = mx::take_along_axis(scores, top_idx, 1);             // {B,TOPK}
 
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
             QTensor &tg = g_tensors.at(nm);
-            mx::array gate_all = mx::gather_qmm(h2, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                 top_idx_row, true, g_layer_group, 4, "affine", false);
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.up_proj", l);
             QTensor &tu = g_tensors.at(nm);
-            mx::array up_all = mx::gather_qmm(h2, tu.w, tu.scales, tu.biases, std::nullopt,
-                                               top_idx_row, true, g_layer_group, 4, "affine", false);
-            // switch_down: TOPK rows of x, each already belonging to its OWN selected
-            // expert (unlike gate/up above, which share ONE h2 row across all TOPK
-            // experts) -- reshape to {TOPK,1,IM} and omit lhs_indices entirely, mirroring
-            // mlx_lm's own SwitchLinear/QuantizedSwitchLinear.__call__ (switch_layers.py),
-            // which never passes lhs_indices for this exact per-row-distinct-expert case.
-            // This REPLACES the former lhs_indices=arange(TOPK) cross-product +
-            // take_along_axis diagonal-extraction dance (Bug 2's original trigger): an
-            // isolated probe (probe_down_no_lhs.cpp, this model's real TOPK=6/IM=1408/
-            // HIDDEN=2048 dims) confirmed the no-lhs_indices form is bit-correct AND
-            // survives being folded into a larger DEFERRED graph with no standalone
-            // eval() -- Bug 2's corruption was specific to the cross-product composition,
-            // not to deferred evaluation itself. Removing lhs_indices therefore also
-            // removes the standalone eval() this branch used to require.
-            // (No residual/error-feedback compensation applies here either, same as this
-            // file's D18 exemption in the header comment above -- this is pure dequant-
-            // consumption of an already-quantized weight, not a new requantization.)
-            mx::array swiglu_3d = mx::reshape(lazy_silu(gate_all) * up_all, {TOPK, 1, IM});
-            mx::array top_idx_1d = mx::reshape(top_idx, {TOPK});
-
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.down_proj", l);
             QTensor &td = g_tensors.at(nm);
-            mx::array down_all = mx::gather_qmm(swiglu_3d, td.w, td.scales, td.biases, std::nullopt,
-                                                 top_idx_1d, true, g_layer_group, 4, "affine", false);
-            mx::array down_flat = mx::reshape(down_all, {TOPK, HIDDEN});
-            mx::array top_wgt_col = mx::reshape(top_wgt, {TOPK, 1});
+
+            std::optional<mx::array> down_flat_opt;
+            if ((long)B * TOPK >= g_gpu_sort_threshold) {
+                // D-sort path (F-4): global flatten+argsort+gather, mlx_lm's own
+                // _gather_sort/_scatter_unsort composition (switch_layers.py), verified via
+                // probe_sorted_gather.py (B=64, real dims) against the unsorted path below
+                // (max_abs_diff 1.0e-05, fp32 noise). x_flat3 == what expand_dims(h2,{-2,-3})
+                // .flatten(0,-3) reduces to algebraically -- skipping the 4D roundtrip since
+                // this branch does its own explicit mx::take() gather instead of relying on
+                // gather_qmm's implicit lhs/rhs batch pairing (that pairing is what the
+                // UNSORTED branch below needs expand_dims for; this branch doesn't use it).
+                mx::array x_flat3 = mx::reshape(h2, {B, 1, HIDDEN});
+                mx::array flat_idx = mx::reshape(top_idx, {B * TOPK});
+                mx::array order = mx::argsort(flat_idx, 0);
+                mx::array inv_order = mx::argsort(order, 0);
+                mx::array topk_arr(TOPK, mx::int32);
+                mx::array row_sel = mx::floor_divide(order, topk_arr);
+                mx::array x_sorted = mx::take(x_flat3, row_sel, 0);      // {B*TOPK,1,HIDDEN}
+                mx::array idx_sorted = mx::take(flat_idx, order);        // {B*TOPK}
+
+                mx::array gate_all_s = mx::gather_qmm(x_sorted, tg.w, tg.scales, tg.biases, std::nullopt,
+                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                mx::array up_all_s = mx::gather_qmm(x_sorted, tu.w, tu.scales, tu.biases, std::nullopt,
+                                                     idx_sorted, true, g_layer_group, 4, "affine", true);
+                mx::array swiglu_3d_s = mx::reshape(lazy_silu(gate_all_s) * up_all_s, {B * TOPK, 1, IM});
+                mx::array down_all_s = mx::gather_qmm(swiglu_3d_s, td.w, td.scales, td.biases, std::nullopt,
+                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                mx::array down_flat_s = mx::reshape(down_all_s, {B * TOPK, HIDDEN});
+                mx::array down_unsorted = mx::take(down_flat_s, inv_order, 0);   // scatter-unsort
+                down_flat_opt = mx::reshape(down_unsorted, {B, TOPK, HIDDEN});
+            } else {
+                // Unsorted path (unchanged from the KILL-GATE-passing build): gather_qmm's
+                // shared-x/per-expert-selection form (gate/up) needs x to carry its OWN
+                // leading {B,1,1,...} batch shape via expand_dims so gather_qmm PAIRS it
+                // with rhs_indices' {B,TOPK} batch instead of cross-producting the two --
+                // confirmed the hard way by probe_batched_router_ffn.py (B=8 without this
+                // expand produced shape (8,6,8,1408), a genuine BxTOPKxB cross product, not
+                // the intended (8,6,1,1408) per-(batch,expert) selection). This step did not
+                // exist in the B=1 code because a bare {1,HIDDEN} x's absent batch dims
+                // happened to look identical to correct pairing when there is only one
+                // possible pairing -- it was never actually being exercised at B=1.
+                mx::array h2_expanded = mx::expand_dims(h2, std::vector<int>{-2, -3});   // {B,1,1,HIDDEN}
+                mx::array gate_all = mx::gather_qmm(h2_expanded, tg.w, tg.scales, tg.biases, std::nullopt,
+                                                     top_idx, true, g_layer_group, 4, "affine", false);
+                mx::array up_all = mx::gather_qmm(h2_expanded, tu.w, tu.scales, tu.biases, std::nullopt,
+                                                   top_idx, true, g_layer_group, 4, "affine", false);
+                // switch_down: B*TOPK rows, each already belonging to its OWN selected
+                // expert (unlike gate/up above, which share one h2 row per batch entry across
+                // its TOPK experts) -- flatten to {B*TOPK,1,IM} and omit lhs_indices entirely,
+                // mirroring mlx_lm's own SwitchLinear/QuantizedSwitchLinear.__call__
+                // (switch_layers.py), which never passes lhs_indices for this exact
+                // per-row-distinct-expert case. Verified at B=8 by probe_batched_router_ffn.py
+                // against a per-row B=1-style loop (max_abs_diff 1.4e-06, identical expert
+                // selection) before being applied here.
+                // (No residual/error-feedback compensation applies here either, same as this
+                // file's D18 exemption in the header comment above -- this is pure dequant-
+                // consumption of an already-quantized weight, not a new requantization.)
+                mx::array swiglu_3d = mx::reshape(lazy_silu(gate_all) * up_all, {B * TOPK, 1, IM});
+                mx::array top_idx_1d = mx::reshape(top_idx, {B * TOPK});
+                mx::array down_all = mx::gather_qmm(swiglu_3d, td.w, td.scales, td.biases, std::nullopt,
+                                                     top_idx_1d, true, g_layer_group, 4, "affine", false);
+                down_flat_opt = mx::reshape(down_all, {B, TOPK, HIDDEN});
+            }
+            mx::array down_flat = *down_flat_opt;
+            mx::array top_wgt_col = mx::reshape(top_wgt, {B, TOPK, 1});
             mx::array weighted = down_flat * top_wgt_col;
-            mx::array routed_sum = mx::sum(weighted, std::vector<int>{0}, true);
+            mx::array routed_sum = mx::sum(weighted, std::vector<int>{1}, false);    // {B,HIDDEN}
 
             if (NS > 0) {
                 snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.gate_proj", l);
@@ -915,9 +1025,10 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
         // finalize() broke because of an unrelated use-after-free (freqs_f32 wrapping a
         // stack-local buffer), not because of anything wrong with deferring across layer
         // boundaries per se. With that fixed, x_out (and this layer's K/V update) can
-        // safely stay lazy here -- evaluated once per TOKEN in finalize(), not once per
-        // layer. Verified: 8/8 argmax, bit-identical gpu_vs_cpu to the old per-layer-eval
-        // design, and KILL-GATE now PASSES (~52.9 tok/s vs the 48.34 bar).
+        // safely stay lazy here -- evaluated once per BATCH STEP (B tokens together) in
+        // finalize(), not once per layer. Verified at B=1: 8/8 argmax, bit-identical
+        // gpu_vs_cpu to the old per-layer-eval design, KILL-GATE PASSES (~52.9 tok/s vs
+        // the 48.34 bar).
         delete g_fused_x;
         g_fused_x = new mx::array(x_out);   // still LAZY -- NOT evaluated until finalize()
         g_fused_layers_done = l + 1;
@@ -933,19 +1044,20 @@ int mlx_gpu_forward_finalize(const float *w_finalnorm, float *logits_out) {
     if (!g_fused_x) return 0;
     try {
         const int HIDDEN = g_layer_hidden;
+        const int B = g_fused_B;
         mx::array x_final = mx::fast::rms_norm(*g_fused_x, wrap_host_f32(w_finalnorm, {HIDDEN}),
                                                 (float)g_mla_rms_eps);
-        mx::array logits = lazy_matvec_e0("lm_head", x_final);
-        // Single eval for the WHOLE token: logits plus every layer's K/V update, all still
-        // lazy from mlx_gpu_layer_step_lazy() above. Untouched g_fused_K/V slots are
+        mx::array logits = lazy_matvec_e0("lm_head", x_final);   // {B,VOCAB}
+        // Single eval for the WHOLE batch step: logits plus every layer's K/V update, all
+        // still lazy from mlx_gpu_layer_step_lazy() above. Untouched g_fused_K/V slots are
         // already-evaluated arrays from a prior finalize() call, so listing all of them
-        // (not just this token's touched layers) is a harmless no-op, not wasted work.
+        // (not just this step's touched layers) is a harmless no-op, not wasted work.
         std::vector<mx::array> all{logits};
         for (auto &a : g_fused_K) all.push_back(a);
         for (auto &a : g_fused_V) all.push_back(a);
         mx::eval(all);
         const int VOCAB = (int)logits.shape().back();
-        std::memcpy(logits_out, logits.data<float>(), sizeof(float) * (size_t)VOCAB);
+        std::memcpy(logits_out, logits.data<float>(), sizeof(float) * (size_t)B * (size_t)VOCAB);
         delete g_fused_x; g_fused_x = nullptr;
         g_fused_pos = -1; g_fused_layers_done = 0;
         return 1;

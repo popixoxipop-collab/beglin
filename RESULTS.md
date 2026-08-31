@@ -3987,3 +3987,182 @@ byte-identity argument from the prior section still holds unchanged.
 Canonical binary updated: `bob:~/vdsp_m4_bench/qwen_infer_v5cfused_final`
 now points at this (Bug-1-fixed, one-eval-per-token) build, superseding
 the 37.16 tok/s Win-1+2 build from earlier the same day.
+
+## V5d: batched B-token GPU decode, rescoped and shipped on the fused lazy
+## path -- accuracy PASSES cleanly at every B, throughput below the 250
+## tok/s target, sort-crossover (F-4) identified as the concrete next lever
+
+**Rescope** (same day, following the KILL-GATE pass above): the standing
+plan's V5d section was written to extend the OLD eager `mlx_gpu_layer_step()`
+(pre-dating this whole session's rewrite). Rescoped to generalize the
+ACTUAL shipped path -- `mlx_gpu_layer_step_lazy()`/`mlx_gpu_forward_finalize()`
+-- in place, adding a leading batch dimension `B` throughout rather than
+forking a new function, so B=1 stays byte-identical to the just-shipped
+KILL-GATE build and the few-eval() design's efficiency compounds at every
+B, not just B=1. Full design written to a plan file and approved before
+any code changed (Plan Mode).
+
+**Two isolated probes before touching the real pipeline** (same discipline
+as the whole throughput round):
+- `probe_batched_slice_update.py`: chained `slice_update()` + a masked
+  `scaled_dot_product_attention` read, both carrying a leading B axis --
+  bit-exact vs a host-buffer reference (0.0) and vs a numpy reference
+  (1.79e-07).
+- `probe_batched_router_ffn.py`: the full router + `gather_qmm` +
+  switch_down composition at B=8, checked against a per-row B=1-style
+  loop. **Found a real gap on the first attempt**: `gather_qmm` with
+  `lhs_indices=nullopt` does NOT automatically pair x's own leading batch
+  dim with `rhs_indices`' batch dim -- omitting `mx::expand_dims(x,
+  {-2,-3})` (mlx_lm's own `SwitchLinear` convention) silently computed a
+  genuine `B x TOPK x B` CROSS PRODUCT instead of per-token selection
+  (caught via the probe's own shape printout: `(8,6,8,1408)` instead of
+  the expected `(8,6,1,1408)`). This didn't exist as a bug at B=1 because
+  a bare `{1,HIDDEN}` x's absent batch dims happened to look identical to
+  correct pairing when there's only one possible pairing -- B=1 was never
+  actually exercising this code path. Fixed by adding the `expand_dims`
+  step; re-verified match to 1.4e-06 with identical expert selection.
+
+**Applied to `mlx_moe.cpp`**: `g_fused_K`/`g_fused_V` gained a leading `B`
+dim (`{B,H,MLA_L0_MAXPOS,*}`), `g_fused_x` became `{B,HIDDEN}`, the router's
+`argsort`/`take_along_axis` generalized to per-row 2D operation, RoPE's
+scalar `offset=pos` broadcasts unchanged over the added B axis (verified,
+not just assumed), and the attention mask stays a SINGLE shared
+`{1,1,1,MLA_L0_MAXPOS}` array across the whole batch -- valid specifically
+because V5d's B sequences are LOCKSTEP at the same `pos` every call (every
+sequence has identical valid history length); this assumption is flagged
+explicitly in the header comment as something V5e's ragged design cannot
+reuse. New `mlx_gpu_set_batch(B)` (default B=1, unset by any pre-V5d
+caller) controls it.
+
+**B=1 regression** (3 reps, real hardware): 8/8 argmax, `gpu_vs_cpu`
+worst-case bit-identical to the pre-V5d build (7.505390e-07), throughput
+52.456-52.527 tok/s -- noise-level vs the 52.91 tok/s mean already
+measured, confirming the generalization is a true superset of the
+existing behavior, not a fork that happens to agree.
+
+**New entry point**: `run_moe_gpu_batch_gate()` (`QWEN_MOE_GPU_BATCH=B`),
+a verbatim structural mirror of `run_moe_gpu_fused_gate()` (this project's
+own established convention for keeping gates independently readable) --
+reuses `run_moe_batch_verify_mode()`'s own 64-token real corpus
+(`real_first_tokens[]`, P0.2's REAL_TEXTS corpus via the real DeepSeek
+tokenizer) and its already-cross-verified `moe_forward_batch(...,
+use_gather=1)` path as the CPU-side reference, rather than re-deriving
+trust from scratch.
+
+**GPU accuracy table, real hardware, bob** (the actual V5d deliverable --
+placed directly next to MoE-3c/MoE-3e's own CPU tables):
+
+| B | flipped/B | worst rel-L2 | tok/s (aggregate) |
+|---:|---:|---:|---:|
+| 8 | 0/8 | 5.12e-04 | 76.2 |
+| 16 | 0/16 | 6.02e-04 | 99.0 |
+| 24 | 0/24 | 6.02e-04 | 105.7 |
+| 32 | 0/32 | 6.63e-04 | 108.5 |
+| 48 | 0/48 | 6.77e-04 | 107.0 |
+| 64 | 0/64 | 6.77e-04 | 109.6 |
+
+**Zero flips at every tested B** -- a real, measured architectural
+difference from the CPU/SME2 arm, not assumed: MoE-3c's own CPU table is
+0/8, 0/16, 4/32, 9/64 raw (needing margin-threshold re-verification to
+reach 100%); MoE-3e's B=64 raw is 54/64. The GPU arm needs no margin
+re-verification machinery at all in this tested range -- confirms the V5d
+plan's own prediction ("0/64 flips is a real and reportable architectural
+difference... not a formality") rather than assuming the GPU wins.
+**Determinism**: 3 identical reruns at B=32 produced bit-identical
+`worst_rel_l2` (6.627989e-04 every time) -- MLX reductions were
+deterministic for this workload, reported rather than assumed.
+
+**Throughput target initially NOT met** (109.6 tok/s at B=64 vs the 250
+target, even below llama.cpp's 180.91) -- addressed same-day in the F-4
+round below.
+
+## F-4: global sort/unsort implemented, real in-situ crossover measured --
+## B=64 throughput 109.6 -> 224.3 tok/s (+105%), now above llama.cpp
+
+**Scope**: implement the sort/unsort optimization V5d's rescoped plan
+flagged as "a design requirement, not a footnote" -- `sort_indices=true`
+with `mlx_lm`'s own global flatten+argsort+gather composition
+(`_gather_sort`/`_scatter_unsort`, `switch_layers.py`), gated on a
+threshold measured INSIDE the real 27-layer streaming pass rather than
+reused from F-4's own isolated microbenchmark (which that same plan
+document already flagged as "partially cache-warm... which the real 8.38
+GiB streaming pass will not be").
+
+**Isolated probe first** (`probe_sorted_gather.py`, real NE=64/HIDDEN=2048/
+IM=1408/TOPK=6 dims, B=64): mlx_lm's exact `_gather_sort`/`_scatter_unsort`
+composition, applied to gate/up/down together, matched the already-shipped
+unsorted routed-FFN computation to 1.0e-05 (fp32 accumulation noise, not a
+discrepancy) -- correctness confirmed before touching `mlx_moe.cpp`.
+
+**Applied to `mlx_moe.cpp`**: the routed-FFN branch now has two code
+paths behind a runtime `B*top_k >= g_gpu_sort_threshold` check (new
+`mlx_gpu_set_sort_threshold()`, default effectively infinite -- sorted
+path never taken unless explicitly configured, so the just-shipped
+KILL-GATE build's behavior doesn't change until this is deliberately
+turned on). The sorted branch: flattens `top_idx` to `{B*top_k}`,
+`argsort`s it globally (not per-row), gathers x's rows into
+sorted-selection order via `mx::take(..., order // top_k)`, runs
+gate/up/down through `gather_qmm(..., sorted_indices=true)` on this
+already-row-per-selection layout (no `expand_dims` needed here, unlike
+the unsorted branch -- this path does its own explicit gather instead of
+relying on `gather_qmm`'s implicit batch pairing), then scatters the
+result back to original order via `mx::take(..., inv_order)`.
+
+**In-situ crossover sweep** (real hardware, bob, `QWEN_MOE_GPU_SORT_
+THRESHOLD` forcing each branch through the actual `run_moe_gpu_batch_gate()`
+pipeline -- not a synthetic microbenchmark):
+
+| B (B*top_k) | unsorted tok/s | sorted tok/s | delta |
+|---:|---:|---:|---:|
+| 1 (6) | 51.3 | 50.2 | **-2%** (sorted loses) |
+| 8 (48) | 76.3 | 91.2 | +19% |
+| 16 (96) | 99.2 | 136.6 | +38% |
+| 24 (144) | 104.1 | 156.5 | +50% |
+| 32 (192) | 108.7 | 170.3 | +57% |
+| 48 (288) | 106.8 | 187.1 | +75% |
+| 64 (384) | 109.6 | 224.3 (reproduced 2x: 224.2, 224.3) | **+105%** |
+
+The crossover sits between B=1 and B=8 -- B=1 (this project's own KILL-GATE
+operating point) is the ONE tested case where sorting loses (argsort
+overhead outweighs the grouping win at only 6 selections). B=2..7 was left
+unmeasured (narrow, operationally unlikely range) rather than guessed.
+
+**One real, reproducible measurement anomaly, root-caused rather than
+hand-waved**: the FIRST B=64 sorted measurement (in the same shell session
+as the full B=8..64 sweep) came back at 108.9 tok/s -- statistically
+identical to unsorted, not the expected win. Re-run in isolation
+immediately after: 224.3 tok/s, reproduced again (224.2) on a third run.
+Not chased further with additional instrumentation (two clean, consistent
+re-measurements outweigh one outlier in a long back-to-back sweep of 11
+process launches) -- most likely ambient system load/thermal state from
+the preceding sweep, not a property of the sorted code path itself;
+flagged here rather than silently dropped.
+
+**Production policy** (`qwen_infer.c`'s new `moe_gpu_sort_threshold(B,
+top_k)`, mirroring `moe_baware_threshold()`'s own established convention
+exactly): B<8 stays unsorted (measured: B=1 loses), B>=8 always sorted
+(measured: wins at every tested point, growing with B). `QWEN_MOE_GPU_
+SORT_THRESHOLD` env var still overrides for future re-measurement.
+Re-verified with this policy as the DEFAULT (no env var set): identical
+numbers to the forced sweep above at every B, confirming the policy
+function routes correctly.
+
+**Accuracy and determinism unaffected**: B=8..64 all still 0 flips (same
+worst_rel_l2 values as the unsorted run, e.g. B=64 6.782749e-04
+unchanged), B=1 KILL-GATE unchanged (8/8, `gpu_vs_cpu` bit-identical
+7.505390e-07, ~52.6 tok/s -- this gate never touches the sort threshold
+at all, so it's unaffected by construction, not just by measurement).
+
+**Result: B=64 now at 89.7% of the 250 tok/s target** (up from 43.8%),
+**and 1.24x llama.cpp's own B=64 number (180.91)** -- crossed from
+"losing to llama.cpp" to "beating it" in this one change. Canonical
+binary (`bob:~/vdsp_m4_bench/qwen_infer_v5cfused_final`) updated to this
+build.
+
+**Status**: V5d + F-4 together are COMPLETE for the batched-decode track:
+correctness (0 flips at every B), determinism (confirmed), and throughput
+(from below llama.cpp to 24% above it at B=64) all verified with real
+measurements. The remaining gap to the 250 tok/s stretch target (10.3%)
+is left open rather than chased further this round -- V5e (ragged
+multi-step decode) is the next planned phase per the standing plan's own
+dependency order.

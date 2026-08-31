@@ -143,6 +143,26 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
                              const float *w_kvaln, const float *w_gate);
 int mlx_gpu_forward_finalize(const float *w_finalnorm, float *logits_out);
 
+// V5d: set the batch size B for subsequent mlx_gpu_layer_step_lazy()/
+// mlx_gpu_forward_finalize() calls. B tokens are LOCKSTEP -- every call processes B
+// sequences that all share the SAME `pos` (this does not hold for V5e's later ragged
+// design). Default B=1, matching every call site before V5d -- omitting this call
+// entirely reproduces the exact single-token behavior this file shipped with when the
+// V5c-fused KILL-GATE first passed. x_in_host becomes B*hidden floats (one row per
+// sequence, row-major) and logits_out becomes B*vocab floats. Bounded to [1,64] to match
+// the CPU/SME2 arm's own MOE_BATCH_MAX ceiling (qwen_infer.c). Returns 1 on success, 0 if
+// MLX is unavailable or B is out of range.
+int mlx_gpu_set_batch(int B);
+
+// F-4/D-sort: gate the routed-FFN's gather_qmm calls onto a global-sort (mlx_lm's
+// _gather_sort/_scatter_unsort) code path when B*top_k >= threshold, instead of the
+// unsorted per-row form. Default threshold is effectively infinite (sorted path never
+// taken) -- callers that never call this get byte-identical behavior to the KILL-GATE
+// build. Pass a real measured crossover (see RESULTS.md's F-4 in-situ sweep) once one
+// exists; there is no compile-time "right" default, this is a runtime-measured value.
+// Returns 1 on success, 0 if MLX is unavailable.
+int mlx_gpu_set_sort_threshold(int threshold);
+
 #ifdef __cplusplus
 }
 #endif

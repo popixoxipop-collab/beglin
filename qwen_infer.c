@@ -7045,6 +7045,273 @@ static int run_moe_gpu_fused_gate(int argc, char **argv) {
     free(x_embed); free(cpu_logits); free(gpu_logits); free(ref_logits);
     return 1;
 }
+
+// D-sort-4: finalized production sort-threshold policy for the GPU batch path.
+// Data-derived from an in-situ B=1/8/16/24/32/48/64 sweep on the REAL 27-layer streaming
+// pass (not the isolated, partially cache-warm gather_qmm microbenchmark F-4's own plan
+// text flagged as unreliable for this exact reason):
+//   B=1  (B*top_k=6):  sorted 50.2 tok/s vs unsorted 51.3 tok/s -- sorted LOSES (-2%)
+//   B=8  (B*top_k=48): sorted 91.2 vs unsorted 76.3 -- sorted wins (+19%)
+//   B=16..64: sorted wins by +38% to +105%, growing with B (see RESULTS.md's F-4 table)
+//   WHY : the crossover sits between B=1 and B=8 -- picking B>=8 (not interpolating into
+//         the untested B=2..7 range) matches this project's own moe_baware_threshold()
+//         convention: an untested point inherits the safer (here: unsorted, i.e. no
+//         behavior change from the KILL-GATE-passing build) neighboring measurement.
+//   COST: B=2..7 stays unsorted even though the real crossover might sit lower -- left
+//         unmeasured rather than guessed; a future sweep of that narrow range could
+//         recover a small additional win but this project's B=1 KILL-GATE and B>=8 batch
+//         gates are the two ranges that actually matter operationally.
+//   EXIT: QWEN_MOE_GPU_SORT_THRESHOLD env var overrides this policy function entirely for
+//         re-measurement; removing this function and its one call site reverts to the
+//         previous "always unsorted" default with no other code changes.
+static int moe_gpu_sort_threshold(int B, int top_k) {
+    if (B < 8) return 2147483647;   // measured: B=1 loses with sorted -- stay unsorted
+    return 0;                        // measured: B>=8 always wins with sorted, by a growing margin
+    (void)top_k;
+}
+
+// V5d: batched B-token GPU decode gate. Verbatim structural mirror of
+// run_moe_gpu_fused_gate() above (Rule 3 -- this project's own established convention,
+// see moe_forward_batch()'s own header comment) rather than a shared helper, so each
+// gate stays independently readable and modifiable. The one real difference: B
+// sequences processed LOCKSTEP at the same `pos` per mlx_gpu_layer_step_lazy() call
+// (mlx_gpu_set_batch(B), a V5d addition to mlx_moe.cpp/mlx_moe.h) instead of B=1.
+//
+// CPU-side ground truth reuses run_moe_batch_verify_mode()'s own real_first_tokens[]
+// workload and its already-cross-verified moe_forward_batch(..., use_gather=1) path
+// (naive vs gather argmax-matched there before this gate ever runs) -- not a new
+// reference, the same one MoE-3c/3e's own accuracy tables are built from, so the GPU
+// accuracy numbers this gate reports sit directly next to those tables per the V5d plan.
+static int run_moe_gpu_batch_gate(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *gate_env = getenv("QWEN_MOE_GPU_BATCH");
+    if (!gate_env || !gate_env[0]) return 0;
+    int B = atoi(gate_env);
+    if (B < 1 || B > MOE_BATCH_MAX) {
+        fprintf(stderr, "FATAL: QWEN_MOE_GPU_BATCH=%d out of [1,%d]\n", B, MOE_BATCH_MAX);
+        exit(1);
+    }
+
+    fprintf(stderr, "[moe gpu batch] QWEN_MOE_GPU_BATCH=%d -- V5d batched fused GPU gate\n", B);
+    if (!mlx_gpu_available()) {
+        fprintf(stderr, "FATAL: QWEN_MOE_GPU_BATCH set but MLX/Metal unavailable\n");
+        exit(1);
+    }
+
+    const char *override = getenv("QWEN_MOE_BASE");
+    const char *dir = (override && override[0]) ? override : ".";
+    char moe_dir[900], path[1024];
+    snprintf(moe_dir, sizeof moe_dir, "%s/weights_moe", dir);
+    snprintf(path, sizeof path, "%s/arch_config_moe.txt", moe_dir);
+
+    MOE_HIDDEN = (int)moe_cfg_get(path,"HIDDEN"); MOE_N_HEADS = (int)moe_cfg_get(path,"N_HEADS");
+    MOE_KV_LORA_RANK = (int)moe_cfg_get(path,"KV_LORA_RANK"); MOE_QK_ROPE_HD = (int)moe_cfg_get(path,"QK_ROPE_HEAD_DIM");
+    MOE_QK_NOPE_HD = (int)moe_cfg_get(path,"QK_NOPE_HEAD_DIM"); MOE_V_HD = (int)moe_cfg_get(path,"V_HEAD_DIM");
+    MOE_Q_HEAD_DIM = MOE_QK_ROPE_HD + MOE_QK_NOPE_HD;
+    MOE_NL = (int)moe_cfg_get(path,"NL"); MOE_FIRST_DENSE_LAYERS = (int)moe_cfg_get(path,"FIRST_DENSE_LAYERS");
+    MOE_N_EXPERTS = (int)moe_cfg_get(path,"N_EXPERTS"); MOE_N_SHARED = (int)moe_cfg_get(path,"N_SHARED");
+    MOE_TOP_K = (int)moe_cfg_get(path,"TOP_K"); MOE_IM_DIM = (int)moe_cfg_get(path,"MOE_IM");
+    MOE_DENSE_IM = (int)moe_cfg_get(path,"DENSE_IM"); MOE_VOCAB = (int)moe_cfg_get(path,"VOCAB");
+    MOE_ROPE_THETA = moe_cfg_get(path,"ROPE_THETA"); MOE_YARN_FACTOR = moe_cfg_get(path,"YARN_FACTOR");
+    MOE_YARN_BETA_FAST = moe_cfg_get(path,"YARN_BETA_FAST"); MOE_YARN_BETA_SLOW = moe_cfg_get(path,"YARN_BETA_SLOW");
+    MOE_YARN_MSCALE = moe_cfg_get(path,"YARN_MSCALE"); MOE_YARN_MSCALE_ALL_DIM = moe_cfg_get(path,"YARN_MSCALE_ALL_DIM");
+    MOE_YARN_ORIG_MAX_POS = moe_cfg_get(path,"YARN_ORIG_MAX_POS");
+    MOE_ATTN_KIND = (int)moe_cfg_get_opt(path,"ATTN_KIND",(double)MOE_ATTN_MLA);
+    MOE_N_KV_HEADS = (int)moe_cfg_get_opt(path,"N_KV_HEADS",(double)MOE_N_HEADS);
+    MOE_HEAD_DIM = (int)moe_cfg_get_opt(path,"HEAD_DIM",(double)MOE_Q_HEAD_DIM);
+    MOE_RMS_EPS = moe_cfg_get_opt(path,"RMS_EPS",1e-6);
+    MOE_NORM_TOPK_PROB = (int)moe_cfg_get_opt(path,"NORM_TOPK_PROB",0.0);
+    MOE_ROPE_STYLE = (int)moe_cfg_get_opt(path,"ROPE_STYLE",(double)MOE_ROPE_TRADITIONAL);
+    moe_cfg_validate();
+    MOE_QDIM     = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_KVA_OUT  = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
+    MOE_KVB_OUT  = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD);
+    MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
+    MOE_SH_IM    = MOE_IM_DIM * MOE_N_SHARED;
+    MOE_KROW = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_VROW = MOE_N_HEADS * MOE_V_HD;
+    MOE_MAX_IN = MOE_HIDDEN;
+    if (MOE_IM_DIM   > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
+    if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
+    if (MOE_DENSE_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_DENSE_IM;
+    MOE_MAX_NG = (MOE_MAX_IN + 63) / 64;
+    MOE_SME2_SLOT_DENSE  = MOE_N_EXPERTS;
+    MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
+    MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2;
+    MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
+    alloc_moe_buffers();
+    moe_init_yarn();
+
+    snprintf(path, sizeof path, "%s/layout_af.txt", moe_dir); moe_load_layout_af(path);
+    snprintf(path, sizeof path, "%s/deepseek_moe_af.bin", moe_dir);
+    long af_bytes; uint8_t *af_blob = moe_mmap_file(path, &af_bytes);
+    snprintf(path, sizeof path, "%s/layout_f32.txt", moe_dir); moe_load_layout_f32(path);
+    snprintf(path, sizeof path, "%s/deepseek_moe_f32.bin", moe_dir);
+    long f32_bytes; g_moe_f32_blob = moe_mmap_file(path, &f32_bytes);
+    moe_resolve_layer_tensors();
+    fprintf(stderr, "[moe gpu batch] af blob %ld bytes, f32 blob %ld bytes, %d layers resolved\n",
+            af_bytes, f32_bytes, MOE_NL);
+
+    MoeAFTensor *t_embed = moe_find_af("model.embed_tokens");
+    MoeAFTensor *t_lmhead = moe_find_af("lm_head");
+    MoeF32Tensor *t_finalnorm = moe_find_f32("model.norm.weight");
+    float *w_finalnorm = (float *)(g_moe_f32_blob + t_finalnorm->off);
+
+    int n_bound = 0;
+    for (int i = 0; i < g_moe_naf; i++) {
+        MoeAFTensor *t = &g_moe_af[i];
+        if (!mlx_gpu_bind_af(af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
+                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+            fprintf(stderr, "FATAL: [moe gpu batch] bind failed for tensor %s\n", t->name);
+            exit(1);
+        }
+        n_bound++;
+    }
+    fprintf(stderr, "[moe gpu batch] bound %d/%d tensors to MLX\n", n_bound, g_moe_naf);
+
+    if (!mlx_gpu_mla_config(MOE_N_HEADS, MOE_Q_HEAD_DIM, MOE_QK_NOPE_HD, MOE_QK_ROPE_HD,
+                            MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
+                            g_moe_yarn_freqs, MOE_RMS_EPS) ||
+        !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
+                               MOE_TOP_K, 64) ||
+        !mlx_gpu_set_batch(B)) {
+        fprintf(stderr, "FATAL: [moe gpu batch] mlx_gpu_*_config/mlx_gpu_set_batch failed\n");
+        exit(1);
+    }
+    // D-sort-4: finalized B-aware policy applied by default (moe_gpu_sort_threshold(),
+    // real in-situ B=1/8/16/24/32/48/64 sweep) -- QWEN_MOE_GPU_SORT_THRESHOLD still
+    // overrides with one manual value for re-measurement, same override convention as
+    // moe_baware_threshold()'s own QWEN_MOE_MARGIN_THRESHOLD.
+    const char *sort_thr_env = getenv("QWEN_MOE_GPU_SORT_THRESHOLD");
+    int sort_thr = sort_thr_env && sort_thr_env[0] ? atoi(sort_thr_env) : moe_gpu_sort_threshold(B, MOE_TOP_K);
+    mlx_gpu_set_sort_threshold(sort_thr);
+    fprintf(stderr, "[moe gpu batch] sort_threshold=%d (B*top_k >= this uses the sorted path; B=%d top_k=%d)\n",
+            sort_thr, B, MOE_TOP_K);
+
+    // Same 64-token real corpus run_moe_batch_verify_mode() uses (P0.2's REAL_TEXTS corpus,
+    // real DeepSeek tokenizer, sliding-window sampling -- not synthetic).
+    static const int real_first_tokens[MOE_BATCH_MAX] = {
+        100000,276,4357,254,3042,254,11,23382,3987,4810,33044,14486,8376,12,21528,54188,
+        12,11,7071,8404,11,100000,13,13,10957,317,8666,10616,5532,3164,64625,7195,
+        457,207,44274,2018,280,895,37548,10165,285,288,13,285,10988,8909,2577,5559,
+        13930,2156,12650,331,245,4941,13,10948,9423,1699,8204,280,100000,56081,895,11
+    };
+    int token_ids[MOE_BATCH_MAX];
+    for (int b = 0; b < B; b++) token_ids[b] = real_first_tokens[b];
+
+    // CPU-side reference: the ALREADY cross-verified gather path (run_moe_batch_verify_mode
+    // checks naive==gather argmax on this exact corpus every time it runs) -- reusing that
+    // trust rather than re-deriving it here.
+    float *cpu_logits = (float *)malloc(sizeof(float) * (size_t)B * MOE_VOCAB);
+    moe_forward_batch(af_blob, t_embed, t_lmhead, w_finalnorm, token_ids, B, cpu_logits, 1);
+
+    float *x_embed_batch = (float *)malloc(sizeof(float) * (size_t)B * MOE_HIDDEN);
+    float *gpu_logits = (float *)malloc(sizeof(float) * (size_t)B * MOE_VOCAB);
+    for (int b = 0; b < B; b++)
+        for (int c = 0; c < MOE_HIDDEN; c++)
+            x_embed_batch[(size_t)b*MOE_HIDDEN + c] = moe_decode_af(af_blob, t_embed, 0, token_ids[b], c);
+
+    // Accuracy gate: B sequences lockstep at pos=0 (V5d's own scope -- see mlx_moe.cpp's
+    // g_fused_K/V header comment on why this is the assumption this whole design rests on).
+    for (int l = 0; l < MOE_NL; l++) {
+        MoeLayerTensors *t = &g_moe_lt[l];
+        float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
+        float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
+        int is_dense = (l < MOE_FIRST_DENSE_LAYERS);
+        float *w_kvaln = (float *)(g_moe_f32_blob + t->kv_a_ln->off);
+        float *w_gate = is_dense ? NULL : (float *)(g_moe_f32_blob + t->gate_w->off);
+        if (!mlx_gpu_layer_step_lazy(l, /*pos=*/0, is_dense, x_embed_batch, w_inln, w_postln, w_kvaln, w_gate)) {
+            fprintf(stderr, "FATAL: [moe gpu batch] mlx_gpu_layer_step_lazy failed at layer %d\n", l);
+            exit(1);
+        }
+    }
+    if (!mlx_gpu_forward_finalize(w_finalnorm, gpu_logits)) {
+        fprintf(stderr, "FATAL: [moe gpu batch] mlx_gpu_forward_finalize failed\n");
+        exit(1);
+    }
+
+    // GPU accuracy table -- directly comparable to MoE-3c/MoE-3e's own CPU tables (0/8, 0/16,
+    // 4/32, 9/64 raw at MoE-3c; 54/64 raw at B=64, MoE-3e). Measured, not assumed.
+    int argmax_match = 0, n_flipped = 0;
+    double worst_rel_l2 = 0.0;
+    for (int b = 0; b < B; b++) {
+        float *lg = gpu_logits + (size_t)b*MOE_VOCAB, *lc = cpu_logits + (size_t)b*MOE_VOCAB;
+        int am_g = 0; float bm_g = lg[0];
+        int am_c = 0; float bm_c = lc[0];
+        double sse = 0.0, ssref = 0.0;
+        for (int v = 0; v < MOE_VOCAB; v++) {
+            if (lg[v] > bm_g) { bm_g = lg[v]; am_g = v; }
+            if (lc[v] > bm_c) { bm_c = lc[v]; am_c = v; }
+            double d = (double)lg[v] - (double)lc[v];
+            sse += d*d; ssref += (double)lc[v]*(double)lc[v];
+        }
+        double rel = ssref > 0 ? sqrt(sse/ssref) : (sse == 0 ? 0.0 : 1.0);
+        if (rel > worst_rel_l2) worst_rel_l2 = rel;
+        int match = (am_g == am_c);
+        if (match) argmax_match++; else n_flipped++;
+        fprintf(stderr, "[moe gpu batch] slot %2d token %6d: cpu_argmax=%d gpu_argmax=%d rel_l2=%.6e %s\n",
+                b, token_ids[b], am_c, am_g, rel, match ? "[MATCH]" : "[FLIP]");
+    }
+    fprintf(stderr, "[moe gpu batch] ACCURACY TABLE: B=%d flipped=%d/%d (cf. MoE-3c/3e's own CPU "
+                    "tables) worst_rel_l2=%.6e\n", B, n_flipped, B, worst_rel_l2);
+
+    // Throughput: repeated STEPS at increasing `pos` (K/V history genuinely grows, same
+    // realism principle as run_moe_gpu_fused_gate()'s own prompt_ids-cycling loop), B
+    // sequences lockstep per step. tok/s = B * measured_steps / wall.
+    int warmup_steps = 4, measure_steps = 16;
+    for (int i = 0; i < warmup_steps; i++) {
+        int pos = 1 + i;
+        if (pos >= 32) break;   // 32 = mlx_moe.cpp's MLA_L0_MAXPOS, this process's cache ceiling
+        for (int b = 0; b < B; b++) {
+            int tok = real_first_tokens[(b + i) % MOE_BATCH_MAX];
+            for (int c = 0; c < MOE_HIDDEN; c++)
+                x_embed_batch[(size_t)b*MOE_HIDDEN + c] = moe_decode_af(af_blob, t_embed, 0, tok, c);
+        }
+        for (int l = 0; l < MOE_NL; l++) {
+            MoeLayerTensors *t = &g_moe_lt[l];
+            float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
+            float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
+            int is_dense = (l < MOE_FIRST_DENSE_LAYERS);
+            float *w_kvaln = (float *)(g_moe_f32_blob + t->kv_a_ln->off);
+            float *w_gate = is_dense ? NULL : (float *)(g_moe_f32_blob + t->gate_w->off);
+            mlx_gpu_layer_step_lazy(l, pos, is_dense, x_embed_batch, w_inln, w_postln, w_kvaln, w_gate);
+        }
+        mlx_gpu_forward_finalize(w_finalnorm, gpu_logits);
+    }
+    double kg_t0 = nowt();
+    int steps_done = 0;
+    for (int i = 0; i < measure_steps; i++) {
+        int pos = 1 + warmup_steps + i;
+        if (pos >= 32) break;   // 32 = mlx_moe.cpp's MLA_L0_MAXPOS, this process's cache ceiling
+        for (int b = 0; b < B; b++) {
+            int tok = real_first_tokens[(b + warmup_steps + i) % MOE_BATCH_MAX];
+            for (int c = 0; c < MOE_HIDDEN; c++)
+                x_embed_batch[(size_t)b*MOE_HIDDEN + c] = moe_decode_af(af_blob, t_embed, 0, tok, c);
+        }
+        for (int l = 0; l < MOE_NL; l++) {
+            MoeLayerTensors *t = &g_moe_lt[l];
+            float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
+            float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
+            int is_dense = (l < MOE_FIRST_DENSE_LAYERS);
+            float *w_kvaln = (float *)(g_moe_f32_blob + t->kv_a_ln->off);
+            float *w_gate = is_dense ? NULL : (float *)(g_moe_f32_blob + t->gate_w->off);
+            mlx_gpu_layer_step_lazy(l, pos, is_dense, x_embed_batch, w_inln, w_postln, w_kvaln, w_gate);
+        }
+        mlx_gpu_forward_finalize(w_finalnorm, gpu_logits);
+        steps_done++;
+    }
+    double kg_t1 = nowt();
+    double toksec = (double)B * steps_done / (kg_t1 - kg_t0);
+    fprintf(stderr, "[moe gpu batch] THROUGHPUT: B=%d, %d steps warm-up (excluded), %d steps "
+                    "measured, %.3fs wall, %.3f tok/s aggregate (target >=250 tok/s at B=64, "
+                    "1.38x llama.cpp's measured 180.91)\n",
+            B, warmup_steps, steps_done, kg_t1 - kg_t0, toksec);
+
+    fprintf(stderr, "RESULT: MoE GPU V5d batched fused gate complete, B=%d\n", B);
+    free(x_embed_batch); free(cpu_logits); free(gpu_logits);
+    return 1;
+}
+
 #endif // QWEN_GPU_MLX
 
 static int run_moe_verify_mode(int argc, char **argv) {
@@ -9014,6 +9281,8 @@ int main(int argc, char **argv) {
     if (run_moe_gpu_full_gate(argc, argv)) return 0;
     // V5c-fused: same reasoning, QWEN_MOE_GPU_FUSED is its own independent env var.
     if (run_moe_gpu_fused_gate(argc, argv)) return 0;
+    // V5d: same reasoning, QWEN_MOE_GPU_BATCH is its own independent env var.
+    if (run_moe_gpu_batch_gate(argc, argv)) return 0;
 #endif
     if (run_gguf_moe_verify_mode(argc, argv)) return 0;
     if (run_moe_safetensors_verify_mode(argc, argv)) return 0;
