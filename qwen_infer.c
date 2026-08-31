@@ -2435,6 +2435,26 @@ static MoeAFTensor *moe_find_af(const char *name) {
     for (int i = 0; i < g_moe_naf; i++) if (!strcmp(g_moe_af[i].name, name)) return &g_moe_af[i];
     fprintf(stderr, "FATAL: moe af tensor not found: %s\n", name); exit(1);
 }
+// Q-LUT research spike (RESULTS.md's TurboQuant-adjacent PolarQuant/Lloyd-Max writeup):
+// off by default (g_moe_lut_enabled==0 keeps moe_lut_apply()==(float)nib, i.e. every existing
+// call site's arithmetic is byte-identical to before this existed). QWEN_MOE_LUT_TEST=1 (see
+// run_moe_lut_gate() below) flips this on to test a SINGLE model-wide fixed non-uniform decode
+// table (fit once, offline, on real DeepSeek-V2-Lite-Chat weights disjoint from this gate's own
+// 8-position forward pass) in place of affine's uniform code/15 spacing -- same per-group
+// scale+bias, same packed-nibble bytes, only the decode LUT changes.
+static int g_moe_lut_enabled = 0;
+static const float g_moe_lut4[16] = {
+    0.2138f, 1.5980f, 2.7263f, 3.7191f, 4.6300f, 5.4868f, 6.3074f, 7.1074f,
+    7.8975f, 8.6968f, 9.5149f, 10.3663f, 11.2735f, 12.2693f, 13.4003f, 14.7780f
+};
+static const float g_moe_lut3[8] = {
+    0.4240f, 1.5448f, 2.3957f, 3.1434f, 3.8663f, 4.6180f, 5.4646f, 6.5837f
+};
+static inline float moe_lut_apply(int nib, int bits) {
+    if (!g_moe_lut_enabled) return (float)nib;
+    return (bits == 3) ? g_moe_lut3[nib] : g_moe_lut4[nib];
+}
+
 static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row, long col) {
     // 4.C bridge: a GGUF-sourced tensor carries its own buffer (t->base); every AF-blob-sourced
     // tensor (t->base==NULL) uses the shared blob exactly as before -- see MoeAFTensor's comment.
@@ -2486,7 +2506,7 @@ static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row
     long bias_idx = t->bias_off + ((e * t->out + row) * t->ng + group) * 4;
     float bias;
     memcpy(&bias, base + bias_idx, 4);
-    return (float)nib * scale + bias;
+    return moe_lut_apply(nib, bits) * scale + bias;
 }
 
 // Phase MoE-4c throughput optimization (task#102 follow-up, "다 해봐" pass): moe_decode_af()
@@ -2556,7 +2576,7 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
             long byte_idx = t->packed_off + eoff + (row * row_words + word_idx) * 4 + byte_in_word;
             uint8_t byte = base[byte_idx];
             int nib = (col % 2 == 0) ? (byte & 0xF) : ((byte >> 4) & 0xF);
-            float w = t->sym ? ((float)nib - 8.0f) * scale : (float)nib * scale + bias;
+            float w = t->sym ? ((float)nib - 8.0f) * scale : moe_lut_apply(nib, bits) * scale + bias;
             acc += (double)w * x[col];
         }
     }
@@ -7031,6 +7051,10 @@ static int run_moe_verify_mode(int argc, char **argv) {
     (void)argc; (void)argv;   // unlike moe2b_verify.c, argv[1] here is the GQA MODE string
                               // (e.g. "greedy"), not a directory -- only QWEN_MOE_BASE selects
                               // the MoE weights dir, defaulting to "." (cwd) when unset.
+    // Q-LUT gate: QWEN_MOE_LUT_TEST=1 flips g_moe_lut_enabled before anything else runs, so the
+    // whole rest of this function (loader, moe_forward_token(), output files) is untouched --
+    // absent (the default), byte-identical to before this existed.
+    if (getenv("QWEN_MOE_LUT_TEST")) g_moe_lut_enabled = 1;
     const char *override = getenv("QWEN_MOE_BASE");
     const char *dir = (override && override[0]) ? override : ".";
     char path[1024];
