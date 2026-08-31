@@ -1603,3 +1603,29 @@ VERIFIED (56/56)".
 배치우위가 이 워크로드에서 최선의 케이스로 발휘를 못 함. 남은
 격차 대부분이 거기 있을 것으로 판단(확정 아님). **V5f 완료**.
 상세: `RESULTS.md` §"V5f: CPU vs GPU A/B, matched workload".
+
+**V5g(재스코프 후 완료, 진짜 batched-causal prefill)**: mlx_moe.cpp/h
+변경 전혀 없이(신규 primitive/probe 0건) — `mlx_gpu_cbatch_layer_step_
+lazy()`의 기존 per-row causal mask(row m이 j<=spos[m] 참조)가 spos[m]=
+그 row 자신의 시퀀스내 위치일 때 이미 정확한 하삼각 causal mask임을
+재도출, A=45(8슬롯 전체 prompt 위치 합)로 한 번에 배치 prefill 실행.
+`run_moe_gpu_cbatch_prefill_gate()`(`QWEN_MOE_GPU_CBATCH_PREFILL=1`)
+신규 추가, 기존 `run_moe_gpu_cbatch_gate()`는 그대로 보존(V5f 기준
+재현성 유지, Rule 3).
+**첫 실측에서 정확도는 즉시 56/56이었지만 처리량이 V5f와 거의
+동일(11.15~11.97)해서 "무의미한 변화"처럼 보였음** — 추측으로
+넘어가지 않고 prefill 스텝만 별도 계측 → **A=45 dispatch 단독이
+7407ms(전체 8600ms의 86%)**, decode 12스텝(57토큰)은 겨우 1192ms.
+근본원인: 이 프로세스가 A=45 shape을 처음 만나면서 MLX/Metal JIT
+컴파일 비용을 지불 중 — 기존 `run_moe_gpu_batch_gate()`가 이미
+`warmup_steps=4`로 방어하던 바로 그 부류의 비용을 이 신규 게이트만
+빠뜨렸던 것. warmup pass(같은 A=45, 미계측, 버림) 추가 후 재측정 →
+**prefill 단독 7407ms→421.80ms(17.6배 감소)**, 가설을 직접 실험으로
+확정. **최종(warm, 4회): 평균 86.517 tok/s**(81.99~93.88) — **V5f GPU
+기준(11.866) 대비 7.3배, CPU(2.771) 대비 ~31배**, V5f가 예측한 격차의
+거의 전부를 회수. decode 스케줄도 이제 CPU 레퍼런스와 완전히 동일
+(`8,8,8,7,6,5,4,4,3,2,1,1`, 8슬롯이 동시에 decode 진입하므로).
+정확도 56/56 warmup 전후 모두 확정 유지(warmup의 K/V 오염은 실제
+prefill의 동일 좌표 덮어쓰기로 자동 해소되는 설계). V5a~g 표준계획
+전체 COMPLETE.
+상세: `RESULTS.md` §"V5g: true batched-causal prefill".

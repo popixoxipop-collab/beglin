@@ -4367,3 +4367,103 @@ CPU vs GPU, same engine, same workload, 3x each, GPU wins ~4.3x with
 the reason for the modest (vs V5d's 224.3 tok/s) margin explicitly
 understood and documented, not hand-waved. True batched-causal prefill
 remains the one open item on the standing plan's own dependency chain.
+
+## V5g: true batched-causal prefill -- 56/56 correct, ~86.5 tok/s (7.3x
+## over V5f's own GPU baseline, ~31x over CPU), root-caused a hidden
+## JIT-warmup artifact that had almost buried the whole result
+
+V5f's own gap analysis named the exact mechanism this closes: V5e's
+ragged design pays one full MLX eval-graph dispatch per prefill
+POSITION (45 dispatches for this workload), the same cost-shape as a
+decode step, instead of processing a whole prompt's positions in ONE
+masked dispatch. **Zero changes to `mlx_moe.cpp`/`mlx_moe.h` were
+needed** -- `mlx_gpu_cbatch_layer_step_lazy()`'s existing per-row causal
+mask (row `m` attends to `j<=spos[m]`) already produces a correct
+lower-triangular mask for any set of rows from ONE sequence, as long as
+each row's own `spos` equals its own position within that sequence.
+This was re-derived from the already-verified V5e mechanism, not
+assumed, and needed no new isolated probe -- same scatter/take/mask/
+rope primitives V5e's own probes already covered, just called with
+`A = sum(prompt_len[s])` across all 8 slots instead of one row per
+slot.
+
+**`qwen_infer.c`**: new `run_moe_gpu_cbatch_prefill_gate()`
+(`QWEN_MOE_GPU_CBATCH_PREFILL=1`), a Rule-3 structural mirror of
+`run_moe_gpu_cbatch_gate()` (that gate stays untouched -- its own V5f
+baseline must stay reproducible). One combined batched-causal prefill
+step (`A=45`, every slot's every prompt position in ONE dispatch per
+layer) replaces V5e's ~8 sequential per-position "prefilling" steps;
+the decode loop after it is byte-for-byte the same code as V5e's own
+(still genuinely autoregressive, no batching shortcut exists there).
+
+**First real run: 56/56 accuracy (correct immediately), but throughput
+looked like a wash** -- 11.151-11.974 tok/s across 4 runs, essentially
+identical to V5f's own 11.866 tok/s baseline. Rather than accept "no
+speedup" at face value, isolated the prefill step's own wall time with
+extra `clock_gettime()` instrumentation: **the ONE prefill dispatch
+alone took 7407ms out of an 8600ms total run -- 86% of the entire
+gate's wall time**, while the 12 decode steps (57 tokens) took only
+~1192ms (47.8 tok/s). A single A=45 dispatch costing MUCH more than the
+sum of many smaller ones pointed at a one-time cost tied to touching a
+brand-new shape, not steady-state compute.
+
+**Root cause, confirmed by direct experiment, not assumed**: this
+process had never exercised the `A=45` shape before -- MLX/Metal
+likely JIT-compiles kernels specific to a shape the first time it's
+used, exactly the class of overhead `run_moe_gpu_batch_gate()` already
+guards against with its own `warmup_steps=4` (a convention this new
+gate had missed copying). Added an untimed warmup pass -- the exact
+same `A=45` shape, run once and discarded before the clock starts (safe
+because the REAL pass's own scatter immediately overwrites the
+warmup's bogus K/V at the identical `(slot,pos)` coordinates). Result:
+**the isolated prefill step dropped from 7407ms to 421.80ms -- a 17.6x
+reduction** -- confirming the JIT/cold-shape hypothesis directly rather
+than leaving it as a plausible story.
+
+**Final numbers, 4 warm runs** (`QWEN_MOE_BASE=~/moe_base_deepseek
+QWEN_MOE_GPU_CBATCH_PREFILL=1 ./qwen_infer_v5g`, all 56/56):
+| run | prefill alone | total (13 steps) | tok/s (102 tok) |
+|---|---|---|---|
+| 1 | 421.80ms | 1195.46ms | 85.323 |
+| 2 | 314.53ms | 1086.52ms | 93.878 |
+| 3 | 465.83ms | 1244.01ms | 81.993 |
+| 4 | 418.64ms | 1201.79ms | 84.873 |
+
+**avg 86.517 tok/s** (range 81.99-93.88, ~14% spread -- a larger
+relative spread than V5f's own ~8%, expected given the much shorter
+absolute run time now amplifies the same noise floor). Decode's own
+schedule (`8,8,8,7,6,5,4,4,3,2,1,1`) now matches the CPU reference's
+literal sequence exactly, unlike V5e's own staggered `n_decoding`
+sub-counts -- a direct consequence of every slot now starting decode
+simultaneously (all 8 finish their one shared prefill dispatch
+together), a nice independent sanity check that the decode loop itself
+is genuinely unchanged.
+
+**Against V5f's own controlled baselines**: GPU 11.866 -> 86.517 tok/s,
+**a 7.3x improvement from batching prefill alone** (nothing else
+changed -- same decode loop, same K/V mechanism, same MLX primitives).
+Against CPU's own 2.771 tok/s average: **~31x**, closing almost the
+entire gap V5f's own analysis predicted would live here. This still
+sits below V5d/F-4's pure-decode lockstep B=64 number (224.3 tok/s),
+but that number measures a structurally different workload (fixed
+B=64, no ragged eviction, no mixed prefill+decode) -- not a discrepancy
+requiring further explanation, an apples-to-oranges comparison already
+flagged as such in V5f's own writeup.
+
+**Why this matters beyond the raw number**: the warmup-vs-cold gap
+(7407ms vs 421.80ms for the identical dispatch) is itself a real,
+reusable finding for this whole GPU track -- V5d/e/f's own gates likely
+carry SOME amount of this same cold-shape cost buried in their own
+first-touched steps too (smaller in absolute terms there, since their
+shapes were all `A<=8`, but not necessarily zero). Any future gate that
+introduces a genuinely new shape should add an explicit warmup pass
+before timing, matching `run_moe_gpu_batch_gate()`'s own convention --
+this was the one established pattern this new gate initially missed
+copying, and skipping it would have shipped a badly misleading
+"no speedup" conclusion for a change that was actually a 7.3x win.
+
+**Status**: V5g is COMPLETE -- true batched-causal prefill implemented
+with zero new MLX primitives, correctness unchanged (56/56), and a
+real, root-caused, reproducible 7.3x throughput improvement over V5f's
+own controlled GPU baseline. This was the last item on the standing
+plan's dependency chain (V5a through V5g) that was still open.
