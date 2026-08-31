@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-08-31T15:00:00.000Z
+  modified: 2026-08-31T16:30:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -1721,3 +1721,62 @@ GPU가 CPU와 가까운 정도가 아니라 **실모델 MLX 출력 자체를 CPU
 라운드 스코프.
 상세: `RESULTS.md` §"V5i: GQA (Grouped Query Attention) model
 generalization on the GPU path".
+
+**V5j(완료, GQA 멀티레이어 전체모델 GPU forward — V5i의 V5c급 후속)**:
+"다음은?" 질문에 사용자가 "멀티레이어로 확장" 확정 — MLA 트랙의
+V5b(layer-0)→V5c(27레이어+kill-gate) 패턴 그대로. 리서치(Explore
+3개+Plan검증 1개 병렬)로 예상보다 작은 스코프 확인: CPU는 이미 검증된
+generic 멀티레이어 OLMoE forward(`run_moe_safetensors_verify_mode()`)
+보유, GPU 포스트어텐션 블록(라우터/switch_mlp/shared_experts/residual)은
+`g_mla_*` 참조 0건으로 verbatim 재사용 확인, MLX primitive 전부 B=1
+라운드에서 이미 검증됨 — 신규 필요한 건 풀 export+실 reference
+capture+lazy-graph GQA broadcast뿐.
+
+**Phase C(export+CPU검증)**: C1 — `MOE_QKNORM_WHOLE_VECTOR`를
+arch_config_moe.txt 기반 8개 config loader 전부에 추가(순수 additive,
+기존 DeepSeek kill-gate 8/8 argmax·동일 rel_l2·52.244 tok/s로
+byte-identical 재확인). C2 — `mlx_olmoe_full_to_q4g64af.py`(DeepSeek
+exporter fork, GQA attention tensors+역양자화 라우터+fp32-upcast fix,
+dense/shared_experts 브랜치 없음) — **첫 실행에서 진짜 버그**:
+`post_attention_layernorm.weight`를 통째로 빠뜨려 FATAL, 확인 후 수정
+재실행(4.323GB AF/8.92MB F32, 114/81 텐서, 공식과 정확히 일치). C3 —
+`olmoe_reference_capture.py`, 실 텍스트 13토큰 teacher-forced. C4 —
+`run_moe_verify_mode()`(신규 C코드 불필요) 대비 **13/13 argmax
+일치**, worst rel_l2 1.106e-02.
+
+**Phase D(GPU 멀티레이어+검증)**: D1 — B=1 eager GQA의 head-broadcast가
+host-side memcpy라 lazy 그래프에 그대로 이식하면 host round-trip 강제
+(MLA의 Bug1/3과 같은 부류) → device-side reshape+broadcast_to+reshape
+메커니즘을 synthetic group=4에서 검증, **max_abs_diff=0.0**. D2-D4 —
+`g_fused_gqa_K/V`(GQA 전용 캐시)+`ensure_fused_gqa_kv_init()`, 신규
+`mlx_gpu_gqa_layer_step_lazy()`(D1 검증된 broadcast+기존 post-attention
+블록 verbatim 재사용), `mlx_gpu_gqa_forward_finalize()`(계획단계에서
+미리 발견한 g_mla_rms_eps 네이밍누수를 실버그로 만나기 전에 수정).
+D5 — `run_moe_gpu_gqa_fused_gate()`(`run_moe_gpu_fused_gate()`엔 없는
+GQA-aware KROW/VROW 분기 포함) — **GPU vs 실 MLX ground truth 13/13
+argmax, rel_l2 5.049e-03~1.106e-02**, CPU 자체 정밀도 대역과 거의 동일.
+
+**원인규명하다 만 진짜 이상현상(얼버무리지 않고 기록)**: 이 인터리브드
+드라이버 내부에서 계산된 CPU logits가 C4의 깨끗한 standalone 출력과
+diverge — position 0은 byte-identical(rel_l2가 C4의 pos0 값과 정확히
+일치)이지만 position 1부터 divergence가 커짐(최대 26%, argmax flip
+2건). **가설 2개 반증**: (1) 일반 CPU 비결정성 — 반증(C4 standalone
+2회 `cmp` byte-identical), (2) GPU/CPU 타이밍 중첩에 의한 64스레드풀
+race — 반증(`QWEN_MOE_SCALAR_THREADS=1` 강제해도 완전히 동일한
+divergent 수치 재현), (3) `routing_out=NULL` 부작용 — 반증(소스 확인,
+진단용 fprintf 전용, 계산에 영향 없음). position0-clean/position1-부터
+오염 패턴은 CPU의 K/V 히스토리 배열이 position0 write와 position1
+read 사이 뭔가에 영향받는다는 뜻이지만, 이번 라운드 신규 코드의 어떤
+포인터도 그 배열과 aliasing되는 지점을 찾지 못함 — **근본원인 이번
+라운드 예산 내 미확정**. 라운드의 주요 정확성 주장(GPU vs 실 MLX
+truth)에는 영향 없음(C4 standalone과 D5 GPU-vs-truth 양쪽에서 독립
+확인됨) — 다음에 인터리브드 CPU+GPU GQA 호출을 건드릴 사람을 위한
+후속조사 항목으로 명시.
+
+**처리량**(관측치만, 외부 baseline 주장 없음 — bob에 llama.cpp OLMoE
+지원은 이미 컴파일돼있지만 이 프로젝트에서 벤치마크된 적 없음): 3회
+107.061/106.824/106.914 tok/s(평균 106.93, ~0.1% 편차 — 정확도 수치의
+완전한 재현성과 마찬가지로 타이트함). **V5j COMPLETE**. batched/ragged/
+online GQA(V5d-h급), 실 llama.cpp 기준선, 위 CPU cross-check 이상현상
+근본원인규명 전부 다음 라운드 오픈 항목.
+상세: `RESULTS.md` §"V5j: full multi-layer GQA GPU forward (OLMoE)".

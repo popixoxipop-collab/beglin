@@ -217,6 +217,22 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
                                     const float *w_gate);
 int mlx_gpu_cbatch_forward_finalize(const float *w_finalnorm, float *logits_out);
 
+// V5j: GQA full multi-layer lazy forward -- the GQA-equivalent of
+// mlx_gpu_layer_step_lazy()/mlx_gpu_forward_finalize() above. A deliberately
+// separate pair of functions (not a runtime branch inside the MLA lazy
+// path), matching mlx_gpu_gqa_layer0()'s own precedent. Call
+// mlx_gpu_gqa_layer_step_lazy() once per layer (l=0..NL-1) for the SAME
+// token/pos, exactly like mlx_gpu_layer_step_lazy() -- x_in_host is only
+// read on l==0. w_qnorm/w_knorm are the WHOLE pre-reshape-shaped RMSNorm
+// weights (OLMoE's own convention, same as mlx_gpu_gqa_layer0()'s own
+// parameters). After all layers, call mlx_gpu_gqa_forward_finalize() once.
+// Returns 1 on success, 0 on failure (aborts pending state on failure --
+// next l==0 call starts fresh, same contract as the MLA lazy pair).
+int mlx_gpu_gqa_layer_step_lazy(int l, int pos, int is_dense,
+                                 const float *x_in_host, const float *w_inln, const float *w_postln,
+                                 const float *w_qnorm, const float *w_knorm, const float *w_gate);
+int mlx_gpu_gqa_forward_finalize(const float *w_finalnorm, float *logits_out);
+
 #ifdef __cplusplus
 }
 #endif

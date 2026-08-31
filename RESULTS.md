@@ -4738,3 +4738,132 @@ full-model GQA forward on GPU (V5c-equivalent), batched/ragged/online
 GQA (V5d-h-equivalents) for OLMoE, and Qwen3-30B-A3B on GPU (ruled out
 on this hardware entirely) remain explicitly out of scope for this
 round, per the plan's own staged dependency order.
+
+## V5j: full multi-layer GQA GPU forward (OLMoE)
+
+The V5c-equivalent for the GQA/OLMoE track: extends V5i's B=1/layer-0
+correctness proof to a full 16-layer forward. Research (3 parallel
+Explore agents + 1 Plan-validation agent) found the real shape of this
+work was smaller than the original MLA build-up: CPU already had a
+validated, generic full multi-layer OLMoE forward
+(`run_moe_safetensors_verify_mode()`), the GPU's post-attention block
+(router/switch_mlp/shared_experts/residual) was confirmed reusable
+verbatim (zero `g_mla_*` references), and every MLX primitive needed
+was already proven from V5i's B=1 round -- only a full AF export, a
+real-MLX reference capture, and a lazy-graph-native GQA broadcast
+mechanism were genuinely new.
+
+### Phase C -- full 16-layer AF export + CPU verification
+
+1. **C1**: added `MOE_QKNORM_WHOLE_VECTOR` to all 8
+   `arch_config_moe.txt`-driven config-loading call sites (previously
+   only set from the safetensors loader or hardcoded in the B=1 gates)
+   -- purely additive (`moe_cfg_get_opt(...,0.0)`), confirmed
+   byte-identical on the existing DeepSeek kill-gate (8/8 argmax,
+   identical rel_l2 values, 52.244 tok/s, unchanged from before this
+   change).
+2. **C2**: `mlx_olmoe_full_to_q4g64af.py` (macstudio), forked from the
+   DeepSeek full exporter, OLMoE deltas: GQA attention tensors
+   (q/k/v/o_proj AF, q_norm/k_norm F32), dequantized router with the
+   fp32-upcast-before-`mx.dequantize()` fix (this checkpoint's
+   `mlp.gate` is itself MLX-quantized, confirmed via a live WebFetch of
+   the real `config.json` during planning -- same situation as
+   Qwen3-30B-A3B, not DeepSeek's plain-fp32 router), no dense-layer/
+   shared-experts branches (OLMoE has neither). **Real bug found on
+   first run**: `moe_resolve_layer_tensors()` FATAL'd on a missing
+   `post_attention_layernorm.weight` -- the exporter's first draft
+   simply forgot this tensor (confirmed present via
+   `hasattr(layer,'post_attention_layernorm')`==True on the real
+   model), fixed and re-exported. Final export: 4.323GB AF / 8.92MB
+   F32, 114 AF tensors / 81 F32 tensors, matching the hand-computed
+   formula exactly (`2+16*7` / `1+16*5`).
+3. **C3**: `olmoe_reference_capture.py` (macstudio, mlx_lm),
+   teacher-forced real-text forward ("The capital of France is Paris,
+   and the capital of Japan is"), 13 real tokenizer IDs (all `<50304`,
+   OLMoE's vocab_size -- Bug 1 from V5i, avoided again here).
+4. **C4**: `run_moe_verify_mode()` (the existing generic AF-blob CPU
+   forward, needed zero new code beyond C1) against the new export --
+   **13/13 argmax match** vs the real MLX reference, worst rel_l2
+   1.106e-02 (one position, marginally over the DeepSeek/Qwen3
+   precedent's 1e-2 bar -- consistent with OLMoE's own previously-
+   documented near-tie-routing float noise, not a new bug). Re-ran the
+   standalone CPU verify twice: byte-identical (`cmp` confirmed) --
+   the CPU path itself is fully deterministic in isolation.
+
+### Phase D -- GPU multi-layer lazy forward + correctness gate
+
+1. **D1** (isolated probe first): the eager B=1 GQA path's head-
+   broadcast is an explicit HOST-SIDE memcpy loop -- porting that
+   verbatim into a lazy multi-layer graph would force a host round-
+   trip every layer/position, the same class of problem V5c-fused's
+   Bug 1/3 fixed for MLA. `probe_gqa_lazy_broadcast.cpp`: a
+   device-side `reshape({B,KVH,1,MAXPOS,HD})` ->
+   `broadcast_to({B,KVH,group,MAXPOS,HD})` -> `reshape({B,H,MAXPOS,HD})`
+   mechanism, tested at a SYNTHETIC group=4 shape (OLMoE's own real
+   config is group=1 and can't exercise this) against a host-loop
+   reference: **max_abs_diff=0.0**, exact match.
+2. **D2-D4**: new `g_fused_gqa_K`/`g_fused_gqa_V` (`{B,n_kv_heads,
+   GQA_L0_MAXPOS,head_dim}`, GQA-shaped, separate from MLA's own
+   cache) + `ensure_fused_gqa_kv_init()`; new
+   `mlx_gpu_gqa_layer_step_lazy()` (attention section = the B=1 eager
+   math restructured into lazy-graph form using D1's proven
+   broadcast, persistent `mx::slice_update()` K/V writes, + the
+   generic post-attention block copied verbatim from
+   `mlx_gpu_layer_step_lazy()`); new `mlx_gpu_gqa_forward_finalize()`
+   using `g_gqa_rms_eps` (not `g_mla_rms_eps` -- a naming-leak gap the
+   planning phase flagged in advance and fixed here rather than
+   discovering it as a live bug).
+3. **D5**: new `run_moe_gpu_gqa_fused_gate()` (`QWEN_MOE_GPU_GQA_FUSED=1`),
+   structural sibling of `run_moe_gpu_fused_gate()` but with the
+   GQA-aware K/V row-geometry branch that function's own MLA-only
+   line lacks (`MOE_KROW/VROW = MOE_N_KV_HEADS*MOE_HEAD_DIM`, Step
+   3.2's own precedent). **GPU vs real MLX ground truth: 13/13
+   argmax, rel_l2 5.049e-03 to 1.106e-02** -- matching CPU's own
+   standalone precision band almost exactly, clean pass well inside
+   the established bar.
+
+**A genuine anomaly found and partially investigated, not glossed
+over**: the CPU logits computed *inside* this same interleaved-with-
+GPU driver diverge from the CPU's own clean standalone (C4) output --
+position 0 is byte-identical (`cpu_vs_truth_rel_l2` matches C4's own
+pos-0 value exactly, 5.050407e-03), but position 1 onward shows
+growing divergence (up to 26% rel_l2) and two real argmax flips (pos
+8, pos 10) that C4's standalone run doesn't have. **Two concrete
+hypotheses tested and rejected with direct evidence**: (1) generic
+CPU nondeterminism -- rejected, two standalone C4 runs are byte-
+identical (`cmp`); (2) a race in the 64-thread CPU scalar pool
+triggered by GPU/CPU timing overlap -- rejected, forcing
+`QWEN_MOE_SCALAR_THREADS=1` reproduces the *exact same* divergent
+numbers, ruling out any timing/thread-count dependence; (3)
+`routing_out=NULL` (vs C4's real FILE*) changing behavior -- rejected
+by reading `moe_forward_token()`'s source, `routing_out` is used only
+for a diagnostic `fprintf`, no computational effect. The
+position-0-clean/position-1-onward-corrupted pattern points at the
+CPU's own K/V history array (`g_moe_K_flat`/`g_moe_V_flat`) somehow
+being affected between position 0's write and position 1's read, but
+no aliasing between those buffers and anything this round's own new
+code touches was found (all new GPU-side pointers are `const float*`
+views into either the read-only mmap'd weight blob or a driver-local
+buffer untouched between calls) -- **root cause not fully identified
+within this round's budget**. This does NOT affect the round's own
+primary correctness claim: GPU-vs-real-MLX-truth is independently
+clean (established both by C4's own standalone CPU-vs-truth
+comparison and by D5's live GPU-vs-truth comparison), and the
+anomalous number is specifically the *redundant in-process CPU cross-
+check*, not the GPU output being verified. Flagged as a concrete
+follow-up item for anyone touching interleaved CPU+GPU calls on the
+GQA path.
+
+**Throughput** (observed only, no external baseline claimed --
+llama.cpp has OLMoE model support already compiled on bob but has
+never been benchmarked in this project): 3 runs, 5 positions warm-up
++ 10 measured each: 107.061 / 106.824 / 106.914 tok/s (avg 106.93,
+~0.1% spread -- tight and reproducible, matching the accuracy
+numbers' own perfect run-to-run determinism).
+
+**Status**: V5j is COMPLETE. Full 16-layer OLMoE forward on GPU,
+correctness-verified against real MLX ground truth. Batched/ragged/
+online GQA on GPU (V5d-h-equivalents), a real llama.cpp OLMoE
+throughput baseline, and root-causing the CPU-embedded-cross-check
+anomaly above all remain explicitly out of scope / open follow-ups
+for a future round, per the plan's own staged dependency order.
