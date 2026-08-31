@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-09-01T00:35:00.000Z
+  modified: 2026-09-01T01:20:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -1890,3 +1890,21 @@ admitted_after_evict=16/queue_wait_events=16/queue_wait_max_steps=31
 CPU/GPU × GQA/MLA 매트릭스 완결**. 남은 공통갭: `load_ids()` 입력검증
 (4곳 전부 미해결). 상세: `RESULTS.md` §"V5l MLA CPU twin: manifest
 support for the MLA CPU ground-truth scheduler".
+
+★V5l `load_ids()` 입력검증(4개 게이트 전부, 사용자 명시요청 "이것도
+진행하자"): 4개 게이트가 전부 공유 로더(`moe_cbatch_load_manifest()`)
+를 통하므로 **한 곳만 수정하면 4곳 전부 적용** — `load_ids()` 반환
+직후 각 토큰이 `0 <= id < MOE_VOCAB`(호출측 게이트가 이미 로드한
+실제 vocab 크기)인지 검사, 위반시 파일/인덱스/값 명시하며 FATAL.
+완벽한 매직넘버 검증은 불가능(임의 파일도 우연히 vocab범위 안 정수로
+읽힐 수 있음)하지만, 포맷이 아예 다른 파일(텍스트/다른 바이너리/
+truncated)은 거의 확실히 초반 토큰에서 범위밖 값이 나와 실무적으로
+충분한 방어선. **검증**: (1) dense-only+GPU 빌드 둘다 클린 (2) 4개
+게이트 전부 기존 유효 매니페스트로 재실행 — timing필드(`tok/s=`
+누락분 발견해 필터 보완) 제외 완전동일, 새 체크가 정상 매니페스트엔
+진짜 no-op임을 확인 (3) 양성테스트(GQA GPU게이트, 로더가 동일코드라
+나머지 3곳 대표): 범위밖 토큰(999999, 실제 MOE_VOCAB=50304 로그로
+직접확인)+음수토큰(-5) 둘 다 GPU작업 시작 전에 정확히 FATAL 트리거
+확인. **V5l 매니페스트 기능의 유일 남은 공통갭 해소 — 4라운드+1
+보강으로 완전히 마무리**. 상세: `RESULTS.md` §"V5l: manifest loader
+input validation".

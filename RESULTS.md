@@ -5662,3 +5662,43 @@ all four online-scheduler gates -- GQA GPU, GQA CPU, MLA GPU, MLA CPU
 admission scheduler. `load_ids()` input validation (no format/magic-
 number check) remains the one open gap across all four, noted in the
 earlier V5l sections above.
+
+## V5l: manifest loader input validation (closes the last common gap across all 4 gates)
+
+**Motivation**: `load_ids()` has no format or magic-number check of
+its own -- it reads any file's raw bytes as int32 tokens with no
+sanity check. A manifest line pointing at the wrong file (wrong
+extension, a text file, a truncated capture) would silently produce
+garbage token ids that then index straight into `embed_tokens` with
+no bounds check downstream -- flagged as an open gap in every V5l
+round so far, closed here in one place rather than four, since all
+four online-scheduler gates route through the single shared
+`moe_cbatch_load_manifest()`.
+
+**Fix**: after `load_ids()` returns a prompt's token count inside the
+loader, every loaded id is checked against `0 <= id < MOE_VOCAB`
+(the real vocab size for whichever model's config the calling gate
+already loaded) and FATALs with the offending file/index/value on the
+first violation. This is the one check that's actually enforceable
+without a real magic number in the file format -- it can't catch
+every malformed file (a random file might coincidentally decode to
+in-range ints), but it reliably catches the common failure mode: a
+file whose byte layout doesn't match the raw-int32 convention at all
+(text, a different binary format, a truncated read) almost always
+produces some out-of-range value within the first few tokens.
+
+**Verification**: since this is one function shared by all four
+gates, verifying it once covers all four call sites.
+1. Dense-only and `-DQWEN_GPU_MLX` builds both compile clean.
+2. Regression: all four gates (GQA GPU, MLA GPU, GQA CPU twin, MLA CPU
+   twin) re-run against their existing valid 8-prompt manifests --
+   stderr diff (timing fields filtered, including `tok/s=`) completely
+   empty against the pre-change binary, confirming the new check is a
+   true no-op on well-formed manifests.
+3. Positive test (GQA GPU gate; the loader is identical code for the
+   other three): a manifest entry pointing at a 2-token file with an
+   out-of-range id (`999999`, vocab size read directly from the log as
+   50304 for this OLMoE config) FATALs with the exact file/index/value
+   before any GPU work starts. A second file with a negative id (`-5`)
+   FATALs identically, confirming both bounds are enforced, not just
+   the upper one.

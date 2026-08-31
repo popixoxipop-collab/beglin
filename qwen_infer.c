@@ -5035,6 +5035,19 @@ static int moe_cbatch_load_manifest(const char *path, int *mf_plen, int *mf_maxn
                     fpath, N, MOE_CBATCH_MAXPOS);
             exit(1);
         }
+        // load_ids() has no format/magic-number check of its own -- it happily reads any file's
+        // raw bytes as int32 tokens (a manifest line pointing at the wrong file type would
+        // otherwise produce silent garbage that then indexes straight into embed_tokens with no
+        // bounds check downstream). This is the one check that's actually enforceable here: every
+        // loaded id must be a valid vocab row.
+        for (int i = 0; i < N; i++) {
+            if (mf_ids[n][i] < 0 || mf_ids[n][i] >= MOE_VOCAB) {
+                fprintf(stderr, "FATAL: [moe cbatch manifest] '%s' token %d = %d out of vocab range "
+                                "[0,%d) (manifest line %d) -- wrong file, or not a raw-int32 prompt file?\n",
+                        fpath, i, mf_ids[n][i], MOE_VOCAB, lineno);
+                exit(1);
+            }
+        }
         mf_plen[n] = N; mf_maxnew[n] = maxnew; n++;
     }
     fclose(f);
