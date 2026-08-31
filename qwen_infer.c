@@ -7279,6 +7279,15 @@ static int run_moe_gpu_gqa_fused_gate(int argc, char **argv) {
     MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
     alloc_moe_buffers();
     moe_init_yarn();
+    // V5j-anomaly root cause (found, not just diagnosed): every other GQA-capable entry point
+    // (run_moe_verify_mode() included) calls moe_init_rope_gqa() right after moe_init_yarn() --
+    // this function was the one duplicated config block missing it. g_moe_rope_inv is malloc'd
+    // by alloc_moe_buffers() (Rule 6: malloc not calloc) but was NEVER WRITTEN here, so
+    // moe_rope_neox_apply()'s frequency table was raw uninitialized memory for every position.
+    // At pos=0 NeoX rope's rotation angle is pos*freq=0 regardless of the frequency value (rope
+    // is the identity there), which is exactly why every test in this investigation saw pos=0
+    // clean and only pos>=1 diverge -- the bug was never about GPU interaction at all.
+    moe_init_rope_gqa();
 
     snprintf(path, sizeof path, "%s/layout_af.txt", moe_dir); moe_load_layout_af(path);
     snprintf(path, sizeof path, "%s/deepseek_moe_af.bin", moe_dir);
@@ -7398,8 +7407,18 @@ static int run_moe_gpu_gqa_fused_gate(int argc, char **argv) {
                     pos, kv_ck_a, vv_ck_a);
         }
 
+        // V5j anomaly investigation, hypothesis 12: bisect HOW MUCH real GPU eval at pos=0 is
+        // needed before the CPU's own pos=1 computation starts diverging. QWEN_MOE_GQA_DEBUG_
+        // MAXGPULAYERS0=<N> limits pos==0's GPU layer loop to the first N layers only (default
+        // unset = unlimited, every existing behavior byte-identical). forward_finalize() is
+        // skipped for pos 0 whenever this truncation is active, since a partial-layer gpu_logits
+        // read would be meaningless anyway -- this is a pure bisection probe, not a real gate.
+        const char *maxgpul0_env = getenv("QWEN_MOE_GQA_DEBUG_MAXGPULAYERS0");
+        int maxgpul0 = (maxgpul0_env && maxgpul0_env[0]) ? atoi(maxgpul0_env) : -1;
+        int this_pos_nl = (pos == 0 && maxgpul0 >= 0) ? maxgpul0 : MOE_NL;
+
         for (int c = 0; c < MOE_HIDDEN; c++) x_embed[c] = moe_decode_af(af_blob, t_embed, 0, token, c);
-        for (int l = 0; l < MOE_NL; l++) {
+        for (int l = 0; l < this_pos_nl; l++) {
             MoeLayerTensors *t = &g_moe_lt[l];
             float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
             float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
@@ -7426,9 +7445,16 @@ static int run_moe_gpu_gqa_fused_gate(int argc, char **argv) {
                                 "fpcr=%016llx\n", pos, (unsigned long long)moe_read_fpcr());
             }
         }
-        if (!mlx_gpu_gqa_forward_finalize(w_finalnorm, gpu_logits)) {
-            fprintf(stderr, "FATAL: [moe gpu gqa fused] mlx_gpu_gqa_forward_finalize failed at pos %d\n", pos);
-            exit(1);
+        if (this_pos_nl == MOE_NL) {
+            if (!mlx_gpu_gqa_forward_finalize(w_finalnorm, gpu_logits)) {
+                fprintf(stderr, "FATAL: [moe gpu gqa fused] mlx_gpu_gqa_forward_finalize failed at pos %d\n", pos);
+                exit(1);
+            }
+        } else {
+            fprintf(stderr, "[maxgpul0] pos %d: GPU truncated to %d/%d layers, forward_finalize "
+                            "SKIPPED (bisection probe, gpu_logits for this pos is meaningless)\n",
+                    pos, this_pos_nl, MOE_NL);
+            memset(gpu_logits, 0, sizeof(float) * MOE_VOCAB);
         }
 
         if (kvcheck && kvcheck[0]) {
@@ -9067,6 +9093,39 @@ static int run_moe_verify_mode(int argc, char **argv) {
             }
             fprintf(stderr, "[bindonly] bound %d/%d tensors to MLX, NO layer compute/eval done -- "
                             "this driver's CPU path continues exactly as before\n", n_bound, g_moe_naf);
+        }
+        // V5j anomaly root-cause, hypothesis 13 (bisection follow-up to hypothesis 12): the
+        // MAXGPULAYERS0=0 bisection showed pos=1 divergence with ZERO real GPU layer evals --
+        // the only D5-vs-hypothesis-9-bindonly structural difference at that point is that D5
+        // ALSO calls mlx_gpu_gqa_config()/mlx_gpu_layer_config() (pure C++ setter functions,
+        // no mx::eval() in either -- but real heap allocation: g_gqa_K/V .assign(), ~16MB).
+        // Replicate exactly that in C4's own driver, still zero eval, to isolate it precisely.
+        const char *bindconfig = getenv("QWEN_MOE_GQA_DEBUG_BINDCONFIG");
+        if (bindconfig && bindconfig[0]) {
+            if (!mlx_gpu_available()) {
+                fprintf(stderr, "FATAL: QWEN_MOE_GQA_DEBUG_BINDCONFIG=1 but MLX/Metal unavailable\n");
+                exit(1);
+            }
+            int n_bound = 0;
+            for (int i = 0; i < g_moe_naf; i++) {
+                MoeAFTensor *t = &g_moe_af[i];
+                if (!mlx_gpu_bind_af(af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
+                                      t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                    fprintf(stderr, "FATAL: [bindconfig] bind failed for tensor %s\n", t->name);
+                    exit(1);
+                }
+                n_bound++;
+            }
+            double attn_scale_bc = 1.0 / sqrt((double)MOE_HEAD_DIM);
+            if (!mlx_gpu_gqa_config(MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_ROPE_THETA,
+                                     attn_scale_bc, MOE_RMS_EPS) ||
+                !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
+                                       MOE_TOP_K, 64)) {
+                fprintf(stderr, "FATAL: [bindconfig] mlx_gpu_*_config failed\n");
+                exit(1);
+            }
+            fprintf(stderr, "[bindconfig] bound %d/%d tensors + called gqa_config/layer_config, "
+                            "STILL NO layer compute/eval done\n", n_bound, g_moe_naf);
         }
     }
 #endif

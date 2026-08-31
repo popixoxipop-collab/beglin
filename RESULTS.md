@@ -4895,27 +4895,68 @@ rejection below is a real measurement, not an inference):
     -- a real uninitialized-read dependency on a ~1e37-magnitude
     garbage pattern would have been impossible to miss.
 
-**Root cause not identified after eleven independently-rejected,
-empirically-tested hypotheses spanning data (weights, embedding,
-hidden state), concurrency (threads, timing), memory (K/V array
-aliasing, raw weight bytes, uninitialized scratch), and hardware
-state (FPU control register)**. What's established with certainty:
-the divergence is fully deterministic and reproducible (not a race),
-requires a REAL GPU compute eval to appear at all (weight binding
-alone never triggers it), first manifests in layer 0's own k_proj
-output at position 1 given provably-identical inputs and provably-
-identical weight bytes, and does not correspond to any state this
-round's own new code writes to. The remaining hypothesis space is
-things not yet instrumented (e.g. Accelerate/vDSP-framework-level
-global state, or P-core/E-core scheduling-induced floating-point
-behavior differences under GPU-induced system load) -- explicitly
-flagged for whoever picks this up next rather than guessed at further.
-This does NOT affect the round's own primary correctness claim:
-GPU-vs-real-MLX-truth is independently clean (established both by
-C4's own standalone CPU-vs-truth comparison and by D5's live
-GPU-vs-truth comparison), and the anomalous number is specifically
-the *redundant in-process CPU cross-check*, not the GPU output being
-verified.
+**ROOT CAUSE FOUND AND FIXED, in a follow-up session** (12th
+hypothesis, after the eleven above were all rejected). The key move
+that broke the case open was a bisection: rather than assuming "real
+GPU eval poisons subsequent CPU state" (the direction all eleven
+prior hypotheses chased), a new `QWEN_MOE_GQA_DEBUG_MAXGPULAYERS0=<N>`
+probe truncated position 0's GPU layer loop to the first N layers and
+skipped `forward_finalize()` whenever truncated. **`N=0` -- ZERO real
+GPU layer evals at position 0 at all -- still reproduced the exact
+same divergent K_row_sum (331.464165740) at position 1**, immediately
+disproving every GPU-interaction hypothesis at once: the bug was never
+about the GPU touching anything.
+
+With GPU eliminated, the only remaining variable was "which driver
+function is running" -- `run_moe_gpu_gqa_fused_gate()` (D5) vs
+`run_moe_verify_mode()` (C4) -- independent of GPU calls entirely. A
+direct diff of their config-loading blocks found it:
+`run_moe_gpu_gqa_fused_gate()` called `alloc_moe_buffers();
+moe_init_yarn();` but was **missing the `moe_init_rope_gqa();` call**
+that every other GQA-capable entry point (`run_moe_verify_mode()`
+included) makes right after `moe_init_yarn()`. `g_moe_rope_inv`
+(the NeoX RoPE frequency table `moe_rope_neox_apply()` reads,
+`double ang = (double)pos * g_moe_rope_inv[i];`) is `malloc()`'d by
+`alloc_moe_buffers()` (Rule 6: malloc not calloc, by design) but is
+**only ever written by `moe_init_rope_gqa()`** -- which D5 never
+called. The table was raw uninitialized memory for the entire gate's
+lifetime.
+
+This explains every single one of the eleven earlier "clean" results
+retroactively: at position 0, NeoX rope's rotation angle is
+`pos * freq = 0 * garbage = 0` for ANY finite garbage value -- rope
+is the identity transform there regardless of what's in the
+uninitialized table -- which is exactly why position 0 was
+byte-identical in every test run across both investigation sessions,
+and why the corruption only ever appeared from position 1 onward
+(where `pos * freq` actually depends on the frequency values). It
+also explains why `MallocPreScribble`'s 0xAA poisoning (hypothesis
+11) didn't change the numbers: that test happened to run before this
+bisection found the real mechanism, and the specific garbage bytes
+present in an unpoisoned run vs a poisoned run both count as "some
+finite garbage" that pos=0 is blind to -- the real discriminator
+was never poisoning, it was whether `moe_init_rope_gqa()` ran at all.
+
+**Fix**: one line, `moe_init_rope_gqa();` added immediately after
+`moe_init_yarn();` in `run_moe_gpu_gqa_fused_gate()`'s config block
+(`qwen_infer.c`), matching the exact pattern every sibling GQA entry
+point already uses.
+
+**Verification**: re-ran the full 13-position gate after the fix.
+`gpu_vs_cpu_rel_l2` dropped from up to 2.603e-01 to a tight
+2e-07~3e-07 band at every position (matching ordinary int4-
+quantization-noise scale, not a bug). The two real argmax flips this
+anomaly caused in the CPU cross-check are gone: position 8's
+`cpu_argmax` is now 2586 (was 2846), position 10's is now 253 (was
+6181) -- both now match `gpu_argmax`/`ref_argmax` exactly. A direct
+before/after checkpoint comparison shows D5's own internal
+`K_row_sum` at position 1 layer 0 now matches C4's standalone value
+to all 9 printed decimal digits: `356.745603780` in both, exactly
+(previously `331.464165740` in D5 vs `356.745603780` in C4). GPU's
+own correctness claim is unaffected either way (`gpu_vs_truth` was
+already clean throughout, 13/13 argmax, both before and after this
+fix) -- throughput also unaffected (107.391 tok/s post-fix, matching
+the pre-fix 106.93 tok/s average within normal run-to-run variance).
 
 **Throughput** (observed only, no external baseline claimed --
 llama.cpp has OLMoE model support already compiled on bob but has
