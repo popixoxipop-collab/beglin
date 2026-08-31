@@ -5151,3 +5151,78 @@ flipped=0/8).
 **Status**: V5j-ragged is COMPLETE (Phase A/B/C/D all verified). V5a-j
 full GQA/OLMoE track (B=1 through online-scheduled ragged batching) is
 now feature-complete, matching the MLA track's own V5a-h scope.
+
+## llama.cpp OLMoE baseline: real B-sweep comparison, closing the GQA track's deferred item
+
+Every V5j round left "real llama.cpp OLMoE throughput baseline" open --
+bob already has llama.cpp+Metal compiled (`~/llamacpp_kleidi_build`,
+checkout `d83f72d`, 2026-08-17) with real `LLM_ARCH_OLMOE` support in
+the C++ inference core, but it had never been run against this
+project's own model in this project. Closed this round.
+
+**Model**: the Python HF->GGUF converter in this checkout has no
+OLMoE class (`convert_hf_to_gguf.py` -- confirmed by grep, zero
+matches, despite the C++ core supporting the architecture), so local
+conversion wasn't an option. Downloaded the official
+`allenai/OLMoE-1B-7B-0125-GGUF` `Q4_0` quant instead (3.93GB) -- the
+exact same base checkpoint (not Instruct) this whole project's own
+OLMoE work has used throughout, and `Q4_0` (uniform 4-bit, no mixed
+K-quant precision) is a closer match to vdsp's own `q4g64` format than
+the `Q4_K_M` used for the earlier DeepSeek/MLA comparison (group size
+differs -- 32 vs 64 -- but both are flat int4, unlike K-quants).
+
+**Method**: same methodology the DeepSeek/MLA F-4 comparison
+established (`~/Desktop/vdsp_v2_design/trackb_v5_plan/...`, `180.91`
+llama.cpp number) -- `llama-batched -m OLMoE-1B-7B-0125-Q4_0.gguf -p
+"..." -n 48 -np N -kvu --perf`, same `-np` values as this project's own
+V5j-batch B sweep. `np=1` smoke test first (coherent, on-topic
+continuation -- "The history of artificial intelligence began with
+philosophy...") before trusting any throughput numbers, matching this
+project's own established caution.
+
+**Real B-sweep, vdsp (V5j-batch, MLX/Metal) vs llama.cpp (Q4_0, Metal)**:
+
+| B | vdsp tok/s | llama.cpp tok/s | ratio (vdsp/llama.cpp) |
+|---:|---:|---:|---:|
+| 1  | 105.8 | 108.83 | 0.97 |
+| 8  | 194.2 | 195.76 | 0.99 |
+| 16 | 277.3 | 293.26 | 0.95 |
+| 24 | 318.0 | 331.57 | 0.96 |
+| 32 | 334.3 | 267.88 (avg of 3 reproduced runs: 264.28/272.68/266.69) | **1.25** |
+| 48 | 397.4 | 351.46 | **1.13** |
+| 64 | 472.6 | 444.81 | **1.06** |
+
+**Honest read, not smoothed over**: near-exact parity at B=1/B=8 (both
+engines converge to the same memory-bandwidth roofline at low
+concurrency, as expected), llama.cpp modestly ahead at B=16/B=24
+(~5%), vdsp ahead at B=32/48/64. This is a genuinely different shape
+from the MLA/DeepSeek F-4 result (where vdsp lost badly at every B
+before F-4's sort-crossover fix, then won cleanly at 1.24x after it) --
+here vdsp was never behind by more than ~5%, and the crossover to
+vdsp's favor happens earlier (B=32) and grows narrower toward B=64
+(1.25x -> 1.06x) rather than the MLA track's widening-with-B pattern.
+
+**llama.cpp's own non-monotonic dip at B=32, reproduced 3x** (331.57 at
+B=24 -> 264-273 at B=32 -> 351.46 at B=48) -- flagged rather than
+silently averaged away or discarded as an outlier (matching this
+project's own "no silent caps" convention); not investigated further
+(out of scope -- it's llama.cpp's own internal behavior, not this
+project's code). This dip is the entire reason vdsp's B=32 ratio
+(1.25x) looks stronger than its neighbors; without it the vdsp-ahead
+region would likely still exist but be flatter.
+
+**One real, unmatched variable, stated rather than hidden**: the GGUF
+file (3.93GB) is ~9% smaller than vdsp's own AF blob (4.32GB) -- group
+size 32 (`Q4_0`) vs 64 (`q4g64`) packs slightly denser. A smaller
+resident model has a real memory-bandwidth edge in decode-bound
+serving (fewer bytes streamed per token), which may partially explain
+llama.cpp's B=16/24 edge; not deconvolved from a genuine kernel/
+scheduling difference this round.
+
+**Status**: llama.cpp OLMoE baseline is CLOSED. The GQA/OLMoE track's
+last explicitly-deferred item (present in every V5j round's own "next
+steps" note since V5j-batch) is now answered with real numbers: vdsp's
+GPU MoE backend is competitive with mature llama.cpp+Metal across the
+whole B range for OLMoE, ahead at the high-concurrency end that this
+project's own online-serving work (V5h/V5j-ragged Phase D) actually
+targets.
