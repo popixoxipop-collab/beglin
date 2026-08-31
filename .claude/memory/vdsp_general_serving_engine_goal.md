@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-08-31T16:30:00.000Z
+  modified: 2026-08-31T22:30:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -1780,3 +1780,37 @@ truth)에는 영향 없음(C4 standalone과 D5 GPU-vs-truth 양쪽에서 독립
 online GQA(V5d-h급), 실 llama.cpp 기준선, 위 CPU cross-check 이상현상
 근본원인규명 전부 다음 라운드 오픈 항목.
 상세: `RESULTS.md` §"V5j: full multi-layer GQA GPU forward (OLMoE)".
+
+★V5l(V5j-ragged Phase D 온라인 admission 스케줄러에 실 프롬프트 연결,
+V5k 완료 직후 사용자 요청): 스코프 GQA만(V5k와 동일한 "GQA먼저, MLA는
+다음라운드" 패턴). Plan Mode로 진행 — Explore agent로 MLA쪽 온라인게이트
+구조 확인(GQA와 달리 corpus테이블이 file-scope 아닌 함수로컬
+`static const`, EOS도 `MOE_EOS_TOKEN_ID` 안읽고 100001 하드코딩 —
+다음라운드 메모), Plan agent로 실코드(`moe_cb4b_admit_guard()` 본문 등)
+직접읽고 설계 검증. ★설계검증 중 진짜 버그 발견: guard가
+`plen+maxnew<=MOE_CBATCH_MAXPOS(32)`만 체크하고 `rq_out`의 실제 선언폭
+`MOE_CBATCH_KNEW(12)`는 전혀 모름 — 기존 8개 corpus의 `moe_cbatch_gen[]`이
+우연히 전부 12이하라 지금까지 안 드러난 잠재 버퍼오버플로우, manifest로
+임의 maxnew를 넣을 수 있게 되면서 새로 노출될 위험이었음. 설계:
+`QWEN_MOE_CB_PROMPT_MANIFEST=<path>`(`<i32경로> <max_new_tokens>` 한줄씩,
+`load_ids()` 재사용) — corpus/manifest 소스를 로드시점에 `mf_plen/mf_maxnew/
+mf_ids` 단일테이블로 통합해(핫루프 3곳 전부 이 테이블만 참조, 분기는
+한곳뿐) manifest 미설정시 오늘과 완전동일값 보장 + `rq_out` 폭을
+`MOE_CBATCH_MAXPOS(32)`로 확장(guard의 실제 상한과 일치시켜 버그 근본해결,
+GQA GPU게이트 로컬선언 1곳만, 동일패턴 다른 3곳(MLA-CPU원본/GQA-CPU-twin/
+MLA-GPU)은 미변경). 구현은 Edit string-matching이 4개 미러링함수 중
+모호하게 여러곳 매칭되는 문제를 겪어 line-number기반 `sed`로 정밀치환.
+**검증 5개 전부 통과**: (1) git diff 전량 `#ifdef QWEN_GPU_MLX`내부
+(2) manifest미설정시 wall-clock필드 제외 stderr 완전동일(diff empty)
+(3) 기존8개를 manifest로 재현해도 완전동일 (4) MC=10(기존8+실프롬프트의
+진짜 부분수열 2개, "새 텍스트 토큰화"는 이 엔진에 토크나이저가 없어
+불가하므로 실제 corpus 텍스트의 실제 prefix를 사용) + R=20으로
+wraparound 유발 — 첫등장·재등장 전부 V5k 단일시퀀스게이트 ground truth와
+정확히 일치 (5) ★rq_out수정을 ASan으로 실증: 폭12로 되돌린 사본을
+`-fsanitize=address`로 컴파일, `R=64,B=8,전요청 plen=1/maxnew=31`(guard가
+허용하는 최악케이스)로 실행 → 정확히 예측지점(`rq_out[r][rq_nout[r]++]`)에서
+진짜 global-buffer-overflow 실측(ASan: "0 bytes after global variable
+...rq_out") — 폭32 수정판은 동일 ASan+동일 최악케이스에서 64개 요청 전부
+클린 통과. 이론적 우려가 아니라 실재 버그였음을 최고강도로 증명.
+상세: `RESULTS.md` §"V5l: real-prompt manifest for the GQA online
+admission scheduler".

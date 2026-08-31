@@ -5360,3 +5360,89 @@ supports (GQA/OLMoE and MLA/DeepSeek). Both models now default to real
 argmax-feedback generation from a real prompt whenever one is
 resolvable, falling back to the original dump-only verify mode
 unchanged otherwise.
+
+## V5l: real-prompt manifest for the GQA online admission scheduler
+
+**Scope**: GQA/OLMoE only this round, mirroring V5k's own "GQA first,
+MLA mirrors next round" pattern. Target: `run_moe_gpu_gqa_cbatch_online_gate()`
+(`qwen_infer.c`), the V5h/V5j-ragged Phase D GPU online admission
+scheduler (B concurrent decode slots serving R requests, admission,
+budget-chunked prefill, eviction). Until this round every request
+cycled through the same fixed 8-prompt synthetic corpus via
+`sp = r % MOE_CBATCH_N`; V5k had already given both topologies a real
+single-sequence generation path, so the natural next step was letting
+the online scheduler serve genuinely distinct real prompts too.
+
+**Design**: `QWEN_MOE_CB_PROMPT_MANIFEST=<path>` -- a text file, one
+`<i32-path> <max_new_tokens>` line per entry, `#`-comment/blank lines
+allowed, `load_ids()` reused for token loading (the same raw-int32
+convention `QWEN_MOE_PROMPT` established in V5k). A new local table
+(`mf_plen`/`mf_maxnew`/`mf_ids`) is populated exactly once, before the
+existing two-pass warmup loop: from the manifest if set, else by
+copying `g_moe_gqa_cbatch_*` verbatim (today's exact corpus) -- every
+downstream read-site (request-table construction, prefill packing,
+diagnostic print) references only this one table via `MCN` (manifest
+entry count, or `MOE_CBATCH_N` when unset), so manifest-vs-corpus is
+decided in exactly one place rather than branched at every read-site.
+
+**Bug found and fixed during design review**: a Plan-agent critique
+pass (reading `moe_cb4b_admit_guard()`'s actual body before trusting
+the design) surfaced that the guard only ever clamps
+`plen[r]+maxnew[r] <= MOE_CBATCH_MAXPOS` (32) -- it has zero knowledge
+of `MOE_CBATCH_KNEW` (12), the actual declared width of
+`rq_out[MOE_CB4B_RMAX][MOE_CBATCH_KNEW]`. A manifest entry with e.g.
+`plen=1, maxnew=31` passes the guard untouched and then writes past
+the declared array width. This was latent since the original corpus's
+hardcoded `moe_cbatch_gen[]` never exceeded 12 -- a real gap the
+manifest feature would have newly exposed. Fixed by widening `rq_out`
+to `[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS]` (32, exactly matching the
+guard's own real ceiling) in this one function's own local `static`
+declaration -- the 3 textually-identical declarations in the sibling
+functions (MLA CPU original, GQA CPU twin, MLA GPU) are untouched,
+out of scope this round.
+
+**Bug confirmed real via AddressSanitizer, not just by inspection**: a
+scratch copy with only the width fix reverted, compiled
+`-fsanitize=address`, run with `R=64, B=8`, every request
+`plen=1 maxnew=31` (the actual worst case the guard allows) --
+ASan caught a real `global-buffer-overflow`, `WRITE of size 4`, at the
+exact predicted write site (`rq_out[r][rq_nout[r]++] = am;`), landing
+`0 bytes after global variable ... rq_out`. The fixed (32-wide)
+binary, same ASan build, same worst-case `R=64/B=8/plen=1/maxnew=31`
+config, ran clean through all 64 requests with zero ASan findings.
+
+**Verification** (all against a real GPU build, `QWEN_MOE_BASE` pointed
+at bob's real OLMoE weights):
+1. `git diff --unified=0` -- every changed/added hunk falls inside
+   `#ifdef QWEN_GPU_MLX` (`:6421`)..`#endif` (`:10691`), confirmed by
+   hunk line ranges (all within 9642-9925).
+2. Manifest unset, before-vs-after binary, wall-clock fields
+   (`ttft_ms`/`ttft_max_ms`/`ttft_mean_ms`/`wall_ms`/`tok/s`) filtered
+   out -- stderr diff completely empty.
+3. Manifest reconstructing the exact 8-prompt corpus (`MCN==MOE_CBATCH_N`)
+   at the default `R=12` -- diff against the no-manifest run empty
+   except for the new one-line "loaded N-entry manifest" log line.
+4. `MC=10` (original 8 + 2 new real prompts -- genuine prefixes of two
+   of the original prompts' own real token sequences, distinct from
+   any existing corpus entry), `R=20` to force `r % MCN` wraparound --
+   every request's `tokens:` list (including both the first occurrence
+   and the wraparound-repeated occurrence of each new prompt) matched
+   its own independently-generated V5k single-sequence ground truth
+   (`QWEN_MOE_GPU_GQA_GENERATE=1`) exactly.
+5. `rq_out` widening: a single request, `plen=4, maxnew=20` (past the
+   old 12-wide bound), completed cleanly with `nout=20`, no crash, no
+   observable corruption -- then the ASan negative/positive pair above
+   gave the strongest possible confirmation the fix was real, not
+   theoretical.
+
+**Out of scope, flagged for follow-up rounds** (per the approved plan):
+MLA GPU online gate (`run_moe_gpu_cbatch_online_gate()`) needs the
+same manifest mechanism -- its corpus tables are function-local
+`static const`, not file-scope like GQA's, and it hardcodes
+`EOS_TOKEN_ID=100001` instead of reading the config-driven global.
+GQA CPU twin (`run_moe_gqa_cbatch_online_cpu_gate()`) still only knows
+the 8-prompt corpus, so manifest workloads have no CPU ground-truth to
+cross-check against yet. `load_ids()` has no format/magic-number
+validation -- a manifest line pointing at the wrong file type would
+silently produce garbage token IDs with no bounds check against
+`MOE_VOCAB` before the embedding-table lookup.
