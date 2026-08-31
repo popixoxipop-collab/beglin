@@ -1067,3 +1067,297 @@ int mlx_gpu_forward_finalize(const float *w_finalnorm, float *logits_out) {
         return 0;
     }
 }
+
+// ---------------------------------------------------------------------------
+// V5e: ragged multi-step GPU decode -- generalizes V5d's mechanism one more
+// step, from "B rows, all sharing one scalar pos (lockstep)" to "A rows,
+// each carrying its OWN (slot,pos) pair (ragged)". One call shape covers
+// BOTH prefill (a slot advancing one more prompt position) and decode (a
+// slot generating a new token) -- unlike the CPU reference (moe_cbatch_step(),
+// qwen_infer.c:4639), which hardcodes prefill as a separate scalar
+// moe_forward_token() loop. Mirrors moe_cbatch_step()'s own (token_ids, slot,
+// spos, A) naming per the standing plan.
+//
+// Reuses g_fused_K/g_fused_V (V5d's persistent per-slot K/V arrays, shaped
+// {N_SLOTS,H,MLA_L0_MAXPOS,*} via mlx_gpu_set_batch(N_SLOTS) -- V5e just
+// changes HOW they're written/read: mx::scatter() with 2-axis (slot,pos)
+// indices instead of V5d's slice_update() with one shared pos, and
+// mx::take(...,slot_arr,0) to gather only this step's active columns' own
+// windows instead of using the whole persistent array directly.
+//
+// Every new MLX composition here was verified via an isolated probe against
+// a trusted host-loop/per-row reference BEFORE being used in this function,
+// per this file's standing discipline (this codebase's Bug 1 was exactly a
+// "looked right at trivial dims, silently wrong at real dims" failure --
+// probing at real dims before committing code is how that class of bug is
+// caught here, not by inspection):
+//   - mx::scatter with 2-axis (slot,pos) indices: probe_ragged_primitives.cpp
+//     Probe A, max_abs_diff=0 vs a host-loop reference. Its real convention is
+//     a WINDOW scatter (updates.ndim == a.ndim + indices[0].ndim), not a
+//     numpy-style scalar-per-index scatter -- updates must be shaped with a
+//     leading {A} index-count dim, size-1 at each INDEXED axis, full size at
+//     each UNINDEXED axis (confirmed the hard way: the first attempt's naive
+//     {A,H,1,QHD} shape threw a dimension-count mismatch).
+//   - mx::fast::rope's per-row offset ARRAY overload: probe_ragged_
+//     primitives.cpp Probe B (H=1 case, max_abs_diff=0) PLUS a follow-up gap
+//     probe (probe_ragged_rope_multihead.cpp) specifically for H>1, since
+//     Probe B alone never exercised more than one head and this codebase's
+//     own Bug 1 was exactly a "correct at a trivial case, silently wrong at
+//     the real multi-dim case" failure. That follow-up found offset must be
+//     RANK-1 (a 2D {A,H} offset throws) AND keys off axis -2 as a genuine
+//     incrementing "sequence" axis (max_abs_diff 2.54 when H sat at axis -2,
+//     since positions became offset[i]+arange(H) -- each head silently got a
+//     DIFFERENT rotation instead of sharing the column's one true position).
+//     The only verified-correct arrangement: flatten (A,H) into ONE leading
+//     axis of size A*H with axis -2 pinned to size 1, and an offset array of
+//     rank 1 length A*H with each column's spos value repeated H times in the
+//     same row-major order mx::reshape uses (max_abs_diff=0). k_pe has no H
+//     axis to begin with (MQA-style, shared across heads before broadcast),
+//     so it uses the already-Probe-B-verified {A,1,ROPE}/offset{A} form
+//     directly, unchanged in shape convention from what was already probed.
+//   - scaled_dot_product_attention's mask_arr with a genuinely PER-ROW
+//     (not shared) boolean mask: probe_ragged_primitives.cpp Probe C,
+//     max_abs_diff=1.19e-07 (fp32 rounding) vs A independent per-row
+//     truncated-K/V references.
+//
+// slot_arr/pos_arr below use the 3-arg iterator array(It,Shape,Dtype) ctor
+// (mlx/array.h array::init() -> allocator::malloc + std::copy), NOT the
+// 4-arg pointer-wrap ctor wrap_host_f32() uses -- confirmed via the header
+// itself that this ctor COPIES immediately, unlike the no-copy wrap that
+// caused Bug 1 (g_mla_yarn_freqs_f32's own header comment). This matters
+// specifically here because eval() is deferred all the way to
+// mlx_gpu_cbatch_forward_finalize(), well after this function (and the
+// caller's own slot[]/spos[] stack buffers) may have returned/been reused.
+static mx::array *g_cbatch_x = nullptr;
+static int g_cbatch_A = 0;
+static int g_cbatch_layers_done = 0;
+
+int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spos, int is_dense,
+                                    const float *x_in_host, const float *w_inln,
+                                    const float *w_postln, const float *w_kvaln,
+                                    const float *w_gate) {
+    if (g_mla_n_heads == 0 || g_layer_hidden == 0) return 0;
+    if (A < 1 || A > 64 || l < 0 || l >= MLA_MAXLAYERS) return 0;
+    try {
+        const int H = g_mla_n_heads, QHD = g_mla_q_head_dim, NOPE = g_mla_qk_nope,
+                  ROPE = g_mla_qk_rope, VHD = g_mla_v_hd, KVLORA = g_mla_kv_lora;
+        const int HIDDEN = g_layer_hidden, IM = g_layer_im_dim, DENSE_IM = g_layer_dense_im,
+                  NE = g_layer_n_experts, NS = g_layer_n_shared, TOPK = g_layer_top_k;
+
+        ensure_fused_kv_init();   // sizes g_fused_K/V to {g_fused_B,H,MLA_L0_MAXPOS,*} --
+                                   // caller must have set g_fused_B=N_SLOTS via mlx_gpu_set_batch()
+                                   // before the first step of a cbatch run (persists across steps,
+                                   // unlike V5d's B which is fully rewritten every call in lockstep).
+        for (int i = 0; i < A; i++) {
+            if (spos[i] < 0 || spos[i] >= MLA_L0_MAXPOS) return 0;
+        }
+        if (l == 0) {
+            delete g_cbatch_x;
+            g_cbatch_x = new mx::array(wrap_host_f32(x_in_host, {A, HIDDEN}));
+            g_cbatch_A = A; g_cbatch_layers_done = 0;
+        }
+        if (g_cbatch_A != A || g_cbatch_layers_done != l) return 0;
+
+        // COPYING ctor (see header comment above) -- safe under the deferred eval() this
+        // whole fused design relies on.
+        mx::array slot_arr(slot, {A}, mx::int32);
+        mx::array pos_arr(spos, {A}, mx::int32);
+
+        char nq[96], nkva[96], nkvb[96], no[96];
+        snprintf(nq, sizeof nq, "model.layers.%d.self_attn.q_proj", l);
+        snprintf(nkva, sizeof nkva, "model.layers.%d.self_attn.kv_a_proj_with_mqa", l);
+        snprintf(nkvb, sizeof nkvb, "model.layers.%d.self_attn.kv_b_proj", l);
+        snprintf(no, sizeof no, "model.layers.%d.self_attn.o_proj", l);
+
+        mx::array x = *g_cbatch_x;
+        mx::array h = mx::fast::rms_norm(x, wrap_host_f32(w_inln, {HIDDEN}), (float)g_mla_rms_eps);
+
+        mx::array q = lazy_matvec_e0(nq, h);
+        mx::array kv_ap = lazy_matvec_e0(nkva, h);
+        mx::array compressed_kv = mx::slice(kv_ap, {0, 0}, {A, KVLORA});
+        mx::array k_pe_raw = mx::slice(kv_ap, {0, KVLORA}, {A, KVLORA + ROPE});
+        mx::array normed_kv = mx::fast::rms_norm(compressed_kv, wrap_host_f32(w_kvaln, {KVLORA}),
+                                                  (float)g_mla_rms_eps);
+        mx::array kv_b = lazy_matvec_e0(nkvb, normed_kv);
+
+        mx::array q_r = mx::reshape(q, {A, H, QHD});
+        mx::array q_nope = mx::slice(q_r, {0, 0, 0}, {A, H, NOPE});
+        mx::array q_pe_raw = mx::slice(q_r, {0, 0, NOPE}, {A, H, NOPE + ROPE});
+        mx::array q_pe_scaled = q_pe_raw * (float)g_mla_rope_mscale;
+        mx::array k_pe_scaled = k_pe_raw * (float)g_mla_rope_mscale;
+
+        mx::array freqs_f32((void *)g_mla_yarn_freqs_f32.data(),
+                             {(int)g_mla_yarn_freqs_f32.size()}, mx::float32, noop_deleter);
+
+        // Per-row RoPE offset -- pos_arr instead of V5d's scalar pos. q_pe needs the
+        // flatten-(A,H)-into-one-axis treatment (see header comment: offset is rank-1 and
+        // keys off axis -2 as a real incrementing sequence axis, so H CANNOT sit at axis -2
+        // or every head silently gets a different rotation). k_pe has no head axis to begin
+        // with, so it reuses the already-probed {A,1,ROPE}/offset{A} form directly.
+        std::vector<int32_t> pos_ah((size_t)A * H);
+        for (int m = 0; m < A; m++) for (int hh = 0; hh < H; hh++) pos_ah[(size_t)m * H + hh] = spos[m];
+        mx::array pos_ah_arr(pos_ah.data(), {A * H}, mx::int32);   // copying ctor, see header comment
+        mx::array q_pe_flat = mx::reshape(q_pe_scaled, {A * H, 1, ROPE});
+        mx::array q_pe_rot_flat = mx::fast::rope(q_pe_flat, ROPE, /*traditional=*/true,
+                                                  /*base=*/std::nullopt, /*scale=*/1.0f,
+                                                  /*offset=*/pos_ah_arr, /*freqs=*/freqs_f32);
+        mx::array q_pe_rot = mx::reshape(q_pe_rot_flat, {A, H, ROPE});
+        mx::array k_pe_in = mx::reshape(k_pe_scaled, {A, 1, ROPE});
+        mx::array k_pe_rot = mx::fast::rope(k_pe_in, ROPE, true, std::nullopt, 1.0f, pos_arr, freqs_f32);
+
+        mx::array q_full = mx::concatenate({q_nope, q_pe_rot}, -1);
+        mx::array kv_b_r = mx::reshape(kv_b, {A, H, NOPE + VHD});
+        mx::array k_nope = mx::slice(kv_b_r, {0, 0, 0}, {A, H, NOPE});
+        mx::array v_new = mx::contiguous(mx::slice(kv_b_r, {0, 0, NOPE}, {A, H, NOPE + VHD}));
+        mx::array k_pe_bcast = mx::broadcast_to(k_pe_rot, {A, H, ROPE});
+        mx::array k_new = mx::concatenate({k_nope, k_pe_bcast}, -1);
+
+        // Scatter this step's K/V into each column's own (slot,pos) -- replaces V5d's
+        // slice_update(shared pos). updates shape = {A(index-batch), window@slot=1, H(full),
+        // window@pos=1, QHD/VHD(full)} -- scatter's real window-write convention, confirmed
+        // via probe_ragged_primitives.cpp Probe A.
+        mx::array k_new_win = mx::reshape(k_new, {A, 1, H, 1, QHD});
+        mx::array v_new_win = mx::reshape(v_new, {A, 1, H, 1, VHD});
+        g_fused_K[l] = mx::scatter(g_fused_K[l], {slot_arr, pos_arr}, k_new_win, {0, 2});
+        g_fused_V[l] = mx::scatter(g_fused_V[l], {slot_arr, pos_arr}, v_new_win, {0, 2});
+
+        // Gather THIS step's active columns' own persistent windows (mx::take by slot_arr) --
+        // each column reads its OWN slot's full {H,MLA_L0_MAXPOS,*} window, not the whole
+        // persistent N_SLOTS array. Per-column mask (row m true for j<=spos[m]) replaces
+        // V5d's single shared mask -- verified via Probe C.
+        mx::array k_win = mx::take(g_fused_K[l], slot_arr, 0);   // {A,H,MLA_L0_MAXPOS,QHD}
+        mx::array v_win = mx::take(g_fused_V[l], slot_arr, 0);   // {A,H,MLA_L0_MAXPOS,VHD}
+
+        std::vector<uint8_t> mask_bytes((size_t)A * MLA_L0_MAXPOS);
+        for (int m = 0; m < A; m++)
+            for (int j = 0; j < MLA_L0_MAXPOS; j++)
+                mask_bytes[(size_t)m * MLA_L0_MAXPOS + j] = (j <= spos[m]) ? 1 : 0;
+        mx::array mask_arr(mask_bytes.data(), {A, 1, 1, MLA_L0_MAXPOS}, mx::bool_);   // copying ctor
+
+        mx::array q_full_r = mx::reshape(q_full, {A, H, 1, QHD});
+        mx::array attn = mx::fast::scaled_dot_product_attention(q_full_r, k_win, v_win,
+                                                                  (float)g_mla_attn_scale, "array", mask_arr);
+        mx::array attn_flat = mx::reshape(attn, {A, H * VHD});
+        mx::array o = lazy_matvec_e0(no, attn_flat);
+        mx::array x_mid = x + o;
+
+        mx::array h2 = mx::fast::rms_norm(x_mid, wrap_host_f32(w_postln, {HIDDEN}), (float)g_mla_rms_eps);
+
+        // Router/FFN block below is IDENTICAL to V5d's mlx_gpu_layer_step_lazy() (including
+        // F-4's sort/unsort branch) -- A plays the exact structural role V5d's B did; none of
+        // this math has any notion of "slot" or "pos".
+        std::optional<mx::array> mlp_out_opt;
+        char nm[128];
+        if (is_dense) {
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.gate_proj", l);
+            mx::array gate_v = lazy_matvec_e0(nm, h2);
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.up_proj", l);
+            mx::array up_v = lazy_matvec_e0(nm, h2);
+            mx::array sw = lazy_silu(gate_v) * up_v;
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.down_proj", l);
+            mlp_out_opt = lazy_matvec_e0(nm, sw);
+            (void)DENSE_IM;
+        } else {
+            mx::array w_gate_arr = wrap_host_f32(w_gate, {NE, HIDDEN});
+            mx::array scores_raw = mx::matmul(h2, mx::transpose(w_gate_arr));       // {A,NE}
+            mx::array scores = mx::softmax(scores_raw, std::vector<int>{-1}, /*precise=*/true);
+            mx::array order = mx::argsort(scores, -1);                              // {A,NE}, per-row
+            mx::array top_idx_u = mx::slice(order, {0, NE - TOPK}, {A, NE});         // {A,TOPK}
+            mx::array top_idx = mx::astype(top_idx_u, mx::int32);
+            mx::array top_wgt = mx::take_along_axis(scores, top_idx, 1);             // {A,TOPK}
+
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
+            QTensor &tg = g_tensors.at(nm);
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.up_proj", l);
+            QTensor &tu = g_tensors.at(nm);
+            snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.down_proj", l);
+            QTensor &td = g_tensors.at(nm);
+
+            std::optional<mx::array> down_flat_opt;
+            if ((long)A * TOPK >= g_gpu_sort_threshold) {
+                // D-sort path (F-4), same composition as V5d -- see mlx_gpu_layer_step_lazy()'s
+                // own comment for the full derivation/verification history.
+                mx::array x_flat3 = mx::reshape(h2, {A, 1, HIDDEN});
+                mx::array flat_idx = mx::reshape(top_idx, {A * TOPK});
+                mx::array order2 = mx::argsort(flat_idx, 0);
+                mx::array inv_order = mx::argsort(order2, 0);
+                mx::array topk_arr(TOPK, mx::int32);
+                mx::array row_sel = mx::floor_divide(order2, topk_arr);
+                mx::array x_sorted = mx::take(x_flat3, row_sel, 0);      // {A*TOPK,1,HIDDEN}
+                mx::array idx_sorted = mx::take(flat_idx, order2);       // {A*TOPK}
+
+                mx::array gate_all_s = mx::gather_qmm(x_sorted, tg.w, tg.scales, tg.biases, std::nullopt,
+                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                mx::array up_all_s = mx::gather_qmm(x_sorted, tu.w, tu.scales, tu.biases, std::nullopt,
+                                                     idx_sorted, true, g_layer_group, 4, "affine", true);
+                mx::array swiglu_3d_s = mx::reshape(lazy_silu(gate_all_s) * up_all_s, {A * TOPK, 1, IM});
+                mx::array down_all_s = mx::gather_qmm(swiglu_3d_s, td.w, td.scales, td.biases, std::nullopt,
+                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                mx::array down_flat_s = mx::reshape(down_all_s, {A * TOPK, HIDDEN});
+                mx::array down_unsorted = mx::take(down_flat_s, inv_order, 0);   // scatter-unsort
+                down_flat_opt = mx::reshape(down_unsorted, {A, TOPK, HIDDEN});
+            } else {
+                mx::array h2_expanded = mx::expand_dims(h2, std::vector<int>{-2, -3});   // {A,1,1,HIDDEN}
+                mx::array gate_all = mx::gather_qmm(h2_expanded, tg.w, tg.scales, tg.biases, std::nullopt,
+                                                     top_idx, true, g_layer_group, 4, "affine", false);
+                mx::array up_all = mx::gather_qmm(h2_expanded, tu.w, tu.scales, tu.biases, std::nullopt,
+                                                   top_idx, true, g_layer_group, 4, "affine", false);
+                mx::array swiglu_3d = mx::reshape(lazy_silu(gate_all) * up_all, {A * TOPK, 1, IM});
+                mx::array top_idx_1d = mx::reshape(top_idx, {A * TOPK});
+                mx::array down_all = mx::gather_qmm(swiglu_3d, td.w, td.scales, td.biases, std::nullopt,
+                                                     top_idx_1d, true, g_layer_group, 4, "affine", false);
+                down_flat_opt = mx::reshape(down_all, {A, TOPK, HIDDEN});
+            }
+            mx::array down_flat = *down_flat_opt;
+            mx::array top_wgt_col = mx::reshape(top_wgt, {A, TOPK, 1});
+            mx::array weighted = down_flat * top_wgt_col;
+            mx::array routed_sum = mx::sum(weighted, std::vector<int>{1}, false);    // {A,HIDDEN}
+
+            if (NS > 0) {
+                snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.gate_proj", l);
+                mx::array sgate = lazy_matvec_e0(nm, h2);
+                snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.up_proj", l);
+                mx::array sup = lazy_matvec_e0(nm, h2);
+                mx::array sswiglu = lazy_silu(sgate) * sup;
+                snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.down_proj", l);
+                mx::array sdown = lazy_matvec_e0(nm, sswiglu);
+                mlp_out_opt = routed_sum + sdown;
+            } else {
+                mlp_out_opt = routed_sum;
+            }
+        }
+        mx::array x_out = x_mid + *mlp_out_opt;
+        delete g_cbatch_x;
+        g_cbatch_x = new mx::array(x_out);   // still LAZY -- not evaluated until finalize()
+        g_cbatch_layers_done = l + 1;
+        return 1;
+    } catch (...) {
+        delete g_cbatch_x; g_cbatch_x = nullptr;
+        g_cbatch_A = 0; g_cbatch_layers_done = 0;
+        return 0;
+    }
+}
+
+int mlx_gpu_cbatch_forward_finalize(const float *w_finalnorm, float *logits_out) {
+    if (!g_cbatch_x) return 0;
+    try {
+        const int HIDDEN = g_layer_hidden;
+        const int A = g_cbatch_A;
+        mx::array x_final = mx::fast::rms_norm(*g_cbatch_x, wrap_host_f32(w_finalnorm, {HIDDEN}),
+                                                (float)g_mla_rms_eps);
+        mx::array logits = lazy_matvec_e0("lm_head", x_final);   // {A,VOCAB}
+        std::vector<mx::array> all{logits};
+        for (auto &a : g_fused_K) all.push_back(a);
+        for (auto &a : g_fused_V) all.push_back(a);
+        mx::eval(all);
+        const int VOCAB = (int)logits.shape().back();
+        std::memcpy(logits_out, logits.data<float>(), sizeof(float) * (size_t)A * (size_t)VOCAB);
+        delete g_cbatch_x; g_cbatch_x = nullptr;
+        g_cbatch_A = 0; g_cbatch_layers_done = 0;
+        return 1;
+    } catch (...) {
+        delete g_cbatch_x; g_cbatch_x = nullptr;
+        g_cbatch_A = 0; g_cbatch_layers_done = 0;
+        return 0;
+    }
+}

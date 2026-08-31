@@ -4166,3 +4166,132 @@ measurements. The remaining gap to the 250 tok/s stretch target (10.3%)
 is left open rather than chased further this round -- V5e (ragged
 multi-step decode) is the next planned phase per the standing plan's own
 dependency order.
+
+## V5e: ragged multi-step GPU decode -- CORRECTNESS VERIFIED (56/56)
+
+V5d's whole design rested on one simplifying assumption: every sequence
+in the batch is at the SAME `pos` every call (lockstep). V5e breaks that
+assumption -- it generalizes `mlx_gpu_layer_step_lazy()`'s single shared
+`pos` to `mlx_gpu_cbatch_layer_step_lazy()`'s A independent `(slot,pos)`
+pairs, one per active column, mirroring `moe_cbatch_step()`'s own
+(token_ids, slot, spos, A) naming (`qwen_infer.c:4639`). Unlike the CPU
+reference (which hardcodes prefill as a separate scalar
+`moe_forward_token()` loop before ever calling `moe_cbatch_step()`), V5e
+drives BOTH prefill and decode through the identical call shape -- a
+"step" is A columns, each contributing exactly one `(token,slot,pos)`
+triple, covering a slot advancing one more prompt position identically
+to a slot generating a new token. This is a genuine design departure
+from the CPU reference's own two-phase structure, made explicitly (see
+`mlx_gpu_cbatch_layer_step_lazy()`'s own header comment in
+`mlx_moe.cpp`), not an accidental deviation.
+
+**Three MLX primitives this design depends on, none previously used
+together in this codebase, each verified via an isolated probe against a
+host-loop/per-row reference BEFORE being used in production code**
+(`probe_ragged_primitives.cpp` on bob, real dims):
+- `mx::scatter(a, {slot_arr, pos_arr}, updates, {0,2})` -- a genuine
+  WINDOW scatter (`updates.ndim == a.ndim + indices[0].ndim`), not a
+  numpy-style scalar-per-index scatter. `max_abs_diff=0`.
+- `mx::fast::rope`'s per-row offset ARRAY overload for k_pe (shape
+  `{A,1,ROPE}`, offset `{A}`). `max_abs_diff=0`.
+- `scaled_dot_product_attention` with a genuinely PER-ROW (not shared)
+  boolean mask `{A,1,1,MLA_L0_MAXPOS}`. `max_abs_diff=1.19e-07` (fp32
+  rounding).
+
+**A fourth, follow-up probe caught a real gap the first three missed**
+(`probe_ragged_rope_multihead.cpp`): Probe B above only ever exercised
+H=1 (k_pe has no head axis). q_pe has H=16 real heads, and reusing the
+same "leading axis = offset" arrangement at `{A,H,ROPE}` with a
+length-A offset was **silently WRONG** (`max_abs_diff=2.54`) -- MLX's
+array-offset rope treats axis -2 as a genuine incrementing sequence
+axis, so with H sitting at axis -2, every head got a DIFFERENT rotation
+(`offset[i]+arange(H)`) instead of sharing one position. This is
+structurally the same failure class as Bug 1 (correct at a degenerate
+case, silently wrong at the real multi-dim case) -- caught here by
+testing at real production dims (H=16) before writing the real code,
+not by inspection. **Fix**: flatten `(A,H)` into one leading axis of
+size `A*H` with axis -2 pinned to size 1, offset repeated per head in
+the same row-major order `mx::reshape` uses. `max_abs_diff=0` once
+fixed. This pattern (and the buffer-lifetime-copy pattern below) is now
+documented as a generalized danger class in
+`~/.claude/skills/hw-kernel-vendoring/SKILL.md` for future MLX/lazy-
+execution-library work.
+
+**Buffer lifetime**: `slot_arr`/`pos_arr` (and the mask array) use MLX's
+COPYING iterator constructor (`array(It, shape, dtype)` -- confirmed via
+the header's own `init()` implementation, `allocator::malloc` +
+`std::copy`), not the 4-arg no-copy pointer-wrap `wrap_host_f32()` uses
+for weights. This matters specifically here because `eval()` is deferred
+all the way to `mlx_gpu_cbatch_forward_finalize()`, well after the
+caller's own `slot[]`/`spos[]` stack buffers may have been reused for
+the next step -- the exact same class of hazard as Bug 1's
+`freqs_f32`, avoided by construction rather than by luck this time.
+
+**Real gate** (`QWEN_MOE_GPU_CBATCH=1`, `run_moe_gpu_cbatch_gate()`,
+same `MOE_CBATCH_N=8` / `prompt_len={4,5,6,7,8,5,6,4}` /
+`moe_cbatch_gen={4,6,8,10,12,5,9,3}` workload as the CPU reference,
+against `moe4a_ref_generation.json`):
+
+A genuine off-by-one surfaced on the first real run (every one of 57
+tokens FLIPped) -- root-caused, not patched blind: `generated[s][]`'s
+recording convention mirrors `moe_cbatch_step()`'s own CPU decode loop
+exactly (record `am` only after feeding an already-model-generated
+token; the transition step that feeds the FIRST post-prompt argmax only
+updates `cb_next_tok[s]`, it never increments `cb_nout[s]`), so
+`generated[s][k]` lines up with `ref_generated[s][k+1]`, not
+`ref_generated[s][k]`. Verified offline before touching the gate code
+again: shifting the comparison by one index matched 56/56 of the range
+the shift actually covers (the one exception -- slot 4, `k=11`, needs
+`ref_generated[4][12]`, one token past the JSON's own 12-token capture
+ceiling -- explicitly logged as unverifiable, not silently dropped;
+57 total decode targets minus this one structurally-uncapturable token
+= 56, exactly the plan's own stated expectation).
+
+**Result, final run**:
+```
+[moe gpu cbatch] ACCURACY TABLE: 56/56 verifiable tokens match ground truth
+(moe4a_ref_generation.json), 1 token(s) skipped as unverifiable
+[moe gpu cbatch] GPU memory: active=9.982GB peak=10.053GB cache=0.212GB
+(cf. V5a Gate 5 B=1 baseline: active=peak=9.814GB against a 12.71GB
+working-set ceiling; N_SLOTS=8 adds this run's own K/V cache on top)
+[moe gpu cbatch] THROUGHPUT: 20 unified steps (prefill+decode combined --
+NOT directly comparable to V5d's decode-only lockstep numbers), 102 total
+token-positions processed, 9062.11ms wall, 11.256 tok/s aggregate
+RESULT: MoE GPU V5e ragged cbatch gate complete, 56/56 match
+```
+
+**Memory**: 10.053GB peak, comfortably under the 12.71GB working-set
+ceiling -- the 8-slot persistent K/V cache adds only ~0.24GB active over
+V5a's B=1 baseline (9.814GB), as expected (K/V is a small fraction of
+memory dominated by the ~9.8GB weight blob, which doesn't grow with
+N_SLOTS).
+
+**Ragged schedule**: NOT directly comparable to `run_moe_cbatch_verify_
+mode()`'s own logged `8,8,8,7,6,5,4,4,3,2,1,1` decode-only sequence, by
+design -- that sequence is an artifact of the CPU reference's own
+split prefill/decode phasing (all 8 slots enter decode simultaneously,
+since prefill fully completes for every slot before decode begins at
+all). V5e's unified design has slots enter decode STAGGERED (shorter
+prompts finish prefilling earlier), so its own `n_decoding` sub-count
+per step (logged alongside total A) traces a different-shaped but
+structurally analogous staggered-eviction curve: `2,4,6,6,6,6,5,4,4,4,
+3,2,2,1,1,1` from the step decode first starts. The token-for-token
+accuracy gate (56/56) is what actually confirms correctness here, not a
+literal schedule-string match -- documented explicitly rather than
+chasing an inapplicable comparison.
+
+**Throughput measured but explicitly NOT the headline number this
+round**: 11.256 tok/s aggregate, dominated by the unified design's own
+prefill steps (which V5d's decode-only lockstep numbers never counted
+at all) -- reported honestly per the plan's own instruction, not
+compared against V5d's 224.3 tok/s figure. A true batched-causal prefill
+(N positions of one sequence in ONE masked dispatch) remains explicitly
+deferred, per the plan, as the real further speedup this number is
+leaving on the table.
+
+**Status**: V5e's correctness deliverable is COMPLETE -- the ragged
+multi-step design is proven correct (56/56) with real per-slot staggered
+eviction, real memory measured under ceiling, on top of the same
+KILL-GATE-passing V5c-fused/V5d/F-4 foundation. V5f (the full CPU-vs-GPU
+A/B report) and true batched-causal prefill remain open, per the
+standing plan's own dependency order.

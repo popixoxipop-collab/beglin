@@ -1548,3 +1548,39 @@ eager 대비 **~6.8배**. `qwen_infer.c` 전체 라운드 미변경(mlx_moe.cpp�
 `bob:~/vdsp_m4_bench/qwen_infer_v5cfused_final`이 이 최종본을 가리킴.
 
 상세: `RESULTS.md` §"Bug 1 ROOT-CAUSED AND FIXED ... KILL-GATE PASSES".
+
+**V5d(같은 날 후속, 배치 B-token GPU decode)**: `mlx_gpu_layer_step_lazy()`에
+배치축 B 일반화(g_fused_K/V/x가 {B,...}). `gather_qmm`의 lhs_indices=nullopt
+크로스곱 버그를 실사용 규모(B=8)에서 발견+수정(mlx_lm SwitchLinear의
+expand_dims 컨벤션 필요, B=1에선 배치축 부재로 안 보였던 버그).
+B∈{8,16,24,32,48,64} 전 구간 **flipped=0, determinism 확인**.
+
+**F-4(V5d 직후)**: mlx_lm의 global sort/unsort(`_gather_sort`/`_scatter_unsort`)
+이식, `B*top_k>=threshold` 런타임 분기. 실 27레이어 pass 내 크로스오버
+재측정(격리벤치 수치 안 믿고): B=1 손해/B≥8 이득. **B=64 109.6→224.3
+tok/s(+105%), llama.cpp(180.91) 대비 0.61x→1.24x로 역전**.
+
+**V5e(재스코프 후 완료, ragged multi-step GPU decode)**: V5d의 lockstep
+전제(모든 시퀀스가 같은 pos)를 깨는 설계 — `mlx_gpu_cbatch_layer_step_lazy()`가
+A개 컬럼 각각 자기만의 (slot,pos)를 가짐, prefill과 decode를 동일 호출
+형태로 통합(CPU 레퍼런스는 둘을 분리했지만 V5e는 하나로). 3개 MLX
+프리미티브(scatter 2축 window-scatter, rope per-row offset array, sdpa
+per-row mask) 전부 격리 probe로 실 dims 검증 후 적용 — **4번째 후속 probe에서
+Bug1과 같은 부류의 새 함정 발견**: rope offset array가 H=1에선 맞았지만
+H=16(실헤드수)에선 조용히 틀림(offset이 axis -2를 진짜 증분 시퀀스축으로
+취급, 헤드마다 다른 회전 적용됨, max_abs_diff=2.54) → (A,H)를 한 축으로
+flatten해 해결(max_abs_diff=0). 이 패턴은 `~/.claude/skills/
+hw-kernel-vendoring/SKILL.md`에 일반화해 기록(사용자 제안).
+실측 게이트(`QWEN_MOE_GPU_CBATCH=1`): 첫 실행에서 57개 전부 FLIP → CPU의
+`moe_cbatch_step()` 기록 컨벤션 재확인 후 off-by-one 발견(생성 배열이
+ref[k+1]과 대응, ref[0]은 절대 기록 안 되는 CPU 자체 컨벤션) → 수정 후
+**56/56 정확도 일치**(57개 중 1개는 JSON 12토큰 캡처 상한 밖이라
+구조적으로 검증불가, 명시적으로 로그됨 — 계획서의 "56/56 기대"와 정확히 일치).
+메모리 active=9.982GB/peak=10.053GB (ceiling 12.71GB, V5a B=1 기준
+9.814GB 대비 +0.24GB만 증가, K/V캐시가 가중치 대비 작은 비중이라 예상대로).
+처리량은 참고용으로만 측정(11.256 tok/s, prefill+decode 통합이라 V5d의
+decode-only 224.3과 직접비교 불가 — 정직하게 명시). **V5e 정확성
+목표 완료**. 남은 것: 진짜 batched-causal prefill(한 시퀀스 N포지션을
+한 마스크드 dispatch로), V5f(CPU vs GPU 최종 A/B 리포트).
+상세: `RESULTS.md` §"V5e: ragged multi-step GPU decode -- CORRECTNESS
+VERIFIED (56/56)".

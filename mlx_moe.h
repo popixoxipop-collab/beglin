@@ -163,6 +163,26 @@ int mlx_gpu_set_batch(int B);
 // Returns 1 on success, 0 if MLX is unavailable.
 int mlx_gpu_set_sort_threshold(int threshold);
 
+// V5e: ragged multi-step GPU decode -- generalizes mlx_gpu_layer_step_lazy()'s single
+// shared `pos` to A independent (slot,pos) pairs, one per active column, covering BOTH
+// prefill (a slot advancing one more prompt position) and decode (a slot generating a new
+// token) with the SAME call shape. Mirrors moe_cbatch_step()'s own (token_ids, slot, spos,
+// A) naming (qwen_infer.c). Reuses the SAME persistent per-slot K/V arrays
+// mlx_gpu_set_batch(N)/mlx_gpu_layer_step_lazy() use -- call mlx_gpu_set_batch(N_SLOTS)
+// once before the first step of a cbatch run to size them; unlike V5d's B (fully rewritten
+// every call), these persist across every step of the run. Call
+// mlx_gpu_cbatch_layer_step_lazy() once per layer (l=0..NL-1) for the SAME step's A
+// columns, then mlx_gpu_cbatch_forward_finalize() once per step (mirrors
+// mlx_gpu_forward_finalize()'s own eval-everything-at-once contract). slot[]/spos[] are
+// read once per call (each call's own array(It,shape,dtype) COPYING ctor -- not the 4-arg
+// no-copy wrap wrap_host_f32() uses for weights -- so their host lifetime need not extend
+// past the call, unlike Bug 1's freqs_f32 mistake). Returns 1 on success, 0 on failure.
+int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spos, int is_dense,
+                                    const float *x_in_host, const float *w_inln,
+                                    const float *w_postln, const float *w_kvaln,
+                                    const float *w_gate);
+int mlx_gpu_cbatch_forward_finalize(const float *w_finalnorm, float *logits_out);
+
 #ifdef __cplusplus
 }
 #endif
