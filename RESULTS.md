@@ -5519,3 +5519,65 @@ with the shared `rq_out` overflow class fixed in both, and the
 manifest loader shared rather than duplicated. GQA CPU twin manifest
 support and `load_ids()` input validation remain open, as noted in the
 GQA round's own section above.
+
+## V5l GQA CPU twin: manifest support for the CPU ground-truth scheduler
+
+**Motivation**: until this round, manifest workloads run through the
+GQA GPU online scheduler had no CPU ground-truth to cross-check
+against -- only the V5k single-sequence gate served that role, and it
+never exercises the online scheduler's own admission/eviction/
+budget-chunked-prefill logic. `run_moe_gqa_cbatch_online_cpu_gate()`
+(the exact scheduling-logic twin of the GPU gate, `moe_cbatch_step()`
+instead of the GPU lazy primitives) got the same
+`QWEN_MOE_CB_PROMPT_MANIFEST` mechanism so manifest workloads now have
+a real CPU-vs-GPU cross-check, not just a single-sequence one.
+
+**Implementation note**: `moe_cbatch_load_manifest()` was originally
+defined between the GQA CPU twin and GQA GPU gate (so only the GPU
+gate, declared after it, could see it without a forward declaration).
+Adding a call from the CPU twin -- declared *before* that point --
+triggered a real C compile error (`implicit-function-declaration` then
+`static declaration ... follows non-static declaration`), not just a
+style nit: the loader had to actually be moved earlier in the file, to
+just above the GQA CPU twin, so all three (soon four, once MLA's own
+CPU twin gets the same treatment) call sites can see one true
+definition regardless of call order. Also fixed the loader's internal
+log tag from the leftover GPU-only `[moe gpu gqa cb online]` to a
+topology/gate-neutral `[moe cbatch manifest]`, now that it's called
+from CPU and GPU gates alike.
+
+**Verification** (real OLMoE weights, `~/vdsp_olmoe_full_weights`):
+1. `git diff --unified=0` -- every hunk (including the loader's
+   relocation, which shows as a same-content move) falls inside
+   `#ifdef QWEN_GPU_MLX`.
+2. Manifest unset, before/after -- stderr diff (wall-clock fields
+   filtered) completely empty.
+3. Manifest reconstructing the exact 8-prompt corpus at default
+   `R=12` -- diff against the no-manifest run empty except the new
+   manifest-load log line.
+4. `MC=10`/`R=20` wraparound, **directly diffed against the GQA GPU
+   gate's own run of the identical manifest+config from the earlier
+   round** (not just against the V5k single-sequence gate this time)
+   -- every field (`req`/`prompt`/`slot`/`admit_step`/`tokens:`,
+   including `steps=37`/`admitted_after_evict=16`/
+   `queue_wait_events=16`/`queue_wait_max_steps=31`) matched exactly.
+   This is the actual point of this round: the online scheduler's CPU
+   and GPU implementations now provably agree on a manifest workload,
+   not just on the fixed synthetic corpus they'd already been checked
+   against.
+5. `rq_out` widening, same ASan protocol: pre-fix (function-scoped
+   revert) hit the identical `global-buffer-overflow` shape at
+   `run_moe_gqa_cbatch_online_cpu_gate.rq_out` under the `R=64,B=8,
+   plen=1,maxnew=31` worst case; post-fix ran clean. This CPU run is
+   scalar (`MoeScalarPool` 64 threads, no GPU dispatch) so it's
+   dramatically slower than the GPU gate's own worst-case run (`tok/s
+   1.833` vs `214.7` for the equivalent GPU-side torture test) -- a
+   real, already-documented property of this codebase (V5f/V5h), not
+   an artifact of this round's change.
+
+**Status**: V5l's online-scheduler manifest support now spans GQA GPU,
+GQA CPU (this round), and MLA GPU. MLA CPU twin
+(`run_moe_cbatch_verify_mode()`'s own online branch) remains the one
+open gap for full CPU/GPU × GQA/MLA coverage, and is now the most
+natural next round given the loader is already positioned to serve
+it.

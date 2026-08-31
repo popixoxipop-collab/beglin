@@ -9458,6 +9458,52 @@ static int run_moe_gpu_gqa_cbatch_prefill_gate(int argc, char **argv) {
 // scheduling logic, nothing more; the MoE-4c margin-gated reverify layer is intentionally omitted
 // here too, same reasoning as the GPU gate below (no SME2 numerical noise to guard against in a
 // ground-truth reference run).
+// V5l: QWEN_MOE_CB_PROMPT_MANIFEST=<path> -- manifest format: one non-blank, non-'#'-comment
+// line per entry, "<i32-token-file-path> <max_new_tokens>" whitespace-separated. Prompt tokens
+// loaded via load_ids() (:2156), the same raw-int32 convention QWEN_MOE_PROMPT already
+// established (V5k). FATAL (not skip) on any per-line failure -- unlike moe_load_layout_f32()'s
+// tolerant blank-line skip, a manifest line the caller wrote is not incidental config noise.
+// Topology-agnostic (raw int arrays only) -- shared verbatim by both the GQA (V5l) and MLA
+// (V5l MLA mirror) online scheduler gates below, not duplicated per Rule 3's own "genuinely
+// shared infra gets one helper" precedent (matches moe_load_gqa_cbatch_config()'s own history).
+static int moe_cbatch_load_manifest(const char *path, int *mf_plen, int *mf_maxnew,
+                                         int mf_ids[][MOE_CBATCH_MAXPOS], int cap) {
+    FILE *f = fopen(path, "r");
+    if (!f) { fprintf(stderr, "FATAL: [moe cbatch manifest] could not open manifest '%s'\n", path); exit(1); }
+    char line[1024];
+    int n = 0, lineno = 0;
+    while (fgets(line, sizeof line, f)) {
+        lineno++;
+        char *p = line; while (*p == ' ' || *p == '\t') p++;
+        if (*p == '\0' || *p == '\n' || *p == '#') continue;
+        char fpath[1024]; int maxnew;
+        if (sscanf(line, "%1023s %d", fpath, &maxnew) != 2) {
+            fprintf(stderr, "FATAL: [moe cbatch manifest] malformed manifest line %d in '%s'\n", lineno, path);
+            exit(1);
+        }
+        if (n >= cap) {
+            fprintf(stderr, "FATAL: [moe cbatch manifest] manifest '%s' has more than %d entries\n", path, cap);
+            exit(1);
+        }
+        if (maxnew <= 0)
+            fprintf(stderr, "[moe cbatch manifest] WARNING: manifest line %d maxnew=%d <= 0\n", lineno, maxnew);
+        int N = load_ids(fpath, mf_ids[n], MOE_CBATCH_MAXPOS);
+        if (N <= 0) {
+            fprintf(stderr, "FATAL: [moe cbatch manifest] could not load prompt ids from '%s' (manifest line %d)\n", fpath, lineno);
+            exit(1);
+        }
+        if (N >= MOE_CBATCH_MAXPOS) {
+            fprintf(stderr, "FATAL: [moe cbatch manifest] manifest entry '%s' prompt length %d >= MOE_CBATCH_MAXPOS=%d\n",
+                    fpath, N, MOE_CBATCH_MAXPOS);
+            exit(1);
+        }
+        mf_plen[n] = N; mf_maxnew[n] = maxnew; n++;
+    }
+    fclose(f);
+    if (n == 0) { fprintf(stderr, "FATAL: [moe cbatch manifest] manifest '%s' has zero valid entries\n", path); exit(1); }
+    return n;
+}
+
 static int run_moe_gqa_cbatch_online_cpu_gate(int argc, char **argv) {
     (void)argc; (void)argv;
     const char *gate_env = getenv("QWEN_MOE_GQA_CBATCH_ONLINE_CPU");
@@ -9476,9 +9522,27 @@ static int run_moe_gqa_cbatch_online_cpu_gate(int argc, char **argv) {
 
     // Same real OLMoE workload every V5j-ragged GPU gate (Phase B/C) already established --
     // now a single shared table (g_moe_gqa_cbatch_* above), not a hand-transcribed copy.
-    const int *prompt_len = g_moe_gqa_cbatch_prompt_len;
-    const int *moe_cbatch_gen = g_moe_gqa_cbatch_gen;
-    const int (*prompt_ids)[MOE_CBATCH_MAXPLEN] = g_moe_gqa_cbatch_prompt_ids;
+    //
+    // V5l: same QWEN_MOE_CB_PROMPT_MANIFEST mechanism as the GPU gate (run_moe_gpu_gqa_cbatch_
+    // online_gate()) -- this CPU twin is the ground truth those manifest workloads had no CPU
+    // cross-check against until now. else-branch copies the exact same g_moe_gqa_cbatch_* values.
+    static int mf_plen[MOE_CB4B_RMAX], mf_maxnew[MOE_CB4B_RMAX];
+    static int mf_ids[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS];
+    int mf_n;
+    const char *manifest_path = getenv("QWEN_MOE_CB_PROMPT_MANIFEST");
+    if (manifest_path && manifest_path[0]) {
+        mf_n = moe_cbatch_load_manifest(manifest_path, mf_plen, mf_maxnew, mf_ids, MOE_CB4B_RMAX);
+        fprintf(stderr, "[moe gqa cb online cpu] loaded %d-entry prompt manifest from '%s'\n", mf_n, manifest_path);
+    } else {
+        for (int i = 0; i < MOE_CBATCH_N; i++) {
+            mf_plen[i] = g_moe_gqa_cbatch_prompt_len[i];
+            mf_maxnew[i] = g_moe_gqa_cbatch_gen[i];
+            for (int c = 0; c < g_moe_gqa_cbatch_prompt_len[i]; c++)
+                mf_ids[i][c] = g_moe_gqa_cbatch_prompt_ids[i][c];
+        }
+        mf_n = MOE_CBATCH_N;
+    }
+    const int MCN = mf_n;
     const int OLMOE_EOS = MOE_EOS_TOKEN_ID;   // now config-driven (arch_config_moe.txt EOS_TOKEN_ID), was a hardcoded magic number
 
     const char *env_slots     = getenv("QWEN_MOE_CB_SLOTS");
@@ -9499,7 +9563,7 @@ static int run_moe_gqa_cbatch_online_cpu_gate(int argc, char **argv) {
 
     static int    rq_plen[MOE_CB4B_RMAX], rq_maxnew[MOE_CB4B_RMAX], rq_arrive[MOE_CB4B_RMAX];
     static int    rq_slot_of[MOE_CB4B_RMAX], rq_admit_step[MOE_CB4B_RMAX];
-    static int    rq_out[MOE_CB4B_RMAX][MOE_CBATCH_KNEW], rq_nout[MOE_CB4B_RMAX];
+    static int    rq_out[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS], rq_nout[MOE_CB4B_RMAX];
     static double rq_t_admit[MOE_CB4B_RMAX], rq_t_first[MOE_CB4B_RMAX];
 
     for (int r = 0; r < R; r++) rq_arrive[r] = 0;
@@ -9513,8 +9577,8 @@ static int run_moe_gqa_cbatch_online_cpu_gate(int argc, char **argv) {
         }
     }
     for (int r = 0; r < R; r++) {
-        int sp = r % MOE_CBATCH_N;
-        rq_plen[r] = prompt_len[sp]; rq_maxnew[r] = moe_cbatch_gen[sp];
+        int sp = r % MCN;
+        rq_plen[r] = mf_plen[sp]; rq_maxnew[r] = mf_maxnew[sp];
         rq_nout[r] = 0; rq_slot_of[r] = -1; rq_admit_step[r] = -1;
         rq_t_admit[r] = 0.0; rq_t_first[r] = 0.0;
         moe_cb4b_admit_guard(rq_plen, rq_maxnew, r);
@@ -9567,7 +9631,7 @@ static int run_moe_gqa_cbatch_online_cpu_gate(int argc, char **argv) {
             int r = mcb_req[s];
             int take = rq_plen[r] - mcb_pref[s]; if (take > budget) take = budget;
             for (int i = 0; i < take; i++) {
-                ids[A] = prompt_ids[r % MOE_CBATCH_N][mcb_pref[s]+i];
+                ids[A] = mf_ids[r % MCN][mcb_pref[s]+i];
                 slots[A] = s; sposs[A] = mcb_pref[s]+i; A++;
             }
             mcb_pref[s] += take; budget -= take;
@@ -9614,7 +9678,7 @@ static int run_moe_gqa_cbatch_online_cpu_gate(int argc, char **argv) {
         ttft_sum += ttft_ms; ttft_n++;
         total_tok_processed += rq_nout[r];
         fprintf(stderr, "[moe gqa cb online cpu] req %d prompt %d slot %d arrive %d admit_step %d ttft_ms %.2f nout %d tokens:",
-                r, r % MOE_CBATCH_N, rq_slot_of[r], rq_arrive[r], rq_admit_step[r], ttft_ms, rq_nout[r]);
+                r, r % MCN, rq_slot_of[r], rq_arrive[r], rq_admit_step[r], ttft_ms, rq_nout[r]);
         for (int k = 0; k < rq_nout[r]; k++) fprintf(stderr, " %d", rq_out[r][k]);
         fprintf(stderr, "\n");
     }
@@ -9640,52 +9704,6 @@ static int run_moe_gqa_cbatch_online_cpu_gate(int argc, char **argv) {
 // precedent for MLA exactly (already re-confirmed empirically by Phase C needing zero mlx_moe.cpp
 // changes on top of Phase B). MoE-4c's margin-gated reverify layer is intentionally not ported,
 // same reasoning V5h's own header comment gives (no SME2 numerical noise on the GPU MLX path).
-// V5l: QWEN_MOE_CB_PROMPT_MANIFEST=<path> -- manifest format: one non-blank, non-'#'-comment
-// line per entry, "<i32-token-file-path> <max_new_tokens>" whitespace-separated. Prompt tokens
-// loaded via load_ids() (:2156), the same raw-int32 convention QWEN_MOE_PROMPT already
-// established (V5k). FATAL (not skip) on any per-line failure -- unlike moe_load_layout_f32()'s
-// tolerant blank-line skip, a manifest line the caller wrote is not incidental config noise.
-// Topology-agnostic (raw int arrays only) -- shared verbatim by both the GQA (V5l) and MLA
-// (V5l MLA mirror) online scheduler gates below, not duplicated per Rule 3's own "genuinely
-// shared infra gets one helper" precedent (matches moe_load_gqa_cbatch_config()'s own history).
-static int moe_cbatch_load_manifest(const char *path, int *mf_plen, int *mf_maxnew,
-                                         int mf_ids[][MOE_CBATCH_MAXPOS], int cap) {
-    FILE *f = fopen(path, "r");
-    if (!f) { fprintf(stderr, "FATAL: [moe gpu gqa cb online] could not open manifest '%s'\n", path); exit(1); }
-    char line[1024];
-    int n = 0, lineno = 0;
-    while (fgets(line, sizeof line, f)) {
-        lineno++;
-        char *p = line; while (*p == ' ' || *p == '\t') p++;
-        if (*p == '\0' || *p == '\n' || *p == '#') continue;
-        char fpath[1024]; int maxnew;
-        if (sscanf(line, "%1023s %d", fpath, &maxnew) != 2) {
-            fprintf(stderr, "FATAL: [moe gpu gqa cb online] malformed manifest line %d in '%s'\n", lineno, path);
-            exit(1);
-        }
-        if (n >= cap) {
-            fprintf(stderr, "FATAL: [moe gpu gqa cb online] manifest '%s' has more than %d entries\n", path, cap);
-            exit(1);
-        }
-        if (maxnew <= 0)
-            fprintf(stderr, "[moe gpu gqa cb online] WARNING: manifest line %d maxnew=%d <= 0\n", lineno, maxnew);
-        int N = load_ids(fpath, mf_ids[n], MOE_CBATCH_MAXPOS);
-        if (N <= 0) {
-            fprintf(stderr, "FATAL: [moe gpu gqa cb online] could not load prompt ids from '%s' (manifest line %d)\n", fpath, lineno);
-            exit(1);
-        }
-        if (N >= MOE_CBATCH_MAXPOS) {
-            fprintf(stderr, "FATAL: [moe gpu gqa cb online] manifest entry '%s' prompt length %d >= MOE_CBATCH_MAXPOS=%d\n",
-                    fpath, N, MOE_CBATCH_MAXPOS);
-            exit(1);
-        }
-        mf_plen[n] = N; mf_maxnew[n] = maxnew; n++;
-    }
-    fclose(f);
-    if (n == 0) { fprintf(stderr, "FATAL: [moe gpu gqa cb online] manifest '%s' has zero valid entries\n", path); exit(1); }
-    return n;
-}
-
 static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
     (void)argc; (void)argv;
     const char *gate_env = getenv("QWEN_MOE_GPU_GQA_CBATCH_ONLINE");

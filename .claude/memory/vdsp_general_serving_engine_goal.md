@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-08-31T22:50:00.000Z
+  modified: 2026-08-31T23:35:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -1841,3 +1841,28 @@ GQA+MLA 두 토폴로지 모두 COMPLETE** — V5k와 똑같은 "GQA 먼저, MLA
 즉시 미러링" 패턴으로 온라인 스케줄러 실프롬프트 지원도 두 토폴로지
 동시완결. 상세: `RESULTS.md` §"V5l MLA mirror: real-prompt manifest
 for the MLA online admission scheduler".
+
+★V5l GQA CPU twin(온라인스케줄러 CPU ground-truth `run_moe_gqa_
+cbatch_online_cpu_gate()`에도 동일 매니페스트, 사용자가 명시 요청:
+"지금 매니페스트 워크로드는 V5k 단일시퀀스 게이트로만 대조 가능하고,
+CPU ground-truth 동시 대조 수단이 없음"): ★진짜 컴파일 에러로 설계
+결함 발견 — `moe_cbatch_load_manifest()`가 원래 GQA-CPU-twin과
+GQA-GPU-게이트 "사이"에 정의돼있어서 CPU twin(더 앞에 선언)에서
+호출하면 C에서 암묵적 선언→나중 static 정의 충돌 에러. 로더 함수
+자체를 CPU twin보다 앞으로 물리 이동시켜 해결(향후 MLA CPU twin도
+같은 위치에서 볼 수 있음). 로더 내부 로그태그도 GPU전용이던
+`[moe gpu gqa cb online]`을 토폴로지중립 `[moe cbatch manifest]`로
+정정. **검증 5개 전부 통과, 이번엔 (4)가 질적으로 다름**: 이전
+GQA/MLA GPU 라운드는 V5k 단일시퀀스 게이트와만 대조했지만, 이번엔
+**GQA GPU 게이트의 이전 라운드 MC=10/R=20 실행결과와 직접 대조** —
+req/prompt/slot/admit_step/tokens/steps=37/admitted_after_evict=16/
+queue_wait_events=16/queue_wait_max_steps=31 전부 완전일치. 이게
+이번 라운드의 진짜 목적(온라인 스케줄러 자체의 CPU=GPU 증명, 고정
+corpus가 아닌 임의 매니페스트 워크로드에서). (5) ASan도 CPU twin
+자체 함수범위에서 재현+수정확인(GPU와 동일 지점 형태). ★CPU 스칼라
+경로가 GPU보다 압도적으로 느림을 재확인(R=64 최악케이스 tok/s=1.833
+vs GPU 214.7 — 기존 세션 기록(V5f/V5h)과 일치하는 이미 알려진
+특성, 이번 변경의 부작용 아님). 다음 유일 남은 갭: MLA CPU twin
+(`run_moe_cbatch_verify_mode()`의 online분기). 상세: `RESULTS.md`
+§"V5l GQA CPU twin: manifest support for the CPU ground-truth
+scheduler".
