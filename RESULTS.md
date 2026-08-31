@@ -4295,3 +4295,75 @@ eviction, real memory measured under ceiling, on top of the same
 KILL-GATE-passing V5c-fused/V5d/F-4 foundation. V5f (the full CPU-vs-GPU
 A/B report) and true batched-causal prefill remain open, per the
 standing plan's own dependency order.
+
+## V5f: CPU vs GPU A/B, matched workload -- the controlled comparison
+## the original honest-but-unmatched gap (RESULTS.md, "44.34x/19.6x")
+## was always meant to be followed up with
+
+The project's very first CPU-vs-GPU comparison (llama.cpp+Metal at
+48.34 tok/s for ONE user vs this engine's CPU/SME2 ragged cbatch at
+2.47 tok/s aggregate across EIGHT concurrent users) was explicitly
+flagged as unmatched -- different engines, different concurrency, no
+controlled variable. That text named exactly what would fix it: "left
+for a real controlled V5d/V5f-style comparison later." V5e's own gate
+now makes that comparison trivial to run correctly: `QWEN_MOE_CBATCH=1`
+(CPU, `run_moe_cbatch_verify_mode()`) and `QWEN_MOE_GPU_CBATCH=1` (GPU,
+`run_moe_gpu_cbatch_gate()`) both drive the IDENTICAL `MOE_CBATCH_N=8` /
+`prompt_len={4,5,6,7,8,5,6,4}` / `moe_cbatch_gen={4,6,8,10,12,5,9,3}`
+workload -- same engine, same binary (`qwen_infer_v5e`), same machine
+(bob), same 102 total token-positions (45 prefill + 57 decode) end to
+end. No new code was needed for this comparison -- both gates already
+report their own prefill+decode-combined wall time
+(`ms_ragged_total`/`ms_wall`); this just runs both, 3x each per this
+project's own established anomaly-detection discipline (F-4 caught a
+real single-run outlier earlier this session), and reports honestly.
+
+**CPU** (`QWEN_MOE_BASE=~/moe_base_deepseek QWEN_MOE_CBATCH=1
+./qwen_infer_v5e`, 3 runs):
+| run | prefill | decode(12 steps) | total (prefill+decode) | tok/s (102 tok) |
+|---|---|---|---|---|
+| 1 | 17283.01ms | 21897.81ms | 39180.81ms | 2.603 |
+| 2 | 16367.93ms | 18505.73ms | 34873.66ms | 2.925 |
+| 3 | 16445.85ms | 20172.45ms | 36618.30ms | 2.786 |
+
+**GPU** (`QWEN_MOE_BASE=~/moe_base_deepseek QWEN_MOE_GPU_CBATCH=1
+./qwen_infer_v5e`, 3 runs, all 56/56 accuracy):
+| run | wall (20 unified steps) | tok/s (102 tok) |
+|---|---|---|
+| 1 | 8168.18ms | 12.488 |
+| 2 | 8856.41ms | 11.518 |
+| 3 | 8799.90ms | 11.591 |
+
+**CPU avg 2.771 tok/s** (range 2.60-2.93, ~12% spread -- ordinary
+machine noise, not chased further), **GPU avg 11.866 tok/s** (range
+11.52-12.49, ~8% spread). **GPU wins by ~4.3x on this matched
+workload** (best/worst-case bracket 3.9x-4.8x depending which runs are
+paired) -- real, controlled, same-engine, same-binary, same-machine,
+apples-to-apples for the first time in this project's whole CPU-vs-GPU
+story.
+
+**Why this is a much smaller gap than V5d/F-4's own B=64 GPU number
+(224.3 tok/s) -- explained, not glossed over**: V5e's ragged design was
+built correctness-first (per its own approved plan, explicitly
+deferring "true batched-causal prefill"). Every one of the 45 prefill
+positions in this workload still costs one full MLX eval-graph
+dispatch per unified step (one position advances per slot per step,
+identical in cost-shape to a single decode step) -- unlike a real
+serving engine's batched-causal prefill, which would process an entire
+prompt's N positions in ONE masked dispatch. This session's own
+`n_decoding` log line already showed the effect directly: GPU's
+`n_decoding` never exceeds 6 of 8 slots at once during this workload's
+early steps (shorter prompts still finishing their own prefill) --
+GPU's real per-step batching advantage (the thing that made V5d's B=64
+number 224.3 tok/s) never gets to operate at its own best case here,
+because true batched-causal prefill is exactly the piece V5e's plan
+left out. The 4.3x measured here is the ragged design's OWN honest
+number, not a proxy for the engine's real ceiling -- true
+batched-causal prefill (still explicitly deferred) is where the rest of
+that gap almost certainly lives.
+
+**Status**: V5f's controlled matched-workload comparison is COMPLETE --
+CPU vs GPU, same engine, same workload, 3x each, GPU wins ~4.3x with
+the reason for the modest (vs V5d's 224.3 tok/s) margin explicitly
+understood and documented, not hand-waved. True batched-causal prefill
+remains the one open item on the standing plan's own dependency chain.

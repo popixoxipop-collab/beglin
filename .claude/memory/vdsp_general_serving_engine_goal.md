@@ -1584,3 +1584,22 @@ decode-only 224.3과 직접비교 불가 — 정직하게 명시). **V5e 정확�
 한 마스크드 dispatch로), V5f(CPU vs GPU 최종 A/B 리포트).
 상세: `RESULTS.md` §"V5e: ragged multi-step GPU decode -- CORRECTNESS
 VERIFIED (56/56)".
+
+**V5f(재스코프 없이 즉시 착수, 새 코드 불필요)**: 세션 최초의 CPU-vs-GPU
+비교(llama.cpp 48.34 tok/s 1유저 vs CPU 2.47 tok/s 8동시유저)는 엔진도
+동시성도 안 맞는 "정직하지만 통제안된" 비교였음 — 그 텍스트 자체가
+"real controlled V5d/V5f-style comparison later"를 예고해뒀었음. V5e의
+두 게이트(`QWEN_MOE_CBATCH=1` CPU / `QWEN_MOE_GPU_CBATCH=1` GPU)가 이미
+완전히 동일한 8슬롯 워크로드를 쓰고 있어서, 같은 바이너리·같은 머신·
+같은 102토큰(45prefill+57decode)으로 3회씩 재측정만 하면 됐음(신규
+코드 없음, F-4의 이상치 탐지 규율 그대로 3회 반복).
+**CPU 평균 2.771 tok/s(2.60~2.93), GPU 평균 11.866 tok/s(11.52~12.49)
+— GPU가 ~4.3배(3.9~4.8배 범위) 우세**, 사상 최초의 진짜 통제 비교.
+**격차가 V5d/F-4의 B=64 수치(224.3 tok/s)보다 훨씬 작은 이유도
+얼버무리지 않고 설명**: V5e는 정확성 우선 설계라 45개 prefill 포지션
+전부가 decode 스텝과 동일 비용(포지션당 MLX eval-graph 1회)으로
+처리됨 — 진짜 batched-causal prefill(한 시퀀스 N포지션을 한 dispatch로)
+이 계획서에서 명시적으로 제외됐던 바로 그 부분이라, GPU의 진짜
+배치우위가 이 워크로드에서 최선의 케이스로 발휘를 못 함. 남은
+격차 대부분이 거기 있을 것으로 판단(확정 아님). **V5f 완료**.
+상세: `RESULTS.md` §"V5f: CPU vs GPU A/B, matched workload".
