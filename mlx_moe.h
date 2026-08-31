@@ -108,25 +108,36 @@ int mlx_gpu_layer_step_dbg(int l, int pos, int is_dense,
                             float *x_out, int *out_top_idx, float *out_top_wgt,
                             float *dbg_xmid_out, float *dbg_routed_out);
 
-// V5c-fused: one-eval-per-LAYER rewrite. STATUS: pos=0 verified correct
-// (matches the golden eager path exactly, rel-L2 5.22e-07); pos>=1 (any
-// nonempty K/V history) still produces WRONG logits -- an unresolved bug,
-// NOT yet safe to treat as a working replacement for mlx_gpu_layer_step().
-// Full account of what was tried (two real bugs found+fixed, a third left
-// unresolved after extensive bisection) is in mlx_moe.cpp's comment above
-// mlx_gpu_layer_step_lazy(). Call mlx_gpu_layer_step_lazy() once per layer,
-// in order (l=0..NL-1), for the SAME token/pos. Each call builds that ONE
-// layer's ops as a single lazy graph (with one exception, documented in the
-// .cpp), evaluates it (this layer's x_out + new K/V together, inside this
-// same call -- not deferred across calls), persists the new K/V into the
-// same cache mlx_gpu_layer_step()/mlx_gpu_mla_layer0() read, and keeps the
-// (already-evaluated) x_out as the next layer's input. x_in_host is only
-// read on l==0 (the token's embedding); for l>0 it is ignored (the previous
-// call's own x_out is used instead). After all layers, call
-// mlx_gpu_forward_finalize() exactly once to append the final norm + lm_head
-// and evaluate that (small) remaining piece, writing logits_out. Returns 1 on
-// success, 0 on failure (aborts the pending state on failure -- next l==0 call
-// starts fresh).
+// V5c-fused: true one-eval-per-TOKEN rewrite (no residual/error-feedback
+// applicable here -- pure control-flow/lifetime fix, not a quantization
+// change; same D18 exemption as this file's own header). K/V history is a
+// device-side FIXED-SHAPE window (constant shape+pointer every call, a
+// boolean mask encoding validity instead of array length -- the same
+// "device-side, fixed-shape" principle production CUDA-graph-capturable
+// decode paths use, e.g. FreeToken's moe.py, though MLX's lazy graph has no
+// literal capture/replay of its own), stored as a genuine persistent
+// mx::array per layer (not a raw host buffer) and updated via
+// mx::slice_update() so a layer's K/V write and the next layer's read live
+// in the SAME lazy graph. STATUS: verified correct against the golden
+// eager path across all 8 tested positions (rel-L2 ~7.5e-07 worst case,
+// exact match), KILL-GATE PASSES (~52.9 tok/s vs the 48.34 tok/s
+// llama.cpp+Metal bar). Full account of four real bugs found+fixed across
+// this rewrite's history (a cross-product gather_qmm composition, a bare
+// mx::slice() not forced contiguous, a switch_down cross-product
+// eliminated outright by matching mlx_lm's own reference SwitchLinear
+// convention, and a stack-lifetime use-after-free in a RoPE frequency
+// array) is in mlx_moe.cpp's comments above
+// mlx_gpu_layer_step_lazy()/mlx_gpu_forward_finalize() and in RESULTS.md.
+// Call mlx_gpu_layer_step_lazy() once per layer, in order (l=0..NL-1), for
+// the SAME token/pos -- each call builds that layer's ops into a single,
+// still-growing lazy graph (nothing is evaluated inside the call itself
+// anymore); x_in_host is only read on l==0 (the token's embedding), for
+// l>0 the previous call's own (still-lazy) x_out is used instead. After
+// all layers, call mlx_gpu_forward_finalize() exactly once -- this is
+// where the ENTIRE token's graph (every layer's K/V update, the final
+// norm, lm_head) actually evaluates, writing logits_out. Returns 1 on
+// success, 0 on failure (aborts the pending state on failure -- next l==0
+// call starts fresh).
 int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
                              const float *x_in_host, const float *w_inln, const float *w_postln,
                              const float *w_kvaln, const float *w_gate);

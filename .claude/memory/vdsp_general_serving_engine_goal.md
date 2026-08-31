@@ -1,0 +1,1417 @@
+---
+name: vdsp-general-serving-engine-goal
+description: vdsp를 Apple Silicon GPU+MoE 대형모델 지원 범용 서빙엔진(MLX/llama.cpp급)으로 확장하는 것이 사용자의 장기 목표
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
+  modified: 2026-08-31T09:40:00.000Z
+---
+
+사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
+q4g64 양자화, SME2/NEON 커널 통합 사례연구)를 **Apple Silicon GPU + MoE 대형모델을
+지원하는 범용 서빙엔진**으로 확장 — MLX나 llama.cpp가 하는 것처럼.
+
+**Why**: FreeToken(arXiv:2608.16157, FlashML-org — NVIDIA GPU 타겟 edge MoE
+서빙엔진, $q^\star$ bandwidth-adaptive CPU-GPU co-execution 정책)을 보고
+"우리 to-be와 같은 방향"이라 판단, 2026-08-22 세션에서 즉시 Opus 에이전트에게
+설계 위임.
+
+**핵심 구조적 차이(이미 사용자와 합의됨, 향후 설계의 전제)**: FreeToken의
+핵심 문제(CPU RAM ↔ GPU VRAM PCIe 대역폭 병목)는 Apple Silicon의 unified
+memory 때문에 그대로 적용되지 않음. Apple Silicon에서 진짜 문제는 (a) 주어진
+연산을 CPU(NEON/SME2) vs GPU(Metal) 중 어디로 라우팅할지 결정하는 정책,
+(b) 동시 실행 시 CPU/GPU 상호 간섭(이미 분리해둔 CPU/GPU 동시성 컴패니언
+논문이 "partner-by-dispatch-mode interaction"으로 부분 규명 — 특정 GPU
+파트너 상대로만 SME2 dispatch가 급격히 취약해짐, 균일한 페널티가 아님).
+
+**MoE 관련 우려**: MoE는 토큰별 sparse expert 활성화라 실효 배치가 작음 —
+SME2의 이점은 배치 크게 커야 나타남(batch=16 near-zero, batch=64 +37%,
+기존 dense 모델 측정 기준). 즉 SME2가 MoE expert 연산 자체엔 안 맞고
+GPU/Metal이 기본, SME2/NEON은 shared/dense 서브레이어나 여러 토큰을 같은
+expert로 묶어 배칭할 때만 쓰는 구조일 가능성.
+
+**진행상황**: 2026-08-22, Opus 에이전트(fresh, model=opus — fork는 parent
+model인 Sonnet을 그대로 물려받아 opus 불가라 fresh agent로 위임)에게 단계적
+설계 로드맵 위탁 완료. 실제 엔진소스(`macstudio:/Volumes/D50/vdsp @ 3537ce6`)와
+논문 표를 직접 읽고 계산한 결과물:
+- 산출물(영구 위치로 이동완료 2026-08-22): `~/Desktop/vdsp_v2_design/DESIGN_vdsp_v2_apple_silicon_serving_engine.md` + artifact https://claude.ai/code/artifact/5f7cf8e9-ae18-42bf-92de-06b808d91913
+- ★★ co-execution 이득은 컴패니언 논문 기존 표 산술만으로 이미 나와있었음: M4 +20.5%(921.32 vs 764.44), M1Max +16.4% — "2배"가 아니라 "+20%" 효과, 예산배분에 결정적
+- ★★ MoE decode는 SME2 구조적 배제: expert당 실효배치(B·k/E)가 SME2 최소문턱 넘으려면 Qwen3-30B-A3B 기준 B≥256 필요 + B≈32에서 이미 bandwidth-bound 전환 → SME2는 prefill+dense서브레이어에만 자리
+- ★ retention%(간섭시 83.9%)가 아니라 절대처리량 기준으로는 최악조건에서도 NEON+SME2가 NEON보다 12.7% 여전히 빠름 — 라우터는 절대값 최적화해야 함
+- ★★★ 하드웨어 제약(유일하게 노력으로 못 만회): SME2 기기=bob(M4,16GB) 1대뿐, 64GB 기기 2대는 SME2 없음 → MoE+SME2 동시검증 불가능한 상태
+- 논문 권고: 현재 스코프 그대로 출간(MAJOR_REVISION 사유=스코프아닌 실행이슈, 이미 처리됨), 확장은 future work 한 문단만
+- GPU 백엔드 도입 시 기존 QA 전체가 의존하는 "bit-identical 검증"이 원리적으로 불가능해짐(fp16 누산 등) → 대체 검증 프로토콜(oracle고정+rel-RMS예산+token agreement) 설계를 리팩터 착수 전 배치 권고
+- 최우선 액션 3개(병렬가능): P0.1 기존바이너리로 co-execution 10분측정(신규코드 0줄), P0.3 mlx::core 링크 spike 200줄, V1+P0.2 기존 64GB M1Max서 MoE regime 실측
+
+**P0.3 부분완료 (2026-08-23, bob/M4)**: (a) `pip install mlx`로 C++ 헤더+dylib
+확보, Python 런타임 없이 순수 clang++로 링크 성공, Metal 자동선택 확인.
+q4g64와 동일 설정(group=64,bits=4) quantized_matmul 4096x4096@M=64 왕복지연
+**평균 1.10ms(200회)** → G3(레이어당 분할, 196회/token)는 이것만으로
+~215ms/token 오버헤드라 트랩 확정, G1/G2가 유효한 설계점. (d) **q4g64→MLX
+니블 패킹 순서가 완전 동일**(byte b의 low nibble=column 2b) — repack도
+requant도 필요없고 `bias=-8*scale` 메타데이터 계산만 필요(설계문서가
+예상한 두 시나리오보다 더 좋은 결과). (b)(c)도 완료(같은 날 후속): mmap 영역을 `newBufferWithBytesNoCopy`+Shared
+storage로 직접 wrap 성공(복사 없이 GPU가 정확히 읽음), CPU-write 직후
+GPU-read도 배리어/`didModifyRange` 없이 5/5 완전 코히런트 — unified memory가
+공짜로 보장. **P0.3 전체 완료**: zero-copy 가중치 로딩 가능+수동 동기화
+코드 불필요, 설계문서가 우려한 3개 리스크 중 2개 해소. 남은 갭: 실제
+q4g64 니블 레이아웃으로 quantized_matmul까지 엔드투엔드 테스트는 아직
+(단순 float 버퍼로만 검증). M1 Max/macstudio 전체 미측정(다른 세션 4개
+활성). Raw: `~/Desktop/vdsp_v2_design/p0.3_spike/`
+
+**P0.1 완료 — 양쪽 칩 모두 (2026-08-23)**:
+bob/M4 실측 B=1 +0.9%(FAIL), B=16 +21.6%(PASS), B=64 +22.4%(PASS) — 설계문서
+산술추정치(+20.5%)와 거의 정확히 일치. 하네스 함정 2건: (a) `llama-cli -no-cnv`가
+non-interactive stdin에서도 무한 프롬프트루프 안 막아줌(15GB 로그 폭주 경험,
+`llama-simple`/`llama-batched`로 대체) (b) `llama-batched -np N`은 `-kvu`
+명시 안 하면 coupled-sequence KV 에러로 죽음. B=256은 엔진 하드캡(64)에
+막혀 스킵.
+
+macstudio/M1 Max도 같은 날 후속 완료 — 사용자가 명시 승인("필요하면 다른
+작업들 맥스튜디오에서 정지 시켰다가... 다시 재개해도 돼")한 뒤, 컴패니언
+논문 Threats-to-Validity가 이미 검증한 전례와 동일하게 상주 프로세스
+`brain.selfplay`(Finance, PID 26018, 99.4% CPU 상시)를 측정구간만 SIGSTOP
+→ 완료 즉시 SIGCONT. 결과: **B=1 +6.3%(FAIL), B=16 +22.7%(PASS),
+B=64 +21.7%(PASS)** — M4와 거의 동일한 패턴, GPU/CPU 상호간섭도 거의
+없음(concurrent 값이 solo 대비 ~2% 이내). `qwen_infer`는 bob과 동일 소스
+파일(SME2 접미사 없는 빌드)이며 `kai_sme2_available()` 런타임 자동감지로
+M1 Max에서 안전하게 NEON 폴백(SIGILL 위험 없음 확인). 하네스 함정 1건 추가:
+macstudio에서 `QWEN_BASE`는 `weights/` 하위가 아니라 엔진 루트
+(`llm_engine/`)여야 함(`ref/prompt_ids.i32` 조회 경로가 `$QWEN_BASE/ref/...`
+고정이라, 다른 3개 가중치 경로는 별도 env var로 명시하는 구조).
+**게이트(+12%) 양쪽 칩 모두 B≥16에서 통과 → SME2 유무와 무관하게 독립
+서빙엔진 co-execution 방향 데이터로 최종 확정.** raw data:
+`~/Desktop/vdsp_v2_design/p0.1_results/`(M4), `p0.1_results_macstudio/`(M1 Max).
+
+**P0.2 V1 완료 (2026-08-23, macstudio/M1 Max, DeepSeek-V2-Lite-Chat-4bit-mlx
+via MLX-LM, 실제 추론)**: `MoEGate.__call__` 몽키패치로 레이어별(26개 MoE
+레이어, 레이어 혼합 금지 — 첫 시도에서 26개 레이어 인덱스를 그냥 합쳐버려
+"B=1에 59/64 expert"라는 말도 안 되는 결과가 나왔던 버그를 게이트 인스턴스별
+분리로 수정) 실측한 decode-step당 distinct-expert 수: **B=1 6.0/64(=top_k,
+검증) / B=8 32.3/64 / B=16 45.9/64 / B=32 57.4/64(90%) / B=64
+62.4/64(97.5%)**. 설계문서 §5.2의 균일분포 이론표(6/35/51/61/64)와 형태는
+거의 일치하지만 실측이 매 B에서 약간 더 낮음 — 실제 학습된 라우터가 균일
+가정보다 오히려 더 편중돼있다는 뜻(이론표가 낙관적이었음). 도중 프롬프트
+배칭 버그 1건 추가 발견·수정: 손으로 쓴 real text 8개만 순환배치해 B>8에서
+동일 시퀀스 중복 발생 → greedy decode라 중복은 라우팅도 동일 → B=16/32/64가
+전부 B=8과 같은 값(30.8)으로 인위적으로 고정되는 현상 → 더 큰 코퍼스에 대한
+슬라이딩 윈도우로 교체해 해결.
+
+V4(달성대역폭 vs M1 Max 400GB/s 이론한계)는 시도했으나 절대수치는
+결론부재 — bytes/forward는 B에 따라 늘지만 achieved GB/s는 오히려
+**감소**(182.6→116.6→110.7→85.7→53.0 GB/s, B=1→64전부 400GB/s 미만)했는데,
+이는 대역폭한계에 수렴하는 워크로드라면 나올 수 없는 방향(설계문서 Q5가
+이미 명시한 "SLC/GPU캐시 재사용으로 analytic 대역폭 추정이 신뢰 불가"
+불확실성과 정확히 일치 — decode 스텝 사이 안 바뀌는 attention/dense
+가중치가 매 스텝 DRAM에서 새로 안 읽히고 GPU측 캐시에 남아있을 가능성).
+
+**최종 판정(V1만으로 게이트에 답 충분)**: B≥32에서 이미 레이어당 expert의
+90%+가 매 forward 스트리밍됨 → **MoE decode가 realistic serving batch
+범위 내에서 사실상 dense-weight-streaming으로 수렴 = bandwidth-bound
+YES**. → 설계문서 P5는 routing(P5b)이 아니라 **bytes-reduction(P5c: expert
+양자화, 스텝간 expert 캐싱, prefetch)으로 재스코프**해야 함(decode-time
+MoE-FFN 서브레이어 한정 — co-execution/P0.1은 prefill+dense/shared
+서브레이어엔 여전히 유효, 별개 결론). raw: `~/Desktop/vdsp_v2_design/p0.2_results/`.
+남은 것: V2(커널 크로스오버)/V3(token-gathering spike)/V5(A/B), Track A의
+더 어려운 케이스(Qwen3-30B-A3B), Track B(SME2+MoE, 신규 엔진코드 필요).
+
+**V2 완료 (2026-08-23, bob/M4) — 예상 반전**: MoE expert shape(1408×2048)
+실측 결과 SME2가 M=1부터 M=64 전 구간에서 NEON(`gemm_qXg64_sdot_mt`,
+T=10, 논문 검증방식 그대로)을 이김 — M=1 2.06배, M=5-11 1.72-1.80배,
+M=18-64 1.27-1.30배. 기존 dense-projection shape(8960×1536, "M=16
+near-zero, M=64 +37%")와 정반대 방향. **액션 아이템**: 실제 엔진의
+`kai_route()` 게이트(`sme2_kai.c:51-54`, `M >= kai_sme2_min_m()`)는 SME2
+커널 자체의 하드웨어 타일크기 기반 단일 고정임계값이라 shape-무관 —
+MoE expert shape엔 불필요하게 보수적임(M=1도 이미 이기는데 게이트가
+차단). Track B 착수 시 이 게이트를 그대로 재사용하면 안 됨. 벤치마크
+방법론 버그 2건을 논문 기존 수치와 대조해 자체발견·수정(잘못된 함수
+`gemv_q4g64_mt` 루프→`gemm_qXg64_sdot_mt` 1회 디스패치로 교체, T=6→T=10).
+
+**V3 완료 (2026-08-23, bob/M4) — GO 판정**: macstudio에서 뽑은 실제
+decode-step 1회의 per-expert row 분포(B=64, 63개 expert 활성, 총 384
+token-expert 배정, count 1~17)를 bob으로 옮겨 실측. gather 없이 384개
+개별 M=1 디스패치=12.23ms vs 63개 expert별 실제-M으로 gather(실제
+memcpy gather+scatter+quant-pack 비용 전부 포함)=4.07ms → **gather가
+3.01배 빠름**. 3MB 활동데이터가 SLC에 다 들어가는 크기라 메모리이동
+비용이 저렴한 게 핵심 이유로 추정. **CPU MoE decode via SME2는 죽지
+않음 — Track B(SME2+MoE 신규 엔진코드) 착수 근거 확보.**
+
+**Track A V1 재실행 완료 (2026-08-23, macstudio, Qwen3-30B-A3B-4bit,
+E=128,k=8 fine-grained)**: DeepSeek(E=64,k=6)보다 실제 라우팅이 훨씬 더
+편중됨 — B=64에서도 레이어당 76.5/128(59.8%)만 활성화(균일가정 98%,
+DeepSeek 실측 97.5%와 대조). **P0.2의 "bandwidth-bound YES"는 아키텍처
+의존적** — coarse-grained(DeepSeek류, E/k≈11)는 P5c(bytes-reduction)
+쪽, fine-grained(Qwen3류, E/k=16)는 B=64에도 40%가 안 만져지는 진짜
+sparsity가 남아있어 P5b(routing) 투자 여지 있음. Track B가 여전히
+DeepSeek-V2-Lite를 타겟으로 삼는 건 "보수적인 케이스"를 테스트하는
+셈(Qwen3류 모델이면 SME2 투자가 더 유리했을 것). 계측 함정 1건:
+QuantizedLinear vs Linear(4bit로드시 실제 클래스가 QuantizedLinear라
+처음엔 아무것도 안 잡힘, ZeroDivisionError로 즉시 발각).
+
+**Track B Phase MoE-1 완료 (2026-08-23)**: DeepSeek-V2-Lite MLX 4bit
+체크포인트를 vdsp 엔진이 로드 가능한 포맷으로 변환+검증(forward pass는
+아직 없음, 순수 로딩 단계만). 구현 착수 직전 실측으로 **두 가지 기존
+전제를 뒤집음**: (1) P0.3의 "byte 재해석만으로 무손실 변환(bias=-8*scale)"은
+합성데이터 한정 결과였고 실제 체크포인트에선 그룹의 32.7%가 1%+ 이탈
+(최대 33.4%) — 사용자가 손실 근사 대신 **엔진에 진짜 affine 4bit 디코드
+경로(`K_Q4G64AF`) 신규 추가**를 선택, 결과 160/160(Python)+6/6(C, bob↔macstudio
+교차언어) 완전 일치로 오차 0 검증. (2) DeepSeek-V2-Lite의 attention은
+MLA(압축 KV+부분 RoPE)라 기존 GQA 엔진코드로 못 돌림 — 사용자가 모델은
+유지하고 MLA도 별도 phase에서 신규구현하기로 결정, **Track B 전체 잔여
+스코프가 애초 추정보다 큼**(MLA가 MoE FFN 작업과 비슷한 규모의 신규
+서브시스템). 표준 구현: `mlx_deepseek_to_q4g64af.py`(변환)+
+`verify_moe_conversion.py`(Python 검증)+`verify_moe_af_load.c`(C 검증,
+qwen_infer.c 미변경 — 2700줄 프로덕션 파일에 forward pass 없이 손대는
+리스크 회피, 실제 통합은 라우터+forward가 생기는 MoE-2로 유예).
+Raw: `~/Desktop/vdsp_v2_design/trackb_moe1_results/`. 남은 것: MoE-2(라우터+
+MLA attention+정확도게이트)/MoE-3(gather+SME2 dispatch, 여기서 V5 처음
+가능) — 각각 별도 세션.
+
+**Track B Phase MoE-2a 완료 (2026-08-23) — MLA attention+YaRN RoPE 정확도
+게이트 PASS**: layer 0(dense) 단독으로 MLA를 검증하는 standalone C
+프로그램(`mla_verify.c`, qwen_infer.c 미변경)을 MLX 실제 forward pass와
+대조 — 8개 실텍스트 토큰 position 전부 rel-L2 ≤1.3e-3(plan의 hard fail
+기준 1e-2 대비 충분히 여유). 착수 중 **실측으로 버그 2건 발견·즉시수정**
+(둘 다 문서/기억이 아니라 실제 MLX 호출로 검증): (1) DeepSeek YaRN이 쓰는
+`mx.fast.rope(traditional=True)`는 interleaved pairing(x[2i],x[2i+1])이지
+qwen_infer.c 기존 rope_apply()의 rotate_half 컨벤션이 아님. (2) **더 결정적인
+버그**: `freqs` 배열이 곱셈이 아니라 나눗셈으로 쓰임(`angle=pos/freqs[i]`,
+`pos*freqs[i]` 아님) — 균일 freq값(예:전부 1.0) 테스트로는 곱셈/나눗셈 구분이
+원리적으로 불가능했고(양쪽 다 같은 결과), **서로 다른 freq값[1,2,3,4]로
+재테스트+MLX의 실제 pre/post-RoPE 텐서를 디버그훅으로 직접 캡처해 회전각을
+역산**해서 발견. 수정 전엔 pos=0(각도=0, 항등회전이라 버그가 안 보임)만
+멀쩡하고 pos=1~7이 rel-L2 0.5~0.97(사실상 무상관)로 파국적으로 틀렸었음 —
+"pos 0만 맞고 pos≥1부터 완전히 틀어짐"이라는 패턴 자체가 위치의존 로직(RoPE)
+버그라는 결정적 단서였음. YaRN 주파수테이블(factor=40,mscale=0.707)은
+`mlx_lm/models/deepseek_v2.py` 수식 그대로 이식, MLX 실제 테이블과
+float32 정밀도 한계까지 정확히 일치 확인. 압축이 아니라 확장된(expanded)
+K/V 캐싱을 채택한 설계결정은 "MLX 레퍼런스 자체가 그렇게 구현돼있음"을
+코드로 직접 확인 후 내린 것이라 유지(진짜 압축-캐시 최적화는 미래 처리량
+phase로 유예). 문서 갭 1건 추가 발견: MoE-1의 "양쪽 호스트 동일 사본"
+주장이 실제론 거짓이었음(f32 blob이 bob엔 없었음) — mla_verify.c 자체의
+FATAL 체크로 즉시 발각, relay로 수정. Raw:
+`~/Desktop/vdsp_v2_design/trackb_moe2a_results/`. 남은 것: MoE-2b(라우터+
+naive MoE FFN forward+27레이어 전체 정확도게이트)/MoE-3 — 각각 별도 세션.
+
+**Track B Phase MoE-2b 완료 (2026-08-23) — 라우터+MoE FFN+27레이어 전체
+forward, 첫 실행에서 바로 PASS**: MoE-2a의 MLA attention 코드(AFTensor/
+decode_af/YaRN/interleaved RoPE)를 그대로 재사용해 27레이어 전체(layer0
+dense MLP + layer1~26 라우터+MoE FFN naive forward+shared experts+model.norm+
+lm_head)로 확장, MLX 실제 greedy decode와 대조. **MoE-2a와 달리 버그 0건**
+(MLA는 이미 검증된 코드 재사용, 라우터/SwiGLU 수식은 착수 전 mlx_lm 소스를
+직접 읽어 확인 — swiglu(gate,up)=silu(gate)*up). 결과: **8/8 position 전부
+argmax 다음토큰 MLX와 완전일치**(예: pos2 예측토큰280이 실제 pos3 프롬프트
+토큰과 우연히 일치하는 등 real language model다운 정상 거동 확인), logits
+(102400차원) rel-L2 1.25e-3~3.91e-3(hard fail기준 1e-2 대비 여유, MoE-2a의
+per-layer 히든state오차보다는 크지만 27층 누적이라 예상범위), 라우터
+expert-set 208개 (position,layer) 결정 중 **207개 완전일치**, 1개 불일치는
+근본원인규명 결과 진짜 near-tie(MLX 6등 expert28 score=0.012779 vs C가
+고른 expert48 score=0.012787, 절대차 7.76e-06)로 확인 — 버그 아니라
+부동소수점 노이즈가 top-k 경계선에서 순위를 뒤집은 것, compare_moe2b.py에
+근접동점 분류로직 자체를 만들어 검증(묻지 않고 넘어가지 않음). qwen_infer.c
+미변경. Raw: `~/Desktop/vdsp_v2_design/trackb_moe2b_results/`. 남은 것:
+MoE-3(gather+SME2 dispatch, qwen_infer.c 실통합, 첫 처리량측정, 여기서 V5
+처음 가능) — 별도 세션.
+
+**Track B Phase MoE-3a 완료 (2026-08-23) — qwen_infer.c 실통합, 정확도
+게이트만, 회귀 0건**: MoE-2b의 검증된 코드를 프로덕션 `qwen_infer.c`에
+`moe_`/`Moe`/`MOE_` 접두사로 순수 추가(기존 `g_wt[]`/`WT`/`K_Q4G64`/
+`kai_route()` 등 GQA 경로 단 한 줄도 미변경, `main()` 최상단에서
+`weights_moe/arch_config_moe.txt` 존재여부만 확인 후 완전히 다른 코드경로로
+분기). **프로덕션 바이너리 출력이 MoE-2b standalone 검증프로그램과 byte-exact
+일치**, MLX 공식게이트 PASS(8/8 argmax, rel-L2 ≤3.91e-3, 라우터 207/208
+완전일치). **기존 dense(GQA) 모델 경로는 "설계상 안전"이 아니라 실제 실행
+대조로 byte-identical 확인**(합성weight Llama설정으로 pre/post 바이너리
+양쪽 실행+diff). 착수 전 중요 발견: git status에서 이번 세션과 무관한
+미커밋 변경사항(`QWEN_SME2_LAZY_REPACK`, 수정시각이 확인시점 2분 전) 포착 —
+"완료됐다고 가정하지 말고 재검증" 원칙대로 바로 진행하지 않고
+AskUserQuestion으로 사용자에게 확인(다른 세션 자기 작업 맞음, 그대로 두고
+진행 승인받음), git diff 삭제줄수가 작업 전후 불변임을 재확인해 무간섭
+검증. 포팅 중 설계버그 1건 자체발견·수정(수학버그 아님): `argv[1]` 폴백이
+moe2b_verify.c의 관례를 그대로 복사했는데 실제 main()에서 argv[1]은
+MODE 문자열이라 의미충돌 — QWEN_MOE_BASE 전용으로 수정. 빌드 중 무관한
+기존 이슈 1건 발견(수정은 스코프 밖): `kleidiai/kai_common.c`가 손상된
+다운로드("404: Not Found"가 파일 내용 그대로) — 필요한 SME2 MOPA 커널
+경로엔 그 파일 심볼이 불필요해 링크는 성공. Raw:
+`~/Desktop/vdsp_v2_design/trackb_moe3a_results/`. 남은 것: MoE-3b(gather+
+SME2 dispatch — V2가 이미 기존 kai_route() M임계값이 MoE shape엔 안 맞다고
+확인해뒀으니 새 shape-aware 게이트 필요, 배치처리, 첫 처리량측정, 여기서
+V5 처음 가능) — 별도 세션.
+
+**Track B Phase MoE-3b 완료 (2026-08-23) — 배치+gather 정확도 게이트 PASS,
+커널 배선은 유예, 처리량은 정직하게 이득없음으로 보고**: B=8/16/32/64 전부
+gather-경로 vs naive-경로 argmax 64/64 완전일치(logits rel-L2 ~1e-7, 순수
+합산순서 노이즈). **처리량은 기대와 다름 — gather 단독으로는 0.99~1.07x,
+사실상 이득 없음.** 원인 회피하지 않고 규명: V3가 측정한 3.01배는 SME2 MOPA
+커널 dispatch당 고정오버헤드(스레드풀 wake, LHS quant-pack 등)를 384회→63회로
+줄여 상각한 효과였는데, 이번 phase는 아직 스칼라 `moe_matvec_af` 그대로라
+상각할 dispatch 오버헤드 자체가 없음 — "gather의 이득은 그 자체가 아니라
+먹이는 커널에 종속적"이라는 재현가능한 결론. **착수 전 실측으로 발견한
+결정적 기술 블로커와 우회**: `sme2_kai.h`의 `kai_sme2_repack_q4g64()`에
+bias 파라미터가 없어(symmetric q4g64 전용) MoE의 affine(`K_Q4G64AF`) 텐서엔
+못쓴다고 보였으나, `code*scale+bias=(code-8)*scale+(8*scale+bias)` 항등식
+분해로 우회 가능함을 계획 세우기 전에 직접 검증(200000개 무작위샘플 오차
+7e-15 + 실제 `layers.5.mlp.switch_mlp.gate_proj` expert10 텐서로 5개 row
+전체 matvec 직접 대조 rel_diff 0.000e+00) — **기존 KleidiAI 커널 무수정으로
+MoE 텐서에 SME2 적용 가능**함이 확인되어 MoE-3c의 진짜 걸림돌이 풀림. 정확도
+게이트 코드 작성 중 자체발견: 배치 검증용 토큰ID 64개 중 8개를 지어낸
+플레이스홀더로 썼다가(Data-First Numerics 위반) 실행 전에 스스로 발견,
+실제 DeepSeek 토크나이저로 P0.2 코퍼스를 직접 토크나이즈한 진짜 64개
+ID(51개 distinct)로 교체 후 진행. qwen_infer.c는 순수 추가만(기존 dense
+회귀 재확인 PASS, 심볼릭링크 테스트방법론 함정 1건 스스로 발견·수정).
+Raw: `~/Desktop/vdsp_v2_design/trackb_moe3b_results/`. 남은 것: MoE-3c(검증된
+분해를 실제 SME2 dispatch로 배선, eager/lazy 리패킹 결정 — 4992개 expert
+텐서 전부 eager면 M4 16GB 예산 초과 가능성 높아 lazy 유력, 새 shape-aware
+게이트, 첫 실처리량, V5) — 별도 세션.
+
+**Track B Phase MoE-3c 완료 (2026-08-23) — 실제 SME2 dispatch 배선,
+Track B 첫 실처리량 확보, 하지만 정확도 비용도 실재함을 정직하게 보고**:
+착수 전 `kai_sme2_rhs_packed_bytes()` 실측(텐서당 1,531,904 bytes)으로
+전체 4992개 expert-projection 텐서 eager 리패킹시 ~7.29GB 필요함을
+확인, `vm_stat`로 이 시점 가용메모리(free+inactive) ~6.7GB뿐임도 확인해
+**lazy 리패킹**(첫 dispatch시에만 리패킹+캐시) 채택 — 추측 아니라 실측
+기반 결정. 새 dispatch 게이트는 V2의 기존 실측(SME2가 M=1부터 이김)을
+근거로 M임계값 없이 항상 SME2 시도. **1단계 격리벤치 통과 후 프로덕션
+배선**: 격리벤치 첫 실행에서 SIGILL 발생 — 원인규명 결과 벤치 호출자
+파일까지 `-march=...+sme2`로 컴파일한 게 문제(이 프로젝트 관례는 호출자는
+plain 컴파일, 벤더 커널 파일만 SME2 플래그 — ARM SME streaming-mode ABI
+요구사항), 호출자를 plain으로 재컴파일해 해결. 격리벤치 결과: rel-L2
+~3.9e-3(텐서 1개당, SME2 내부 int8 활성화 양자화가 진짜 원인), GFLOP/s
+87~366(스칼라 기준 1.3~2.5 대비 — 단, 이 스칼라 기준선 자체가 이 프로젝트
+전체가 정확도우선으로 일부러 안 최적화한 것이라 V2의 SME2-vs-최적화NEON
+1.27~2.06배와는 직접비교 부적절함을 명시). **프로덕션 배선 첫 실행에서
+진짜 버그 발견**: B=8에서 rel-L2 1.7(argmax 7/8 불일치)라는, 양자화
+노이즈로는 설명 안 되는 파국적 결과 → gather 버퍼를
+`float gate_group[MOE_BATCH_MAX][4096]`(stride 4096)로 선언했는데
+`moe_matvec_af_group_smart`(및 그 안의 `kai_sme2_gemm_f32`)는 실제
+out/in(1408)을 stride로 가정해 읽고 씀 — stride 불일치로 값이 뒤섞인
+것, flat 버퍼로 재선언해 수정. **수정 후 최종 결과: B=8 1.945x/argmax
+8/8일치, B=16 2.019x/16/16, B=32 2.091x/28/32(4건 불일치), B=64
+2.139x/55/64(9건 불일치)** — **처리량은 확실히 실재하는 ~2배**(MoE-3b의
+1.0x와 대조, V3의 3.01배가 SME2 dispatch 오버헤드 상각 효과였다는 가설이
+실제 프로덕션에서 재현됨). **하지만 정확도는 B가 커질수록 실제로 저하** —
+B=32부터 진짜 argmax가 뒤집히기 시작(버그 아니라 26레이어에 걸친 int8
+양자화 노이즈 누적, 1단계에서 측정한 텐서당 노이즈가 정직하게 누적된
+결과). 성과를 부풀리지 않고 트레이드오프 그대로 보고. Raw:
+`~/Desktop/vdsp_v2_design/trackb_moe3c_results/`. 남은 것(MoE-3d 가칭):
+속도/정확도 트레이드오프 정책 결정(예: M 크기 기반 hybrid 게이트),
+shared_experts/dense/lm_head도 SME2화, ragged 연속배치, V5.
+
+**Track B Phase MoE-3d 완료 (2026-08-24) — margin 기반 선택적 스칼라
+재검증으로 MoE-3c 트레이드오프 실제로 해결**: 착수 전 MoE-3c의 실제
+데이터(B=8/32/64 슬롯별 결과)를 재분석해 "M 크기 기반 hybrid 게이트"
+아이디어가 **잘못된 전제**였음을 코드 작성 전에 발견 — argmax 뒤집힘은
+배치나 그룹 크기가 커질수록 심해지는 게 아니라 **토큰별 결정론적
+속성**(동일 입력 토큰은 어느 슬롯/배치크기에 있든 항상 동일하게
+뒤집힘/안뒤집힘, 중복토큰 13이 4개 슬롯 전부 동일 결과로 실측 확인).
+이 재해석을 사용자에게 보고 후 "margin 낮은(위험한) 토큰만 스칼라로
+선택 재검증" 방향으로 확정. **결과: threshold≈0.32에서 naive와
+argmax 100% 완전일치 + 실제 1.177배 속도향상** — 사전 추정치(~1.19x)와
+실측이 거의 정확히 일치. 전체 곡선 실측: threshold=0(재검증0개,
+86%정확도,2.16x)→0.05(4개,89%,1.91x)→0.1(8개,89%,1.71x)→0.2(16개,
+97%,1.41x)→**0.32(25개,100%,1.177x)**→0.5(29개,100%,1.099x,0.32보다
+느린데 정확도 이득 없음=0.32가 진짜 최소임계값 확인)→1e9(64개 전부,
+100%,0.69x). 기존 검증된 `moe_forward_token()`(MoE-3a) 그대로
+재사용(신규 스칼라 로직 없음), threshold=1e9 sanity check로 재검증
+메커니즘 자체의 정확성 먼저 확인 후 threshold별 결과 신뢰.
+**중요 인프라 사고(작업 중 발생, 기술과 무관)**: qwen_infer.c가 마지막
+git 커밋 상태로 리셋되어 이 세션의 MoE-1~3c 작업 전체와 다른 세션의
+`QWEN_SME2_LAZY_REPACK` 작업이 파일에서 사라짐(둘 다 미커밋 상태였음).
+`git reflog`엔 흔적 없음(plain checkout/restore는 reflog에 안 남음),
+`tailscale status`로 bob이 "offline, last seen 1h+" 확인 → 사용자가
+물리적으로 재부팅 확인. **작업은 실제로 유실되지 않음** — 매 phase
+종료시 영구위치(`~/Desktop/vdsp_v2_design/trackb_*_results/`)에 전체
+파일 스냅샷 저장해두는 관례 덕에 MoE-3c 완성본 그대로 복구, 재컴파일+
+재검증(dense 회귀/MoE-3a 순차모드 둘 다 byte-identical) 후 속행.
+bob 재부팅으로 `/tmp`도 초기화돼 회귀테스트용 baseline 바이너리를
+로컬 백업(`qwen_infer.c.orig_backup`)에서 재빌드. Raw:
+`~/Desktop/vdsp_v2_design/trackb_moe3d_results/`. 남은 것: 프로덕션
+threshold 결정, shared_experts/dense/lm_head SME2화, ragged 연속배치,
+V5.
+
+**연관**: [[vdsp_sme2_paper_codex_review_final]] (기존 SME2 논문 상태),
+[[reference_hw_kernel_vendoring_skill]] (벤더 커널 통합 스킬, 이 확장에도
+재사용 가능할 듯)
+
+## MoE-3e: shared_experts/dense/lm_head SME2화 (2026-08-24 완료)
+
+MoE-3c/3d가 routed switch_mlp(전문가 0~63)에만 연결했던 SME2 배선을,
+항상 M=B로 호출돼 gather/bucket 로직이 아예 필요없는 세 곳(레이어0
+dense MLP, 매 레이어 shared_experts, lm_head)으로 확장. 사용자가 "MoE-3e
+진행해"라고만 지시해 스코프 미지정 상태였고, AskUserQuestion으로
+후보 4개(threshold 확정/이 확장/ragged 배치/V5) 중 물으려 했으나
+무관한 프로젝트 규칙을 오적용한 훅에 차단됨 — 재시도 대신 판단근거를
+설명하며 직접 이 방향으로 결정.
+
+**핵심 설계**: 기존 `moe_matvec_af_group_smart(af, tsr, e, layer, proj, ...)`의
+`e` 파라미터가 AF블롭 주소(항상 실제 전문가 인덱스 필요)와 캐시배열
+`g_moe_sme2[layer][e][proj]` 인덱스 두 역할을 겸했음 — dense/shared/
+lm_head는 AF블롭상 전문가가 1개뿐이라 주소엔 항상 e=0을 넘겨야 하는데
+캐시엔 그대로 0을 쓰면 같은 레이어의 실제 라우팅된 전문가0 캐시와
+충돌. `blob_e`(주소용)/`cache_e`(캐시키용) 두 파라미터로 분리하고
+예비 슬롯 64/65/66(MOE_SME2_SLOT_DENSE/SHARED/LMHEAD)을 실제 전문가
+범위(0~63, N_EXPERTS=64 실측 확인) 밖에 예약해 해결.
+
+**실제 프로덕션 크래시 1건 발견+수정**: `moe_matvec_af_group_smart()`의
+보정항 계산에 쓰던 `float groupsum[64]`가 switch_mlp/shared_experts
+(ng<=44)에만 유효한 가정이었는데, dense_down의 `in=MOE_DENSE_IM=10944`는
+`ng=171`이라 스택 오버플로우(`SIGABRT`/`__stack_chk_fail`, B=64
+프로덕션 실행에서 실제 재현). 256으로 확장해 해결. 같은 함수의 LHS
+scratch 버퍼도 `max_in=2048` 하드코딩 후 절대 재할당 안 하던 구조라
+dense_down 호출 시 잠재적 2차 문제였음 — 실제 in값 전달+성장형
+재할당으로 함께 고침.
+
+**실측 결과(B=8/16/32/64, real DeepSeek 토크나이저 corpus)**:
+- raw(재검증 없음) speedup: B=8 4.07x / B=16 4.79x / B=32 5.34x / B=64
+  **5.71x**(MoE-3d의 2.16x 대비 크게 개선 — dense_down/lm_head처럼
+  원래 제일 큰 행렬곱들이 이제 SME2를 타서)
+- **신규 발견(MoE-3d엔 없던 것)**: B<=16은 raw 그대로 100% 정확도
+  (재검증 0건) — 4.07x/4.79x를 안전하게 그대로 획득
+- B=32/64는 여전히 margin 재검증 필요(raw 정확도 소폭 악화, 55/64→
+  54/64) — 하지만 같은 threshold=0.32 기준 B=64에서 MoE-3d의 1.177x→
+  **1.872x**로 개선(gather 경로 자체가 훨씬 빨라져 재검증 비용 비율이
+  줄어듦)
+- 시사점: 고정 threshold 하나보다 **B-aware 정책**(소배치=거의 0,
+  대배치=0.2~0.32)이 다음 논의 주제로 새로 부상 — 이번 phase에서
+  구현은 안 함, 데이터만 확보.
+
+회귀 전부 통과(컴파일 -Wall -Wextra 새경고 0건, dense모델 byte-identical,
+MoE-3a 순차모드 185,207,280,254,317,8148,1234,12 완전동일 — 크래시
+수정 전/후 두 번 다 확인). Raw: `~/Desktop/vdsp_v2_design/trackb_moe3e_results/`.
+다음: B-aware threshold 정책, ragged 연속배치, V5.
+
+## MoE-3f: B-aware threshold 프로덕션 정책 확정 (2026-08-24 완료)
+
+MoE-3e가 실측한 "B별 100%정확도 최소threshold"(B<=16→0, B=32→0.2,
+B=64→0.32)를 연구 기록에서 엔진 실제 기본동작으로 승격. `moe_baware_
+threshold(B)` 계단함수 추가 — 테스트 안 된 B는 항상 더 큰(안전한)
+이웃값 상속. `run_moe_batch_verify_mode()`의 threshold 선택 로직 재구성:
+- `QWEN_MOE_MARGIN_THRESHOLD` 명시 → 기존과 동일(하위호환)
+- `QWEN_MOE_SWEEP=1` 신규 → 기존 7점 스윕 그대로(연구용으로 이동)
+- **env var 없음(신규 기본값)** → 정책함수가 고른 단일 threshold 자동적용
+
+**검증**: 기존 4개 지점(8/16/32/64) 기본동작 재실행 → MoE-3e 데이터와
+일치(재검증개수/정확도/speedup 전부, 타이밍 노이즈 수준 차이만).
+`QWEN_MOE_SWEEP=1`이 옛 7점 스윕과 완전동일 재현 확인(하위호환).
+**핵심 신규 검증**: 한번도 테스트 안 된 B=24(→0.2 상속)/B=48(→0.32
+상속)을 실제로 돌려 두 지점 다 100% 정확도 달성 확인 — "이웃값 상속"
+설계가 가정이 아니라 실측으로 검증됨, 계단 경계 조정 불필요.
+
+회귀 전부 통과(dense byte-identical, 순차모드 동일). Raw:
+`~/Desktop/vdsp_v2_design/trackb_moe3f_results/`. 다음: ragged 연속배치,
+V5.
+
+## MoE-4a: 정적 ragged 연속배치 — 여러 스텝 실디코드 첫 검증 (2026-08-24 완료)
+
+사용자가 "ragged 연속배치와 V5 해보자"고 요청. V5는 "중량"(gpu-mlx
+백엔드 신규 이식, gather_qmm 라우터 연동, 다세션 규모) 선택 → 이번엔
+ragged 배치만 완결 단위로 스코프, V5는 별도 Plan Mode로 다음에 착수.
+
+**핵심 재발견**: MoE-1~3f 전부 위치 0에서만 테스트했음(배치용 KV캐시
+`g_moe_bK/bV`엔 position 차원조차 없음, attention도 "단일키=softmax1.0"
+하드코딩). 진짜 여러 스텝 디코드는 이 프로젝트에서 한 번도 실행된 적
+없었음 — 이게 이번 phase의 진짜 신규 작업.
+
+**설계**: dense 모델의 `cbatch_step()`(라인 1882) 패턴을 MoE에 최초
+이식. 슬롯별 position-indexed KV캐시(`g_moe_cK/cV`, MOE_CBATCH_MAXPOS=32
+— B=64 run 피크 RSS 실측 ~5.53GB 기반, 신규 배열 +1.28GB, 17.18GB
+시스템 대비 안전 확인) + `moe_mla_attention_ragged()`(MoE-2a 검증된
+수식 그대로, 슬롯 인자만 추가) + `moe_cbatch_step()`(dense 구조
+미러링, attention만 컬럼별 순회 — causal position이 달라 배칭 불가).
+**dense/router/switch_mlp/shared_experts/lm_head는 MoE-3e/3f 함수
+(`moe_ffn_batched()`/`moe_matvec_af_group_smart()`)를 컴팩트 A 크기
+그대로 재사용, 코드 수정 전혀 불필요** — "이미 런타임 M을 받는
+구조라 ragged로 그대로 전이될 것"이라는 계획 단계의 가설이 실제로
+검증됨.
+
+**결과**: 크래시 0건(첫 실행부터 완주). **A값이 8→8→8→7→6→5→4→4→3→
+2→1→1로 실제로 줄어드는 진짜 ragged 동작 확인**(슬롯별 생성목표
+3~12토큰 부여해 손계산과 정확히 일치 확인 — 프롬프트 길이만 다르게
+주고 목표는 고정이면 전부 동시에 끝나 ragged가 안 됨을 설계 중
+재발견해 수정).
+
+**정확성 게이트**: macstudio에서 실 mlx_lm autoregressive greedy 생성
+(teacher-forcing 아닌 진짜 생성, 8슬롯×prompt4-8토큰+생성12토큰) ground
+truth 확보, 신규 ragged C엔진과 토큰단위 정밀대조: **52/56(92.9%)
+일치**, 8슬롯 중 7개 완전일치, 1개(가장 긴 목표)만 8번째 생성토큰에서
+분기 후 자동회귀로 전파(새 독립오류 아님). **해석: MoE-3c~3f가 배치폭
+축에서 특성화한 SME2 int8 노이즈 argmax뒤집힘이 디코드스텝(시간) 축
+에서도 누적될 수 있음을 처음 확인** — margin 재검증을 ragged 서빙에
+통합해야 할 실질적 근거 확보(다음 phase 동기).
+
+**처리량**: prefill 45토큰 실측 1550.84ms/토큰, decode 57토큰(A 8→1)
+12스텝 33.28초. 순수 순차 스칼라 추정(158.19초) 대비 **1.535배**
+(B=64 lockstep의 5.71x보다 낮음 — 이 워크로드 평균 활성슬롯수가 작아서,
+정직하게 기록).
+
+**부수 발견**: macstudio에 mlx/mlx_lm이 사라져있었음(이전 phase는
+있었는데 원인불명) → `/opt/homebrew/bin/python3.11 -m pip install mlx
+mlx-lm`으로 재설치(bob의 설치패턴과 동일하게 맞춤).
+
+회귀 전부 통과(dense byte-identical, 순차모드/MoE-3f B=32 기본동작
+동일). Raw: `~/Desktop/vdsp_v2_design/trackb_moe4a_results/`. 다음:
+margin 재검증의 ragged 통합, 온라인 admission(MoE-4b), V5.
+
+## MoE-4b: 온라인 admission — ragged 연속배치 확장 (2026-08-24 완료)
+
+사용자가 "margin 재검증의 ragged 통합, 온라인 admission(MoE-4b), V5는
+opus 에이전트로 plan 만들기" 요청 → 3개 Opus Plan agent 병렬 실행,
+각각 실제 bob 코드를 직접 읽고 상세 계획 산출(`~/Desktop/vdsp_v2_design/
+trackb_moe4c_plan/`에 저장). 사용자가 "MoE-4b 시작해"로 착수 지시.
+
+**구현**: dense 모델의 검증된 mixed 스케줄러(M21→M22)를 MoE에 최초
+이식. `moe_cbatch_step()`에 `want_logits` 추가(dense L1963 미러,
+순수prefill 스텝에서 lm_head GEMM 생략), 요청테이블+온라인 스케줄러
+(`QWEN_MOE_CB_ONLINE`, 기본0=MoE-4a 그대로 유지, 하위호환), FIFO
+스텝인덱스 도착+슬롯재사용+EOS eviction(MoE-4a엔 없던 신규 기능),
+양쪽 `PREFILL_MODE`(0=스칼라/1=SME2배칭혼합, 기본1).
+
+**핵심 발견(원인규명 방법론 적용)**: 기본 PREFILL_MODE=1에서 4개
+프롬프트가 ground truth와 불일치(80.0%) 발견 → 즉시 "버그 vs 정직한
+리스크(D6이 사전 명시)" 가설 구분에 들어감. **재현성/이웃독립성
+검사로 확정**: 같은 프롬프트를 다른 슬롯·다른 도착시각·다른 동시
+스케줄로 재실행해도 완전 동일한 토큰(불일치 부분까지 포함)을 냄 —
+스케줄러가 이웃/타이밍 의존 버그를 가진 게 아니라는 강한 증거.
+PREFILL_MODE=0(스칼라)로 같은 워크로드 재실행 → 95.3% 일치로 개선,
+유일 잔여 불일치는 MoE-4a가 이미 문서화한 바로 그 slot4 SME2 디코드
+노이즈(같은 토큰, 같은 위치) — **버그 아니라 SME2 배칭 prefill의
+추가 수치오차가 실제로 발현된 것으로 인과 확정**.
+
+**Gate5 정밀측정**(PREFILL_MODE A/B): mode1(기본)=80.0%정확도/59.8초,
+mode0(스칼라)=95.3%정확도/182.3초 — 3배 속도차 vs 정확도차 트레이드오프
+실측. mode1을 기본으로 유지하는 근거(스칼라=admission당~12초 정지,
+온라인서빙 기능적 퇴보)는 여전히 유효하나, margin 재검증이 이제
+**decode뿐 아니라 prefill 노이즈도 커버해야 한다**는 새 구체적 요구가
+확정됨(다음 phase 인계사항).
+
+**Gate4**(budget스윕{1,2,3,4,16}): 5개 전부 토큰 100% 동일(정밀
+비교스크립트 확인) — 스케줄러 메커니즘 자체(admission/슬롯재사용/D3
+순서불변/D4무데드락)는 완전 정확함을 별도로 실증. `steps_pure_prefill`
+계측 추가해 budget=1에서 22회 want_logits=0 실제 발생 확인(기본
+budget=16은 짧은 프롬프트라 이 경로 자체가 안 태워짐 — 계측으로
+확인, 추측 아님).
+
+**Gate6**(스트레스 B=16,budget48,R=32,`QWEN_MOE_CB_CHECK=1`): A=64
+도달 가능 설정에서 D3/D9 불변조건 assert 활성 상태로 완주, 위반 0건,
+발산 프롬프트도 여전히 정확히 동일 4개(새 실패유형 없음).
+
+**Gate7**(이웃독립성): 8개의 서로 다른 실행 전체에서 위반 0건(자동
+검사). **Gate8**(메모리): peak RSS 10.72GB(17.18GB 중, MoE-4a의
+5.53GB보다 높음 — 더 많은 슬롯/재사용요청이 더 많은 전문가 SME2캐시를
+건드림, 예상된 방향).
+
+크래시 0건 전체. 회귀 전부 통과. Raw:
+`~/Desktop/vdsp_v2_design/trackb_moe4b_results/`. 다음: margin 재검증
+(decode+prefill 노이즈 둘 다 커버), V5.
+
+## MoE-4c: margin 재검증의 ragged 통합 (2026-08-24 완료)
+
+MoE-4b가 실측한 "SME2 배칭 prefill 노이즈가 KV 히스토리에 각인돼
+prefill-완료 시점이 아니라 몇 스텝 뒤 decode 중 표면화"는 사전 Opus
+plan(`trackb_moe4c_plan/PLAN_moe4c_margin_reverify_ragged.md`)이
+쓰여진 시점엔 몰랐던 사실 — 계획을 그대로 채택하지 않고 재조정
+후 착수. 재조정 3건: (1) margin검사를 decode+prefill완료 양쪽 emit
+site 모두에 적용, (2) shadow lane을 슬롯이 아니라 요청ID로 키잉
+(MoE-4b는 슬롯을 요청이 재사용), (3) Tier0 사전시딩 폐기, Tier2
+lazy 최초빌드로 통일(PREFILL_MODE=1 기본값에서 사전시딩은 prefill
+이중계산이 돼 전혀 공짜가 아님).
+
+**착수 전 실제 OOB 버그 발견**: `MOE_MAXPOS=16`이 ragged 재검증경로의
+pos-up-to-31 스칼라 함수 호출에 비해 작아 조용한 stack/array
+overflow — 별도 커밋 단위로 32로 확장 + `_Static_assert` 추가.
+
+**핵심 재현실험(가정 아님, 신규 텔레메트리로 실측)**: 85토큰
+always-escalate 전체스캔에서 진짜 SME2/스칼라 불일치는 **딱 1건**
+(req6 pos6, margin=0.0817, sme2=4309 vs 정답463) — 이 한 번의
+노이즈가 자기회귀적으로 다른 3개 프롬프트 전체 시퀀스를 오염시켰음이
+확정됨(MoE-4b의 "KV drift" 가설의 실제 메커니즘).
+
+**정확도: 80.0%→95.3%, PREFILL_MODE=0(순수스칼라) 자체 상한과 정확히
+동일**. 유일 잔여불일치(req4/pos15, 9652 vs 254)는 SME2와 Tier1(순수
+스칼라)이 완전 agree — SME2 근사오차가 아니라 vdsp엔진과 mlx_lm
+사이의 근본 구현차이(MoE-4a가 이미 문서화한 슬롯4/포지션8 사례와
+정확히 일치) — 재검증 메커니즘이 "진짜 SME2오차"와 "무관한 엔진차이"를
+정확히 구분해냄. threshold=0.1(disagree 케이스 0.0817보다 살짝
+높게, 실측근거)로도 동일하게 95.3% 달성(85회→10회 에스컬레이션으로
+축소), 신규 기본값 채택.
+
+**처리량은 이 phase 자체 성패기준 미달성**: PREFILL_MODE=1+
+REVERIFY=on(234~242s)이 PREFILL_MODE=0 baseline(182.3s)보다 빨라야
+했으나 오히려 ~30% 느림. 원인규명: Tier2 escalation이 요청 히스토리를
+처음부터 순차 replay하는데(5회 escalation×요청당 최대13개토큰),
+MLA attention 비용이 위치에 비례해 커져 순차 replay 누적비용이
+quadratic에 가까움 — 원 계획의 비용모델(583.83+f×1550.84 ms/token)은
+Tier1만 가정하고 Tier2의 이 특성을 반영 안 했었음. shadow-KV
+"Tier1-agree 시 적립" 최적화를 사용자 승인 하 시도했으나 낮은
+threshold(=드문 Tier1 호출)에서는 연속성 조건이 거의 안 맞아 효과
+없었음(234s→242s, 무변화). **사용자가 정확도게이트 통과로 마무리를
+명시적으로 승인, 처리량 최적화(멀티스레딩 또는 Tier2 replay 알고리즘
+개선)는 후속 phase로 이관.**
+
+메모리: peak RSS 관측 최대 10.77GB, MoE-4b의 10.72GB와 비슷한 범위
+(shadow lane 추가분 168MB는 실행간 자연 RSS 변동폭에 묻혀 명확히
+분리측정 못함, 정직히 기록). 회귀 전부 통과(매 코드변경 후
+REVERIFY=off byte-identity 재확인). Raw:
+`~/Desktop/vdsp_v2_design/trackb_moe4c_results/`. 다음: 처리량
+최적화 또는 V5(GPU-only A/B, 계획은 이미 완료).
+
+## MoE-4c 처리량 최적화 (같은 세션 후속, 2026-08-24 완료)
+
+사용자 "처리량 최적화 먼저 해보자" → 착수 전 재진단으로 **위 MoE-4c
+본문의 "Tier2 replay가 quadratic" 진단이 틀렸음을 확정**: 실측
+계측(Tier1 단일콜 vs Tier2 토큰당 replay비용)이 통계적으로
+구분 안 됨(position이 비용을 안 키움). 진짜 원인: `moe_matvec_af()`가
+완전 미벡터화·미스레드 스칼라 루프이며 `moe_decode_af()`(원소당
+memcpy 2회)를 토큰당 ~550회 호출하는 것(~2450ms/토큰).
+
+**적용한 안전(수치불변) 최적화 3종**: (1) `MoeScalarPool` —
+`q4gemv.h`의 `q4pool`과 같은 mutex+condvar+영속워커 아키텍처를
+AF블롭 전용 신규구현(`moe_decode_af()` 순수함수 확인 후 행분할
+스레딩이 bit-identical함을 코드로 보장). (2) group-hoisted
+scale/bias(`moe_matvec_af_row`) — 64원소마다 재읽던 scale/bias를
+그룹당 1회로 축소(memcpy 128→2회/그룹). (3) 작은 콜
+배치통합(`MoeBatchJob`/`moe_matvec_af_batch_mt`) — MoE레이어당
+21개 개별 디스패치를 gate+up/down 2개 배치로 축소(디스패치
+658→약58/토큰).
+
+**폐기한 최적화**: vDSP_dotpr(SIMD 벡터화) — 속도 24%개선했으나
+정확도 95.3%→85.9%로 심각악화(이 모델 특유의 좁은 margin
+0.014~0.028에서 float 리덕션순서 차이가 실제로 argmax 뒤집음,
+req6 프롬프트 전체 발산). 재검증 경로 존재이유("SME2와 다른 신뢰
+가능한 정답") 자체가 float SIMD조차 못 견딜 만큼 민감함을 실측
+확정 — opt-in(`QWEN_MOE_SCALAR_VDSP`, 기본off)로만 보존.
+
+**스레드수 스윕 중 실제버그 발견**(Data-First Numerics 원칙이
+막아준 사례): `MOE_SPOOL_MAX_THREADS=32` 클램프 때문에 "T=40"
+측정치가 실은 T=32 재실행이었음 — 재검증 없이 넘어갔으면 틀린
+결론을 문서에 남길 뻔함, 배열을 64로 확장 후 재측정해 바로잡음.
+
+**최종 처리량**(스레딩+group-hoist+attention스레딩+배치통합+T=64):
+(a)PREFILL_MODE=0 143.6s→**58.4s**(2.46x), (c)PREFILL_MODE=1+
+REVERIFY=tier2 239s→**88.0s**(2.72x). 스레드수는 48→64 구간
+-1.4%로 diminishing 확인 후 T=64에서 정지. **여전히 (c)가 (a)보다
+느림** — 단 "SME2 스텝 고정비용~34s" 설명은 사용자가 "순수 추론
+비교가 아니지 않냐"고 지적해 재검증한 결과 **틀린 진단이었음이
+드러남**: (b)PREFILL_MODE=1+REVERIFY=off를 T=64로 실측(3회,
+37.8/41.7/41.9s평균40.5s)하니 오히려 (a)=58.4s보다 **1.4배
+(≈17.9s) 빠름** — PREFILL_MODE=1은 prefill·decode를 26개 스텝
+전체에 걸쳐 같은 `moe_cbatch_step()`에 섞어 처리해 "한번 돌고 끝나는
+SME2 셋업 단계"란 게 애초에 코드상 존재하지 않음(직접 확인). 정정된
+분해: (c)88.0s=(b)40.5s+재검증오버헤드≈47.5s(전부 진짜 추론연산,
+뺄 "셋업" 아님) — 재검증오버헤드(47.5s)가 SME2 자체 속도우위
+쿠션(17.9s)보다 약 2.7배 커서 (c)가 (a)를 못 이김. 원래 엄격한
+성패기준은 여전히 미달성이나 진단은 훨씬 명확해짐(재검증오버헤드를
+추가로 ~2.7배 줄이면 역전 가능). 정확도(95.3%, PREFILL_MODE=0과
+bit-identical)와 Gate1(`REVERIFY=off` no-op)은 매 최적화 단계(스레딩→
+group-hoist→attention스레딩→vDSP실험→배치통합→스레드수 3회 재스윕)
+마다 재확인해 전부 유지. Raw: `~/Desktop/vdsp_v2_design/
+trackb_moe4c_results/RESULTS.md`(추록 섹션, 정정 포함). 다음: V5,
+또는 재검증오버헤드를 ~2.7배 줄이는 최적화(비동기 재검증 파이프라인
+등 — 훨씬 큰 재설계, 별도 세션).
+
+## f16p-LHS SME2 커널 실험 (2026-08-25, Step1-3 완료+SIGILL 해결)
+
+재검증 오버헤드를 근본적으로 줄이려는 시도 — 현재 SME2 커널이
+가중치뿐 아니라 활성값도 int8 동적양자화하는 게 진짜 근본원인이라는
+판단 하에, 활성값을 fp16으로 패킹하는 대안 커널
+(`kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa`)을
+실험. **Step1(격리 마이크로벤치마크) PASS**(rel-L2 2.6~2.9e-04,
+O2/O3), 가는 길에 진짜 Apple clang SME2타깃 자동벡터화 미스컴파일
+버그 발견+pragma로 수정. Step2(sme2_kai.h/.c 병렬함수군) 완료.
+
+**Step3(엔진 배선) 후 SIGILL → lldb로 해결**: 배선 직후 CBATCH
+경로에서 SIGILL, 수십 개 격리테스트로 원인 못 찾다가 **사용자가
+bob에서 직접 lldb로 백트레이스를 떠서 해결**. 근본원리: M4는 SVE를
+SME2 스트리밍모드 안에서만 지원 — (1) 호출자(`qwen_infer.c`)까지
+`-march=...+sme2`로 컴파일하면 `main()`의 스택할당이 SVE명령어
+(`addvl`)를 씀→크래시(과거 Phase63 컨벤션 "호출자는 plain" 재적용
++lldb로 근거확정), (2) 호출자를 고쳐도 **제가 안 건드린 기존
+`kai_sme2_repack_q4g64()`**(int8경로, 몇주째 검증됨)의 루프가 이번
+세션에 f16lhs 자매함수를 같은 파일에 추가한 부작용(whole-TU
+코드젠 변화)으로 새로 자동벡터화→SVE 방출→크래시. 같은 pragma를
+이 루프에도 적용(D-f16lhs-2)해 해결. 수정후 재검증: CBATCH 전체
+exit0, 토큰 byte-identical 확인.
+
+**교훈(중요)**: "bob 환경 자체 문제"라는 초기 결론은 오판 —
+실제로는 진단가능한 소프트웨어 버그였음. 같은 파일에 새 코드를
+추가하면 최적화레벨에 따라 안 건드린 다른 함수의 코드젠까지 바뀔
+수 있다(회귀테스트를 "수정한 부분만"으로 좁히면 놓침). 원인불명
+SIGILL을 비대화형 SSH로 여러 번 못 찾으면 바로 대화형 lldb
+백트레이스를 요청할 것 — 상세: [[vdsp_sme2_build_caller_plain_convention]].
+
+산출물: `~/Desktop/vdsp_v2_design/trackb_moe4c_results/
+f16lhs_experiment/{sme2_kai.h/.c(양쪽 pragma fix), f16lhs_bench.c,
+qwen_infer_f16lhs_wired.c(최종,검증완료), gate1_pf0_FIXED_out.txt}`.
+Raw: RESULTS.md 추록2.
+
+**Step4 실측 완료 — 가설 확인, reverify 없이 (a) 능가**:
+`QWEN_MOE_SME2_F16LHS=1, REVERIFY=off, PREFILL_MODE=1` 3회 실행:
+**정확도 95.3%(81/85)**=순수스칼라(a) 이론상한과 완전동일(재검증
+전혀없이), 유일잔여불일치는 기존에 아는 vdsp-mlx_lm구조적차이(원리상
+재검증도못고침). **속도 46.6s(3회평균)**=int8-LHS REVERIFY=off
+(40.5s)보다~15%느리지만 (a)순수스칼라(58.4s)보다**1.25배빠름**.
+결론: margin재검증(tier2, 88.0s)은 사후패치비용이SME2속도우위를
+초과해(a)를못이겼지만, f16p-LHS는패치자체가필요없어**재검증없이
+정확도+속도둘다(a)능가**— 이phase원래성패기준을처음으로달성.
+세션초반가설("SME2의int8활성값양자화가정확도손실진짜근본원인")
+완전히실측확정.
+
+**확장검증(B=16/R=48, 342토큰, 4배규모) — 결과 더 선명해짐**:
+(a)208.5s/int8-LHS 85.0s(정확도87.7%, 3개base프롬프트에서SME2
+근사오차)/**f16p-LHS 87.7s(정확도93.0%, 1개base프롬프트만—전부
+기존에아는재현불가케이스, f16p-LHS가새로만든오차0건)**. f16p-LHS가
+int8이틀리는3개프롬프트를전부고치고1개(원리상못고침)만남음. 속도
+격차(int8대비)는B=4때15%→B=16때**3.2%로축소**(SME2배치클수록
+유리, f16p-LHS도거의동등하게누림), (a)대비속도우위는1.25배→
+**2.38배로확대**. 결론: 규모키울수록f16p-LHS의우위가더분명해짐.
+**신규 기본값 승격 완료(D-f16lhs-3)**: `moe_sme2_f16lhs_mode()`
+판정을 `unset→f16p(신기본값), "0"만 int8 opt-out`으로 전환.
+int8경로코드 전부보존(즉시되돌리기가능). 검증: Gate0(경고13건일치)
++신기본값 정상작동+opt-out byte-identical 확인. **MoE-4c phase
+최종결론**: margin재검증(사후패치)으로시작해정확도는회복했지만
+속도목표미달성이었는데, 근본원인재진단(활성값int8양자화)+대안커널
+(f16p-LHS)로**재검증자체를불필요하게만들며**정확도·속도둘다달성,
+신규기본값승격완료. margin-reverify코드는삭제안하고옵션보존.
+
+**연관**: [[reference_hw_kernel_vendoring_skill]] (사전 계획 산출에
+Opus Plan agent 활용 패턴 참고 가능)
+
+## 상업화 + 패키징 (별도 세션, 2026-08-25) — `beglin` 출시, 다음 방향은 범용화
+
+MoE-4c/f16p-LHS 완결 직후 별도 세션에서: AGPL-3.0-or-later+상업 라이선스
+듀얼 결정 → bob의 MoE/f16p-LHS 최신 엔진(vdsp_local은 M41로 낙후돼있어
+미채택)만 clean extraction → 신규 repo+npm 패키지 **`beglin`**으로 출시.
+`https://github.com/popixoxipop-collab/beglin` (public) +
+`https://www.npmjs.com/package/beglin`(실제 publish 완료, `npm whoami`
+401→로그인→2FA OTP까지 실제로 거쳐 발행). bob(M4, 실SME2 하드웨어)에서
+`npm install beglin`(레지스트리 경로)로 설치→재빌드→벤치마크까지 실행해
+**토큰출력 byte-identical, wall-clock 41.7s 기준 대비 44.5~46.1s(정상
+노이즈범위)**로 실제 재현 확인(로컬 테스트가 아니라 진짜 레지스트리
+설치 경로로).
+
+이름 변천: `vdsp-engine`(내가 제안, GitHub repo와 동일하게)→사용자가
+"엔진이 빠른 이유와 연관지어서" 재요청→`vdsp-sme2` 제안했으나 사용자가
+직접 `beglin`으로 확정(repo+npm 패키지명 통일, 관련 대문자질문에는
+"npm은 소문자만 가능, GitHub repo는 대문자 가능"으로 답변).
+
+**★★★ 다음 방향(사용자가 명시적으로 확정, 2026-08-25)**: 사용자가
+"이게 llama.cpp처럼 범용엔진이냐"고 질문 → 정직하게 답변(아니다,
+현재는 Qwen2.5-1.5B/Llama-3.1-8B/MoE 1종만 검증된 전용엔진, GGUF 아닌
+커스텀 바이너리 포맷+비공개 변환스크립트) → 사용자가 **"GGUF 범용
+로더 + `eval/quantize_int4.py`/`gptq_quantize.py` 등 양자화/export
+스크립트의 범용화가 앞으로 우리 방향"**이라고 확정. 이 프로젝트의
+"vdsp를 MLX/llama.cpp급 범용 서빙엔진으로" 원래 장기목표(이 메모리
+최상단)와 정확히 같은 방향이지만, 이번엔 **GPU/co-execution 축이
+아니라 "임의 모델 로딩" 축**으로 구체화됨 — 두 축은 별개 작업이라
+합쳐서 스코프하면 안 됨. brew 배포는 이 범용화 이전엔 시기상조라고
+판단해 보류 권고(사용자 반박 없이 넘어감, 사실상 동의로 볼 여지는
+있으나 명시 확답은 아님 — 다음 세션에서 재확인 필요).
+
+**아직 안 한 것(다음 세션 스코프)**: 실제 계획 수립 자체가 안 됨 —
+GGUF 파서 자체구현 vs llama.cpp의 ggml/gguf.c 일부 vendoring(MIT)
+검토, SME2 커널이 Qwen/Llama 정확한 shape에 손으로 맞춰져 있어 임의
+shape 일반화가 진짜 난제(설계 필요), 확장 대상 아키텍처 우선순위
+미정. 큰 스코프라 착수 전 별도 Plan Mode 세션 필요.
+
+**★ 위 문단 갱신 필요(2026-08-25 후속 세션에서 실제로 착수·완료됨)**:
+Opus Plan 에이전트가 `PLAN_general_purpose_loader.md`(7-phase) 작성
+— 실제 코드 재확인으로 "SME2가 3모델에 hand-fit"이라는 위 문단의
+전제 자체를 정정(진실: `out`엔 제약없음, `in%64==0`만 검증됨, 한번도
+실행 안 해본 미지수였을 뿐). **Phase 0**(shape soak, bob 실기기
+64개 shape 조합, `any_fail=0`)로 그 미지수 해소 — dispatch-table
+재설계 불필요 확인. **Phase 1**(GGUF 파서 자체구현, from-scratch —
+vendoring 아닌 쪽으로 결정) sub-step 1~6 전부 완료: 컨테이너
+파서+dequant 둘 다 `gguf-py`(별개구현) 대조 zero-diff(339텐서
+실fixture), TensorRole 인다이렉션(57 콜사이트) R1 회귀 검증,
+ArchCfg를 GGUF 메타데이터에서 직접 유도, architecture allowlist,
+`QWEN_GGUF` env-gated 4번째 로더로 실배선 — **실제 GGUF 파일
+하나(`qwen2.5-1.5b-instruct-q4_k_m.gguf`)를 로드해 upstream
+llama.cpp(`llama-simple`)와 동일 31토큰 완전일치**까지 실측 확인.
+전부 `/Users/xox/vdsp-engine`(beglin repo, main)에 커밋+push 완료.
+상세: repo-local `RESULTS.md`/`PLAN_general_purpose_loader.md`,
+세션 히스토리 `~/Desktop/HISTORY/2026-08-17_vdsp-sme2-paper-artifact-codex-review.md`
+Phase 17~19. 남은 것: Phase 2(transcode+온디스크캐시+Mistral-7B
+신규모델), WikiText ppl-delta 측정(보류중), `g_wt[512]`→realloc
+확장(보류중, Phase 3+ 대형모델 시점).
+
+**★★ Phase 2 완료(2026-08-25, 같은 세션 연속): sub-step 1~4 전부**.
+`gguf_transcode.c`(RTN+error-feedback→K_Q4G64, plain RTN→K_Q8G64,
+`quantize_int4.py` 그대로 이식) — 오라클 검증 중 진짜 버그 2건 발견
+(`roundf` vs numpy round-half-to-even, reciprocal-multiply vs direct
+division). `load_gguf_weights()` role별 policy 배선(D7/D9/D17 그대로)
+— 이 과정에서 q4pool 미초기화 버그 발견+수정, GGUF 로드 모델이
+llama.cpp 대비 27/27 토큰 완전일치. `gguf_cache.c`(온디스크
+`.beglin` sidecar, mmap zero-transcode, 실측 10.4배 속도) — **push
+후 자동 보안리뷰가 실제 버그 2종 발견**(cache 파일 offset bounds
+미검증, symlink-follow) → 둘 다 수정+실제 truncate/symlink 공격
+재현으로 검증 완료(`81b1c6a`). `QWEN_SME2_LAZY_REPACK` GGUF경로
+기본on 전환 검증 중 **완전히 무관한 기존 버그**(`QWEN_SME2_LAZY_REPACK=1`
++`serve`모드=SIGILL, legacy `QWEN_INT4_BIN`경로에서도 재현)를
+새로 발견 — [[vdsp_sme2_lazy_repack_serve_sigill]] 참고, 미해결
+낮은우선순위로 기록만. sub-step 4(dispatch tier startup log)까지
+전부 commit+push(`368678e`).
+
+**Phase 2 sub-step 3 (Mistral-7B-v0.3 검증) — 진행중, 다운로드가
+병목**: `bartowski/Mistral-7B-Instruct-v0.3-GGUF`(공개, apache-2.0,
+official mistralai 기반 requant) Q4_K_M(~4.37GB) 다운로드 시도 —
+bob 네트워크가 지속적으로 느림(비인증 상태에선 초반 버스트 후 거의
+정체, HF rate-limit으로 추정 후 사용자가 HF 토큰 제공→
+`~/.cache/huggingface/token`에 설치, `hf auth whoami` 확인됨).
+인증 후에도 여전히 대역폭 자체가 느려(버스티, 시간당 20~50%대
+진행) 수 시간째 완료 못함. **1회 실수**: 정체된 curl 재시작 시
+이전 프로세스(래퍼 스크립트가 자동재시작한 것) kill 확인 없이
+새 프로세스를 띄워 두 curl이 동시에 같은 파일에 write하는
+경쟁상태 발생 → 파일크기가 예상(4,372,812,000B)보다 136MB 커서
+오염 발견, 삭제 후 완전히 새로 재다운로드(**교훈: 재시작 전
+반드시 기존 프로세스 완전종료를 `ps`로 확인**, 특히 자동재시도
+래퍼가 붙어있을 때). 사용자가 "백그라운드로 계속 두고 세션 마무리"
+선택 — `nohup ... & disown`으로 떠 있어 세션 종료와 무관하게 계속
+진행됨. **다음 세션 재개 시**: `ssh bob 'ls -la
+~/models_gguf/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf'`로 완료 여부
++ 크기(4,372,812,000B와 정확히 일치해야 정상) 확인 →
+`QWEN_GGUF=~/models_gguf/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf`로
+beglin 엔진 돌려 ArchCfg(HD=128/GROUP=4 예상, D-gen-4 #1 근거)
+확인 → 가능하면 llama.cpp 대조까지. 결과는
+`PLAN_general_purpose_loader.md`/`RESULTS.md`에 sub-step 3 섹션
+추가.
+
+**★★★ 위 항목 완료(2026-08-25, 자율루프 tick에서 이어서 진행,
+다운로드는 3시간+ 소요 끝에 완료 — 4,372,812,000B 정확 일치)**:
+로드 자체는 D-gen-4 #1 예측대로 "신규 엔진코드 0줄"이 구조적으론
+맞았음(ArchCfg가 `%s.field` 템플릿으로 이미 아키텍처 무관, allowlist
+에 `"llama"` 한 줄만 추가 — GGUF가 Mistral을
+`general.architecture="llama"`로 태깅, 별도 "mistral" 태그 없음).
+
+**하지만 실제 출력은 반복루프로 깨짐(크래시 아님)** — 먼저 프롬프트
+실수(Qwen 토크나이저 기반 프롬프트를 Mistral에 오사용)를 Mistral
+자체 GGUF 토크나이저로 재토큰화해 고쳤는데도 여전히 깨짐 → 진짜
+버그 확정. **llama.cpp 소스(`src/llama-model.cpp`) 직접 읽어서
+근본원인 규명**(추측 아님): `LLM_ARCH_QWEN2`는
+`LLAMA_ROPE_TYPE_NEOX`(반씩 나눠 회전, 이 엔진이 여태 구현한
+유일한 방식), `LLM_ARCH_LLAMA`는 `LLAMA_ROPE_TYPE_NORM`(인접 쌍
+회전) — GGUF 텐서 레이아웃 자체가 아키텍처별로 다름. Qwen2는
+우연히 이 엔진의 기존 convention과 맞아서 이전에 31토큰 완전일치
+했던 것뿐이고, Llama계열은 처음부터 안 맞았던 것.
+
+**수정**: `g_rope_norm` 플래그(기본0=NEOX) 추가,
+`load_gguf_arch()`에서 아키텍처 문자열로 설정("llama"→1).
+`rope_apply()`/`rope_head()`에 분기 하나씩(같은 회전수식, 인덱싱만
+다름). 수정 후: 완전히 유창한 영어 출력("Tokyo.\n\n## How many
+countries have a capital city?..."), llama.cpp 대비 첫 2토큰
+완전일치 후 (Qwen 검증 때와 같은 성격의) 양자화 노이즈로 다른
+방향 분기 — 반복루프였던 버그이전과는 질적으로 다른, 정상적인
+결과로 판단. Qwen2 GGUF + custom-format Llama-3.1-8B(동일
+HD=128/GROUP=4, 다른 로더) 둘 다 byte-identical 회귀 확인,
+`g_rope_norm`은 이 두 경로엔 전혀 안 건드림. `abf303b` 커밋+push.
+**Phase 2 sub-step 1~4 전부 완료.**
+
+**Phase 3 sub-step 5 (2026-08-26, bob) — V2의 "M=1 이김" 모순 해소**:
+V2(2026-08-23, MoE expert shape 1408×2048, M=1부터 SME2 승리)와
+`sme2_kai.h`의 "M=1은 target 아님"(dense-projection 기준, M16
+near-zero/M64+37%)이 정반대로 보였던 모순 — 둘 다 맞았고, 그냥
+**서로 다른 NEON 커널과 비교**했던 것으로 확인. `kai_route()`의
+실제 두 호출부(`matmul_t`/`matmul_sdot`)가 서로 다른 NEON fallback을
+씀: `matmul_sdot`→`gemm_qXg64_sdot_mt`(int8-SDOT, V2/기존 threshold
+둘 다 이 커널 기준), `matmul_t`→`gemm_qXg64_mt`(순수fp32, 이전엔
+아무도 이거로 측정 안 함). `kai_sme2_min_m()=16`은 matmul_sdot
+기준으론 그대로 맞는 값(재확인됨, 변경 불필요). `matmul_t`는
+`forward_tokens()`에서만 호출되고 `n<=MAXSPEC-1=15`라 기존 M>=16
+게이트로는 **이 엔진 존재 이래 SME2 dispatch가 단 한 번도 실행 안
+됨**(죽은 코드) — 순수fp32 비교로는 2.2~6.4배 우위인데 활용 안 됨.
+`kai_route_min(W,M,min_m)` 추가해서 matmul_t만 floor=1로 낮추는 시도
+→ **bob 실기기에서 즉시 재현되는 SIGILL**(`kai_sme2_gemm_f32` 내부,
+`forward_tokens`에서 호출) 발견. 격리 repro 2개(임의shape/실제
+Qwen1.5B 8개shape, 둘 다 실제와 동일한 "M=64용 공유 scratch buffer"
+패턴 사용)는 재현 안 됨 — 진짜 원인(196개 텐서 동시 repack 상태 등
+production-only 조건 추정)은 인터랙티브 lldb 없이는 확정 불가
+(비대화형 SSH 세션 제약 재확인). **매출/안정성 우선 → matmul_t를
+안전한 kai_route(W,M)(floor=16, 기존과 100% 동일)로 되돌림**, spec
+모드 byte-identical 재확인 후 커밋(`d1403f5`)+push. `kai_route_min()`은
+코드에 남김(검증된 인프라, 실전 적용은 lldb 접근 있는 세션 몫).
+
+**같은 날 해결됨 — 사용자가 bob에 화면공유 직접접속해 인터랙티브
+lldb 실행**(비대화형 SSH lldb는 이 하드웨어에서 "cannot get
+permission to debug processes"로 거부됨, `-tt` pty강제도 무효 —
+Developer Tools TCC가 세션 자체에 안 걸려있는 게 원인, 사용자가
+직접/화면공유로 접속하면 우회됨). 백트레이스가 `kai_sme2_gemm_f32`
+내부 `rdvl` 명령에서 죽음 — 디스어셈블리 전체를 보니 함수 안에
+`smstart`가 전혀 없고, 문제의 SVE 블록은 `bias!=NULL`일 때만
+실행되는 구조(`cbz x20, <exit>`로 게이팅). **진짜 원인 확정**:
+`sme2_kai.c`의 bias-add 루프(`if(bias){for m{for r ym[r]+=bias[r]}}`)가
+이 SME2-arch-flag TU에서 컴파일러에 의해 불법 SVE로
+auto-vectorize됨 — SME2 커널(.S 어셈블리) 호출이 이미 스트리밍 모드를
+끄고 반환한 *뒤에* 이 코드가 실행되는데, Apple Silicon엔 순정 SVE가
+없어 무조건 illegal. 이 파일이 이미 두 번 겪었던 것과 같은 클래스의
+"caller-plain 위반"인데, 이 루프는 나중에 추가돼서 그 수정들을
+비껴갔던 것. **더 중요한 발견**: `kai_sme2_gemm_f16lhs()`(MoE
+f16p-LHS 경로, D-f16lhs-3 기본값)에도 완전히 동일한 미수정 루프가
+있었음 — `matmul_sdot`의 기존 배포 경로도 bias 있는 Q/K/V에서
+이론상 같은 크래시 위험을 안고 있었는데, 실전 B값이 전부 16의
+배수라 우연히 한 번도 안 터진 것뿐(구조적 보호 아님). `#pragma
+clang loop vectorize(disable)`로 수정(처음엔 outer 루프에 잘못
+붙여서 무효였고, inner 루프로 옮긴 뒤 otool로 SVE 0개 확인). 원인
+해결 후 matmul_t에 `kai_route_min(W,M,1)` 재적용 → spec 모드
+byte-identical 출력(3회 반복 확인) + **처리량 33.5→~100 tok/s
+(2.98배) 실측**, matmul_sdot 기존 경로도 `identical 1`로 무영향
+재확인. 커밋 `b8302d3`+push. Phase 3-5 완전 종결.
+
+**Phase 3-1~4,6 전체 완료 (2026-08-26, 같은 날) — GGUF 5개 모델
+shape-ladder 검증 + HD=64 신규커널 결정**: Qwen2.5-0.5B(HD=64,
+GROUP=7)/Llama-3.2-1B(HD=64,GROUP=4)/Qwen2.5-3B(HD=128,GROUP=8)/
+Llama-3.2-3B(HD=128,GROUP=3)/Qwen2.5-7B(HD=128,GROUP=7, 2-shard) 전부
+llama.cpp(`llama-simple`) 대비 greedy 검증 완료 — 모델 클수록 완전일치
+토큰수 증가(2→2→2→11→9), 일관된 패턴. 발견/수정 2건: (1) Q5_0
+quant type 미지원(작은모델 전용 quant recipe) → `gguf_quants.c`에
+`dequant_row_q5_0` 포팅. (2) Llama-3 NTK rope scaling GGUF에 전용키
+없음(low/high_freq_factor 없음, 이전 세션이 미룬 조사 완료) →
+llama.cpp가 사전계산한 `rope_freqs.weight` 텐서([hd/2])로 대체함을
+`ggml-cpu/ops.cpp` 소스로 확인, 기존 `g_rope_scale[]` 메커니즘(레거시
+로더와 동일 슬롯)에 `1/ff[i]`로 얹음. Qwen2.5-7B는
+`llama-gguf-split --merge`로 2-shard 병합(엔진 로더 자체는 단일파일
+유지). Phase 3-6(HD=64 신규 attn_neon.h 커널 필요여부)은 기존
+`QWEN_PROF=1 bench` 프로파일러로 실측 — attention이 전체 decode의
+1.46~2.49%뿐(FFN proj 55~63%, head_gemv 20~32%가 진짜 병목) →
+**신규 커널 안 만들기로 결정**(이론상 최대개선 2.5%로 정당화 안 됨).
+commit d14a4fa→3337f5e→13152b5→fb4eea3→320bf49, 전부 push.
+**Phase 3(sub-step 1~6) 완전 종결.** 다음은 Phase 4(MoE 경로
+de-hardcode, 계획서 자체가 "가장 큰 덩어리"로 표시, 사용자 확인 후
+착수).
+
+## MoE-format safetensors Steps 4-6 + per-role/per-expert precision engine (2026-08-29~30 완료)
+
+**인프라 선행**: bob(M4,16GB RAM+1GB swap뿐, `sysctl` 실측)이 Qwen3-30B-A3B
+(기본정밀도 ~32.4GB, 풀int4도 ~15.6GB 필요)를 실행할 수 없음을 config.json
+기반 계산으로 확인 → macstudio(M1 Max, 64GB RAM)로 대형모델 작업 이관.
+시스템 Python 3.9의 `huggingface_hub` 캡핑(1.8.0) 문제는 포터블 Python 3.12
+(`~/py312_portable/`, brew/sudo 불필요, astral-sh 배포)로 해결, 다운로드
+2-4MB/s→~10MB/s. bob<->macstudio 직접 LAN SSH(`bob-lan`/`macstudio-lan`
+alias, 전용키)로 대용량 전송 8-10배 향상(~9MB/s). 사용자 지시로 xox까지
+포함한 3-way Tailscale SSH mesh를 **영구** 구성(임시키 정리 계획 폐기,
+memory 별도기록: `reference_bob_macstudio_lan_ssh`/`reference_3way_tailscale_ssh_mesh`).
+
+**Step 6(OLMoE) 진행 중 진짜 버그 2건 발견+수정**:
+1. **out-of-vocab prompt ID**: 기본값 100000이 OLMoE vocab_size=50304 범위
+   밖 → C/MLX 양쪽 다 pos-0 로짓이 우연히 같은 all-zero로 퇴화(둘 다 틀려서
+   눈치채기 어려웠음). 실 프롬프트ID로 교체해 해결.
+2. **D-qknorm-1(진짜 아키텍처 버그)**: Qwen3-MoE의 q_norm/k_norm은 reshape
+   *후* per-head 정규화(weight shape=[128]), OLMoE는 reshape *전* 전체벡터
+   정규화(weight shape=[2048]) — 같은 텐서 이름, 다른 축 관례. 실 safetensors
+   shape 검사+mlx_lm 소스 직독으로 확인. `MOE_QKNORM_WHOLE_VECTOR` 플래그+
+   `moe_qknorm_apply()` 헬퍼로 수정.
+
+**근본원인 추가규명(사용자가 "남은 오차를 계속 파고들어"라고 명시 지시)**:
+레이어별 hidden-state 실측 덤프로 레이어13의 근접-동점 라우팅 플립(score
+gap 1.87e-05)을 확정 특정 — 원인은 그 이후 레이어들의 비선형 증폭 +
+레퍼런스 자체 최종레이어 norm 자연축소(56.2→8.25)가 상대오차를 부풀림.
+
+**전략적 전환(사용자 지시)**: 이 발산을 "더 못 없앤다"가 아니라 "그래서
+per-role 정밀도 엔진이 필요하다"는 실증사례로 재구성. per-role 엔진의
+F32 게이트를 (기존 embed_tokens/lm_head 전용에서) attention 역할까지
+확장(`st_register_moe_f32_as_af()`, forward-pass 함수 무변경).
+
+**실측(OLMoE, 8개 teacher-forced position)**:
+| | int8 baseline | attn F32 only | expert top-8 only | attn F32 + expert top-8 |
+|---|---|---|---|---|
+| router hard mismatch | 1/128 | **0/128** | 1/128(다른 위치) | **0/128** |
+| rel-L2 실패 위치 수 | 5/8 | 4/8 | 4/8 | **1/8** |
+
+attention F32 승격만으로 router mismatch 완전제거+최악위치 4.8e-2→6.5e-3.
+잔여 발산(pos 0,2,3,7)은 라우팅 expert 양자화 노이즈로 추적 → AEQ식
+frequency/importance 프로파일러(`moe_st_expert_profiler_olmoe.py`, 60개
+프롬프트)로 top-8-per-layer 선별승격 실행. **핵심 발견**: expert top-8
+**단독**으로는 baseline 대비 명확히 안 나음(같은 4/8 실패, sparsity
+재확인 — 60개 프롬프트에도 레이어당 63-64/64 expert가 활성화돼 "top-8"이
+거의 균일분포에서 임의로 자르는 것에 가까움). 하지만 **attention F32와
+결합하면 상호보완적으로 작용해 실패위치 4/8→1/8로 개선** — attention이
+못 건드리던 발산까지 닫음. 엔진의 실제 가치(선택적·근거기반 승격이
+baseline이 못 닫는 발산을 닫음)를 실증.
+
+`QWEN_MOE_EXPERT_BITS` 포맷을 2필드→3필드(`<layer> <expert_id> <bits>`,
+bits∈{4,8,32})로 변경(intentional breaking change, 이 기능 자체가 기본값
+채택된 적 없음). `moe_decode_af()`/`moe_matvec_af_row()`를 per-expert bits
+해석(`t->ebits[e]`)하도록 수정 — attention 전용(E=1) 케이스에선 안 드러나던
+버그를 mixed E>1 승격에서 발견·수정.
+
+커밋: `c26ddb0`(fix: qk-norm axis+F32 attention), `5606ad3`(docs: Steps
+4-6), `48c228d`(feat: per-expert F32 bits=32), `7127eb7`(docs: top-k
+expert promotion 실측). 전체 세션기록:
+`~/Desktop/HISTORY/2026-08-29_vdsp-moe-per-role-precision-engine.md`.
+
+**남은 것**: Step 4/5(Qwen3-30B-A3B 구조검증+실측게이트 — 61GB 체크포인트는
+이미 macstudio에 다운로드 완료, 아직 등록/forward 코드 미실행), Step
+7(전체 마무리 문서화+커밋). pos 7의 잔여 1.9e-2 발산은 이번 라운드에서
+더 파고들지 않기로 결정(엔진 유효성 실증 목적은 이미 충족).
+
+## MoE-format safetensors Steps 1-7 전체 CLOSED (2026-08-30)
+
+Step5(Qwen3-30B-A3B 실측게이트)+Step7(최종문서화) 완료로 7-step 계획 전체 종결.
+3개 아키텍처(deepseek_v2/qwen3_moe/olmoe) 전부 구조등록+실측게이트 통과.
+
+**Step5 실측 방법론 우회 (재사용 가능 패턴)**: Qwen3-30B-A3B(bf16 61GB)는 DeepSeek/
+OLMoE 게이트가 쓴 "MLX fp32 강제업캐스트"(~122GB 필요) 방식이 macstudio 64GB로도
+물리적으로 불가능 — 사용자가 "llama.cpp로는 못 돌려?" 제안 → `llama-cpp-python`
+설치해 이미 디스크에 있던 Q4_K_M GGUF(18.5GB, mmap기반이라 bob 16GB로도 무리없음)를
+레퍼런스로 채택. 정직한 캐비어트: 이건 pristine ground truth가 아니라 독립적으로
+양자화된 다른 아티팩트라 rel-L2가 원래 게이트들보다 크게 나옴(0.03~0.38) — 벡터
+norm비율(0.99~1.05)+Pearson상관(0.96~0.996) 실측으로 "diffuse 노이즈일 뿐 구조적
+불일치 아님"을 확인하는 절차가 필수. 결과: 7/8 argmax일치, 유일 불일치(pos6)는
+양쪽 다 top-2가 같은 토큰 순서만 바뀐 근접동점으로 확인(버그 아님).
+**교훈**: fp32-forced MLX reference가 메모리부족으로 불가능할 때 llama.cpp+기존
+GGUF양자화본이 정직하게 캐비어트 명시하는 조건 하에 대체 참조로 쓸만함 — 향후
+대형 체크포인트 게이트에 재사용 가능한 패턴.
+
+README에 사용자 지시로 "테세우스의 배" 프레이밍 섹션 신규 추가: 아키텍처별
+최소-정밀도-유지 조합을 찾는 조합최적화 탐색 자체(nCk 스케일)는 이 프로젝트가
+아니라 향후 다른 연구자/LLM이 수행할 미래 과제, 이 엔진은 그 탐색을 실험
+가능하게 만드는 밑바탕(substrate)이라는 메타 프레이밍 — 이 프로젝트 전체의
+존재이유를 명문화.
+
+전체 세션기록: `~/Desktop/HISTORY/2026-08-29_vdsp-moe-per-role-precision-engine.md`.
+남은 것: 이 7-step 계획 관점에서는 없음(D-expert-promo-1은 향후 확장 여지로 문서화
+됐을 뿐 미해결 버그 아님). 다음 장기목표 방향은 README의 "open question" 섹션이
+가리키는 조합최적화 탐색(다른 연구자/LLM 몫) 또는 vdsp v2(GPU+co-execution) 트랙.
+
+## V5-pre + Opus 재계획 (2026-08-30) — MLX 백엔드 투자 판단이 크게 바뀜
+
+**V5-pre (llama.cpp+Metal 저비용 사전탐색, 실행완료)**: Qwen3-30B-A3B(18.5GB)는
+bob(M4,16GB) Metal 워킹셋 한계(12.71GB)를 46% 초과해 OOM(하드웨어 한계, 백엔드
+무관). DeepSeek-V2-Lite(9.65GB, 한계 안에 여유)로 재시도해 llama.cpp+Metal
+**48.34 tok/s**(단일유저) 확보, 우리 CPU/SME2 엔진 실측 **2.47 tok/s**(8인 동시
+서빙 합산, `QWEN_MOE_CBATCH=1`이 REQS/SLOTS 무시하고 8프롬프트 하드코딩된 것도
+새로 발견) — 약 19.6배 차이.
+
+**Opus Plan 에이전트 재계획(같은 세션, bob 라이브 재검증)** — 몇 가지 핵심 수치가
+뒤집힘:
+- **메모리 대역폭 루프라인 계산(새로 함)**: bob GPU 스트리밍 대역폭 실측
+  94.6GB/s. B=1 디코드는 토큰당 ~1.53GB 읽어야 해서 **이론 한계 61.8 tok/s**
+  — llama.cpp의 48.34는 이미 이 한계의 **82.6%**. 즉 **커스텀 MLX 백엔드도
+  B=1에서는 최대 ~1.28배**밖에 못 이김 — 8-12세션 투자를 정당화 못 함.
+  B=64는 이론한계 ~640 tok/s인데 llama.cpp는 180.91(28%)만 달성 — **여기
+  ~3.5배 여지가 진짜 기회**(배치 서빙 영역).
+- **P0.1 "CPU+GPU 동시실행 상호간섭 거의 없음"이 M1 Max(macstudio)에만 해당,
+  bob(M4)은 GPU -6%, CPU -13~17%로 재확인됨** — 이전 요약이 두 칩 다 해당하는
+  것처럼 일반화했던 게 틀렸음(design doc 자체의 §4.2는 이미 정확히 말하고
+  있었음).
+- **DeepSeek-V2-Lite에서 co-execution은 이상적 경우도 +3.3%, 실측 간섭 반영하면
+  -3.2%(순손실)** — CPU/GPU 속도비가 30배라 P0.1의 +20% 효과(2.9배 비율에서
+  측정)가 전혀 다른 체제. **FreeToken의 실제 메커니즘(GPU가 PCIe fetch로
+  멈춰있는 동안 CPU가 overflow 계산)도 통합메모리에는 그 "멈춰있는 시간" 자체가
+  없어서 이식 안 됨** — CPU expert 1개(~2.3ms)가 GPU 레이어 전체(~0.08ms)의
+  28배 걸림, 절대 못 숨김.
+- **결론**: V6(role별 CPU/GPU 디바이스 배정 + FreeToken식 expert 분담)는
+  **속도가 아니라 용량(capacity) 기능으로 재정의**됨 — 못 올라가던 모델
+  (Qwen3-30B-A3B)을 부분 GPU-상주+CPU-overflow로 실제로 돌아가게 만드는 게
+  진짜 가치, throughput 향상은 기대하면 안 됨.
+- **전체 세션 규모**: V5(GPU 백엔드 기초) 8-14세션 + V6(role+device 일반화)
+  7-12세션 = **총 15-26세션** — 원래 8-12세션 추정보다 훨씬 큼.
+- **권고**: V5a만 우선 승인(20분짜리 gate 0 link+metallib 스모크테스트부터),
+  V5b+V5c를 한 묶음으로 진행하되 V5c의 kill-gate(llama.cpp의 48.34 tok/s
+  못 넘으면 중단 재검토)를 진짜 정지점으로 삼을 것.
+
+전체 계획 파일: `~/Desktop/vdsp_v2_design/trackb_v5_plan/PLAN_v5_v6_gpu_backend_and_role_device.md`
+(F-1~F-16 실측근거, D-gpu-1~10 설계결정, V5a~g/V6a~d 세부 게이트 전부 포함).
+
+## V5a 완료 (2026-08-30, 같은 세션 후속) — 8개 게이트 전부 PASS
+
+사용자가 "V5a 시작"으로 직접 착수 지시(질문 없이 바로 실행하라는 명시적
+피드백 있었음, [[feedback_...]] 참고할 만한 교훈: 명확한 지시 후 곁가지
+확인질문 금지). `mlx_moe.h`/`mlx_moe.cpp` 신규(C++17, MLX 링크, `sme2_kai.h`
+벤더경계 패턴 그대로), `qwen_infer.c`에 `run_moe_gpu_mode()` 추가
+(`#ifdef QWEN_GPU_MLX` 전체가드).
+
+**실제 버그 2건 발견·수정(원인규명 방법론 적용, 표준 hw-kernel-vendoring
+스킬이 경고하는 정확히 그 클래스)**:
+1. `mx::allocator::can_reuse_alien_buffer()`가 이 MLX 빌드(bob)에서
+   Python 아닌 C++ 프로세스에서 호출 시 **무조건 SIGSEGV** — 격리
+   프로브로 확정(단순 malloc 포인터+MLX 워밍업 후에도 재현). 원래
+   optional 진단용(zero-copy 여부 리포팅)이라 correctness엔 불필요함을
+   확인 후 완전 제거, Gate5는 MLX 메모리 카운터만으로 잔류.
+2. Gate3 dequant 동치검사가 `col0` 파라미터 없이 항상 컬럼[0,16)만
+   비교하는데 CPU측은 랜덤 `col0+c`를 봐서 **서로 다른 컬럼을 비교하는**
+   테스트-하네스 버그(max_abs_diff=0.69로 표면화) — `col0` 파라미터
+   추가로 수정. 부수적으로 `mx::dequantize`가 2차원 이상 요구한다는
+   것도 발견(1D row는 예외), `expand_dims`로 해결.
+
+**최종 실측 결과(DeepSeek-V2-Lite AF-blob, 269개 텐서, 9.81GB)**:
+Gate1(기본빌드 byte-identity) PASS · Gate2(bits sanity) 269/269 PASS ·
+Gate3(dequant 동치) 400개 좌표 max_abs_diff=**0.0 정확히** PASS ·
+Gate4(GEMM 교차검증) worst rel_l2=2.13e-07(bar 1e-5) PASS ·
+Gate5(residency) active=peak=9.814GB vs 12.71GB 천장, 여유 확보 PASS ·
+Gate6(경고베이스라인) 20개 그대로 PASS · Gate7(SVE/SME 누출) 0건 PASS ·
+R8(회귀) byte-identical .o가 그 자체로 최강 증거.
+
+**V5a 완료, V5b(레이어0 MLA attention on GPU)가 다음 승인 대상.**
+상세: `RESULTS.md` §"V5a: GPU weight binding + numerical equivalence --
+real gates, all PASS", 스냅샷 `~/Desktop/vdsp_v2_design/trackb_v5a_results/`.
+
+## V5b 완료 (같은 세션 후속, 2026-08-30 07시대) — 레이어0 MLA attention on GPU
+
+사용자가 "V5b 시작 질문 및 멈추지 말고 오전 11시까지 진행" 지시 → 질문 없이
+바로 실행. `mlx_gpu_mla_layer0()`/`mlx_gpu_mla_config()` 신규 구현 —
+q_proj/kv_a_proj/kv_b_proj/o_proj GEMM(V5a가 이미 바인딩한 텐서 재사용),
+kv_a_layernorm RMSNorm, RoPE(traditional=true 교차쌍+YaRN freqs 나눗셈),
+causal self-attention 전부 GPU.
+
+**와이어링 전 3개 빌딩블록을 격리 프로브로 먼저 검증**(hw-kernel-vendoring
+원칙 — 헤더만 읽고 믿지 않음): `fast::rope`(freqs override)가 실제
+DeepSeek YaRN 테이블(32개 distinct)로 CPU 검증 arithmetic과
+max_abs_diff=4.77e-07 일치, `fast::scaled_dot_product_attention`
+(mask_mode="")이 CPU 수동 softmax와 1.49e-08 일치, `fast::rms_norm`이
+1.19e-07 일치 — 셋 다 안전 확인 후 실제 배선.
+
+**실측 결과(8개 실 prompt position, MoE-2a 실캡처 prompt_ids
+[100000,549,4345,280,8204,317,245,1234] 재사용)**: cpu_vs_gpu
+worst=2.78e-07(bar 1e-4) PASS, cpu_vs_truth worst=1.299e-03(bar 1e-2,
+MoE-2a 원래 결과 "≤1.3e-3"와 6자리까지 일치 — 하네스 자체 정확성
+재확인), gpu_vs_truth worst=1.299e-03(bar 1e-2) PASS — 계획이 예측한
+전이관계(GPU≈CPU 수준 오차라 GPU-vs-truth≈CPU-vs-truth) 정확히 실측
+확인. 회귀: 기존 pre-V5 baseline과 byte-identical 재확인(V5a+V5b 전체
+합산 후에도).
+
+상세: `RESULTS.md` §"V5b: layer-0 MLA attention on GPU -- real gates,
+all PASS", 스냅샷 `~/Desktop/vdsp_v2_design/trackb_v5b_results/`.
+**V5b 완료. 다음: V5c(27레이어 전체 forward, 계획의 kill-gate) — 별도
+승인 필요.**
+
+## V5c 완료 — 정확도게이트 전부 PASS, **처리량 kill-gate 실패**(같은 세션, 07시대)
+
+사용자 "V5b 시작... 멈추지 말고 오전 11시까지 진행" 지시 연장선에서 계속
+실행. `mlx_gpu_layer_step()` 신규 — 전체 FFN(dense+router+gather_qmm
+라우팅전문가+shared전문가) 27레이어 전체로 확장. 신규 MLX API
+`gather_qmm` 격리검증(group_size=8은 커널 없음 에러, 64로 재시도해
+max_abs_diff=4.77e-07 확인 후 배선). Router(64-wide softmax+top-6)는
+호스트(CPU)에 의도적으로 유지 — 정확도/성능상 GPU로 밀 이유 없는
+합법적 role별 CPU/GPU 분담.
+
+**정확도: 첫 실행에서 전부 PASS**(이번 라운드는 버그 0건 — V5a의 2건과
+대조): argmax parity 8/8(실제 MLX ground truth 대비), gpu_vs_cpu worst
+rel_l2=4.84e-07(bar 1e-4), gpu_vs_truth worst=3.91e-03(bar 1e-2) —
+cpu_vs_truth와 6자리까지 일치, 게다가 이 값이 이 프로젝트 MoE-2b 자체
+기록("rel-L2 1.25e-3~3.91e-3")과 거의 정확히 일치 — 전체 새 파이프라인이
+진짜 정확함을 강하게 뒷받침.
+
+**★★★ 처리량 kill-gate 실패**: 실측 **~7.8 tok/s**(3회 반복,
+7.771/7.789/7.812) vs 계획의 bar **48.34 tok/s**(llama.cpp+Metal parity)
+— roofline 61.8 tok/s의 겨우 13%(llama.cpp는 82.6%). **원인규명(추측
+아니라 수치로 정합성 확인)**: 라우팅 레이어당 ~19개(비라우팅 레이어
+~11개), 27레이어 합산 **토큰당 ~505개의 개별 mx::eval() 디스패치** —
+128.7ms/토큰 ÷ 505 ≈ 0.25ms/디스패치, M=1(단일토큰) 초소형 GEMM 대비
+Metal 커맨드버퍼 제출+대기 고정비용이 압도하는 정합적 수치. 계획
+자체의 D-gpu-4 설계원칙("토큰당 eval() **1회**")을 정확히 위반한
+경우 — 이번 라운드는 신규 프리미티브(gather_qmm 등)를 하나씩 격리
+검증 후 배선하는 정확성우선 방식으로 개발했고, 그 결과 각 프리미티브
+호출이 즉시 eval()되는 eager 패턴이 됨(27레이어 전체를 하나의 lazy
+그래프로 지연시켰다가 마지막에 1회 eval()하지 않음). **병목은 이
+구현의 eager-eval 디스패치 패턴이지, gather_qmm 자체 연산비용도 MLX/
+하드웨어 한계도 아님**(V5b의 격리된 rope/rms_norm/sdpa 전부 정확+
+빠른 원시함수임을 이미 확인) — 고쳐야 할 지점이 명확히 식별됨.
+
+**계획 자체의 kill-gate 프로토콜대로 여기서 정지+재스코프 필요**: V5d/e는
+시작 안 함. 수정안(27레이어 전체를 lazy 그래프 1개로 재구성, eval() 1회로
+축소)은 식별됐으나 실제 엔지니어링(별도 세션 규모)이 필요하고 성공을
+보장하지 않음 — 시도하지 않고 정직하게 보고.
+
+상세: `RESULTS.md` §"V5c: full 27-layer GPU forward -- correctness gates
+all PASS, KILL-GATE FAILS", 스냅샷 `~/Desktop/vdsp_v2_design/trackb_v5c_results/`.
+
+### 세션 끝 시점 상태 (이 창)
+- V5a/V5b 전부 완료+실측+문서화+커밋 완료.
+- "릴레이" 모니터링 요청은 완전 미해결·의미불명 상태로 남음 — 사용자가
+  다시 꺼내기 전엔 건드리지 말 것.
+- 행동교정 기록: 명확한 지시("V5a 시작"/"V5b 시작... 멈추지 말고") 이후엔
+  곁가지 확인질문 금지, 시간이 허락하는 한 계속 실행(사용자가 명시적으로
+  화냄, 시간낭비 지적한 전례 있음).
+
+## V5c-fused 시도 (같은 세션 후속) — 버그 1건 발견+수정, 실측 ~3.2배 가속,
+## 하지만 버그 2건째 미해결로 kill-gate 여전히 실패
+
+사용자 지시 "eval() 한 번으로 lazy graph 재구성 시도해봐"(V5c kill-gate
+실패 직후) 그대로 착수.
+
+**1차 시도(one-eval-per-TOKEN, 계획의 D-gpu-4 원칙대로)**: 27레이어 전체를
+lazy 그래프 하나로 짓고 마지막에 eval() 1회. **결과: pos=0 정확(5.22e-07),
+pos>=1 전부 틀림**(rel-L2 0.4~1.3) — 개별 서브계산(레이어별 attention,
+dense FFN, 라우터, routed FFN, 각 레이어 x_out 전체)은 강제 조기 eval()로
+확인하면 전부 정확한데도 그렇다. MLX 자체 그래프 실행기 내부 원인은 이번
+라운드 범위 밖. **처리량은 실제 ~37.8 tok/s 도달**(48.34 bar에는 미달이나
+디스패치-오버헤드 진단이 방향상 맞았음을 재확인).
+
+**2차 시도(one-eval-per-LAYER, 절충안)**: 레이어당 ~15-20개 연산을 하나의
+lazy 그래프로 짓되 **레이어마다** eval() 호출(~27-28회/토큰). 1차 시도의
+버그가 그래프 "깊이"(27레이어 병합) 문제인지 테스트하려는 의도.
+
+이 과정에서 진짜 버그 2건 발견 — 둘 다 이미 검증된 eager
+`mlx_gpu_layer_step()`과 lazy 중간값을 대조(임시 디버그 훅)하는 동일한
+방법으로 찾음:
+
+- **버그2(발견+수정)**: `switch_down`(선택된 전문가마다 다른 입력행 필요)에
+  `gather_qmm`을 쓰면 `(TOPK,TOPK,out)` 전체 cross product가 나옴(행별
+  페어링 아님, 격리 검증 완료) — 정답은 그 대각선, `mx::take_along_axis`로
+  추출. 이 추출 자체는 격리 상태(합성 mlx.core 재현, 단독 eval())에서는
+  정확한데, **다른 무관한 연산들과 함께 더 큰 하나의 eval() 배치에 묶이면
+  조용히 거의 0에 가까운/뒤섞인 값을 반환**함(레이어1 강제 조기eval→정상,
+  레이어2 동일코드 미적용→여전히 틀림, 2회 재현). **수정**: down_flat을
+  계산 직후 단독으로 eval() — pos=0이 eager와 정확히 일치(5.220869e-07,
+  3회 반복 재현) 확인.
+
+- **버그3(발견, 미해결)**: 버그2 수정 후에도 K/V 히스토리가 있는 모든
+  위치(pos>=1)에서 여전히 틀림(gpu_vs_cpu 0.44~1.26, 히스토리 길수록
+  증가) — 3회 반복 동일 재현. x_mid/FFN출력/top_idx/swiglu_2d/down_flat을
+  모든 레이어·모든 위치에서 대조하는 광범위한 이분탐색을 했는데 **전부
+  정확하다는 결과**가 나왔으나, **이 이분탐색 도구 자체가 오염됨**을 뒤늦게
+  발견: 검증용 eager 경로(`mlx_gpu_layer_step_dbg`)가 lazy 경로와 같은
+  `g_mla_K`/`g_mla_V` 캐시를 공유해서, 검증 호출 자체가 조용히 그 캐시
+  슬롯을 "자가치유"해버림 — 실제 lazy 경로의 진짜 동작을 가려버린 것.
+  이후 깨끗한(비오염) 파이프라인에 직접 4가지 "이것도 단독 eval 필요한가"
+  테스트(o, attn, x_mid를 명시적 eval 출력으로, FFN결합출력을 명시적
+  eval출력으로, x_out에 강제 host-sync read)를 시도 — **4가지 전부
+  바이트 단위로 동일하게 틀린 결과**, 버그2와 달리 eval-타이밍 문제가
+  아닐 가능성이 높음을 시사. K/V 히스토리 읽기/concat 경로(레이어 내
+  유일한 position-의존 코드)의 진짜 로직버그일 가능성이 가장 높으나,
+  이번 라운드 시간예산 내에 격리 못함.
+
+**실측 처리량(버그2 수정만 적용, 3회 반복)**: 0.648s/24.709, 0.649s/24.653,
+0.650s/24.625 tok/s — **eager 7.8 tok/s 대비 실제 ~3.2배 가속**(48.34 bar
+에는 여전히 미달). argmax parity 1/8(pos=0만 정확) — **이 빌드는 아직
+production-ready 아님**, pos>=1 정확성 미확정 상태로 사용 금지.
+
+**정직하게 정지**: 투자한디버깅 규모(investigation-protocol의 "2회 이상
+막히면 정직하게 보고" 기준 충족) 대비 반환 감소 → 이번 라운드 종료. 임시
+디버그 계측(peek 함수들, 전역 g_dbg_*, env-var 게이트 비교블록)은 전부
+제거하고 `mlx_gpu_layer_step_dbg()`(추가 out-param 있는 eager 변형)만
+재사용 가능한 회귀도구로 남김.
+
+상세: `RESULTS.md` §"V5c-fused: lazy-graph rewrite attempt -- root cause
+confirmed correct, real ~3x speedup demonstrated, but TWO real
+MLX-composition bugs found (one fixed, one unresolved) -- KILL-GATE still
+FAILS".
+
+### 다음 세션 재개 지점 (2026-08-30 해결됨 — 아래 섹션 참고)
+- ~~Bug3(pos>=1) 근본원인 미해결~~ → **해결됨, 아래 참고**
+- V5d/e는 여전히 시작 안 함(계획 자체 kill-gate 프로토콜, 처리량 미달로
+  여전히 미착수).
+- 커밋 여부: 이 시점 코드+문서 변경은 이후 `fe7f2c7`로 커밋됨(사용자
+  "commit this" 승인).
+
+## Bug 3 재시도 — "device-side fixed-shape" 원칙으로 근본원인 발견+수정
+## 완료 (같은 날 후속 세션, 2026-08-30) — ★★ 8개 위치 전부 정확, 여전히
+## 처리량 kill-gate는 미달
+
+`fe7f2c7` 커밋 직후 사용자가 두 가지를 순서대로 지시: (1) "cuda graph는
+이 lazy graph문제를 어떻게 해결했지? FreeToken에서는? AEQ에서는?" —
+리서치 질문, (2) "Bug 3 device-side fixed-shape로 다시 접근해봐" — 방금
+리서치한 원칙을 실제 재시도에 적용하라는 지시.
+
+**리서치 결과**: CUDA Graph capture/replay는 이미 정확한 eager 실행을
+1회 기록 후 그대로 재생 — MLX의 매 호출마다 새로 해석되는 lazy 그래프와
+구조적으로 다르며, 이 트랙이 계속 만난 버그 계열에 원리적으로 면역.
+FreeToken(github.com/FlashML-org/FreeToken, `gh api`+`WebFetch`로 실제
+소스 확인)의 `GraphRunner`(`python/freetoken/engine/graph.py`)가 실제
+CUDA graph capture를 하며, 자체 `moe.py` 주석이 decode 경로를
+"device-side, fixed-shape... capture-safe"라 명시 — 이 원칙을 MLX엔
+없는 literal capture/replay가 아니라 설계 원칙으로 이식. AEQ는 메모리
+검색으로 무관 확인(양자화 비트폭 연구, 런타임 그래프 실행과 무관).
+
+**재설계**: 매 위치마다 커지는/재concatenate되는 K/V 히스토리를
+CONSTANT-shape·CONSTANT-pointer 윈도우(`{1,H,MLA_L0_MAXPOS=32,*}`
+전체를 매번 그대로 wrap)+boolean mask(`j<=pos`)로 교체,
+`mx::fast::scaled_dot_product_attention(..., "array", mask_arr)`로
+검증(mask_mode="array" 필수, `strings libmlx.dylib`로 사전확인 —
+실행 전 잡은 API 제약, 런타임 버그로 실제 발생한 적은 없음). 레이어당
+eval 1회→2회(Stage A: 이 위치 자신의 K/V 계산+즉시persist, Stage B:
+고정윈도우 attention+FFN)로 분리.
+
+**재설계 직후 pos=0까지 회귀(rel-L2 0.66~1.76)** — investigation-protocol
+그대로 재수행(bob 실제 MLX 0.32.1 위에서 격리 probe, 로컬 syntax check
+아님):
+- 기각: 마스킹 메커니즘 자체(`probe_mask.cpp`/`probe_mask2.cpp`/
+  `probe_mask3.cpp`, 실제 모델 차원 H=16/QHD=192/VHD=128로 3중 검증,
+  전부 `max_abs_diff=0.0`)
+- 기각: stale Metal 버퍼 캐싱(`probe_stale_ptr.cpp`)
+- 기각: eval 타이밍/배칭(버그2와 같은 형태의 standalone eval 시도,
+  결과 불변)
+- **확정 근본원인**: `v_new = mx::slice(kv_b_r, {0,0,NOPE}, {1,H,NOPE+VHD})`가
+  후속 연산 없는 bare slice(형제 `k_nope`는 `mx::concatenate()`로 흘러가
+  부수효과로 압축됨)라 `mx::eval()`이 압축을 강제 안 함
+  (`row_contiguous` 여전히 false) — 이 모델의 `NOPE==VHD==128` 우연이
+  실제 stride(256)와 naive `hh*VHD` 인덱싱이 가정하는 dense stride(128)를
+  충돌시켜 `v_new`의 진짜 데이터와 `k_nope`의 이웃 바이트가 조용히
+  뒤섞임(관측된 "한 헤드 걸러 정확" 패턴과 정확히 일치, `probe_slice.cpp`로
+  실차원 격리재현+strides `[4096,256,1]` vs 기대 dense `[2048,128,1]`
+  직접 확인).
+- `mx::copy(slice(...))` 1차 시도 **실패**(MLX 옵티마이저가 strided view를
+  "이미 valid"로 보고 실제 복사를 생략 — 격리 probe로도 확인).
+  **진짜 수정: `mx::contiguous(mx::slice(...))`** — 격리 probe로 먼저
+  확인(row_contiguous→true, dense strides, 모든 naive 읽기 정확) 후
+  실코드 적용.
+
+**실제 하드웨어 결과(bob, `QWEN_MOE_BASE=~/moe_base_deepseek
+QWEN_MOE_GPU_FUSED=1 ./qwen_infer_v5cfused_final`)**:
+```
+argmax parity vs real MLX ground truth: 8/8 (bar 8/8)
+WORST across 8 positions: gpu_vs_cpu=7.505390e-07 (bar <=1e-4)
+```
+**★★★ Bug 3 완전 해결 — 8개 위치(0~7) 전부 정확, pos=0뿐 아니라
+pos>=1 전체에서 처음으로 eager 경로와 사실상 machine-epsilon 수준
+일치.** 이 세션에서 만든 fused GPU forward pass의 첫 완전정확 버전.
+
+**처리량(3회 반복, 동일 8-warmup/16-measured 프로토콜)**: 0.736s/21.753,
+0.734s/21.793, 0.734s/21.786 tok/s. **~21.78 tok/s vs 48.34 bar(~45%)**
+— eager 7.8 tok/s 대비 실제 ~2.8배 가속이지만, 버그2만 적용된(하지만
+pos>=1은 틀렸던) 이전 24.7 tok/s보다는 느림 — 고정윈도우 2단계-eval
+설계가 정확성의 대가로 치른 실측 처리량 비용(D1 결정기록에 사전 명시된
+그대로, 놀라움 아님).
+
+**KILL-GATE: 여전히 실패**하지만 **이번엔 정확한 구현 위에서의 실패**
+— 이전 두 번의 "더 빠른" 수치(37.8/24.7 tok/s)는 전부 pos>=1에서 틀린
+빌드에서 나온 것이라 신뢰도가 근본적으로 다름. Gate 1(기본빌드
+바이트동일)도 재확인 시도 — bob의 clang/ld 자체가 동일 소스 두 번
+연속빌드에서도 바이트동일을 보장 안 함(비결정적 빌드, 격리
+재현확인)을 발견해 raw cmp는 무효 판정, 대신 (a) 이번 세션
+`qwen_infer.c` 변경이 100% `#ifdef QWEN_GPU_MLX` 안쪽임을 git diff로
+정적 확인 (b) 디스어셈블(`otool -tv`) 대조로 실제 차이가 균일한
+주소/literal-pool 이동뿐(로직 변경 없음)임을 확인 — 두 증거로 기본빌드
+보존 결론.
+
+상세: `RESULTS.md` §"Bug 3 RE-ATTEMPTED with the 'device-side
+fixed-shape' principle -- FOUND, ROOT-CAUSED, and FIXED". 다음: V5d/e
+착수 여부는 여전히 사용자 재스코프 결정 대기(처리량 미달, 정확성은
+이제 해결).
+
+## V5c-fused 처리량 최적화 (2026-08-31, repo-isolation 전환 후 첫 세션) —
+## eval-count 감축으로 21.78→37.16 tok/s(+70.6%), 정확도 완전 유지,
+## kill-gate 여전히 미달이나 격차 45%→77%로 좁혀짐
+
+정확도(8/8)는 해결됐지만 처리량(21.78 vs bar 48.34)이 미달인 채였던
+V5c-fused를, "토큰당 real `mx::eval()` 호출 수"(81회)를 직접 줄이는
+방향으로 공략. 매 eval()이 실제 Metal command-buffer 제출+host-sync
+경계라는 가설 하에, 실제 파이프라인 수정 전 항상 isolated probe로
+bob의 실제 MLX 0.32.1에서 먼저 검증(이 프로젝트 기존 규율 그대로).
+
+**Win 1 — switch_down의 강제 eval을 제거(우회가 아니라 근본원인 제거)**:
+기존 switch_down이 `gather_qmm`에 `lhs_indices=arange(TOPK)`를 명시
+전달해 (TOPK,TOPK,out) cross-product를 만들고 `take_along_axis`로
+대각선만 추출하던 것(Bug 2의 원래 유발 지점, standalone eval로 우회
+중이었음)을, **Apple 공식 `mlx_lm`의 `switch_layers.py`(`SwitchLinear`/
+`QuantizedSwitchLinear.__call__`)가 이 정확히 같은 "행마다 다른
+expert" 패턴에 lhs_indices를 아예 안 쓴다**는 사실을 소스 직접
+확인으로 발견 후 그대로 적용. Python(`probe_gather_no_lhs.py`)+
+C++(`probe_down_no_lhs.cpp`, 실제 TOPK=6/IM=1408/HIDDEN=2048차원)
+두 단계로 사전검증: lhs_indices=nullopt 형태가 정확할 뿐 아니라
+deferred eval(Bug2의 스트레스 조건 그대로 재현)에서도 안전함을
+확인 — **Bug 2의 오염은 cross-product 조합 자체의 문제였지 "지연
+평가" 자체의 문제가 아니었다**는 뜻. 결과: 정확도 8/8·gpu_vs_cpu
+7.5e-07(완전 동일) 유지, 처리량 **21.78→29.99~30.06 tok/s(3회),
++37.7%**.
+
+**Win 2 — Stage A/B eval 분리를 K/V persistent array로 제거**: 고정폭
+K/V 윈도우(Bug 3의 수정)가 raw host 메모리(`g_mla_K`/`g_mla_V`)였기
+때문에 매 레이어 `mx::eval(stageA)`가 강제였음(Stage B의 host wrap이
+그 메모리를 읽기 전 반드시 완료돼야 하는데, MLX는 host memcpy
+의존성을 볼 수 없음). Fused 경로 전용 신규 persistent `mx::array`
+K/V(`g_fused_K`/`g_fused_V`, 최초 1회 zero-init)로 교체,
+`mx::slice_update(src, update, start_indices, axes)`로 갱신(Python
+바인딩은 dynamic-index 오버로드만 노출, C++엔 static Shape 오버로드도
+있음 — 실제 사용은 dynamic 형태). `probe_slice_update_chain.py`로
+먼저 검증: 5회 체이닝된 slice_update, 전부 지연, 끝에 단일 eval →
+호스트버퍼 기준과 완전일치(diff=0.0), 아직 미평가 상태의 체이닝된
+윈도우에 대한 masked attention 읽기도 numpy 대비 float32 정밀도까지
+일치(1.19e-07) — bare `mx::slice()`와 달리 slice_update 결과는
+`mx::contiguous()` 없이도 안전함을 확인(Bug 3와 다른 종류의 이슈였을
+가능성을 사전에 배제). 결과: 정확도 8/8·gpu_vs_cpu 7.5e-07(완전
+동일, bit단위로 이전과 같음) 유지, 처리량 **29.99→37.03~37.17
+tok/s(3회), Win1 대비 추가 +23.6%**.
+
+**누적: 21.78→~37.16 tok/s(평균, 37.171/37.153/37.159), +70.6%**,
+정확도는 이번 라운드 전체에서 마지막 자릿수까지 완전 불변(eval
+경계 개수/위치만 바꿨지 산술은 안 건드림). eval count: 81→55(Win1)
+→**28**(Win1+2: 27레이어×1eval + finalize 1).
+
+**반증된 가설(시도 후 롤백) — "토큰당 완전 1 eval"**: Bug2/Bug3 둘 다
+닫혔으니, 원래의 Attempt 1(전체 27레이어를 그래프 1개로 지연, 끝에
+eval 1번)의 옛 미해결 버그("Bug 1": pos=0만 맞고 pos≥1부터 틀림)가
+사실 Bug 3와 같은 원인이었을 것이라는 가설로 재시도 — x_out의
+레이어별 eval도 제거해 finalize()에서 logits+전체 K/V를 한번에
+eval. **실측: 처리량은 bar를 실제로 넘음(52.98 tok/s > 48.34)이나
+정확도가 2/8로 완전히 깨짐, 오염 시작 지점이 정확히 pos≥1**(Bug 1의
+원래 증상과 동일 패턴). → **"Bug1=Bug3" 가설은 반증됨** — 레이어
+경계를 넘는 지연(deferral)에는 아직 원인 미규명의 별개 이슈가
+실재함(레이어 내부 position 간 slice_update 체이닝은 probe로 안전
+확인됐지만, 그건 다른 조건). 검증된 37.16 tok/s 버전(Win1+2, 레이어당
+1 eval)으로 롤백, 이 반증 결과와 재현 신호(pos=0 정상/pos≥1부터
+30~77% rel-L2)는 향후 세션이 Bug2/3와 같은 이분탐색 방법론으로
+집을 수 있도록 RESULTS.md에 상세 기록.
+
+**KILL-GATE: 여전히 미달**(37.16 < 48.34)이나 격차 45%→77%로 축소.
+"Bug 1" 근본원인을 규명하면 남은 ~23%(52.98 tok/s 천장이 잠깐
+확인됨)를 열 가능성이 있음 — 계속 추적할지 여기서 멈출지는 향후
+세션의 열린 결정. 상세: `RESULTS.md` §"V5c-fused throughput round".
+qwen_infer.c는 이번 라운드 미변경(mlx_moe.cpp/mlx_moe.h만).
+
+## Bug 1 근본원인 규명 + 수정 (같은 날 후속, 2026-08-31) — ★★★
+## KILL-GATE 최종 통과, 21.78→~52.91 tok/s(+143%)
+
+사용자 "Bug1 원인 계속 파봐" 지시로 착수. investigation-protocol
+그대로 적용: 재현→경쟁가설→가설별증거→인과사슬→전후검증→기각가설
+보고.
+
+**재현 단계의 결정적 단서**: "1-eval-per-token" 실패 빌드를 2회 더
+재실행 — **결과가 실행마다 다름**(1회차 2/8·pos1 rel_l2=0.30, 2회차
+1/8·pos1 rel_l2=1.36, argmax는 둘 다 549로 같지만 오차크기는 다름).
+진짜 산술버그라면 동일 입력에 매번 동일한 틀린 값이 나와야 정상 —
+실행마다 다르다는 것 자체가 **미초기화/해제된 메모리를 읽고 있다는
+강한 신호**, 코드를 건드리기 전에 가설공간을 재가중.
+
+**가설 4개**:
+1. **H_freqs(확정)**: `mlx_gpu_layer_step_lazy()`의 RoPE `freqs_f32`가
+   함수-로컬 `std::vector<float> freqs_f`를 `noop_deleter`로 wrap(zero-copy,
+   포인터만 참조) — eval이 함수 반환 전에 일어나야만 안전한데, "1-eval-
+   per-token" 설계는 finalize()까지 전부 미룸(27개 레이어 호출 전부
+   반환+스택해제 완료 후). RoPE 회전각=pos/freq이므로 pos=0은 freq값과
+   무관하게 항상 0(항등회전) → "pos=0만 항상 맞고 pos≥1부터 비결정적으로
+   틀림"을 정확히 예측 — 이번 재현+Bug1 원 보고(2026-08-30) 둘 다와
+   정확히 일치.
+2. **H_weights(기각)**: qwen_infer.c의 `run_moe_gpu_full_gate()` 호출부
+   직접 확인(~6950줄) — w_inln/w_postln/w_kvaln/w_gate는 영속 mmap
+   blob(`g_moe_f32_blob`) 포인터, x_embed는 루프 밖에서 1회 malloc —
+   전부 프로그램 lifetime 동안 안전. 소스 직접 확인으로 기각(추정 아님).
+3. **H_depth(기각, 수정으로 반증됨)**: MLX 그래프 실행기 자체가 27레이어
+   전체를 아우르는 깊은 지연그래프를 못 다룰 것이라는 원래(2026-08-30)
+   주력 가설 — freqs_f32 lifetime **하나만** 고쳤을 뿐 그래프 깊이/eval
+   횟수는 전혀 안 건드렸는데 완전히 해결됨 → 그래프 깊이 자체는 문제가
+   아니었음이 실측으로 반증됨.
+4. **H_gfusedx(기각, 약한 가설)**: g_fused_x는 MLX 자체 그래프 노드
+   참조카운팅이 관리하는 mx::array를 담고 있어(freqs_f32처럼 외부
+   raw 포인터가 아님) 메커니즘상 안전 — freqs 수정만으로 해결된 결과가
+   간접 확인.
+
+**인과사슬**: `freqs_f`(함수-로컬 std::vector) → `freqs_f32`가 그
+`.data()` 포인터만 wrap(복사 없음) → 함수 반환, 스택 해제 → 같은
+스택영역을 다음 26개 레이어 호출의 자기 로컬변수들이 반복 재사용 →
+`mlx_gpu_forward_finalize()`가 한참 뒤 첫 eval() 호출 → MLX가
+freqs_f32 포인터로 그 시점 스택에 있는 아무 값이나 읽음(진짜 RoPE
+주파수 아님) → 모든 레이어의 q_pe_rot/k_pe_rot이 쓰레기 주파수로
+계산됨 → pos=0만 우연히 정상(항등회전), pos≥1부터 오염, 실행마다
+스택 잔여값이 달라 결과도 비결정적.
+
+**수정**: 영속 global `g_mla_yarn_freqs_f32`를 `mlx_gpu_mla_config()`에서
+1회만 채우고, 함수-로컬 복사본 대신 이 버퍼를 wrap하도록 변경.
+**2단계 검증**:
+- Step A(수정만, 기존 레이어당-eval 설계 유지): 회귀없음 확인 —
+  8/8·gpu_vs_cpu 완전동일(7.5e-07)·처리량 37.075(변화없음). 이 버그가
+  기존 배포판에서도 "숨어있던"(가려진 것이지 없던 게 아닌) 버그였음을
+  실증.
+- Step B(수정+"1-eval-per-token" 재적용): **3회 반복 전부 8/8,
+  gpu_vs_cpu 완전동일(7.5e-07, bit-identical), 처리량 52.809~52.996
+  tok/s(평균 ~52.91)**.
+
+**★★★ KILL-GATE 최종 통과**: 52.91 tok/s(평균) vs bar 48.34 — **bar의
+109.4%**, 61.8 roofline의 85.6%(target 55, 89%엔 못 미침이나 kill-gate
+자체는 통과). 이 라운드 전체 누적: eager 7.8 → V5c-fused(Bug3) 21.78
+→ Win1(no lhs_indices) 30.0 → Win2(K/V slice_update) 37.16 →
+Bug1수정(진짜 1-eval/token) **~52.91 tok/s**. 원 21.78 대비 **+143%**,
+eager 대비 **~6.8배**. `qwen_infer.c` 전체 라운드 미변경(mlx_moe.cpp만).
+`bob:~/vdsp_m4_bench/qwen_infer_v5cfused_final`이 이 최종본을 가리킴.
+
+상세: `RESULTS.md` §"Bug 1 ROOT-CAUSED AND FIXED ... KILL-GATE PASSES".

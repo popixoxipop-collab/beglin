@@ -3632,3 +3632,358 @@ was removed from the shipped `mlx_moe.cpp`/`mlx_moe.h`/`qwen_infer.c`
 before this was written up -- `mlx_gpu_layer_step_dbg()` itself (the
 eager variant with extra debug out-params) was kept, since it is a real,
 reusable regression-testing tool for whoever picks Bug 3 back up.
+
+### Prior art check: how does CUDA Graph / FreeToken / AEQ handle "lazy
+### graph dispatch overhead"? (research, before the Bug 3 re-attempt below)
+
+Before re-attempting Bug 3, checked how three external precedents solve the
+class of problem this whole V5c-fused track is fighting (per-token dispatch
+overhead from a graph re-derived every call):
+
+- **CUDA Graph capture/replay**: architecturally different from MLX's own
+  lazy evaluation. `torch.cuda.graph()` records an already-CORRECT eager
+  execution ONCE, then `g.replay()` re-issues the exact same captured kernel
+  sequence -- it never re-derives results from op semantics on replay, so
+  it is structurally immune to the whole class of bug this track kept
+  finding (a fresh graph, freshly interpreted by MLX's scheduler, on every
+  call). MLX has no equivalent capture/replay primitive; the closest analog
+  available here is minimizing `mx::eval()` call count, which is what this
+  whole track has been doing.
+- **FreeToken** (github.com/FlashML-org/FreeToken, real repo, verified via
+  `gh api`+`WebFetch`): `python/freetoken/engine/graph.py`'s `GraphRunner`
+  does real CUDA graph capture (`_capture_graphs()`), keyed by batch-size
+  buckets (`_determine_cuda_graph_bs()`: `[1,2,4] + range(8, max_bs+1, 8)`),
+  gated by `can_use_cuda_graph()` (decode-only, `size<=max_graph_bs`), with
+  a warmup forward pass before capture. Its own `moe.py` comments its decode
+  path as explicitly "device-side, fixed-shape... capture-safe" -- capture
+  requires static shapes and static buffer addresses, which is exactly the
+  design principle borrowed below for Bug 3's redesign (MLX still has no
+  literal capture/replay, so this is a principle transplant, not a literal
+  API transplant).
+- **AEQ** (this user's own project): confirmed via memory-file search to be
+  unrelated -- its research axis is expert-importance-weighted quantization
+  bit-width selection, not runtime graph/dispatch execution. No relevant
+  prior art there.
+
+### Bug 3 RE-ATTEMPTED with the "device-side fixed-shape" principle --
+### FOUND, ROOT-CAUSED, and FIXED. Confirmed correct across ALL 8 positions.
+### KILL-GATE: still FAILS on throughput, but for the first time on a
+### FULLY CORRECT implementation.
+
+**Redesign**: replaced the per-layer design's growing/re-concatenated K/V
+history (`{1,H,pos,QHD}`, a NEW shape and a NEW host buffer every position)
+with a CONSTANT-shape, CONSTANT-pointer wrap of each layer's full
+`{1,H,MLA_L0_MAXPOS,*}` K/V window (`MLA_L0_MAXPOS=32`), plus an explicit
+boolean mask (`true` for `j<=pos`) fed to
+`mx::fast::scaled_dot_product_attention(..., "array", mask_arr)` in place
+of array-length as the validity signal. `mask_mode` must be `"array"` (not
+`""`) when passing an explicit mask -- confirmed via `strings libmlx.dylib`
+before ever running the code (`"mask_mode must be 'causal', 'array' or
+''"`), so this was never itself a runtime bug, despite early suspicion.
+Split into two `mx::eval()` stages per layer: Stage A computes this
+position's own K/V (shape depends only on H/QHD/VHD, never on `pos`),
+evaluates+persists it into the host cache immediately; Stage B then wraps
+the fixed window and runs attention+FFN.
+
+**This redesign initially REGRESSED pos=0 (previously always correct) to
+rel-L2 0.66-1.76 across all positions** -- extensively debugged per the
+investigation-protocol (reproduce, competing hypotheses, isolated probes on
+bob's real MLX 0.32.1, not just local syntax checks):
+
+- **Rejected**: the masking mechanism itself -- verified bit-exact correct
+  in 3 separate isolated probes (`probe_mask.cpp`/`probe_mask2.cpp` with
+  synthetic data, `probe_mask3.cpp` replicating the real function's
+  evaluated-q pattern with this model's real dims H=16/QHD=192/VHD=128),
+  `max_abs_diff=0.0` against a truncated-K/V reference in every case.
+- **Rejected**: stale Metal buffer caching on host-pointer re-wrap
+  (`probe_stale_ptr.cpp` -- no such effect).
+- **Rejected**: eval-timing/bundling (an `mx::eval(attn)` standalone-eval
+  attempt, mirroring Bug 2's own fix shape, did NOT change the wrong
+  result).
+- **CONFIRMED root cause**: `v_new = mx::slice(kv_b_r, {0,0,NOPE},
+  {1,H,NOPE+VHD})` is a bare `mx::slice()` with no follow-up op forcing
+  contiguous materialization (unlike the sibling `k_nope`, which flows into
+  `mx::concatenate()` afterward and gets compacted as a side effect --
+  confirmed via `probe_contig.cpp`, `row_contiguous=1` with dense strides
+  after eval). Because this model's `NOPE==VHD==128`, `v_new`'s true stride
+  (256) silently aliases with the byte layout naive `hh*VHD`-indexed reads
+  (exactly what the Stage-A host memcpy performs) expect from a *dense*
+  128-stride buffer -- `mx::eval()` does **not** force compaction of a bare
+  slice (`row_contiguous` stays `false`). Isolated proof:
+  `probe_slice.cpp`, real dims, showed exactly this: strides `[4096,256,1]`
+  instead of the expected dense `[2048,128,1]`, and naive reads silently
+  interleaving `v_new`'s real data with `k_nope`'s neighboring bytes -- this
+  exactly reproduces the observed "every other head correct" corruption
+  pattern (`lazy[head=2k] == ref[head=k]`).
+- **First fix attempt, `mx::copy(slice(...))`, FAILED**: verified in both
+  the real code and an isolated probe that `row_contiguous` stays `false`
+  even after `mx::copy()` -- MLX's optimizer elides the actual copy since
+  the strided view remains internally "valid" from its own perspective.
+  **Real fix**: `mx::contiguous(mx::slice(...))` -- confirmed in isolation
+  first (`row_contiguous` flips to `true`, dense strides, all naive reads
+  correct), then applied to the real function.
+
+**Result, real hardware, bob, `QWEN_MOE_BASE=~/moe_base_deepseek
+QWEN_MOE_GPU_FUSED=1 ./qwen_infer_v5cfused_final`**:
+
+```
+[moe gpu fused] argmax parity vs real MLX ground truth: 8/8 (bar 8/8)
+[moe gpu fused] WORST across 8 positions: gpu_vs_cpu=7.505390e-07 (bar <=1e-4)
+    gpu_vs_truth=3.909946e-03 (bar <=1e-2) cpu_vs_truth=3.909851e-03 (bar <=1e-2)
+```
+
+**Bug 3 is FIXED, confirmed across all 8 positions (0-7), not just pos=0**
+-- `gpu_vs_cpu` worst-case rel-L2 7.5e-07 is essentially machine-epsilon
+level, two orders of magnitude under the 1e-4 bar. This is the first fully
+correct version of the fused GPU forward pass across the entire tested
+position range.
+
+**Throughput (3 reps, same 8-warmup/16-measured protocol as before)**:
+
+| rep | wall time | tok/s |
+|---|---|---|
+| 1 | 0.736s | 21.753 |
+| 2 | 0.734s | 21.793 |
+| 3 | 0.734s | 21.786 |
+
+**~21.78 tok/s vs the 48.34 tok/s bar** -- real, ~2.8x speedup over V5c's
+eager 7.8 tok/s baseline, and correct for the first time (unlike the
+Attempt-2/Bug-2-only 24.7 tok/s number above, which was faster but WRONG
+for every pos>=1). The two-eval-per-layer split (Stage A + Stage B) costs
+some throughput versus the (incorrect) one-eval-per-layer design -- this is
+the real, measured cost of the fixed-shape-window redesign's correctness
+fix, not a surprise: D1's own decision record (in `mlx_gpu_layer_step_lazy()`'s
+header comment) named this cost upfront before the fix was confirmed
+working.
+
+**KILL-GATE: still FAILS** (21.78 < 48.34 tok/s, ~45% of bar) -- but this is
+now a FAILURE ON A CORRECT IMPLEMENTATION, which is a fundamentally
+different, more trustworthy result than either prior attempt (Attempt 1:
+correct-but-slower at 37.8 tok/s with a per-token eval that still failed
+pos>=1 in a DIFFERENT way at finer granularity turned out not to apply here
+since per-layer eval was chosen; Attempt 2/Bug-2-only: faster at 24.7 tok/s
+but wrong for every pos>=1). Gate 1 (default-build byte-identity) was
+re-checked and found NOT directly verifiable on this toolchain -- a
+reproducibility probe showed bob's clang/ld does not produce byte-identical
+output even from two back-to-back builds of IDENTICAL source (differing
+UUID/layout/literal-pool offsets), so raw `cmp` against an old on-disk
+binary is not a valid regression test here. Verified instead via (a) static
+proof that 100% of this session's `qwen_infer.c` changes since the last
+default-build-verified commit are inside `#ifdef QWEN_GPU_MLX` guards
+(confirmed via `git diff`), and (b) a disassembly-level diff (`otool -tv`)
+showing the only differences between the old on-disk binary and a fresh
+rebuild are uniform address/literal-pool shifts, not logic changes.
+
+### V5c-fused throughput round: eval-count reduction, +70% real speedup on a
+### CORRECT implementation, KILL-GATE still fails but the gap narrowed 45%->77%
+
+**Scope**: with Bug 3 fixed (8/8 argmax, prior section), the remaining gap to
+the 48.34 tok/s bar (21.78 tok/s, ~45%) was attacked directly by counting and
+cutting real `mx::eval()` calls -- the per-token count was 81 (1 dense layer
+x 2 evals + 26 routed layers x 3 evals + 1 finalize), each a real Metal
+command-buffer submit+host-sync boundary. Two independent reductions, each
+verified correct via an isolated probe against bob's real MLX 0.32.1 BEFORE
+being applied to the real pipeline (this project's own established
+discipline), then applied and re-gated on the real 8-position harness.
+
+**Win 1 -- eliminate switch_down's forced eval (not just the eval, the whole
+cross-product), reference: mlx_lm's own `switch_layers.py`.** The routed-FFN
+down_proj step used `gather_qmm` with `lhs_indices=arange(TOPK)` +
+`rhs_indices=top_idx`, producing a (TOPK,TOPK,out) cross product that needed
+`take_along_axis` to extract the diagonal -- this exact composition was Bug
+2's original corruption trigger, previously worked around with a forced
+standalone `eval(down_flat)`. Reading Apple's own `mlx_lm` reference MoE
+implementation (`switch_layers.py`, installed alongside MLX on bob) showed
+its `SwitchLinear`/`QuantizedSwitchLinear.__call__` NEVER passes
+`lhs_indices` for this exact "each row already belongs to a different
+expert" case -- it relies on `x`'s own existing batch dimension (here,
+TOPK, from the prior gate/up_proj gather_qmm calls) matching `rhs_indices`
+1:1, no cross product needed. Verified via an isolated probe in both Python
+(`probe_gather_no_lhs.py`) and C++ (`probe_down_no_lhs.cpp`, this model's
+real TOPK=6/IM=1408/HIDDEN=2048 dims) BEFORE touching `mlx_moe.cpp`: the
+`lhs_indices=nullopt` form (x reshaped `{TOPK,1,IM}`) is bit-correct AND --
+critically -- survives being folded into a larger DEFERRED graph with no
+standalone eval (Bug 2's exact stress condition), confirming Bug 2's
+corruption was specific to the cross-product composition, not to deferred
+evaluation itself. Applied to `mlx_moe.cpp`'s routed-FFN branch, removing
+`lhs_ids`/`lhs_idx`/`diag_ids`/`diag_idx`/`down_cross`/`down_diag` and the
+standalone `mx::eval(down_flat)` entirely. Result (8-position gate, real
+hardware): **8/8 argmax unchanged, gpu_vs_cpu worst-case still 7.5e-07
+(bit-identical to before)**, throughput **21.78 -> 29.99-30.06 tok/s (3
+reps), +37.7%**.
+
+**Win 2 -- eliminate Stage A/B's forced eval via a persistent device-side
+K/V cache.** The fixed-shape K/V window (Bug 3's fix) lived in raw HOST
+memory (`g_mla_K`/`g_mla_V`, `std::vector<float>`), so every layer needed a
+standalone `mx::eval(stageA)` to get this position's K/V out to host memory
+BEFORE Stage B's `wrap_host_f32()` could safely read it back in as an
+input array -- a real, unavoidable eval boundary given that design, since
+MLX has no visibility into a host memcpy dependency on raw external memory.
+Fix: replace the host buffer with a genuine persistent `mx::array` per layer
+(`g_fused_K`/`g_fused_V`, lazily zero-initialized once via
+`ensure_fused_kv_init()`), updated via `mx::slice_update(src, update,
+start_indices, axes)` -- confirmed via `mx::slice_update`'s C++ signature
+(only the dynamic-`start_indices`-array overload is exposed to Python;
+verified matching semantics in both langs) and an isolated probe
+(`probe_slice_update_chain.py`) BEFORE applying: 5 chained `slice_update`
+calls, all deferred (no eval between), a single eval at the very end,
+reproduce a host-buffer reference bit-for-bit (`max_abs_diff=0.0`), and a
+masked `scaled_dot_product_attention` read over the still-lazy chained
+window (mimicking Stage B reading a not-yet-materialized cache) matches a
+numpy reference to float32 rounding precision (1.19e-07) -- unlike bare
+`mx::slice()` (Bug 3), `slice_update`'s output does not need an extra
+`mx::contiguous()` to stay correct under deferral. Applied: Stage A's
+`mx::eval(stageA)` + host memcpy removed; Stage B's `wrap_host_f32()` calls
+replaced with direct references to `g_fused_K[l]`/`g_fused_V[l]`; the
+layer's end-of-function eval now covers `{x_out, g_fused_K[l],
+g_fused_V[l]}` in ONE combined call instead of two separate ones. Eval count
+per token: 81 -> 55 (Win 1) -> **28** (Win 1+2: 27 layers x 1 eval + 1
+finalize). Result (8-position gate, real hardware): **8/8 argmax unchanged,
+gpu_vs_cpu worst-case still 7.5e-07 (bit-identical)**, throughput **29.99 ->
+37.03-37.17 tok/s (3 reps), +23.6% on top of Win 1**.
+
+**Cumulative: 21.78 -> ~37.16 tok/s (mean of 3 reps: 37.171, 37.153,
+37.159), +70.6%, gap to the 48.34 tok/s bar narrowed from 45% to 77%
+covered.** Correctness held bit-identical (same gpu_vs_cpu/gpu_vs_truth
+numbers to the last decimal) across every step of this round -- neither win
+touched the actual arithmetic, only the number and placement of eval()
+boundaries.
+
+**Rejected (tried, reverted): true one-eval-per-TOKEN.** With both known
+"wrong under deferred eval" causes closed (Bug 2 eliminated, Bug 3 fixed),
+re-attempted the ORIGINAL Attempt-1 design from the prior section --
+deferring x_out's per-layer eval too, evaluating the entire 27-layer graph
+(logits + every layer's K/V) exactly once in `mlx_gpu_forward_finalize()` --
+on the hypothesis that Attempt 1's old, never-isolated "correct at pos=0,
+wrong at pos>=1" bug (this file's own "Bug 1") was actually Bug 3 under a
+different name. Real result: throughput DID clear the bar --
+**52.98 tok/s, above the 48.34 target** -- but correctness broke:
+**argmax parity fell to 2/8**, wrong starting exactly at pos>=1 (pos=0 still
+correct), matching Bug 1's original symptom pattern exactly. **This
+disproves the "Bug 1 == Bug 3" hypothesis** -- Bug 1 is a real, distinct,
+still-unknown issue specific to deferring K/V-dependent computation across
+MULTIPLE LAYER boundaries in one graph (as opposed to across POSITIONS
+within one layer's own slice_update chain across separate token calls,
+which the probe above confirmed is safe). Reverted to the Win 1+2 design
+(37.16 tok/s, 8/8 correct) rather than chase this further this round --
+left as a documented, reproducible lead (not a guess) for a future session:
+the failure signature (pos=0 correct, pos>=1 wrong, ~30-77% rel-L2) is
+identical enough to Bug 1's original report that isolating it with the same
+bisection discipline used for Bug 2/3 (temporary debug peek accessors,
+progressively finer eval granularity between layer boundaries) is a
+concrete, scoped next step, not a re-exploration from zero.
+
+**KILL-GATE: still FAILS** (37.16 < 48.34 tok/s) on the shipped (correct)
+build, but the gap is now real, measured, and substantially smaller than
+when this round started. Whether to keep chasing (Bug 1's root cause could
+plausibly unlock the remaining ~23%, based on the 52.98 tok/s ceiling it
+briefly touched) or stop here is an open decision for a future session.
+
+### Bug 1 ROOT-CAUSED AND FIXED (same-day follow-up session): a real
+### use-after-free, not an MLX or graph-depth issue -- KILL-GATE PASSES
+
+**Scope**: user asked to keep chasing Bug 1 rather than stop at the 37.16
+tok/s checkpoint above. Followed this project's investigation-protocol
+discipline: reproduce first, competing hypotheses, evidence per hypothesis,
+full causal chain, verify before/after, report rejected hypotheses.
+
+**Reproduce**: re-ran the reverted "1-eval-per-token" binary twice more.
+**Result was non-deterministic between runs** -- run A: 2/8 argmax,
+pos=1 rel-L2=0.30; run B: 1/8 argmax, pos=1 rel-L2=1.36 (same wrong argmax
+token, different error magnitude). A genuine arithmetic/logic bug would
+reproduce the exact same wrong output every run on identical input --
+run-to-run variance on identical input is the signature of reading
+uninitialized or already-freed memory, not a math error. This observation
+alone reweighted the hypothesis space before any code was touched.
+
+**Hypotheses**:
+1. **H_freqs (CONFIRMED)**: `mlx_gpu_layer_step_lazy()`'s RoPE `freqs_f32`
+   array wraps a FUNCTION-LOCAL `std::vector<float> freqs_f` via
+   `noop_deleter` (a zero-copy alien-buffer wrap, not a data copy) --
+   safe only as long as `mx::eval()` happens before the function returns
+   (so `freqs_f` is still alive on the stack at eval time). The Win 1+2
+   design always evaluates before return; the "1-eval-per-token" design
+   defers everything to `mlx_gpu_forward_finalize()`, called only after
+   all 27 layers' `mlx_gpu_layer_step_lazy()` calls have already returned
+   and their stack frames unwound -- so by eval time, `freqs_f32` points
+   into stack memory that 26 subsequent layer calls have long since reused
+   for their own locals. RoPE's rotation angle is `pos/freq` -- exactly 0
+   at pos=0 regardless of what garbage `freq` actually holds (identity
+   rotation either way), but pos>=1 genuinely depends on the value --
+   **this exactly predicts "pos=0 always correct, pos>=1 wrong and
+   non-deterministic,"** matching both this round's reproduction and Bug
+   1's original 2026-08-30 report precisely.
+2. **H_weights (REJECTED)**: maybe `w_inln`/`w_postln`/`w_kvaln`/`w_gate`/
+   `x_embed` (pointer parameters into `mlx_gpu_layer_step_lazy()`) have a
+   similar lifetime issue. Checked `qwen_infer.c`'s actual call site
+   (`run_moe_gpu_full_gate()`, ~line 6950): all of them are pointers into
+   `g_moe_f32_blob` (a persistent mmap'd blob) or `malloc()`'d once outside
+   the position loop (`x_embed`) -- alive for the whole program, not
+   function-local. Ruled out by direct source inspection, not assumption.
+3. **H_depth (REJECTED, disproved by the fix below)**: maybe MLX's graph
+   executor has a genuine bug/limitation handling a single lazy graph that
+   spans all 27 layers (deep fan-in from `slice_update` chains, many
+   `gather_qmm`/`quantized_matmul` nodes reusing views of the same
+   underlying quantized-weight arrays across layers). This was the
+   leading suspicion going in (it's what "Bug 1" was originally filed
+   as). Disproved by the fix's own result: fixing ONLY `freqs_f32`'s
+   lifetime -- touching nothing about graph depth, layer count, or how
+   many `mx::eval()` calls exist -- fully resolved the failure. If graph
+   depth itself were the problem, this one-line fix could not have been
+   sufficient.
+4. **H_gfusedx (REJECTED, weak from the start)**: `g_fused_x`'s contents
+   flow through MLX's own graph-node reference counting (it holds an
+   `mx::array`, not a raw external pointer), so its lifetime is managed by
+   MLX itself regardless of when `eval()` runs -- mechanistically different
+   from `freqs_f32`'s external, unmanaged host buffer. Indirectly ruled out
+   by the fix's result (nothing about `g_fused_x` was touched, yet the bug
+   is gone).
+
+**Causal chain, verified**: `freqs_f` (stack-local `std::vector<float>`,
+declared inside `mlx_gpu_layer_step_lazy()`) -> `freqs_f32` wraps its
+`.data()` pointer via `noop_deleter` (no copy) -> function returns, stack
+frame unwinds, `freqs_f`'s backing memory is freed -> the SAME stack
+region gets reused by each of the next ~26 layer calls' own local
+variables -> `mlx_gpu_forward_finalize()` runs much later, calls
+`mx::eval()` for the first time, MLX dereferences `freqs_f32`'s pointer
+and reads whatever now occupies that stack slot (not RoPE frequencies) ->
+`q_pe_rot`/`k_pe_rot` for every layer are computed with garbage frequency
+values -> wrong for every position except pos=0 (angle=0, RoPE is the
+identity transform independent of the frequency value) -> logits diverge
+starting at pos>=1, output is a genuine use-after-free so it varies
+run-to-run depending on incidental stack contents.
+
+**Fix**: added a PERSISTENT global `std::vector<float>
+g_mla_yarn_freqs_f32`, populated once in `mlx_gpu_mla_config()` (program
+startup, not per-call), and pointed `freqs_f32` at that instead of a fresh
+per-call local copy. **Verification, staged**:
+- **Step A (fix alone, keeping the WORKING per-layer-eval design)**: sanity
+  check that the fix introduces no regression on its own, since the bug was
+  always latent (masked, not absent) even in the shipped 37.16 tok/s
+  build. Result: 8/8 argmax, `gpu_vs_cpu` worst-case bit-identical to
+  before (7.505390e-07), throughput 37.075 tok/s (unchanged, noise-level)
+  -- confirms the fix is a pure safety hardening with zero behavioral
+  change under the design that was already masking the bug.
+- **Step B (fix + re-apply the "one-eval-per-token" deferral on top)**:
+  real hardware, bob, 3 reps: **8/8 argmax every run, `gpu_vs_cpu`
+  worst-case bit-identical to the per-layer-eval design (7.505390e-07)**,
+  throughput **52.809 / 52.952 / 52.824 tok/s (first probe build)**, then
+  **52.894 / 52.996 / 52.839 tok/s (final shipped build, mean ~52.91)**
+  after porting the fix into the canonical `mlx_moe.cpp` (not just the
+  scratch probe copy) and re-verifying end to end.
+
+**KILL-GATE: PASSES.** 52.91 tok/s (mean of 3 reps) vs the 48.34 tok/s bar
+-- **109.4% of bar**, and 85.6% of the 61.8 tok/s roofline target (>=55
+tok/s = 89% of roofline was the stretch goal; 52.91 is short of that but
+clears the actual kill-gate). Cumulative journey this whole throughput
+round: eager 7.8 -> V5c-fused (Bug 3 fixed) 21.78 -> Win 1 (no
+lhs_indices) 29.99-30.06 -> Win 2 (K/V slice_update) 37.03-37.17 -> Bug 1
+fixed (true one-eval-per-token, now safe) ~52.91 tok/s. **~6.8x over the
+V5c-fused eager baseline, ~2.4x over the pre-this-round 21.78 tok/s
+correct-but-slow build.** `qwen_infer.c` unmodified throughout this whole
+round (only `mlx_moe.cpp`/`mlx_moe.h` changed) -- default (non-GPU) build
+byte-identity argument from the prior section still holds unchanged.
+
+Canonical binary updated: `bob:~/vdsp_m4_bench/qwen_infer_v5cfused_final`
+now points at this (Bug-1-fixed, one-eval-per-token) build, superseding
+the 37.16 tok/s Win-1+2 build from earlier the same day.

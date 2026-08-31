@@ -230,6 +230,24 @@ necessarily this project -- inherits a place to plug a `(role/tensor,
 bits)` assignment in and get a real pass/fail number back, not a rewrite
 of the loader first.
 
+## Research notes not in RESULTS.md
+
+Some investigations end in a finding worth keeping but don't belong in the
+measured-results narrative (negative results, or results that don't ship as
+code). These live in `.claude/memory/` instead — see
+[`.claude/memory/MEMORY.md`](.claude/memory/MEMORY.md) for the index. Notably:
+[`turboquant_lut_router_sensitivity.md`](.claude/memory/turboquant_lut_router_sensitivity.md) —
+a TurboQuant-style non-uniform codebook improves q4g64 weight-reconstruction
+error by 8-12% at zero extra storage (confirmed real, generalizes across all
+27 layers), but does **not** safely improve real forward-pass accuracy for
+this MoE architecture: even a numerically-better per-weight perturbation is
+enough to flip close top-k router ties, and one flip cascades through the
+rest of the layer stack and the autoregressive sequence. Weight
+reconstruction error alone is not a sufficient proxy for MoE forward-pass
+fidelity -- any future quantization-scheme change needs the same real
+forward-pass gate this repo already uses for precision-tier promotion, not
+just an offline reconstruction-error number.
+
 ## Scope, honestly
 
 This is **not** a general-purpose loader like llama.cpp yet — it's

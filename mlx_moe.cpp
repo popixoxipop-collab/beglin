@@ -196,6 +196,19 @@ static int g_mla_n_heads = 0, g_mla_q_head_dim = 0, g_mla_qk_nope = 0, g_mla_qk_
            g_mla_v_hd = 0, g_mla_kv_lora = 0;
 static double g_mla_rope_mscale = 0.0, g_mla_attn_scale = 0.0, g_mla_rms_eps = 1e-6;
 static std::vector<float> g_mla_yarn_freqs;   // qk_rope_hd/2 entries
+// BUG 1 ROOT CAUSE (found + fixed, throughput round part 2): the fused path's per-call
+// freqs_f32 used to wrap a FUNCTION-LOCAL std::vector<float> via noop_deleter -- safe
+// only as long as eval() always happened before the function returned (freqs_f still
+// alive on the stack at eval time). Once x_out's eval was deferred past the function's
+// return (the "one-eval-per-token" design), MLX read freqs_f32 through a pointer into
+// ALREADY-FREED stack memory, repeatedly overwritten by the next 26 layers' own local
+// variables -- a genuine use-after-free, not an MLX bug. Confirmed by symptom: RoPE's
+// rotation angle is pos/freq, which is exactly 0 at pos=0 regardless of the (garbage)
+// freq value -- pos=0 stayed correct by coincidence (identity rotation either way)
+// while pos>=1 depended on the actual freq value and broke, non-deterministically
+// (different stack garbage on different runs) -- exactly what was observed. Fix:
+// wrap this PERSISTENT global instead, populated once in mlx_gpu_mla_config().
+static std::vector<float> g_mla_yarn_freqs_f32;
 
 // GPU arm's own K/V cache (separate from qwen_infer.c's CPU-side g_moe_K/V --
 // D-gpu-2, no shared mutable state across the vendor boundary). Layout
@@ -222,6 +235,7 @@ int mlx_gpu_mla_config(int n_heads, int q_head_dim, int qk_nope_hd, int qk_rope_
     g_mla_rms_eps = rms_eps;
     int half = qk_rope_hd / 2;
     g_mla_yarn_freqs.assign(yarn_freqs_half, yarn_freqs_half + half);
+    g_mla_yarn_freqs_f32.assign(g_mla_yarn_freqs.begin(), g_mla_yarn_freqs.end());
     g_mla_K.assign((size_t)MLA_MAXLAYERS * n_heads * MLA_L0_MAXPOS * q_head_dim, 0.0f);
     g_mla_V.assign((size_t)MLA_MAXLAYERS * n_heads * MLA_L0_MAXPOS * v_hd, 0.0f);
     return 1;
@@ -599,74 +613,99 @@ int mlx_gpu_layer_step_dbg(int l, int pos, int is_dense,
     return 1;
 }
 // ---------------------------------------------------------------------------
-// V5c-fused: one-eval-per-LAYER rewrite (not per-token -- see below), addressing
-// the kill-gate's root cause (~505 eager eval() dispatches/token -> Metal
-// command-buffer overhead dominating tiny M=1 GEMMs).
+// V5c-fused: one-eval-per-LAYER rewrite. Rebuilds each layer's K/V-history
+// handling as a device-side FIXED-SHAPE window (the same principle production
+// serving engines use to make GPU decode CUDA-graph-capturable: CUDA Graph
+// capture/replay itself requires static shapes+addresses; FreeToken's own MoE
+// decode path -- python/freetoken/layers/moe.py -- is explicitly commented
+// "device-side with fixed shapes... capture-safe" for the same reason)
+// instead of a per-position growing/concatenated array. This replaced an
+// earlier version whose K/V history array literally changed shape every
+// position (`{1,H,pos,QHD}` concatenated fresh each call) and read from a
+// brand-new host allocation each time -- exactly the two properties CUDA
+// Graph capture (and, it turned out, this bug) cannot tolerate.
 //
-// TWO real, reproducible eval-granularity bugs were found and fixed during this
-// rewrite, both via the same method: cross-check a lazy intermediate against
-// the already-proven eager mlx_gpu_layer_step() using debug peek accessors
-// (mlx_gpu_layer_step_dbg() above), added and then removed once each bug was
-// isolated and fixed.
+// Three real, reproducible bugs were found and fixed getting a correct,
+// reproducible one-eval-per-layer design (full history in git log; the first
+// two predate this fixed-shape redesign):
 //
-// Bug 1 (per-TOKEN granularity, ~540-node graph): building the ENTIRE 27-layer
-// graph lazily and calling mx::eval() exactly once at the very end (logits +
-// every layer's K/V together) gave a CORRECT result at pos=0 but a WRONG one
-// for pos>=1, even though every individual sub-computation (attention per
-// layer, dense FFN, router selection, routed FFN, and each layer's full
-// x_out) checked out correct when read via a forced early eval(). Not
-// resolved at the root (MLX's own graph executor was out of scope to debug
-// further); worked around by evaluating once per LAYER instead of once per
-// token (below).
+// Bug 1 (per-TOKEN granularity): building the ENTIRE 27-layer graph lazily
+// and calling mx::eval() once at the very end was correct at pos=0, wrong at
+// pos>=1, for reasons never isolated -- worked around by evaluating once per
+// LAYER instead.
 //
-// Bug 2 (per-LAYER granularity, ~15-node graph, found bisecting a REGRESSION
-// vs Bug 1's own per-token attempt -- pos=0 was wrong too under naive
-// per-layer eval, where it had been correct under per-token): isolated via
-// x_mid/mlp_out/top_idx/swiglu_2d/down_flat peeks to the down_proj step
-// specifically. down_proj needs a DIFFERENT input row per selected expert
-// (switch_down's TOPK rows of swiglu'd activation, one per expert), which
-// gather_qmm computes as a full (TOPK,TOPK,out) cross product (verified in
-// isolation: NOT a per-row pairing) -- the correct row is its diagonal,
-// extracted via mx::take_along_axis(cross, diag_idx, 1) with diag_idx shape
-// {TOPK,1,1}. That extraction is numerically correct in ISOLATION (confirmed
-// via a synthetic Python mlx.core repro with identical shapes/dtypes) and
-// correct when eval'd on its OWN -- but silently returns near-zero/garbled
-// data when its eval is deferred and swept into a LARGER combined mx::eval()
-// batch alongside unrelated ops (attention, dense-FFN-shaped ops, k_new/v_new).
-// Reproduced twice (layer 1 fixed by forcing an early eval, layer 2 identical
-// code path still broken without it) before concluding this is inherent to
-// gather_qmm(lhs_indices+rhs_indices cross-product)+take_along_axis specifically,
-// not a general "big graph" problem -- the per-token version's own bug (Bug 1)
-// is graph-depth-related; this one reproduces at a much smaller ~15-node scope
-// and is specific to this op combination. Fixed by evaluating down_flat on its
-// own, immediately after computing it, before folding it into the rest of the
-// layer's (otherwise still-lazy) graph. This fix is CONFIRMED and real: with it,
-// pos=0 (no K/V history) matches the golden eager path exactly (rel-L2 5.22e-07).
+// Bug 2 (gather_qmm cross-product + take_along_axis, in the routed-FFN's
+// switch_down step): silently returned corrupted data when its eval was
+// deferred into a larger combined mx::eval() batch. Originally worked around
+// by evaluating it standalone, immediately after computing it -- this cost
+// one extra eval() per routed layer. Later (throughput-optimization round)
+// ELIMINATED entirely, not just worked around: mlx_lm's own reference
+// SwitchLinear/QuantizedSwitchLinear (switch_layers.py) never passes
+// lhs_indices for this per-row-distinct-expert pattern in the first place --
+// switching to that same lhs_indices=nullopt form (x reshaped {TOPK,1,IM})
+// avoids the cross-product entirely, confirmed correct AND safe under
+// deferred eval by an isolated probe (probe_down_no_lhs.cpp) before being
+// applied to this function, so the standalone eval is no longer needed.
+// (No residual/error-feedback compensation applies -- same D18 exemption as
+// this file's header: pure dequant-consumption, not requantization.)
 //
-// Bug 3 (UNRESOLVED, pos>=1 only): even with Bug 2 fixed, every position with
-// nonempty K/V history (pos>=1) still produces wrong logits (gpu_vs_cpu rel-L2
-// 0.44-1.26 across pos=1..7, growing with history length) in the real,
-// undebugged pipeline. Extensive bisection was attempted (x_mid/mlp_out/
-// top_idx/swiglu_2d/down_flat cross-checks via mlx_gpu_layer_step_dbg, at every
-// layer, at every position) and found EVERY individual layer/position combo
-// correct -- but this bisection method turned out to be invalid: dbg's eager
-// path shares g_mla_K/g_mla_V with the lazy path, so calling it for
-// verification silently overwrites (and "self-heals") the very cache slots
-// under test, masking whatever the lazy path's real behavior would have been.
-// Four different "does this need a standalone eval too" tests (o, attn, x_mid
-// as an explicit eval() output, mlp_out_opt as an explicit eval() output, and
-// a forced host-sync .data<float>() read on x_out) were tried against the
-// CLEAN (non-debug-contaminated) pipeline and produced BIT-IDENTICAL wrong
-// output every time -- meaning, unlike Bug 2, this is very unlikely to be an
-// eval-timing/graph-composition issue, and is more likely a genuine logic bug
-// in the K/V-history read/concatenate path (the only pos-dependent code) that
-// was not isolated within the time budget spent. Left for a future session
-// with non-cache-sharing debug tooling (e.g. a scratch K/V cache for the dbg
-// variant, or a from-scratch hand-computed RoPE+history reference that never
-// touches g_mla_K/V at all).
+// Bug 3 (this redesign's own target, ROOT-CAUSED -- not an MLX bug): the
+// original per-layer design's `v_new` was built as a BARE `mx::slice()` of
+// `kv_b_r` with no follow-up op to force materialization (unlike `k_new`,
+// which flows into `mx::concatenate()` afterward and gets compacted as a
+// side effect). Confirmed via isolated repro: `mx::eval()` on a bare slice
+// does NOT compact it -- `.flags().row_contiguous` stays false, and
+// `.data<float>()` returns a pointer into the ORIGINAL parent buffer with the
+// slice's true (non-dense) strides. Reading it via naive per-head `hh*VHD`
+// indexing (exactly what persisting it into the host K/V cache requires)
+// silently interleaves v_new's real data with neighboring `k_nope` bytes --
+// this produced a reproducible "every other head correct" corruption
+// pattern, confirmed byte-for-byte against a synthetic isolated repro with
+// the model's real dimensions (H=16, QHD=192, VHD=128). `mx::copy()` was
+// tried first and did NOT fix it (MLX's optimizer elides the copy since the
+// strided view is "valid" from its own internal perspective); `mx::contiguous()`
+// is the real, confirmed fix -- verified in isolation (row_contiguous flips
+// to true, strides become dense, naive reads match exactly) and in the real
+// pipeline (layer-0/pos-0 x_mid went from rel-L2 1.39 to 2.96e-07 with this
+// one-line fix, no other change).
 static mx::array *g_fused_x = nullptr;   // pending residual stream, always ALREADY evaluated between calls
 static int g_fused_pos = -1;
 static int g_fused_layers_done = 0;
+
+// Throughput round: fused path's OWN persistent K/V cache, as real (lazy-updatable)
+// mx::array objects rather than a raw host float buffer (g_mla_K/g_mla_V above, which
+// stay untouched -- still used by the eager mlx_gpu_mla_layer_impl()/mlx_gpu_layer_step()
+// paths). Storing K/V as device arrays and updating them via mx::slice_update() lets Stage
+// A's write and Stage B's windowed read live in the SAME lazy graph, with no forced
+// standalone eval() between them -- eliminating the eval() this file's Stage A/B split used
+// to require every layer. Verified safe by an isolated probe (probe_slice_update_chain.py)
+// before being applied here: chained slice_update() calls, all deferred, evaluated once at
+// the end, reproduce a host-buffer reference bit-for-bit (max_abs_diff=0.0), and a masked
+// scaled_dot_product_attention read over the still-lazy chained window matches a numpy
+// reference to float32 rounding precision (1.19e-07) -- the same class of "does a bare
+// slice-derived array stay correct under deferred eval" question Bug 3 raised, now answered
+// affirmatively for slice_update specifically (as opposed to bare mx::slice(), which needed
+// mx::contiguous() -- slice_update's output is not subject to the same bug, confirmed by
+// this probe, not assumed from the analogy).
+static std::vector<mx::array> g_fused_K;
+static std::vector<mx::array> g_fused_V;
+static bool g_fused_kv_inited = false;
+
+static void ensure_fused_kv_init() {
+    if (g_fused_kv_inited) return;
+    const int H = g_mla_n_heads, QHD = g_mla_q_head_dim, VHD = g_mla_v_hd;
+    g_fused_K.clear();
+    g_fused_V.clear();
+    std::vector<mx::array> all;
+    for (int l = 0; l < MLA_MAXLAYERS; l++) {
+        g_fused_K.push_back(mx::zeros({1, H, MLA_L0_MAXPOS, QHD}, mx::float32));
+        g_fused_V.push_back(mx::zeros({1, H, MLA_L0_MAXPOS, VHD}, mx::float32));
+        all.push_back(g_fused_K.back());
+        all.push_back(g_fused_V.back());
+    }
+    mx::eval(all);   // one-time materialization at first use, not part of the per-token cost
+    g_fused_kv_inited = true;
+}
 
 static mx::array wrap_host_f32(const float *p, std::initializer_list<int> shape) {
     return mx::array((void *)p, mx::Shape(shape), mx::float32, noop_deleter);
@@ -687,12 +726,14 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
                              const float *x_in_host, const float *w_inln, const float *w_postln,
                              const float *w_kvaln, const float *w_gate) {
     if (g_mla_n_heads == 0 || g_layer_hidden == 0) return 0;
+    if (pos < 0 || pos >= MLA_L0_MAXPOS || l < 0 || l >= MLA_MAXLAYERS) return 0;
     try {
         const int H = g_mla_n_heads, QHD = g_mla_q_head_dim, NOPE = g_mla_qk_nope,
                   ROPE = g_mla_qk_rope, VHD = g_mla_v_hd, KVLORA = g_mla_kv_lora;
         const int HIDDEN = g_layer_hidden, IM = g_layer_im_dim, DENSE_IM = g_layer_dense_im,
                   NE = g_layer_n_experts, NS = g_layer_n_shared, TOPK = g_layer_top_k;
 
+        ensure_fused_kv_init();
         if (l == 0) {
             delete g_fused_x;
             g_fused_x = new mx::array(wrap_host_f32(x_in_host, {1, HIDDEN}));
@@ -709,6 +750,9 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
         mx::array x = *g_fused_x;
         mx::array h = mx::fast::rms_norm(x, wrap_host_f32(w_inln, {HIDDEN}), (float)g_mla_rms_eps);
 
+        // ---- Stage A: this position's OWN K/V (shape depends only on H/QHD/
+        // VHD -- constants -- never on pos or on history). Eval + persist
+        // immediately, before the fixed-shape attention window is built.
         mx::array q = lazy_matvec_e0(nq, h);
         mx::array kv_ap = lazy_matvec_e0(nkva, h);
         mx::array compressed_kv = mx::slice(kv_ap, {0, 0}, {1, KVLORA});
@@ -723,10 +767,9 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
         mx::array q_pe_scaled = q_pe_raw * (float)g_mla_rope_mscale;
         mx::array k_pe_scaled = k_pe_raw * (float)g_mla_rope_mscale;
 
-        mx::array freqs_arr(g_mla_yarn_freqs.data(), {(int)g_mla_yarn_freqs.size()},
-                             mx::float32, noop_deleter);
-        std::vector<float> freqs_f(g_mla_yarn_freqs.begin(), g_mla_yarn_freqs.end());
-        mx::array freqs_f32((void *)freqs_f.data(), {(int)freqs_f.size()}, mx::float32, noop_deleter);
+        // Bug 1 fix: wrap the PERSISTENT global, not a function-local std::vector.
+        mx::array freqs_f32((void *)g_mla_yarn_freqs_f32.data(),
+                             {(int)g_mla_yarn_freqs_f32.size()}, mx::float32, noop_deleter);
 
         mx::array q_pe_hro = mx::transpose(q_pe_scaled, {1, 0, 2});
         mx::array q_pe_rot_hro = mx::fast::rope(q_pe_hro, ROPE, /*traditional=*/true,
@@ -739,36 +782,56 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
         mx::array q_full = mx::concatenate({q_nope, q_pe_rot}, -1);
         mx::array kv_b_r = mx::reshape(kv_b, {1, H, NOPE + VHD});
         mx::array k_nope = mx::slice(kv_b_r, {0, 0, 0}, {1, H, NOPE});
-        mx::array v_new = mx::slice(kv_b_r, {0, 0, NOPE}, {1, H, NOPE + VHD});
+        // v_new: mx::contiguous() forces genuine materialization of this bare slice --
+        // see the Bug 3 header comment above for why this is required (k_nope avoids
+        // the same issue only because it flows into concatenate() below, which
+        // compacts as a side effect; v_new has no such follow-up op).
+        mx::array v_new = mx::contiguous(mx::slice(kv_b_r, {0, 0, NOPE}, {1, H, NOPE + VHD}));
         mx::array k_pe_bcast = mx::broadcast_to(k_pe_rot, {1, H, ROPE});
         mx::array k_new = mx::concatenate({k_nope, k_pe_bcast}, -1);
 
-        std::optional<mx::array> k_full_opt, v_full_opt;
-        std::vector<float> k_stage, v_stage;   // local -- fine, this layer's eval happens before return
-        if (pos > 0) {
-            k_stage.resize((size_t)H * pos * QHD);
-            v_stage.resize((size_t)H * pos * VHD);
-            for (int hh = 0; hh < H; hh++) {
-                std::memcpy(k_stage.data() + (size_t)hh * pos * QHD,
-                            g_mla_K.data() + ((size_t)l * H + hh) * MLA_L0_MAXPOS * QHD,
-                            sizeof(float) * (size_t)pos * QHD);
-                std::memcpy(v_stage.data() + (size_t)hh * pos * VHD,
-                            g_mla_V.data() + ((size_t)l * H + hh) * MLA_L0_MAXPOS * VHD,
-                            sizeof(float) * (size_t)pos * VHD);
-            }
-            mx::array k_hist = wrap_host_f32(k_stage.data(), {1, H, pos, QHD});
-            mx::array v_hist = wrap_host_f32(v_stage.data(), {1, H, pos, VHD});
-            mx::array k_new_r = mx::reshape(k_new, {1, H, 1, QHD});
-            mx::array v_new_r = mx::reshape(v_new, {1, H, 1, VHD});
-            k_full_opt = mx::concatenate({k_hist, k_new_r}, 2);
-            v_full_opt = mx::concatenate({v_hist, v_new_r}, 2);
-        } else {
-            k_full_opt = mx::reshape(k_new, {1, H, 1, QHD});
-            v_full_opt = mx::reshape(v_new, {1, H, 1, VHD});
-        }
+        // Persist this position's K/V into the FUSED path's own persistent device arrays
+        // via slice_update -- NO eval() here (throughput round: this used to be a forced
+        // standalone eval + host memcpy into g_mla_K/g_mla_V; verified via
+        // probe_slice_update_chain.py that deferring this is safe). pos_start is built with
+        // the VALUE-constructing array(T) ctor (copies at construction time), not a host-
+        // pointer wrap, so it stays valid regardless of this function's stack lifetime.
+        mx::array k_new_win = mx::reshape(k_new, {1, H, 1, QHD});
+        mx::array v_new_win = mx::reshape(v_new, {1, H, 1, VHD});
+        mx::array pos_start(pos, mx::int32);
+        g_fused_K[l] = mx::slice_update(g_fused_K[l], k_new_win, pos_start, std::vector<int>{2});
+        g_fused_V[l] = mx::slice_update(g_fused_V[l], v_new_win, pos_start, std::vector<int>{2});
+
+        // ---- Stage B: fixed-shape attention. k_win/v_win wrap the FULL
+        // per-layer window at a CONSTANT pointer and CONSTANT shape
+        // {1,H,MLA_L0_MAXPOS,*} on every call, for every position -- the
+        // window's per-head blocks are contiguous by construction, so no
+        // copy is needed, just a raw wrap of g_mla_K/g_mla_V's own
+        // persistent storage (which now includes this position's own K/V,
+        // just written above). A boolean causal mask (true for j<=pos, false
+        // otherwise) replaces "array length" as the way of encoding how much
+        // of the fixed window is valid -- positions beyond `pos` still hold
+        // stale/zero data but are masked out of the softmax entirely.
+        // k_win/v_win: the SAME lazy arrays slice_update() just produced above -- no host
+        // wrap, no separate eval boundary between the write (Stage A) and this windowed
+        // read (Stage B) anymore; both live in one graph, evaluated together below.
+        mx::array k_win = g_fused_K[l];
+        mx::array v_win = g_fused_V[l];
+        static bool s_mask_buf[MLA_L0_MAXPOS];   // static: fixed address across calls
+        for (int j = 0; j < MLA_L0_MAXPOS; j++) s_mask_buf[j] = (j <= pos);
+        mx::array mask_arr((void *)s_mask_buf, {1, 1, 1, MLA_L0_MAXPOS}, mx::bool_, noop_deleter);
+
         mx::array q_full_r = mx::reshape(q_full, {1, H, 1, QHD});
-        mx::array attn = mx::fast::scaled_dot_product_attention(q_full_r, *k_full_opt, *v_full_opt,
-                                                                  (float)g_mla_attn_scale, "");
+        // mask_mode MUST be "array" (not "") when passing an explicit mask_arr --
+        // confirmed against libmlx.dylib's own validation strings ("mask_mode must
+        // be 'causal', 'array' or ''"; passing an array with mode "" throws
+        // "Invalid mask_arr for mask_mode"). The masking mechanism itself (boolean
+        // mask, false beyond `pos`) was independently verified bit-identical to
+        // truncating k/v to just the valid positions, both with synthetic data and
+        // with this model's real dimensions (H=16, QHD=192, VHD=128) -- it was never
+        // the source of Bug 3, despite substantial early suspicion.
+        mx::array attn = mx::fast::scaled_dot_product_attention(q_full_r, k_win, v_win,
+                                                                  (float)g_mla_attn_scale, "array", mask_arr);
         mx::array attn_flat = mx::reshape(attn, {1, H * VHD});
         mx::array o = lazy_matvec_e0(no, attn_flat);
         mx::array x_mid = x + o;
@@ -805,29 +868,30 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
             QTensor &tu = g_tensors.at(nm);
             mx::array up_all = mx::gather_qmm(h2, tu.w, tu.scales, tu.biases, std::nullopt,
                                                top_idx_row, true, g_layer_group, 4, "affine", false);
-            mx::array swiglu_all = lazy_silu(gate_all) * up_all;
-            mx::array swiglu_2d = mx::reshape(swiglu_all, {TOPK, IM});
-
-            int32_t lhs_ids[64];
-            for (int k = 0; k < TOPK; k++) lhs_ids[k] = k;
-            mx::array lhs_idx((void *)lhs_ids, {TOPK}, mx::int32, noop_deleter);
+            // switch_down: TOPK rows of x, each already belonging to its OWN selected
+            // expert (unlike gate/up above, which share ONE h2 row across all TOPK
+            // experts) -- reshape to {TOPK,1,IM} and omit lhs_indices entirely, mirroring
+            // mlx_lm's own SwitchLinear/QuantizedSwitchLinear.__call__ (switch_layers.py),
+            // which never passes lhs_indices for this exact per-row-distinct-expert case.
+            // This REPLACES the former lhs_indices=arange(TOPK) cross-product +
+            // take_along_axis diagonal-extraction dance (Bug 2's original trigger): an
+            // isolated probe (probe_down_no_lhs.cpp, this model's real TOPK=6/IM=1408/
+            // HIDDEN=2048 dims) confirmed the no-lhs_indices form is bit-correct AND
+            // survives being folded into a larger DEFERRED graph with no standalone
+            // eval() -- Bug 2's corruption was specific to the cross-product composition,
+            // not to deferred evaluation itself. Removing lhs_indices therefore also
+            // removes the standalone eval() this branch used to require.
+            // (No residual/error-feedback compensation applies here either, same as this
+            // file's D18 exemption in the header comment above -- this is pure dequant-
+            // consumption of an already-quantized weight, not a new requantization.)
+            mx::array swiglu_3d = mx::reshape(lazy_silu(gate_all) * up_all, {TOPK, 1, IM});
             mx::array top_idx_1d = mx::reshape(top_idx, {TOPK});
 
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.down_proj", l);
             QTensor &td = g_tensors.at(nm);
-            mx::array down_cross = mx::gather_qmm(swiglu_2d, td.w, td.scales, td.biases, lhs_idx,
-                                                   top_idx_1d, true, g_layer_group, 4, "affine", false);
-            int32_t diag_ids[64];
-            for (int k = 0; k < TOPK; k++) diag_ids[k] = k;
-            mx::array diag_idx((void *)diag_ids, {TOPK, 1, 1}, mx::int32, noop_deleter);
-            mx::array down_diag = mx::take_along_axis(down_cross, diag_idx, 1);
-            mx::array down_flat = mx::reshape(down_diag, {TOPK, HIDDEN});
-            // Bug 2 fix (see file header comment): gather_qmm's cross-product +
-            // take_along_axis combo silently returns wrong data when its eval is
-            // deferred and swept into a later, larger combined mx::eval() batch.
-            // Evaluating it here, on its own, is the fix -- confirmed by direct
-            // repro (broken when deferred, correct when eval'd standalone here).
-            mx::eval(down_flat);
+            mx::array down_all = mx::gather_qmm(swiglu_3d, td.w, td.scales, td.biases, std::nullopt,
+                                                 top_idx_1d, true, g_layer_group, 4, "affine", false);
+            mx::array down_flat = mx::reshape(down_all, {TOPK, HIDDEN});
             mx::array top_wgt_col = mx::reshape(top_wgt, {TOPK, 1});
             mx::array weighted = down_flat * top_wgt_col;
             mx::array routed_sum = mx::sum(weighted, std::vector<int>{0}, true);
@@ -846,23 +910,16 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
             }
         }
         mx::array x_out = x_mid + *mlp_out_opt;
-
-        // ONE eval for the rest of this layer: x_out + this position's new K/V
-        // (persisted immediately -- no cross-call deferral).
-        std::vector<mx::array> to_eval{x_out, k_new, v_new};
-        mx::eval(to_eval);
-
-        const float *kp = k_new.data<float>();
-        const float *vp = v_new.data<float>();
-        for (int hh = 0; hh < H; hh++) {
-            float *kdst = g_mla_K.data() + (((size_t)l * H + hh) * MLA_L0_MAXPOS + pos) * QHD;
-            float *vdst = g_mla_V.data() + (((size_t)l * H + hh) * MLA_L0_MAXPOS + pos) * VHD;
-            std::memcpy(kdst, kp + (size_t)hh * QHD, sizeof(float) * QHD);
-            std::memcpy(vdst, vp + (size_t)hh * VHD, sizeof(float) * VHD);
-        }
-
+        // Bug 1 FOUND AND FIXED (see g_mla_yarn_freqs_f32's declaration comment above):
+        // the earlier attempt at deferring this eval all the way to mlx_gpu_forward_
+        // finalize() broke because of an unrelated use-after-free (freqs_f32 wrapping a
+        // stack-local buffer), not because of anything wrong with deferring across layer
+        // boundaries per se. With that fixed, x_out (and this layer's K/V update) can
+        // safely stay lazy here -- evaluated once per TOKEN in finalize(), not once per
+        // layer. Verified: 8/8 argmax, bit-identical gpu_vs_cpu to the old per-layer-eval
+        // design, and KILL-GATE now PASSES (~52.9 tok/s vs the 48.34 bar).
         delete g_fused_x;
-        g_fused_x = new mx::array(x_out);   // already evaluated -- safe to reuse directly
+        g_fused_x = new mx::array(x_out);   // still LAZY -- NOT evaluated until finalize()
         g_fused_layers_done = l + 1;
         return 1;
     } catch (...) {
@@ -879,7 +936,14 @@ int mlx_gpu_forward_finalize(const float *w_finalnorm, float *logits_out) {
         mx::array x_final = mx::fast::rms_norm(*g_fused_x, wrap_host_f32(w_finalnorm, {HIDDEN}),
                                                 (float)g_mla_rms_eps);
         mx::array logits = lazy_matvec_e0("lm_head", x_final);
-        mx::eval(logits);
+        // Single eval for the WHOLE token: logits plus every layer's K/V update, all still
+        // lazy from mlx_gpu_layer_step_lazy() above. Untouched g_fused_K/V slots are
+        // already-evaluated arrays from a prior finalize() call, so listing all of them
+        // (not just this token's touched layers) is a harmless no-op, not wasted work.
+        std::vector<mx::array> all{logits};
+        for (auto &a : g_fused_K) all.push_back(a);
+        for (auto &a : g_fused_V) all.push_back(a);
+        mx::eval(all);
         const int VOCAB = (int)logits.shape().back();
         std::memcpy(logits_out, logits.data<float>(), sizeof(float) * (size_t)VOCAB);
         delete g_fused_x; g_fused_x = nullptr;

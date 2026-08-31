@@ -10,3 +10,4 @@ kleidiai/kai_test_asan*
 kleidiai/*.o.tmp
 node_modules/
 .build/
+.claude/history/
