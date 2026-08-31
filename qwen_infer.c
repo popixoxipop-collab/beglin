@@ -7187,7 +7187,263 @@ static int run_moe_gpu_fused_gate(int argc, char **argv) {
     free(x_embed); free(cpu_logits); free(gpu_logits); free(ref_logits);
     return 1;
 }
-// V5j: full multi-layer GQA GPU forward, correctness gate against real MLX + CPU.
+
+// V5k Phase 1b: MLA/DeepSeek real generation entry point -- structural mirror of V5k's own GQA
+// gate above (run_moe_gpu_gqa_generate_gate()), itself a mirror of D5's/V5c-fused's own
+// (run_moe_gpu_fused_gate()) config+forward machinery with the CPU crosscheck and ref-logits
+// requirement stripped and an EOS-stop added. No shared config-loading helper exists for MLA
+// (every MLA gate still inlines its own block, Rule 3's own established default here) -- this
+// is the only MLA gate that needs this exact combination, so a helper would have exactly one
+// caller; not built for that reason (D-gqa-shared-1's own EXIT clause: only share when there's
+// more than one real caller).
+static int run_moe_gpu_generate_gate(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *gate_env = getenv("QWEN_MOE_GPU_GENERATE");
+    if (!gate_env || !gate_env[0]) return 0;
+
+    fprintf(stderr, "[moe gpu generate] QWEN_MOE_GPU_GENERATE=1 -- V5k real MLA generation gate\n");
+    if (!mlx_gpu_available()) {
+        fprintf(stderr, "FATAL: QWEN_MOE_GPU_GENERATE set but MLX/Metal unavailable\n");
+        exit(1);
+    }
+
+    const char *override = getenv("QWEN_MOE_BASE");
+    const char *dir = (override && override[0]) ? override : ".";
+    char moe_dir[900], path[1024];
+    snprintf(moe_dir, sizeof moe_dir, "%s/weights_moe", dir);
+    snprintf(path, sizeof path, "%s/arch_config_moe.txt", moe_dir);
+
+    MOE_HIDDEN = (int)moe_cfg_get(path,"HIDDEN"); MOE_N_HEADS = (int)moe_cfg_get(path,"N_HEADS");
+    MOE_KV_LORA_RANK = (int)moe_cfg_get(path,"KV_LORA_RANK"); MOE_QK_ROPE_HD = (int)moe_cfg_get(path,"QK_ROPE_HEAD_DIM");
+    MOE_QK_NOPE_HD = (int)moe_cfg_get(path,"QK_NOPE_HEAD_DIM"); MOE_V_HD = (int)moe_cfg_get(path,"V_HEAD_DIM");
+    MOE_Q_HEAD_DIM = MOE_QK_ROPE_HD + MOE_QK_NOPE_HD;
+    MOE_NL = (int)moe_cfg_get(path,"NL"); MOE_FIRST_DENSE_LAYERS = (int)moe_cfg_get(path,"FIRST_DENSE_LAYERS");
+    MOE_N_EXPERTS = (int)moe_cfg_get(path,"N_EXPERTS"); MOE_N_SHARED = (int)moe_cfg_get(path,"N_SHARED");
+    MOE_TOP_K = (int)moe_cfg_get(path,"TOP_K"); MOE_IM_DIM = (int)moe_cfg_get(path,"MOE_IM");
+    MOE_DENSE_IM = (int)moe_cfg_get(path,"DENSE_IM"); MOE_VOCAB = (int)moe_cfg_get(path,"VOCAB");
+    MOE_ROPE_THETA = moe_cfg_get(path,"ROPE_THETA"); MOE_YARN_FACTOR = moe_cfg_get(path,"YARN_FACTOR");
+    MOE_YARN_BETA_FAST = moe_cfg_get(path,"YARN_BETA_FAST"); MOE_YARN_BETA_SLOW = moe_cfg_get(path,"YARN_BETA_SLOW");
+    MOE_YARN_MSCALE = moe_cfg_get(path,"YARN_MSCALE"); MOE_YARN_MSCALE_ALL_DIM = moe_cfg_get(path,"YARN_MSCALE_ALL_DIM");
+    MOE_YARN_ORIG_MAX_POS = moe_cfg_get(path,"YARN_ORIG_MAX_POS");
+    MOE_ATTN_KIND = (int)moe_cfg_get_opt(path,"ATTN_KIND",(double)MOE_ATTN_MLA);
+    MOE_N_KV_HEADS = (int)moe_cfg_get_opt(path,"N_KV_HEADS",(double)MOE_N_HEADS);
+    MOE_HEAD_DIM = (int)moe_cfg_get_opt(path,"HEAD_DIM",(double)MOE_Q_HEAD_DIM);
+    MOE_RMS_EPS = moe_cfg_get_opt(path,"RMS_EPS",1e-6);
+    MOE_NORM_TOPK_PROB = (int)moe_cfg_get_opt(path,"NORM_TOPK_PROB",0.0);
+    MOE_ROPE_STYLE = (int)moe_cfg_get_opt(path,"ROPE_STYLE",(double)MOE_ROPE_TRADITIONAL);
+    MOE_QKNORM_WHOLE_VECTOR = (int)moe_cfg_get_opt(path,"QKNORM_WHOLE_VECTOR",0.0);
+    // Real captured DeepSeek-V2-Lite eos_token_id, confirmed via the actual model's own
+    // config.json/generation_config.json on macstudio (both agree: 100001) -- not the
+    // already-established "100001" convention this session's V5h/online-scheduler code uses
+    // taken on faith, independently reconfirmed here per Data-First Numerics.
+    MOE_EOS_TOKEN_ID = (int)moe_cfg_get_opt(path,"EOS_TOKEN_ID",100001.0);
+    if (MOE_ATTN_KIND != MOE_ATTN_MLA) {
+        fprintf(stderr, "FATAL: [moe gpu generate] arch_config_moe.txt ATTN_KIND is not MLA -- "
+                        "this gate is MLA-only, use run_moe_gpu_gqa_generate_gate() for GQA models\n");
+        exit(1);
+    }
+    moe_cfg_validate();
+    MOE_QDIM     = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_KVA_OUT  = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
+    MOE_KVB_OUT  = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD);
+    MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
+    MOE_SH_IM    = MOE_IM_DIM * MOE_N_SHARED;
+    MOE_KROW = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_VROW = MOE_N_HEADS * MOE_V_HD;
+    MOE_MAX_IN = MOE_HIDDEN;
+    if (MOE_IM_DIM   > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
+    if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
+    if (MOE_DENSE_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_DENSE_IM;
+    MOE_MAX_NG = (MOE_MAX_IN + 63) / 64;
+    MOE_SME2_SLOT_DENSE  = MOE_N_EXPERTS;
+    MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
+    MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2;
+    MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
+    alloc_moe_buffers();
+    moe_init_yarn();
+
+    snprintf(path, sizeof path, "%s/layout_af.txt", moe_dir); moe_load_layout_af(path);
+    snprintf(path, sizeof path, "%s/deepseek_moe_af.bin", moe_dir);
+    long af_bytes; uint8_t *af_blob = moe_mmap_file(path, &af_bytes);
+    snprintf(path, sizeof path, "%s/layout_f32.txt", moe_dir); moe_load_layout_f32(path);
+    snprintf(path, sizeof path, "%s/deepseek_moe_f32.bin", moe_dir);
+    long f32_bytes; g_moe_f32_blob = moe_mmap_file(path, &f32_bytes);
+    moe_resolve_layer_tensors();
+    fprintf(stderr, "[moe gpu generate] af blob %ld bytes, f32 blob %ld bytes, %d layers resolved, "
+                    "EOS_TOKEN_ID=%d\n", af_bytes, f32_bytes, MOE_NL, MOE_EOS_TOKEN_ID);
+
+    MoeAFTensor *t_embed = moe_find_af("model.embed_tokens");
+    MoeF32Tensor *t_finalnorm = moe_find_f32("model.norm.weight");
+    float *w_finalnorm = (float *)(g_moe_f32_blob + t_finalnorm->off);
+
+    // D5's own bind loop (the exact piece V5k Phase 1's own first real run found missing after
+    // an over-eager strip of the adjacent CPU-crosscheck code -- kept front and center here,
+    // never optional).
+    int n_bound = 0;
+    for (int i = 0; i < g_moe_naf; i++) {
+        MoeAFTensor *t = &g_moe_af[i];
+        if (!mlx_gpu_bind_af(af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
+                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+            fprintf(stderr, "FATAL: [moe gpu generate] bind failed for tensor %s\n", t->name);
+            exit(1);
+        }
+        n_bound++;
+    }
+    fprintf(stderr, "[moe gpu generate] bound %d/%d tensors to MLX\n", n_bound, g_moe_naf);
+
+    if (!mlx_gpu_mla_config(MOE_N_HEADS, MOE_Q_HEAD_DIM, MOE_QK_NOPE_HD, MOE_QK_ROPE_HD,
+                            MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
+                            g_moe_yarn_freqs, MOE_RMS_EPS) ||
+        !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
+                               MOE_TOP_K, 64)) {
+        fprintf(stderr, "FATAL: [moe gpu generate] mlx_gpu_*_config failed\n");
+        exit(1);
+    }
+
+    const char *prompt_env = getenv("QWEN_MOE_PROMPT");
+    char prompt_path[1024];
+    if (prompt_env && prompt_env[0]) {
+        snprintf(prompt_path, sizeof prompt_path, "%s", prompt_env);
+    } else {
+        snprintf(prompt_path, sizeof prompt_path, "%s/ref/prompt_ids.i32", dir);
+    }
+    static int prompt_ids[MOE_MAXPOS];
+    int N = load_ids(prompt_path, prompt_ids, MOE_MAXPOS);
+    if (N <= 0) {
+        fprintf(stderr, "FATAL: [moe gpu generate] could not load prompt ids from '%s' "
+                        "(set QWEN_MOE_PROMPT to a raw int32 token-id file)\n", prompt_path);
+        exit(1);
+    }
+    if (N >= MOE_MAXPOS) {
+        fprintf(stderr, "FATAL: [moe gpu generate] prompt length %d >= this round's fixed "
+                        "K/V cache window (%d positions, MOE_MAXPOS) -- longer prompts need the "
+                        "cache resized, out of scope this round\n", N, MOE_MAXPOS);
+        exit(1);
+    }
+
+    const char *gen_n_env = getenv("QWEN_MOE_GEN_N");
+    int n_gen = (gen_n_env && gen_n_env[0]) ? atoi(gen_n_env) : 32;
+
+    float *x_embed = (float *)malloc(sizeof(float) * MOE_HIDDEN);
+    float *gpu_logits = (float *)malloc(sizeof(float) * MOE_VOCAB);
+
+    // Prefill: real prompt, one position at a time, same primitives V5c-fused already proved
+    // correct.
+    int pos = -1;
+    for (pos = 0; pos < N; pos++) {
+        int token = prompt_ids[pos];
+        for (int c = 0; c < MOE_HIDDEN; c++) x_embed[c] = moe_decode_af(af_blob, t_embed, 0, token, c);
+        for (int l = 0; l < MOE_NL; l++) {
+            MoeLayerTensors *t = &g_moe_lt[l];
+            float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
+            float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
+            int is_dense = (l < MOE_FIRST_DENSE_LAYERS);
+            float *w_kvaln = (float *)(g_moe_f32_blob + t->kv_a_ln->off);
+            float *w_gate = is_dense ? NULL : (float *)(g_moe_f32_blob + t->gate_w->off);
+            if (!mlx_gpu_layer_step_lazy(l, pos, is_dense, x_embed, w_inln, w_postln, w_kvaln, w_gate)) {
+                fprintf(stderr, "FATAL: [moe gpu generate] mlx_gpu_layer_step_lazy failed "
+                                "at prefill pos %d layer %d\n", pos, l);
+                exit(1);
+            }
+        }
+        if (!mlx_gpu_forward_finalize(w_finalnorm, gpu_logits)) {
+            fprintf(stderr, "FATAL: [moe gpu generate] mlx_gpu_forward_finalize failed "
+                            "at prefill pos %d\n", pos);
+            exit(1);
+        }
+    }
+    pos = N - 1;
+
+    // Generation: real argmax feedback, mirroring dense `greedy`'s own loop shape exactly, same
+    // as V5k's own GQA gate -- raw token ids printed, no detokenization (this C engine has none
+    // anywhere).
+    fprintf(stderr, "[moe gpu generate] prefill done (%d real prompt positions), generating "
+                    "up to %d tokens\n", N, n_gen);
+    printf("generate:");
+    int n_emitted = 0;
+    for (int g = 0; g < n_gen; g++) {
+        int am = 0; float bm = gpu_logits[0];
+        for (int v = 1; v < MOE_VOCAB; v++) if (gpu_logits[v] > bm) { bm = gpu_logits[v]; am = v; }
+        printf(" %d", am);
+        fflush(stdout);
+        n_emitted++;
+        if (am == MOE_EOS_TOKEN_ID) {
+            fprintf(stderr, "\n[moe gpu generate] EOS (token %d) at generated position %d, stopping\n",
+                    am, g);
+            break;
+        }
+        if (pos + 1 >= MOE_MAXPOS) {
+            fprintf(stderr, "\n[moe gpu generate] hit the %d-position cache window, stopping "
+                            "early (generated %d/%d requested)\n", MOE_MAXPOS, n_emitted, n_gen);
+            break;
+        }
+        pos++;
+        for (int c = 0; c < MOE_HIDDEN; c++) x_embed[c] = moe_decode_af(af_blob, t_embed, 0, am, c);
+        for (int l = 0; l < MOE_NL; l++) {
+            MoeLayerTensors *t = &g_moe_lt[l];
+            float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
+            float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
+            int is_dense = (l < MOE_FIRST_DENSE_LAYERS);
+            float *w_kvaln = (float *)(g_moe_f32_blob + t->kv_a_ln->off);
+            float *w_gate = is_dense ? NULL : (float *)(g_moe_f32_blob + t->gate_w->off);
+            if (!mlx_gpu_layer_step_lazy(l, pos, is_dense, x_embed, w_inln, w_postln, w_kvaln, w_gate)) {
+                fprintf(stderr, "FATAL: [moe gpu generate] mlx_gpu_layer_step_lazy failed "
+                                "at generate pos %d layer %d\n", pos, l);
+                exit(1);
+            }
+        }
+        if (!mlx_gpu_forward_finalize(w_finalnorm, gpu_logits)) {
+            fprintf(stderr, "FATAL: [moe gpu generate] mlx_gpu_forward_finalize failed "
+                            "at generate pos %d\n", pos);
+            exit(1);
+        }
+    }
+    printf("\n");
+
+    fprintf(stderr, "RESULT: MoE GPU V5k MLA generate gate complete, prompt_len=%d generated=%d\n",
+            N, n_emitted);
+    free(x_embed); free(gpu_logits);
+    return 1;
+}
+
+// V5k Phase 2 (MLA): promote real generation to the default MLA serving path, same graceful-
+// tiers design as the GQA version above -- see that function's own doc comment for the full
+// rationale (bigger blast radius than the QWEN_SME2 precedent, so every precondition is checked
+// without committing to anything that could FATAL).
+static int run_moe_gpu_generate_default_mode(int argc, char **argv) {
+    const char *override = getenv("QWEN_MOE_BASE");
+    const char *dir = (override && override[0]) ? override : ".";
+    char probe_path[1024];
+    snprintf(probe_path, sizeof probe_path, "%s/weights_moe/arch_config_moe.txt", dir);
+    FILE *probe = fopen(probe_path, "r");
+    if (!probe) return 0;
+    fclose(probe);
+
+    double attn_kind = moe_cfg_get_opt(probe_path, "ATTN_KIND", (double)MOE_ATTN_MLA);
+    if ((int)attn_kind != MOE_ATTN_MLA) return 0;   // GQA model -- the GQA default path handles it
+
+    if (!mlx_gpu_available()) return 0;
+
+    const char *prompt_env = getenv("QWEN_MOE_PROMPT");
+    char prompt_path[1024];
+    int have_prompt = 0;
+    if (prompt_env && prompt_env[0]) {
+        snprintf(prompt_path, sizeof prompt_path, "%s", prompt_env);
+        have_prompt = 1;
+    } else {
+        snprintf(prompt_path, sizeof prompt_path, "%s/ref/prompt_ids.i32", dir);
+        FILE *pf = fopen(prompt_path, "rb");
+        if (pf) { fclose(pf); have_prompt = 1; }
+    }
+    if (!have_prompt) return 0;
+
+    fprintf(stderr, "[moe gpu generate] auto-promoted default path -- weights_moe/ present, "
+                    "MLA model, GPU available, real prompt resolvable (QWEN_MOE_GPU_GENERATE "
+                    "not required)\n");
+    setenv("QWEN_MOE_GPU_GENERATE", "1", 1);
+    return run_moe_gpu_generate_gate(argc, argv);
+}
+
 // Structural mirror of run_moe_gpu_fused_gate() (V5c-fused's own MLA driver) -- but that
 // function is confirmed hardcoded to mlx_gpu_mla_config()/mlx_gpu_layer_step_lazy()/
 // mlx_gpu_forward_finalize() and an unconditional MLA-shaped KROW/VROW, so this is a new
@@ -12511,6 +12767,8 @@ int main(int argc, char **argv) {
     if (run_moe_gpu_full_gate(argc, argv)) return 0;
     // V5c-fused: same reasoning, QWEN_MOE_GPU_FUSED is its own independent env var.
     if (run_moe_gpu_fused_gate(argc, argv)) return 0;
+    // V5k Phase 1b: same reasoning, QWEN_MOE_GPU_GENERATE is its own independent env var.
+    if (run_moe_gpu_generate_gate(argc, argv)) return 0;
     // V5j: same reasoning, QWEN_MOE_GPU_GQA_FUSED is its own independent env var.
     if (run_moe_gpu_gqa_fused_gate(argc, argv)) return 0;
     // V5k: same reasoning, QWEN_MOE_GPU_GQA_GENERATE is its own independent env var.
@@ -12538,6 +12796,9 @@ int main(int argc, char **argv) {
     // (see the function's own doc comment) if any aren't met, so this is safe to check
     // unconditionally right before run_moe_verify_mode()'s own file-presence trigger below.
     if (run_moe_gpu_gqa_generate_default_mode(argc, argv)) return 0;
+    // V5k Phase 2 (MLA): same reasoning, its own ATTN_KIND peek defers to the GQA path above
+    // when it's not an MLA model, so trying both in sequence is safe and order-independent.
+    if (run_moe_gpu_generate_default_mode(argc, argv)) return 0;
 #endif
     if (run_gguf_moe_verify_mode(argc, argv)) return 0;
     if (run_moe_safetensors_verify_mode(argc, argv)) return 0;

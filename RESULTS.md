@@ -5312,3 +5312,51 @@ dispatches) and designed around it with graceful tiers throughout.
 generate gate (structurally similar but needs its own prompt-injection
 built from scratch and has no shared config helper yet) is deferred to
 a follow-on round, same scope split the plan itself called out.
+
+## V5k Phase 1b/2b: MLA/DeepSeek's own real generation entry point + promotion
+
+Follow-on round closing V5k's own deferred item -- `run_moe_gpu_generate_gate()`
+(`QWEN_MOE_GPU_GENERATE=1`), structural mirror of both V5k's GQA gate
+and V5c-fused (`run_moe_gpu_fused_gate()`), using MLA's own lazy
+primitives (`mlx_gpu_layer_step_lazy()`/`mlx_gpu_forward_finalize()`,
+`mlx_gpu_mla_config()`) unchanged. Real DeepSeek-V2-Lite EOS token id
+(100001) independently reconfirmed against the actual model's own
+`config.json`/`generation_config.json` on macstudio (both agree) rather
+than trusting this session's own already-established "100001"
+convention on faith -- appended as `EOS_TOKEN_ID=100001` to the live
+`arch_config_moe.txt` on bob, per Data-First Numerics. No shared
+config-loading helper built for MLA (unlike GQA's own
+`moe_load_gqa_cbatch_config()`) -- this is the only MLA gate needing
+this exact combination, so a helper would have exactly one caller;
+the config block is inlined once instead, matching Rule 3's own
+default when there's nothing to actually share.
+
+**Verification**: the 8 real DeepSeek prompts (`moe4a_ref_generation.json`'s
+own real captured continuations, teacher-free `mlx_lm` generation on
+macstudio) run through the new gate with `QWEN_MOE_GEN_N=12`, compared
+token-for-token against the real captured `generated_ids`. **8/8
+prompts exact, 12/12 tokens each -- 96/96 tokens exact, no divergence
+at all** (cleaner than the GQA round's own 83/84 result -- consistent
+with MLA/DeepSeek being this project's most heavily-scrutinized model,
+with the most prior rounds of numerical validation: V5b/V5c/V5c-fused/
+V5d/F-4/V5e/V5f/V5g/V5h all exercised this exact model before this
+round). Determinism reconfirmed (byte-identical rerun). Position-cap
+early-stop tested directly (`prompt_len=8, QWEN_MOE_GEN_N=30` ->
+stopped gracefully at 25/30). Regression: V5c-fused (8/8 argmax parity,
+52.501 tok/s kill-gate, still above the 48.34 llama.cpp+Metal bar) and
+V5e ragged cbatch (56/56) both unaffected.
+
+**Phase 2b**: `run_moe_gpu_generate_default_mode()`, same graceful-tiers
+design as the GQA version -- peeks `ATTN_KIND` without committing to
+the full config load (a GQA model correctly falls through to the GQA
+default-mode function instead, order-independent), checked right after
+it in the dispatch chain. Verified directly: no env vars set still
+produces byte-identical output to today's `run_moe_verify_mode()` dump,
+and `QWEN_MOE_PROMPT` set with no `QWEN_MOE_GPU_GENERATE` auto-fires
+real generation with `EOS_TOKEN_ID=100001` correctly read from config.
+
+**Status**: V5k is now COMPLETE for both MoE topologies this project
+supports (GQA/OLMoE and MLA/DeepSeek). Both models now default to real
+argmax-feedback generation from a real prompt whenever one is
+resolvable, falling back to the original dump-only verify mode
+unchanged otherwise.
