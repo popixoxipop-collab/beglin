@@ -9645,7 +9645,10 @@ static int run_moe_gqa_cbatch_online_cpu_gate(int argc, char **argv) {
 // loaded via load_ids() (:2156), the same raw-int32 convention QWEN_MOE_PROMPT already
 // established (V5k). FATAL (not skip) on any per-line failure -- unlike moe_load_layout_f32()'s
 // tolerant blank-line skip, a manifest line the caller wrote is not incidental config noise.
-static int moe_gqa_cbatch_load_manifest(const char *path, int *mf_plen, int *mf_maxnew,
+// Topology-agnostic (raw int arrays only) -- shared verbatim by both the GQA (V5l) and MLA
+// (V5l MLA mirror) online scheduler gates below, not duplicated per Rule 3's own "genuinely
+// shared infra gets one helper" precedent (matches moe_load_gqa_cbatch_config()'s own history).
+static int moe_cbatch_load_manifest(const char *path, int *mf_plen, int *mf_maxnew,
                                          int mf_ids[][MOE_CBATCH_MAXPOS], int cap) {
     FILE *f = fopen(path, "r");
     if (!f) { fprintf(stderr, "FATAL: [moe gpu gqa cb online] could not open manifest '%s'\n", path); exit(1); }
@@ -9755,7 +9758,7 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
     int mf_n;
     const char *manifest_path = getenv("QWEN_MOE_CB_PROMPT_MANIFEST");
     if (manifest_path && manifest_path[0]) {
-        mf_n = moe_gqa_cbatch_load_manifest(manifest_path, mf_plen, mf_maxnew, mf_ids, MOE_CB4B_RMAX);
+        mf_n = moe_cbatch_load_manifest(manifest_path, mf_plen, mf_maxnew, mf_ids, MOE_CB4B_RMAX);
         fprintf(stderr, "[moe gpu gqa cb online] loaded %d-entry prompt manifest from '%s'\n", mf_n, manifest_path);
     } else {
         for (int i = 0; i < MOE_CBATCH_N; i++) {
@@ -10354,6 +10357,11 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     MOE_NORM_TOPK_PROB = (int)moe_cfg_get_opt(path,"NORM_TOPK_PROB",0.0);
     MOE_ROPE_STYLE = (int)moe_cfg_get_opt(path,"ROPE_STYLE",(double)MOE_ROPE_TRADITIONAL);
     MOE_QKNORM_WHOLE_VECTOR = (int)moe_cfg_get_opt(path,"QKNORM_WHOLE_VECTOR",0.0);
+    // V5l MLA mirror: this gate did its own manual config load (not the shared ctx helper
+    // GQA online gate uses), so it never actually read EOS_TOKEN_ID -- both eviction checks
+    // below hardcoded the literal 100001 instead. Same default value, now config-driven like
+    // every other MLA gate (V5k Phase 1b, :7239).
+    MOE_EOS_TOKEN_ID = (int)moe_cfg_get_opt(path,"EOS_TOKEN_ID",100001.0);
     moe_cfg_validate();
     MOE_QDIM     = MOE_N_HEADS * MOE_Q_HEAD_DIM;
     MOE_KVA_OUT  = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
@@ -10445,9 +10453,31 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
         {100000,549,17298,3327},
     };
 
+    // V5l MLA mirror: QWEN_MOE_CB_PROMPT_MANIFEST, same design as the GQA online gate. Unlike
+    // GQA (whose corpus lives in file-scope g_moe_gqa_cbatch_* globals), this corpus is already
+    // local to this function -- the else-branch below just copies from the local consts above
+    // instead of a shared table, no hoisting to file scope needed.
+    static int mf_plen[MOE_CB4B_RMAX], mf_maxnew[MOE_CB4B_RMAX];
+    static int mf_ids[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS];
+    int mf_n;
+    const char *manifest_path = getenv("QWEN_MOE_CB_PROMPT_MANIFEST");
+    if (manifest_path && manifest_path[0]) {
+        mf_n = moe_cbatch_load_manifest(manifest_path, mf_plen, mf_maxnew, mf_ids, MOE_CB4B_RMAX);
+        fprintf(stderr, "[moe gpu cb online] loaded %d-entry prompt manifest from '%s'\n", mf_n, manifest_path);
+    } else {
+        for (int i = 0; i < MOE_CBATCH_N; i++) {
+            mf_plen[i] = prompt_len[i];
+            mf_maxnew[i] = moe_cbatch_gen[i];
+            for (int c = 0; c < prompt_len[i]; c++)
+                mf_ids[i][c] = prompt_ids[i][c];
+        }
+        mf_n = MOE_CBATCH_N;
+    }
+    const int MCN = mf_n;
+
     static int    rq_plen[MOE_CB4B_RMAX], rq_maxnew[MOE_CB4B_RMAX], rq_arrive[MOE_CB4B_RMAX];
     static int    rq_slot_of[MOE_CB4B_RMAX], rq_admit_step[MOE_CB4B_RMAX];
-    static int    rq_out[MOE_CB4B_RMAX][MOE_CBATCH_KNEW], rq_nout[MOE_CB4B_RMAX];
+    static int    rq_out[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS], rq_nout[MOE_CB4B_RMAX];
     static double rq_t_admit[MOE_CB4B_RMAX], rq_t_first[MOE_CB4B_RMAX];
     static int    mcb_active[MOE_BATCH_MAX], mcb_req[MOE_BATCH_MAX], mcb_tok[MOE_BATCH_MAX];
     static int    mcb_pos[MOE_BATCH_MAX], mcb_pref[MOE_BATCH_MAX], mcb_freed_before[MOE_BATCH_MAX];
@@ -10480,8 +10510,8 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
             }
         }
         for (int r = 0; r < R; r++) {
-            int sp = r % MOE_CBATCH_N;
-            rq_plen[r] = prompt_len[sp]; rq_maxnew[r] = moe_cbatch_gen[sp];
+            int sp = r % MCN;
+            rq_plen[r] = mf_plen[sp]; rq_maxnew[r] = mf_maxnew[sp];
             rq_nout[r] = 0; rq_slot_of[r] = -1; rq_admit_step[r] = -1;
             rq_t_admit[r] = 0.0; rq_t_first[r] = 0.0;
             moe_cb4b_admit_guard(rq_plen, rq_maxnew, r);
@@ -10536,7 +10566,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 int r = mcb_req[s];
                 int take = rq_plen[r] - mcb_pref[s]; if (take > budget) take = budget;
                 for (int i = 0; i < take; i++) {
-                    tok_arr[A] = prompt_ids[r % MOE_CBATCH_N][mcb_pref[s]+i];
+                    tok_arr[A] = mf_ids[r % MCN][mcb_pref[s]+i];
                     slot_arr[A] = s; spos_arr[A] = mcb_pref[s]+i; A++;
                 }
                 mcb_pref[s] += take; budget -= take;
@@ -10572,14 +10602,14 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
             }
             double temit = nowt();
 
-            // 4. decode columns: emit + evict (EOS 100001 / stop_extra / maxnew / position cap).
+            // 4. decode columns: emit + evict (EOS / stop_extra / maxnew / position cap).
             for (int m = 0; m < ndec; m++) {
                 int s = slot_arr[m], r = mcb_req[s];
                 float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
                 int am = 0; float bm = lg[0];
                 for (int v = 1; v < MOE_VOCAB; v++) if (lg[v] > bm) { bm = lg[v]; am = v; }
                 rq_out[r][rq_nout[r]++] = am; mcb_pos[s]++;
-                if (am == 100001 || am == stop_extra || rq_nout[r] >= rq_maxnew[r] || mcb_pos[s] >= MOE_CBATCH_MAXPOS)
+                if (am == MOE_EOS_TOKEN_ID || am == stop_extra || rq_nout[r] >= rq_maxnew[r] || mcb_pos[s] >= MOE_CBATCH_MAXPOS)
                     { mcb_active[s] = 0; mcb_freed_before[s] = 1; nact--; }
                 else mcb_tok[s] = am;
             }
@@ -10591,7 +10621,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 int am = 0; float bm = lg[0];
                 for (int v = 1; v < MOE_VOCAB; v++) if (lg[v] > bm) { bm = lg[v]; am = v; }
                 rq_out[r][rq_nout[r]++] = am; rq_t_first[r] = temit;
-                if (am == 100001 || am == stop_extra || rq_nout[r] >= rq_maxnew[r])
+                if (am == MOE_EOS_TOKEN_ID || am == stop_extra || rq_nout[r] >= rq_maxnew[r])
                     { mcb_active[s] = 0; mcb_freed_before[s] = 1; nact--; }
                 else { mcb_active[s] = 1; mcb_tok[s] = am; mcb_pos[s] = rq_plen[r]; }
             }
@@ -10609,7 +10639,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
         if (ttft_ms > ttft_max) ttft_max = ttft_ms;
         ttft_sum += ttft_ms; ttft_n++;
         fprintf(stderr, "[moe gpu cb online] req %d prompt %d slot %d arrive %d admit_step %d ttft_ms %.2f nout %d tokens:",
-                r, r % MOE_CBATCH_N, rq_slot_of[r], rq_arrive[r], rq_admit_step[r], ttft_ms, rq_nout[r]);
+                r, r % MCN, rq_slot_of[r], rq_arrive[r], rq_admit_step[r], ttft_ms, rq_nout[r]);
         for (int k = 0; k < rq_nout[r]; k++) fprintf(stderr, " %d", rq_out[r][k]);
         fprintf(stderr, "\n");
     }

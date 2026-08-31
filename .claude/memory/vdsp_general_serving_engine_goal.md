@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-08-31T22:30:00.000Z
+  modified: 2026-08-31T22:50:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -1814,3 +1814,30 @@ wraparound 유발 — 첫등장·재등장 전부 V5k 단일시퀀스게이트 g
 클린 통과. 이론적 우려가 아니라 실재 버그였음을 최고강도로 증명.
 상세: `RESULTS.md` §"V5l: real-prompt manifest for the GQA online
 admission scheduler".
+
+★V5l MLA 대응(GQA 완료 직후 "1번 진행" 사용자 승인으로 바로 이어서
+진행): 동일 매니페스트 메커니즘을 `run_moe_gpu_cbatch_online_gate()`
+(DeepSeek/MLA 온라인게이트)에 이식. GQA 라운드가 남긴 두 갭도 이번에
+같이 닫음 — (1) corpus 테이블이 GQA와 달리 애초에 함수로컬
+`static const`라 file-scope로 끌어올릴 필요 자체가 없었음(else-branch가
+그냥 로컬 const를 복사) (2) EOS가 두 eviction 체크 지점 모두
+`100001` 하드코딩이었던 걸 `MOE_EOS_TOKEN_ID`(config-driven, V5k Phase
+1b와 동일 관례)로 교체 — 실제 값은 100001로 동일하므로 오늘 기준
+동작변화 없는 순수 정확성 정리. 매니페스트 로더 함수도
+`moe_gqa_cbatch_load_manifest`→`moe_cbatch_load_manifest`로 개명해
+GQA/MLA 양쪽이 그대로 재사용(본체에 GQA 특정 로직이 전혀 없어서
+~40줄 중복 방지, `moe_load_gqa_cbatch_config()` 공유헬퍼 선례와 동일
+판단). **검증 5개 전부 통과, GQA때와 동일 프로토콜**: (1) git diff
+전량 `#ifdef QWEN_GPU_MLX`내부(9648~10642) (2) manifest미설정시
+wall-clock필드 제외 stderr 완전동일(EOS 하드코딩→config전환이 진짜
+no-op임을 이 스텝이 직접증명) (3) 기존 8개 실 DeepSeek 프롬프트를
+manifest로 재현해도 완전동일 (4) MC=10(기존8+실프롬프트 부분수열2) +
+R=20 wraparound — 첫등장·재등장 전부 V5k MLA 단일시퀀스게이트 ground
+truth와 정확히 일치 (5) ★rq_out ASan 실증: pre-fix 사본이 GQA와
+**정확히 같은 지점 형태**(`run_moe_gpu_cbatch_online_gate.rq_out`, "0
+bytes after global variable")에서 재현, post-fix는 동일 최악케이스
+(R=64/B=8/plen=1/maxnew=31) 64개 요청 전부 클린. **V5l는 이제
+GQA+MLA 두 토폴로지 모두 COMPLETE** — V5k와 똑같은 "GQA 먼저, MLA
+즉시 미러링" 패턴으로 온라인 스케줄러 실프롬프트 지원도 두 토폴로지
+동시완결. 상세: `RESULTS.md` §"V5l MLA mirror: real-prompt manifest
+for the MLA online admission scheduler".

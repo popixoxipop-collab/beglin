@@ -5446,3 +5446,76 @@ cross-check against yet. `load_ids()` has no format/magic-number
 validation -- a manifest line pointing at the wrong file type would
 silently produce garbage token IDs with no bounds check against
 `MOE_VOCAB` before the embedding-table lookup.
+
+## V5l MLA mirror: real-prompt manifest for the MLA online admission scheduler
+
+**Scope**: the deferred MLA follow-on from the V5l GQA round above, same
+`QWEN_MOE_CB_PROMPT_MANIFEST` mechanism ported to
+`run_moe_gpu_cbatch_online_gate()` (the DeepSeek/MLA online admission
+scheduler). Two structural gaps flagged in the GQA round's own "out of
+scope" notes were closed as part of this mirror, not deferred further:
+
+1. **Corpus table was function-local, not file-scope.** Unlike GQA
+   (whose corpus lives in shared `g_moe_gqa_cbatch_*` globals), MLA's
+   8-prompt corpus (`prompt_len`/`moe_cbatch_gen`/`prompt_ids`) was
+   already a `static const` local to this one function -- no hoisting
+   needed. The manifest-vs-corpus unification block's else-branch just
+   copies from these local consts directly, otherwise identical in
+   shape to the GQA design.
+2. **EOS was hardcoded `100001` at both eviction-check sites**, not
+   read from `MOE_EOS_TOKEN_ID` like every other MLA gate (V5k Phase
+   1b). This gate did its own manual config load rather than using the
+   shared ctx helper GQA's online gate uses, so it had simply never
+   picked up the config-driven convention. Fixed by adding
+   `MOE_EOS_TOKEN_ID = (int)moe_cfg_get_opt(path,"EOS_TOKEN_ID",100001.0);`
+   to this function's own config block and replacing both `am ==
+   100001` literals with `am == MOE_EOS_TOKEN_ID`. Same real value
+   (100001, independently reconfirmed in V5k against the actual
+   model's own `config.json`), so this is a correctness cleanup with
+   zero behavior change today, not a functional fix.
+
+**Shared infra, not duplicated**: the manifest-file parser
+(`moe_gqa_cbatch_load_manifest()` in the GQA round) was renamed to
+`moe_cbatch_load_manifest()` and reused verbatim for MLA -- its body
+has zero GQA-specific logic (raw int arrays, `load_ids()`, nothing
+attention-kind-aware), so duplicating ~40 lines of file-parsing code
+for a second topology would have been pure churn. One call-site update
+in the GQA gate, one new call in the MLA gate.
+
+**`rq_out` overflow fix applied identically**: same widening,
+`[MOE_CB4B_RMAX][MOE_CBATCH_KNEW]` -> `[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS]`,
+in this function's own local `static` declaration only.
+
+**Verification** (against bob's real DeepSeek-V2-Lite weights,
+`~/moe_base_deepseek`):
+1. `git diff --unified=0` -- every changed/added hunk for this round
+   falls between lines 9648 and 10642, inside `#ifdef QWEN_GPU_MLX`.
+2. Manifest unset, before (V5l GQA-only binary) vs after (V5l GQA+MLA
+   binary), same `QWEN_MOE_GPU_CBATCH_ONLINE=1` config, wall-clock
+   fields filtered -- stderr diff completely empty. This also directly
+   confirms the EOS hardcoded-to-config-driven switch is a true no-op
+   (same 100001 value either way).
+3. Manifest reconstructing the exact 8-prompt DeepSeek corpus at the
+   default `R=12` -- diff against the no-manifest run empty except for
+   the one new manifest-load log line.
+4. `MC=10` (original 8 + 2 real prefixes of two of the original
+   prompts' own token sequences) + `R=20` to force wraparound -- every
+   request's `tokens:` list (first occurrence and wraparound-repeated
+   occurrence alike) matched its own independently-generated V5k MLA
+   single-sequence ground truth (`QWEN_MOE_GPU_GENERATE=1`) exactly.
+5. `rq_out` widening, same ASan protocol as the GQA round: a scratch
+   copy with only the MLA function's own width reverted, compiled
+   `-fsanitize=address`, `R=64, B=8`, every request `plen=1/maxnew=31`
+   -- ASan caught a real `global-buffer-overflow` at the exact
+   predicted site (`run_moe_gpu_cbatch_online_gate.rq_out`, "0 bytes
+   after global variable"), same shape as GQA's own finding one
+   function over. The fixed (32-wide) binary, identical ASan build and
+   worst-case config, ran all 64 requests clean.
+
+**Status**: V5l is now COMPLETE for both MoE topologies (GQA/OLMoE and
+MLA/DeepSeek) -- both online admission schedulers can now serve
+genuinely distinct real prompts via `QWEN_MOE_CB_PROMPT_MANIFEST`,
+with the shared `rq_out` overflow class fixed in both, and the
+manifest loader shared rather than duplicated. GQA CPU twin manifest
+support and `load_ids()` input validation remain open, as noted in the
+GQA round's own section above.
