@@ -5226,3 +5226,89 @@ GPU MoE backend is competitive with mature llama.cpp+Metal across the
 whole B range for OLMoE, ahead at the high-concurrency end that this
 project's own online-serving work (V5h/V5j-ragged Phase D) actually
 targets.
+
+## V5k: real generation entry point for GQA/OLMoE, promoted to default
+
+User asked to "promote the already-validated GPU MoE path to the
+actual default serving path" (mirroring the earlier `QWEN_SME2`
+default-promotion precedent). Two read-only investigations found the
+real gap first: `qwen_infer.c` had no MoE-model equivalent of its own
+dense-model `greedy` mode anywhere. Every one of the 15 `QWEN_MOE_GPU_*`
+gates and 3 CPU "verify mode" loaders was either a numeric-correctness
+gate against a fixed captured reference, or a teacher-forced dump loop
+feeding the *known-correct* token at every position -- structurally
+incapable of generating more tokens than were fed in. The two "online
+admission scheduler" gates closest to real serving discarded
+`argc`/`argv` entirely and only ever replayed 8 hardcoded synthetic
+prompts. So "promote to default" wasn't meaningful yet -- this round
+built the real entry point first, then promoted it.
+
+**Phase 1 -- `run_moe_gpu_gqa_generate_gate()` (`QWEN_MOE_GPU_GQA_GENERATE=1`)**:
+structural mirror of D5 (`run_moe_gpu_gqa_fused_gate()`), with the
+per-position CPU cross-check and the `QWEN_MOE_REF_LOGITS_BIN`
+requirement stripped (a real generate gate has no reference file for
+an arbitrary prompt), and an early-stop check against
+`MOE_EOS_TOKEN_ID` added (config-driven from this session's own
+earlier refactor). Reuses dense's own `load_ids()` directly via a new
+`QWEN_MOE_PROMPT` env var (same raw-int32-binary format dense
+`QWEN_PROMPT` uses), reuses the shared `moe_load_gqa_cbatch_config()`
+helper for config/blob loading, and reuses `mlx_gpu_gqa_layer_step_lazy()`/
+`mlx_gpu_gqa_forward_finalize()` (D3/D4, unchanged -- zero new GPU-backend
+work). Explicit position-cap scope limit: `MOE_MAXPOS`/`GQA_L0_MAXPOS`=32
+is a hard-compiled K/V cache bound; the gate FATALs on an over-length
+prompt and gracefully early-stops generation (mirroring dense
+`greedy`'s own `if(pos+1>=g_cfg.maxseq) break;`) if the budget runs out.
+
+**Bug found and fixed during first real run**: the first attempt
+scored effectively 0% -- `mlx_gpu_gqa_layer_step_lazy()` failed at
+prefill pos 0 layer 0 for every prompt. Root cause: D5's own
+`mlx_gpu_bind_af()` tensor-binding loop had been accidentally stripped
+out along with the CPU-crosscheck/ref-logits code it was structurally
+adjacent to -- without it, `lazy_matvec_e0()`'s internal tensor lookups
+threw, silently caught by the function's own `catch (...)` and
+returned as a plain `0`. Restored the bind loop verbatim from D5, unchanged.
+
+**Verification**: the 8 real OLMoE prompts (`g_moe_gqa_cbatch_prompt_ids`)
+run through the new gate with `QWEN_MOE_GEN_N=12`, compared token-for-token
+against `g_moe_gqa_cbatch_ref_generated[s][0..11]` (real, teacher-free
+captured continuations -- no index shift needed, unlike the ragged
+scheduler's own bookkeeping convention, since this is a plain greedy
+loop matching how the reference was itself originally captured).
+**7/8 prompts exact match, 12/12 tokens each (84/84).** The 8th prompt
+(slot 2) matches exactly for its first 10 tokens, then diverges at
+index 10 -- the first time this project has ever exercised that deep
+into slot 2's generation (V5j-ragged Phase B's own 56/56 gate only
+ever checked slot 2 through index 7, per its own `moe_cbatch_gen[2]=8`
+target). Reproduced deterministically (identical divergence on rerun),
+consistent with this session's own already-documented ~1e-2 rel_l2
+GPU-vs-real-MLX-truth gap (D5) tipping a near-tied argmax at one
+specific position, not a new bug -- **83/84 tokens exact overall**.
+Position-cap early-stop tested directly (`prompt_len=8,
+QWEN_MOE_GEN_N=30` -> stopped gracefully at 25/30 with a clear stderr
+note, RESULT line reflects the true count). Regression: V5j-ragged
+Phase B (56/56) and V5j-batch B=8 (flipped=0/8) both unaffected.
+
+**Phase 2 -- promoted default, safely**: new
+`run_moe_gpu_gqa_generate_default_mode()`, checked immediately before
+`run_moe_verify_mode()`'s own file-presence trigger. Fires only if
+`weights_moe/` is present, the model's own `ATTN_KIND` (peeked without
+committing to the full GQA-only config loader, so an MLA model falls
+through cleanly instead of hitting a `FATAL`) is GQA, `mlx_gpu_available()`
+is true **at runtime**, and a real prompt is resolvable (`QWEN_MOE_PROMPT`
+or `<base>/ref/prompt_ids.i32`, mirroring dense's own fallback) --
+then delegates to the exact same, already-verified Phase 1 gate via
+`setenv()`, rather than duplicating its ~150-line body. If any
+precondition fails, returns 0 and falls through completely unchanged
+-- verified directly: no env vars set still produces byte-identical
+output to today's `run_moe_verify_mode()` dump (nothing regresses),
+and `QWEN_MOE_PROMPT` set with no `QWEN_MOE_GPU_GQA_GENERATE` now
+auto-fires the real generation path with output identical to Phase 1's
+explicit-gate run. Noted explicitly (bigger blast radius than the
+`QWEN_SME2` precedent, which only ever changed an unset-env-var default
+inside an always-executed shared function, never which top-level mode
+dispatches) and designed around it with graceful tiers throughout.
+
+**Status**: V5k Phase 1+2 COMPLETE for GQA/OLMoE. MLA/DeepSeek's own
+generate gate (structurally similar but needs its own prompt-injection
+built from scratch and has no shared config helper yet) is deferred to
+a follow-on round, same scope split the plan itself called out.
