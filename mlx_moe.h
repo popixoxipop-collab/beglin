@@ -79,6 +79,40 @@ int mlx_gpu_mla_config(int n_heads, int q_head_dim, int qk_nope_hd, int qk_rope_
 // missing.
 int mlx_gpu_mla_layer0(const float *h, int pos, const float *kv_a_ln_w, float *o_out);
 
+// V5i Phase B: layer-0 GQA (Grouped Query Attention) config -- call once, after
+// V5a's mlx_gpu_bind_af() calls, before any mlx_gpu_gqa_layer0() call. A
+// deliberately SEPARATE top-level path from mlx_gpu_mla_config()/
+// mlx_gpu_mla_layer0() above -- matches the CPU reference's own explicit
+// design rationale (moe_gqa_attention() vs moe_mla_attention() as distinct
+// functions, not one function with a runtime switch): plain q/k/v/o_proj
+// (no KV-LoRA), NeoX-style rope (traditional=false, not MLA's interleaved/
+// YaRN), plain 1/sqrt(head_dim) attn_scale (caller computes and passes it,
+// same convention as mlx_gpu_mla_config's own attn_scale param). This is a
+// dequant-consumption / attention-primitive-composition path only -- no
+// int4 quantization or residual-vs-SR tradeoff exists here (same D18
+// exemption mlx_moe.h's own file header already states). Returns 1 on
+// success, 0 if MLX is unavailable.
+int mlx_gpu_gqa_config(int n_heads, int n_kv_heads, int head_dim, double rope_theta,
+                        double attn_scale, double rms_eps);
+
+// V5i Phase B: layer-0 GQA attention for one token position, on GPU. Looks up
+// "model.layers.0.self_attn.{q_proj,k_proj,v_proj,o_proj}" from tensors
+// already bound by mlx_gpu_bind_af() -- mlx_gpu_gqa_config() must have been
+// called first. w_qnorm/w_knorm are the WHOLE pre-reshape-shaped
+// ([n_heads*head_dim] / [n_kv_heads*head_dim]) RMSNorm weights -- OLMoE's
+// own convention (confirmed directly from mlx_lm.models.olmoe's source:
+// `self.q_norm = nn.RMSNorm(n_heads*head_dim, ...)` applied BEFORE the
+// per-head reshape), not the more common per-head convention. Maintains its
+// own internal layer-0 K/V cache (position-indexed, separate from both
+// g_mla_K/V above and qwen_infer.c's CPU-side cache, D-gpu-2) -- call
+// sequentially with pos=0,1,2,... exactly like mlx_gpu_mla_layer0(). Writes
+// o_proj's raw output (NOT accumulated into a residual -- the caller
+// decides how to combine it) into o_out[hidden]. Returns 1 on success, 0 if
+// config wasn't called, pos is out of range, or a required tensor is
+// missing.
+int mlx_gpu_gqa_layer0(const float *h, int pos, const float *w_qnorm, const float *w_knorm,
+                        float *o_out);
+
 // V5c: full-layer config -- call once, after mlx_gpu_mla_config(), before any
 // mlx_gpu_layer_step() call.
 int mlx_gpu_layer_config(int hidden, int im_dim, int dense_im, int n_experts, int n_shared,

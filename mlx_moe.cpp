@@ -382,6 +382,155 @@ int mlx_gpu_mla_layer0(const float *h, int pos, const float *kv_a_ln_w, float *o
 }
 
 
+// ---------------------------------------------------------------------------
+// V5i Phase B: layer-0 GQA (Grouped Query Attention) attention on GPU. A
+// deliberately SEPARATE top-level implementation from mlx_gpu_mla_layer_impl()
+// above -- matches the CPU reference's own explicit design rationale for
+// keeping moe_gqa_attention()/moe_mla_attention() as distinct functions
+// rather than one function with a runtime switch (genuinely different
+// projection structures, not just different parameter values). Plain
+// q_proj/k_proj/v_proj/o_proj (no kv_a/kv_b LoRA stages), whole-vector
+// q_norm/k_norm (OLMoE's own convention -- confirmed directly from
+// mlx_lm.models.olmoe's source, applied to the FULL pre-reshape vector, not
+// per-head), NeoX-style rope (traditional=false -- a genuinely different
+// rotation convention from every other rope call in this file, which are
+// all traditional=true/MLA's interleaved+YaRN style; verified via isolated
+// probe, probe_neox_rope.cpp, max_abs_diff=1.01327896e-06 at real OLMoE
+// dims H=16/HEAD_DIM=128/theta=10000.0, before being wired in here -- not
+// assumed from the header). GQA head-grouping (query head hh reads KV head
+// hh/group, group=n_heads/n_kv_heads) is done via an explicit host-side
+// broadcast when staging the sdpa K/V buffers below, not relied upon as an
+// implicit MLX sdpa behavior.
+static int g_gqa_n_heads = 0, g_gqa_n_kv_heads = 0, g_gqa_head_dim = 0;
+static double g_gqa_rope_theta = 0.0, g_gqa_attn_scale = 0.0, g_gqa_rms_eps = 1e-6;
+
+// GPU arm's own K/V cache (separate from g_mla_K/V above and from
+// qwen_infer.c's CPU-side cache -- D-gpu-2). Layout [layer][kv_head][pos][dim].
+#define GQA_L0_MAXPOS 32
+#define GQA_MAXLAYERS 32
+static std::vector<float> g_gqa_K;  // GQA_MAXLAYERS * n_kv_heads * GQA_L0_MAXPOS * head_dim
+static std::vector<float> g_gqa_V;
+
+int mlx_gpu_gqa_config(int n_heads, int n_kv_heads, int head_dim, double rope_theta,
+                        double attn_scale, double rms_eps) {
+    if (!mlx_gpu_available()) return 0;
+    g_gqa_n_heads = n_heads;
+    g_gqa_n_kv_heads = n_kv_heads;
+    g_gqa_head_dim = head_dim;
+    g_gqa_rope_theta = rope_theta;
+    g_gqa_attn_scale = attn_scale;
+    g_gqa_rms_eps = rms_eps;
+    g_gqa_K.assign((size_t)GQA_MAXLAYERS * n_kv_heads * GQA_L0_MAXPOS * head_dim, 0.0f);
+    g_gqa_V.assign((size_t)GQA_MAXLAYERS * n_kv_heads * GQA_L0_MAXPOS * head_dim, 0.0f);
+    return 1;
+}
+
+static int mlx_gpu_gqa_layer_impl(int l, const float *h, int pos,
+                                   const float *w_qnorm, const float *w_knorm, float *o_out) {
+    if (g_gqa_n_heads == 0) return 0;   // mlx_gpu_gqa_config() not called
+    if (pos < 0 || pos >= GQA_L0_MAXPOS || l < 0 || l >= GQA_MAXLAYERS) return 0;
+    char nq[96], nk[96], nv[96], no[96];
+    snprintf(nq, sizeof nq, "model.layers.%d.self_attn.q_proj", l);
+    snprintf(nk, sizeof nk, "model.layers.%d.self_attn.k_proj", l);
+    snprintf(nv, sizeof nv, "model.layers.%d.self_attn.v_proj", l);
+    snprintf(no, sizeof no, "model.layers.%d.self_attn.o_proj", l);
+    auto itq = g_tensors.find(nq);
+    auto itk = g_tensors.find(nk);
+    auto itv = g_tensors.find(nv);
+    auto ito = g_tensors.find(no);
+    if (itq == g_tensors.end() || itk == g_tensors.end() ||
+        itv == g_tensors.end() || ito == g_tensors.end()) return 0;
+
+    try {
+        const int H = g_gqa_n_heads, KVH = g_gqa_n_kv_heads, HD = g_gqa_head_dim;
+        const int group = H / KVH;
+        const int qdim = (int)itq->second.out;   // H*HD
+        const int kdim = (int)itk->second.out;   // KVH*HD
+        const int vdim = (int)itv->second.out;   // KVH*HD
+
+        std::vector<float> q(qdim), k(kdim), v(vdim);
+        if (!mlx_gpu_matvec_probe(nq, 0, h, q.data())) return 0;
+        if (!mlx_gpu_matvec_probe(nk, 0, h, k.data())) return 0;
+        if (!mlx_gpu_matvec_probe(nv, 0, h, v.data())) return 0;
+
+        // OLMoE Bug 2 fix: q_norm/k_norm normalize the WHOLE pre-reshape
+        // vector, not per-head -- applied over the full {qdim}/{kdim} vector
+        // BEFORE any head split (mlx_lm.models.olmoe's own
+        // `self.q_norm = nn.RMSNorm(n_heads*head_dim, ...)`, confirmed
+        // directly from its source, applied to `queries` pre-reshape).
+        mx::array qin((void *)q.data(), {1, qdim}, mx::float32, noop_deleter);
+        mx::array wqn((void *)w_qnorm, {qdim}, mx::float32, noop_deleter);
+        mx::array qnormed = mx::fast::rms_norm(qin, wqn, (float)g_gqa_rms_eps);
+        mx::array kin((void *)k.data(), {1, kdim}, mx::float32, noop_deleter);
+        mx::array wkn((void *)w_knorm, {kdim}, mx::float32, noop_deleter);
+        mx::array knormed = mx::fast::rms_norm(kin, wkn, (float)g_gqa_rms_eps);
+        mx::eval(qnormed);
+        mx::eval(knormed);
+        std::memcpy(q.data(), qnormed.data<float>(), sizeof(float) * qdim);
+        std::memcpy(k.data(), knormed.data<float>(), sizeof(float) * kdim);
+
+        // NeoX rope (traditional=false), per-head, scalar offset=pos (single
+        // position per call -- V5e's array-offset multi-row trick isn't
+        // needed here). Verified via isolated probe before being wired in.
+        mx::array q_in((void *)q.data(), {H, 1, HD}, mx::float32, noop_deleter);
+        mx::array q_out = mx::fast::rope(q_in, HD, /*traditional=*/false,
+                                          /*base=*/(float)g_gqa_rope_theta,
+                                          /*scale=*/1.0f, /*offset=*/pos);
+        mx::array k_in((void *)k.data(), {KVH, 1, HD}, mx::float32, noop_deleter);
+        mx::array k_out = mx::fast::rope(k_in, HD, /*traditional=*/false,
+                                          /*base=*/(float)g_gqa_rope_theta,
+                                          /*scale=*/1.0f, /*offset=*/pos);
+        mx::eval(q_out);
+        mx::eval(k_out);
+        std::memcpy(q.data(), q_out.data<float>(), sizeof(float) * qdim);
+        std::memcpy(k.data(), k_out.data<float>(), sizeof(float) * kdim);
+
+        // Write this position's K/V into the GQA GPU-arm cache.
+        for (int kvh = 0; kvh < KVH; kvh++) {
+            float *kdst = g_gqa_K.data() + (((size_t)l * KVH + kvh) * GQA_L0_MAXPOS + pos) * HD;
+            float *vdst = g_gqa_V.data() + (((size_t)l * KVH + kvh) * GQA_L0_MAXPOS + pos) * HD;
+            std::memcpy(kdst, k.data() + kvh * HD, sizeof(float) * HD);
+            std::memcpy(vdst, v.data() + kvh * HD, sizeof(float) * HD);
+        }
+
+        // sdpa over positions 0..pos. Stage a per-QUERY-HEAD [H,kv_len,HD]
+        // buffer -- query head hh reads KV head hh/group, expanded via
+        // explicit host-side copy (not relied upon as implicit MLX sdpa
+        // GQA-broadcast behavior).
+        int kv_len = pos + 1;
+        std::vector<float> k_stage((size_t)H * kv_len * HD), v_stage((size_t)H * kv_len * HD);
+        for (int hh = 0; hh < H; hh++) {
+            int kvh = hh / group;
+            std::memcpy(k_stage.data() + (size_t)hh * kv_len * HD,
+                        g_gqa_K.data() + ((size_t)l * KVH + kvh) * GQA_L0_MAXPOS * HD,
+                        sizeof(float) * kv_len * HD);
+            std::memcpy(v_stage.data() + (size_t)hh * kv_len * HD,
+                        g_gqa_V.data() + ((size_t)l * KVH + kvh) * GQA_L0_MAXPOS * HD,
+                        sizeof(float) * kv_len * HD);
+        }
+        mx::array qa((void *)q.data(), {1, H, 1, HD}, mx::float32, noop_deleter);
+        mx::array ka((void *)k_stage.data(), {1, H, kv_len, HD}, mx::float32, noop_deleter);
+        mx::array va((void *)v_stage.data(), {1, H, kv_len, HD}, mx::float32, noop_deleter);
+        mx::array attn = mx::fast::scaled_dot_product_attention(
+            qa, ka, va, (float)g_gqa_attn_scale, "");
+        mx::eval(attn);
+        std::vector<float> attn_out((size_t)H * HD);
+        std::memcpy(attn_out.data(), attn.data<float>(), sizeof(float) * H * HD);
+
+        if (!mlx_gpu_matvec_probe(no, 0, attn_out.data(), o_out))
+            return 0;
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
+int mlx_gpu_gqa_layer0(const float *h, int pos, const float *w_qnorm, const float *w_knorm,
+                        float *o_out) {
+    return mlx_gpu_gqa_layer_impl(0, h, pos, w_qnorm, w_knorm, o_out);
+}
+
+
 
 // ---------------------------------------------------------------------------
 // V5c: full transformer block for one layer -- attention + FFN (dense or

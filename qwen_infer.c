@@ -5900,6 +5900,108 @@ static int run_moe_gqa_selftest_mode(int argc, char **argv) {
     return 1;
 }
 
+// V5i Phase A: OLMoE variant of run_moe_gqa_selftest_mode() immediately above -- verbatim
+// structural mirror (Rule 3), only the hardcoded config differs: OLMoE's real
+// config.json (confirmed today, mlx-community/OLMoE-1B-7B-0125-4bit) gives HIDDEN=2048,
+// N_HEADS=N_KV_HEADS=16 (OLMoE is GQA-shaped code path but structurally degenerates to plain
+// MHA -- group=N_HEADS/N_KV_HEADS=1, still a genuine exercise of the GQA dispatch/NeoX-rope/
+// whole-vector-qknorm paths, just not the "fewer KV heads" aspect specifically),
+// HEAD_DIM=hidden/n_heads=128 (OLMoE's own config.json has no explicit head_dim key, confirmed
+// against mlx_lm.models.olmoe's own fallback `head_dim or hidden_size/n_heads`), rope_theta=
+// 10000.0, rms_eps=1e-5. Critically or the whole comparison is meaningless: MOE_QKNORM_
+// WHOLE_VECTOR=1 (this project's own documented D-qknorm-1 fix -- OLMoE's q_norm/k_norm
+// normalize the WHOLE pre-reshape vector, not per-head like Qwen3-MoE; get this wrong and
+// every downstream number is wrong in a way that looks like a real bug, not a config typo).
+static int run_moe_gqa_olmoe_selftest_mode(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *dir = getenv("QWEN_MOE_GQA_OLMOE_SELFTEST");
+    if (!dir || !dir[0]) return 0;
+
+    fprintf(stderr, "[gqa olmoe selftest] QWEN_MOE_GQA_OLMOE_SELFTEST=%s -- attention-only numeric check\n", dir);
+
+    // Real OLMoE-1B-7B-0125 config (verified against mlx-community/OLMoE-1B-7B-0125-4bit's
+    // own config.json today, not assumed from the earlier 0924 checkpoint's own documented
+    // numbers).
+    MOE_HIDDEN = 2048; MOE_N_HEADS = 16; MOE_N_KV_HEADS = 16; MOE_HEAD_DIM = 128;
+    MOE_ROPE_THETA = 10000.0; MOE_RMS_EPS = 1e-5; MOE_ATTN_KIND = MOE_ATTN_GQA;
+    MOE_ROPE_STYLE = MOE_ROPE_NEOX; MOE_NORM_TOPK_PROB = 0;
+    MOE_QKNORM_WHOLE_VECTOR = 1;   // D-qknorm-1: OLMoE-specific, NOT the Qwen3-MoE default
+    // Dummy-but-valid: MLA-specific/FFN/router fields this attention-only test never reads.
+    MOE_KV_LORA_RANK = 2; MOE_QK_ROPE_HD = 2; MOE_QK_NOPE_HD = 2; MOE_V_HD = 2;
+    MOE_Q_HEAD_DIM = MOE_QK_ROPE_HD + MOE_QK_NOPE_HD;
+    MOE_NL = 1; MOE_FIRST_DENSE_LAYERS = 1; MOE_N_EXPERTS = 1; MOE_N_SHARED = 1;
+    MOE_TOP_K = 1; MOE_IM_DIM = 8; MOE_DENSE_IM = 8; MOE_VOCAB = 8;
+    MOE_YARN_FACTOR = 1.0; MOE_YARN_BETA_FAST = 1.0; MOE_YARN_BETA_SLOW = 1.0;
+    MOE_YARN_MSCALE = 1.0; MOE_YARN_MSCALE_ALL_DIM = 1.0; MOE_YARN_ORIG_MAX_POS = 4096.0;
+    moe_cfg_validate();
+
+    MOE_QDIM     = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_KVA_OUT  = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
+    MOE_KVB_OUT  = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD);
+    MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
+    MOE_SH_IM    = MOE_IM_DIM * MOE_N_SHARED;
+    MOE_KROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    MOE_VROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    MOE_MAX_IN = MOE_HIDDEN;
+    if (MOE_IM_DIM   > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
+    if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
+    if (MOE_DENSE_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_DENSE_IM;
+    MOE_MAX_NG = (MOE_MAX_IN + 63) / 64;
+    MOE_SME2_SLOT_DENSE  = MOE_N_EXPERTS;
+    MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
+    MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2;
+    MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
+
+    alloc_moe_buffers();
+    moe_init_yarn();
+    moe_init_rope_gqa();
+
+    char path[1024];
+    snprintf(path, sizeof path, "%s/gqa_layout_af.txt", dir); moe_load_layout_af(path);
+    snprintf(path, sizeof path, "%s/gqa_af.bin", dir);
+    long af_bytes; uint8_t *af_blob = moe_mmap_file(path, &af_bytes);
+    snprintf(path, sizeof path, "%s/gqa_layout_f32.txt", dir); moe_load_layout_f32(path);
+    snprintf(path, sizeof path, "%s/gqa_f32.bin", dir);
+    long f32_bytes; g_moe_f32_blob = moe_mmap_file(path, &f32_bytes);
+    fprintf(stderr, "[gqa olmoe selftest] af blob %ld bytes (%d tensors), f32 blob %ld bytes (%d tensors)\n",
+            af_bytes, g_moe_naf, f32_bytes, g_moe_nf32);
+
+    moe_resolve_attn_tensors_gqa(0, &g_moe_lt[0]);
+    fprintf(stderr, "[gqa olmoe selftest] layer-0 attention tensors resolved and shape-checked "
+                    "(q_norm=%p k_norm=%p)\n", (void *)g_moe_lt[0].q_norm, (void *)g_moe_lt[0].k_norm);
+
+    snprintf(path, sizeof path, "%s/x_embed.bin", dir);
+    long xb; uint8_t *xblob = moe_mmap_file(path, &xb);
+    int N = (int)(xb / ((long)MOE_HIDDEN * sizeof(float)));
+    fprintf(stderr, "[gqa olmoe selftest] N=%d positions, HIDDEN=%d N_HEADS=%d N_KV_HEADS=%d HEAD_DIM=%d\n",
+            N, MOE_HIDDEN, MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM);
+
+    MoeF32Tensor *t_inln = moe_find_f32("model.layers.0.input_layernorm.weight");
+    float *w_inln = (float *)(g_moe_f32_blob + t_inln->off);
+
+    float *x_embed = malloc((size_t)MOE_HIDDEN * sizeof(float));
+    float *h = malloc((size_t)MOE_HIDDEN * sizeof(float));
+    float *x_residual = malloc((size_t)MOE_HIDDEN * sizeof(float));
+
+    snprintf(path, sizeof path, "%s/gqa_c_dump.txt", dir);
+    FILE *out = fopen(path, "w");
+    if (!out) { perror(path); exit(1); }
+
+    for (int pos = 0; pos < N; pos++) {
+        memcpy(x_embed, xblob + (size_t)pos*MOE_HIDDEN*sizeof(float), (size_t)MOE_HIDDEN*sizeof(float));
+        memcpy(x_residual, x_embed, (size_t)MOE_HIDDEN*sizeof(float));
+        moe_rmsnorm(x_embed, w_inln, h, MOE_HIDDEN);
+        moe_attention(af_blob, &g_moe_lt[0], 0, pos, h, x_residual);
+        fprintf(out, "pos %d", pos);
+        for (int c = 0; c < MOE_HIDDEN; c++) fprintf(out, " %.8g", x_residual[c]);
+        fprintf(out, "\n");
+        fprintf(stderr, "[gqa olmoe selftest] pos %d done\n", pos);
+    }
+    fclose(out);
+    fprintf(stderr, "RESULT: gqa olmoe selftest forward complete, dumped to %s/gqa_c_dump.txt\n", dir);
+    return 1;
+}
+
 // ============================================================================
 // Phase 4 sub-part 4: GGUF stacked-expert MoE loader.
 //
@@ -8276,6 +8378,130 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     return 1;
 }
 
+// V5i Phase B: B=1 GQA GPU correctness gate. Verbatim structural mirror of
+// run_moe_gqa_olmoe_selftest_mode() (qwen_infer.c, above) -- same env-var-selected AF/F32
+// blob directory, same hardcoded real OLMoE-1B-7B-0125 config, same per-position input-
+// layernorm-then-attention loop -- except attention itself runs through the NEW
+// mlx_gpu_gqa_layer0() GPU path (mlx_moe.cpp) instead of the CPU's moe_attention(). Dumps
+// to gqa_gpu_dump.txt in the SAME "pos <n> <hidden floats>" format the CPU dump uses, so
+// the same compare tooling that already validated the CPU dump against the real MLX
+// reference (rel_l2 ~1.5-2.3e-07) can diff this file too -- three-way cross-check (GPU vs
+// CPU vs real MLX), not "GPU vs CPU only."
+static int run_moe_gqa_gpu_gate(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *dir = getenv("QWEN_MOE_GQA_OLMOE_GPU");
+    if (!dir || !dir[0]) return 0;
+
+    fprintf(stderr, "[gqa olmoe gpu] QWEN_MOE_GQA_OLMOE_GPU=%s -- V5i Phase B B=1 GPU gate\n", dir);
+    if (!mlx_gpu_available()) {
+        fprintf(stderr, "FATAL: QWEN_MOE_GQA_OLMOE_GPU set but MLX/Metal unavailable\n");
+        exit(1);
+    }
+
+    // Same real OLMoE-1B-7B-0125 config as run_moe_gqa_olmoe_selftest_mode() (verified
+    // against mlx-community/OLMoE-1B-7B-0125-4bit's own config.json).
+    MOE_HIDDEN = 2048; MOE_N_HEADS = 16; MOE_N_KV_HEADS = 16; MOE_HEAD_DIM = 128;
+    MOE_ROPE_THETA = 10000.0; MOE_RMS_EPS = 1e-5; MOE_ATTN_KIND = MOE_ATTN_GQA;
+    MOE_ROPE_STYLE = MOE_ROPE_NEOX; MOE_NORM_TOPK_PROB = 0;
+    MOE_QKNORM_WHOLE_VECTOR = 1;
+    MOE_KV_LORA_RANK = 2; MOE_QK_ROPE_HD = 2; MOE_QK_NOPE_HD = 2; MOE_V_HD = 2;
+    MOE_Q_HEAD_DIM = MOE_QK_ROPE_HD + MOE_QK_NOPE_HD;
+    MOE_NL = 1; MOE_FIRST_DENSE_LAYERS = 1; MOE_N_EXPERTS = 1; MOE_N_SHARED = 1;
+    MOE_TOP_K = 1; MOE_IM_DIM = 8; MOE_DENSE_IM = 8; MOE_VOCAB = 8;
+    MOE_YARN_FACTOR = 1.0; MOE_YARN_BETA_FAST = 1.0; MOE_YARN_BETA_SLOW = 1.0;
+    MOE_YARN_MSCALE = 1.0; MOE_YARN_MSCALE_ALL_DIM = 1.0; MOE_YARN_ORIG_MAX_POS = 4096.0;
+    moe_cfg_validate();
+    MOE_QDIM     = MOE_N_HEADS * MOE_Q_HEAD_DIM;
+    MOE_KVA_OUT  = MOE_KV_LORA_RANK + MOE_QK_ROPE_HD;
+    MOE_KVB_OUT  = MOE_N_HEADS * (MOE_QK_NOPE_HD + MOE_V_HD);
+    MOE_ATTN_OUT = MOE_N_HEADS * MOE_V_HD;
+    MOE_SH_IM    = MOE_IM_DIM * MOE_N_SHARED;
+    MOE_KROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    MOE_VROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    MOE_MAX_IN = MOE_HIDDEN;
+    if (MOE_IM_DIM   > MOE_MAX_IN) MOE_MAX_IN = MOE_IM_DIM;
+    if (MOE_SH_IM    > MOE_MAX_IN) MOE_MAX_IN = MOE_SH_IM;
+    if (MOE_DENSE_IM > MOE_MAX_IN) MOE_MAX_IN = MOE_DENSE_IM;
+    MOE_MAX_NG = (MOE_MAX_IN + 63) / 64;
+    MOE_SME2_SLOT_DENSE  = MOE_N_EXPERTS;
+    MOE_SME2_SLOT_SHARED = MOE_N_EXPERTS + 1;
+    MOE_SME2_SLOT_LMHEAD = MOE_N_EXPERTS + 2;
+    MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
+    alloc_moe_buffers();
+    moe_init_yarn();
+
+    char path[1024];
+    snprintf(path, sizeof path, "%s/gqa_layout_af.txt", dir); moe_load_layout_af(path);
+    snprintf(path, sizeof path, "%s/gqa_af.bin", dir);
+    long af_bytes; uint8_t *af_blob = moe_mmap_file(path, &af_bytes);
+    snprintf(path, sizeof path, "%s/gqa_layout_f32.txt", dir); moe_load_layout_f32(path);
+    snprintf(path, sizeof path, "%s/gqa_f32.bin", dir);
+    long f32_bytes; g_moe_f32_blob = moe_mmap_file(path, &f32_bytes);
+    fprintf(stderr, "[gqa olmoe gpu] af blob %ld bytes (%d tensors), f32 blob %ld bytes (%d tensors)\n",
+            af_bytes, g_moe_naf, f32_bytes, g_moe_nf32);
+
+    int n_bound = 0;
+    for (int i = 0; i < g_moe_naf; i++) {
+        MoeAFTensor *t = &g_moe_af[i];
+        if (!mlx_gpu_bind_af(af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
+                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+            fprintf(stderr, "FATAL: [gqa olmoe gpu] bind failed for tensor %s\n", t->name);
+            exit(1);
+        }
+        n_bound++;
+    }
+    fprintf(stderr, "[gqa olmoe gpu] bound %d/%d tensors to MLX\n", n_bound, g_moe_naf);
+
+    double attn_scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
+    if (!mlx_gpu_gqa_config(MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_ROPE_THETA,
+                             attn_scale, MOE_RMS_EPS)) {
+        fprintf(stderr, "FATAL: [gqa olmoe gpu] mlx_gpu_gqa_config() failed\n");
+        exit(1);
+    }
+    fprintf(stderr, "[gqa olmoe gpu] gqa config: N_HEADS=%d N_KV_HEADS=%d HEAD_DIM=%d "
+                    "rope_theta=%.3f attn_scale=%.9g rms_eps=%.3g\n",
+            MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_ROPE_THETA, attn_scale, MOE_RMS_EPS);
+
+    snprintf(path, sizeof path, "%s/x_embed.bin", dir);
+    long xb; uint8_t *xblob = moe_mmap_file(path, &xb);
+    int N = (int)(xb / ((long)MOE_HIDDEN * sizeof(float)));
+    fprintf(stderr, "[gqa olmoe gpu] N=%d positions\n", N);
+
+    MoeF32Tensor *t_inln = moe_find_f32("model.layers.0.input_layernorm.weight");
+    MoeF32Tensor *t_qnorm = moe_find_f32("model.layers.0.self_attn.q_norm.weight");
+    MoeF32Tensor *t_knorm = moe_find_f32("model.layers.0.self_attn.k_norm.weight");
+    float *w_inln  = (float *)(g_moe_f32_blob + t_inln->off);
+    float *w_qnorm = (float *)(g_moe_f32_blob + t_qnorm->off);
+    float *w_knorm = (float *)(g_moe_f32_blob + t_knorm->off);
+
+    float *x_embed = malloc((size_t)MOE_HIDDEN * sizeof(float));
+    float *h = malloc((size_t)MOE_HIDDEN * sizeof(float));
+    float *o_out = malloc((size_t)MOE_HIDDEN * sizeof(float));
+    float *x_residual = malloc((size_t)MOE_HIDDEN * sizeof(float));
+
+    snprintf(path, sizeof path, "%s/gqa_gpu_dump.txt", dir);
+    FILE *out = fopen(path, "w");
+    if (!out) { perror(path); exit(1); }
+
+    for (int pos = 0; pos < N; pos++) {
+        memcpy(x_embed, xblob + (size_t)pos*MOE_HIDDEN*sizeof(float), (size_t)MOE_HIDDEN*sizeof(float));
+        moe_rmsnorm(x_embed, w_inln, h, MOE_HIDDEN);
+        if (!mlx_gpu_gqa_layer0(h, pos, w_qnorm, w_knorm, o_out)) {
+            fprintf(stderr, "FATAL: [gqa olmoe gpu] mlx_gpu_gqa_layer0() failed at pos %d\n", pos);
+            exit(1);
+        }
+        for (int c = 0; c < MOE_HIDDEN; c++) x_residual[c] = x_embed[c] + o_out[c];
+        fprintf(out, "pos %d", pos);
+        for (int c = 0; c < MOE_HIDDEN; c++) fprintf(out, " %.8g", x_residual[c]);
+        fprintf(out, "\n");
+        fprintf(stderr, "[gqa olmoe gpu] pos %d done\n", pos);
+    }
+    fclose(out);
+    fprintf(stderr, "RESULT: gqa olmoe GPU B=1 gate complete, dumped to %s/gqa_gpu_dump.txt\n", dir);
+    free(x_embed); free(h); free(o_out); free(x_residual);
+    return 1;
+}
+
 #endif // QWEN_GPU_MLX
 
 static int run_moe_verify_mode(int argc, char **argv) {
@@ -10234,6 +10460,7 @@ int main(int argc, char **argv) {
     if (run_moe_sym_selftest_mode(argc, argv)) return 0;
     if (run_moe_mqa_selftest_mode(argc, argv)) return 0;
     if (run_moe_gqa_selftest_mode(argc, argv)) return 0;
+    if (run_moe_gqa_olmoe_selftest_mode(argc, argv)) return 0;
 #ifdef QWEN_GPU_MLX
     // V5a: same reasoning as the three selftest checks above -- QWEN_MOE_GPU is an env var,
     // not weights_moe/ file presence, so it must be checked before run_moe_verify_mode()'s
@@ -10253,6 +10480,8 @@ int main(int argc, char **argv) {
     if (run_moe_gpu_cbatch_prefill_gate(argc, argv)) return 0;
     // V5h: same reasoning, QWEN_MOE_GPU_CBATCH_ONLINE is its own independent env var.
     if (run_moe_gpu_cbatch_online_gate(argc, argv)) return 0;
+    // V5i Phase B: same reasoning, QWEN_MOE_GQA_OLMOE_GPU is its own independent env var.
+    if (run_moe_gqa_gpu_gate(argc, argv)) return 0;
 #endif
     if (run_gguf_moe_verify_mode(argc, argv)) return 0;
     if (run_moe_safetensors_verify_mode(argc, argv)) return 0;

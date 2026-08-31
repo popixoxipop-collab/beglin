@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-08-31T09:40:00.000Z
+  modified: 2026-08-31T15:00:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -1659,3 +1659,65 @@ mode1 구조 미러 — 스케줄 전략 차이지 버그 아님, 명시적으�
 SME2배칭, 정확도 80%) 2.793 tok/s → **GPU ~35.7배**(더 대표성있는
 비교로 병기, 큰 숫자만 내세우지 않음). V5a~h 트랙 전체 COMPLETE.
 상세: `RESULTS.md` §"V5h: GPU online/dynamic admission scheduler".
+
+**V5i(재스코프 후 완료, GQA 모델 일반화 — MLA 전용이던 GPU 경로에
+DeepSeek이 아닌 모델 최초 이식)**: "다음은 일반화?"에 사용자가
+"GQA 모델 일반화"로 확정. 착수 전 리서치(3개 병렬 Explore agent)로
+스코프가 예상보다 훨씬 큼을 발견 — Qwen3-30B-A3B(기존 CPU측 GQA
+모델)는 GGUF Q4_K_M 18.5GB가 bob 12.71GB 워킹셋 상한을 46% 초과해
+**하드웨어 원천 불가**(이 프로젝트 기존 결론 재확인, 재작업 문제가
+아님), 기존 AF export도 디스크에서 사라짐(deleted 디렉터리로의 깨진
+심볼릭링크). OLMoE(~7.5GB)만 하드웨어로 가능한데 AF export가 아예
+없었음(원본 HF safetensors뿐). AskUserQuestion으로 "Phase A(export)만/
+Phase A+B(GPU attention까지) 통합/방향전환" 중 확인 → **"전체를 한
+번에" 선택**, 두 phase 통합 계획으로 승인.
+
+**Phase A(export)**: `mlx_olmoe_gqa_selftest_export.py`(macstudio) —
+기존 DeepSeek exporter+Qwen3 selftest 파일포맷의 Rule-3 미러, layer-0
+attention-only로 스코프 축소(B=1이 이번 라운드 실목표라 16레이어
+전체export 불필요 — 구현 중 자체판단, "승인된 트랙 내 재확인 불필요"
+원칙대로 사용자 재컨펌 없이 진행). `mlx-community/OLMoE-1B-7B-0125-4bit`
+(WebSearch/WebFetch로 존재 사전확인) 다운로드 49분 소요.
+**재확인한 기존버그 2건**(과거 CPU측 OLMoE 작업에서 이미 문서화됐던
+것, 이번에 재검증만): (1) vocab_size=50304라 DeepSeek 기본 프롬프트ID
+(100000+)가 범위밖 — export가 작은 ID`[100,549,4345]` 사용. (2)
+**핵심**: OLMoE q_norm/k_norm이 reshape 전 전체벡터를 정규화(Qwen3-MoE의
+per-head 컨벤션과 다름) — `mlx_lm.models.olmoe` 소스 직접 재확인
+(`self.q_norm=nn.RMSNorm(n_heads*head_dim,...)`, reshape 전 적용).
+기존 CPU측 `MOE_QKNORM_WHOLE_VECTOR`가 이미 정확히 처리.
+신규 CPU 진입점 `run_moe_gqa_olmoe_selftest_mode()`(`QWEN_MOE_GQA_
+OLMOE_SELFTEST=<dir>`) — 기존 Qwen3용 `run_moe_gqa_selftest_mode()`의
+형제함수(같은 파일포맷, 다른 하드코딩 config), 기존 함수를 고치는 게
+아니라 새로 추가(이 파일의 기존 "같은shape함수, 다른실모델config"
+관례 그대로). **검증**: CPU의 기존 검증된 `moe_gqa_attention()`이
+export의 실 MLX reference와 rel_l2 1.5~2.3e-07(float32 노이즈 수준)
+일치, 3개 position 전부. Phase A 완료.
+
+**Phase B(GPU attention, B=1)**: 격리 probe 먼저(이 세션 전체의
+불변규율) — NeoX rope(`traditional=false`)는 mlx_moe.cpp에서 한 번도
+안 쓰인 회전컨벤션(기존 전부 traditional=true/MLA interleaved+YaRN).
+`probe_neox_rope.cpp`, 실 OLMoE 차원(H=16,HEAD_DIM=128,theta=10000)에서
+`max_abs_diff=1.01327896e-06`(V5b의 traditional=true probe 4.77e-07
+대비 한 자릿수 크지만 여전히 float32 반올림 노이즈 수준 — 진짜
+컨벤션 불일치였다면 O(1) 발산이지 1e-6이 아님, pass로 판정).
+`mlx_gpu_gqa_config()`+`mlx_gpu_gqa_layer0()`(mlx_moe.cpp/.h) 신규
+추가 — 기존 `mlx_gpu_mla_config()`/`mlx_gpu_mla_layer0()`의 런타임
+분기가 아니라 **완전히 별도 함수**(CPU 레퍼런스의 기존 설계원칙
+그대로: MLA/GQA는 프로젝션 구조 자체가 다름). Plain q/k/v/o_proj(LoRA
+없음), whole-vector qknorm, NeoX rope(단일position이라 V5e의
+array-offset 트릭 불필요, scalar offset=pos), GQA head-grouping은
+sdpa K/V 버퍼 staging시 explicit host-side broadcast로 구현(MLX sdpa의
+암묵적 GQA지원에 의존 안 함). 별도 K/V캐시(`g_gqa_K/V`).
+신규 CPU 드라이버 `run_moe_gqa_gpu_gate()`(`QWEN_MOE_GQA_OLMOE_GPU=
+<dir>`) — `run_moe_gqa_olmoe_selftest_mode()`의 구조적 미러, attention만
+GPU 경로로 교체.
+**B=1 게이트, 3-way 교차검증**(GPU vs CPU vs 실 MLX reference, GPU-vs-
+CPU만이 아님): 3개 position 전부 rel_l2 1.5e-07~2.6e-07 범위 —
+GPU가 CPU와 가까운 정도가 아니라 **실모델 MLX 출력 자체를 CPU와
+동일한 정밀도로 독립재현**. V5a/V5b 원래 게이트기준(rel-L2≤1e-5) 대비
+압도적 여유로 PASS. **V5i는 B=1/layer-0 스코프에서 COMPLETE** —
+멀티레이어 전체모델(V5c급)/batched-ragged-online(V5d-h급) OLMoE GPU
+일반화, Qwen3-30B-A3B GPU(하드웨어로 원천배제)는 명시적으로 다음
+라운드 스코프.
+상세: `RESULTS.md` §"V5i: GQA (Grouped Query Attention) model
+generalization on the GPU path".

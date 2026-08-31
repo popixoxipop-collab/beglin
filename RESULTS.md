@@ -4602,3 +4602,139 @@ with TTFT/queue-wait instrumentation matching what an actual
 online-serving evaluation needs. MoE-4c's reverify layer, full-scale
 stress configs, and a real HTTP-servable interface remain explicitly
 out of scope, per the plan.
+
+## V5i: GQA (Grouped Query Attention) model generalization on the GPU path
+
+Every V5a-h gate targeted DeepSeek-V2-Lite's MLA attention exclusively --
+`mlx_moe.cpp` had no GQA path at all. This round ported GQA to the GPU,
+matched against a genuinely different hardware-feasible model (OLMoE)
+rather than reusing DeepSeek. Two phases, mirroring V5a-c's own original
+build-up (single-layer, B=1 correctness before any batching), not
+V5d-h's later reuse-an-already-proven-mechanism shape.
+
+**Scope-discovery finding, before any code**: Qwen3-30B-A3B (this
+project's other already-shipped GQA model, CPU side) is
+hardware-infeasible on bob for a GPU path -- its real GGUF `Q4_K_M` is
+18.5GB, 46% over bob's 12.71GB working-set ceiling (already established
+in Phase 4-3/4-4's own CPU work). Its own prior AF export no longer
+exists on disk (broken symlinks into a deleted directory). OLMoE
+(~7.5GB) is the only hardware-feasible GQA target on this machine, but
+had no AF export at all -- only a raw HF safetensors checkpoint. So this
+round had a real Phase A (get OLMoE into this engine's AF format) before
+Phase B (GPU attention) could start.
+
+### Phase A -- OLMoE export
+
+New script `mlx_olmoe_gqa_selftest_export.py` (macstudio), a Rule-3
+mirror of the existing DeepSeek AF exporter (`mlx_deepseek_to_q4g64af.py`)
+and of the existing Qwen3 `run_moe_gqa_selftest_mode()` selftest harness's
+own file-format contract -- deliberately scoped to layer-0-attention-only
+(not a full 16-layer export), since B=1/layer-0 is this round's real
+target. Source: `mlx-community/OLMoE-1B-7B-0125-4bit` (confirmed to exist
+via WebSearch/WebFetch before starting, group-64 4-bit, same AF
+convention this engine already expects). Exports `q_proj`/`k_proj`/
+`v_proj`/`o_proj` (AF) + `q_norm`/`k_norm`/`input_layernorm` (F32) for
+layer 0, plus 3 real embedding rows (token ids `[100, 549, 4345]`,
+deliberately `<vocab_size=50304`) and a real MLX-computed layer-0
+attention-only reference for positions 0-2 (`gqa_mlx_ref.txt`).
+
+Two previously-documented real OLMoE bugs (from this project's earlier
+CPU-side OLMoE work) were re-verified today, not assumed:
+- **Bug 1**: OLMoE `vocab_size=50304` -- DeepSeek's own default prompt
+  IDs (`>=100000`) are out of range. This export deliberately uses small
+  IDs.
+- **Bug 2 (the one that actually matters for Phase B's GPU design)**:
+  OLMoE's `q_norm`/`k_norm` normalize the WHOLE pre-reshape
+  `(n_heads*head_dim,)` vector, not per-head like Qwen3-MoE's
+  `[head_dim]`-shaped weight -- confirmed again today directly from
+  `mlx_lm.models.olmoe`'s own source (`self.q_norm =
+  nn.RMSNorm(n_heads*head_dim, ...)`, applied to `queries` BEFORE the
+  per-head reshape). CPU's `MOE_QKNORM_WHOLE_VECTOR`/
+  `moe_qknorm_apply(..., whole_vector)` already implements this
+  correctly; this export just had to produce the weight at its real,
+  un-split shape.
+
+**New CPU-side entry point** `run_moe_gqa_olmoe_selftest_mode()`
+(`QWEN_MOE_GQA_OLMOE_SELFTEST=<dir>`) -- a sibling of the existing
+Qwen3-targeted `run_moe_gqa_selftest_mode()` (same file-format contract,
+different hardcoded real config: `HIDDEN=2048 N_HEADS=N_KV_HEADS=16
+HEAD_DIM=128 ROPE_THETA=10000.0 RMS_EPS=1e-5 MOE_QKNORM_WHOLE_VECTOR=1`),
+not a runtime branch inside the existing function -- matches this file's
+own established "same-shape function, different hardcoded config"
+convention (already used three times: MQA/sym/GQA selftests).
+
+**Verification**: CPU's already-verified `moe_gqa_attention()` (Phase
+4-2) against the new export's real MLX reference, all 3 positions:
+
+| pos | rel_l2 (CPU vs real MLX) |
+|---|---|
+| 0 | 2.268e-07 |
+| 1 | 1.522e-07 |
+| 2 | 1.642e-07 |
+
+Float32-noise level, cleanly under any reasonable bar -- Phase A's own
+completion bar met without qualification. The export is trustworthy as
+a GPU ground truth.
+
+### Phase B -- GQA attention on the GPU, B=1
+
+**Isolated probe first** (this session's own ironclad discipline,
+especially given V5e's own RoPE-axis-binding near-miss): NeoX-style rope
+(`mx::fast::rope(..., traditional=false, ...)`) had never been exercised
+anywhere in `mlx_moe.cpp` before this round -- every existing rope call
+is `traditional=true` (MLA's interleaved+YaRN convention), a genuinely
+different rotation. `probe_neox_rope.cpp`, checked against a direct C++
+transcription of `moe_rope_neox_apply()`'s own math, at real OLMoE dims
+(H=16, HEAD_DIM=128, theta=10000.0): **max_abs_diff=1.01327896e-06** --
+about an order of magnitude above V5b's own `traditional=true` rope
+probe (4.77e-07) but still solidly float32-rounding-noise-scale at
+HEAD_DIM=128's wider accumulation width, not a structural mismatch (a
+real convention bug would show as O(1) divergence, not 1e-6). Treated as
+a pass; Phase B's integration gate (below) is the real confirmation, not
+assumed from the probe alone.
+
+**New, deliberately separate GPU path** (`mlx_moe.cpp`/`mlx_moe.h`):
+`mlx_gpu_gqa_config()` + `mlx_gpu_gqa_layer0()` -- a sibling of
+`mlx_gpu_mla_config()`/`mlx_gpu_mla_layer0()`, NOT a runtime branch
+inside the MLA path, matching the CPU reference's own explicit design
+rationale (`moe_gqa_attention()`/`moe_mla_attention()` as genuinely
+separate functions -- different projection structures, not just
+different parameters). Plain `q_proj`/`k_proj`/`v_proj`/`o_proj` (no
+KV-LoRA), whole-vector q_norm/k_norm (OLMoE's own convention, Bug 2's
+fix applied on the GPU side too), NeoX rope with a scalar per-call
+`offset=pos` (V5e's array-offset multi-row trick isn't needed here --
+one position per call), GQA head-grouping (query head `hh` reads KV
+head `hh/(n_heads/n_kv_heads)`) done via an explicit host-side broadcast
+when staging the sdpa K/V buffers, not relied on as an implicit MLX
+sdpa behavior. Own K/V cache (`g_gqa_K`/`g_gqa_V`), separate from
+`g_mla_K`/`V` and from the CPU-side cache.
+
+New CPU-side driver `run_moe_gqa_gpu_gate()`
+(`QWEN_MOE_GQA_OLMOE_GPU=<dir>`) -- verbatim structural mirror of
+`run_moe_gqa_olmoe_selftest_mode()`, except attention runs through
+`mlx_gpu_gqa_layer0()` instead of CPU's `moe_attention()`. Binds the 4
+AF tensors via the already-proven `mlx_gpu_bind_af()`, then walks
+positions 0-2 sequentially (matching the export's own autoregressive
+capture), writing a `gqa_gpu_dump.txt` in the same format the CPU dump
+uses.
+
+**B=1 correctness gate**, three-way cross-check (GPU vs CPU vs the real
+MLX reference, not just GPU-vs-CPU):
+
+| pos | GPU vs real MLX rel_l2 | GPU vs CPU rel_l2 | CPU vs real MLX rel_l2 |
+|---|---|---|---|
+| 0 | 2.640e-07 | 2.030e-07 | 2.268e-07 |
+| 1 | 1.897e-07 | 1.625e-07 | 1.522e-07 |
+| 2 | 1.947e-07 | 1.875e-07 | 1.642e-07 |
+
+All three pairwise comparisons sit in the same float32-noise band
+(~1.5e-07 to 2.6e-07) -- the GPU path is not just "close to CPU," it
+independently reproduces the real model's own MLX output at the same
+precision CPU does. Clean PASS, well under V5a/V5b's own original
+rel-L2 gate bar.
+
+**Status**: V5i is COMPLETE at its stated B=1/layer-0 scope. Multi-layer
+full-model GQA forward on GPU (V5c-equivalent), batched/ragged/online
+GQA (V5d-h-equivalents) for OLMoE, and Qwen3-30B-A3B on GPU (ruled out
+on this hardware entirely) remain explicitly out of scope for this
+round, per the plan's own staged dependency order.
