@@ -4822,37 +4822,100 @@ mechanism were genuinely new.
    standalone precision band almost exactly, clean pass well inside
    the established bar.
 
-**A genuine anomaly found and partially investigated, not glossed
-over**: the CPU logits computed *inside* this same interleaved-with-
-GPU driver diverge from the CPU's own clean standalone (C4) output --
-position 0 is byte-identical (`cpu_vs_truth_rel_l2` matches C4's own
-pos-0 value exactly, 5.050407e-03), but position 1 onward shows
-growing divergence (up to 26% rel_l2) and two real argmax flips (pos
-8, pos 10) that C4's standalone run doesn't have. **Two concrete
-hypotheses tested and rejected with direct evidence**: (1) generic
-CPU nondeterminism -- rejected, two standalone C4 runs are byte-
-identical (`cmp`); (2) a race in the 64-thread CPU scalar pool
-triggered by GPU/CPU timing overlap -- rejected, forcing
-`QWEN_MOE_SCALAR_THREADS=1` reproduces the *exact same* divergent
-numbers, ruling out any timing/thread-count dependence; (3)
-`routing_out=NULL` (vs C4's real FILE*) changing behavior -- rejected
-by reading `moe_forward_token()`'s source, `routing_out` is used only
-for a diagnostic `fprintf`, no computational effect. The
-position-0-clean/position-1-onward-corrupted pattern points at the
-CPU's own K/V history array (`g_moe_K_flat`/`g_moe_V_flat`) somehow
-being affected between position 0's write and position 1's read, but
-no aliasing between those buffers and anything this round's own new
-code touches was found (all new GPU-side pointers are `const float*`
-views into either the read-only mmap'd weight blob or a driver-local
-buffer untouched between calls) -- **root cause not fully identified
-within this round's budget**. This does NOT affect the round's own
-primary correctness claim: GPU-vs-real-MLX-truth is independently
-clean (established both by C4's own standalone CPU-vs-truth
-comparison and by D5's live GPU-vs-truth comparison), and the
-anomalous number is specifically the *redundant in-process CPU cross-
-check*, not the GPU output being verified. Flagged as a concrete
-follow-up item for anyone touching interleaved CPU+GPU calls on the
-GQA path.
+**A genuine anomaly found and thoroughly investigated across two
+sessions, not glossed over**: the CPU logits computed *inside* this
+same interleaved-with-GPU driver diverge from the CPU's own clean
+standalone (C4) output -- position 0 is byte-identical
+(`cpu_vs_truth_rel_l2` matches C4's own pos-0 value exactly,
+5.050407e-03), but position 1 onward shows growing divergence (up to
+26% rel_l2) and two real argmax flips (pos 8, pos 10) that C4's
+standalone run doesn't have.
+
+**Eleven concrete hypotheses tested and rejected with direct,
+reproducible evidence** (investigation-protocol discipline: every
+rejection below is a real measurement, not an inference):
+1. GPU corrupts CPU's own K/V history array (`g_moe_K_flat`/
+   `V_flat`) -- rejected, full-array checksum delta is exactly 0.0 at
+   every position, measured before/after each position's GPU pass.
+2. Generic CPU nondeterminism -- rejected, two standalone C4 runs are
+   byte-identical (`cmp`).
+3. A race in the 64-thread CPU scalar pool triggered by GPU/CPU
+   timing overlap -- rejected, forcing `QWEN_MOE_SCALAR_THREADS=1`
+   reproduces the *exact same* divergent numbers in D5, and C4 itself
+   is independently thread-count-invariant too (356.745603780 at both
+   nthreads=1 and nthreads=64).
+4. `routing_out=NULL` (D5) vs C4's real `FILE*` -- rejected by
+   tracing every use of the parameter inside `moe_forward_token()`:
+   exactly one call site, gated `if (routing_out)`, a diagnostic
+   `fprintf` only, zero computational effect.
+5. Raw embedding `x[]` differs between D5 and C4 -- rejected,
+   checksums identical at all 13 positions.
+6. `h` (rmsnorm output, layer 0) or `w_inln` differs -- rejected,
+   checksums identical at position 1 layer 0 (h_sum=15.261551881
+   both, w_inln_sum matches, MOE_RMS_EPS matches).
+7. Metal/MLX device init alone (trivial `mx::ones({4})` sum+eval, no
+   real weight work) alters process FPU state -- rejected, calling
+   `mlx_gpu_available()` standalone inside C4's own driver leaves its
+   K_row_sum completely unchanged (356.745603780).
+8. A real GPU dequant touch mutates the af_blob mmap bytes the CPU
+   later re-reads for the same tensor (the untested reverse of this
+   project's own already-verified-safe CPU-write-then-GPU-read
+   unified-memory direction) -- rejected. A raw FNV-1a byte hash
+   (deliberately not a float sum, to rule out cancellation blindness)
+   of layer-0 k_proj's packed/scale/bias byte ranges is IDENTICAL
+   (`699c90024549f07e`) before binding, after binding all 114
+   tensors, and after real GPU layer-compute at every one of
+   positions 0-2 -- and identical again to C4's own hash, which never
+   touches GPU at all. The weight bytes are provably immutable.
+9. Heavy MLX weight *binding* alone (114 tensors, 4.3GB, real Metal
+   buffer creation) without any actual layer compute/eval changes
+   CPU scalar math -- rejected. Binding every tensor inside C4's own
+   driver via `mlx_gpu_bind_af()`, with zero calls to
+   `mlx_gpu_gqa_layer_step_lazy()`/`forward_finalize()` afterward,
+   leaves K_row_sum at pos 1 layer 0 completely unchanged
+   (356.745603780).
+10. Real GPU kernel dispatch/eval alters the ARM64 FPCR (rounding
+    mode / flush-to-zero) in a way that persists into later CPU
+    scalar float math -- rejected. Read directly via inline
+    `mrs %0, fpcr` before the position loop, before/after the very
+    first real GPU eval (pos 0 layer 0), and in C4's driver for
+    comparison: `fpcr=0x0` at every single checkpoint in both
+    drivers, no change ever observed.
+11. An uninitialized-memory read from one of the engine's
+    deliberately non-`calloc`'d scratch/cache buffers (`g_moe_K_flat`
+    etc. are plain `malloc()` by explicit design -- "Rule 6: NOT
+    calloc, never memset ... must stay lazily-faulted exactly as the
+    BSS arrays these replace were"), with D5's heavier pre-allocation
+    footprint (MLX/Metal init, 4.3GB binding) leaving different
+    stale bytes behind than C4's leaner footprint -- rejected. Running
+    D5 under `MallocPreScribble=1 MallocScribble=1` (macOS malloc
+    debug hooks that poison every freshly-handed-out byte with 0xAA)
+    reproduces numbers identical to 9+ significant digits at every
+    position (e.g. pos 9 `gpu_vs_cpu_rel_l2=2.603078e-01`, unchanged)
+    -- a real uninitialized-read dependency on a ~1e37-magnitude
+    garbage pattern would have been impossible to miss.
+
+**Root cause not identified after eleven independently-rejected,
+empirically-tested hypotheses spanning data (weights, embedding,
+hidden state), concurrency (threads, timing), memory (K/V array
+aliasing, raw weight bytes, uninitialized scratch), and hardware
+state (FPU control register)**. What's established with certainty:
+the divergence is fully deterministic and reproducible (not a race),
+requires a REAL GPU compute eval to appear at all (weight binding
+alone never triggers it), first manifests in layer 0's own k_proj
+output at position 1 given provably-identical inputs and provably-
+identical weight bytes, and does not correspond to any state this
+round's own new code writes to. The remaining hypothesis space is
+things not yet instrumented (e.g. Accelerate/vDSP-framework-level
+global state, or P-core/E-core scheduling-induced floating-point
+behavior differences under GPU-induced system load) -- explicitly
+flagged for whoever picks this up next rather than guessed at further.
+This does NOT affect the round's own primary correctness claim:
+GPU-vs-real-MLX-truth is independently clean (established both by
+C4's own standalone CPU-vs-truth comparison and by D5's live
+GPU-vs-truth comparison), and the anomalous number is specifically
+the *redundant in-process CPU cross-check*, not the GPU output being
+verified.
 
 **Throughput** (observed only, no external baseline claimed --
 llama.cpp has OLMoE model support already compiled on bob but has

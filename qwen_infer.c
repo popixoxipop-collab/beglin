@@ -3464,11 +3464,38 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
         }
     }
 
+    // V5j anomaly root-cause: checksum the raw embedding x[] itself, right after it's
+    // computed, for every position -- separates "input to this position's forward differs"
+    // from "same input, different computed output."
+    if (getenv("QWEN_MOE_GQA_DEBUG_KVCHECK")) {
+        double xck = 0.0;
+        for (int c = 0; c < MOE_HIDDEN; c++) xck += fabs((double)x[c]);
+        fprintf(stderr, "[kvcheck-x] pos %d token %d: x_sum=%.9f\n", pos, token_id, xck);
+    }
+
     for (int l = 0; l < MOE_NL; l++) {
         MoeLayerTensors *t = &g_moe_lt[l];
         float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
         moe_rmsnorm(x, w_inln, h, MOE_HIDDEN);
+        if (getenv("QWEN_MOE_GQA_DEBUG_KVCHECK") && pos <= 1 && l == 0) {
+            double hck = 0.0, wck = 0.0;
+            for (int c = 0; c < MOE_HIDDEN; c++) { hck += fabs((double)h[c]); wck += fabs((double)w_inln[c]); }
+            fprintf(stderr, "[kvcheck-h] pos %d layer 0: h_sum=%.9f w_inln_sum=%.9f MOE_RMS_EPS=%.12g\n",
+                    pos, hck, wck, MOE_RMS_EPS);
+        }
         moe_attention(af, t, l, pos, h, x);
+
+        // V5j anomaly root-cause: per-layer checksum right after THIS layer's own attention
+        // (K/V row + residual x) to pinpoint the FIRST layer where D5 vs C4 diverge, instead
+        // of only knowing "somewhere in the 16 layers."
+        if (getenv("QWEN_MOE_GQA_DEBUG_KVCHECK") && pos <= 2) {
+            double krow_ck = 0.0, xres_ck = 0.0;
+            float *krow = moe_K_row(l, pos);
+            for (int i = 0; i < MOE_KROW; i++) krow_ck += fabs((double)krow[i]);
+            for (int c = 0; c < MOE_HIDDEN; c++) xres_ck += fabs((double)x[c]);
+            fprintf(stderr, "[kvcheck-layer] pos %d layer %2d: K_row_sum=%.9f x_resid_sum=%.9f\n",
+                    pos, l, krow_ck, xres_ck);
+        }
 
         float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
         moe_rmsnorm(x, w_postln, h2, MOE_HIDDEN);
@@ -7159,6 +7186,37 @@ static int run_moe_gpu_fused_gate(int argc, char **argv) {
 // model's own real tokenizer output, captured by olmoe_reference_capture.py -- OLMoE's
 // vocab_size=50304 makes the DeepSeek-tokenizer hardcoded prompt this file's other gates use
 // genuinely out of range, Bug 1 from the prior round, not just a different vocabulary).
+// V5j anomaly investigation, hypothesis 8 (raw-byte, not float-sum, specifically to rule out
+// sum-of-floats cancellation blindness): does a real GPU dequant touch of a weight tensor via
+// mlx_gpu_bind_af()/mlx_gpu_gqa_layer_step_lazy() mutate the af_blob mmap bytes the CPU later
+// re-reads for that SAME tensor? This project has only ever verified the CPU-write-then-GPU-read
+// unified-memory direction safe (P0.3 spike) -- the reverse (GPU-reads-then-CPU-reads-again) has
+// never been tested. Off by default (QWEN_MOE_GQA_DEBUG_BLOBCHECK unset), zero cost when unset.
+// V5j anomaly investigation, hypothesis 10: does a REAL GPU kernel dispatch/eval (as opposed to
+// mere Metal device init or weight binding, both already tested and rejected) alter the ARM64
+// FPCR (floating-point control register -- rounding mode, flush-to-zero/denormal handling) in a
+// way that persists into this SAME process's later CPU scalar float math? Read directly via
+// inline asm, not inferred.
+static uint64_t moe_read_fpcr(void) {
+    uint64_t v;
+    __asm__ __volatile__("mrs %0, fpcr" : "=r"(v));
+    return v;
+}
+
+static uint64_t moe_af_raw_byte_hash(const uint8_t *af_blob, const MoeAFTensor *t) {
+    uint64_t h = 1469598103934665603ULL; // FNV-1a offset basis
+    long scale_bytes = t->E * t->out * t->ng * (long)sizeof(float);
+    const uint8_t *ranges[3] = { af_blob + t->packed_off, af_blob + t->scale_off, af_blob + t->bias_off };
+    long lens[3] = { t->packed_bytes, scale_bytes, scale_bytes };
+    for (int r = 0; r < 3; r++) {
+        for (long i = 0; i < lens[r]; i++) {
+            h ^= (uint64_t)ranges[r][i];
+            h *= 1099511628211ULL; // FNV-1a prime
+        }
+    }
+    return h;
+}
+
 static int run_moe_gpu_gqa_fused_gate(int argc, char **argv) {
     (void)argc; (void)argv;
     const char *gate_env = getenv("QWEN_MOE_GPU_GQA_FUSED");
@@ -7237,6 +7295,13 @@ static int run_moe_gpu_gqa_fused_gate(int argc, char **argv) {
     MoeF32Tensor *t_finalnorm = moe_find_f32("model.norm.weight");
     float *w_finalnorm = (float *)(g_moe_f32_blob + t_finalnorm->off);
 
+    const char *blobcheck = getenv("QWEN_MOE_GQA_DEBUG_BLOBCHECK");
+    if (blobcheck && blobcheck[0]) {
+        uint64_t h = moe_af_raw_byte_hash(af_blob, g_moe_lt[0].k_proj);
+        fprintf(stderr, "[blobcheck] layer0 k_proj raw bytes BEFORE bind: hash=%016llx\n",
+                (unsigned long long)h);
+    }
+
     int n_bound = 0;
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
@@ -7248,6 +7313,12 @@ static int run_moe_gpu_gqa_fused_gate(int argc, char **argv) {
         n_bound++;
     }
     fprintf(stderr, "[moe gpu gqa fused] bound %d/%d tensors to MLX\n", n_bound, g_moe_naf);
+
+    if (blobcheck && blobcheck[0]) {
+        uint64_t h = moe_af_raw_byte_hash(af_blob, g_moe_lt[0].k_proj);
+        fprintf(stderr, "[blobcheck] layer0 k_proj raw bytes AFTER bind:  hash=%016llx\n",
+                (unsigned long long)h);
+    }
 
     double attn_scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
     if (!mlx_gpu_gqa_config(MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_ROPE_THETA,
@@ -7297,10 +7368,35 @@ static int run_moe_gpu_gqa_fused_gate(int argc, char **argv) {
     int argmax_match = 0;
     double worst_gpu_vs_cpu = 0.0, worst_gpu_vs_truth = 0.0, worst_cpu_vs_truth = 0.0;
 
+    // V5j anomaly root-cause: QWEN_MOE_GQA_DEBUG_KVCHECK=1 checksums g_moe_K_flat/V_flat's
+    // FULL extent right after the CPU write and again after this position's GPU calls --
+    // isolates whether the GPU calls touch CPU heap memory at all, before chasing any
+    // specific mechanism. Off by default, zero cost when unset.
+    const char *kvcheck = getenv("QWEN_MOE_GQA_DEBUG_KVCHECK");
+
+    if (blobcheck && blobcheck[0]) {
+        fprintf(stderr, "[fpcr] BEFORE position loop (no GPU eval yet): fpcr=%016llx\n",
+                (unsigned long long)moe_read_fpcr());
+    }
+
     for (int pos = 0; pos < N; pos++) {
         int token = prompt_ids[pos];
+        if (blobcheck && blobcheck[0] && pos <= 2) {
+            fprintf(stderr, "[fpcr] pos %d BEFORE moe_forward_token: fpcr=%016llx\n",
+                    pos, (unsigned long long)moe_read_fpcr());
+        }
         moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, token, pos, cpu_logits,
                            NULL, NULL, NULL);
+
+        double kv_ck_a = 0.0, vv_ck_a = 0.0;
+        if (kvcheck && kvcheck[0]) {
+            size_t kn = (size_t)MOE_MAXLAYERS * MOE_MAXPOS * MOE_KROW;
+            size_t vn = (size_t)MOE_MAXLAYERS * MOE_MAXPOS * MOE_VROW;
+            for (size_t i = 0; i < kn; i++) kv_ck_a += fabs((double)g_moe_K_flat[i]);
+            for (size_t i = 0; i < vn; i++) vv_ck_a += fabs((double)g_moe_V_flat[i]);
+            fprintf(stderr, "[kvcheck] pos %d AFTER cpu write: K_sum=%.9f V_sum=%.9f\n",
+                    pos, kv_ck_a, vv_ck_a);
+        }
 
         for (int c = 0; c < MOE_HIDDEN; c++) x_embed[c] = moe_decode_af(af_blob, t_embed, 0, token, c);
         for (int l = 0; l < MOE_NL; l++) {
@@ -7322,10 +7418,28 @@ static int run_moe_gpu_gqa_fused_gate(int argc, char **argv) {
                                 "at pos %d layer %d\n", pos, l);
                 exit(1);
             }
+            if (blobcheck && blobcheck[0] && l == 0 && pos <= 2) {
+                uint64_t h = moe_af_raw_byte_hash(af_blob, g_moe_lt[0].k_proj);
+                fprintf(stderr, "[blobcheck] pos %d layer0 k_proj raw bytes AFTER gpu layer_step: "
+                                "hash=%016llx\n", pos, (unsigned long long)h);
+                fprintf(stderr, "[fpcr] pos %d AFTER layer0 gpu layer_step (first real eval if pos==0): "
+                                "fpcr=%016llx\n", pos, (unsigned long long)moe_read_fpcr());
+            }
         }
         if (!mlx_gpu_gqa_forward_finalize(w_finalnorm, gpu_logits)) {
             fprintf(stderr, "FATAL: [moe gpu gqa fused] mlx_gpu_gqa_forward_finalize failed at pos %d\n", pos);
             exit(1);
+        }
+
+        if (kvcheck && kvcheck[0]) {
+            size_t kn = (size_t)MOE_MAXLAYERS * MOE_MAXPOS * MOE_KROW;
+            size_t vn = (size_t)MOE_MAXLAYERS * MOE_MAXPOS * MOE_VROW;
+            double kv_ck_b = 0.0, vv_ck_b = 0.0;
+            for (size_t i = 0; i < kn; i++) kv_ck_b += fabs((double)g_moe_K_flat[i]);
+            for (size_t i = 0; i < vn; i++) vv_ck_b += fabs((double)g_moe_V_flat[i]);
+            fprintf(stderr, "[kvcheck] pos %d AFTER gpu calls:  K_sum=%.9f V_sum=%.9f "
+                            "(delta K=%.9e V=%.9e)\n",
+                    pos, kv_ck_b, vv_ck_b, kv_ck_b - kv_ck_a, vv_ck_b - vv_ck_a);
         }
 
         int cpu_argmax = 0, gpu_argmax = 0, ref_argmax = 0;
@@ -8801,6 +8915,17 @@ static int run_moe_verify_mode(int argc, char **argv) {
     fclose(probe);
 
     fprintf(stderr, "[engine] weights_moe/arch_config_moe.txt found -- MoE-3a verification mode\n");
+#ifdef QWEN_GPU_MLX
+    // V5j anomaly root-cause: QWEN_MOE_GQA_DEBUG_TRIGGER_MLX=1 does a MINIMAL real MLX/Metal
+    // op (same as mlx_gpu_available()'s own probe) with NO other GPU work at all, to test
+    // whether Metal/MLX device init alone (not any actual layer computation) changes this
+    // CPU-only driver's own scalar output -- isolates "Metal init touches process FPU state"
+    // from every other GPU-interaction hypothesis already tested.
+    if (getenv("QWEN_MOE_GQA_DEBUG_TRIGGER_MLX")) {
+        int ok = mlx_gpu_available();
+        fprintf(stderr, "[kvcheck-trigger] mlx_gpu_available() called standalone -> %d\n", ok);
+    }
+#endif
     char moe_dir[900];
     snprintf(moe_dir, sizeof moe_dir, "%s/weights_moe", dir);
 
@@ -8903,6 +9028,49 @@ static int run_moe_verify_mode(int argc, char **argv) {
     moe_resolve_layer_tensors();
     fprintf(stderr, "[moe check] all %d layers' tensors resolved\n", MOE_NL);
 
+    // V5j anomaly investigation, hypothesis 8 control point: C4 (this driver) never calls any
+    // GPU code at all, so this hash should be a fixed, mmap-only baseline to compare D5's own
+    // "BEFORE bind"/"AFTER bind"/"AFTER gpu layer_step" hashes against -- if they all match
+    // this value too, the raw bytes were never mutated and hypothesis 8 is REJECTED.
+#ifdef QWEN_GPU_MLX
+    if (MOE_ATTN_KIND == MOE_ATTN_GQA) {
+        const char *blobcheck_c4 = getenv("QWEN_MOE_GQA_DEBUG_BLOBCHECK");
+        if (blobcheck_c4 && blobcheck_c4[0]) {
+            uint64_t h = moe_af_raw_byte_hash(af_blob, g_moe_lt[0].k_proj);
+            fprintf(stderr, "[blobcheck-c4] layer0 k_proj raw bytes (no GPU ever touches this "
+                            "driver): hash=%016llx\n", (unsigned long long)h);
+        }
+    }
+#endif
+
+#ifdef QWEN_GPU_MLX
+    // V5j anomaly root-cause, hypothesis 9: does BINDING all weight tensors into MLX (real
+    // Metal buffer creation + GPU-visible memory allocation for the full 4.3GB blob) -- WITHOUT
+    // any actual layer compute/eval -- alone change this CPU-only driver's own scalar output?
+    // Isolates "heavy Metal/MLX init touches process state" from "actual GPU compute does."
+    if (MOE_ATTN_KIND == MOE_ATTN_GQA) {
+        const char *bindonly = getenv("QWEN_MOE_GQA_DEBUG_BINDONLY");
+        if (bindonly && bindonly[0]) {
+            if (!mlx_gpu_available()) {
+                fprintf(stderr, "FATAL: QWEN_MOE_GQA_DEBUG_BINDONLY=1 but MLX/Metal unavailable\n");
+                exit(1);
+            }
+            int n_bound = 0;
+            for (int i = 0; i < g_moe_naf; i++) {
+                MoeAFTensor *t = &g_moe_af[i];
+                if (!mlx_gpu_bind_af(af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
+                                      t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                    fprintf(stderr, "FATAL: [bindonly] bind failed for tensor %s\n", t->name);
+                    exit(1);
+                }
+                n_bound++;
+            }
+            fprintf(stderr, "[bindonly] bound %d/%d tensors to MLX, NO layer compute/eval done -- "
+                            "this driver's CPU path continues exactly as before\n", n_bound, g_moe_naf);
+        }
+    }
+#endif
+
     MoeAFTensor *t_embed = moe_find_af("model.embed_tokens");
     MoeAFTensor *t_lmhead = moe_find_af("lm_head");
     MoeF32Tensor *t_finalnorm = moe_find_f32("model.norm.weight");
@@ -8940,8 +9108,29 @@ static int run_moe_verify_mode(int argc, char **argv) {
     if (!routing_out) { perror("moe3a_c_routing.txt"); exit(1); }
 
     float *logits = malloc((size_t)MOE_VOCAB * sizeof(float));
+    // V5j anomaly root-cause: same QWEN_MOE_GQA_DEBUG_KVCHECK diagnostic as
+    // run_moe_gpu_gqa_fused_gate() -- lets the two independent CPU forward loops be
+    // compared position-by-position via direct diff of their own stderr output.
+    const char *kvcheck_c4 = getenv("QWEN_MOE_GQA_DEBUG_KVCHECK");
+#ifdef QWEN_GPU_MLX
+    {
+        const char *blobcheck_fpcr = getenv("QWEN_MOE_GQA_DEBUG_BLOBCHECK");
+        if (blobcheck_fpcr && blobcheck_fpcr[0]) {
+            fprintf(stderr, "[fpcr-c4] BEFORE position loop: fpcr=%016llx\n",
+                    (unsigned long long)moe_read_fpcr());
+        }
+    }
+#endif
     for (int pos = 0; pos < N; pos++) {
         moe_forward_token(af_blob, t_embed, t_lmhead, w_finalnorm, prompt_ids[pos], pos, logits, routing_out, NULL, NULL);
+        if (kvcheck_c4 && kvcheck_c4[0]) {
+            size_t kn = (size_t)MOE_MAXLAYERS * MOE_MAXPOS * MOE_KROW;
+            size_t vn = (size_t)MOE_MAXLAYERS * MOE_MAXPOS * MOE_VROW;
+            double kck = 0.0, vck = 0.0;
+            for (size_t i = 0; i < kn; i++) kck += fabs((double)g_moe_K_flat[i]);
+            for (size_t i = 0; i < vn; i++) vck += fabs((double)g_moe_V_flat[i]);
+            fprintf(stderr, "[kvcheck-c4] pos %d: K_sum=%.9f V_sum=%.9f\n", pos, kck, vck);
+        }
         fwrite(logits, sizeof(float), MOE_VOCAB, logits_out);
         int argmax = 0; float best = logits[0];
         for (int v = 1; v < MOE_VOCAB; v++) if (logits[v] > best) { best = logits[v]; argmax = v; }
