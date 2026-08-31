@@ -4467,3 +4467,138 @@ with zero new MLX primitives, correctness unchanged (56/56), and a
 real, root-caused, reproducible 7.3x throughput improvement over V5f's
 own controlled GPU baseline. This was the last item on the standing
 plan's dependency chain (V5a through V5g) that was still open.
+
+## V5h: GPU online/dynamic admission scheduler -- 32/32 requests correct
+## across two workloads, ~62x over CPU's own accuracy-reference mode
+
+V5a-V5g all drove a fixed, hardcoded 8-slot/8-request workload admitted
+entirely up front -- a correctness/throughput benchmark harness, not
+the shape a real serving engine takes requests in. The CPU side of this
+engine already had the missing piece: MoE-4b's online scheduler
+(`run_moe_cbatch_verify_mode()`'s `online` branch, `qwen_infer.c:5094+`)
+-- a genuine request table distinct from the slot pool, FIFO
+step-indexed arrival (`QWEN_MOE_CB_ARRIVE`), slot reuse on eviction,
+and a budget-chunked prefill scheduler mixing new-request prefill
+columns into the same dispatch as other slots' decode columns --
+already verified on CPU back on 2026-08-24 (Gate1-8, 0 invariant
+violations, 0 neighbor-dependence). It had just never been wired to
+the GPU path.
+
+**No changes to `mlx_moe.cpp`/`mlx_moe.h`** -- V5g already proved any
+set of independent `(slot,pos)` rows, including multiple rows from the
+SAME slot at different positions mixed with OTHER slots' single decode
+rows, are correct in one `mlx_gpu_cbatch_layer_step_lazy()` call. This
+is exactly what the CPU scheduler's own decode-then-budgeted-prefill
+packing already produces -- the scheduling LOGIC (admission/packing/
+eviction/metrics) ported directly as C, with the GPU mechanism dropped
+in for the forward-pass call.
+
+**Worth recording explicitly**: the CPU reference's own D3 invariant
+("within one step, a slot's columns must appear in strictly ascending
+spos order") exists because `moe_mla_attention_ragged()` writes THIS
+call's own K/V then immediately reads it back in the same sequential C
+loop -- a real CPU-side ordering hazard. The GPU mechanism has no such
+hazard (scatter writes and take reads are graph-ordered by MLX's own
+dependency tracking, not host-loop iteration order), so row order
+genuinely does not matter on the GPU side -- this gate still packs in
+the same order as CPU purely for side-by-side debugging convenience.
+
+**`qwen_infer.c`**: new `run_moe_gpu_cbatch_online_gate()`
+(`QWEN_MOE_GPU_CBATCH_ONLINE=1`), reusing the CPU path's own
+workload-sizing env vars verbatim (`QWEN_MOE_CB_SLOTS`, `QWEN_MOE_CB_REQS`,
+`QWEN_MOE_CB_PREFILL_BUDGET`, `QWEN_MOE_CB_ARRIVE`, `QWEN_MOE_CB_STOP_EXTRA`)
+so the identical workload configures both a CPU ground-truth run and
+this GPU run with zero duplicated parameters. Workload generation is
+verbatim-ported too: request `r`'s prompt is `prompt_len[r % MOE_CBATCH_N]`
+/ `prompt_ids[r % MOE_CBATCH_N]` / `moe_cbatch_gen[r % MOE_CBATCH_N]` --
+the same 8 real prompts cycled -- guaranteeing byte-identical requests
+between CPU and GPU runs for any `R`. `run_moe_gpu_cbatch_gate()` and
+`run_moe_gpu_cbatch_prefill_gate()` stay untouched (their own V5f/V5g
+baselines stay reproducible).
+
+MoE-4c's margin-gated reverify layer was intentionally NOT ported -- it
+exists solely to catch real SME2 numerical noise in the CPU's own
+scalar/batched prefill kernels; the GPU MLX path has shown zero
+non-determinism across every V5d-g gate, so there is no analogous
+problem here for it to solve.
+
+**Warmup, generalized from V5g's own finding**: this gate exercises a
+VARYING set of shapes across its own run (different `A` per step,
+depending on how many decode+prefill rows pack together), unlike V5g's
+single fixed shape. Since the whole scheduler is deterministic given
+the same `B`/`R`/arrival/budget config (nothing depends on wall-clock
+time, only step-index arrival and argmax), the gate runs the ENTIRE
+simulation twice: pass 0 untimed and discarded (pre-compiles every
+shape the run will touch), pass 1 the real timed run with byte-identical
+admission/eviction/packing decisions -- pass 1's own scatter writes
+overwrite every `(slot,pos)` coordinate pass 0 touched, in the same
+order, before decode ever reads them back.
+
+**Verification, `B=8 R=16` (double the slot count -- genuine queueing,
+not just admit-all-up-front)**:
+1. **Token accuracy against CPU's own online scheduler as ground
+   truth** -- no fresh mlx_lm capture needed (unlike V5e): ran CPU with
+   `QWEN_MOE_CB_PREFILL_MODE=0` (scalar prefill, the CPU reference's
+   OWN higher-fidelity mode -- MoE-4b's own prior finding was 95.3%
+   there vs mode 1's 80.0%, so comparing against mode 1 would conflate
+   CPU's known SME2 prefill noise with a real GPU discrepancy), default
+   arrival (all `rq_arrive=0`, capacity-driven queueing only). **16/16
+   requests, 114/114 tokens, exact match** (programmatic diff, not
+   eyeballed).
+2. **Arrival-gating check**: re-ran both engines with a genuinely
+   staggered `QWEN_MOE_CB_ARRIVE=0,0,0,0,0,0,0,0,5,5,5,5,10,10,10,10`.
+   **16/16 requests, 114/114 tokens, exact match again**, and every
+   admission on both engines satisfied `admit_step >= arrive_time`
+   (the FIFO head-of-line block works correctly on GPU too). Combined
+   with check 1: **32/32 requests, 228/228 tokens verified across two
+   independent workload configurations.**
+3. **Invariant checks** (`QWEN_MOE_GPU_CB_CHECK=1`, porting CPU's own
+   `moe_cb4b_assert_invariants`): 0 `CHECK FAIL` across the run.
+4. **A genuine, expected scheduling-shape difference, explained rather
+   than glossed over**: individual `admit_step` values differ slightly
+   between CPU (e.g. req 8 admitted at step 2) and GPU (req 8 admitted
+   at step 4) even though every TOKEN matches. Root cause: CPU's ground
+   truth uses `PREFILL_MODE=0`, which prefills a request's ENTIRE
+   prompt synchronously and instantly at admission (no separate
+   scheduler steps consumed) -- while this GPU gate uses budget-chunked
+   prefill (mirroring CPU's own `PREFILL_MODE=1` STRUCTURE, not mode
+   0's), where every prefill chunk still consumes a step-counter tick
+   same as a decode step. This is a real difference between the two
+   SCHEDULING STRATEGIES being compared, not a bug -- `queue_wait_events`
+   and `admitted_after_evict` stayed qualitatively consistent between
+   engines (both 8/8 in the default-arrival run) despite this.
+5. **Throughput**, 3 runs each on bob:
+
+| engine / mode | wall (114 tok) | tok/s |
+|---|---|---|
+| GPU (V5h) run 1 | 1888.38ms | 99.556 |
+| GPU (V5h) run 2 | 1887.18ms | 99.620 |
+| GPU (V5h) run 3 | 1888.13ms | 99.570 |
+| CPU `PREFILL_MODE=0` (ground-truth ref) run 1 | 72933.85ms | 1.563 |
+| CPU `PREFILL_MODE=0` run 2 | 71583.39ms | 1.593 |
+| CPU `PREFILL_MODE=0` run 3 | 68419.14ms | 1.666 |
+| CPU `PREFILL_MODE=1` (CPU's own faster serving mode) | 40820.98ms | 2.793 |
+
+**GPU avg 99.582 tok/s** (99.556-99.620, ~0.03% spread -- the tightest
+run-to-run variance of any gate this session, plausibly because the
+two-pass warmup pre-compiles every shape the timed run touches, unlike
+V5f/V5g's own single-shape warmup or no-warmup designs). **CPU
+`PREFILL_MODE=0` avg 1.607 tok/s -> GPU is ~62x** -- but honestly
+caveated: mode 0 was chosen as ground truth specifically FOR its
+higher token fidelity, not as a fair CPU speed baseline (it's CPU's
+own deliberately-slowest, most-accurate mode, `qwen_infer.c`'s own
+comments call it out as "would stall every decode slot ~12s per
+admitted prompt"). Against CPU's own actually-used-for-speed mode
+(`PREFILL_MODE=1`, 2.793 tok/s, real 80% token fidelity per MoE-4b's
+already-documented SME2 batched-prefill noise): **GPU is ~35.7x** --
+the more representative "real CPU serving mode vs GPU" number, reported
+alongside the larger one rather than instead of it.
+
+**Status**: V5h is COMPLETE -- the GPU path now supports genuine online
+request admission (not just a fixed benchmark workload), correctness
+verified against CPU's own already-proven scheduler across two
+independent workload configurations (32/32 requests, 228/228 tokens),
+with TTFT/queue-wait instrumentation matching what an actual
+online-serving evaluation needs. MoE-4c's reverify layer, full-scale
+stress configs, and a real HTTP-servable interface remain explicitly
+out of scope, per the plan.

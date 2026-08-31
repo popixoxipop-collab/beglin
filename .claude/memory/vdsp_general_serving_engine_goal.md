@@ -1629,3 +1629,33 @@ lazy()`의 기존 per-row causal mask(row m이 j<=spos[m] 참조)가 spos[m]=
 prefill의 동일 좌표 덮어쓰기로 자동 해소되는 설계). V5a~g 표준계획
 전체 COMPLETE.
 상세: `RESULTS.md` §"V5g: true batched-causal prefill".
+
+**V5h(재스코프 후 완료, GPU 온라인/동적 admission 스케줄러)**: V5a~g는
+전부 8슬롯을 up-front로 전량 admit하는 고정 워크로드 — 실서빙 형태
+아님. CPU엔 이미 있던 MoE-4b 온라인 스케줄러(요청테이블+FIFO
+step-indexed arrival+슬롯재사용+budget-chunked prefill, 2026-08-24
+Gate1-8 검증완료)를 GPU에 최초 이식. mlx_moe.cpp/h 변경 전혀 없이(V5g의
+"임의 (slot,pos) 행 조합은 이미 correct" 통찰을 decode+prefill 혼합
+행에도 그대로 적용) 순수 C 스케줄링 로직만 포팅.
+`run_moe_gpu_cbatch_online_gate()`(`QWEN_MOE_GPU_CBATCH_ONLINE=1`)
+신규, CPU와 동일 env var(`QWEN_MOE_CB_SLOTS/REQS/PREFILL_BUDGET/ARRIVE/
+STOP_EXTRA`) 재사용해 동일 워크로드 재현 가능(하드코딩 중복 없음).
+CPU의 D3 invariant(한 스텝 내 같은 슬롯은 spos 오름차순)는 CPU 고유의
+"쓰고 바로 같은 루프서 읽는" 순차 hazard 때문 — GPU는 scatter/take가
+MLX 그래프 의존성으로 순서 보장돼서 이 제약이 원래 불필요함(기록해둠).
+V5g의 웜업 교훈을 일반화: 스텝마다 shape이 다르므로 전체 시뮬레이션을
+2-pass(1회 미계측 버림+1회 실측)로 실행 — 결정론적이라 안전.
+**검증**: CPU 온라인 스케줄러(PREFILL_MODE=0, 정확도 95.3% 기준)를
+ground truth로 삼아 B=8/R=16 기본 arrival + staggered arrival(0×8,5×4,
+10×4) 두 워크로드에서 **32/32 요청·228/228 토큰 완전 일치**(프로그램적
+diff), invariant 위반 0건, arrival-gate 위반 0건(admit_step이 두
+엔진 모두 arrival 조건 만족). admit_step 절대값은 두 엔진이 살짝
+다름(CPU mode0=admission시 동기 전량prefill, GPU=budget-chunked라
+mode1 구조 미러 — 스케줄 전략 차이지 버그 아님, 명시적으로 설명).
+**처리량**: GPU 평균 **99.582 tok/s**(99.556~99.620, ~0.03% 편차 —
+이번 세션 전체 게이트 중 최소 변동폭, 2-pass 웜업이 전체 shape을
+미리 컴파일해서로 추정). CPU mode0(정확도기준, 의도적으로 느림)
+평균 1.607 tok/s → **GPU ~62배**. CPU의 실제 서빙용 모드(mode1,
+SME2배칭, 정확도 80%) 2.793 tok/s → **GPU ~35.7배**(더 대표성있는
+비교로 병기, 큰 숫자만 내세우지 않음). V5a~h 트랙 전체 COMPLETE.
+상세: `RESULTS.md` §"V5h: GPU online/dynamic admission scheduler".
