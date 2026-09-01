@@ -6612,9 +6612,35 @@ tested this round). Real DeepSeek-V2-Lite AF-blob checkpoint
   (manifest line 1) -- wrong file, or not a raw-int32 prompt file?:
   token[2] = 99999999 out of vocab range [0,102400)
   ```
-All four call sites are now verified by real execution, not just
-code inspection -- the GPU-guarded GQA twin is the one remaining gap,
-deferred until a GPU build is actually needed for other work.
+**GQA CPU twin, GPU build (closes the last gap)**: built a fresh
+`clang++`/MLX-linked binary (`qwen_infer.c -DQWEN_GPU_MLX`, plain
+`clang` for the compile step per this project's established
+convention -- only the link step needs `clang++`; linked against
+`mlx_moe_v5j.o`, unmodified since V5g per this whole track's own
+"mlx_moe.cpp changed 0 times" pattern, plus the same KleidiAI/gguf/
+safetensors objects as the dense build) to reach
+`run_moe_gqa_cbatch_online_cpu_gate()`
+(`QWEN_MOE_GQA_CBATCH_ONLINE_CPU=1`, real OLMoE AF-blob at
+`/Users/bob/vdsp_olmoe_full_weights`). Three real runs:
+- No manifest (default corpus): clean baseline, B=4/R=12 online
+  scheduler completes normally with real generated tokens
+  (`steps=26 ... tok/s=4.235`).
+- Valid manifest (ids `510,22116,310,253`, all in-range): loads
+  cleanly (`loaded 1-entry prompt manifest`), generates real output
+  across 5 admitted requests. No regression.
+- Same file with one id corrupted to `99999999`: fails immediately
+  with the identical rich diagnostic pattern, this time reporting
+  OLMoE's own vocab bound:
+  ```
+  FATAL: [moe cbatch manifest] '/tmp/gqa_manifest_bad_prompt.i32'
+  (manifest line 1) -- wrong file, or not a raw-int32 prompt file?:
+  token[2] = 99999999 out of vocab range [0,50304)
+  ```
+
+**All four MoE token-id loading call sites are now verified by real
+execution** -- across two architectures (OLMoE/GQA, DeepSeek-V2-Lite/
+MLA) and two build modes (dense-only CPU, GPU/MLX) -- not just code
+inspection. No remaining gaps in D-vocab-guard-1's coverage.
 
 ## DeepSeek-V2-Lite port of the router-margin profiler -- OLMoE's
 ## early-layer pattern does NOT generalize

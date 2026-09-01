@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-09-01T13:25:00.000Z
+  modified: 2026-09-01T13:45:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -2289,3 +2289,21 @@ MLA generate게이트+run_moe_safetensors_verify_mode)는 이제 실행
 
 상세: `RESULTS.md` "D-vocab-guard-1: generalized MoE token-id
 vocab-range check" 섹션(매니페스트 재검증 서브섹션 포함).
+
+★★★★★★**GQA CPU twin도 GPU 빌드해서 최종 완결(2026-09-01, 사용자
+재요구)**: `clang++ -DQWEN_GPU_MLX`(컴파일 자체는 여전히 plain
+`clang`, 링크만 `clang++` — 이 프로젝트 확립된 관행) + `mlx_moe_v5j.o`
+(V5g 이후 무변경, "mlx_moe.cpp 변경 0회" 패턴 그대로) 링크해
+`run_moe_gqa_cbatch_online_cpu_gate()`(9587, 실제로는 이름과 달리
+`QWEN_GPU_MLX` 가드 안)에 도달. 실 OLMoE AF-blob
+(`/Users/bob/vdsp_olmoe_full_weights`)로 3회 실행: (1) 매니페스트
+없음 — B=4/R=12 온라인스케줄러 정상완주, 실생성토큰(`tok/s=4.235`),
+(2) 유효 매니페스트(`510,22116,310,253`) — 정상 로드+5개 요청 실생성,
+회귀無, (3) 토큰 하나 99999999로 오염 — `FATAL: [moe cbatch
+manifest] '...' (manifest line 1) -- wrong file, or not a raw-int32
+prompt file?: token[2] = 99999999 out of vocab range [0,50304)`로
+OLMoE 자신의 vocab bound(50304)까지 정확히 반영해 잡힘.
+
+**D-vocab-guard-1의 4개 지점 전부가 이제 실제 실행으로 검증
+완료**(2개 아키텍처: OLMoE-GQA/DeepSeek-MLA × 2개 빌드모드:
+dense-CPU/GPU-MLX) — 코드검사만으로 남겨둔 구멍 0개.
