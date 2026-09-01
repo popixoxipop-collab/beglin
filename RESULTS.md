@@ -6428,7 +6428,23 @@ combos, at zero cost to those combos (promoting an already-safe
 combination to bits=16 doesn't break anything, it's just unnecessary
 memory). **This closes the "unswept layers" gap completely** -- every
 OLMoE layer's attention roles have now been measured, not assumed by
-extrapolation. Data: macstudio
+extrapolation.
+
+**Independent re-verification** (user pushback: re-check the
+6-layer numbers directly against raw data, not just the script's own
+printed summary): loaded the raw JSON on macstudio and recomputed
+every (layer, role) collapse point from scratch in a fresh script,
+for both `router_flip_rate` and `output_flip_rate` at all four bit
+widths, across all 24 combinations. Result: **exact match** to the
+numbers above -- 21/24 router, 18/24 output, identical exception
+list (layer 8/v_proj, layer 10/k_proj, layer 11/q_proj+k_proj, layer
+13/q_proj+k_proj+v_proj). Also confirmed this sweep is a fully
+separate code path from the C engine's `run_moe_safetensors_verify_mode()`
+default-corpus bug (D-vocab-guard-1 above) -- this is a pure-Python
+`mlx_lm` run against real tokenized text, `n_prompts=60`,
+`total_positions=1453`, unaffected by that bug. Full 24-combo table
+(router/output flip rate at all 4 bit widths each) reported to the
+user directly, not just the collapse-point abstraction. Data: macstudio
 `/Users/eoe/vdsp_olmoe_full_weights/moe_precision_sweep_remaining_layers.json`.
 
 ## Synthesis: blanket all-layer attention promotion, not selective, and why

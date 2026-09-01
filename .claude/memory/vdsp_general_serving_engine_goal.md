@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-09-01T13:45:00.000Z
+  modified: 2026-09-01T14:00:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -2307,3 +2307,17 @@ OLMoE 자신의 vocab bound(50304)까지 정확히 반영해 잡힘.
 **D-vocab-guard-1의 4개 지점 전부가 이제 실제 실행으로 검증
 완료**(2개 아키텍처: OLMoE-GQA/DeepSeek-MLA × 2개 빌드모드:
 dense-CPU/GPU-MLX) — 코드검사만으로 남겨둔 구멍 0개.
+
+★★★★★★**미스윕 레이어 6,7,8,10,11,13 output-flip 독립 재검증
+완료(2026-09-01)**: "output-flip까지 전부 재확인해줘" → macstudio에서
+원본 JSON을 직접 로드해 24개 (layer,role) 조합 전부의 router_flip_rate
+/output_flip_rate를 4개 bit폭 전부 새 스크립트로 재계산 — **기존
+보고와 완전히 일치**(router 21/24, output 18/24, 예외 목록도 동일:
+layer8/v_proj, layer10/k_proj, layer11/q_proj+k_proj, layer13/
+q_proj+k_proj+v_proj). 이 스윕은 C엔진 `run_moe_safetensors_verify_
+mode()` 기본코퍼스 버그(D-vocab-guard-1)와 **완전히 무관한 별도 경로**
+(순수 Python mlx_lm 직접실행, n_prompts=60, total_positions=1453)임도
+확인 — 데이터 오염 가능성 없음. 24개 조합 전체 표(4비트폭×2지표)를
+사용자에게 직접 보고, collapse-point 요약만이 아니라 raw flip rate
+전부 노출. RESULTS.md "D-roadmap-2 Track B: final layer sweep" 섹션에
+재검증 서브섹션 추가.
