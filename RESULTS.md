@@ -7066,3 +7066,75 @@ distribution shape. Both matter, but they don't predict each other.
   pattern. Shared-experts stays untouched either way (structurally
   confirmed pointless). Data: macstudio
   `/Users/eoe/deepseek_precision_intervention_full26.json`.
+
+## D-deepseek-precint-3: precise config selected -- deployment artifact
+
+User chose the precise tier over the simple blanket-16 alternative.
+Generated directly from `deepseek_precision_intervention_full26.json`'s
+own per-(layer,role) collapse points -- not hand-tuned -- a real,
+usable `QWEN_MOE_ROLE_BITS` file, `deepseek_role_bits_precise.txt`
+(104 lines, format `<role> <layer> <bits>` matching
+`moe_load_role_bits()`'s own parser exactly): 76 lines at `bits=16`,
+28 at `bits=8` (27% of role-layer combos stay at the cheaper tier
+instead of blanket-16). Saved to `/tmp/deepseek_role_bits_precise.txt`
+on bob, matching this project's own established convention for
+config-file artifacts (e.g. `/tmp/role_bits_16_all.txt` for OLMoE's
+blanket promotion) -- not committed to the git repo itself.
+
+```
+q_proj 1 8              kv_a_proj_with_mqa 1 16    kv_b_proj 1 16      o_proj 1 16
+q_proj 2 16             kv_a_proj_with_mqa 2 16    kv_b_proj 2 16      o_proj 2 16
+q_proj 3 16             kv_a_proj_with_mqa 3 16    kv_b_proj 3 16      o_proj 3 16
+q_proj 4 16             kv_a_proj_with_mqa 4 16    kv_b_proj 4 16      o_proj 4 16
+q_proj 5 8              kv_a_proj_with_mqa 5 16    kv_b_proj 5 16      o_proj 5 16
+q_proj 6 16             kv_a_proj_with_mqa 6 16    kv_b_proj 6 16      o_proj 6 16
+q_proj 7 8              kv_a_proj_with_mqa 7 16    kv_b_proj 7 8       o_proj 7 16
+q_proj 8 8              kv_a_proj_with_mqa 8 16    kv_b_proj 8 16      o_proj 8 16
+q_proj 9 16             kv_a_proj_with_mqa 9 16    kv_b_proj 9 16      o_proj 9 16
+q_proj 10 16            kv_a_proj_with_mqa 10 16   kv_b_proj 10 16     o_proj 10 16
+q_proj 11 16            kv_a_proj_with_mqa 11 16   kv_b_proj 11 16     o_proj 11 16
+q_proj 12 16            kv_a_proj_with_mqa 12 16   kv_b_proj 12 16     o_proj 12 16
+q_proj 13 16            kv_a_proj_with_mqa 13 16   kv_b_proj 13 16     o_proj 13 16
+q_proj 14 8             kv_a_proj_with_mqa 14 16   kv_b_proj 14 16     o_proj 14 16
+q_proj 15 16            kv_a_proj_with_mqa 15 16   kv_b_proj 15 8      o_proj 15 16
+q_proj 16 16            kv_a_proj_with_mqa 16 16   kv_b_proj 16 8      o_proj 16 16
+q_proj 17 8             kv_a_proj_with_mqa 17 16   kv_b_proj 17 8      o_proj 17 16
+q_proj 18 16            kv_a_proj_with_mqa 18 16   kv_b_proj 18 8      o_proj 18 16
+q_proj 19 8             kv_a_proj_with_mqa 19 16   kv_b_proj 19 16     o_proj 19 16
+q_proj 20 16            kv_a_proj_with_mqa 20 16   kv_b_proj 20 16     o_proj 20 16
+q_proj 21 16            kv_a_proj_with_mqa 21 8    kv_b_proj 21 8      o_proj 21 16
+q_proj 22 8             kv_a_proj_with_mqa 22 16   kv_b_proj 22 16     o_proj 22 8
+q_proj 23 16            kv_a_proj_with_mqa 23 8    kv_b_proj 23 16     o_proj 23 16
+q_proj 24 8             kv_a_proj_with_mqa 24 8    kv_b_proj 24 8      o_proj 24 8
+q_proj 25 8             kv_a_proj_with_mqa 25 16   kv_b_proj 25 8      o_proj 25 8
+q_proj 26 8             kv_a_proj_with_mqa 26 8    kv_b_proj 26 8      o_proj 26 8
+```
+(one `<role> <layer> <bits>` triple per cell above, reformatted into
+a 4-column grid purely for readability here -- the actual file is one
+triple per line, 104 lines. Full file also copied to this session's
+scratchpad and referenced here for reproducibility.)
+
+**Live C-engine end-to-end validation: not run this round, feasibility
+checked and blocked, documented honestly rather than skipped
+silently.** Checked whether `mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx`
+(the checkpoint this whole DeepSeek investigation line has used) could
+serve as a drop-in `QWEN_MOE_SAFETENSORS` target the way
+`allenai/OLMoE-1B-7B-0125` did for OLMoE's Track A validation. It is
+technically safetensors-formatted (`model.safetensors.index.json` +
+sharded `.safetensors` files) but inspecting its `weight_map` shows
+each linear layer stored as an MLX-native quantized triple
+(`<name>.weight` packed uint32 + `<name>.scales` + `<name>.biases`),
+not the single dequantizable tensor per weight this engine's
+`safetensors_dequant_row()` already knows how to read (F32/F16/BF16,
+or GGUF-style quant blobs). Wiring up MLX's own quantization layout is
+real new decoder work, not a config change -- out of scope for "pick
+the precise config," which is what was actually asked. The other
+option, a genuine bf16 HF `deepseek-ai/DeepSeek-V2-Lite` checkpoint,
+isn't cached (only `config.json`-level metadata, confirmed earlier in
+D-deepseek-precint-1) and would need a ~31GB download. Neither blocker
+was worked around silently -- this precise config is Python-measured
+(same methodology and honesty caveat as D-deepseek-precint-1/2: RELATIVE
+to the already-4bit-served baseline, not an absolute bf16 ground truth)
+and ready to deploy, but not yet C-engine-verified end-to-end the way
+OLMoE's blanket promotion was. Flagged as the next step if DeepSeek
+precision tuning is pursued further, not silently treated as done.

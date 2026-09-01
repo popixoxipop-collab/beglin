@@ -2451,3 +2451,24 @@ kv_b_proj 1/26. **margin 위험도 랭킹과 attention 취약도 사이에
 쉬움). shared-experts는 어느 쪽이든 손대지 않음(효과 없음 확정).
 RESULTS.md "D-deepseek-precint-2" 섹션. 데이터: macstudio
 `/Users/eoe/deepseek_precision_intervention_full26.json`.
+
+★★★★★★**D-deepseek-precint-3(2026-09-01) — 정밀 버전 선택, 실제
+config 파일 산출**: 사용자가 정밀 버전 선택 → `deepseek_precision_
+intervention_full26.json`의 role별 collapse point 그대로
+`deepseek_role_bits_precise.txt`(104줄, `<role> <layer> <bits>`,
+`moe_load_role_bits()` 파서 포맷과 정확히 일치) 생성 — bits=16 76줄
++ bits=8 28줄(27%가 더 싼 티어로 충분). bob `/tmp/`에 저장(OLMoE
+`role_bits_16_all.txt`와 같은 관행, git커밋 안 함).
+
+**실 C엔진 end-to-end 검증은 이번 라운드 미실시 — feasibility
+확인 후 명시적으로 막힘**: `mlx-community/DeepSeek-V2-Lite-Chat-
+4bit-mlx`(이 조사 라인 전체가 써온 체크포인트)가 safetensors
+포맷이긴 하나 `weight_map` 확인 결과 각 텐서가 MLX 자체 양자화
+3-텐서(.weight uint32packed+.scales+.biases) 구조라 `safetensors_
+dequant_row()`가 이미 아는 포맷(F32/F16/BF16/GGUF식)이 아님 —
+새 디코더가 필요한 진짜 엔지니어링, "정밀 config 선택"이라는
+요청 범위 밖. bf16 원본(`deepseek-ai/DeepSeek-V2-Lite`)은 config만
+캐시돼있고 ~31GB 다운로드 필요(D-precint-1에서 이미 확인됨).
+조용히 우회하지 않고 정직하게 "미검증, 배포 준비는 됐지만 OLMoE
+블랭킷 승격처럼 C엔진 실측까지는 안 끝남"으로 명시. RESULTS.md
+"D-deepseek-precint-3" 섹션.
