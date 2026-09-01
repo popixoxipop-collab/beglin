@@ -6534,6 +6534,66 @@ question left open in the Synthesis section above. This closes the
 "inconclusive on directionality" gap noted there without relying on
 the corrupted corpus.
 
+## D-vocab-guard-1: generalized MoE token-id vocab-range check
+
+User pushback after the bug report above: the vocab-range check
+already existed (`moe_cbatch_load_manifest()`, added for the V5l
+manifest loader) -- why did `run_moe_safetensors_verify_mode()`'s
+default corpus slip past it? Answer: it didn't slip past anything --
+that check only ever existed at ONE of four MoE token-id loading call
+sites, not as a shared layer. Audited every id-loading site in the
+file:
+
+```
+moe_cbatch_load_manifest()          -- HAD the check (V5l, 123a3c2)
+run_moe_gpu_generate_gate()  (MLA)  -- no check at all
+run_moe_gpu_gqa_generate_gate() (GQA) -- no check at all
+run_moe_safetensors_verify_mode()   -- no check at all (not even load_ids();
+                                        its own inline prompt_ids_default[]/
+                                        QWEN_MOE_PROMPT_IDS atoi() parsing)
+```
+
+`load_ids()` itself (`qwen_infer.c:2156`) has zero validation of any
+kind -- it's a raw `fread()` of int32s. The check was bolted onto the
+manifest loader's own call site as caller-side logic, not centralized.
+
+**Fix**: added `moe_check_ids_vocab_range(ctx, ids, n)`
+(`qwen_infer.c:2730`, right after `MOE_VOCAB`'s declaration so it's
+visible to every downstream site) as the one shared implementation,
+and wired it into all four sites -- the manifest loader (replacing its
+inline loop, same diagnostic message preserved via a `snprintf`'d
+context string), both GPU generate gates (previously unchecked), and
+`run_moe_safetensors_verify_mode()` itself (previously unchecked,
+where the actual bug lived).
+
+**Build note (own mistake, caught and fixed before shipping)**: first
+rebuild attempt added `-march=armv9-a+sme2` to the plain-C compile of
+`qwen_infer.c` (guessing at flags rather than checking what the
+existing build actually used) -- produced a binary that SIGILL'd
+before any output, on ANY input, unrelated to this change's own logic.
+Root cause: `qwen_infer.c` itself needs no explicit `-march` at all
+(SME2 codegen lives entirely in the separately-compiled, already-flag-
+correct KleidiAI `.o` files this file only links against) -- recompiling
+natively on the target M4 hardware with no `-march` override fixed it.
+Caught via direct execution (zero output, SIGILL) before mistaking the
+build for done, not assumed from a clean compile alone.
+
+**Verification**: rebuilt `/tmp/qwen_f16tier_bin` from the fixed
+source, three real runs on bob against `/Users/bob/olmoe_1b7b_hf`:
+(1) valid corpus (`510,22116,...`), no role-bits override -- logits
+byte-identical to the pre-fix baseline (regression clean); (2) same
+valid corpus + blanket `bits=16` promotion -- logits byte-identical to
+the pre-fix promoted run (regression clean); (3) the **original
+default corpus, no override** -- now fails fast and clearly instead of
+silently corrupting:
+```
+FATAL: [moe st verify]: token[0] = 100000 out of vocab range [0,50304)
+```
+The manifest loader's own call site (unchanged logic, just extracted)
+was verified by compile success and code inspection, not re-run
+end-to-end this round -- lower-risk mechanical extraction, not new
+logic, but noted as a lighter verification tier than the other three.
+
 ## DeepSeek-V2-Lite port of the router-margin profiler -- OLMoE's
 ## early-layer pattern does NOT generalize
 

@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-09-01T12:20:00.000Z
+  modified: 2026-09-01T13:05:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -2237,3 +2237,35 @@ bits=16 필요** — 예외는 여전히 깊은 레이어(11,13)에 흩어져 �
 **(3)(4)는 이번 라운드 범위 밖**(사용자 명시) — DeepSeek 원인규명은
 향후 아키텍처별 설계 착수 시점에, 런타임 메커니즘은 D-roadmap-3가
 이미 두 번 축소됐으므로 재정당화 없이는 미착수.
+
+★★★★★★**D-vocab-guard-1(2026-09-01) — 일반화된 vocab-range 필터
+계층**: 사용자가 "필터링이 왜 한 경로에만 적용됐냐"고 반문 →
+전체 4개 MoE 토큰-id 로딩 지점을 감사한 결과 vocab-range 검사가
+`moe_cbatch_load_manifest()`(V5l, `123a3c2`) 단 한 곳에만 캐스터사이드
+로 붙어있었고, `load_ids()` 자체엔 검증이 전혀 없으며(raw fread),
+나머지 세 지점(MLA/GQA GPU generate 게이트, 그리고 버그의 실제
+발원지인 `run_moe_safetensors_verify_mode()`의 자체 인라인 파싱)은
+무방비였음을 확인. `moe_check_ids_vocab_range(ctx,ids,n)` 공유 함수
+(`qwen_infer.c:2730`, MOE_VOCAB 선언 직후)를 신설해 4곳 전부 배선.
+
+**빌드 중 자기실수 발견+즉시수정**: 재컴파일 1차시도에서
+`-march=armv9-a+sme2`를 임의로 추측해 붙였다가 **모든 입력에서
+SIGILL로 즉시 크래시**(qwen_infer.c 자체엔 SME2 코드젠이 불필요 —
+SME2는 이미 올바른 플래그로 빌드된 KleidiAI .o 파일에만 있고
+qwen_infer.c는 그걸 링크만 함, native M4에서 -march 없이 재컴파일해
+해결). "컴파일 성공=완료"로 착각하지 않고 실제 실행(0바이트 출력+
+SIGILL)으로 잡아냄 — `feedback_codegen_compile_check_insufficient`
+교훈과 정확히 같은 패턴.
+
+**3중 검증**: (1) 유효코퍼스+기본 int8 — 수정 전과 로짓 byte-identical
+(회귀無), (2) 유효코퍼스+블랭킷 bits=16 — 마찬가지로 byte-identical,
+(3) **원래 문제의 기본 코퍼스(오버라이드 없음)** — 이제
+`FATAL: [moe st verify]: token[0] = 100000 out of vocab range [0,50304)`
+로 깔끔하게 즉시 실패(이전엔 조용히 망가진 출력을 냈음). 매니페스트
+로더 자체는 로직 무변경 추출이라 컴파일 성공+코드검사로만 확인,
+end-to-end 재실행은 안 함(리스크가 낮은 기계적 리팩터로 판단, 다른
+3곳보다 검증 강도가 약함을 정직하게 명시).
+
+`/tmp/qwen_f16tier_bin`을 검증된 신규 바이너리로 교체 완료. 상세:
+`RESULTS.md` "D-vocab-guard-1: generalized MoE token-id vocab-range
+check" 섹션.

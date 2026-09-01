@@ -2726,6 +2726,28 @@ static double moe_cfg_get_opt(const char *path, const char *key, double def) {
 
 static int MOE_HIDDEN, MOE_N_HEADS, MOE_KV_LORA_RANK, MOE_QK_ROPE_HD, MOE_QK_NOPE_HD, MOE_V_HD, MOE_Q_HEAD_DIM;
 static int MOE_NL, MOE_FIRST_DENSE_LAYERS, MOE_N_EXPERTS, MOE_N_SHARED, MOE_TOP_K, MOE_IM_DIM, MOE_DENSE_IM, MOE_VOCAB;
+
+// D-vocab-guard-1 (2026-09-01): single shared vocab-range check for every MoE token-id loading
+// site. load_ids() itself has no validation of any kind (raw fread() of int32s -- see its own
+// callers' comments). Before this, the ONLY call site that checked ids against MOE_VOCAB was
+// moe_cbatch_load_manifest() (added for the V5l manifest loader) -- every other id-loading path
+// (both GPU generate gates below, and run_moe_safetensors_verify_mode()'s own hardcoded
+// prompt_ids_default[]/QWEN_MOE_PROMPT_IDS parsing, which doesn't call load_ids() at all) had
+// none. This is not hypothetical: prompt_ids_default[]'s first id (100000) was found to exceed
+// OLMoE's real MOE_VOCAB=50304 (a DeepSeek-scale default silently reused for a smaller-vocab
+// model) during a spot-check investigation -- every run of that default corpus against OLMoE had
+// been reading out-of-bounds embed_tokens rows, undetected, until traced back here. Centralizing
+// the check closes the gap at every site at once instead of one at a time (and any future
+// id-loading call site only needs to call this, not reinvent the range test).
+static void moe_check_ids_vocab_range(const char *ctx, const int *ids, int n) {
+    for (int i = 0; i < n; i++) {
+        if (ids[i] < 0 || ids[i] >= MOE_VOCAB) {
+            fprintf(stderr, "FATAL: %s: token[%d] = %d out of vocab range [0,%d)\n",
+                    ctx, i, ids[i], MOE_VOCAB);
+            exit(1);
+        }
+    }
+}
 static double MOE_ROPE_THETA, MOE_YARN_FACTOR, MOE_YARN_BETA_FAST, MOE_YARN_BETA_SLOW, MOE_YARN_MSCALE, MOE_YARN_MSCALE_ALL_DIM, MOE_YARN_ORIG_MAX_POS;
 static double g_moe_rope_mscale, g_moe_attn_scale;
 // Phase 4 sub-part 2, Step 2.1: which attention family this model uses. MLA (DeepSeek's
@@ -5061,16 +5083,13 @@ static int moe_cbatch_load_manifest(const char *path, int *mf_plen, int *mf_maxn
         // load_ids() has no format/magic-number check of its own -- it happily reads any file's
         // raw bytes as int32 tokens (a manifest line pointing at the wrong file type would
         // otherwise produce silent garbage that then indexes straight into embed_tokens with no
-        // bounds check downstream). This is the one check that's actually enforceable here: every
-        // loaded id must be a valid vocab row.
-        for (int i = 0; i < N; i++) {
-            if (mf_ids[n][i] < 0 || mf_ids[n][i] >= MOE_VOCAB) {
-                fprintf(stderr, "FATAL: [moe cbatch manifest] '%s' token %d = %d out of vocab range "
-                                "[0,%d) (manifest line %d) -- wrong file, or not a raw-int32 prompt file?\n",
-                        fpath, i, mf_ids[n][i], MOE_VOCAB, lineno);
-                exit(1);
-            }
-        }
+        // bounds check downstream). moe_check_ids_vocab_range() (D-vocab-guard-1) is the one
+        // check that's actually enforceable here: every loaded id must be a valid vocab row.
+        char range_ctx[1200];
+        snprintf(range_ctx, sizeof range_ctx,
+                 "[moe cbatch manifest] '%s' (manifest line %d) -- wrong file, or not a raw-int32 prompt file?",
+                 fpath, lineno);
+        moe_check_ids_vocab_range(range_ctx, mf_ids[n], N);
         mf_plen[n] = N; mf_maxnew[n] = maxnew; n++;
     }
     fclose(f);
@@ -7425,6 +7444,7 @@ static int run_moe_gpu_generate_gate(int argc, char **argv) {
                         "cache resized, out of scope this round\n", N, MOE_MAXPOS);
         exit(1);
     }
+    moe_check_ids_vocab_range("[moe gpu generate]", prompt_ids, N);   // D-vocab-guard-1
 
     const char *gen_n_env = getenv("QWEN_MOE_GEN_N");
     int n_gen = (gen_n_env && gen_n_env[0]) ? atoi(gen_n_env) : 32;
@@ -8995,6 +9015,7 @@ static int run_moe_gpu_gqa_generate_gate(int argc, char **argv) {
                         "cache resized, out of scope this round\n", N, MOE_MAXPOS);
         exit(1);
     }
+    moe_check_ids_vocab_range("[moe gpu gqa generate]", prompt_ids, N);   // D-vocab-guard-1
 
     const char *gen_n_env = getenv("QWEN_MOE_GEN_N");
     int n_gen = (gen_n_env && gen_n_env[0]) ? atoi(gen_n_env) : 32;
@@ -12237,6 +12258,9 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
         N = n;
     }
     if (N > MOE_MAXPOS) { fprintf(stderr, "FATAL: N=%d > MOE_MAXPOS=%d\n", N, MOE_MAXPOS); exit(1); }
+    moe_check_ids_vocab_range("[moe st verify]", prompt_ids, N);   // D-vocab-guard-1 -- catches
+    // exactly the bug this was added for: prompt_ids_default[]'s first id (100000) exceeds
+    // OLMoE's real MOE_VOCAB=50304, previously an undetected out-of-bounds embed_tokens read.
 
     FILE *logits_out = fopen("moe_st_c_logits.bin", "wb");
     if (!logits_out) { perror("moe_st_c_logits.bin"); exit(1); }
