@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-09-01T14:30:00.000Z
+  modified: 2026-09-01T15:00:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -2237,6 +2237,38 @@ OLMoE wikitext 발견과 같은 패턴.
 데이터 `/Users/eoe/deepseek_hiddenstate_diff.json`. RESULTS.md
 "Root-cause probe: why is DeepSeek-V2-Lite's depth-risk pattern
 inverted vs OLMoE?" 섹션.
+
+★★★★★★**분포모양 통계까지 완결(2026-09-01, 사용자 요청 — "정확한
+생성 메커니즘까지 파악")**: `deepseek_logit_shape_profiler.py`로
+같은 후킹지점에서 raw 로짓 skewness/kurtosis, post-softmax entropy/
+top1_mass, 그리고 **경계-vs-극단 국소분산 직접비교**(top_k=6 경계를
+낀 4랭크 윈도우 vs 최극단 4랭크 윈도우)까지 측정.
+
+**"전체 라우팅이 더 결정적/집중적으로 변한다" 가설은 직접 반증**:
+entropy가 깊이와 거의 무관(r=-0.020, 3.3~3.7 nats로 평탄, uniform은
+ln(64)=4.16). skewness/kurtosis도 margin과 약한 상관뿐(±0.13,
+-0.33) — 표준 분포모양 통계 단독으로는 설명 안 됨.
+
+**진짜 메커니즘 — 경계-극단 반대방향 발산**: `boundary_local_var`
+(랭크5-8, top_k=6 경계 낀 윈도우)는 깊이에 따라 **줄고**(r=-0.441),
+`extreme_local_var`(1-2등+63-64등)는 깊이에 따라 **커짐**(r=+0.394)
+— 정반대 부호. boundary/extreme 비율은 뚜렷이 감소(r=-0.620).
+**boundary_local_var가 margin_median과 이번 조사 전체에서 가장 강한
+상관(r=+0.702)** — 이게 왜 5단계(전체 std)에서는 평탄해 보였는지도
+설명: 극단은 벌어지고 경계는 좁아지는 두 효과가 전체 분산에서
+상쇄됨.
+
+**결론(이제 "무엇"은 정확히 특정, "왜"는 정직하게 열어둠)**: 전체
+집중도(entropy) 변화가 아니라, **깊이가 깊어질수록 최상위/최하위
+소수 전문가는 더 극단으로 벌어지고 top_k 경계 부근의 "중간권"
+전문가들은 서로 더 비슷해지는 차등 발산(differential divergence)**
+현상 — top_k=6 경계가 하필 이 "중간권 균질화" 지대에 걸려서 margin이
+줄어드는 것. 이 발산의 근본원인(소수 전문가 특화 강화 vs 중간권
+전문가 중복성 증가 — 학습 다이내믹스/전문가 유사도 분석 필요)은
+정적 forward-pass 측정만으로는 답할 수 없는 범위로 명시 — 과장 없이
+"무엇이 일어나는가"까지만 확정, "왜 학습중 그렇게 됐는가"는 열린
+질문으로 남김. 데이터: macstudio `/Users/eoe/deepseek_logit_shape.json`.
+RESULTS.md "Step 6 -- distribution-shape statistics" 서브섹션.
 
 ★★★★★★**foundation 마무리 라운드(2026-09-01, ROI 1·2번 실행)**: 사용자가
 "향후 설계는 아키텍처별 재측정 필요하니 우린 기반 다지는 작업까지만"으로

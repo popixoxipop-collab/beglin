@@ -6794,6 +6794,77 @@ honestly as the current state of the investigation, not oversold as
 solved. Scripts: `deepseek_hiddenstate_diff_profiler.py` (macstudio),
 output: `/Users/eoe/deepseek_hiddenstate_diff.json`.
 
+### Step 6 -- distribution-shape statistics (the follow-up measurement above flagged as needed)
+
+Measured, per layer, per token, at the same `MoEGate.__call__` hook:
+raw pre-softmax logit skewness/kurtosis (Fisher skewness, excess
+kurtosis across the 64 experts), post-softmax routing entropy and
+top-1 probability mass (both concentration measures), and a direct
+**boundary-vs-extreme local-variance comparison**: the variance of a
+4-rank window straddling the top_k=6/rank-7 cutoff (ranks 5-8) versus
+the variance of the most extreme ranks (top-2 + bottom-2) -- built to
+test the "top-heavy/more decisive" guess directly instead of inferring
+it from margin alone. `deepseek_logit_shape_profiler.py`, same hook
+point and 30-prompt corpus as every prior script in this line.
+
+**The "increasing overall decisiveness/concentration" guess is
+refuted directly**: `r(depth, entropy_mean) = -0.020` -- routing
+entropy across the 64 experts is completely flat with depth (~3.3-3.7
+nats throughout, vs. `ln(64)=4.16` for uniform). `top1_mass_mean`
+(mean probability mass on the single top expert) only weakly trends
+up (`r=+0.270`). Skewness (`r_vs_depth=-0.533`) and kurtosis
+(`r_vs_depth=-0.025`) show no clean, strong depth trend either, and
+neither correlates strongly with margin (`r=+0.130`, `r=-0.326`).
+None of the standard single-number distribution-shape statistics
+explain the effect on their own.
+
+**The boundary-vs-extreme comparison is the one that lands**:
+```
+boundary_local_var_mean (ranks 5-8):  r_vs_depth = -0.441   r_vs_margin_median = +0.702
+extreme_local_var_mean (top-2+bot-2): r_vs_depth = +0.394   r_vs_margin_median = +0.199
+boundary/extreme ratio:               r_vs_depth = -0.620   r_vs_margin_median = +0.352
+```
+The local variance right around the top-k cutoff **shrinks** with
+depth while the local variance at the distribution's extremes
+**grows** with depth -- opposite-signed trends depending on *where*
+in the rank order you look, which is exactly why the earlier
+whole-distribution `std` measurement (Step 5) came back flat: the two
+effects cancel in the aggregate. `boundary_local_var_mean` is also the
+single strongest correlate of `margin_median` found in this entire
+investigation (`r=+0.702`), which is mechanistically the expected
+relationship (a wider local spread around the cutoff naturally allows
+a wider specific gap between rank 6 and rank 7).
+
+**Root cause, now precisely characterized (not just inferred)**:
+DeepSeek-V2-Lite's deep layers are riskier not because routing becomes
+globally more concentrated/decisive (entropy refutes that) or because
+the overall logit scale changes (Steps 1-5 refuted that) -- it's a
+**differential tail-vs-middle divergence**: as depth increases, the
+handful of most-favored and least-favored experts (the extremes) pull
+further apart from the pack, while the middle band straddling the
+top_k=6 cutoff specifically becomes *more* locally homogeneous. The
+top-k boundary sits in exactly the region that's compressing, so
+margin shrinks even though the model's overall routing "decisiveness"
+doesn't change.
+
+**What remains genuinely open**: *why* the extremes and the boundary
+band diverge in opposite directions with depth -- e.g. whether a small
+number of experts become increasingly specialized/dominant at deep
+layers (consistent with growing `extreme_local_var`) while a larger
+"generalist" cohort near the cutoff grows more redundant/interchangeable
+with each other -- is a training-dynamics/expert-specialization
+question this static, forward-pass-only measurement can't answer. That
+would need either an expert-similarity analysis (e.g. cosine similarity
+between expert FFN weight rows, checking whether experts ranked 5-15
+specifically converge toward each other more than experts overall) or
+comparing against DeepSeek-V2-Lite's own training/routing-balance-loss
+literature. Flagged as the honest boundary of what this round's
+measurements can settle -- the *what* is now precisely pinned down by
+direct measurement (boundary-vs-extreme local variance divergence,
+not global concentration), the *why* (the underlying training-dynamics
+cause of that divergence) is not. Data: macstudio
+`/Users/eoe/deepseek_logit_shape.json`.
+
 **Practical implication**: the OLMoE-only "blanket all-layer attention
 promotion" conclusion (the Synthesis section above) is **not
 invalidated for OLMoE** -- it's still correctly derived and validated
