@@ -6975,3 +6975,94 @@ complete, actionable, and now the honest scope: attention precision is
 the confirmed lever at DeepSeek's risky layers, same-layer
 shared-experts precision is confirmed not to be one. Data: macstudio
 `/Users/eoe/deepseek_precision_intervention.json`.
+
+## D-deepseek-precint-2: full 26/26-layer coverage -- dominant-role table
+
+Extended D-deepseek-precint-1 from the 6 riskiest layers to all 26
+DeepSeek-V2-Lite MoE layers (`deepseek_precision_intervention_remaining.py`,
+same methodology, layers 1-19+26, merged with the original 6 into
+`deepseek_precision_intervention_full26.json`). 26 layers x 7 roles x
+4 bit widths = 728 configs total.
+
+**Shared-experts: unconditionally irrelevant, now proven for the
+entire model, not just the risky subset**: all 26 layers x 3 roles x
+{4,8,16} bit widths -- 78 additional data points beyond D-precint-1's
+18 -- show `flip=0.0` with zero exceptions. This isn't a per-layer
+empirical pattern that happens to hold on a risky sample; it's the
+structural fact (`gates = x @ self.weight.T` runs before the FFN
+block) holding everywhere it's checkable.
+
+**Per-role collapse-point distribution across all 26 layers**:
+```
+role                   bits=8    bits=16   bits=32
+q_proj                 11 layers 15 layers 0
+kv_a_proj_with_mqa      4 layers 22 layers 0
+kv_b_proj               9 layers 17 layers 0
+o_proj                  4 layers 22 layers 0
+```
+`kv_a_proj_with_mqa` and `o_proj` need `bits=16` in 22/26 (85%)
+layers -- the most consistently fragile roles. `q_proj` is the most
+forgiving (15/26, 58%). No role ever needs the full `bits=32`.
+
+**Dominant role per layer** (which single role has the largest
+`bits=4` flip at that layer) -- full 26-row table, with each layer's
+own margin-risk ranking alongside it for cross-reference:
+```
+layer margin_med  dominant_role         b4_flip  collapse | 2nd role (b4_flip)
+   1   0.002640    kv_b_proj             0.0695     16     | kv_a_proj_with_mqa (0.0666)
+   2   0.002533    kv_a_proj_with_mqa    0.1124     16     | q_proj (0.0547)
+   3   0.002640    q_proj                0.0473     16     | kv_a_proj_with_mqa (0.0444)
+   4   0.003494    kv_a_proj_with_mqa    0.0888     16     | q_proj (0.0695)
+   5   0.003632    q_proj                0.0873      8     | kv_a_proj_with_mqa (0.0518)
+   6   0.003197    kv_a_proj_with_mqa    0.0680     16     | q_proj (0.0666)
+   7   0.003326    q_proj                0.0385      8     | kv_a_proj_with_mqa (0.0385)
+   8   0.003464    q_proj                0.0503      8     | o_proj (0.0340)
+   9   0.003601    kv_a_proj_with_mqa    0.0547     16     | q_proj (0.0399)
+  10   0.003830    o_proj                0.0399     16     | kv_a_proj_with_mqa (0.0325)
+  11   0.002579    q_proj                0.1183     16     | kv_a_proj_with_mqa (0.0547)
+  12   0.002663    q_proj                0.0488     16     | kv_a_proj_with_mqa (0.0399)
+  13   0.002472    q_proj                0.0370     16     | kv_a_proj_with_mqa (0.0325)
+  14   0.002945    q_proj                0.0444      8     | kv_a_proj_with_mqa (0.0251)
+  15   0.002472    o_proj                0.0296     16     | q_proj (0.0266)
+  16   0.002388    q_proj                0.0784     16     | kv_a_proj_with_mqa (0.0533)
+  17   0.002792    q_proj                0.0444      8     | kv_a_proj_with_mqa (0.0414)
+  18   0.002350    kv_a_proj_with_mqa    0.0414     16     | q_proj (0.0340)
+  19   0.002563    kv_a_proj_with_mqa    0.0266     16     | o_proj (0.0266)
+  20   0.002052    kv_a_proj_with_mqa    0.0444     16     | q_proj (0.0414)
+  21   0.002098    kv_a_proj_with_mqa    0.0636      8     | q_proj (0.0340)
+  22   0.002129    kv_a_proj_with_mqa    0.0340     16     | q_proj (0.0311)
+  23   0.002151    q_proj                0.0444     16     | kv_a_proj_with_mqa (0.0444)
+  24   0.001793    o_proj                0.0311      8     | kv_a_proj_with_mqa (0.0251)
+  25   0.001862    q_proj                0.0370      8     | kv_a_proj_with_mqa (0.0163)
+  26   0.002815    o_proj                0.0118      8     | kv_b_proj (0.0104)
+```
+Dominant-role frequency: `q_proj` 12/26, `kv_a_proj_with_mqa` 9/26,
+`o_proj` 4/26, `kv_b_proj` 1/26 -- **q_proj and kv_a_proj_with_mqa
+together account for 81% of "which role is worst here"**, and
+shared-experts never appears (structurally can't, per above).
+
+**No clean correlation between margin-risk ranking and attention
+fragility**: e.g. layer 26 (safest by margin, 0.00281) still shows
+real `bits=4` flip (o_proj, 0.0118, collapse=8); layer 1 (mid-risk,
+0.00264) needs `bits=16` on its dominant role with a much larger
+`bits=4` flip (kv_b_proj, 0.0695). Attention-role sensitivity to
+quantization noise and the boundary-vs-extreme margin-risk mechanism
+(Step 5/6 above) appear to be largely independent axes -- the former
+is a direct, local quantization-error question; the latter is about
+how upstream-accumulated noise reshapes the router's *input*
+distribution shape. Both matter, but they don't predict each other.
+
+**Actionable config, two tiers**:
+- **Precise** (uses the table above): set each of the 4 attention
+  roles to its own per-layer collapse point (`bits=8` for the ~30% of
+  role-layer combos that reach it, `bits=16` for the rest) --
+  `104` `QWEN_MOE_ROLE_BITS` lines, minimal memory for full coverage.
+- **Simple** (matches OLMoE's own eventual blanket-promotion
+  conclusion): `q_proj -1 16` / `kv_a_proj_with_mqa -1 16` /
+  `kv_b_proj -1 16` / `o_proj -1 16` (4 lines, `-1` layer wildcard) --
+  costs a bit more than the precise tier (the ~30% of combos that
+  didn't need 16 get it anyway) but is trivial to maintain and matches
+  this project's established default-to-blanket-when-mostly-needed
+  pattern. Shared-experts stays untouched either way (structurally
+  confirmed pointless). Data: macstudio
+  `/Users/eoe/deepseek_precision_intervention_full26.json`.

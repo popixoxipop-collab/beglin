@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-09-01T15:40:00.000Z
+  modified: 2026-09-01T16:10:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -2422,3 +2422,32 @@ mode()` 기본코퍼스 버그(D-vocab-guard-1)와 **완전히 무관한 별도 
 사용자에게 직접 보고, collapse-point 요약만이 아니라 raw flip rate
 전부 노출. RESULTS.md "D-roadmap-2 Track B: final layer sweep" 섹션에
 재검증 서브섹션 추가.
+
+★★★★★★**D-deepseek-precint-2(2026-09-01) — 전체 26/26레이어 완결 +
+레이어별 지배요소 표**: 사용자 요청("나머지 레이어까지 모두 스윕,
+상류하류전파는 번외로, 레이어별 지배요소를 먼저 표로") — 나머지
+20개 레이어(1-19,26)를 추가 스윕(560개 조합)해 기존 6개(24,25,20,
+21,22,23) 결과와 병합, 728개 조합 전체 완결.
+
+**shared-experts — 전체 26개 레이어에서 예외 없이 무관 확정**:
+26×3role×{4,8,16} 전부 flip=0.0 — 위험레이어 표본에서만이 아니라
+모델 전체에서 구조적 사실로 확정.
+
+**attention 4개 role의 collapse-point 분포(26레이어)**: q_proj
+15/26(58%)·kv_a_proj_with_mqa 22/26(85%)·kv_b_proj 17/26(65%)·
+o_proj 22/26(85%)이 bits=16 필요, bits=32 필요한 조합은 0개.
+kv_a_proj_with_mqa/o_proj가 가장 취약.
+
+**레이어별 지배요소(26행 전체 표)**: q_proj가 12/26, kv_a_proj_with_mqa
+가 9/26 레이어에서 최취약 role — 이 둘이 81% 차지, o_proj 4/26,
+kv_b_proj 1/26. **margin 위험도 랭킹과 attention 취약도 사이에
+뚜렷한 상관 없음**(가장 안전한 레이어26도 여전히 bits=4에서 실flip)
+— 근접동점 메커니즘(경계-극단 발산, Step5/6)과 양자화 민감도는
+독립적인 축임을 확인.
+
+**실전 config 2단계 제시**: (1) 정밀 — 표의 role별 collapse point
+그대로(104줄, 메모리 최소), (2) 단순 — 4개 attention role 전부
+`-1 16`(4줄, OLMoE 최종결론과 같은 패턴, 약간 더 비용 들지만 유지
+쉬움). shared-experts는 어느 쪽이든 손대지 않음(효과 없음 확정).
+RESULTS.md "D-deepseek-precint-2" 섹션. 데이터: macstudio
+`/Users/eoe/deepseek_precision_intervention_full26.json`.
