@@ -7138,3 +7138,411 @@ to the already-4bit-served baseline, not an absolute bf16 ground truth)
 and ready to deploy, but not yet C-engine-verified end-to-end the way
 OLMoE's blanket promotion was. Flagged as the next step if DeepSeek
 precision tuning is pursued further, not silently treated as done.
+
+## D-roadmap-3 flag-and-log prototype: real-traffic near-tie telemetry, shipped and verified
+
+Implements `ROADMAP.md`'s "D-roadmap-3" section (narrowed scope: no
+correction path this round, flag-and-log-only, building real-traffic
+evidence a future correction round would consume -- attention-role
+near-ties are already fully closed by static blanket promotion per
+D-roadmap-2, so this axis is specifically the residual final-output
+near-tie, wherever it still occurs).
+
+**What shipped** (`qwen_infer.c`, all changes in one file): two new
+functions right after `moe_cb4c_maybe_reverify()` --
+`moe_neartie_attn_bits_summary()` (one-time startup tally of the
+actually-active attention-role bit-width distribution, read straight
+off each `MoeAFTensor.bits`, already resolved at load time) and
+`moe_neartie_maybe_log()` (per-call: disabled costs one bool check;
+enabled computes `moe_cb4c_margin()` -- the SAME top1-vs-top2 final-
+logit-gap quantity `moe_cb4c` already uses, deliberately not the
+offline router-margin profiler's different expert-selection-softmax
+axis -- and logs an event line if below threshold). Wired into exactly
+the two call sites `moe_cb4c_maybe_reverify()` already uses inside
+`run_moe_cbatch_verify_mode()`'s online-scheduler branch (decode-emit
+and prefill-completion-emit loops) -- no other call site touched.
+`QWEN_MOE_NEARTIE_LOG` (default off) and `QWEN_MOE_NEARTIE_THRESHOLD`
+(no shipped default -- `LOG=1` without it is a FATAL, not a guessed
+number; existing sweep artifacts never recorded this continuous margin
+alongside a flip/no-flip outcome, so a real default isn't derivable
+yet, and this project's data-first-numerics rule blocks shipping a
+guess).
+
+**Build**: local dense-only (`clang -O3 -w -c`) and `-DQWEN_GPU_MLX`
+syntax compiles both clean (this machine, arm64 macOS). Real runtime
+verification on bob: `run_moe_cbatch_verify_mode()`'s online branch is
+outside any `#ifdef QWEN_GPU_MLX` guard (re-confirmed, same as
+D-vocab-guard-1's finding), so no MLX/GPU link needed -- rebuilt the
+plain dense binary (`clang -O3 -w -c` + KleidiAI/gguf/safetensors
+objects, no `-march` override, same recipe D-vocab-guard-1 established)
+against real DeepSeek-V2-Lite AF-blob weights
+(`/Users/bob/moe_base_deepseek`).
+
+**Verification, all real execution, `QWEN_MOE_CB_SLOTS=4 QWEN_MOE_CB_REQS=6`**:
+1. **Disabled-by-construction regression**: `QWEN_MOE_NEARTIE_LOG` unset,
+   pre-change (`/tmp/qwen_f16tier_bin`) vs. post-change
+   (`/tmp/qwen_neartie_bin`) -- byte-identical generated token sequences
+   and every structural metric (`steps`, `steps_idle`,
+   `admitted_after_evict`, `queue_wait_events`, etc.); only the two
+   wall-clock timing fields (`ttft_ms`, `wall_ms`) differ, as expected
+   from run-to-run noise. Confirmed by real `diff`, not assumed from the
+   single-bool-gate argument.
+2. **FATAL guard**: `QWEN_MOE_NEARTIE_LOG=1` with no threshold set --
+   real exit code 1, exact message `FATAL: QWEN_MOE_NEARTIE_LOG=1
+   requires QWEN_MOE_NEARTIE_THRESHOLD (no data-derived default exists
+   for this axis yet -- see ROADMAP.md D-roadmap-3)`.
+3. **Force-trigger smoke test**, `THRESHOLD=100.0` (above any real
+   logit gap): 45 `[moe neartie] event` lines, exactly matching the
+   run's own total `nout` sum (45) -- every emitted token triggered, as
+   expected. Startup `[moe neartie] cfg` line: `attn_af_bits: 4=108
+   8=0 16=0 32=0 other=0 (of 108 tensors, NL=27)` -- `108 = NL*4`
+   confirms the bucket tally covers exactly the expected tensor count
+   (this run had no `QWEN_MOE_ROLE_BITS` override, so all-int4 is
+   correct). Summary line: `events=45 mean_margin=2.447021
+   min_margin=0.016970 threshold=100.000000`.
+4. **Zero-trigger**, `THRESHOLD=0.0`: 0 events (gate isn't spuriously
+   open).
+5. **Interaction with `moe_cb4c_maybe_reverify()`**:
+   `QWEN_MOE_CBATCH_REVERIFY=tier2 QWEN_MOE_CBATCH_THRESHOLD=0.1` +
+   `QWEN_MOE_NEARTIE_LOG=1 QWEN_MOE_NEARTIE_THRESHOLD=100.0` together --
+   cb4c fired 3 times (all Tier1-agree), and the neartie event logged at
+   each of those same (req,pos) positions showed a margin measurably
+   different from cb4c's own pre-correction margin (req=5 pos=4:
+   `0.0170` -> `0.017696`; req=3 pos=12: `0.0333` -> `0.032707`; req=4
+   pos=15: `0.0467` -> `0.048040`) -- proof the logged value reflects
+   the *post*-cb4c-correction logits (call sites run after cb4c
+   returns and reuse its already-computed `am`), not a stale
+   pre-correction snapshot.
+6. **Overhead A/B**, 3 repeats each: disabled
+   (34175.53/37369.96/37002.04 ms), enabled-never-fire
+   (37165.93/37124.14/37318.45 ms), enabled-always-fire
+   (36814.70/37427.03/37296.83 ms) -- all three groups' means (36183,
+   37203, 37180 ms) sit within the disabled group's own ~9% run-to-run
+   noise band. No measurable overhead from either the always-on
+   `moe_cb4c_margin()` O(`MOE_VOCAB`) scan (computed unconditionally
+   once enabled, mirroring `moe_cb4c`'s own margin-first-then-compare
+   shape) or from stderr log volume at the always-fire extreme -- this
+   workload's per-token forward-pass cost (hundreds of ms) swamps a
+   ~100K-float double linear scan (microseconds) by several orders of
+   magnitude.
+
+**Still open**: a real, data-derived `QWEN_MOE_NEARTIE_THRESHOLD`
+default -- needs `moe_precision_sweep_output.py` extended to record the
+bf16-baseline top1-vs-top2 gap alongside its already-captured
+flip/no-flip outcome, then cross-tabulated on its existing corpus. Not
+attempted this round (Python-side follow-up, separate from this C
+feature). No correction path either, per the explicit flag-and-log-only
+scope -- this round is evidence-gathering infrastructure only.
+
+## D-roadmap-3 threshold calibration: a real, cited QWEN_MOE_NEARTIE_THRESHOLD default
+
+Closes the "still open" item from the previous section: derives a
+real, measured default for the axis `moe_neartie_maybe_log()` triggers
+on, instead of requiring every caller to supply one manually.
+
+**Method** (`moe_precision_sweep_margin_calibration.py`, macstudio,
+plain RTN quant/dequant, no residual/error-feedback correction --
+measurement script, not a deployment quantization path, matching this
+whole investigation's established disclaimer convention): extends
+`moe_precision_sweep_output.py`'s exact methodology (same model
+`allenai/OLMoE-1B-7B-0125`, same 60-prompt/1453-position corpus,
+imported by source-extraction so it's guaranteed identical, same 16
+(layer,role) x {4,8,16,32} combos, same quant math) but additionally
+captures, for the untouched bf16 baseline only, each position's
+top1-vs-top2 raw-logit gap -- the same quantity `moe_cb4c_margin()`/
+`moe_neartie_maybe_log()` compute in the C engine -- and tracks, per
+position, whether ANY of the 16 combos at a given bit width flips that
+position's final argmax relative to baseline.
+
+**Sanity check against the original aggregate data**: this run's
+own mean flip rate across all 16 combos (bits=4: 1.57%, bits=8: 0.24%)
+falls inside `moe_precision_sweep_output.json`'s original per-combo
+ranges (0.68%-2.55% / 0.07%-1.17%) -- confirms no methodology drift
+between the two scripts before trusting the new per-position data.
+
+**Cross-tabulation, 1453 positions, decile buckets by baseline margin**
+(bits=4 flip-by-any-of-16-combos):
+
+| decile | margin range | flip rate |
+|---|---|---|
+| 1 | [0.0005, 0.1549] | 48.28% (70/145) |
+| 2 | [0.1574, 0.3068] | 12.41% (18/145) |
+| 3 | [0.3078, 0.5181] | 4.14% (6/145) |
+| 4 | [0.5195, 0.7903] | **0.00%** (0/145) |
+| 5-10 | [0.7922, 13.2773] | **0.00%** (0/145 each) |
+
+Threshold sweep confirms a clean cutoff: at `T=0.50`, positions below
+T flip 22.38% of the time (94 total flip events among them) and
+positions at/above T flip **exactly 0.00%** of the time (0/1033) --
+every one of the 94 positions where a bits=4 substitution ever flipped
+the output had a baseline margin below 0.5 (max observed: **0.4786**,
+95th percentile among flipped positions: 0.3173). Overall any-combo
+flip fraction across all 1453 positions: 6.47% (bits=4), 1.31% (bits=8).
+
+**Default shipped**: `qwen_infer.c`'s `moe_neartie_threshold()` now
+returns **0.5** (a cited literal, same pattern as `moe_cbatch_
+threshold()`'s own 0.1 -- "chosen to sit just above the one known real
+disagreement"), replacing the earlier FATAL-if-unset requirement.
+`QWEN_MOE_NEARTIE_THRESHOLD` still overrides it. Full per-position data:
+`/Users/eoe/vdsp_olmoe_full_weights/moe_neartie_margin_calibration.json`
+(macstudio).
+
+**Re-verification on bob (real DeepSeek-V2-Lite weights, rebuilt
+binary)**: (1) `QWEN_MOE_NEARTIE_LOG=1` with no threshold set -- no
+FATAL, `exit=0`, startup cfg line reports `threshold=0.500000`, 11 of
+45 emitted tokens triggered (a realistic partial rate, not all-or-
+nothing) with `mean_margin=0.231731 min_margin=0.016970`; (2) explicit
+`QWEN_MOE_NEARTIE_THRESHOLD=100.0` override still force-triggers all
+45/45 as before; (3) disabled-by-construction regression against the
+pre-this-change binary still byte-identical (timing fields excluded).
+
+**Honest caveat, same as the feature's original shipping**: this
+calibration is single-model (OLMoE) and single-perturbation-source
+(attention-role bits=4 RTN quantization) -- the 0.5 default is real and
+cited, not guessed, but not yet validated against other architectures,
+other quantization schemes, or genuine serving-time noise sources. The
+default is deliberately still override-able via `QWEN_MOE_NEARTIE_
+THRESHOLD` for exactly that reason.
+
+## D-roadmap-3 correction path: bits=16 full-position reactive replay (OLMoE/GQA), shipped and verified
+
+Implements the correction path ROADMAP.md's D-roadmap-3 section
+sketched but never built. **User explicitly chose to build this
+without first satisfying the section's own gating criterion**
+(gather real-traffic flag-and-log evidence first) -- a disclosed,
+deliberate deviation.
+
+**Scope correction, data-justified, user-confirmed**: the original
+sketch implied a single-layer fix. The already-measured local-vs-
+upstream residual-accumulation data (this file, "D-roadmap-3 residual-
+accumulation test", 6.7-11.3x router-level upstream-noise dominance)
+made that very unlikely to close the gap. The user was shown this and
+chose the full version: on trigger, replay the flagged position's
+ENTIRE forward pass (all layers) at bits=16 attention precision,
+mirroring the already-validated blanket-promotion finding, paid
+reactively per-request instead of unconditionally by every token. This
+also resolves, by construction, whether stale low-precision K/V cache
+entries from earlier decode steps would independently corrupt a
+corrected recompute (never tested before this round) -- a full
+from-scratch replay recomputes K/V at bits=16 too.
+
+### Mechanism (`qwen_infer.c`, all changes)
+
+No new export tool or file format. Reuses `st_register_moe_f16_as_af()`
+(built for Track A's safetensors validation) by opening a SECOND,
+independent `SafetensorsMulti*` handle to a genuine bf16 checkpoint at
+startup, registering bits=16 attention-only tensors under
+`__neartie_hi`-suffixed engine names into the SAME shared `g_moe_af[]`
+registry production already populated (zero collision risk).
+`g_moe_lt_hi[MOE_MAXLAYERS]` struct-copies each layer's production
+tensor set (FFN/expert/norm pointers unchanged -- already shown
+irrelevant, D-roadmap-2 (b)) then overrides only the 4 attention-role
+pointers.
+
+**Table-swap, not a duplicated function**: traced `moe_forward_token()`'s
+actual call graph -- `moe_attention()`/`moe_mla_attention()`/
+`moe_gqa_attention()` all take `MoeLayerTensors *t` as a parameter; the
+ONLY direct `g_moe_lt[l]` reference in `moe_forward_token()`'s own body
+is one line. Fix: one new global `g_moe_lt_cur` (normally aliases
+`g_moe_lt`) + that one line changed to `&g_moe_lt_cur[l]`. The
+correction replay (`moe_neartie_reverify_hi()`, a structural sibling of
+`moe_reverify_exact()`) does a save/swap/restore around a synchronous,
+single-threaded call -- verified safe against the real `MoeScalarPool`
+thread-pool code (workers never dereference `g_moe_lt`/`g_moe_lt_cur`
+themselves) before relying on it.
+
+**Separate shadow K/V pool** (`MOE_NEARTIE_LANES=8`, mirrors
+`MOE_CB4C_LANES`'s exact shape/round-robin-eviction pattern) -- never
+shares storage with Tier2's, since bits=16-computed K/V is numerically
+different from production-precision cached values. Allocated only when
+`QWEN_MOE_NEARTIE_CORRECT=1` (zero cost disabled), unlike Tier2's own
+unconditional allocation.
+
+**Dedicated, tighter correction threshold** -- reusing the logging
+threshold's 0.5 would trigger ~29% of tokens, prohibitively expensive
+for a full replay. Re-analyzed the same calibration data
+(`moe_neartie_margin_calibration.json`) at tighter cuts:
+
+| T | trigger rate | flip rate below T | flip rate at/above T |
+|---|---|---|---|
+| 0.1 | 6.47% (94/1453) | 59.57% | 2.80% |
+| 0.2 | 13.9% | 37.62% | 1.44% |
+| 0.3 | 19.8% | 30.66% | 0.51% |
+| 0.5 (log threshold) | 28.9% | 22.38% | 0.00% |
+
+`QWEN_MOE_NEARTIE_CORRECT_THRESHOLD` default = **0.1** -- bounds
+trigger rate to ~6.5%, 9.2x flip-rate enrichment over the 6.47%
+baseline, honest named trade (leaves a thin real-flip tail in
+[0.1, 0.48) uncorrected by default). Shares `moe_cb4c_maybe_reverify()`'s
+own per-step budget rather than a new cap (directly follows this
+project's own COST-reuse guidance).
+
+### Verification (bob, real weights)
+
+**Setup**: production OLMoE AF-blob at `/Users/bob/vdsp_olmoe_
+full_weights` (NL=16, ATTN_KIND=1/GQA, `EOS_TOKEN_ID=50279` already in
+its own `arch_config_moe.txt`); genuine bf16 checkpoint confirmed real
+(not re-quantized) at `/Users/bob/olmoe_1b7b_hf` -- `torch_dtype:
+bfloat16`, `quantization_config: None`, sample tensor dtype `BF16`,
+directly verified before trusting it. An 8-prompt manifest was
+tokenized from `moe_precision_sweep_output.py`'s own `PROMPTS_R1[0:8]`
+(same corpus the threshold calibration used, so specific positions are
+directly cross-referenceable against `moe_neartie_margin_calibration.json`).
+
+1. **Disabled-by-construction regression**: pre-change binary
+   (`/tmp/qwen_neartie2_bin`) vs. post-change (`/tmp/qwen_correction_bin`)
+   on the same manifest -- byte-identical (timing fields excluded).
+2. **FATAL guards**: `CORRECT=1` with no `_SAFETENSORS` -- real exit 1,
+   exact cited message; `CORRECT=1` against the DeepSeek/MLA AF-blob --
+   real exit 1, MLA scope guard fires correctly.
+3. **Force-trigger** (`THRESHOLD=100.0`): 59/59 emitted tokens
+   triggered correction (exact match to the run's own `nout` sum).
+   Startup cfg line: `attn_hi_bytes=536870912 shadow_pool_bytes=
+   268435456` (512MiB attn registry + 256MiB shadow pool -- the pool
+   uses `MOE_MAXLAYERS=64` for its reservation, same lazily-faulted
+   convention as Tier2's own pool, not `MOE_NL=16`, so real RSS is
+   lower than this virtual reservation). Correct incremental-cost decay
+   observed directly in the log: a request's first correction pays a
+   full replay (e.g. `n_scalar=29`), subsequent corrections on the same
+   request pay only the new position (`n_scalar=1`) -- the shadow lane
+   caching works as designed.
+4. **Zero-trigger** (`THRESHOLD=0.0`): 0 correction events; generated
+   tokens identical to the disabled baseline (confirmed by diffing the
+   actual token lists, not just the log line count).
+5. **Real RSS** (`/usr/bin/time -l`, maximum resident set size):
+   disabled 8,241,381,376 bytes (7.67GiB); enabled (default threshold
+   0.1) 9,243,000,832 bytes (8.61GiB, **+955MiB**); force-trigger
+   9,264,955,392 bytes (8.63GiB, **+976MiB**). Higher than the
+   ~576MiB static estimate (512MiB registry + 256MiB pool minus the
+   NL-vs-MOE_MAXLAYERS sizing difference) -- the delta is real,
+   measured, and comfortably affordable against bob's 16GB total
+   (~7.4GB free at the higher measurement), but the gap between
+   estimate and measurement wasn't further root-caused this round
+   (plausibly transient dequant scratch or increased buffer
+   utilization under the replay workload).
+6. **Accuracy -- corrected output matches genuine bf16, production
+   doesn't**: at the real-threshold (0.1) trigger for request 1,
+   position 23 (the last token of an unmodified 24-token prompt,
+   predicting the first generated token -- a clean case with no
+   generated-token history to reconstruct), production (uncorrected)
+   predicted token **380**; this C engine's actual corrected output was
+   **831**; genuine bf16 ground truth, computed independently and
+   directly (`allenai/OLMoE-1B-7B-0125` via `mlx_lm`, same 24-token
+   prefix), is **831** -- top-2 logits `[380: 15.332, 831: 15.615]`, a
+   real near-tie the production quantization gets wrong and the
+   correction mechanism gets right. Exact match, not an approximation.
+7. **A real side-finding**: cross-referencing all 5 real-threshold
+   trigger positions against `moe_neartie_margin_calibration.json`
+   (built against genuine bf16) shows those exact positions have LARGE
+   margins there (1.99 to 8.21) -- not near-ties at all in the genuine
+   model. The production AF-blob (built from `mlx-community/
+   OLMoE-1B-7B-0125-4bit`, an already-quantized source -- the
+   provenance gap this round's Plan agent flagged) has induced its OWN
+   artificial near-ties. Independent confirmation of the mechanism's
+   value beyond the single traced accuracy case above.
+8. **Overhead A/B**, 3x repeats, same manifest: disabled
+   (15268/15177/15220 ms, mean 15222), never-fire (15218/15343/15265 ms,
+   mean 15275 -- +0.35% vs. disabled, noise-level), always-fire
+   (46780/46604/46417 ms, mean 46600 -- ~3.06x, expected: every one of
+   59 tokens pays a full/incremental replay).
+9. **Interaction with `moe_cb4c_maybe_reverify()`**: both enabled
+   together (`QWEN_MOE_CBATCH_REVERIFY=tier2` + this correction path,
+   both threshold 0.1) -- 5 cb4c events and 5 correction events fired
+   in the same run, no budget starvation, no crash, clean completion.
+   Shadow-pool non-contamination verified structurally (the two pools
+   use entirely disjoint symbol sets -- `g_moe_sK/sV_flat`+`g_moe_sh_*`
+   vs. `g_moe_nt_sK/sV_flat`+`g_moe_nt_sh_*` -- no shared code path or
+   aliasable pointer exists between them; for statically-separated
+   memory regions like this, code-level inspection is the correct
+   verification, not a runtime checksum).
+
+### Honest limits
+
+OLMoE/GQA only this round -- MLA/DeepSeek is a structurally-similar
+follow-up once its genuine bf16 download (in progress elsewhere)
+completes; `MOE_ST_ATTN_ROLES_MLA` already exists, unused, deferred.
+No K/V resync into the production SME2 batched decode path -- each
+correction affects only that one token's served answer, never
+propagates forward to later tokens of the same request (an explicit,
+named scope limit; an optional resync mirroring `QWEN_MOE_CBATCH_
+RESYNC` is a real follow-up, not silently dropped). This round still
+didn't satisfy D-roadmap-3's own original gating criterion (real-
+traffic evidence before spending correction-path engineering cost) --
+the user chose to proceed anyway, and that choice + its rationale is
+recorded here plainly, not smoothed over.
+
+## D-deepseek-precint-4: live bf16-ground-truth validation -- int4 flip confirmed, int8+ all correct
+
+Closes D-deepseek-precint-3's own flagged gap ("not yet C-engine-
+verified end-to-end the way OLMoE's blanket promotion was") -- the
+genuine bf16 `deepseek-ai/DeepSeek-V2-Lite-Chat` checkpoint (~31GB)
+finished downloading this round, transferred macstudio->bob directly
+over a newly-connected Thunderbolt 4 link (~311MB/s, see the SSH-
+infrastructure fix documented in this session's memory, not repeated
+here -- cross-project, not vdsp-specific), enabling this engine's
+`QWEN_MOE_SAFETENSORS` path to run directly against real bf16 weights
+for the first time on DeepSeek-V2-Lite, alongside an independently-
+computed genuine-bf16 ground truth (`mlx_lm`, macstudio, same prompt).
+
+**A real methodology bug caught mid-round, not glossed over**: the
+first 4 comparison runs (default/blanket-16/precise/bits=32) used the
+C engine's own hardcoded default 8-position corpus, which does NOT
+match the prompt the ground-truth script used -- an apples-to-oranges
+comparison. Caught before drawing any conclusion from it; all 4 runs
+were re-launched with `QWEN_MOE_PROMPT_IDS` set to the exact same
+8-token prefix (`549,84732,2134,317,254,2604,12138,8872`, the real
+tokenization of "The mitochondria is the organelle responsible for
+producing most of a cell's supply of adenosine triphosphate...") the
+ground-truth script used.
+
+**A second real gap caught by the user, not by the agent**: those same
+4 "corrected" runs still never exercised bits=4 -- the SAFETENSORS
+loader's own fallback default is a hardcoded `8` (`st_register_moe_
+role(..., moe_role_bits(role->role, l, 8), ...)`, `qwen_infer.c:12522`
+etc.), not 4, so "default" in this round actually means int8. bits=4
+is exactly the axis the entire Python-side precision-intervention
+sweep (D-deepseek-precint-1/2) found real flip events on -- without a
+live bits=4 run, this validation round could not actually demonstrate
+the problem the precise/blanket-16 config is supposed to fix. A 5th
+run (`deepseek_role_bits_int4all.txt`, all 26 layers x 4 attention
+roles forced to bits=4) was added.
+
+**Results, 8 positions, same prompt, all 5 configs vs. genuine bf16 argmax:**
+
+| pos | genuine bf16 | int4 (all) | int8 (default) | blanket-16 | precise | bits=32 |
+|---|---|---|---|---|---|---|
+| 0 | 207 | 207 | 207 | 207 | 207 | 207 |
+| 1 | 6850 | 6850 | 6850 | 6850 | 6850 | 6850 |
+| 2 | 418 | 418 | 418 | 418 | 418 | 418 |
+| 3 | 254 | 254 | 254 | 254 | 254 | 254 |
+| 4 | 92583 | 92583 | 92583 | 92583 | 92583 | 92583 |
+| 5 | 12138 | 12138 | 12138 | 12138 | 12138 | 12138 |
+| 6 | **8872** | **344 ❌** | 8872 | 8872 | 8872 | 8872 |
+| 7 | 327 | 327 | 327 | 327 | 327 | 327 |
+
+**int4 (all attention roles) is the only configuration that diverges
+from genuine bf16 ground truth** -- position 6, predicted 344 instead
+of 8872. This is a real, live-C-engine-observed near-tie flip, not a
+Python simulation: bf16's own top-2 logits at that position are 8872
+(29.625) vs. 344 (28.875), a gap of only 0.75 -- a genuine near-tie
+the int4 quantization noise pushes the wrong way. **int8 (this
+engine's own SAFETENSORS-path default), blanket-16, the precise
+config, and bits=32 all match ground truth exactly at every one of
+the 8 positions**, confirming this engine's already-shipped default
+(int8, not int4) already avoids this specific near-tie -- consistent
+with, not contradicting, the project's broader finding that int4 is
+the risky tier and int8+ is where correctness returns.
+
+**Honest limits of this round**: single prompt, 8 positions -- this
+does NOT distinguish precise-config's real value proposition (memory/
+compute savings vs. blanket-16 at equal correctness) from blanket-16
+itself, since both matched ground truth identically on this small
+sample; that comparison still rests on the much larger 1453-position
+Python sweep (D-deepseek-precint-1/2), not this live check. A curious,
+unexplained side-observation: blanket-16 and bits=32's logits were
+bit-for-bit identical across all 8 positions in this run -- not
+investigated further this round, noted for anyone extending this work.
+
+Full logs: `/Users/bob/vdsp_m4_bench/bf16valid_run_{a2_default,
+b2_blanket16,c2_precise,d2_f32,e_int4all}_matched.log`. Ground truth:
+`/Users/eoe/deepseek_bf16_groundtruth.json` (macstudio).

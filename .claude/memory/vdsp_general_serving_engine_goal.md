@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-09-01T16:10:00.000Z
+  modified: 2026-09-01T11:31:40.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -2472,3 +2472,119 @@ dequant_row()`가 이미 아는 포맷(F32/F16/BF16/GGUF식)이 아님 —
 조용히 우회하지 않고 정직하게 "미검증, 배포 준비는 됐지만 OLMoE
 블랭킷 승격처럼 C엔진 실측까지는 안 끝남"으로 명시. RESULTS.md
 "D-deepseek-precint-3" 섹션.
+
+★★★★★★**D-roadmap-3(2026-09-01) — flag-and-log-only 런타임
+근접동점 텔레메트리 프로토타입, 실행검증 완료, 커밋은 아직**:
+사용자가 stale task 3개(#10/#28/#41, 예전 SME2/PMU 논문트랙 잔재)
+정리 후 요청. ROADMAP.md의 "D-roadmap-3"(원래 구상=런타임
+bit-width 자동승격이었으나 D-roadmap-2 스윕으로 attention-role
+근접동점은 정적 블랭킷 bits=16 하나로 이미 다 닫힘 확인 →
+"correction 경로 없이 로그만" 으로 스코프 축소)를 실제 구현.
+
+**핵심 설계결정**: (1) 트리거 축=`moe_cb4c_margin()`이 이미
+계산하는 것과 동일한 최종출력 top1-vs-top2 logit gap(라우터
+expert-selection margin 아님 — ROADMAP 원문의 "recompute the
+flagged position's attention-role tensors" 문구가 최종logit 축을
+전제해야 말이 됨), (2) threshold 기본값 없음 — `QWEN_MOE_NEARTIE_
+LOG=1`인데 `QWEN_MOE_NEARTIE_THRESHOLD` 없으면 FATAL(이 축의
+continuous margin과 flip결과를 같이 기록한 기존 데이터가 전혀
+없어서 데이터기반 기본값 도출 불가 — 이 프로젝트 데이터퍼스트
+규칙상 추측값 금지), (3) `run_moe_cbatch_verify_mode()`의 온라인
+스케줄러 2개 콜사이트(`moe_cb4c_maybe_reverify()`와 정확히 같은
+지점)에만 배선 — 이 엔진이 정의하는 "real traffic" 그 자체.
+
+**실행검증(bob, 실 DeepSeek-V2-Lite AF-blob)**: 비활성시 변경전후
+바이트동일(타이밍필드 제외) · FATAL가드 실제 exit=1 확인 ·
+threshold=100 강제트리거 45/45 정확히 일치+cfg라인 버킷합계
+NL*4=108 확인 · threshold=0 무트리거 확인 · cb4c와 동시실행시
+neartie가 기록한 margin이 cb4c 보정후 값 반영함을 실측으로
+증명(0.0170→0.017696 등, 정확히 같은 값 아님=보정 실제로 반영됨) ·
+오버헤드 A/B 3×3 전부 노이즈범위내(~9%) 무차이 확인.
+
+**미완이었던 threshold 도출도 즉시 이어서 완료(2026-09-01)**:
+`moe_precision_sweep_margin_calibration.py`(macstudio, RTN양자화·
+잔차보정無=측정스크립트라 무관, 기존 관례그대로 disclaimer) —
+`moe_precision_sweep_output.py`와 동일 모델·동일 60-prompt/1453-
+position corpus(소스추출로 재사용, drift없음 보장)·동일 16
+(layer,role)×{4,8,16,32} 조합으로 bf16 baseline의 top1-vs-top2
+margin을 포지션별로 캡처+어느 조합이 실제 argmax를 뒤집는지 교차
+기록. **집계 flip率 sanity체크 통과**(bits4=1.57%/bits8=0.24%,
+기존 개별조합 범위 0.68-2.55%/0.07-1.17% 안에 정확히 들어감 —
+방법론 drift 없음 확인). **핵심 발견**: bits=4 substitution으로
+실제 flip된 94개 포지션의 baseline margin 중 최대값=**0.4786**,
+margin≥0.5195(decile4 하한) 이상은 전 구간 flip률 0%. **threshold=
+0.5를 실제 인용가능한 기본값으로 채택**(cb4c의 0.1과 동일 논리 —
+"실관측된 flip 최대값 바로 위"), `qwen_infer.c`의 `moe_neartie_
+threshold()`가 이제 이 값 반환, FATAL 요구 제거(override는 그대로
+유지). bob 재빌드+재검증: threshold 미설정시 FATAL 없이 exit=0+
+threshold=0.5 정상동작(11/45 트리거, 부분적이고 현실적인 비율)·
+override(100.0→45/45) 그대로 유지·비활성 회귀 여전히 바이트동일.
+**정직한 한계 명시 유지**: OLMoE 단일모델+bits=4 단일섭동원 캘리브레이션,
+타 아키텍처/타 정밀도손실원엔 미검증. RESULTS.md "D-roadmap-3
+threshold calibration" 섹션 + ROADMAP.md D-roadmap-3 Update 추가.
+git 커밋/push는 여전히 사용자 명시 요청 대기 중.
+
+★★★★★★**D-roadmap-3 correction 경로(2026-09-01) — bits=16 전체
+포지션 재계산, OLMoE/GQA 구현+실행검증 완료**: 사용자가 ROADMAP
+자체 게이팅 기준(실트래픽 flag-and-log 근거 먼저)을 명시적으로
+건너뛰고 진행 선택(정직하게 기록). **스코프 교정**: ROADMAP 원안
+(해당 포지션 자기레이어만 bits=16)은 이미 측정된 local-vs-upstream
+데이터(상류누적 6.7-11.3배 지배)와 충돌 — 사용자에게 제시 후
+데이터정당화된 전체버전(전체 레이어 재계산, Tier2식 전체 히스토리
+replay) 채택.
+
+**메커니즘**: 신규 export/blob포맷 없이 기존 `st_register_moe_f16_
+as_af()` 재사용 — 별도 독립 `SafetensorsMulti` 핸들로 진짜 bf16
+체크포인트 열어 `__neartie_hi` 접미사로 같은 `g_moe_af[]` 레지스트리에
+등록, `g_moe_lt_hi[]`(FFN/expert는 production과 동일 포인터
+struct-copy, attention만 override). **테이블스왑이 1줄 수정으로
+충분함을 콜그래프 직접추적으로 발견**(`moe_forward_token()` 본문
+내 `g_moe_lt[l]` 직접참조는 딱 1곳뿐 — Plan agent가 처음 가정한
+"여러곳 rename 또는 함수통째복제"보다 훨씬 작고 안전한 diff).
+`g_moe_lt_cur` 전역 1개+그 1줄 변경만으로 해결. 별도 shadow K/V
+lane pool(Tier2 것과 절대 공유안함, bits=16 계산값이라 수치가
+다름), 전용 tighter threshold(0.1, LOG용 0.5 재사용시 ~29% 트리거로
+비용폭발 — 같은 calibration 데이터 재분석해 도출). cb4c와 step_budget
+공유(ROADMAP 자체 COST 지침 그대로 재사용).
+
+**실행검증(bob, 실 OLMoE AF-blob+진짜 bf16 `/Users/bob/
+olmoe_1b7b_hf` — torch_dtype bfloat16 직접확인)**: 비활성 회귀
+바이트동일 · FATAL가드 2종(체크포인트 미설정/MLA스코프) 실제 exit=1 ·
+force-trigger 59/59 정확일치+증분캐싱 실증(n_scalar 29→1→1) ·
+zero-trigger 토큰까지 baseline과 완전동일 · **실RSS**(disabled
+7.67GiB→enabled 8.61GiB, +955MiB, 이론추정 576MiB보다 큼 — 원인
+미규명이지만 16GB 대비 충분히 여유) · **정확도 핵심사례**:
+production(비보정)=380(오답), 이 C엔진 correction 실제출력=831,
+독립계산한 genuine bf16 ground truth=831 — **정확히 일치**. ·
+**부가발견**: correction이 발동한 5개 포지션 전부 offline bf16
+calibration corpus에서는 margin이 1.99~8.21로 전혀 근접동점이 아님
+— production AF-blob(4bit MLX 체크포인트에서 파생, provenance
+gap)이 스스로 인공적 근접동점을 만들어낸 것 · 오버헤드A/B
+disabled/never-fire 노이즈수준 무차이, always-fire ~3.06배(예상대로,
+전량replay) · cb4c 동시실행 무충돌(5+5 이벤트, 크래시無, shadow pool
+분리는 코드상 완전 disjoint 심볼셋으로 구조적 보증).
+
+**정직한 한계**: OLMoE/GQA만(MLA는 DeepSeek bf16 다운로드 완료후
+후속), K/V resync 없음(보정은 해당 토큰 응답만 영향, 후속토큰
+전파안함 — 명시적 스코프제한), ROADMAP 자체 게이팅기준 미충족한채
+진행(사용자 명시선택). RESULTS.md "D-roadmap-3 correction path"
+섹션 + ROADMAP.md D-roadmap-3 두번째 Update. git 커밋/push 미실행.
+
+★★★★★★**D-deepseek-precint-4(2026-09-01) — 진짜 bf16 라이브
+C엔진 검증 완료, int4 flip 실증**: bf16 다운로드(31GB) 완료 →
+macstudio→bob TB4 직결 전송(311MB/s) → fork가 4개 config(default/
+blanket16/precise/bits32) 비교 실행. **fork 스스로 방법론 버그
+발견+수정**: 최초 4런이 C엔진 기본 하드코딩 corpus 써서 ground-
+truth 프롬프트와 안 맞았음(apples-to-oranges) → `QWEN_MOE_PROMPT_
+IDS`로 정확히 맞춰 재실행. **사용자가 두번째 진짜 구멍 발견**:
+"int4는?" — safetensors 로더 fallback 기본값이 8(int8)이라 4런
+전부 int4를 아예 테스트 안 했음(정작 Python 스윕에서 실제 flip이
+발견된 축이 int4인데). 내가 직접 int4-all config(104줄) 만들어
+5번째 런 실행 → **pos6에서 진짜 flip 실증**(genuine bf16=8872,
+int4=344, top2 gap 겨우 0.75). int8(default)/blanket16/precise/
+bits32는 전부 8/8 포지션 정답. RESULTS.md "D-deepseek-precint-4"
+섹션(5-config 비교표 포함). **정직한 한계**: 단일 프롬프트 8-
+position이라 정밀config가 blanket16 대비 메모리절감 외 정확도
+이점이 있는지는 이걸로 구분 안 됨(그건 여전히 1453-position Python
+스윕 근거), blanket16≡bits32 logit 완전동일이라는 미해명 현상도
+발견됨(미조사). fork에겐 이 이후 작업 중단 요청함(중복편집 방지).

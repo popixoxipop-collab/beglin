@@ -3251,6 +3251,18 @@ typedef struct {
 #define MOE_MAXLAYERS 64
 static MoeLayerTensors g_moe_lt[MOE_MAXLAYERS];
 
+// D-roadmap-3 correction path (2026-09-01): the bits=16 "hi" attention-only mirror of
+// g_moe_lt, populated by moe_resolve_layer_tensors_hi() only when QWEN_MOE_NEARTIE_CORRECT=1
+// (stays all-zero/unused otherwise -- zero extra cost when disabled). g_moe_lt_cur is the
+// indirection moe_forward_token() actually reads (see the one-line change at its own g_moe_lt
+// reference) -- normally points at production g_moe_lt; moe_neartie_reverify_hi() swaps it to
+// g_moe_lt_hi for the duration of a correction replay, then restores it. Safe because
+// run_moe_cbatch_verify_mode()'s online loop is single-threaded and MoeScalarPool workers
+// never dereference g_moe_lt/g_moe_lt_cur themselves (verified against the real thread-pool
+// code before relying on this).
+static MoeLayerTensors g_moe_lt_hi[MOE_MAXLAYERS];
+static MoeLayerTensors *g_moe_lt_cur = g_moe_lt;
+
 // Phase 4 sub-part 1, Step 1: shape cross-checks. Every (out,in) pair here was confirmed by
 // reading the real call sites, not assumed -- moe_mla_attention() (q_proj/kv_a_proj/kv_b_proj/
 // o_proj) and moe_forward_token()'s dense/switch/shared branches (dense_*/switch_*/shared_*,
@@ -3302,6 +3314,35 @@ static void moe_resolve_attn_tensors_gqa(int l, MoeLayerTensors *t) {
     moe_check_af_shape(t->k_proj, "k_proj", l, (long)MOE_N_KV_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
     moe_check_af_shape(t->v_proj, "v_proj", l, (long)MOE_N_KV_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
     moe_check_af_shape(t->o_proj, "o_proj", l, MOE_HIDDEN, (long)MOE_N_HEADS*MOE_HEAD_DIM);
+}
+
+// D-roadmap-3 correction path: the "__neartie_hi"-suffixed mirror of moe_resolve_attn_tensors_
+// gqa() above -- same shapes, looks up the bits=16 registry entries moe_neartie_correct_load_
+// attn_hi() registers instead of the production AF-blob-file entries. GQA-only this round
+// (MLA's own hi-mirror is a deferred, structurally-similar follow-up, not implemented
+// speculatively -- MOE_ST_ATTN_ROLES_MLA already exists and is unused by this pass).
+static void moe_resolve_attn_tensors_gqa_hi(int l, MoeLayerTensors *t) {
+    char nm[256];
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.q_proj__neartie_hi",l); t->q_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.k_proj__neartie_hi",l); t->k_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.v_proj__neartie_hi",l); t->v_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.o_proj__neartie_hi",l); t->o_proj = moe_find_af(nm);
+    moe_check_af_shape(t->q_proj, "q_proj__neartie_hi", l, (long)MOE_N_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
+    moe_check_af_shape(t->k_proj, "k_proj__neartie_hi", l, (long)MOE_N_KV_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
+    moe_check_af_shape(t->v_proj, "v_proj__neartie_hi", l, (long)MOE_N_KV_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
+    moe_check_af_shape(t->o_proj, "o_proj__neartie_hi", l, MOE_HIDDEN, (long)MOE_N_HEADS*MOE_HEAD_DIM);
+}
+
+// Must run AFTER moe_resolve_layer_tensors() (production) and AFTER moe_neartie_correct_load_
+// attn_hi() (registers the "__neartie_hi" entries this looks up). Struct-copies each layer's
+// production tensor set first -- brings along FFN/expert/norm/q_norm/k_norm pointers unchanged
+// (D-roadmap-2 (b): FFN precision doesn't move this phenomenon, no reason to promote/duplicate
+// it) -- then overrides only the 4 attention-role pointers with the bits=16 versions.
+static void moe_resolve_layer_tensors_hi(void) {
+    for (int l = 0; l < MOE_NL; l++) {
+        g_moe_lt_hi[l] = g_moe_lt[l];
+        moe_resolve_attn_tensors_gqa_hi(l, &g_moe_lt_hi[l]);
+    }
 }
 
 static void moe_resolve_layer_tensors(void) {
@@ -3529,7 +3570,10 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
     }
 
     for (int l = 0; l < MOE_NL; l++) {
-        MoeLayerTensors *t = &g_moe_lt[l];
+        // D-roadmap-3 correction path: g_moe_lt_cur, not g_moe_lt directly -- normally an alias
+        // for g_moe_lt (byte-identical), swapped to g_moe_lt_hi only inside
+        // moe_neartie_reverify_hi()'s replay loop. The only such reference in this function.
+        MoeLayerTensors *t = &g_moe_lt_cur[l];
         float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
         moe_rmsnorm(x, w_inln, h, MOE_HIDDEN);
         if (getenv("QWEN_MOE_GQA_DEBUG_KVCHECK") && pos <= 1 && l == 0) {
@@ -4917,6 +4961,96 @@ static void moe_reverify_exact(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTen
     if (n_scalar_tok_out) *n_scalar_tok_out = n_scalar;
 }
 
+// D-roadmap-3 correction path: a SEPARATE shadow K/V lane pool, never shared with Tier2's
+// (g_moe_sK_flat/g_moe_sV_flat above). WHY: this pool caches K/V computed via bits=16 attention
+// weights (g_moe_lt_hi) -- numerically different from Tier2's production-precision cache: mixing
+// them would silently corrupt whichever replay reads a lane the other one wrote.
+//   COST: unlike Tier2's pool (allocated unconditionally in alloc_moe_buffers()), this one is
+//   allocated ONLY when QWEN_MOE_NEARTIE_CORRECT=1 (moe_neartie_correct_init(), below) -- zero
+//   bytes when the feature is disabled, matching this subsystem's established "disabled costs
+//   nothing" property (moe_neartie_maybe_log()/moe_neartie_maybe_correct() themselves already
+//   follow this same rule).
+//   EXIT: if MOE_NEARTIE_LANES=8 (matching MOE_CB4C_LANES) ever proves too small/large under
+//   real traffic, it's independently tunable -- no other code assumes the two pool sizes match.
+#define MOE_NEARTIE_LANES 8
+static float *g_moe_nt_sK_flat = NULL, *g_moe_nt_sV_flat = NULL;
+static inline float *moe_nt_sK_row(int l, int lane, int pos) { return g_moe_nt_sK_flat + (((long)l*MOE_NEARTIE_LANES + lane)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_KROW; }
+static inline float *moe_nt_sV_row(int l, int lane, int pos) { return g_moe_nt_sV_flat + (((long)l*MOE_NEARTIE_LANES + lane)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_VROW; }
+static int g_moe_nt_sh_req[MOE_NEARTIE_LANES];
+static int g_moe_nt_sh_valid[MOE_NEARTIE_LANES];
+static int g_moe_nt_sh_next_evict = 0;
+
+static int moe_neartie_shadow_lane_for(int req) {   // verbatim mirror of moe_shadow_lane_for()
+    for (int i = 0; i < MOE_NEARTIE_LANES; i++) if (g_moe_nt_sh_req[i] == req) return i;
+    int lane = g_moe_nt_sh_next_evict;
+    g_moe_nt_sh_next_evict = (g_moe_nt_sh_next_evict + 1) % MOE_NEARTIE_LANES;
+    g_moe_nt_sh_req[lane] = req;
+    g_moe_nt_sh_valid[lane] = 0;
+    return lane;
+}
+static int moe_neartie_shadow_valid_peek(int req) {   // verbatim mirror of moe_shadow_valid_peek()
+    for (int i = 0; i < MOE_NEARTIE_LANES; i++) if (g_moe_nt_sh_req[i] == req) return g_moe_nt_sh_valid[i];
+    return 0;
+}
+
+static float *g_mnc_logits_hi = NULL;   // MOE_VOCAB scratch, mirrors g_mre_logits_tmp above
+
+// Bits=16 counterpart of moe_reverify_exact() -- identical incremental-replay shape (only
+// replays positions beyond what this request's OWN neartie lane already has cached), but swaps
+// g_moe_lt_cur to g_moe_lt_hi around the replay loop instead of using production g_moe_lt.
+// Reuses moe_forward_token()'s own single-sequence scratch (g_moe_K_flat/g_moe_V_flat via
+// moe_K_row()/moe_V_row()) as the working buffer -- safe: this is a synchronous, single-threaded
+// call, never overlapping with Tier2's own use of the same scratch (each completes fully before
+// the next one in the caller's sequential emit-loop flow), and that scratch is entirely separate
+// from production's own g_moe_cK_flat/g_moe_cV_flat (verified -- moe_forward_token() never
+// touches the "c"-prefixed family), so this can never corrupt production serving state.
+static void moe_neartie_reverify_hi(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
+                                     float *w_finalnorm, int req, int pos, float *logits_out,
+                                     int *n_scalar_tok_out) {
+    int lane = moe_neartie_shadow_lane_for(req);
+    int start = g_moe_nt_sh_valid[lane];
+    if (start > pos) start = 0;
+
+    for (int l = 0; l < MOE_NL; l++)
+        for (int p = 0; p < start; p++) {
+            memcpy(moe_K_row(l,p), moe_nt_sK_row(l,lane,p), (size_t)MOE_KROW*sizeof(float));
+            memcpy(moe_V_row(l,p), moe_nt_sV_row(l,lane,p), (size_t)MOE_VROW*sizeof(float));
+        }
+
+    float *logits_tmp = g_mnc_logits_hi;
+    int n_scalar = 0;
+    g_moe_lt_cur = g_moe_lt_hi;   // swap -- moe_forward_token()'s one g_moe_lt_cur reference now reads bits=16
+    for (int p = start; p <= pos; p++) {
+        moe_forward_token(af, t_embed, t_lmhead, w_finalnorm, rq_hist[req][p], p, logits_tmp, NULL, NULL, NULL);
+        n_scalar++;
+    }
+    g_moe_lt_cur = g_moe_lt;   // restore -- single straight-line exit above, exactly one restore site
+    memcpy(logits_out, logits_tmp, MOE_VOCAB * sizeof(float));
+
+    for (int l = 0; l < MOE_NL; l++)
+        for (int p = start; p <= pos; p++) {
+            memcpy(moe_nt_sK_row(l,lane,p), moe_K_row(l,p), (size_t)MOE_KROW*sizeof(float));
+            memcpy(moe_nt_sV_row(l,lane,p), moe_V_row(l,p), (size_t)MOE_VROW*sizeof(float));
+        }
+    g_moe_nt_sh_valid[lane] = pos + 1;
+    if (n_scalar_tok_out) *n_scalar_tok_out = n_scalar;
+}
+
+// D-roadmap-3 correction path: allocates the neartie-specific shadow pool + scratch, ONLY when
+// called (i.e. only when QWEN_MOE_NEARTIE_CORRECT=1) -- see the pool's own comment for why this
+// must stay conditional, unlike Tier2's unconditional allocation.
+static void moe_neartie_correct_init(void) {
+    for (int i = 0; i < MOE_NEARTIE_LANES; i++) { g_moe_nt_sh_req[i] = -1; g_moe_nt_sh_valid[i] = 0; }
+    g_moe_nt_sh_next_evict = 0;
+    g_moe_nt_sK_flat = malloc((long)MOE_MAXLAYERS*MOE_NEARTIE_LANES*MOE_CBATCH_MAXPOS*MOE_KROW*sizeof(float));
+    g_moe_nt_sV_flat = malloc((long)MOE_MAXLAYERS*MOE_NEARTIE_LANES*MOE_CBATCH_MAXPOS*MOE_VROW*sizeof(float));
+    g_mnc_logits_hi = malloc(MOE_VOCAB * sizeof(float));
+    if (!g_moe_nt_sK_flat || !g_moe_nt_sV_flat || !g_mnc_logits_hi) {
+        fprintf(stderr, "FATAL: QWEN_MOE_NEARTIE_CORRECT=1: shadow pool / scratch alloc failed\n");
+        exit(1);
+    }
+}
+
 // (A,pos)-aware threshold, mirroring moe_baware_threshold()'s (MoE-3f) discipline: never
 // invented, always measured. Task#101 (B=4,R=12, PREFILL_MODE=1, unlimited budget, threshold=1e9
 // i.e. always-escalate) captured the FULL margin distribution for this workload: 85 tier1 calls,
@@ -5031,6 +5165,145 @@ static void moe_cb4c_maybe_reverify(const uint8_t *af, MoeAFTensor *t_embed, Moe
                 memcpy(moe_cV_row(l,slot,p), moe_sV_row(l,lane,p), (size_t)MOE_VROW*sizeof(float));
             }
     }
+}
+
+// D-roadmap-3: flag-and-log-only runtime near-tie telemetry (ROADMAP.md, "D-roadmap-3" --
+// narrowed scope after D-roadmap-2 Track A/B showed attention-role near-ties are fully closed
+// by static blanket QWEN_MOE_ROLE_BITS promotion; no correction mechanism is needed for that
+// axis. What remains: build real-traffic evidence of residual final-output near-ties, for a
+// *future* correction round to consume -- this round logs only, it never corrects.
+//
+// D1: trigger axis is the SAME quantity moe_cb4c_margin() already computes (top1-minus-top2
+//   raw-logit gap over MOE_VOCAB), not the offline router-margin profiler's expert-selection-
+//   softmax margin (RESULTS.md, router-margin-profiler sections) -- those are different axes.
+//   WHY: the (not-yet-built) correction path this feature is evidence-gathering for would
+//   "recompute the flagged position's attention-role tensors... substitute the corrected
+//   result" (ROADMAP.md), which only makes sense if the trigger is itself a final-logit
+//   quantity, same as moe_cb4c's own trigger.
+//   COST: reuses moe_cb4c_margin()'s O(MOE_VOCAB) scan on the rare trigger -- acceptable,
+//   moe_cb4c already pays this cost on its own axis with the same "cheap gate first" shape.
+//   EXIT: if a future round wants the router-expert-selection axis instead, it's a distinct
+//   feature (needs moe_top_k_select() to retain the (k+1)-th score) -- not a variant of this one.
+// D2 (measured, 2026-09-01, moe_precision_sweep_margin_calibration.py -- see RESULTS.md
+//   "D-roadmap-3 threshold calibration"): OLMoE layers 1-4, all 4 attention roles, bits=4
+//   RTN quant/dequant (the most aggressive precision this project ever ships), 1453 real
+//   positions (same 60-prompt corpus as moe_precision_sweep_output.py): the LARGEST
+//   baseline top1-vs-top2 margin among all 94 positions where a bits=4 substitution
+//   actually flipped the final output-token argmax was 0.4786; margin>=0.5195 (decile 4's
+//   lower edge) never flipped once (0/145, and every higher decile is the same 0/145).
+//   0.5 sits just above the observed max flip margin, same "just above the one known real
+//   disagreement" logic moe_cbatch_threshold()'s own 0.1 used for its own axis.
+//   COST: single-model (OLMoE), single perturbation source (attention-role bits=4) --
+//   not yet cross-validated against other architectures or other precision-loss sources
+//   (numerical nondeterminism, a different quant scheme). QWEN_MOE_NEARTIE_THRESHOLD
+//   still overrides this for anyone who wants a workload-specific recalibration.
+//   EXIT: if a future measurement on a different model/workload finds real flips above
+//   0.5, replace this literal and update the citation, same as moe_cbatch_threshold()'s
+//   own precedent for revising a measured constant.
+static int    g_moe_neartie_log_on    = 0;   // QWEN_MOE_NEARTIE_LOG, default off
+static double g_moe_neartie_threshold_override = -1.0;   // QWEN_MOE_NEARTIE_THRESHOLD override
+static double moe_neartie_threshold(void) {
+    if (g_moe_neartie_threshold_override >= 0.0) return g_moe_neartie_threshold_override;
+    return 0.5;   // measured, see D2 comment above
+}
+
+// D-roadmap-3 correction path (2026-09-01): a SEPARATE, TIGHTER threshold than
+// moe_neartie_threshold()'s 0.5 -- deliberately not shared. WHY: 0.5 was calibrated for
+// cheap logging (deliberately high recall, ~29% of tokens trigger) -- a full from-scratch
+// position-history replay at that trigger rate would be prohibitively expensive, defeating
+// the entire point of paying correction cost only rarely. Re-analyzed the SAME calibration
+// data (moe_neartie_margin_calibration.json, RESULTS.md "D-roadmap-3 threshold calibration")
+// at tighter cuts: T=0.1 bounds trigger rate to 6.47% (94/1453) with 59.57% flip-rate-
+// within-bucket (9.2x enrichment over the 6.47% overall baseline) -- the tightest point in
+// the sweep that keeps replay cost affordable while catching the highest-density real risk.
+//   COST: an explicit, named trade -- this leaves a thin tail of real flip risk (margin in
+//   [0.1, 0.48), the observed max among real bits4 flips) uncorrected by default.
+//   EXIT: QWEN_MOE_NEARTIE_CORRECT_THRESHOLD overrides for more recall at higher replay cost.
+static double g_moe_neartie_correct_threshold_override = -1.0;
+static double moe_neartie_correct_threshold(void) {
+    if (g_moe_neartie_correct_threshold_override >= 0.0) return g_moe_neartie_correct_threshold_override;
+    return 0.1;   // measured, see comment above
+}
+
+// Forward decl: moe_neartie_correct_load_attn_hi() itself is defined much later (needs
+// MoeStRole/MOE_ST_ATTN_ROLES_GQA, only declared near run_moe_safetensors_verify_mode()), but
+// run_moe_cbatch_verify_mode() (defined before that point) needs to call it -- same "declare up
+// front, define later" pattern this file already uses elsewhere (e.g. moe_mla_attention_ragged()'s
+// own forward decl next to moe_forward_token()), C99+ has no implicit function declaration.
+static void moe_neartie_correct_load_attn_hi(const char *safetensors_path);
+
+// One-time (startup) tally of the actually-active attention-role bit-width distribution,
+// read straight off each MoeAFTensor's own resolved .bits field (set at load time by
+// st_register_moe_role()/moe_role_bits()) -- no new lookup table needed, this data already
+// exists per-tensor. O(MOE_NL*4), called once, not per token.
+static void moe_neartie_attn_bits_summary(char *buf, size_t bufsz) {
+    int cnt4 = 0, cnt8 = 0, cnt16 = 0, cnt32 = 0, cnt_other = 0, total = 0;
+    for (int l = 0; l < MOE_NL; l++) {
+        MoeAFTensor *roles[4];
+        if (MOE_ATTN_KIND == MOE_ATTN_MLA) {
+            roles[0] = g_moe_lt[l].q_proj; roles[1] = g_moe_lt[l].kv_a_proj;
+            roles[2] = g_moe_lt[l].kv_b_proj; roles[3] = g_moe_lt[l].o_proj;
+        } else {
+            roles[0] = g_moe_lt[l].q_proj; roles[1] = g_moe_lt[l].k_proj;
+            roles[2] = g_moe_lt[l].v_proj; roles[3] = g_moe_lt[l].o_proj;
+        }
+        for (int i = 0; i < 4; i++) {
+            if (!roles[i]) continue;
+            total++;
+            switch (roles[i]->bits) {
+                case 4: cnt4++; break; case 8: cnt8++; break;
+                case 16: cnt16++; break; case 32: cnt32++; break;
+                default: cnt_other++; break;
+            }
+        }
+    }
+    snprintf(buf, bufsz, "attn_af_bits: 4=%d 8=%d 16=%d 32=%d other=%d (of %d tensors, NL=%d)",
+             cnt4, cnt8, cnt16, cnt32, cnt_other, total, MOE_NL);
+}
+
+// Per-call check: disabled (the default) costs exactly one bool compare. Enabled and above
+// threshold costs moe_cb4c_margin()'s O(MOE_VOCAB) scan (same cost moe_cb4c already pays on
+// its own axis). Returns -1.0 (sentinel, margin is always >=0 by construction) on no-trigger,
+// else the margin that triggered the log line.
+static double moe_neartie_maybe_log(int slot, int req, int pos, int token_id, int argmax, const float *logits) {
+    if (!g_moe_neartie_log_on) return -1.0;
+    double margin = moe_cb4c_margin(logits);
+    double threshold = moe_neartie_threshold();
+    if (margin >= threshold) return -1.0;
+    fprintf(stderr, "[moe neartie] event req=%d slot=%d pos=%d token=%d argmax=%d margin=%.6f threshold=%.6f\n",
+            req, slot, pos, token_id, argmax, margin, threshold);
+    return margin;
+}
+
+// D-roadmap-3 correction path: cheap-gate-first, same shape as moe_cb4c_maybe_reverify() (bool
+// check -> margin scan -> budget check, expensive replay only on the rare trigger). Shares the
+// SAME per-step step_budget int moe_cb4c_maybe_reverify() already threads through the emit
+// loops (not a separate cap) -- directly follows ROADMAP.md's own D-roadmap-3 COST guidance
+// ("reuse [the existing mechanism's] cost discipline, don't re-derive from scratch") and bounds
+// a real risk: without a shared cap, many concurrent requests triggering correction in the same
+// step could dominate that step's wall-clock.
+static int g_moe_neartie_correct_on = 0;   // QWEN_MOE_NEARTIE_CORRECT, default off
+
+static void moe_neartie_maybe_correct(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
+                                       float *w_finalnorm, int req, int pos, float *logits_inout,
+                                       int *budget_inout) {
+    if (!g_moe_neartie_correct_on) return;
+    double margin_before = moe_cb4c_margin(logits_inout);
+    if (margin_before >= moe_neartie_correct_threshold()) return;
+    if (*budget_inout <= 0) return;
+    int already = moe_neartie_shadow_valid_peek(req);
+    int cost = pos + 1 - already; if (cost < 0) cost = 0;
+    if (*budget_inout < cost) {
+        fprintf(stderr, "[moe neartie] correct req=%d pos=%d SKIPPED budget-starved (need=%d have=%d)\n",
+                req, pos, cost, *budget_inout);
+        return;
+    }
+    int n_scalar = 0;
+    moe_neartie_reverify_hi(af, t_embed, t_lmhead, w_finalnorm, req, pos, g_mnc_logits_hi, &n_scalar);
+    *budget_inout -= n_scalar;
+    fprintf(stderr, "[moe neartie] correct req=%d pos=%d n_scalar=%d margin_before=%.6f threshold=%.6f\n",
+            req, pos, n_scalar, margin_before, moe_neartie_correct_threshold());
+    memcpy(logits_inout, g_mnc_logits_hi, MOE_VOCAB * sizeof(float));
 }
 
 // Phase 4 sub-part 1, Step 8 (Group F): logits_step, flat, MOE_BATCH_MAX*MOE_VOCAB -- shared by
@@ -5254,6 +5527,18 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     const char *env_budget4c  = getenv("QWEN_MOE_CBATCH_BUDGET");
     const char *env_resync    = getenv("QWEN_MOE_CBATCH_RESYNC");
 
+    // D-roadmap-3: flag-and-log-only near-tie telemetry (see the comment block above
+    // moe_neartie_maybe_log() for the full D1/D2 rationale). Default off, zero behavioral
+    // change when unset.
+    const char *env_neartie_log = getenv("QWEN_MOE_NEARTIE_LOG");
+    const char *env_neartie_thr = getenv("QWEN_MOE_NEARTIE_THRESHOLD");
+
+    // D-roadmap-3 correction path: default off, zero behavioral/memory change when unset
+    // (see moe_neartie_maybe_correct()/the shadow-pool comment for the full rationale).
+    const char *env_neartie_correct       = getenv("QWEN_MOE_NEARTIE_CORRECT");
+    const char *env_neartie_correct_st    = getenv("QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS");
+    const char *env_neartie_correct_thr   = getenv("QWEN_MOE_NEARTIE_CORRECT_THRESHOLD");
+
     int B            = env_slots  && env_slots[0]  ? atoi(env_slots)  : 4;
     int R            = env_reqs   && env_reqs[0]   ? atoi(env_reqs)   : 12;
     int pfB          = env_budget && env_budget[0] ? atoi(env_budget) : 16;
@@ -5273,6 +5558,43 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     g_moe_cb4c_threshold_override = env_threshold && env_threshold[0] ? atof(env_threshold) : -1.0;
     int    cbatch_budget      = env_budget4c  && env_budget4c[0]  ? atoi(env_budget4c)  : MOE_CBATCH_MAXPOS;
     int    resync_on          = env_resync    && env_resync[0]    && atoi(env_resync) != 0;
+
+    // D-roadmap-3: QWEN_MOE_NEARTIE_THRESHOLD overrides moe_neartie_threshold()'s measured
+    // default (D2 above) when set; unset just uses the cited 0.5. Safe to call
+    // moe_neartie_attn_bits_summary() here: moe_resolve_layer_tensors() already ran earlier
+    // in this function.
+    g_moe_neartie_log_on = env_neartie_log && env_neartie_log[0] && atoi(env_neartie_log) != 0;
+    g_moe_neartie_threshold_override = env_neartie_thr && env_neartie_thr[0] ? atof(env_neartie_thr) : -1.0;
+    if (g_moe_neartie_log_on) {
+        char cfgbuf[256];
+        moe_neartie_attn_bits_summary(cfgbuf, sizeof cfgbuf);
+        fprintf(stderr, "[moe neartie] cfg attn_kind=%d nl=%d %s threshold=%.6f\n",
+                MOE_ATTN_KIND, MOE_NL, cfgbuf, moe_neartie_threshold());
+    }
+
+    // D-roadmap-3 correction path init -- FATAL if enabled without a checkpoint, not a guessed
+    // path (same data-first-numerics discipline as every other QWEN_MOE_NEARTIE_* gate).
+    g_moe_neartie_correct_on = env_neartie_correct && env_neartie_correct[0] && atoi(env_neartie_correct) != 0;
+    g_moe_neartie_correct_threshold_override = env_neartie_correct_thr && env_neartie_correct_thr[0]
+        ? atof(env_neartie_correct_thr) : -1.0;
+    if (g_moe_neartie_correct_on) {
+        if (!env_neartie_correct_st || !env_neartie_correct_st[0]) {
+            fprintf(stderr, "FATAL: QWEN_MOE_NEARTIE_CORRECT=1 requires QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS "
+                            "(genuine bf16/original checkpoint -- see ROADMAP.md D-roadmap-3)\n");
+            exit(1);
+        }
+        moe_neartie_correct_load_attn_hi(env_neartie_correct_st);   // FATALs itself on non-GQA (scope guard)
+        moe_resolve_layer_tensors_hi();
+        moe_neartie_correct_init();
+        long attn_hi_bytes = 0;
+        for (int l = 0; l < MOE_NL; l++)
+            attn_hi_bytes += g_moe_lt_hi[l].q_proj->packed_bytes + g_moe_lt_hi[l].k_proj->packed_bytes
+                            + g_moe_lt_hi[l].v_proj->packed_bytes + g_moe_lt_hi[l].o_proj->packed_bytes;
+        long shadow_pool_bytes = (long)MOE_MAXLAYERS*MOE_NEARTIE_LANES*MOE_CBATCH_MAXPOS*MOE_KROW*(long)sizeof(float)
+                                + (long)MOE_MAXLAYERS*MOE_NEARTIE_LANES*MOE_CBATCH_MAXPOS*MOE_VROW*(long)sizeof(float);
+        fprintf(stderr, "[moe neartie] correct cfg safetensors=%s threshold=%.6f attn_hi_bytes=%ld shadow_pool_bytes=%ld\n",
+                env_neartie_correct_st, moe_neartie_correct_threshold(), attn_hi_bytes, shadow_pool_bytes);
+    }
 
     if (B < 1 || B > MOE_BATCH_MAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS=%d out of [1,%d]\n", B, MOE_BATCH_MAX); exit(1); }
     if (R < 1 || R > MOE_CB4B_RMAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_REQS=%d out of [1,%d]\n", R, MOE_CB4B_RMAX); exit(1); }
@@ -5338,6 +5660,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     int qhead = 0, nact = 0, step = 0;
     long steps_idle = 0, steps_with_idle_slot = 0, admitted_after_evict = 0;
     long queue_wait_events = 0, queue_wait_max_steps = 0, steps_pure_prefill = 0;
+    long neartie_events = 0; double neartie_margin_sum = 0.0, neartie_margin_min = 1e30;   // D-roadmap-3
     float *logits_step = g_rmcv_logits_step;
 
     double t_run0 = nowt();
@@ -5424,8 +5747,12 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
             float *lm = logits_step + (size_t)m*MOE_VOCAB;
             moe_cb4c_maybe_reverify(af_blob, t_embed, t_lmhead, w_finalnorm, s, r, sposs[m], ids[m],
                                      A, lm, &step_budget, reverify_mode, resync_on);
+            moe_neartie_maybe_correct(af_blob, t_embed, t_lmhead, w_finalnorm, r, sposs[m], lm, &step_budget);   // D-roadmap-3
             int am = 0; float bm = lm[0];
             for (int v = 1; v < MOE_VOCAB; v++) if (lm[v] > bm) { bm = lm[v]; am = v; }
+            { double ntm = moe_neartie_maybe_log(s, r, sposs[m], ids[m], am, lm);   // D-roadmap-3
+              if (ntm >= 0.0) { neartie_events++; neartie_margin_sum += ntm;
+                                 if (ntm < neartie_margin_min) neartie_margin_min = ntm; } }
             rq_out[r][rq_nout[r]++] = am; mcb_pos[s]++;
             if (mcb_pos[s] < MOE_CBATCH_MAXPOS) rq_hist[r][mcb_pos[s]] = am;
             if (am == 100001 || am == stop_extra || rq_nout[r] >= rq_maxnew[r] || mcb_pos[s] >= MOE_CBATCH_MAXPOS)
@@ -5440,8 +5767,12 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
                 float *lm = logits_step + (size_t)m*MOE_VOCAB;
                 moe_cb4c_maybe_reverify(af_blob, t_embed, t_lmhead, w_finalnorm, s, r, sposs[m], ids[m],
                                          A, lm, &step_budget, reverify_mode, resync_on);
+                moe_neartie_maybe_correct(af_blob, t_embed, t_lmhead, w_finalnorm, r, sposs[m], lm, &step_budget);   // D-roadmap-3
                 int am = 0; float bm = lm[0];
                 for (int v = 1; v < MOE_VOCAB; v++) if (lm[v] > bm) { bm = lm[v]; am = v; }
+                { double ntm = moe_neartie_maybe_log(s, r, sposs[m], ids[m], am, lm);   // D-roadmap-3
+                  if (ntm >= 0.0) { neartie_events++; neartie_margin_sum += ntm;
+                                     if (ntm < neartie_margin_min) neartie_margin_min = ntm; } }
                 rq_out[r][rq_nout[r]++] = am; rq_t_first[r] = temit;
                 if (rq_plen[r] < MOE_CBATCH_MAXPOS) rq_hist[r][rq_plen[r]] = am;
                 if (am == 100001 || am == stop_extra || rq_nout[r] >= rq_maxnew[r])
@@ -5468,6 +5799,10 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
             "queue_wait_events=%ld queue_wait_max_steps=%ld steps_pure_prefill=%ld ttft_max_ms=%.2f ttft_mean_ms=%.2f wall_ms=%.2f\n",
             step, steps_idle, steps_with_idle_slot, admitted_after_evict, queue_wait_events,
             queue_wait_max_steps, steps_pure_prefill, ttft_max, ttft_n ? ttft_sum/ttft_n : 0.0, (t_run1-t_run0)*1000.0);
+    if (g_moe_neartie_log_on)   // D-roadmap-3
+        fprintf(stderr, "[moe neartie] summary events=%ld mean_margin=%.6f min_margin=%.6f threshold=%.6f\n",
+                neartie_events, neartie_events ? neartie_margin_sum / neartie_events : 0.0,
+                neartie_events ? neartie_margin_min : 0.0, moe_neartie_threshold());
     fprintf(stderr, "RESULT: MoE-4b online cbatch complete, B=%d R=%d PREFILL_MODE=%d\n", B, R, prefill_mode);
     return 1;
 }
@@ -11972,6 +12307,47 @@ static const MoeStRole MOE_ST_ATTN_ROLES_GQA[] = {   // qwen3_moe/olmoe -- both 
     { "model.layers.%d.self_attn.q_norm.weight", "model.layers.%d.self_attn.q_norm.weight", 0 },
     { "model.layers.%d.self_attn.k_norm.weight", "model.layers.%d.self_attn.k_norm.weight", 0 },
 };
+
+// D-roadmap-3 correction path: registers bits=16 attention-only tensors for ALL layers, sourced
+// from a genuine bf16/original safetensors checkpoint (QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS),
+// into the SAME shared g_moe_af[] registry the production AF-blob loader already populated --
+// reuses st_register_moe_f16_as_af() verbatim (already-tested code, no new quant/dequant math),
+// just under "__neartie_hi"-suffixed engine names so lookups can never collide with production
+// entries. WHY no new export tool/blob format: the AF-blob-FILE format (layout_af.txt+.bin) has
+// no on-disk representation for raw F16 tensors -- reusing the safetensors loader's existing
+// live-dequant path is real, tested machinery already in this file, not new engineering.
+//   COST: opens a SECOND independent SafetensorsMulti handle concurrently with the production
+//   AF-blob deployment (verified no shared/singleton global state between the two loader
+//   subsystems before relying on this) -- one-time startup cost (~512MiB eager, see RESULTS.md
+//   memory math), not a hot-path cost.
+//   EXIT: MLA support is a structurally-identical follow-up (swap MOE_ST_ATTN_ROLES_GQA for
+//   MOE_ST_ATTN_ROLES_MLA, add a kv_a_proj/kv_b_proj-shaped hi-resolve mirror) -- deferred, not
+//   implemented speculatively, since this round's real bf16 source (DeepSeek) isn't available yet.
+static void moe_neartie_correct_load_attn_hi(const char *safetensors_path) {
+    if (MOE_ATTN_KIND != MOE_ATTN_GQA) {
+        fprintf(stderr, "FATAL: QWEN_MOE_NEARTIE_CORRECT=1 only implemented for GQA models this round "
+                        "(MLA is a deferred follow-up -- see ROADMAP.md D-roadmap-3)\n");
+        exit(1);
+    }
+    SafetensorsMulti *saved = g_st_moe;
+    g_st_moe = safetensors_open_multi(safetensors_path);
+    char name[160], ename[160];
+    for (int l = 0; l < MOE_NL; l++) {
+        for (size_t r = 0; r < sizeof(MOE_ST_ATTN_ROLES_GQA)/sizeof(MOE_ST_ATTN_ROLES_GQA[0]); r++) {
+            const MoeStRole *role = &MOE_ST_ATTN_ROLES_GQA[r];
+            if (!role->is_af) continue;   // skip q_norm/k_norm -- already F32, no promotion needed
+            snprintf(name, sizeof name, role->st_pattern, l);
+            snprintf(ename, sizeof ename, role->engine_pattern, l);
+            size_t n = strlen(ename);
+            snprintf(ename + n, sizeof ename - n, "__neartie_hi");
+            st_register_moe_f16_as_af(name, ename);
+        }
+    }
+    g_st_moe = saved;
+    fprintf(stderr, "[moe neartie] correct attn_hi registered: %d layers x 4 roles from '%s'\n",
+            MOE_NL, safetensors_path);
+}
+
 static const MoeStRole MOE_ST_DENSE_ROLES[] = {   // only l < MOE_FIRST_DENSE_LAYERS (deepseek_v2)
     { "model.layers.%d.mlp.gate_proj.weight", "model.layers.%d.mlp.gate_proj", 1, "dense_gate_proj" },
     { "model.layers.%d.mlp.up_proj.weight",   "model.layers.%d.mlp.up_proj",   1, "dense_up_proj" },
