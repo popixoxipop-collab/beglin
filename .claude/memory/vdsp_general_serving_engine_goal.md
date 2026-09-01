@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-09-01T13:05:00.000Z
+  modified: 2026-09-01T13:25:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -2266,6 +2266,26 @@ SIGILL)으로 잡아냄 — `feedback_codegen_compile_check_insufficient`
 end-to-end 재실행은 안 함(리스크가 낮은 기계적 리팩터로 판단, 다른
 3곳보다 검증 강도가 약함을 정직하게 명시).
 
-`/tmp/qwen_f16tier_bin`을 검증된 신규 바이너리로 교체 완료. 상세:
-`RESULTS.md` "D-vocab-guard-1: generalized MoE token-id vocab-range
-check" 섹션.
+`/tmp/qwen_f16tier_bin`을 검증된 신규 바이너리로 교체 완료.
+
+★★★★★★**매니페스트 로더 실제 재실행 검증 완료(2026-09-01, 사용자
+재요구)**: "컴파일 확인만 하지 말고 진짜 재실행해서 검증해줘" →
+`#ifdef` 중첩을 직접 파이썬으로 파싱해 확인한 결과 `run_moe_gqa_
+cbatch_online_cpu_gate()`(GQA CPU twin, line 9587)는 이름과 달리
+실제로는 `QWEN_GPU_MLX` 가드 안(6545에서 열림)이라 dense-only
+바이너리로는 도달 불가 — 반면 `run_moe_cbatch_verify_mode()`의
+`QWEN_MOE_CB_ONLINE=1` 분기(MLA용, line 5100)는 가드 밖이라 재빌드
+없이 바로 테스트 가능함을 확인. 실제 DeepSeek-V2-Lite AF-blob
+체크포인트(`/Users/bob/moe_base_deepseek`)로 두 매니페스트 실행:
+(1) 유효 raw-int32 프롬프트파일 — 정상 로드+온라인스케줄러 완주+
+실생성출력 확인(회귀無), (2) 토큰 하나를 99999999로 오염시킨 파일 —
+`FATAL: [moe cbatch manifest] '...' (manifest line 1) -- wrong
+file, or not a raw-int32 prompt file?: token[2] = 99999999 out of
+vocab range [0,102400)`로 원래 진단메시지(파일명+라인번호+힌트)
+그대로 보존된 채 정확히 잡힘. **4개 지점 중 3개(매니페스트로더+
+MLA generate게이트+run_moe_safetensors_verify_mode)는 이제 실행
+검증 완료, GQA CPU twin 1개만 GPU빌드 필요로 미검증 상태 남음**(다른
+작업에서 GPU빌드가 실제로 필요해질 때 같이 확인 예정).
+
+상세: `RESULTS.md` "D-vocab-guard-1: generalized MoE token-id
+vocab-range check" 섹션(매니페스트 재검증 서브섹션 포함).

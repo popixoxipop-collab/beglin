@@ -6589,10 +6589,32 @@ silently corrupting:
 ```
 FATAL: [moe st verify]: token[0] = 100000 out of vocab range [0,50304)
 ```
-The manifest loader's own call site (unchanged logic, just extracted)
-was verified by compile success and code inspection, not re-run
-end-to-end this round -- lower-risk mechanical extraction, not new
-logic, but noted as a lighter verification tier than the other three.
+**Manifest loader re-verified end-to-end** (user pushback: "actually
+re-run it, don't just trust the compile"). Found the CPU-reachable
+entry point that hits `moe_cbatch_load_manifest()` without needing a
+GPU build (`run_moe_cbatch_verify_mode()`'s `QWEN_MOE_CB_ONLINE=1`
+branch is outside any `#ifdef QWEN_GPU_MLX` -- confirmed by walking
+the file's actual `#ifdef`/`#endif` nesting, not assumed; the sibling
+GQA CPU-twin `run_moe_gqa_cbatch_online_cpu_gate()` at line 9587 by
+contrast IS inside the GPU guard (opened at 6545) despite its own
+"CPU twin" name -- that one needs the `clang++`/MLX-linked build, not
+tested this round). Real DeepSeek-V2-Lite AF-blob checkpoint
+(`/Users/bob/moe_base_deepseek`), two synthetic manifests:
+- Valid raw-int32 prompt file (ids `1,2,3,4,5`, `QWEN_MOE_CB_PROMPT_MANIFEST`)
+  -- loads cleanly (`loaded 1-entry prompt manifest`), online scheduler
+  runs to completion with real generated output. No regression.
+- Same file with one id corrupted to `99999999` -- fails immediately
+  with the exact original rich diagnostic (filename + manifest line
+  number + "wrong file?" hint) preserved through the `snprintf`'d
+  context string:
+  ```
+  FATAL: [moe cbatch manifest] '/tmp/manifest_bad_prompt.i32'
+  (manifest line 1) -- wrong file, or not a raw-int32 prompt file?:
+  token[2] = 99999999 out of vocab range [0,102400)
+  ```
+All four call sites are now verified by real execution, not just
+code inspection -- the GPU-guarded GQA twin is the one remaining gap,
+deferred until a GPU build is actually needed for other work.
 
 ## DeepSeek-V2-Lite port of the router-margin profiler -- OLMoE's
 ## early-layer pattern does NOT generalize
