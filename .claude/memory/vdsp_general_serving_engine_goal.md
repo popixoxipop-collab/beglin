@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-09-01T11:40:00.000Z
+  modified: 2026-09-01T12:20:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -2203,3 +2203,37 @@ OLMoE wikitext 발견과 같은 패턴.
 `RESULTS.md` "DeepSeek-V2-Lite port of the router-margin profiler"
 섹션. 데이터: macstudio `/Users/eoe/deepseek_router_margin.json`,
 스크립트 `/Users/eoe/deepseek_router_margin_profiler.py`.
+
+★★★★★★**foundation 마무리 라운드(2026-09-01, ROI 1·2번 실행)**: 사용자가
+"향후 설계는 아키텍처별 재측정 필요하니 우린 기반 다지는 작업까지만"으로
+범위를 명시하고 4개 잔여항목을 ROI순 정렬 요청 → 순위: (1) 8-position
+spot-check 방향성(최저비용·최고리스크) (2) 미스윕 레이어 완결
+(3) DeepSeek 원인규명(향후 아키텍처별 범주, 지금 범위 밖) (4) 런타임
+메커니즘 구현(이미 2번 축소됨, 최저ROI) — 1,2번만 이번 라운드 실행.
+
+**qwen_infer.c 16비트 티어 커밋+push 완료**: `e560fda`(코드)+
+`37c05f9`(문서), `origin/main` 123a3c2..37c05f9.
+
+**(1) 8-position spot-check — 해소 + 진짜 버그 발견**: `prompt_ids_default[]`
+(`qwen_infer.c:12224`)의 첫 토큰 100000이 OLMoE vocab_size=50304를
+초과하는 out-of-range 값(DeepSeek 계열용 기본값을 OLMoE에 그대로 씀) —
+지금까지의 pos2/pos7 스팟체크 자체가 이 손상된 입력으로 돌아간 결과였음.
+`QWEN_MOE_PROMPT_IDS`로 유효 토큰열(`510,22116,310,253,1963,4415,5506,323`)
+재실행해 baseline/promoted/bf16참조 셋 다 이 코퍼스로 재정렬 후 대조:
+이 코퍼스는 근접동점을 안 건드려 argmax는 8/8 이미 일치하지만,
+**rel-L2가 8/8 포지션 전부에서 예외없이 감소**(평균 0.015718→0.015290,
+~2.7%) — 방향성(정답에 가까워짐) 명확히 확정. 참조:
+`moe_st_8pos_validcorpus_bf16_ref_logits.bin`(macstudio).
+
+**(2) 미스윕 레이어(6,7,8,10,11,13) 스윕 완료 — 16/16 레이어 전체 커버리지
+달성**: 24개 신규 조합, router_collapse=16 21/24·output_collapse=16 18/24.
+**전체 64/64 조합 최종집계: router 60/64(93.8%)·output 53/64(82.8%)가
+bits=16 필요** — 예외는 여전히 깊은 레이어(11,13)에 흩어져 있을 뿐
+규칙성 없음, 블랭킷 승격 결론 그대로 유지(이미 안전한 조합에 16비트
+적용해도 손해 없음). "미스윕 레이어" 갭 완전 해소 — 이제 추정이 아니라
+16/16 레이어 전부 실측됨. 데이터:
+`/Users/eoe/vdsp_olmoe_full_weights/moe_precision_sweep_remaining_layers.json`.
+
+**(3)(4)는 이번 라운드 범위 밖**(사용자 명시) — DeepSeek 원인규명은
+향후 아키텍처별 설계 착수 시점에, 런타임 메커니즘은 D-roadmap-3가
+이미 두 번 축소됐으므로 재정당화 없이는 미착수.

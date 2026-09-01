@@ -6394,6 +6394,43 @@ Full data: `/Users/eoe/vdsp_olmoe_full_weights/moe_precision_sweep_extra_layers.
 `/Users/eoe/vdsp_olmoe_full_weights/moe_local_vs_upstream.json`
 (raw log `/tmp/local_vs_upstream.log`) (macstudio).
 
+## D-roadmap-2 Track B: final layer sweep -- full 16/16 layer coverage
+
+Swept the last 6 unswept OLMoE layers (6,7,8,10,11,13 -- the remaining
+gap after the original 4 (1-4) plus the first 6-layer extension
+(0,5,9,12,14,15)) via `moe_precision_sweep_remaining_layers.py`
+(`allenai/OLMoE-1B-7B-0125` bf16 original, same 60-prompt/1453-position
+corpus and methodology as every prior round). 24 new (layer,role)
+combinations x {4,8,16,32}.
+
+**Collapse-point summary, these 6 layers:**
+```
+router_collapse=16:  21/24   (exceptions: layer11/q_proj=8, layer13/q_proj=8, layer13/k_proj=8)
+output_collapse=16:  18/24   (exceptions: layer8/v_proj=8, layer10/k_proj=8, layer11/k_proj=8,
+                               layer13/q_proj=8, layer13/k_proj=8, layer13/v_proj=8)
+```
+
+**Grand total, all 16 OLMoE layers x 4 attention roles (64/64 combos,
+full coverage now complete):**
+```
+router_collapse=16:  60/64  (93.8%)
+output_collapse=16:  53/64  (82.8%)
+```
+(layers 1-4: 16/16 router, 16/16 output -- layers 0,5,9,12,14,15: 23/24
+router, 19/24 output -- layers 6,7,8,10,11,13: 21/24 router, 18/24
+output.)
+
+Same pattern as every prior round: the small minority of exceptions
+cluster at deeper layers (11, 13) rather than following any obvious
+rule, and none of them change the overall conclusion -- blanket
+`bits=16` still correctly covers all but a handful of already-safer
+combos, at zero cost to those combos (promoting an already-safe
+combination to bits=16 doesn't break anything, it's just unnecessary
+memory). **This closes the "unswept layers" gap completely** -- every
+OLMoE layer's attention roles have now been measured, not assumed by
+extrapolation. Data: macstudio
+`/Users/eoe/vdsp_olmoe_full_weights/moe_precision_sweep_remaining_layers.json`.
+
 ## Synthesis: blanket all-layer attention promotion, not selective, and why
 
 **The local-vs-upstream result changes the recommendation.** Earlier
@@ -6449,6 +6486,53 @@ and (b) already showed the (much larger) expert/FFN parameter mass does
 not need this.
 
 **Updated to `ROADMAP.md`'s `D-roadmap-2`/`D-roadmap-3` accordingly.**
+
+## 8-position spot-check resolution -- and a real bug found along the way
+
+**Bug found**: `run_moe_safetensors_verify_mode()`'s
+`prompt_ids_default[] = {100000, 549, 4345, 280, 8204, 317, 245, 1234}`
+(`qwen_infer.c:12224`) leads with token id 100000 -- **out of range for
+OLMoE's actual vocab_size=50304** (this default is tuned for the
+DeepSeek-tokenizer-scale models this loader was originally built
+against, ~102400+ vocab). Feeding it to OLMoE is undefined behavior
+(out-of-bounds embedding-table row read), and it silently propagates
+through the whole causal sequence via attention -- meaning the earlier
+Synthesis section's pos2/pos7 spot-check (which used this default,
+unmodified) was run against a corrupted input the whole time. This
+also explains why a prior round's `olmoe_reference_capture.py`
+deliberately used a real tokenized text prompt instead of the raw
+default -- that was already routing around this exact bug, just not
+cross-referenced against the Synthesis section's own run.
+
+**Fix + re-verification**: re-ran both baseline (int8 default) and the
+blanket `bits=16` promotion via `QWEN_MOE_PROMPT_IDS` override with a
+valid, in-range 8-token sequence (`510,22116,310,253,1963,4415,5506,323`,
+tokenized from real text, all < 50304), against a freshly captured bf16
+ground truth from the real `allenai/OLMoE-1B-7B-0125` checkpoint for
+this exact sequence (`moe_st_8pos_validcorpus_bf16_ref_logits.bin`).
+
+```
+pos  argmax_ref  argmax_base  argmax_promo   relL2_base  relL2_promo  closer
+  0         806          806           806     0.041628     0.041411  promo
+  1         403          403           403     0.007137     0.007005  promo
+  2         253          253           253     0.007371     0.006771  promo
+  3        1612         1612          1612     0.015502     0.015241  promo
+  4        4415         4415          4415     0.008366     0.007882  promo
+  5         326          326           326     0.007163     0.006899  promo
+  6         323          323           323     0.019458     0.018153  promo
+  7         253          253          253      0.019120     0.018960  promo
+
+mean rel-L2: baseline 0.015718 -> promoted 0.015290
+```
+
+This valid corpus doesn't happen to hit a near-tie case (argmax already
+matches ground truth at both bit-widths, unlike the broken corpus's
+2/8 flips), but it gives a stronger, cleaner signal than a flip count:
+**rel-L2 to the true bf16 output decreased at all 8/8 positions under
+promotion, with zero exceptions** -- directly confirming the direction
+question left open in the Synthesis section above. This closes the
+"inconclusive on directionality" gap noted there without relying on
+the corrupted corpus.
 
 ## DeepSeek-V2-Lite port of the router-margin profiler -- OLMoE's
 ## early-layer pattern does NOT generalize
