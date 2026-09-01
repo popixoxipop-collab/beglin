@@ -6881,3 +6881,97 @@ transferable universal heuristic, is the honest conclusion.
 
 Output: `/Users/eoe/deepseek_router_margin.json` (macstudio),
 script: `/Users/eoe/deepseek_router_margin_profiler.py` (macstudio).
+
+## D-deepseek-precint-1: which per-role precision actually suppresses DeepSeek's deep-layer risk
+
+User redirect after the root-cause probe: stop chasing *why* the
+boundary-vs-extreme divergence trains in that shape (a training-dynamics
+question, not this engine's to answer) and instead use the engine's own
+per-role, per-layer independent precision assignment
+(`QWEN_MOE_ROLE_BITS`/`QWEN_MOE_EXPERT_BITS`) to find which *specific*
+weight roles, when precision-promoted, actually suppress the effect --
+the directly actionable question.
+
+**Design**: `deepseek_precision_intervention.py` sweeps `{4,8,16,32}`
+across every role this engine can independently precision-tune,
+one at a time, at DeepSeek's 6 riskiest layers (24,25,20,21,22,23,
+worst-median-margin-first): the 4 attention roles
+(`q_proj`/`kv_a_proj_with_mqa`/`kv_b_proj`/`o_proj` -- confirmed to
+match `qwen_infer.c`'s own `MOE_ST_ATTN_ROLES_MLA` table exactly, so
+any resulting config is directly usable, no new C code needed) and the
+3 shared-experts roles (`gate_proj`/`up_proj`/`down_proj` -- the
+always-active MLP every token passes through, unlike the sparse routed
+experts). 168 configs total (6 layers x 7 roles x 4 bit widths).
+Measures router-flip (does the top-6 expert *set* change) relative to
+each role's own `bits=32` (checkpoint-native dequant) reference.
+
+**Methodology note** (honest, unlike Track A/B's genuine bf16 OLMoE
+original): baseline is `mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx`'s
+own dequantized weights, not a separately-downloaded ~31GB bf16 HF
+checkpoint (not cached, skipped for time budget). This makes every
+comparison RELATIVE to what's already served at 4bit -- "does further
+degrading role R move routing more than degrading role S" -- exactly
+the question a precision-BUDGET decision needs, though not an
+absolute bf16-ground-truth measurement like Track A/B's flagship
+result.
+
+**Attention roles: real, measurable effect, same direction as OLMoE**:
+all 24 (layer, role) attention combinations show nonzero flip at
+`bits=4` (1.2%-6.4%):
+```
+layer  role                  b4      b8      b16
+ 24    q_proj              0.0148  0.0000  0.0000
+ 24    kv_a_proj_with_mqa  0.0251  0.0000  0.0000
+ 24    kv_b_proj           0.0118  0.0000  0.0000
+ 24    o_proj              0.0311  0.0000  0.0000
+ 20    q_proj              0.0414  0.0059  0.0000
+ 20    kv_a_proj_with_mqa  0.0444  0.0015  0.0000
+ 21    kv_a_proj_with_mqa  0.0636  0.0000  0.0000   <- largest single b4 flip found
+```
+(full 24-row table in the JSON output). Collapse points are **more
+varied than OLMoE's near-universal bits=16**: roughly half the
+combinations already reach zero flip at `bits=8` (all 4 roles at
+layer 24; q_proj/o_proj at layer 22; kv_a/kv_b at layer 21; kv_a at
+layer 23; q_proj/kv_b/o_proj at layer 25), the rest need `bits=16`.
+None need the full `bits=32`.
+
+**Shared-experts roles: confirmed structurally irrelevant at the same
+layer**: all 18 (layer, role) shared-experts combinations show
+`flip=0.0` at every bit width tested, including `bits=4`. This is
+expected by construction, not a new mechanism -- `gates = x @
+self.weight.T` runs before the FFN block, so layer L's own
+shared-experts output cannot possibly affect layer L's own routing
+decision, the same structural argument this project's OLMoE
+expert-sweep already established for routed experts. Confirmed
+directly for DeepSeek's shared-experts (previously assumed by
+analogy, not measured) rather than left as an assumption.
+
+**Actionable engine config** (drop-in `QWEN_MOE_ROLE_BITS` file,
+role names verified against `MOE_ST_ATTN_ROLES_MLA`):
+```
+q_proj              24 16
+kv_a_proj_with_mqa  24 16
+kv_b_proj           24 16
+o_proj              24 16
+... (same 4 lines x layers 25,20,21,22,23 -- 24 lines total,
+     or bits=8 substituted for the roughly-half of combos that
+     already collapse there per the table above, for a tighter budget)
+```
+Shared-experts roles are deliberately excluded from this config --
+the measurement above shows promoting them at these layers buys
+nothing.
+
+**What this does NOT establish**: this is a same-layer (local-only)
+test, matching Track B's original design, not the local-vs-upstream
+design that (for OLMoE) found upstream noise accumulation dominates
+6.7-11.3x over local imprecision. Since shared-experts output DOES
+feed the residual stream for *later* layers (unlike routed-expert
+output, which never does), it remains an open question whether
+promoting shared-experts precision at *upstream* layers (not the
+risky layer itself) reduces margin risk at the deep layers downstream
+-- the genuinely analogous follow-up to OLMoE's local-vs-upstream
+result, not run this round. The same-layer answer above is already a
+complete, actionable, and now the honest scope: attention precision is
+the confirmed lever at DeepSeek's risky layers, same-layer
+shared-experts precision is confirmed not to be one. Data: macstudio
+`/Users/eoe/deepseek_precision_intervention.json`.

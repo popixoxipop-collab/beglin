@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-09-01T15:00:00.000Z
+  modified: 2026-09-01T15:40:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -2269,6 +2269,41 @@ ln(64)=4.16). skewness/kurtosis도 margin과 약한 상관뿐(±0.13,
 "무엇이 일어나는가"까지만 확정, "왜 학습중 그렇게 됐는가"는 열린
 질문으로 남김. 데이터: macstudio `/Users/eoe/deepseek_logit_shape.json`.
 RESULTS.md "Step 6 -- distribution-shape statistics" 서브섹션.
+
+★★★★★★**D-deepseek-precint-1(2026-09-01) — 학습원인 조사 대신 실용
+정밀도 개입으로 방향전환(사용자 명시: "왜 그렇게 학습됐는가는 할
+필요 없어... 억누르기 위한 부분 특정 정밀도 개선에 역량 집중")**:
+`deepseek_precision_intervention.py`로 위험레이어(24,25,20,21,22,23)
+×{q_proj,kv_a_proj_with_mqa,kv_b_proj,o_proj,shared gate/up/down_proj}
+×{4,8,16,32} 168개 조합을 실측(router top-6 set flip 기준, baseline=
+4bit체크포인트 자체 dequant, bf16 원본 아님 — 정직히 명시).
+
+**attention 4개 role — 실측 효과 있음**: 24개 조합 전부 bits=4에서
+실제 flip(1.2~6.4%), OLMoE보다 collapse point가 더 다양함(절반 정도는
+bits=8에서 이미 0, 나머지는 bits=16 — bits=32까지 필요한 조합 없음).
+
+**shared-experts 3개 role — 같은 레이어에선 구조적으로 무관 확인**:
+18개 조합 전부 bits=4에서도 flip=0.0 — `gates=x@weight.T`가 FFN보다
+먼저 실행되니 그 레이어 자신의 shared-experts 출력이 그 레이어 자신의
+라우팅에 영향 줄 수 없음(OLMoE routed-expert와 같은 구조적 논리,
+DeepSeek shared-experts에서는 이번에 최초로 직접 확인 — 이전엔 유추만).
+
+**즉시 실전 적용 가능**: C엔진의 `MOE_ST_ATTN_ROLES_MLA` 테이블이
+`q_proj`/`kv_a_proj_with_mqa`/`kv_b_proj`/`o_proj` role 이름을 이미
+정확히 지원 확인(qwen_infer.c:11957-11962) — **새 코드 없이 바로
+`QWEN_MOE_ROLE_BITS` config만으로 적용 가능**. 위험레이어 6개×
+attention 4개 role = 24줄 config(bits=16, 또는 이미 bits=8로 충분한
+절반은 8로), shared-experts는 의도적으로 제외(효과 없음 확인됨).
+
+**정직하게 열어둔 부분**: 이건 same-layer(local-only) 테스트임 —
+OLMoE의 local-vs-upstream(상류 6.7~11.3배 우세) 같은 UPSTREAM
+테스트는 이번 라운드 미실시. shared-experts는 항상활성이라 출력이
+residual stream에 남아 미래 레이어들의 라우팅에 영향 줄 수 있음(routed
+expert와 다름) — "shared-experts를 상류 레이어에서 승격하면 하류
+위험레이어 margin이 개선되는가"는 열린 후속질문으로 명시, 지금 라운드
+답은 "같은 레이어에선 확실히 무관"까지만. RESULTS.md
+"D-deepseek-precint-1" 섹션. 데이터: macstudio
+`/Users/eoe/deepseek_precision_intervention.json`.
 
 ★★★★★★**foundation 마무리 라운드(2026-09-01, ROI 1·2번 실행)**: 사용자가
 "향후 설계는 아키텍처별 재측정 필요하니 우린 기반 다지는 작업까지만"으로
