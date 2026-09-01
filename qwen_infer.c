@@ -2472,6 +2472,14 @@ static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row
         long byte_idx = t->packed_off + eoff32 + (row * t->in + col) * 4;
         float v; memcpy(&v, base + byte_idx, 4); return v;
     }
+    // bits==16 (st_register_moe_f16_as_af(), D-roadmap-2 follow-up): same raw-passthrough shape
+    // as bits==32 above -- no scale/bias/group, just a 2-byte-per-element float container instead
+    // of 4. Mirrors the eoff32/byte_idx arithmetic exactly, sizeof(_Float16)==2 in place of 4.
+    if (bits0 == 16) {
+        long eoff16 = t->ebits ? (long)t->epacked_off[e] : (e * t->out * t->in * (long)sizeof(_Float16));
+        long byte_idx = t->packed_off + eoff16 + (row * t->in + col) * (long)sizeof(_Float16);
+        _Float16 v; memcpy(&v, base + byte_idx, sizeof(_Float16)); return (float)v;
+    }
     long group = col / 64;
     long scale_idx = t->scale_off + ((e * t->out + row) * t->ng + group) * 4;
     float scale;
@@ -2540,6 +2548,20 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
         }
         return acc32;
     }
+    // bits==16 (st_register_moe_f16_as_af(), D-roadmap-2 follow-up): mirrors the bits==32 branch
+    // above exactly -- raw passthrough, no scale/bias/group -- with sizeof(_Float16)==2 in place
+    // of 4. The (float) conversion on each element promotes to the same double-accumulation the
+    // 32-bit path uses, so this differs from bits==32 ONLY in what's stored, not how it's summed.
+    if (bits == 16) {
+        long eoff16 = t->ebits ? (long)t->epacked_off[e] : (e * t->out * t->in * (long)sizeof(_Float16));
+        long row_byte0 = t->packed_off + eoff16 + row * t->in * (long)sizeof(_Float16);
+        double acc16 = 0.0;
+        for (long col = 0; col < t->in; col++) {
+            _Float16 w; memcpy(&w, base + row_byte0 + col * (long)sizeof(_Float16), sizeof(_Float16));
+            acc16 += (double)(float)w * x[col];
+        }
+        return acc16;
+    }
     long eoff = t->ebits ? (long)t->epacked_off[e]
                          : (bits == 8 ? e * t->out * t->in : e * t->out * row_words * 4);
     double acc = 0.0;
@@ -2599,6 +2621,7 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
 // before ever being considered for promotion to default.
 static double moe_matvec_af_row_vdsp(const uint8_t *blob, MoeAFTensor *t, long e, long row, const float *x) {
     if (t->bits == 8) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==8 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for int8 tensors)\n"); exit(1); }
+    if (t->bits == 16) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==16 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for F16-as-AF tensors)\n"); exit(1); }
     if (t->bits == 32) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==32 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for F32-as-AF tensors)\n"); exit(1); }
     if (t->ebits) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: per-expert mixed precision not implemented (QWEN_MOE_SCALAR_VDSP unsupported for mixed tensors)\n"); exit(1); }
     const uint8_t *base = t->base ? t->base : blob;   // 4.C bridge, see moe_decode_af()
@@ -11555,11 +11578,13 @@ static MoeAFTensor *st_register_moe_experts_mixed_as(const char *name_pattern, i
     size_t off = 0;
     for (long e = 0; e < E; e++) {
         int b = ebits_in[e];
-        if (b != 4 && b != 8 && b != 32) { fprintf(stderr, "FATAL: st_register_moe_experts_mixed_as: expert %ld has invalid bits=%d (must be 4, 8, or 32)\n", e, b); exit(1); }
+        if (b != 4 && b != 8 && b != 16 && b != 32) { fprintf(stderr, "FATAL: st_register_moe_experts_mixed_as: expert %ld has invalid bits=%d (must be 4, 8, 16, or 32)\n", e, b); exit(1); }
         // D-expert-promo-1: bits==32 is raw unquantized float (4 bytes/element, no packing) --
         // the prefix-sum epacked_off table already generalizes to a third byte-width the same
-        // way it generalizes from one (4/8) to two.
-        size_t row_pbytes = (size_t)(b == 32 ? in * 4 : (b == 8 ? in : in / 2));
+        // way it generalizes from one (4/8) to two. D-roadmap-2 follow-up: bits==16 is the same
+        // raw-float shape at 2 bytes/element (sizeof(_Float16)) -- a fourth byte-width, same
+        // generalization.
+        size_t row_pbytes = (size_t)(b == 32 ? in * 4 : (b == 16 ? in * (long)sizeof(_Float16) : (b == 8 ? in : in / 2)));
         epacked_off[e] = off;
         off = moe_gguf_add_checked("mixed packed_bytes running total", off,
                  moe_gguf_mul_checked("mixed row bytes", (size_t)out, row_pbytes));
@@ -11603,6 +11628,13 @@ static MoeAFTensor *st_register_moe_experts_mixed_as(const char *name_pattern, i
             // moe_matvec_af_row()'s bits==32 branch never touches scale), harmless per this
             // engine's own dummy-placeholder convention used elsewhere.
             memcpy(packed_all + epacked_off[e], deq, (size_t)out * (size_t)in * sizeof(float));
+        } else if (ebits_in[e] == 16) {
+            // D-roadmap-2 follow-up: same no-quantize-step shape as bits==32 just above, narrowed
+            // to 2 bytes/element -- see st_register_moe_f16_as_af()'s own comment for the
+            // rationale (raw float container, not a new quantization scheme).
+            _Float16 *dst16 = (_Float16 *)(packed_all + epacked_off[e]);
+            size_t n16 = (size_t)out * (size_t)in;
+            for (size_t i = 0; i < n16; i++) dst16[i] = (_Float16)deq[i];
         } else if (ebits_in[e] == 8) {
             gguf_quantize_q8g64(deq, (int)out, (int)in,
                                  (int8_t *)(packed_all + epacked_off[e]),
@@ -11715,6 +11747,51 @@ static MoeAFTensor *st_register_moe_f32_as_af(const char *name, const char *engi
     return w;
 }
 
+// D-roadmap-2 follow-up (precision-collapse calibration, not yet earned as a swept default --
+// see ROADMAP.md): second raw-float tier, half the memory of bits==32, for roles where the
+// margin profiler flags real near-tie risk but F32's 4x-over-int8 memory cost isn't justified by
+// data yet. Verified this round via a standalone bob probe (_Float16 round-trip on real values,
+// including overflow-to-inf above ~65504 and subnormal-range values) before wiring in -- Clang/
+// ARM64's _Float16 behaves as a真 correctly-rounded IEEE-754 binary16, not a silent promotion
+// (sizeof checked ==2). Same dequant-to-F32-then-downcast shape as st_register_moe_f32_as_af()
+// above: safetensors_dequant_row() (already vetted, handles any source dtype) produces F32, this
+// just narrows that to 2 bytes/element instead of keeping all 4 -- no new quantization math, no
+// group/scale/bias (same as bits==32, F16 is a float container, not an integer code).
+static MoeAFTensor *st_register_moe_f16_as_af(const char *name, const char *engine_name) {
+    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (safetensors)\n"); exit(1); }
+    SafetensorsFile *shard = NULL;
+    const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
+    if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
+    long out = (long)t->shape[0], in = t->n_dims >= 2 ? (long)t->shape[1] : 0;
+    if (out <= 0 || in <= 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s has non-positive dims (out=%ld in=%ld)\n", name, out, in);
+        exit(1);
+    }
+    if (!safetensors_dequant_supported(t->dtype)) {
+        fprintf(stderr, "FATAL: safetensors moe tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
+        exit(1);
+    }
+    size_t n_elem = (size_t)moe_gguf_mul_checked("f16-as-af n_elem", (size_t)out, (size_t)in);
+    float *tmp32 = malloc(n_elem * sizeof(float));
+    if (!tmp32) { fprintf(stderr, "FATAL: safetensors moe f16-as-af tmp alloc failed for '%s' (%zu elems)\n", engine_name, n_elem); exit(1); }
+    safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), tmp32, (uint64_t)n_elem);
+
+    size_t need_bytes = moe_gguf_mul_checked("f16-as-af need_bytes", n_elem, sizeof(_Float16));
+    uint8_t *base = malloc(need_bytes);
+    if (!base) { fprintf(stderr, "FATAL: safetensors moe f16-as-af alloc failed for '%s' (%zu bytes)\n", engine_name, need_bytes); free(tmp32); exit(1); }
+    _Float16 *h = (_Float16 *)base;
+    for (size_t i = 0; i < n_elem; i++) h[i] = (_Float16)tmp32[i];
+    free(tmp32);
+
+    MoeAFTensor *w = &g_moe_af[g_moe_naf++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->E = 1; w->out = out; w->in = in; w->ng = 0;
+    w->packed_off = 0; w->packed_bytes = (long)need_bytes;
+    w->scale_off = -1; w->bias_off = -1;   // unused for bits==16, never dereferenced (same as 32)
+    w->base = base; w->sym = 0; w->bits = 16;
+    return w;
+}
+
 // Mirrors gguf_register_moe_f32_as() (growable, realloc-safe g_moe_f32_blob -- the SAME shared
 // global buffer/counters every MoE loader writes into) but sources from
 // safetensors_multi_find_tensor()+safetensors_dequant_row() instead of gguf_find_tensor()+
@@ -11773,8 +11850,8 @@ static void moe_load_role_bits(const char *path) {
     g_role_bits = malloc(sizeof(MoeRoleBitsEntry) * (size_t)cap);
     char role[48]; int layer, bits;
     while (fscanf(f, "%47s %d %d", role, &layer, &bits) == 3) {
-        if (bits != 4 && bits != 8 && bits != 32) {
-            fprintf(stderr, "FATAL: QWEN_MOE_ROLE_BITS: role '%s' layer %d has invalid bits=%d (must be 4, 8, or 32)\n",
+        if (bits != 4 && bits != 8 && bits != 16 && bits != 32) {
+            fprintf(stderr, "FATAL: QWEN_MOE_ROLE_BITS: role '%s' layer %d has invalid bits=%d (must be 4, 8, 16, or 32)\n",
                     role, layer, bits);
             exit(1);
         }
@@ -11814,6 +11891,24 @@ static void st_register_moe_role(const char *name, const char *engine_name, int 
         }
         if (f32_as_af) st_register_moe_f32_as_af(name, engine_name);
         else st_register_moe_f32_as(name, engine_name);
+    } else if (bits == 16) {
+        // D-roadmap-2 follow-up: reuses the SAME allow_f32 gate as bits==32 -- a role that can't
+        // be trusted at F32 shouldn't get a quieter backdoor at F16 either, without evidence they
+        // should differ. Only wired for f32_as_af==1 (AF-eligible attention roles, the only place
+        // this round's plan actually needs it) -- embed_tokens/lm_head (f32_as_af==0) go through
+        // a structurally different MoeF32Tensor/moe_find_f32() path elsewhere in the loader
+        // (t_embed/t_lmhead's own embed_is_f32/lmhead_is_f32 special-casing); silently accepting
+        // bits==16 there would produce an AF-shaped tensor the rest of that path doesn't expect
+        // to find, so this FATALs instead of guessing.
+        if (!allow_f32) {
+            fprintf(stderr, "FATAL: QWEN_MOE_ROLE_BITS: role '%s' requested bits=16 (F16), not enabled for this role\n", role);
+            exit(1);
+        }
+        if (!f32_as_af) {
+            fprintf(stderr, "FATAL: QWEN_MOE_ROLE_BITS: role '%s' requested bits=16 (F16), not implemented for non-AF roles (embed_tokens/lm_head)\n", role);
+            exit(1);
+        }
+        st_register_moe_f16_as_af(name, engine_name);
     } else if (bits == 8) {
         st_register_moe_dense_af_q8g64_as(name, engine_name);
     } else {
@@ -11969,8 +12064,8 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
                         pl, pe, MOE_NL, MOE_N_EXPERTS);
                 exit(1);
             }
-            if (pb != 4 && pb != 8 && pb != 32) {
-                fprintf(stderr, "FATAL: QWEN_MOE_EXPERT_BITS: (layer=%d, expert=%d) bits=%d invalid (must be 4, 8, or 32)\n", pl, pe, pb);
+            if (pb != 4 && pb != 8 && pb != 16 && pb != 32) {
+                fprintf(stderr, "FATAL: QWEN_MOE_EXPERT_BITS: (layer=%d, expert=%d) bits=%d invalid (must be 4, 8, 16, or 32)\n", pl, pe, pb);
                 exit(1);
             }
             g_promo_ebits[pl][pe] = pb;
