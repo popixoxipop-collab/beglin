@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-09-01T14:00:00.000Z
+  modified: 2026-09-01T14:30:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -2203,6 +2203,40 @@ OLMoE wikitext 발견과 같은 패턴.
 `RESULTS.md` "DeepSeek-V2-Lite port of the router-margin profiler"
 섹션. 데이터: macstudio `/Users/eoe/deepseek_router_margin.json`,
 스크립트 `/Users/eoe/deepseek_router_margin_profiler.py`.
+
+★★★★★★**DeepSeek 깊은레이어 위험 원인 조사(2026-09-01, 사용자 요청 —
+이전엔 "기반만" 범위로 미룬 항목)**: `moe_hiddenstate_diff_profiler.py`
+를 `MoEGate.__call__` 후킹(DeepSeek 전용 게이트 모듈)으로 이식,
+`deepseek_router_margin_profiler.py`의 30프롬프트 코퍼스를 소스추출로
+재사용(동일 forward pass 보장). 5단계로 후보 메커니즘 순차 배제:
+
+1. hidden-state 크기가 깊이에 따라 커지는가? — **예**, OLMoE와 동일한
+   보편적 residual 누적 패턴(r(depth,var)=0.937, r(depth,norm)=0.974).
+2. 크기가 margin과 OLMoE와 같은 방향으로 상관되는가? — **아니오,
+   부호반전**: r(var,margin)=-0.701, r(norm,margin)=-0.672
+   (OLMoE는 +0.90/+0.93) — 정성적 발견을 정량적으로 재확인.
+3. 게이트 가중치 스케일이 DeepSeek만 다르게 줄어드는가? — **배제**:
+   OLMoE도 거의 동일한 강도로 깊이에 따라 줄어듦(DeepSeek r=-0.871,
+   OLMoE r=-0.852) — 두 모델 공통 현상, DeepSeek 특이 원인 아님.
+4. ||x||·||W_row|| 곱(유효 로짓 스케일)이 margin을 예측하는가? —
+   **배제**: 곱은 깊이에 따라 커지는데(r=0.729) margin과는 여전히
+   음의 상관(r=-0.480) — "로짓 커지면 더 벌어진다"는 순진한 직관과
+   반대, 단순 크기곱으로 설명 안 됨.
+5. 라우터 로짓 자체의 전체 스프레드(64개 전문가 std)가 깊이에 따라
+   줄어드는가? — **아니오**, 거의 평탄함(r(depth,logit_std)=0.137),
+   그런데 margin_median은 뚜렷이 감소(0.0033→0.0018) —
+   r(logit_std,margin)=0.481로 부분적 관련만 있음.
+
+**결론(부분적, 정직하게 미완결로 명시)**: "전체 로짓이 눌린다"가
+아니라 **top-k=6/rank-7 경계 부근만 특정하게 붐빈다**는 국소적
+현상 — 전체 분산은 그대로인데 순위통계량(margin)만 줄어드는 건
+분포의 "모양"(top-heavy 집중도 등)이 깊이에 따라 변한다는 뜻.
+정확한 생성메커니즘(skewness/kurtosis, 라우팅 집중도 엔트로피 등
+분포모양 통계)은 이번 라운드에 측정 안 함 — 다음 단계로 명시,
+"해결됨"으로 과장하지 않음. 5개 스크립트 전부 macstudio,
+데이터 `/Users/eoe/deepseek_hiddenstate_diff.json`. RESULTS.md
+"Root-cause probe: why is DeepSeek-V2-Lite's depth-risk pattern
+inverted vs OLMoE?" 섹션.
 
 ★★★★★★**foundation 마무리 라운드(2026-09-01, ROI 1·2번 실행)**: 사용자가
 "향후 설계는 아키텍처별 재측정 필요하니 우린 기반 다지는 작업까지만"으로

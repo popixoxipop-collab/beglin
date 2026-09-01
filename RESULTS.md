@@ -6712,6 +6712,88 @@ MLA vs GQA attention, `n_shared_experts=2`, `topk_method="greedy"`),
 or a different mechanism dominates here. Not yet root-caused -- flagged
 as a real open question, not resolved by assumption.
 
+## Root-cause probe: why is DeepSeek-V2-Lite's depth-risk pattern inverted vs OLMoE?
+
+Ported `moe_hiddenstate_diff_profiler.py`'s exact formulas to DeepSeek
+via `deepseek_hiddenstate_diff_profiler.py`, hooking `MoEGate.__call__`
+(same point `deepseek_router_margin_profiler.py` already uses -- `x`
+there is the hidden state feeding the router) and importing that
+script's own 30-prompt corpus by source-extraction (guarantees this
+measures hidden states for the exact forward passes
+`deepseek_router_margin.json`'s margins came from, not a re-typed
+approximation). 26 MoE layers, 676 tokens.
+
+**Step 1 -- does hidden-state magnitude even grow with depth in
+DeepSeek?** Yes, monotonically and strongly: `var_total` 0.11 (layer
+1) -> 1.42 (layer 24), `norm_mean` 15.5 -> 59.2. `r(depth, var_total)
+= 0.937`, `r(depth, norm_mean) = 0.974` -- same universal
+residual-accumulation pattern as OLMoE. This rules out "DeepSeek's
+hidden state just doesn't grow with depth" as the explanation.
+
+**Step 2 -- does magnitude correlate with margin the same direction as
+OLMoE?** No -- **inverted**: `r(var_total, margin_median) = -0.701`,
+`r(norm_mean, margin_median) = -0.672` (OLMoE: +0.90/+0.93). Bigger
+hidden state correlates with *tighter* margin in DeepSeek, the
+opposite of OLMoE. Confirms the earlier finding quantitatively rather
+than just via the eyeballed riskiest/safest layer lists above.
+
+**Step 3 -- is it because DeepSeek's gate weight scales differently
+with depth than OLMoE's?** Measured `gate.weight` row-norm per layer
+directly (no forward pass needed) for both models:
+```
+DeepSeek: row_norm_mean 1.54 (layer 1) -> 0.45 (layer 24), r(depth, row_norm) = -0.871
+OLMoE:    row_norm_mean 1.45 (layer 0) -> 0.62 (layer 15), r(depth, row_norm) = -0.852
+```
+**Ruled out** -- both models' gate weights shrink with depth at
+almost identical correlation strength. This isn't a DeepSeek-specific
+weight-scaling quirk; OLMoE has the same trend and it doesn't produce
+the same margin behavior there.
+
+**Step 4 -- does the naive "effective logit scale" (`||x|| * ||W_row||`)
+predict margin?** `r(depth, ||x||*||W_row||) = 0.729` (grows with
+depth -- hidden-state growth outpaces weight shrinkage), but
+`r(||x||*||W_row||, margin_median) = -0.480` -- growing effective
+scale correlates with *tighter* margin, the opposite of the naive
+"bigger logits -> more separated -> looser margin" intuition.
+**Ruled out** as a clean explanation -- aggregate magnitude products
+don't predict margin direction here either.
+
+**Step 5 -- direct measurement: does the actual router logit spread
+(pre-softmax, std across all 64 experts) shrink with depth?** This is
+the most direct candidate -- margin is a gap statistic, so if the
+whole logit distribution's spread shrinks, margin should shrink with
+it. Measured per-token logit std, averaged per layer:
+```
+layer  1: std=0.838   layer 10: std=1.294   layer 20: std=1.100
+layer  5: std=1.261   layer 15: std=1.089   layer 24: std=1.099
+```
+**`r(depth, logit_std) = 0.137`** -- essentially flat/noisy, no real
+depth trend, while margin_median clearly trends down from ~0.0033
+(shallow/mid) to ~0.0018-0.0021 (layers 20-25) over the same range.
+`r(logit_std, margin_median) = 0.481` -- a real but partial
+relationship, nowhere near strong enough to explain margin's clean
+depth trend on its own.
+
+**Conclusion (partial, honestly not fully closed)**: the effect is
+**not** a global "logits get less spread out at depth" phenomenon --
+overall logit variance across all 64 experts stays roughly constant.
+Margin specifically measures the gap right at the top-k=6/rank-7
+boundary (a local, order-statistic quantity), so the shrinking margin
+with roughly-constant overall spread implies the *shape* of the
+per-token logit distribution changes with depth in a way that
+specifically crowds the region near the top-k cutoff -- e.g. deep
+layers' routing becoming more top-heavy/decisive for the leading
+experts while the boundary band becomes more homogeneous -- without
+the total spread across all 64 shrinking. This is a mechanistically
+plausible characterization, not yet a fully closed causal chain: the
+natural next measurement (not done this round -- distribution-shape
+statistics like per-layer skewness/kurtosis of the logit distribution,
+or an entropy measure of routing concentration) would be needed to
+pin down *why* the boundary region specifically compresses. Flagged
+honestly as the current state of the investigation, not oversold as
+solved. Scripts: `deepseek_hiddenstate_diff_profiler.py` (macstudio),
+output: `/Users/eoe/deepseek_hiddenstate_diff.json`.
+
 **Practical implication**: the OLMoE-only "blanket all-layer attention
 promotion" conclusion (the Synthesis section above) is **not
 invalidated for OLMoE** -- it's still correctly derived and validated
