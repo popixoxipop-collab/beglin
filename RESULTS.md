@@ -5702,3 +5702,821 @@ gates, verifying it once covers all four call sites.
    before any GPU work starts. A second file with a negative id (`-5`)
    FATALs identically, confirming both bounds are enforced, not just
    the upper one.
+
+## Router near-tie (margin) statistics profiler -- generalizing a known incident into a repeatable measurement
+
+**Motivation.** This project already found and fixed ONE real instance of a
+"near-tie router flip" by hand (OLMoE round, above in this doc): int8
+attention quantization noise accumulated layer-over-layer until it flipped
+a borderline top-k router decision at layer 13, position 0 (ref_expert=29
+vs C_expert=17, score gap=1.87e-05, the 6th/last top-k slot), found via a
+one-off `QWEN_MOE_DEBUG_LAYERDUMP` per-layer hidden-state comparison and
+fixed by promoting attention roles to F32 via `QWEN_MOE_ROLE_BITS`. This
+round generalizes that single manual find into a repeatable, systematic
+sweep, per Data-First Numerics (CLAUDE.md Sec 13): measure the real
+distribution before choosing any threshold or promoting any tensor.
+
+**Method.** New script `moe_router_margin_profiler.py` (macstudio,
+`~/moe_router_margin_profiler.py`, not checked into this repo -- same
+convention as every other `mlx_*`/`moe_st_*` measurement script this
+project has written, all macstudio-local). Templated on the existing
+`moe_st_expert_profiler.py`'s hook philosophy and its 30-prompt diverse
+real-text corpus, but measures a different signal: instead of tallying
+which experts get selected how often (importance ranking), it captures
+**how close each top-k selection was to flipping** -- the margin between
+the k-th selected expert's routing weight and the (k+1)-th (first
+rejected) expert's weight, at every (layer, token) router call.
+
+OLMoE's `mlp.gate` is a bare `nn.Linear` (raw logits only) -- unlike
+`moe_st_expert_profiler.py`'s DeepSeek-V2-Lite target, which has a
+dedicated Gate module already returning post-topk `(inds, scores)`. So the
+hook point here is one level up: `OlmoeSparseMoeBlock.__call__` itself
+(`mlx_lm/models/olmoe.py`), monkey-patched to independently recompute
+`softmax(self.gate(x_flat))` (the exact same values the real forward pass
+uses to select experts) as a side computation, then let the unmodified
+original `__call__` run the real path -- zero effect on model output,
+pure measurement. Model: `mlx-community/OLMoE-1B-7B-0125-4bit`, the same
+checkpoint already used throughout this project's OLMoE work as ground
+truth (reference-capture AND the C engine's own weight-export source).
+
+**Real results (30 prompts, 642 tokens, 16 layers, 10272 total router
+calls):**
+
+Overall margin distribution: p1=0.000015, p5=0.000092, p10=0.000214,
+p25=0.000641, median=0.001694, **min=0.000000** (literal exact ties
+observed, not just small values -- e.g. layer 0/prompt 1/pos 12,
+expert 13 vs expert 8, margin=0.00000000 to 8 decimal places).
+
+Per-layer median margin, riskiest (tightest) first:
+
+| layer | median | p1 | min |
+|---|---|---|---|
+| 1 | 0.000755 | 0.000015 | 0.000000 |
+| 4 | 0.000992 | 0.000015 | 0.000000 |
+| 0 | 0.001060 | 0.000015 | 0.000000 |
+| 2 | 0.001076 | 0.000013 | 0.000000 |
+| 3 | 0.001175 | 0.000000 | 0.000000 |
+| 5-8 | 0.001366-0.001923 | | |
+| 9-14 | 0.002167-0.002655 | | |
+| 13 | 0.002571 | 0.000031 | 0.000015 |
+| 15 | 0.003220 | 0.000031 | 0.000000 | (loosest layer)
+
+**Sanity check (validates the tool measures the right thing):** layer
+13's own p1 (0.000031) is the same order of magnitude as the real,
+independently-confirmed incident's gap (1.87e-05) -- this tool
+rediscovers the same risk region the manual layerdump investigation found,
+without being told where to look.
+
+**Surprising finding, contradicts a naive assumption:** the EARLIEST
+layers (0-4), not the latest, have the tightest router margins -- layer 1
+median is 4.3x tighter than layer 15's. The one incident this project
+already fixed (layer 13) is mid-pack by this ranking, not the worst case
+-- there is very likely at least one *undiscovered* near-tie-flip
+incident in layers 0-4 that simply hasn't been chased down yet, since
+the only prior investigation was triggered by one specific position (pos
+0) diverging, not a systematic sweep.
+
+**Scope note (OLMoE-specific):** `QWEN_MOE_ROLE_BITS`'s `allow_f32=0`
+gate on dense-layer/shared-expert roles (`qwen_infer.c:12041,12052`) does
+NOT apply here -- OLMoE has no dense layers (`first_k_dense_replace=0`)
+and no shared experts (`n_shared_experts=0`), confirmed in
+`mlx_olmoe_full_to_q4g64af.py`'s own header comment. That gate will
+matter when this profiler is ported to DeepSeek-V2-Lite (which has both),
+not for OLMoE's own promotion candidates.
+
+**Not yet done (deliberately out of scope this round):** (1) causal
+validation -- does promoting layers 0-4's attention/router-input
+precision actually reduce real argmax/router flips, the way the layer-13
+attention-F32 fix was validated with real before/after numbers (8/8 ->
+0/128 hard mismatches)? (2) DeepSeek-V2-Lite run (same script, different
+`MODEL_PATH`, would need the dense/shared-expert `allow_f32` gate opened
+first if that architecture's data points there). (3) The user's larger
+vision -- automatic runtime near-tie detection + adaptive precision
+escalation (4bit->8bit->32bit, exponential-backoff-style) -- deferred
+until this offline data has been acted on and its real-world impact
+measured; 16-bit is not a valid target regardless (`QWEN_MOE_ROLE_BITS`
+only accepts `{4, 8, 32}`, `qwen_infer.c:11776`).
+
+Full per-event data (10272 records, top-50 closest-to-tie ranked) written
+to `moe_router_margin.json` on macstudio
+(`/Users/eoe/vdsp_olmoe_full_weights/moe_router_margin.json`).
+
+## Router near-tie profiler: cross-corpus replication (independent 30-prompt set, zero topic overlap)
+
+**Motivation.** Round 1's top-50 closest-to-tie events showed layer 12's
+expert pair (51,55) recurring 8/50 times -- far more than any other pair,
+suggesting a genuine model-specific structural weakness (these two
+experts' weight vectors intrinsically hard to separate) rather than an
+artifact of that specific 30-prompt text. Tested by rerunning the
+identical profiler (`moe_router_margin_profiler_v2.py`, same hook, same
+model) against 30 brand-new prompts covering entirely different topics
+(astronomy/geology/networking/law/linguistics/etc., zero overlap with
+round 1's biology/history/finance/etc. set).
+
+**Result: partial confirmation, more nuanced than the round-1 framing.**
+
+1. **The specific pair (51,55)@layer12 DOES genuinely recur** in the
+   independent corpus: 3/811 layer-12 router calls, margins 7.63e-6 to
+   6.10e-5 -- same order of magnitude as round 1 and as the original
+   layer-13 incident (1.87e-5). This is real, not noise: a structural
+   near-boundary between these two experts exists independent of which
+   text triggers it.
+2. **But it is NOT the dominant closest-tie pair in round 2** -- 0/50 in
+   round 2's own top-50 closest events (round 2's top-50 is dominated by a
+   larger number of exact-zero-margin ties spread across many different,
+   mostly non-repeating pairs in layers 0-2, same "long tail of one-offs"
+   pattern as round 1's remaining 42/50). So (51,55)@layer12 is a real,
+   reproducible weak point, but not clearly *the* single worst one --
+   corpus-dependent which specific near-zero tie ranks highest.
+3. **The much more robustly replicated signal is the LAYER-level
+   pattern, not a specific pair**: layers 1-4 are the tightest region in
+   BOTH independent corpora, and layer 1 specifically is nearly
+   identical across runs (median 0.000755 round 1 vs 0.000748 round 2).
+   Layer 12 itself, contrary to round 1's "riskiest by median" framing,
+   is actually the LOOSEST layer by median in round 2 (0.003418) --
+   meaning layer 12 overall is comfortably separated; only this one
+   specific expert pair within it is chronically tight, not the whole
+   layer. This argues for a *targeted per-expert-pair* fix over a
+   blanket per-layer fix if/when promotion is pursued.
+
+**Revised conclusion:** the reproducible, actionable finding is the
+early-layer (1-4) pattern, not the single (51,55) pair -- that pair is a
+confirmed-real but narrow curiosity, not the main signal. Early layers
+being structurally tighter across two independent, topically disjoint
+corpora is a much stronger basis for the next investigation (why are
+layers 1-4 harder to separate than later layers -- likely less-refined,
+less-differentiated hidden states this early in the network, but
+unconfirmed) than chasing one specific expert pair would have been.
+
+## D-roadmap-2 Track A: 16-bit (F16) tier added to QWEN_MOE_ROLE_BITS/QWEN_MOE_EXPERT_BITS
+
+**Motivation.** `ROADMAP.md`'s `D-roadmap-2` records the gap: prior
+precision fixes (OLMoE attention int8->F32) jumped straight to the
+safest tier without testing whether anything in between (16-bit) would
+have sufficed. `QWEN_MOE_ROLE_BITS`/`QWEN_MOE_EXPERT_BITS` only accepted
+`{4, 8, 32}` -- no way to even test a 4->8->16->32 ladder. This closes
+that specific gap: adds `bits==16` as a second raw-float tier (same
+shape as the existing `bits==32` passthrough, just `_Float16` instead
+of `float`, half the memory), verified end-to-end against the real
+OLMoE checkpoint.
+
+**Verification, in order:**
+1. **Standalone `_Float16` probe (bob, before touching `qwen_infer.c`)**:
+   round-tripped real values (1.0, pi, 65000 near f16's max, 100000
+   correctly overflowing to `inf`, 1e-5 in subnormal range) through
+   `(_Float16)`/`(float)` casts. `sizeof(_Float16)==2` confirmed (not a
+   silent 4-byte promotion), relative error for in-range values matched
+   f16's expected ~1e-3 to 1e-4 precision floor. PASS.
+2. **Dense-only build** (`clang -O3 -w -c`, exact production flags from
+   `scripts/postinstall-build.js`): clean.
+3. **`-DQWEN_GPU_MLX` build**: clean.
+4. **Real end-to-end link + run against the actual OLMoE checkpoint**
+   (`/Users/bob/olmoe_1b7b_hf`, `QWEN_MOE_SAFETENSORS=.../model.safetensors.index.json`,
+   `run_moe_safetensors_verify_mode()`): baseline (no
+   `QWEN_MOE_ROLE_BITS`) ran clean, 8/8 positions sane. Promoting
+   `q_proj -1 16` ran clean, 8/8 positions, argmax unchanged from
+   baseline at every position, logits shifted slightly from the int8
+   baseline as expected (e.g. pos 1: 10.3355 -> 10.3906, pos 5: 7.6776
+   -> 7.6464).
+5. **Three-way comparison, the actual point of building this**:
+   `q_proj -1 16` and `q_proj -1 32` produced **bit-for-bit identical
+   printed logits at all 8 positions** (10.3906/8.8795/9.0885/7.3510/
+   7.6464/9.1867/8.0213, matched exactly). This is a real, measured
+   answer to D-roadmap-2's actual question for this specific role:
+   **16-bit already captures the full precision benefit that 32-bit
+   gives for `q_proj`** -- going to F32 here would cost 2x the memory
+   for zero additional accuracy. This is exactly the "minimum
+   sufficient bits" data point the roadmap item asked for, not a guess.
+
+**Scope of the code change** (`qwen_infer.c`): `st_register_moe_f16_as_af()`
+(mirrors `st_register_moe_f32_as_af()`), `bits==16` branches in
+`moe_decode_af()`/`moe_matvec_af_row()` (mirror the existing `bits==32`
+branches, 2 bytes/element instead of 4), a FATAL guard in
+`moe_matvec_af_row_vdsp()` (SME2/vDSP path explicitly doesn't support
+this tier, same as it already doesn't for 8/32), `st_register_moe_role()`
+dispatches `bits==16` through the same `allow_f32` permission gate as
+32 (FATALs for non-AF roles like embed_tokens/lm_head -- not wired
+there, out of scope), `moe_load_role_bits()`'s and the
+`QWEN_MOE_EXPERT_BITS` parser's FATAL checks both extended to accept 16,
+and `st_register_moe_experts_mixed_as()` (the per-expert path) mirrors
+the same raw-float-at-2-bytes treatment for expert-level promotion.
+All additions are `else if` arms gated on an explicit `bits==16` request
+-- unreachable by any existing config, so unset behavior is unaffected
+by construction (no existing `QWEN_MOE_ROLE_BITS`/`QWEN_MOE_EXPERT_BITS`
+file in this project requests 16).
+
+**Not yet done:** the vdsp/SME2 fast path explicitly doesn't support
+bits==16 (FATALs, matching its existing 8/32 behavior) -- fine for this
+round's scalar-path verification, would need real work if a throughput-
+sensitive caller ever wants F16 on that path. Track B (Python sweep
+harness, layers 1-4, bit-width collapse point) is running separately.
+
+Data: `/Users/eoe/vdsp_olmoe_full_weights/moe_router_margin_v2.json`.
+
+## Root-cause probe: why are OLMoE's early layers (1-4) structurally tighter?
+
+**Motivation.** The router near-tie profiler's cross-corpus replication
+found layers 1-4 consistently the tightest across two independent
+30-prompt corpora, contradicting the naive assumption that later layers
+(closer to the one known layer-13 incident) would be riskiest. The
+leading hypothesis going in: early-layer hidden states are less
+*differentiated* -- fewer transformer blocks have refined them, so
+different tokens' representations are closer to each other in direction,
+making router decisions naturally closer to ties. Tested with real
+measurement, not left as speculation.
+
+**Method.** New script `moe_hiddenstate_diff_profiler.py` (macstudio),
+hooking the identical `OlmoeSparseMoeBlock.__call__` interception point
+`moe_router_margin_profiler.py`/`_v2.py` already use and already proved
+correct -- `x` at that hook IS the hidden state the router reads, so no
+new interception point was invented. Ran across both existing 30-prompt
+corpora combined (60 prompts, 1453 tokens total, all 16 layers), computing
+per-layer: total variance (mean of per-dimension variance across all
+tokens), mean L2 norm, and mean cosine similarity of each token's
+hidden vector to that layer's mean direction (the actual "differentiation"
+metric the hypothesis needed -- low cosine-to-mean = well-differentiated,
+high = collapsed/similar). Correlated all three against the
+ALREADY-MEASURED per-layer margin medians in `moe_router_margin.json`/
+`_v2.json` (not recomputed) via Pearson r across the 16 layers.
+
+**Result: the specific hypothesis (representation collapse/cosine
+similarity) is NOT confirmed** -- `cos_to_mean` vs margin median:
+**r=0.0125**, essentially zero correlation. Early-layer tokens are not
+meaningfully more "pointing in the same direction" than late-layer
+tokens (cosine-to-mean stays in a narrow 0.26-0.34 band across all 16
+layers, no clear trend).
+
+**But a more mechanistically fundamental, and much stronger, pattern
+emerged instead**: hidden-state **magnitude** (both total variance and
+mean L2 norm) grows monotonically with layer depth -- variance
+0.054(layer0) -> 0.788(layer14), norm 10.7 -> 41.6 -- the well-known
+residual-stream norm-growth pattern in transformers. This correlates
+very strongly with the margin medians: **r=0.900 (variance) and r=0.932
+(norm)**, consistent across both corpora individually (r=0.8999/0.8876
+for variance). The router's raw logits are `gate_weight @ hidden_state`
+-- when the hidden state has small magnitude (early layers, residual
+stream hasn't accumulated much yet), any linear readout including the
+router naturally produces smaller-spread logits, which after softmax
+land closer together. **Margin tightness in early layers is
+overwhelmingly explained by activation-magnitude growth with depth, not
+representation collapse.**
+
+**Practical implication for this project's whole precision-promotion
+direction**: this is a real caution, not just a curiosity. A near-tie
+caused by naturally small residual-stream magnitude may be an inherent
+property of the model's own computation at that depth -- a genuinely
+close call the model would make even at full precision -- rather than a
+quantization-induced error the way the layer-13 incident was (noise
+from int8 attention accumulating and corrupting an otherwise-clear
+decision). Track B's bit-width sweep on layers 1-4 will show directly
+whether precision changes actually move these particular margins; if
+they don't move much, that's consistent with this finding (the
+tightness isn't noise-driven there) and would redirect promotion effort
+toward layers/roles where margin tightness IS shown to respond to
+precision, rather than treating "tight margin" alone as sufficient
+grounds for promotion.
+
+Full per-layer data + correlations:
+`/Users/eoe/vdsp_olmoe_full_weights/moe_hiddenstate_diff.json`.
+
+## D-roadmap-2 Track B: bit-width collapse-point sweep, OLMoE layers 1-4 attention roles
+
+**Motivation.** Track A proved 16-bit recovers 32-bit's precision for
+`q_proj` on one workload. This is the systematic version: for all four
+attention roles (q/k/v/o_proj) across the four layers this session's
+margin profiler identified as structurally tightest (1-4), sweep
+`{4, 8, 16, 32}` bits and measure real argmax-flip rate against an
+untouched bf16 baseline -- the actual "minimum sufficient bits" answer
+D-roadmap-2 asked for, at scale, not a single spot-check.
+
+**Method.** `moe_precision_sweep.py` (macstudio), using the genuine
+`allenai/OLMoE-1B-7B-0125` bf16 original (not the pre-quantized
+mlx-community 4-bit checkpoint used elsewhere in this project as a
+*shipping* reference -- using an already-4-bit source here would have
+meant quantizing noise on top of noise, not a clean measurement) as
+ground truth. For each of the 16 (layer, role) combinations: quantize-
+dequantize only that one weight matrix (plain RTN, int4-group64
+nib-8-symmetric and int8-group64 matching `qwen_infer.c`'s real
+`moe_decode_af()` formulas; F16/F32 are pure dtype casts, no group
+math), leave every other tensor at native bf16, rerun the same
+`OlmoeSparseMoeBlock.__call__` router-margin hook already proven by
+`moe_router_margin_profiler.py`/`_v2.py` over both existing 30-prompt
+corpora combined, and record the margin distribution plus the fraction
+of router decisions whose argmax (selected vs. first-rejected expert)
+flips relative to the untouched-bf16 baseline at each bit width.
+
+**Real results, all 16 (layer, role) combinations, flip rate = fraction
+of router decisions where quantizing just this one tensor changes which
+expert wins the boundary slot:**
+
+| bits | flip rate range across all 16 combos | mean |
+|---|---|---|
+| 4  | 11.0% - 35.9% | ~17.9% |
+| 8  | 0.34% - 3.03% | ~1.2% |
+| 16 | **0.0% for all 16** | 0.0% |
+| 32 | **0.0% for all 16** | 0.0% (identical to 16) |
+
+Every single one of the 16 combinations independently reaches its
+collapse point at exactly **bits=16** -- flip rate is nonzero (though
+small) at the engine's current production default (8-bit), and drops to
+*exactly* zero at 16, with zero further improvement from going to 32.
+This is the clean, systematic version of Track A's single-workload
+finding: for this whole role x layer region, 16-bit is both necessary
+(8-bit still measurably flips) and sufficient (32-bit buys nothing more)
+-- not a guess, a swept, replicated answer across 16 independent
+measurements.
+
+**A real, consistent secondary pattern**: `v_proj` has the highest
+bits=4 flip rate at every one of the 4 layers (23.6%-35.9%, vs.
+11.0%-15.7% for q/k/o_proj at the same layers) -- `v_proj` is
+measurably the most int4-sensitive of the four attention roles in this
+region, consistently, not a one-off.
+
+**Practical reading, combined with the root-cause probe above**: the
+root-cause probe found early-layer margin tightness is likely an
+intrinsic property of shallow hidden-state magnitude, not itself a
+quantization artifact -- but this sweep shows that regardless of *why*
+the margin is tight, quantization noise at 4-8 bits still measurably
+flips a real fraction of those already-close decisions, and 16-bit
+reliably closes that gap. The two findings compose: precision can't
+make a genuinely close call less close, but it can stop noise from
+being the thing that tips it.
+
+**Not yet done:** this covers attention roles at layers 1-4 only.
+Whether the same clean 16-bit collapse point holds for FFN/expert
+tensors, other layers, or other models (DeepSeek-V2-Lite port running
+separately) is unconfirmed. Causal validation against a full end-to-end
+generation gate (not just single-position router-margin flip rate) is
+the natural next step before recommending this as a shipped default.
+
+Full data: `/Users/eoe/vdsp_olmoe_full_weights/moe_precision_sweep.json`,
+raw log `/private/tmp/precision_sweep.log` (macstudio).
+
+## (b) Expert/FFN precision sweep -- bounded, evidence-backed sample, OLMoE
+
+**Scope, and a real mid-run scope cut.** OLMoE's FFN surface is purely
+routed experts (no dense layers, no shared experts): 64 experts x 16
+layers x 3 projections (gate/up/down) = 3072 tensors, not tractable to
+sweep exhaustively. Built a target list from two evidence sources: (1)
+`(layer,expert)` pairs recurring in the router-margin profiler's
+`top_closest_events` (real near-tie evidence, `moe_router_margin.json`/
+`_v2.json`), (2) each layer's single most-frequently-routed expert (real
+traffic coverage). First attempt used a `>=2` recurrence threshold + the
+frequency addition -> 39 pairs x 3 x 4 = 468 runs. One real timed run
+showed this would take ~30+ hours (each run redoes a full 60-prompt,
+16-layer forward pass at every bit width -- same per-run cost as the
+attention-role sweep, just far more runs). Killed it and raised the
+threshold to `>=4` recurrences, dropping the frequency addition
+entirely (weaker evidence, source of most of the bloat) -- final target
+list: **4 pairs** (`layer=3/expert=23` x4, `layer=3/expert=55` x4,
+`layer=12/expert=51` x8, `layer=12/expert=55` x8 -- the last two being
+the exact chronic pair this whole investigation started from). 154 of
+158 originally-seen pairs were one-off (recurrence=1) and dropped as
+not chronic by definition, matching this project's own "no silent
+caps" convention -- logged here and in the script's own stderr.
+
+**A structural fact this measurement itself confirms, not just
+assumes**: quantizing an expert's own FFN weight (gate/up/down) cannot
+change which expert the ROUTER selects -- the router's decision comes
+only from `hidden_state @ gate_weight` (a separate, un-quantized-here
+matrix), computed entirely upstream of any expert's own FFN compute.
+Real data confirms this exactly: `router_flip_rate_conditional` was
+**0.0 across all 48 runs** (4 pairs x 3 projections x 4 bit widths),
+with zero exceptions -- not a surprising result once traced through
+the causal graph, but good to have measured rather than assumed.
+
+**Real results -- output-token flip rate (unconditional over the full
+60-prompt/1453-position corpus), the only signal that can move here**:
+
+| bits | max output_flip_rate across 12 (pair,projection) combos |
+|---|---|
+| 4  | 0.00275 (layer=3 expert=23 up_proj -- ~4/1453 positions) |
+| 8  | 0.0 for all 12 |
+| 16 | 0.0 for all 12 |
+| 32 | 0.0 for all 12 |
+
+Collapse points (first bits where output flip hits exactly 0): 8 of 12
+combos already collapse at **bits=4** itself (zero measurable output
+impact even at the lowest tested precision), the remaining 4 collapse
+at **bits=8**. **None of the 12 needed bits=16 or bits=32** -- the
+opposite pattern from the attention-role sweep, where every one of 16
+combos needed bits=16 and 8-bit still measurably flipped output.
+
+**What this means, honestly stated**: this is a real, informative null
+result for these 4 specific experts, not a contradiction of Track A/B.
+The near-tie phenomenon these experts were selected for (chronic
+closeness between the router's own competing scores for them) lives in
+the router-input pathway -- upstream hidden-state precision (Track A/B's
+territory) -- not in the selected expert's own weight precision. Once
+an expert IS selected, quantizing its own FFN weights barely perturbs
+the final output for this workload, even at 4-bit. **Practical
+implication for D-roadmap-3 (runtime escalation design)**: expert/FFN-
+level bit promotion is not the lever for router-flip risk -- attention-
+role promotion (Track A/B) is. This sample (4 pairs, evidence-selected
+specifically for chronic near-tie involvement) argues against
+broadening expert-level static promotion as a priority; a genuinely
+different, larger, more randomly-sampled expert set could still show a
+different pattern, but there is no evidence for that yet, and no reason
+from this data to assume it.
+
+**Not yet done**: only 4 of 3072 possible (layer,expert) combinations
+were tested, chosen specifically because they were the strongest
+near-tie evidence available -- this is not a claim that no expert
+tensor ever needs promotion, only that the ones most likely to need it
+(by this project's own evidence) don't. DeepSeek-V2-Lite's dense-layer
+and shared-expert tensors (architecture OLMoE lacks entirely) remain
+completely unexamined.
+
+Full data: `/Users/eoe/vdsp_olmoe_full_weights/moe_expert_precision_sweep.json`,
+raw log `/tmp/expert_sweep.log` (macstudio).
+
+## (a) Output-token causal validation for the attention-role sweep
+
+**Motivation.** Track B measured router-level flip rate (does the
+selected expert change). That's an internal signal -- the actually
+important question is whether promoting bits changes the REAL OUTPUT
+(final next-token argmax). Re-scoped from "build real multi-step
+autoregressive generation" (checked directly: neither
+`run_moe_safetensors_verify_mode()` nor `run_moe_verify_mode()` has a
+sample-append-continue loop, only fixed-corpus teacher-forced single
+passes -- more machinery than the question needs) to: extend the
+already-proven `moe_precision_sweep.py` methodology
+(`moe_precision_sweep_output.py`, same model/corpus/quant math) to
+additionally capture the FULL model's final LM-head argmax at every
+position, compared against the untouched-bf16 baseline's own final
+argmax at that position -- same forward passes, no new C-engine
+feature needed.
+
+**Real results, same 16 (layer,role) x {4,8,16,32} combinations as
+Track B, output-token flip rate (fraction of the 1453 real positions
+across both 30-prompt corpora where the final predicted token
+changes):**
+
+| bits | output-token flip rate range across 16 combos |
+|---|---|
+| 4  | 0.68% - 2.55% (much lower than router-level's 11-36% -- most router flips don't cascade to a different final token) |
+| 8  | 0.07% - 1.17% |
+| 16 | **0.0% for 16 of 16** |
+| 32 | **0.0% for 16 of 16** |
+
+Collapse points match Track B's router-level finding almost exactly:
+15 of 16 combos need bits=16 to reach zero output-token flip, and one
+(`layer=1/k_proj`) already reaches zero at bits=8 -- output-level flip
+is a slightly looser bar than router-level flip (some router flips get
+absorbed downstream without changing the final token), but the
+practical conclusion is unchanged and now confirmed at the metric that
+actually matters: **16-bit eliminates real output divergence for all
+16 tested (layer,role) combinations, at every position in both real
+corpora.**
+
+**Combined with (b)'s null result** (expert/FFN weight precision
+doesn't move the needle for the near-tie phenomenon), the full picture
+for OLMoE layers 1-4 is now: promote `q_proj`/`k_proj`/`v_proj`/`o_proj`
+to bits=16 via `QWEN_MOE_ROLE_BITS`, and that alone -- a one-time static
+config, no runtime mechanism -- eliminates measured quantization-
+induced output divergence in this region. This is a complete, real,
+data-driven answer to D-roadmap-2's original question for this specific
+architecture/region.
+
+Full data: `/Users/eoe/vdsp_olmoe_full_weights/moe_precision_sweep_output.json`,
+raw log `/tmp/output_sweep.log` (macstudio).
+
+## WikiText-103-scale near-tie recurrence scan -- the small corpus was misleading
+
+**Motivation.** D-roadmap-3's flag-and-log design implicitly assumed
+"real traffic" would supply the long-tail recurrence evidence, but this
+engine has no live serving deployment -- the 60-prompt/1453-position
+corpus used throughout this session (margin profiler, Track A/B, (a),
+(b)) is a hand-curated sample, far too small to tell a genuinely one-off
+near-tie pair from one that would recur given real-scale, diverse text.
+User pointed this out directly (paraphrased: real evidence-gathering
+needs a continuous, wiki-scale stream, not 60 sentences).
+
+**Method.** `moe_wikitext_neartie_scan.py` (macstudio): same
+`OlmoeSparseMoeBlock.__call__` router-margin hook already proven in
+`moe_router_margin_profiler.py`/`_v2.py`, same model
+(`mlx-community/OLMoE-1B-7B-0125-4bit`, production precision, matching
+those scripts -- this run measures real recurrence patterns as actually
+computed, not a quantization-sensitivity sweep), but fed real
+WikiText-103-raw-v1 text (streaming, real Wikipedia-derived paragraphs,
+not hand-picked sentences) across **all 16 layers** (not just 1-4) until
+reaching a bounded, explicitly-logged target of 30,000 positions (~20x
+the 60-prompt corpus). Completed in 48s (296 paragraphs, 30,216
+positions actual) -- a single pass with no per-config weight
+quantization overhead, much faster than the bit-width sweep scripts.
+
+**Real results -- the one-off finding was a sampling artifact, not a
+real property of the phenomenon:**
+
+| | 60-prompt corpus (1453 pos) | WikiText-103 (30,216 pos) |
+|---|---|---|
+| one-off fraction (recurrence==1) | 84% (42/50 in top-50) | **5.8%** |
+| chronic pairs (recurrence>=4) | 4 (deliberately evidence-selected) | **25,142** |
+| recurrence distribution shape | appeared bimodal (few chronic, mostly one-off) | **smooth, continuous decline** (1761 pairs at recurrence=1, gradually down through 20+) |
+
+At real scale, the overwhelming majority of distinct (layer,expert-pair)
+combinations that appear at all recur multiple times -- "one-off" was
+mostly an artifact of not having enough data to see the second
+occurrence, not a real property of most near-tie pairs. This directly
+revises this session's earlier framing (`RESULTS.md`, router near-tie
+profiler sections, and `ROADMAP.md`'s `D-roadmap-3`): the long tail
+that supposedly couldn't be pre-empted by static configuration is much
+smaller than believed, and there is far more real chronic recurrence
+than the small sample suggested.
+
+**A second real correction: chronic pairs are NOT concentrated in
+layers 1-4.** Per-layer chronic-pair counts in the saved top-200-by-
+recurrence sample: layer 15 has the most (32), followed by layer 9
+(21), layer 12 (20), layer 0 (18), layer 14 (18) -- layers 1-4 (the
+only region swept for bit-width sensitivity so far) are NOT
+disproportionately represented. This means the region this session has
+validated as fixable by attention-role bits=16 promotion (Track A/B,
+(a)) may only be a fraction of where real near-tie chronicity actually
+concentrates.
+
+**Honest open question this creates, not yet answered**: chronicity
+(how often a specific pair is close) and flip-susceptibility (whether
+low bit-width actually causes that closeness to resolve wrong) are
+different measurements -- the root-cause probe's hidden-state-magnitude
+correlation (r=0.90/0.93) predicts *later* layers should be naturally
+*more* robust to low precision despite having chronic pairs (larger
+hidden-state magnitude -> wider logit spread even under noise). Whether
+attention-role bits=16 promotion generalizes to layers 9/12/14/15 the
+way it did for 1-4, or its value tapers off with depth as that
+mechanism would predict, is being tested now (extended sweep, see next
+section once complete).
+
+Full data: `/Users/eoe/vdsp_olmoe_full_weights/moe_wikitext_neartie.json`,
+raw log `/tmp/wikitext_scan.log` (macstudio).
+
+## D-roadmap-2 Track B extension: 6 new layers {0,5,9,12,14,15} -- does bits=16 attention promotion generalize, and local vs. accumulated (upstream) noise attribution
+
+**Motivation.** The WikiText-103 scan above corrected this session's own
+earlier framing: chronic near-tie pairs are NOT concentrated in layers
+1-4 (the only region Track B/(a) had swept) -- layer 15 has the most
+chronic pairs (32), then 9 (21), 12 (20), 0 (18), 14 (18). Two questions
+followed directly: (1) does Track B's clean "bits=16 is the collapse
+point" finding hold outside 1-4, or does the root-cause probe's
+hidden-state-magnitude/margin correlation (r=0.90/0.93) mean deeper
+layers are naturally more robust and need less promotion; (2) for a
+genuinely deep layer, is its own near-tie risk caused by its OWN
+attention imprecision, or inherited noise accumulated through the
+residual stream from everything computed before it. Chose 6 layers to
+answer (1): 0 and 15 (network extremes), 9/12/14 (highest chronic-pair
+counts from the wikitext scan), 5 (a lower-count mid-layer contrast).
+
+**Method.** `moe_precision_sweep_extra_layers.py` (macstudio), identical
+methodology to Track B/(a) -- same genuine `allenai/OLMoE-1B-7B-0125`
+bf16 ground truth, same 60-prompt/1453-position corpus, same
+group-64 RTN int4/int8 dequant matching `qwen_infer.c`'s real
+`moe_decode_af()` formulas (F16/F32 = pure dtype casts), same
+router-margin hook plus the (a) extension capturing final LM-head
+argmax. For each of the new 24 (layer, role) combinations (6 layers x
+4 roles), swept `{4, 8, 16, 32}` bits one tensor at a time, everything
+else native bf16, measuring both router-flip and output-flip against
+the untouched baseline. 96 runs total.
+
+**Real collapse-point table, all 24 new (layer, role) combinations
+(lowest bits reaching exactly 0.0 flip rate):**
+
+| layer | role | router collapse | output collapse | bits=4 router flip | bits=8 router flip |
+|---|---|---|---|---|---|
+| 0  | q_proj | 16 | 16 | 18.2% | 1.03% |
+| 0  | k_proj | 16 | 16 | 18.4% | 0.96% |
+| 0  | v_proj | 16 | 16 | 55.3% | 7.36% |
+| 0  | o_proj | 16 | 16 | 41.7% | 3.10% |
+| 5  | q_proj | 16 | 16 | 10.2% | 0.48% |
+| 5  | k_proj | 16 | **8** | 6.8% | 0.07% |
+| 5  | v_proj | 16 | 16 | 13.1% | 1.24% |
+| 5  | o_proj | 16 | 16 | 12.0% | 0.96% |
+| 9  | q_proj | 16 | **8** | 4.3% | 0.21% |
+| 9  | k_proj | 16 | 16 | 3.0% | 0.21% |
+| 9  | v_proj | 16 | 16 | 5.4% | 0.41% |
+| 9  | o_proj | 16 | 16 | 5.4% | 0.55% |
+| 12 | q_proj | 16 | 16 | 4.5% | 0.28% |
+| 12 | k_proj | 16 | 16 | 3.4% | 0.28% |
+| 12 | v_proj | 16 | 16 | 5.2% | 0.34% |
+| 12 | o_proj | 16 | 16 | 5.6% | 0.34% |
+| 14 | q_proj | **8** | 16 | 1.9% | 0.0% |
+| 14 | k_proj | 16 | **8** | 2.0% | 0.07% |
+| 14 | v_proj | 16 | 16 | 4.3% | 0.14% |
+| 14 | o_proj | 16 | **8** | 4.6% | 0.48% |
+| 15 | q_proj | 16 | 16 | 2.6% | 0.07% |
+| 15 | k_proj | 16 | **8** | 2.9% | 0.07% |
+| 15 | v_proj | 16 | 16 | 9.0% | 0.34% |
+| 15 | o_proj | 16 | 16 | 9.8% | 1.86% |
+
+**Router-level: 23 of 24 new combos still need bits=16** for a hard
+zero-flip guarantee (only `layer=14/q_proj` collapses early, at
+bits=8). **Output-level: 19 of 24 need bits=16** (5 exceptions collapse
+at bits=8: `layer=5/k_proj`, `layer=9/q_proj`, `layer=14/k_proj`,
+`layer=14/o_proj`, `layer=15/k_proj`). Combined with Track B/(a)'s
+original 16/16 (both metrics, layers 1-4), across all 10 layers now
+swept (0-5, 9, 12, 14, 15 -- 6,7,8,10,11,13 remain untested): **39 of 40
+router combos and 35 of 40 output combos still require bits=16**. The
+finding generalizes as the correct STATIC per-tensor precision floor --
+no layer tested so far is safe running attention at bits=8 across the
+board.
+
+**A real, secondary depth pattern (raw noise sensitivity, not the
+collapse point itself) exists and matches the root-cause probe's
+prediction**: bits=4 router-flip magnitude drops sharply with depth --
+layer 0's range is 18.2%-55.3%, layer 5's is 6.8%-13.1%, by layers
+9-15 the range has settled to roughly 1.9%-9.8%. Deeper layers really
+are more robust to raw quantization noise (larger hidden-state
+magnitude -> wider logit spread, exactly as the r=0.90/0.93 correlation
+predicted) -- but that robustness shows up as a smaller flip rate AT
+bits=4/8, not as a lower collapse point. The zero-flip guarantee itself
+barely relaxes with depth; the margin by which bits=8 fails does.
+
+## D-roadmap-3 residual-accumulation test: local (own-layer) vs. upstream (inherited) attention noise, layers 9/12/15 @ bits=8
+
+**Motivation.** The collapse-point table above answers "how much
+precision does layer L's own attention need" but not "why does a deep
+layer's near-tie risk exist at all" -- is it driven by that layer's own
+imprecision, or by noise accumulated through the residual stream from
+every layer computed before it? This directly tests the root-cause
+probe's residual-accumulation hypothesis (hidden-state magnitude grows
+monotonically with depth, r=0.90/0.93 correlation with margin
+looseness) with a controlled comparison rather than a correlation.
+
+**Method.** `moe_local_vs_upstream.py` (macstudio), same ground truth
+and corpus as the sweep above, bits=8 (the engine's production
+default) only. For layers 9, 12, 15: captured a clean-bf16 baseline,
+then measured two configs against it --
+**local-only** (quantize ONLY layer L's own q/k/v/o_proj, all 4 roles
+together, everything else native bf16) and
+**upstream-only** (quantize ALL of layers 0..L-1's q/k/v/o_proj to
+bits=8, layer L itself and everything after stays native bf16) --
+measuring layer L's own router-flip (at L's own gate) and the final
+output-token flip in both cases. Note: local-only here quantizes all 4
+roles of layer L at once (not one role at a time as in the sweep
+above), matched to upstream-only's "all 4 roles of every affected
+layer" scheme, so the two are a fair apples-to-apples comparison with
+each other -- not directly comparable to the single-role numbers above.
+
+**Real results:**
+
+| layer | local router-flip | local output-flip | upstream router-flip | upstream output-flip | router ratio (upstream/local) | output ratio |
+|---|---|---|---|---|---|---|
+| 9  | 0.76% | 0.34% | 5.09% | 0.69% | **6.7x** | 2.0x |
+| 12 | 0.55% | 0.21% | 5.02% | 0.76% | **9.1x** | 3.7x |
+| 15 | 0.69% | 0.34% | 7.78% | 0.83% | **11.3x** | 2.4x |
+
+At every one of the 3 layers tested, **upstream (accumulated) noise
+causes far more router disruption than the layer's own local attention
+imprecision** -- 6.7x to 11.3x more at the router level, 2.0x to 3.7x
+more at the final-output level. And the router-level ratio climbs
+monotonically with depth (6.7x -> 9.1x -> 11.3x, tracking the number of
+upstream layers quantized: 9, 12, then 15) -- exactly the pattern the
+residual-accumulation hypothesis predicts: the deeper the layer, the
+more of its own near-tie vulnerability is attributable to everything
+computed before it, not to itself.
+
+**This resolves the open question the WikiText scan left unanswered
+(previous section) and refines, not contradicts, Track B/(a)'s
+uniform-bits=16 recommendation.** "Does bits=16 promotion generalize
+beyond layers 1-4, or does its value taper off with depth" has a more
+precise answer than either "yes" or "no": the STATIC per-tensor
+precision floor generalizes almost without exception (39/40 router,
+35/40 output combos above), but the underlying reason a deep layer
+needs it is increasingly NOT about that layer's own tensors -- it's
+about keeping the whole upstream chain clean. A sparse promotion
+scheme that only raised precision on layers with locally-measured
+near-tie risk would miss most of the real risk at depth, since a
+mid-to-late layer's danger is dominated by inherited noise rather than
+local imprecision. Uniform, depth-independent bits=16 promotion across
+all attention roles remains the right call -- this data explains why
+it has to be uniform rather than targeted.
+
+Full data: `/Users/eoe/vdsp_olmoe_full_weights/moe_precision_sweep_extra_layers.json`
+(raw log `/tmp/extra_layers_sweep.log`) and
+`/Users/eoe/vdsp_olmoe_full_weights/moe_local_vs_upstream.json`
+(raw log `/tmp/local_vs_upstream.log`) (macstudio).
+
+## Synthesis: blanket all-layer attention promotion, not selective, and why
+
+**The local-vs-upstream result changes the recommendation.** Earlier
+sections of this investigation (Track A/B, the layer extension above)
+framed the fix as "find which specific (layer,role) combos need
+promotion, promote those." The local-vs-upstream attribution (layers
+9/12/15, immediately above) shows that framing under-counts the real
+risk: at every depth tested, accumulated upstream noise disrupts a
+layer's own router **6.7-11.3x more** than that layer's own local
+attention imprecision, and the ratio grows with depth. Mechanistically,
+this means **any gap in the promoted-layer set re-admits noise that
+then accumulates forward past that point** -- a sparse pattern (e.g.
+alternating layers, or only the two ends) leaves the exact channel this
+data shows dominates the risk wide open. Combined with finding ①'s
+39/40 (router) and 35/40 (output) combos across all 10 layers tested
+needing bits=16 regardless of depth, the data doesn't support
+selectivity as a real optimization -- **an unbroken prefix from layer 0
+is mechanistically necessary, and since virtually every layer needs the
+promotion anyway, the simplest defensible policy is promoting all four
+attention roles at all layers.**
+
+**Real end-to-end validation of the blanket config, real C engine**:
+`QWEN_MOE_ROLE_BITS` with `q_proj/k_proj/v_proj/o_proj -1 16` (the `-1`
+layer wildcard already matches every layer, confirmed via
+`moe_role_bits()`'s own matching rule, `qwen_infer.c:11792-11799`) --
+this is a 4-line config, no new code. Ran real end-to-end against the
+production OLMoE checkpoint (`/Users/bob/olmoe_1b7b_hf`,
+`run_moe_safetensors_verify_mode()`, same setup as Track A's positive
+test): loaded clean (`4 role/layer overrides loaded`, all 16 layers x 4
+roles resolved), completed 8/8 positions with no crash. Compared to the
+int8-default baseline, **2 of 8 positions produced a different argmax**
+(pos 2: 13 -> 15, pos 7: 250 -> 1234) -- confirming the blanket
+promotion has a real, measurable effect on the actual served output,
+not a no-op. Attempted to check these against a captured bf16 MLX
+reference (`moe3a_mlx_ref_logits.bin`) but that file turned out to be
+from a different, 13-position corpus (mismatched -- not a valid
+comparison for this 8-position default corpus), so this specific
+spot-check is **inconclusive on directionality** (real change confirmed,
+but not verified against ground truth for these exact two positions).
+This doesn't weaken the overall conclusion -- it rests on the much
+larger, already-rigorous sweeps (Track A/B, (a), (b), the layer
+extension, all directly compared against real bf16 baselines across
+hundreds of positions) -- but is noted honestly rather than papered
+over with a mismatched comparison.
+
+**Cost**: attention is a small fraction of a MoE model's total
+parameters (4 tensors/layer vs. the expert FFN's 3 tensors x 64 experts
+x 16 layers -- an order of magnitude more parameters, per the earlier
+DeepSeek-V2-Lite F32-promotion discussion in this doc). Doubling
+attention's bit-width from the current int8 default to 16 across all 16
+layers is a small total-memory increase relative to the whole model,
+and (b) already showed the (much larger) expert/FFN parameter mass does
+not need this.
+
+**Updated to `ROADMAP.md`'s `D-roadmap-2`/`D-roadmap-3` accordingly.**
+
+## DeepSeek-V2-Lite port of the router-margin profiler -- OLMoE's
+## early-layer pattern does NOT generalize
+
+**Question**: does OLMoE's replicated finding ("layers 1-4 have the
+tightest router margins of any layers, across two independent 30-prompt
+corpora") reflect a general MoE-router property, or is it OLMoE-specific?
+Ported `moe_router_margin_profiler.py`'s exact methodology
+(margin = k-th minus (k+1)-th post-softmax routing weight at the real
+top-k boundary) to DeepSeek-V2-Lite-Chat-4bit-mlx via
+`deepseek_router_margin_profiler.py`, hooking `MoEGate.__call__` directly
+(DeepSeek's gate is its own `nn.Module`, unlike OLMoE's bare
+`nn.Linear`) -- same 30-prompt corpus this project already used for
+`moe_st_expert_profiler.py`. 26 MoE layers (of 27 total -- layer 0 is
+dense, `first_k_dense_replace=1`), top_k=6, 676 tokens, 17,576 router
+calls total.
+
+**Result: the depth pattern is inverted, not confirmed.**
+
+Riskiest (lowest median margin) layers, worst-first:
+```
+layer 24: median=0.001793   layer 20: median=0.002052   layer 18: median=0.002350
+layer 25: median=0.001862   layer 21: median=0.002098   layer 16: median=0.002388
+                             layer 22: median=0.002129   layer 13: median=0.002472
+                             layer 23: median=0.002151   layer 15: median=0.002472
+```
+Safest (highest median margin) layers:
+```
+layer 10: median=0.003830   layer 9: median=0.003601   layer 8: median=0.003464
+layer  5: median=0.003632   layer 4: median=0.003494   layer 7: median=0.003326
+```
+
+DeepSeek-V2-Lite's riskiest layers are the **deep** ones (16-26), and
+its safest are **shallow-to-mid** (4-10) -- the exact opposite of
+OLMoE, where layers 1-4 were tightest and margins loosened with depth.
+
+Extreme-tail events (`margin=0.00000000` to 8 decimals) are NOT confined
+to the riskiest-by-median layers either -- they occur across layers
+1,2,3,4,5,6,7,9... including layers whose *median* margin is
+comparatively safe (4,5,6,7). This echoes the earlier WikiText-103
+finding for OLMoE (chronic near-ties spread across all layers, not
+concentrated) -- tail risk and median risk are not the same signal, in
+either model.
+
+**Why this matters**: the hidden-state-magnitude mechanism found for
+OLMoE (variance/norm grows monotonically with depth, r=0.90/0.93
+correlation with margin looseness -- i.e. *bigger* hidden state ->
+*looser* margin) would, if it held here too, predict DeepSeek's deep
+layers should be the *safest*, not the riskiest. They're the opposite.
+Either DeepSeek-V2-Lite's hidden-state-magnitude-vs-depth curve itself
+doesn't grow monotonically the same way (plausible: different training,
+MLA vs GQA attention, `n_shared_experts=2`, `topk_method="greedy"`),
+or a different mechanism dominates here. Not yet root-caused -- flagged
+as a real open question, not resolved by assumption.
+
+**Practical implication**: the OLMoE-only "blanket all-layer attention
+promotion" conclusion (the Synthesis section above) is **not
+invalidated for OLMoE** -- it's still correctly derived and validated
+there. But its *justification story* ("early layers structurally
+tighter, upstream noise accumulates through depth") does not transfer
+to DeepSeek-V2-Lite, whose risk is concentrated at the *opposite* end.
+A blanket-promotion *policy* (promote everything, ignore which layer)
+would still work as a crude fix for either model, since it doesn't rely
+on knowing which end is risky -- but any future *selective* /
+runtime-adaptive design that assumes "early = risky" (as this project's
+own D-roadmap reasoning did, OLMoE-derived) would be wrong out of the
+box for DeepSeek-V2-Lite. Per-architecture calibration, not a
+transferable universal heuristic, is the honest conclusion.
+
+Output: `/Users/eoe/deepseek_router_margin.json` (macstudio),
+script: `/Users/eoe/deepseek_router_margin_profiler.py` (macstudio).

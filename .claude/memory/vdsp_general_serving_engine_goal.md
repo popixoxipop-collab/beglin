@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e6c100cc-beb0-426d-8425-0959ae41d7af
-  modified: 2026-09-01T01:20:00.000Z
+  modified: 2026-09-01T11:40:00.000Z
 ---
 
 사용자의 장기 목표: 현재 vdsp(Apple Silicon CPU 전용, 단일 C 파일 `qwen_infer.c`,
@@ -1908,3 +1908,298 @@ truncated)은 거의 확실히 초반 토큰에서 범위밖 값이 나와 실�
 확인. **V5l 매니페스트 기능의 유일 남은 공통갭 해소 — 4라운드+1
 보강으로 완전히 마무리**. 상세: `RESULTS.md` §"V5l: manifest loader
 input validation".
+
+★★라우터 근접-동점(margin) 통계 프로파일러(사용자 제안 "정밀도 각개
+승격" 아이디어의 측정 단계): 이 프로젝트가 이미 한 번 실제로 겪은
+사건(OLMoE 레이어13/pos0 라우터 플립, gap=1.87e-05, attention F32
+승격으로 실제 수정 완료됨, `qwen_infer.c:12010-12029` 주석)을
+반복측정 도구로 일반화. `moe_router_margin_profiler.py`(macstudio
+전용, repo에 안 넣음, 기존 `moe_st_expert_profiler.py` 훅 방식
+차용) — OLMoE의 `mlp.gate`는 순수 `nn.Linear`라(전용 Gate 모듈 아님)
+`OlmoeSparseMoeBlock.__call__` 자체를 몽키패치해 top-k 선택에 실제
+쓰이는 raw routing_weights를 옆에서 재계산(실제 forward엔 영향 없음),
+매 (layer,token) 라우터콜마다 k번째 선택expert vs (k+1)번째 탈락
+expert의 margin 기록. **실측(30프롬프트/642토큰/16레이어/10272
+라우터콜)**: 전체분포 p1=0.000015, median=0.001694, **min=0.000000
+(진짜 완전동점 이벤트 다수 관측)**. 레이어13 자체 p1(0.000031)이
+실제 사건 gap(1.87e-05)과 같은 자릿수 — 도구가 실제 위험지점을
+재발견함을 확인(타당성 검증). **의외 발견**: 가장 위험한 건 후반
+레이어가 아니라 **초반 레이어(0-4)** — layer1 median이 layer15보다
+4.3배 더 촘촘함. 이미 고친 layer13 사건은 이 순위에서 중간 정도이지
+최악이 아님 → **0-4레이어에 아직 못 찾은 미발견 사건이 있을 가능성
+높음**(기존 조사는 pos0 한 지점 발산으로 우연히 트리거된 것, 체계적
+스윕 아니었음). OLMoE는 dense-layer/shared-expert가 아예 없어서
+(`first_k_dense_replace=0`/`n_shared_experts=0`) `allow_f32=0` 게이트
+제약은 이번엔 무관 — DeepSeek-V2-Lite로 포팅할 때나 해당. **이번
+라운드는 측정까지만**: 승격 후 실제로 플립이 줄어드는지 인과검증
+(layer13 사건 때처럼 before/after 실측)과 런타임 자동 적응형 승격
+(4→8→32bit, 16bit는 `QWEN_MOE_ROLE_BITS`가 지원 안 함) 비전은 다음
+라운드. 전체 데이터: macstudio
+`/Users/eoe/vdsp_olmoe_full_weights/moe_router_margin.json`. 상세:
+`RESULTS.md` §"Router near-tie (margin) statistics profiler".
+
+★★재현검증(완전 다른 주제 30프롬프트, 겹침 0%)으로 사용자 요청
+("ㅇㅇ")에 응해 실행 — 처음 가설보다 더 정교한 결론. layer12(51,55)
+쌍은 **진짜로 재현됨**(독립 코퍼스에서도 3/811회, margin
+7.6e-6~6.1e-5 — 같은 자릿수) → 이 쌍은 우연이 아니라 실재하는
+구조적 약점. 하지만 **"가장 위험한 쌍"은 아니었음** — round2
+자체의 top50 closest에는 0/50(각기 다른 일회성 쌍들이 더 촘촘했음),
+게다가 layer12 자체는 round2에서 median 기준 **가장 느슨한
+레이어**(0.003418, round1 때 "중간위험"이라던 것과 배치) — 즉
+"layer12가 위험"이 아니라 "layer12 안의 이 특정 쌍 하나만" 콕
+집어 촘촘한 것. **훨씬 강하게 재현된 신호는 레이어 단위 패턴**:
+초반 레이어(1-4)가 두 독립 코퍼스에서 공통으로 가장 촘촘함
+(layer1 median 0.000755 vs 0.000748 — 거의 동일). **결론 수정**:
+특정 expert쌍 하나를 쫓기보다 "왜 초반 레이어가 구조적으로 더
+촘촘한가"가 더 근거있고 실행가능한 다음 조사 대상. 사용자의
+"항상 존재하는 취약 쌍" 가설은 부분적으로만 맞음(존재는 하지만
+지배적 원인은 아님) — 사용자에게 이 뉘앙스 그대로 보고 예정.
+전체 데이터: macstudio
+`/Users/eoe/vdsp_olmoe_full_weights/moe_router_margin_v2.json`. 상세:
+`RESULTS.md` §"Router near-tie profiler: cross-corpus replication".
+
+★사용자 지적("layer13 F32 승격이 진짜 최소 필요 정밀도였는지 검증
+안 됨 — 4/8/16/32 각각 어디서 붕괴하는지 스윕했어야, 추론엔진도
+'학습/캘리브레이션'이 필요한 상태로 정의하고 싶음")을 받아 코드
+아님, `ROADMAP.md`에 `D-roadmap-2`로 문서화(WHY/COST/EXIT 형식,
+기존 D-roadmap-1과 동일 관례). 핵심: 지금까지의 모든 정밀도 수정
+(OLMoE attention F32, DeepSeek profiler-driven int8 승격)이 전부
+"문제발견→가장 안전한 티어로 즉시 점프"였지 실제 붕괴지점을 스윕한
+적 없음 — margin profiler는 "위험한가"만 답하지 "최소 몇 비트면
+충분한가"는 안 답함. 엔진에 이미 있는 bit-width 사다리
+(`QWEN_MOE_ROLE_BITS`/`QWEN_MOE_EXPERT_BITS`)를 실제로 스윕하는
+루프가 빠진 부분. **아직 착수 안 함, 의도와 갭만 기록** — 사용자가
+"일단 적어놓고 다음 단계를 정할게"라고 명시, 코드/스윕 하네스는
+다음 단계 결정 후.
+
+★★★D-roadmap-2 Track A **완료+실측 검증**: `qwen_infer.c`에 16비트
+(F16) 티어 추가 — `st_register_moe_f16_as_af()`/`moe_decode_af()`·
+`moe_matvec_af_row()`의 bits==16 분기/`moe_load_role_bits()`+
+`QWEN_MOE_EXPERT_BITS` FATAL체크 확장/`st_register_moe_role()`
+allow_f32게이트 재사용/`st_register_moe_experts_mixed_as()` 전문가별
+경로까지 전부 미러링. **검증 순서**: (1) bob에서 `_Float16` 왕복
+독립 프로브(실제값+overflow-to-inf+subnormal 전부 정상) (2)
+dense-only+GPU매크로 빌드 둘다 클린 (3) **실제 OLMoE 체크포인트로
+end-to-end 링크+실행**(`/Users/bob/olmoe_1b7b_hf`,
+`QWEN_MOE_SAFETENSORS`+`run_moe_safetensors_verify_mode()`) — baseline
+8/8 정상, `q_proj -1 16` 승격도 8/8 정상+argmax 불변. **핵심 결과**:
+`q_proj -1 16`과 `q_proj -1 32`가 8개 포지션 전부 **완전히 동일한
+logit** 산출 — 16비트가 이미 32비트와 같은 정밀도를 이 role에서
+확보함을 실측 확인, D-roadmap-2가 원했던 "최소 충분 비트" 데이터
+포인트를 처음으로 실제 확보. 상세: `RESULTS.md` §"D-roadmap-2 Track
+A: 16-bit (F16) tier added". Track B(Python 스윕 하네스, layers 1-4)는
+별도 fork로 병렬 실행 중.
+
+★Track B 재개 라운드(직접 ps aux 검증): 1차 fork의 "백그라운드 워처
+가동중" 자기보고는 **거짓으로 확인됨** — macstudio에 실제 프로세스
+전무, bf16 원본 체크포인트(`allenai/OLMoE-1B-7B-0125`) 다운로드가
+3.6GB에서 멈춰있었고(.incomplete blob 6개) 아무도 이어받고 있지
+않았음. nohup+disown으로 재시작(PID 53056), 재확인 결과 실제로
+살아있고 3.6G→3.7G로 성장 중 확인. **아직 미완료** — 다운로드 자체가
+더 필요하고(bf16 전체 예상 ~14GB) 그 뒤에 실제 스윕(16 layer×role
+조합 × 4비트폭 × 2코퍼스)이 남음. 다음 세션에서 재개 확인 필요.
+
+★★★초반레이어(1-4) 촘촘함 원인조사 **완료+반전 있는 결과**: 원래
+가설("hidden state 미분화/collapse")은 **반증됨** — cosine-to-mean
+유사도와 margin median 상관계수 r=0.0125, 거의 무상관(0.26~0.34 좁은
+범위, 레이어 깊이와 무관). 대신 **훨씬 강한 다른 패턴 발견**: hidden
+state의 크기 자체(variance/norm)가 레이어 깊이에 따라 단조증가
+(residual stream 누적, 잘 알려진 transformer 특성) — 이게 margin
+median과 r=0.900(variance)/r=0.932(norm)로 매우 강하게 상관. 두
+코퍼스 개별로도 일관(r=0.8999/0.8876). 메커니즘: 라우터 로짓=
+gate_weight@hidden_state이므로, 초반레이어처럼 hidden state 크기가
+작으면 로짓 스프레드도 작아지고 softmax 후 후보들이 자연히 더
+가까워짐 — **근접-동점이 양자화 노이즈가 아니라 모델 자체의 고유한
+연산 특성일 수 있음**을 시사(layer13 사건과 성격이 다를 수 있음).
+**실무적 함의**: Track B 스윕에서 layer1-4가 비트폭 변화에 별로
+반응 안 한다면 이 발견과 정합적(노이즈발 tightness가 아니므로) —
+그럴 경우 승격 노력을 "margin이 실제로 정밀도에 반응하는" 다른
+role/layer로 재조준해야 함. 상세: `RESULTS.md` §"Root-cause probe:
+why are OLMoE's early layers (1-4) structurally tighter?". 데이터:
+macstudio `/Users/eoe/vdsp_olmoe_full_weights/moe_hiddenstate_diff.json`.
+
+★★★★★D-roadmap-2 Track B **완료+매우 깔끔한 결과**: 레이어1-4 ×
+q/k/v/o_proj 16개 조합 전부에 대해 {4,8,16,32}비트 실제 스윕(macstudio,
+`allenai/OLMoE-1B-7B-0125` bf16 원본, plain RTN int4/int8 dequant는
+qwen_infer.c 실제 공식 이식, 기존 두 코퍼스 합쳐 60프롬프트). **핵심
+결과**: 16개 조합 전부 "collapse point"(flip_rate가 0으로 돌아가는
+최소 비트)가 **정확히 bits=16** — bits=4에서 flip률 11~36%(평균
+17.9%), bits=8(현재 프로덕션 기본값)에서도 0.3~3%가 남는데, bits=16에서
+16개 전부 정확히 0.0%, bits=32도 동일하게 0.0%(더 이상 이득 없음).
+Track A의 단일 워크로드 발견(q_proj -1 16 == -1 32)이 16개 조합
+전체로 체계적으로 재현됨. **부가 발견**: v_proj가 4개 레이어 전부에서
+bits=4 flip률이 가장 높음(23.6~35.9% vs 나머지 11~15.7%) — 일회성
+아니라 일관된 패턴, v_proj가 int4에 가장 민감한 role. **위 root-cause
+발견과의 종합**: margin 촘촘함 자체는 내재적(양자화 무관)일 수 있지만,
+그 촘촘한 결정을 실제로 뒤집는 건 낮은 비트폭의 노이즈이고, 16비트가
+그 노이즈를 확실히 제거함 — 두 발견이 상충 안 하고 결합됨. 상세:
+`RESULTS.md` §"D-roadmap-2 Track B: bit-width collapse-point sweep".
+데이터: macstudio `/Users/eoe/vdsp_olmoe_full_weights/
+moe_precision_sweep.json`.
+
+★다운로드 중 겪은 실수: 같은 fork를 SendMessage로 재개하지 않고 매번
+새 Agent(subagent_type:fork)를 띄워서 동일 다운로드에 여러 fork가
+동시에 손대는 혼선 발생 — 한 fork가 내부 load()로 자체 다운로드를
+또 시작해 같은 incomplete blob에 중복 기록 중이었음, 다른 fork가
+`ps aux`/`lsof`로 직접 확인해 중복 프로세스를 찾아 정리. **교훈**:
+같은 백그라운드 작업은 매번 새 fork가 아니라 SendMessage로 반드시
+같은 agentId를 재개할 것.
+
+★(b) expert/FFN 정밀도 스윕 **완료**(OLMoE, 근접-동점 증거기반 유일
+4쌍: layer3/expert23·55, layer12/expert51·55 — 마지막 둘이 바로 이번
+조사 전체의 발단이 된 그 만성쌍). **중간 스코프 컷 실화**: 처음엔
+39쌍×3×4=468런으로 시작했다가 1런 타이밍 실측해보니 ~30시간+ 걸릴
+게 확인돼 즉시 킬 → 재현빈도 임계값 4회 이상으로 올려 4쌍(48런)으로
+축소, 명시적으로 로그·문서화(무단절삭 아님). **핵심 발견 — 구조적
+사실을 실측으로 확인**: expert 자신의 FFN 가중치를 양자화해도
+라우터의 "어느 expert를 고를지" 결정 자체는 절대 못 바꾼다(라우터는
+hidden_state @ gate_weight로만 결정, expert FFN 연산은 그 뒤에 일어남
+— 인과적으로 불가능) — 48런 전부 router_flip=0.0으로 실측 확인,
+가정이 아니라 데이터로 검증. **output-token flip도 미미**: 12개
+(쌍,프로젝션) 조합 중 8개가 bits=4에서 이미 flip=0, 나머지 4개도
+bits=8에서 완전 수렴 — attention role 스윕과 정반대 패턴(그쪽은 전부
+bits=16 필요, 여기는 아무도 16 불필요). **정직한 해석**: 이 4개
+expert는 근접-동점 증거로 뽑힌 것들인데, 그 근접함의 원인은
+"라우터에 들어가는 hidden state 경로"(Track A/B 영역)에 있지 expert
+자신의 가중치 정밀도가 아니다 — expert가 일단 선택되면 그 가중치가
+4비트여도 최종출력엔 거의 영향 없음. **D-roadmap-3(런타임 승격
+설계)에 주는 함의**: expert 레벨 정적 승격은 우선순위 아님, attention
+role 승격(Track A/B)이 진짜 레버. 상세: `RESULTS.md` §"(b) Expert/FFN
+precision sweep". 데이터: macstudio
+`/Users/eoe/vdsp_olmoe_full_weights/moe_expert_precision_sweep.json`.
+
+★★★★★(a) output-token 인과검증 **완료** — router 레벨 대신 최종
+예측토큰 자체가 실제로 바뀌는지 측정(`moe_precision_sweep_output.py`,
+같은 16조합). 결과: bits=4에서 flip률 0.68~2.55%(router레벨 11~36%
+보다 훨씬 낮음 — router flip 대부분이 최종토큰까지 안 번짐),
+bits=8은 0.07~1.17%, **bits=16/32는 16개 조합 전부 정확히 0%**. 15/16
+조합이 bits=16에서야 0 도달, 1개(layer1/k_proj)만 bits=8에서 이미
+0. router레벨 결론과 실질적으로 동일 — 16비트가 실제 출력까지
+포함해 완전히 해소.
+
+★★★★★**(a)+(b) 종합, D-roadmap-2의 최종 결론**: OLMoE 레이어1-4는
+`QWEN_MOE_ROLE_BITS`로 q/k/v/o_proj를 16비트로 **한 번 정적으로**
+올리면 끝난다 — 런타임 메커니즘 불필요. 사용자의 원래 "런타임 자동
+적응형" 비전은 이 케이스엔 과했던 것으로 실측 확인됨(더 단순한 답이
+있었음).
+
+★★★★★**(c) D-roadmap-3 작성 완료(설계만, 미구현)**: `ROADMAP.md`에
+WHY/COST/EXIT 형식으로 추가. 핵심 재조준: 런타임 승격이 정말 필요한
+건 만성 쌍(정적으로 이미 해결됨)이 아니라 **top-50 중 84%(42/50)를
+차지하는 일회성 쌍** — 어떤 조합이 걸릴지 사전에 알 수 없어 정적
+리스트로 못 잡음. `moe_cb4c_maybe_reverify()`(margin-gated Tier1/Tier2,
+`qwen_infer.c:4911`)를 비트폭 축으로 확장하되, **1단계는 보정 없이
+flag-and-log만** — 실 트래픽에서 이 롱테일이 실제로 얼마나 자주
+발생하는지부터 증거를 쌓은 뒤 보정 경로 구현 여부 결정(threshold도
+SME2-vs-scalar축의 0.1을 재사용하지 않고 이 축 전용으로 재도출
+필요, WHY에 명시). **미착수, 설계만** — 다음 단계는 사용자 판단.
+
+★★★★★**Track B 확장 — WikiText-103 실측 규모 재검증 + 6개 신규레이어
+스윕 + local-vs-upstream 원인귀속 실험 (2026-09-01, fork 실행)**:
+D-roadmap-3의 "84% 일회성 쌍" 판정은 60프롬프트/1453포지션짜리 소규모
+표본의 산출물이었음 — WikiText-103(30,216 실 포지션, 16레이어 전체)로
+재측정 결과 **일회성 비율 84%→5.8%로 급락, 만성쌍(재현≥4) 4개→25,142개로
+폭증** — "롱테일은 대부분 일회성" 전제 자체가 표본부족 아티팩트였음이
+확정됨. **2차 정정**: 만성쌍은 레이어1-4에 집중돼있지 않음(레이어15가
+최다 32개, 이어서 9=21/12=20/0=18/14=18) — Track B/(a)가 검증한 레이어
+1-4 영역이 실제 만성 근접동점의 일부에 불과할 가능성 제기.
+
+이에 6개 신규레이어{0,5,9,12,14,15}×4역할×4비트폭(96런,
+`moe_precision_sweep_extra_layers.py`)로 Track B를 확장, 동시에 사용자가
+추가지시한 layers 9/12/15의 **local-only vs upstream-only 원인귀속
+실험**(`moe_local_vs_upstream.py`, bits=8 고정)도 병행:
+
+**① 24개 신규 (layer,role) 조합 collapse point**: router레벨 23/24가
+여전히 bits=16 필요(유일 예외: layer14/q_proj가 bits=8서 이미 0),
+output레벨 19/24가 bits=16 필요(예외 5개: layer5/k, layer9/q,
+layer14/k, layer14/o, layer15/k — 전부 bits=8서 이미 0). 레이어1-4의
+기존 16/16 결과와 합산하면 지금까지 스윕한 10개 레이어(0-5,9,12,14,15)
+전체 40개 조합 중 router 39/40·output 35/40이 bits=16 필요 — **정적
+전역 bits=16 승격이 여전히 옳은 결론으로 대체로 일반화됨**(depth로
+가치가 사라지지 않음). 단, bits=4 raw flip률 절대크기는 깊이에 따라
+뚜렷이 감소(layer0 18-55%→layer9-15 2-10%대) — root-cause probe의
+hidden-state 크기 상관관계(r=0.90/0.93) 예측과 일치, 다만 이건
+"collapse point"가 아니라 "그 아래서 얼마나 심하게 틀리는가"에서만
+드러남.
+
+**② local-vs-upstream 원인귀속 (layers 9/12/15, bits=8, 4역할 동시양자화)**:
+| layer | local router | upstream router | 배율 | local output | upstream output | 배율 |
+|---|---|---|---|---|---|---|
+| 9  | 0.76% | 5.09% | **6.7x** | 0.34% | 0.69% | 2.0x |
+| 12 | 0.55% | 5.02% | **9.1x** | 0.21% | 0.76% | 3.7x |
+| 15 | 0.69% | 7.78% | **11.3x** | 0.34% | 0.83% | 2.4x |
+
+**핵심 결론**: 세 레이어 전부에서 그 레이어 자신의 attention 양자화보다
+**상류(이전) 레이어들의 누적 양자화 노이즈가 router 교란을 6.7~11.3배
+더 많이 일으킴** — root-cause probe가 상관관계로만 제시했던
+"잔차누적 가설"을 통제실험으로 실증. router 배율은 깊이(상류레이어수
+9→12→15)에 정확히 비례해 증가(6.7x→9.1x→11.3x) — 깊은 레이어일수록
+그 레이어 자신의 근접동점 위험은 자기 자신보다 **그 이전 전체 체인의
+정밀도**에 더 의존한다는 뜻. **실무적 함의**: 근접동점 위험이 국소적으로
+측정된 레이어에만 선택적으로 bits=16을 주는 sparse 승격 방식은 실제
+위험의 대부분(상류누적분)을 놓친다 — Track A/B가 채택한 "모든 레이어
+attention role 균일 bits=16"이 옳은 이유가 바로 이것(레이어별 선택이
+아니라 체인 전체 청결도가 핵심).
+
+상세: `RESULTS.md` "D-roadmap-2 Track B extension"/"D-roadmap-3
+residual-accumulation test" 섹션. 데이터: macstudio
+`/Users/eoe/vdsp_olmoe_full_weights/moe_precision_sweep_extra_layers.json`,
+`/Users/eoe/vdsp_olmoe_full_weights/moe_local_vs_upstream.json`.
+**미스윕 잔여**: 레이어 6,7,8,10,11,13 (16개 중 6개) 여전히 미검증.
+
+★★★★★★**최종 종합(2026-09-01, 이번 세션 D-roadmap-2/3 결론)**: (1)
+39/40 router조합이 여전히 bits=16 필요 — "후반은 덜 필요할 것"이란
+예측 틀림, magnitude 상관관계는 "4비트가 얼마나 심하게 틀리는가"에만
+반영됨. (2) 레이어9/12/15 local-vs-upstream 분리 실측: **상류 누적
+노이즈가 그 레이어 자신의 노이즈보다 6.7~11.3배 더 크게 flip을
+일으킴**, 비율이 깊이에 따라 커짐(6.7x→9.1x→11.3x) — residual
+누적가설(r=0.90/0.93)의 정량적 확정판. **함의**: 번갈아가면서/초반+후반
+같은 구멍 있는 패턴은 그 구멍에서 노이즈가 재유입돼 안 통함 —
+**끊김없는 prefix만 유효**, 그리고 어차피 거의 전 레이어가 필요하니
+"전 레이어 attention 4-role 전부 16비트"가 가장 단순하고 정당화됨.
+실제 C엔진에서 `q/k/v/o_proj -1 16`(4줄 config, layer=-1 wildcard가
+이미 전 레이어 매칭) end-to-end 검증: 8/8 정상, int8 기본값 대비
+2개 포지션(pos2,7) 실제로 다른 토큰 예측 — 승격이 진짜 효과 있음
+확인(단, 이 특정 8-position spot-check용 bf16 참조파일이 다른
+코퍼스(13-position) 것이라 방향성 검증은 미완료로 정직하게 남김 —
+대세 결론은 이미 훨씬 큰 스윕들로 충분히 뒷받침됨).
+
+★★★★★★**wikitext 스캔의 결정적 정정**: 60프롬프트(1453포지션)에서
+"top-50 중 84% 일회성"이라던 이전 발견이 **wiki 규모(30,216포지션)
+에서는 5.8%로 뒤집힘** — 작은 샘플의 착시였음. chronic쌍(≥4회)이
+25,142개, 재등장분포는 이분법 아니라 완만한 연속분포. chronic쌍은
+레이어1-4에 안 몰려있고 전체(특히 15,9,12,0,14)에 퍼짐. **이게
+D-roadmap-3(런타임 flag-and-log)의 원래 존재이유를 무너뜨림** —
+"84% 못 잡는 롱테일"이 실제로는 5.8%밖에 안 됨, 게다가 블랭킷 정적
+승격이 이미 거의 다 커버함. `ROADMAP.md` D-roadmap-2/3 둘 다 이
+전체 서사로 재작성 완료. 상세: `RESULTS.md` "Synthesis: blanket
+all-layer attention promotion" 섹션 + 그 앞 3개 섹션(레이어확장/
+local-vs-upstream/wikitext스캔). 데이터: macstudio
+`/Users/eoe/vdsp_olmoe_full_weights/moe_wikitext_neartie.json`.
+
+★★★★★★**DeepSeek-V2-Lite 포팅(2026-09-01) — OLMoE 패턴은 일반화 안 됨,
+정반대**: fork가 `deepseek_router_margin_profiler.py`를 짜놓고 실행은
+안 하고 끊긴 상태였음(대화 압축 후 실행함) — 실제 macstudio에서
+실행(mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx, 26개 MoE레이어,
+top_k=6, 676토큰/17,576 router call). **결과: 위험 레이어가 정반대다.**
+OLMoE는 레이어1-4가 가장 위험(margin 타이트)했는데, DeepSeek-V2-Lite는
+**깊은 레이어(24,25,20,21,22,23,18,16)가 가장 위험**, **얕은~중간
+(10,9,8,5,4,7)이 가장 안전** — hidden-state-magnitude 메커니즘(깊이
+증가→분산 증가→margin 느슨해짐, OLMoE서 r=0.90/0.93로 확인)이 그대로
+적용된다면 DeepSeek도 깊을수록 안전해야 하는데 정반대로 나옴 → 이
+모델은 다른 메커니즘이 지배하거나 hidden-state 성장곡선 자체가
+다름(MLA vs GQA, n_shared_experts=2, topk_method="greedy" 등 구조차
+때문일 가능성, **미규명**). tail 이벤트(margin=0.0)는 median기준
+안전한 레이어(4-7)에도 섞여 나옴 — median위험도≠tail위험도, 이건
+OLMoE wikitext 발견과 같은 패턴.
+
+**실무적 함의**: 이번 세션의 "전 레이어 attention 블랭킷 승격"
+결론 자체는 OLMoE 한정으로는 안 무너짐(정책으로선 어느 쪽이 위험한지
+몰라도 통함) — 하지만 그 근거 서사("초반이 구조적으로 위험, 상류
+누적")는 DeepSeek-V2-Lite엔 그대로 못 옮김. **아키텍처마다 위험
+프로파일을 따로 측정해야 하고, "초반=위험"은 OLMoE 특이적 발견이지
+보편 MoE-라우터 속성이 아니다** — 향후 선택적/런타임 적응형 설계를
+할 때 이 가정을 깔면 DeepSeek류 모델에서 처음부터 틀림. 상세:
+`RESULTS.md` "DeepSeek-V2-Lite port of the router-margin profiler"
+섹션. 데이터: macstudio `/Users/eoe/deepseek_router_margin.json`,
+스크립트 `/Users/eoe/deepseek_router_margin_profiler.py`.
