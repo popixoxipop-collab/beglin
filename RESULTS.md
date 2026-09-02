@@ -8897,3 +8897,84 @@ Full per-n data (both pass/fail and rel-L2) is in the sweep summary; not
 reproduced verbatim here since the table above already carries the
 load-bearing numbers.
   boilerplate set) and report the firing rate that comes out, rather than selecting for it.
+
+### D-d5-18: the corpus-selection approach failed, and the threshold is the better instrument
+
+**Pass 1 result** (96 OLMoE prompts, every emitted token's margin logged at `THRESHOLD=1000`):
+
+| margin below | tokens | share |
+|---|---|---|
+| 0.1 | 48 / 576 | **8.3%** |
+| 0.5 | 224 / 576 | **38.9%** |
+| 1.0 | 337 / 576 | 58.5% |
+| 2.0 | 455 / 576 | 79.0% |
+
+median margin 0.727, min 0.0017, max 12.92.
+
+**Selecting by minimum per-prompt margin barely moved the rate**: the best 24 of 96 prompts still
+have 22.9% of tokens under 0.5, against 38.9% for the pool and 49.3% for the worst 24. At six
+tokens per prompt even a confident prompt contains one thin one, so **this text distribution has
+no sparse-firing regime to select** -- which is itself worth recording, since the whole D-d5
+series has been treating a ~30% firing rate as if it were incidental to the corpus.
+
+**The threshold is the right knob instead.** Firing rate is a tunable of the mechanism, not a
+property of the corpus: on the *same* corpus, 0.5 fires on 38.9% of tokens and 0.1 on 8.3%.
+Sweeping it isolates firing rate with zero selection effect and no change to the text. 0.1 is
+also the engine's shipped default -- D-d5-6 raised it to 0.5 for statistical power, so the whole
+series so far has measured a deliberately hot setting, not the default one.
+
+**Sweep** (OLMoE, same 24x6 corpus): `B_truth` (114 combos: attention 64 + experts 48 +
+embed_tokens + lm_head) as the accuracy reference, then correction thresholds 0.5 / 0.2 / 0.1 /
+0.05, each reporting wall time, peak RSS, corrections fired and real flips.
+
+**D-d5-18 -- sweep the threshold, keep the selected corpus as a by-product**
+  WHY: it varies exactly one thing. Corpus selection varies firing rate AND prompt difficulty
+  together, and D-d5-17 already had to write down that confound as a limitation; the threshold
+  has no such confound.
+  COST: it answers "what if we correct less often", not "what if the workload has fewer
+  near-ties". Those coincide in cost but not in accuracy -- a low threshold declines to correct
+  positions that ARE near-ties, whereas a genuinely confident workload has fewer of them to
+  begin with. The accuracy column here is therefore a lower bound on what a naturally
+  sparse workload would give.
+  EXIT: the selected 24-prompt low-margin corpus is built and kept (`low_tie_prompts.txt`); run
+  the same arms on it to get the other half of the answer if the threshold result warrants it.
+
+### D-d5-18 results: the sparse-firing regime does not rescue the runtime path
+
+OLMoE, 24x6 = 144 tokens, reference `B_truth` (114 combos incl. `embed_tokens` + `lm_head`).
+
+| threshold | corrections | fire rate | real flips | wall_ms | vs 0.5 | peak RSS | reqs exact | 1st tok |
+|---|---|---|---|---|---|---|---|---|
+| 0.5 | 51 | 35.4% | 17 | 482,730 | -- | 5.03 GiB | 3/24 | 14/24 |
+| 0.2 | 29 | 20.1% | 10 | 467,891 | -3.1% | 5.02 GiB | 2/24 | 14/24 |
+| **0.1** (shipped default) | 13 | 9.0% | 5 | 446,168 | -7.6% | 5.01 GiB | 2/24 | 15/24 |
+| 0.05 | 9 | 6.2% | 4 | 417,688 | -13.5% | 5.01 GiB | 2/24 | 15/24 |
+| **`B_truth`** | -- | -- | -- | **307,418** | **-36.3%** | **25.13 GiB** | 24/24 | 24/24 |
+
+**1. Correction cost is not proportional to firing rate.** Firing drops 5.7x (35.4% -> 6.2%) and
+wall time drops 13.5%. The model this series has been using -- "the runtime path costs per
+firing, so it approaches free on a quiet workload" -- is wrong. Fixed costs dominate: the hi
+tensors are loaded and resident regardless, the shadow pool is allocated regardless, and the
+scheduler carries the same per-step work. Only the replays themselves scale, and they are a
+minority of the total.
+
+**2. More correction does not buy accuracy here.** 5.7x more firing moves `reqs exact` 2/24 ->
+3/24 and moves the first-token column the *wrong* way, 15/24 -> 14/24. On this corpus the
+correction spends time without moving measurably toward the reference.
+
+**3. `B_truth` wins on time as well as accuracy** -- 36.3% faster than the cheapest correction
+setting, because bits=16 skips nibble unpack and per-group scale on the CPU path (the same
+effect D-d5-6/D-d5-13 measured). Its only cost is memory: 25.13 GiB against 5.01.
+
+**What this closes.** D-d5-16 argued the runtime path's remaining case was "near-ties rare,
+memory tight". The firing-rate half of that is now measured and does not hold: at the sparse end
+the runtime path is still slower than blanket promotion and no more accurate. The memory half
+stands unrefuted -- 5.01 vs 25.13 GiB is a 5x difference, and on a machine where the promoted
+model does not fit, blanket promotion is not an option at any speed. But the accuracy it buys in
+that situation is small on this evidence (2-3 of 24 requests), and that is the honest summary of
+the runtime path's value as measured.
+
+**Caveat that limits all three points**: one corpus, one model, 144 tokens, and a correction path
+that promotes attention only (OLMoE has no dense/shared, and experts are never corrected). A
+correction that also promoted experts -- which D-d5-14's attribution says is where 12 of 14 hits
+live -- is not what was measured here and might behave differently.
