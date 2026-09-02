@@ -9075,6 +9075,15 @@ simply not on the list. Re-running attribution at `MAX_EVENTS=12` to rebuild the
 Static promotion still wins accuracy and time outright; only `L_sel` wins memory, and it does so
 by giving up the correction. No configuration found yet where the runtime path dominates.
 
+**`L_sel2` result, reconstructed 2026-09-03** (never previously written down -- the run completed
+2026-09-02 22:41 KST, `/tmp/lsel2.log`, but D-d5-20's own writeup stopped at "re-running
+attribution" and the number was carried only in conversation state). 55 combos, union over 12
+attributed events: **7/24 exact, 18/24 first-tok, 23.78 GiB** (25,528,614,912 bytes peak RSS).
+4x the attributed events (3 -> 12) moved exact accuracy 3/24 -> 7/24 while nearly 2.4x-ing memory
+over `L_sel` (10.05 -> 23.78 GiB) -- better, still well short of `E0.5`'s 12/24 at a comparable
+29.01 GiB, and the memory saving over blanket scope has almost disappeared (23.78 vs 29.01 GiB,
+18% -- against `L_sel`'s original 65%).
+
 ## ROI-G Phase 2: classification-gated search, validated against known-good data
 
 `tools/quant_search_n.py` implements the Opus plan's Sec 3.3 bisection
@@ -9422,3 +9431,55 @@ models and different architectures. They were counted as tested and could never 
 and sufficiency diverge; it is not enough to size a selective-hi set from necessary roles, which
 is the obvious next experiment (`L_nec`: promote the ablate union instead of the add union, and
 compare accuracy per GiB against `L_sel2`'s 23.78 GiB / 7-24).
+
+## D-d5-24 -- the necessary union is smaller AND more memory-efficient than the sufficient one, but neither closes the accuracy gap (2026-09-03)
+
+Direct test of D-d5-23's own hypothesis: does sizing a selective-hi set from the ablate
+(necessary) union beat sizing it from the add (sufficient) union D-d5-20 used?
+
+**`L_nec`**: the 7 combos D-d5-23 found necessary (OLMoE, 3 attributed events) --
+`o_proj L12, v_proj L13, expert_up_proj L14, expert_down_proj L9/L12/L13/L15` -- promoted
+under the same lazy-hi config, same corpus (wikitext2 24x6), same `qwen_d522_bin` as `L_sel2`.
+`/tmp/lnec.log`, 01:54:28 - 02:03:57 (9m 29s).
+
+Accuracy recomputed from raw per-request token output against `B_truth`'s reference
+(same method used to reconstruct `L_sel2`'s number this session):
+
+| arm | combos | source | memory | exact | first-tok | wall_ms | exact/GiB |
+|---|---|---|---|---|---|---|---|
+| `L_sel` | 14 | add, 3 events | 10.05 GiB | 3/24 | -- | 471,286 | 0.299 |
+| `L_sel2` | 55 | add, 12 events | 23.78 GiB | 7/24 | 18/24 | 530,464 | 0.294 |
+| **`L_nec`** | **7** | **ablate, 3 events** | **6.56 GiB** | **4/24** | **16/24** | 568,661 | **0.610** |
+| `E0.5` | blanket | -- | 29.01 GiB | 12/24 | 20/24 | 461,239 | 0.414 |
+| `B_truth` | everything | static | 25.13 GiB | 24/24 | 24/24 | 307,418 | 0.955 |
+
+**The efficiency hypothesis holds.** `L_nec` gets the best exact-accuracy-per-GiB of any
+adaptive/selective arm measured -- 0.610, beating blanket `E0.5` (0.414) by ~47% and
+`L_sel`/`L_sel2` (~0.30 both) by roughly 2x, on well under a third of `L_sel2`'s memory (6.56 vs
+23.78 GiB) and half its combo count (7 vs 55). This is consistent with D-d5-23's redundancy
+finding: `L_sel2`'s 55-combo union is mostly alternative paths to the same corrections, and
+paying for alternatives buys little beyond what one path already bought.
+
+**It does not close the gap to blanket scope.** 4/24 vs `E0.5`'s 12/24 -- `L_nec` is still a
+worse arm in absolute terms, just a cheaper one. The reason is the same limitation D-d5-20
+already flagged for the add union and D-d5-23 flagged for this one: **7 combos from 3 events is
+a lower bound**, not the true necessary set. This run alone shows 15 `REAL FLIP`s (`L_sel2`: 33,
+`E0.5`: 31 per D-d5-19/20's own table) -- most of this run's own flips are at positions the
+3-event attribution never sampled, so their necessary roles are simply absent from `hi_nec.txt`.
+The 7-combo set was never going to cover them; it was only ever going to be cheap.
+
+**Open, not concluded**: whether necessity keeps its efficiency edge under the same 4x expansion
+`L_sel2` got (3 -> 12 events) is untested. If `L_nec`'s edge holds at 12-event scale, this
+becomes a genuine memory/accuracy operating point between `L_sel2` and `E0.5`. If it collapses
+toward `L_sel2`'s ratio as more redundant-but-necessary combos accumulate, the redundancy
+hypothesis would need revising. **`L_nec12`** (ablate union over the same 12 events `L_sel2`'s
+`hi_union.txt` was built from) is the direct next measurement -- not run yet.
+
+**Not investigated**: `L_nec`'s wall time (568,661 ms) is the slowest of all five arms despite
+the fewest combos and lowest memory, including slower than `L_sel2` (530,464 ms, 55 combos,
+23.78 GiB). Combo count does not predict wall time here. Two visible differences that were not
+isolated: `L_nec` has fewer promoted combos, but a different (smaller) set of them, so a
+different subset of decode steps hit a promoted tensor and take the slow path -- corpus and
+threshold are identical, but the *identity* of which steps fire is not, since `REAL FLIP` is
+determined against whichever hi combos are currently active. Flagged as open rather than
+explained; no hypothesis here has been checked against evidence.
