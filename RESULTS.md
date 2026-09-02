@@ -8978,3 +8978,447 @@ the runtime path's value as measured.
 that promotes attention only (OLMoE has no dense/shared, and experts are never corrected). A
 correction that also promoted experts -- which D-d5-14's attribution says is where 12 of 14 hits
 live -- is not what was measured here and might behave differently.
+
+## D-quant Phase 1 extension: monotonicity violation reproduces across 6 targets, not 1
+
+Same req5/pos4 flip, 3 more (role,layer) targets from its known 17-hit list
+(`o_proj` L6, `kv_b_proj` L6, `shared_up_proj` L16), same fast sweep
+mechanism, 45 more real runs -- extending the original 3-target result to 6:
+
+| target | knee (lowest passing n) | tier? | monotonicity |
+|---|---|---|---|
+| `q_proj` L5 | 3 | No | VIOLATED (fails n=4,5 after passing n=3) |
+| `kv_a_proj_with_mqa` L13 | 4 | Yes | VIOLATED (fails n=5,6 after passing n=4) |
+| `shared_gate_proj` L25 | 4 | Yes | OK |
+| `o_proj` L6 | 2 | No | VIOLATED (fails n=3 after passing n=2) |
+| `kv_b_proj` L6 | 2 | No | **VIOLATED (fails n=3-7, 5 straight, after passing n=2)** |
+| `shared_up_proj` L16 | 4 | Yes | OK |
+
+**4 of 6 targets (67%) are non-monotonic in n** -- this is no longer a
+single-target anomaly, it replicates. The pattern by role family is stark:
+**both clean (monotone) targets are shared-FFN roles; all four violated
+targets are attention-family roles** (q/o/kv_a/kv_b). Sample is still small
+(4 attention vs 2 FFN, one flip), so this is reported as an observed
+pattern, not a proven architectural law -- but it's directly consistent
+with D-roadmap-2's own local-vs-upstream finding (attention roles sit
+earlier/differently in the residual stream than the FFN roles tested here,
+and non-monotonicity is exactly the kind of interaction effect that finding
+already predicted). `kv_b_proj`/L6 is the most dramatic case: correct at
+n=2, wrong for every one of n=3 through n=7, correct again from n=8 --
+five consecutive real engine runs regressing after one that passed.
+
+**This closes the question the original 3-target result left open**: the
+Opus plan's M-scalar monotonicity premise for its bidirectional search
+(§3.3) is not an edge case -- it fails on the majority of tested attention
+targets for this flip. Any Phase 2 search design has to either restrict
+itself to the FFN role family (where it held cleanly, 2/2) or abandon
+bisection in favor of the plan's own §3.5 fallback (exhaustive scan over a
+small ladder, no monotonicity assumed) for attention roles.
+
+### D-d5-19/20: expert-scope correction, lazy materialization, and what each actually bought
+
+Three findings, in the order they landed.
+
+**D-d5-19a -- the whole series had been judging a handicapped configuration.** Every arm from
+D-d5-6 through D-d5-18 measured inference-time correction while it promoted **attention only** --
+and D-d5-14's attribution puts 12 of its 14 hits on routed experts. That was never a limitation
+of the mechanism: D-d5-9 already wired expert hi tensors into `moe_resolve_ffn_tensors_hi()`, so
+`g_moe_lt_hi` carries them whenever registered. The sweep simply never set
+`QWEN_MOE_NEARTIE_HI_EXPERT_LAYERS` on the correction arms -- only on `B_truth`. Turning it on,
+with everything else identical:
+
+| arm | correction scope | corrections | flips | wall_ms | RSS | reqs exact | 1st tok |
+|---|---|---|---|---|---|---|---|
+| T0.5 | attention only | 51 | 17 | 482,730 | 5.03 GiB | 3/24 | 14/24 |
+| **E0.5** | attention + experts | 53 | **31** | **461,239** | 29.01 GiB | **12/24** | **20/24** |
+| T0.1 | attention only | 13 | 5 | 446,168 | 5.01 GiB | 2/24 | 15/24 |
+| E0.1 | attention + experts | 12 | 6 | 427,667 | 29.01 GiB | 2/24 | 16/24 |
+
+At threshold 0.5 accuracy quadruples (3 -> 12 of 24) and the run gets 4.5% *faster* -- bits=16
+skips nibble unpack on the CPU path, and that applies to the replay too. At 0.1 it buys nothing
+(2 -> 2): the accuracy gain depends on firing often enough to find the flips. **The earlier
+verdict "the runtime path spends time without buying accuracy" was an artifact of the scope it
+was given, not a property of the approach.**
+
+**D-d5-19b -- lazy materialization.** `MoeAFTensor` gains a lazy descriptor
+(`lz_kind`/`lz_name`/`lz_layer`/`lz_E`); the two f16 registrars record metadata instead of
+converting when `QWEN_MOE_NEARTIE_HI_LAZY=1`; `moe_af_materialize()`/`moe_af_release()` bracket
+the replay inside `moe_neartie_reverify_hi()`. The bf16 handle (`g_moe_hi_st`) is kept open past
+registration because conversion now happens at replay time.
+
+**Equivalence gate: `L_eq` reproduced `E0.5` token for token (0 differing positions).** Same
+weights, same arithmetic, only conversion timing differs -- so materialization is correct.
+
+| arm | config | wall_ms | RSS | reqs exact | 1st tok |
+|---|---|---|---|---|---|
+| E0.5 | eager, blanket | 461,239 | 29.01 GiB | 12/24 | 20/24 |
+| L_eq | **lazy**, blanket | 543,299 | 30.16 GiB (+3.9%) | 12/24 | 20/24 |
+| L_sel | **lazy + 14 attribution combos** | 471,286 | **10.05 GiB (-65.3%)** | 3/24 | 16/24 |
+
+**Lazy alone buys nothing, as predicted before running it** -- at blanket scope every mirror
+materializes on the first firing anyway, so `L_eq` costs the same memory and 18% more time.
+
+**D-d5-20 -- selective scope cut memory 65% and accuracy with it.** `L_sel` fell to 3/24, back to
+roughly the 4-bit baseline (2/24): it saved the memory by declining to correct. The cause is the
+combo list, not the idea -- those 14 combos were the union over **3** attributed events
+(`MAX_EVENTS=3`), while this run has 26-31 real flips. The other flips need combos that are
+simply not on the list. Re-running attribution at `MAX_EVENTS=12` to rebuild the union.
+
+**Standing scoreboard** (OLMoE, 144 tokens, vs `B_truth`):
+
+| | accuracy | time | memory |
+|---|---|---|---|
+| `B_truth` static, everything | **24/24** | **307,418** | 25.13 GiB |
+| `E0.5` adaptive, full scope | 12/24 | 461,239 | 29.01 GiB |
+| `L_sel` adaptive, selective | 3/24 | 471,286 | **10.05 GiB** |
+
+Static promotion still wins accuracy and time outright; only `L_sel` wins memory, and it does so
+by giving up the correction. No configuration found yet where the runtime path dominates.
+
+## ROI-G Phase 2: classification-gated search, validated against known-good data
+
+`tools/quant_search_n.py` implements the Opus plan's Sec 3.3 bisection
+(ablation-frontier-prioritized, verbatim pseudocode) gated by a real
+classification step instead of assuming monotonicity universally:
+`exhaustive_required` (some tested corpus showed a violation for this exact
+target -- bisection unsafe), `bisection_candidate` (one corpus tested,
+clean, not yet cross-corpus-confirmed), `bisection` (2+ corpora all clean),
+`unknown` (no data, defaults safe). Validated against the 6 already-known
+WikiText-2 targets (zero new bob cost, per the plan's own sequencing) using
+a historical oracle (looks up real already-collected results, no engine
+calls):
+
+| target | true knee | classification | found knee | tests used | correct |
+|---|---|---|---|---|---|
+| `kv_a_proj_with_mqa` L13 | 4 | exhaustive_required | 4 | 15 | Yes |
+| `kv_b_proj` L6 | 2 | exhaustive_required | 2 | 15 | Yes |
+| `o_proj` L6 | 2 | exhaustive_required | 2 | 15 | Yes |
+| `q_proj` L5 | 3 | exhaustive_required | 3 | 15 | Yes |
+| `shared_gate_proj` L25 | 4 | bisection_candidate | 4 | **5** | Yes |
+| `shared_up_proj` L16 | 4 | bisection_candidate | 4 | **5** | Yes |
+
+**6/6 correct.** The 4 attention targets were correctly classified as
+unsafe (they really did violate monotonicity, confirmed by the earlier
+Phase 1 extension) and got the safe full scan. The 2 shared-FFN targets --
+the only 2 that were actually clean -- got bisection and found the exact
+same knee `quant_sim_n.py`'s exhaustive sweep already confirmed, in 5 tests
+instead of 15 (a real 3x reduction, earned only where the data said it was
+safe). This is the validation gate the plan required before ever pointing
+the tool at new/unknown targets -- passed cleanly on the first real run.
+
+## vanilla MLX (mlx_lm.generate) baseline: B=1, "own serving layer vs raw MLX"
+
+User's real question, reframed correctly before measuring anything: since
+this project's GPU MoE path (`mlx_moe.cpp`) is itself built on MLX's C++
+API, "vdsp vs MLX" was never two competing engines -- it's vdsp's own
+scheduling/serving logic layered on MLX primitives vs calling MLX
+directly (`mlx_lm.generate`, the reference single-stream tool). This
+section closes the B=1 half of that question with a real number.
+
+**Where measured**: bob (Mac mini, M4, 16GB) -- the only idle,
+SME2-capable machine at the time (xox and macstudio were both mid-job on
+unrelated work; bob's own `vdsp_m4_bench` working tree was also mid-refactor
+from a separate session, so this used a fresh clone at
+`vdsp_m4_bench_sme2/vdsp_fresh` instead of touching that tree).
+
+**Build note (new, not previously documented anywhere in this repo)**:
+the GPU/MLX code (`mlx_moe.cpp`, every `#ifdef QWEN_GPU_MLX` gate) has no
+build script or CMakeLists in this repo -- README's own Build section is
+CPU-only ("no MLX, no llama.cpp"). Built it for the first time against the
+**pip-installed `mlx` wheel's bundled C++ headers/dylib**
+(`<site-packages>/mlx/{include,share/cmake/MLX,lib/libmlx.dylib}`) rather
+than a from-source MLX build -- works cleanly, no separate MLX C++ build
+needed. Two build pitfalls hit and fixed, worth keeping: (1) CMake needs
+`ASM` added to `project(... LANGUAGES C CXX ASM)` explicitly or the
+KleidiAI `.S` files silently fail to produce object code (no error at
+configure time -- shows up later as missing-symbol link errors that look
+unrelated); (2) `QWEN_GPU_MLX` must be passed as an explicit
+`target_compile_definitions` -- without it every `run_moe_gpu_*` gate
+compiles out silently (no warning) and the binary just falls through to
+CPU-only dispatch regardless of which env var is set. CMakeLists lives at
+`bob:/Users/bob/vdsp_m4_bench_sme2/vdsp_fresh/CMakeLists.txt` (not yet
+landed in this repo -- offer open if a standing GPU build target is
+wanted going forward).
+
+**Model**: `mlx-community/OLMoE-1B-7B-0125-4bit` -- deliberately matches
+this project's own canonical checkpoint (0125, not the 0924 already cached
+locally on bob) *and* its own quantization class (4-bit, matching vdsp's
+`q4g64` int4 format), so neither checkpoint-date nor precision confounds
+the comparison. The already-local full-precision checkpoint (13GB) doesn't
+fit anyway: confirmed by reproducing the failure first --
+`mlx_lm.generate` on it OOM'd with a Metal "Command buffer execution
+failed" error (13.2GB required vs this machine's ~12.1GB recommended
+working set) before switching to the quantized model.
+
+**vdsp side**: reused this project's own already-measured, already-verified
+V5j-batch B=1 number (105.8 tok/s, OLMoE, MLX/Metal GPU path) rather than
+re-running it -- same architecture, already trustworthy (see "llama.cpp
+OLMoE baseline" section above). Also smoke-tested the newer
+`run_moe_gpu_gqa_generate_gate()` (V5k, `QWEN_MOE_GPU_GQA_GENERATE=1`)
+directly against `vdsp_olmoe_full_weights`, same prompt text this
+project's own smoke-test convention uses ("The history of artificial
+intelligence began with philosophy") -- 114/114 tensors bound, 8/8 tokens
+generated cleanly, confirming the fresh build is functionally correct.
+(This gate has no built-in tok/s instrumentation, unlike the batch gates,
+so it wasn't the source of the timed number.)
+
+**MLX vanilla side, real measurement**:
+```
+mlx_lm.generate --model mlx-community/OLMoE-1B-7B-0125-4bit \
+  --prompt "The history of artificial intelligence began with philosophy" \
+  --max-tokens 64 --verbose True
+```
+Coherent, on-topic continuation (same smoke-test bar this project's own
+methodology requires before trusting a throughput number). **128.331 tok/s
+generation, peak memory 3.932 GB.** (Prompt-side 4.791 tok/s not treated
+as meaningful -- 8-token prefill is too short to read as a real prefill
+rate.)
+
+**Result, B=1**:
+
+| engine | tok/s | ratio (vdsp/other) |
+|---|---:|---:|
+| vdsp GPU (V5j-batch) | 105.8 | -- |
+| llama.cpp+Metal (Q4_0) | 108.83 | 0.97 |
+| **MLX vanilla (mlx_lm.generate)** | **128.33** | **0.82** |
+
+**Honest read, not reframed as a tie**: at B=1, vanilla MLX is the
+fastest of all three engines measured against this architecture -- vdsp's
+own GPU serving layer is ~18% slower than just calling `mlx_lm.generate`
+directly. That's a real gap, and in the opposite direction from what this
+session expected going in.
+
+**Why this narrows the "own serving layer" thesis rather than killing
+it**: `mlx_lm.generate` has no concept of concurrent-request serving --
+it's a single-stream CLI. There is no direct vanilla-MLX equivalent to
+vdsp's own B=32/48/64 aggregate numbers (334.3 / 397.4 / 472.6 tok/s, same
+V5j-batch table) because N sequential `mlx_lm.generate` calls get zero
+batching benefit and would top out near the B=1 number regardless of N.
+**The narrower, defensible claim this data actually supports**: vdsp's
+scheduling/serving layer's value is concurrent-request throughput on one
+device, not single-user latency. At B=1 it has no speed claim over calling
+MLX directly -- the honest pitch is "serve many users on one Mac," not
+"faster inference than MLX." A true apples-to-apples multi-request MLX-only
+baseline (N independent `mlx_lm.generate` processes run concurrently, real
+wall-clock aggregate throughput measured, not assumed from the B=1 number)
+is the natural next step if this claim needs harder numbers to stand on --
+not done this round.
+
+**Side effect, disclosed rather than hidden**: patching a local
+`config.json` copy (mlx_lm's OLMoE loader requires `rms_norm_eps`, absent
+from the source HF checkpoint's `config.json`) was attempted via a
+symlinked directory at `/tmp/olmoe_patched`, but Python's `open(path, 'w')`
+follows symlinks -- the write landed on the original
+`/Users/bob/olmoe_1b7b_hf/config.json` instead of a copy. Effect confirmed
+benign before moving on: purely additive (one new key, `rms_norm_eps:
+1e-05` -- the standard OLMoE value, matching this project's own
+`arch_config_moe.txt` `RMS_EPS`), file still valid JSON afterward, nothing
+removed or overwritten. Not reverted, since the added value is correct and
+the field was genuinely missing (a bug-fix side effect, not corruption) --
+flagged here per this project's own no-silent-changes convention rather
+than left undisclosed.
+
+**Status**: OPEN. B=1 single-stream comparison closed with a real,
+unfavorable-to-vdsp number, honestly reported. The claim that actually
+matters for a consumer-serving pitch -- many concurrent users on one Mac --
+still needs its own direct measurement against N-parallel vanilla-MLX
+processes, not inferred from the B=1 gap.
+
+## D-d5-22 -- the attribution denominator counted questions it never asked (2026-09-03)
+
+**Trigger.** D-d5-20's Qwen3-30B-A3B sparsity probe reported its first real flip as
+
+```
+[moe neartie] correct req=3 pos=10 REAL FLIP orig=3364 corrected=4013 -- running attribution
+[moe attrib]  req=3 pos=10 done: 0/338 combos individually reproduced the corrected answer
+```
+
+Read at face value that says *no single role at any layer explains this flip* -- the strongest
+possible version of the D-roadmap-4 finding that most flips are not single-role. It is not what
+was measured.
+
+**What 338 was.** `moe_neartie_attribute()` counted every combo that passed
+`moe_attrib_role_valid_at()`, which answers "does this architecture have this role at this
+layer", not "is there anything here to promote". For Qwen3-30B-A3B (NL=48, GQA, no dense layer,
+no shared experts):
+
+| component | count | testable |
+|---|---|---|
+| attention `q/k/v/o` x 48 | 192 | yes |
+| `expert_gate/up/down` x 48 | **144** | **no -- hi mirrors never registered** |
+| `embed_tokens`, `lm_head` (layer 0) | 2 | no -- unhandled in the replay switch |
+| **counted** | **338** | **effective 192** |
+
+The routed-expert mirror is 402MB per (layer, role) = 1.21GB per layer = 58GB for 48 layers,
+which does not fit in 64GB, so `QWEN_MOE_NEARTIE_HI_EXPERT_LAYERS` registered none of them.
+`moe_resolve_ffn_tensors_hi()` leaves the production 4-bit pointer in place on a registry miss
+(D-d5-13 made it deliberately miss-tolerant), so those 144 combos replayed the *baseline* --
+a full `[0..pos]` forward pass each, producing `orig`, never `corrected_argmax`, never a hit.
+42.6% of the denominator, and 42.6% of the wall time, was spent asking nothing.
+
+**This is D-d5-10's bug, one class over.** D-d5-10's own comment names it exactly:
+
+> Sweeping MLA-only roles on a GQA model (or the reverse) used to be a silent no-op that still
+> consumed a combination slot and **inflated the tested denominator**.
+
+That fix gated on *architecture*. It does not cover a role the architecture has but that this
+run did not register. `moe_resolve_ffn_tensors_hi()`'s own comment even states the equivalence
+("an unloaded layer replays the baseline and simply never hits, exactly like a role that is
+invalid here") without drawing the conclusion that it should therefore be counted the same way.
+
+**Second defect, found while fixing the first.** `moe_attrib_replay_one()`'s switch has no case
+for `MOE_ATTRIB_EMBED_TOKENS` / `MOE_ATTRIB_LM_HEAD` (D-d5-15 added them to the role vocabulary
+and to `moe_promotion_apply_one()`, but not here) -- they fell through to `default: return -1`.
+
+| mode | reads `-1` as | effect |
+|---|---|---|
+| add | `-1 != corrected` -> no hit | harmless, 2 wasted replays |
+| **ablate** (D-d5-21) | `-1 != corrected` -> **hit** | **guaranteed false positive, every event** |
+
+Ablate mode was built in D-d5-21 and has not been run yet, so no published result is affected --
+but the first ablate run would have reported `embed_tokens` and `lm_head` as *necessary* for
+every single flip, and the sweep's own denominator gave no way to notice.
+
+**Fix.**
+1. `moe_attrib_combo_effective(role, layer, ablate)` -- architecture validity AND
+   `g_moe_lt_hi[layer].<field> != g_moe_lt[layer].<field>`. Declarative: it asks the pointers
+   whether a promotion would change a weight, rather than enumerating which roles a given run
+   happens to have loaded. Per-mode, because embed/lm_head are add-only: `moe_neartie_reverify_hi()`
+   passes `t_embed`/`t_lmhead` through unchanged, so `corrected_argmax` is produced with
+   *production* embed/lm_head and the all-hi ablate baseline never promoted them -- there is
+   nothing to demote.
+2. `moe_attrib_replay_one()` now implements embed/lm_head (pointer swaps on the two args), and
+   both call sites guard `am >= 0` so the `-1` sentinel can never be read as a value again.
+3. **Baseline probe** (`layer < 0` = no swap): before each sweep, replay the mode's own starting
+   point. Add is only meaningful if the all-4-bit baseline does *not* already reach
+   `corrected_argmax`; ablate is only meaningful if the all-hi baseline *does*. If the ablate
+   baseline missed, every combo would trivially "hit" and the sweep would look like a very
+   strong result -- the exact failure a denominator cannot show. Two extra replays per event
+   against 192-338 in the sweep.
+4. Startup banner corrected: it printed `MOE_ATTRIB_ROLE_COUNT * MOE_NL` as the tested count and
+   said "attention roles only", both stale since D-d5-9/10/15. It now prints that number as a
+   ceiling and points at the per-event `done:` line.
+
+**WHY**: an inflated denominator does not just misreport coverage, it inverts the conclusion.
+"0/338" reads as evidence *against* single-role explanations; "0/192, with the 144 expert combos
+untestable" says the measurement never asked where OLMoE's own attribution puts 77% of its hits
+(58/75, D-d5-20). Same numerator, opposite reading.
+**COST**: one pointer comparison per combo per sweep, plus 2 baseline replays per event.
+**EXIT**: `QWEN_MOE_ATTRIB_COUNT_INEFFECTIVE=1` restores the pre-D-d5-22 sweep exactly.
+
+**Verification** -- re-measure in progress (`/tmp/q3_d522.log`, macstudio, `qwen_d522_bin`),
+identical config to D-d5-20's run. Baseline preserved at `/tmp/q3_attrib_OLD.log`:
+
+The fix moves the denominator in both directions: it drops the 144 expert combos that could
+never be tested, and it *adds* `embed_tokens`/`lm_head`, which were counted-but-unhandled before
+and are now real replays (both hi mirrors are registered here -- no combo restriction is active,
+so `want_e`/`want_l` are 1). Expected 192 attention + 2 global = 194, minus one if Qwen3-30B-A3B
+turns out to tie `lm_head` to the embedding.
+
+| | baseline (D-d5-20) | expected (D-d5-22) |
+|---|---|---|
+| event 1 `req=3 pos=10` | 0/338 | 0/194 (193 if lm_head is tied) |
+| event 2 `req=6 pos=9` | 74/338 | 74/194 |
+| hit set sha1 (16) | `88ad13f18214c950` | identical |
+| role tally | v_proj 28, o_proj 19, q_proj 15, k_proj 12 | identical |
+
+**Result** (`/tmp/q3_d522_FINAL.log`, 2026-09-03 00:06:08 - 01:09:50):
+
+| | baseline (D-d5-20) | D-d5-22 |
+|---|---|---|
+| event 1 `req=3 pos=10` | 0/338 | **0/194** |
+| event 2 `req=6 pos=9` | 74/338 | **75/194** |
+| role tally | v_proj 28, o_proj 19, q_proj 15, k_proj 12 | identical **+ embed_tokens 1** |
+| hits lost | -- | **0** (`comm -23` empty) |
+| hits gained | -- | **1**: `req=6 pos=9 embed_tokens L0` |
+| baseline probe warnings | n/a | 0 (both baselines behaved) |
+
+Near-tie events reproduced byte-for-byte across the two binaries
+(`req=3 slot=3 pos=10 token=576 argmax=4013 vs_token=3364 margin=0.279966`), so this is a
+controlled comparison, not two similar runs.
+
+The pass criterion as first written -- "the hit set must be byte-identical" -- was too strong,
+and stating it before the analysis was finished is what makes the miss visible. Skipping an
+unregistered combo can only remove no-ops, which is the half that held (0 lost). But the same
+change also made `embed_tokens`/`lm_head` real replays for the first time, and that half can only
+*add*. The correct criterion is: **no hit may be lost, and every gained hit must belong to a
+newly-testable role.** Both hold.
+
+The gained hit is not bookkeeping. `embed_tokens` at layer 0, promoted alone, reproduces event
+2's corrected answer -- a single-role explanation that sat inside the counted denominator through
+every attribution run since D-d5-15 and could never once have fired. The old sweep reported it as
+tested 78 times on DeepSeek and twice here.
+
+**Wall time.** End-to-end did not improve (40 min to event 1 before, 41 min after): the
+safetensors hi-mirror load dominates a `MAX_EVENTS=2` run and is untouched by this change. The
+sweep itself did: event 1 -> event 2 took <= 37 min before and **22 min 45 s** after, and that
+interval still contains the same unchanged inter-event decode, so the sweep-only reduction is
+consistent with the 43% combo reduction. The saving is proportional to sweep work, which is what
+scales with corpus size -- exactly the regime (many flips, long corpus) where the cost cap
+`QWEN_MOE_ATTRIB_MAX_EVENTS` exists because attribution is otherwise unaffordable.
+
+## D-d5-23 -- necessity is rarer than sufficiency, and two of three flips need nothing at all (2026-09-03)
+
+D-d5-21 built the ablative sweep; this is its first run. It went second on purpose: D-d5-22's
+`-1`-sentinel fix and baseline probe are both load-bearing for trusting a single number here.
+
+**Setup.** OLMoE-1B-7B, 16 layers, GQA, all expert hi mirrors registered
+(`QWEN_MOE_NEARTIE_HI_EXPERT_LAYERS=all`), `QWEN_MOE_ATTRIB_MODE=both`, 3 events, same
+wikitext2-24x9 corpus as D-d5-20's 12-event add-only run. 114 effective combos per event
+(64 attention + 48 expert + 2 global) x 2 replays. `qwen_d522_bin`, 01:10:43 - 01:41:43.
+Sweep rate measured inside a single event, free of load/decode: **5.19 s/combo**
+(42 combos in 218 s); OLMoE's own load is ~46 s.
+
+| event | combos flagged | add (sufficient) | ablate (necessary) |
+|---|---|---|---|
+| `req=0 pos=10` | 12 | 8 | **7** |
+| `req=0 pos=12` | 6 | 6 | **0** |
+| `req=1 pos=11` | 1 | 1 | **0** |
+| total | 19 | **15** | **7** |
+
+`BASELINE WARN` count: **0**. Every all-hi baseline reproduced `corrected_argmax` and every
+all-4-bit baseline did not, on all three events -- so no sweep here is the degenerate
+everything-hits case D-d5-22's probe exists to catch.
+
+**Two of three flips have no necessary role at all.** Demote any single role out of the all-16-bit
+baseline and the corrected answer survives, while six different roles each reproduce it alone.
+That is a redundancy signature: multiple independent paths carry the same correction, so no one
+of them is load-bearing. Additive attribution cannot see this -- it reports six healthy hits and
+says nothing about whether removing any of them matters.
+
+**Where necessity lives.** All 7 ablate hits are in one event and in the top half of the network:
+
+```
+req=0 pos=10  o_proj L12   v_proj L13   expert_up_proj L14
+              expert_down_proj L9  L12  L13  L15
+```
+
+Three combos are both necessary and sufficient -- `expert_down_proj L13`, `expert_down_proj L15`,
+`v_proj L13`. Those are the only genuinely load-bearing single roles in the whole sample.
+
+**Why this matters for selective hi.** D-d5-20 left `L_sel`/`L_sel2` unexplained: promoting the
+union of known additive hits recovered 3/24 and 7/24, far short of blanket scope's 12/24, and the
+recorded hypothesis was sample size. This is a better explanation. A union built from *sufficient*
+roles is a set of alternatives, not a set of requirements: promoting six mutually-redundant paths
+buys the accuracy of one, at six times the memory. Sizing a selective set by additive hit count
+over-counts exactly where redundancy is highest. The necessary set here is less than half the
+sufficient set (7 vs 15) and, on two of three flips, empty.
+
+**Second confirmation of D-d5-22's newly-testable roles.** Comparing add-mode hits to the
+pre-D-d5-22 add-only run on the same corpus and the same first three events:
+
+| event | before (112 combos) | after (114 combos) |
+|---|---|---|
+| `req=0 pos=10` | 8 | 8 |
+| `req=0 pos=12` | **5** | **6** |
+| `req=1 pos=11` | 1 | 1 |
+
+The single new hit is `req=0 pos=12 role=lm_head layer=0` -- the delta is exactly the role that
+became testable. Qwen3 produced the identical pattern one model earlier (`embed_tokens L0`,
+74 -> 75). Both roles that D-d5-22 unblocked fired on their first real opportunity, on different
+models and different architectures. They were counted as tested and could never have hit.
+
+**Status**: OPEN for the necessary-set measurement at scale. 3 events is enough to show necessity
+and sufficiency diverge; it is not enough to size a selective-hi set from necessary roles, which
+is the obvious next experiment (`L_nec`: promote the ablate union instead of the add union, and
+compare accuracy per GiB against `L_sel2`'s 23.78 GiB / 7-24).

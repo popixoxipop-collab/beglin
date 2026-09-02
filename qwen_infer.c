@@ -2396,6 +2396,18 @@ typedef struct {
     // formulas, both `E*out*ng*sizeof(float)`), so only the packed-code offset needs this table.
     int *ebits;
     size_t *epacked_off;
+    // D-d5-19 (2026-09-02): lazy materialization of a bits=16 mirror. The correction path's hi
+    // tensors are COLD -- read only while a near-tie replay runs (8-35% of tokens), unlike a
+    // statically promoted tensor which is read on every one. Cold data does not have to be
+    // resident: the bf16 safetensors it is derived from are already mmap'd, and what costs
+    // anonymous memory is materializing the f16 conversion ahead of time.
+    //   lz_kind: 0 = not lazy (base is valid from registration, every pre-D-d5-19 tensor)
+    //            1 = single tensor      -> lz_name holds the exact safetensors tensor name
+    //            2 = E-stacked experts  -> lz_name holds a "...%d...%d..." layer/expert pattern
+    // base is NULL while dematerialized; moe_af_materialize() fills it, moe_af_release() frees it.
+    int lz_kind;
+    char lz_name[160];
+    int lz_layer, lz_E;
 } MoeAFTensor;
 
 static uint8_t *moe_mmap_file(const char *path, long *out_bytes) {
@@ -3304,6 +3316,17 @@ static int g_moe_hi_combos_on = 0;
 // active pointers instead of a field swap. NULL until moe_lt_active_init() runs.
 static MoeAFTensor *g_moe_embed_active = NULL, *g_moe_lmhead_active = NULL;
 static MoeAFTensor *g_moe_embed_hi = NULL, *g_moe_lmhead_hi = NULL;
+
+// D-d5-19: lazy hi materialization. g_moe_hi_st keeps the correction checkpoint open past
+// registration, because a lazy tensor is converted at replay time rather than at load time.
+static SafetensorsMulti *g_moe_hi_st = NULL;
+static int g_moe_hi_lazy = 0;          // QWEN_MOE_NEARTIE_HI_LAZY, default off
+static long g_moe_lazy_live_bytes = 0; // currently materialized, for the report line
+
+// Defined next to the f16 registrars far below (they need MoeStRole/safetensors helpers that are
+// only declared there); used by moe_neartie_reverify_hi() long before that point.
+static void moe_lazy_hi_materialize_all(void);
+static void moe_lazy_hi_release_all(void);
 
 // Phase 4 sub-part 1, Step 1: shape cross-checks. Every (out,in) pair here was confirmed by
 // reading the real call sites, not assumed -- moe_mla_attention() (q_proj/kv_a_proj/kv_b_proj/
@@ -5182,6 +5205,9 @@ static void moe_neartie_reverify_hi(const uint8_t *af, MoeAFTensor *t_embed, Moe
 
     float *logits_tmp = g_mnc_logits_hi;
     int n_scalar = 0;
+    // D-d5-19: bring the lazy mirrors in for the duration of this replay only. No-op unless
+    // QWEN_MOE_NEARTIE_HI_LAZY is set, in which case nothing was materialized at load time.
+    moe_lazy_hi_materialize_all();
     // D-d5-13: selective table when a combo list is active, whole hi table otherwise (the
     // original behavior, kept as the no-attribution-history fallback -- see D-d5-12's COST).
     g_moe_lt_cur = g_moe_hi_combos_on ? g_moe_lt_sel : g_moe_lt_hi;
@@ -5190,6 +5216,7 @@ static void moe_neartie_reverify_hi(const uint8_t *af, MoeAFTensor *t_embed, Moe
         n_scalar++;
     }
     g_moe_lt_cur = g_moe_lt_active;   // restore -- to the CURRENT active table (D-roadmap-4 Phase 6: may include permanent promotions), not frozen production g_moe_lt -- single straight-line exit above, exactly one restore site
+    moe_lazy_hi_release_all();        // D-d5-19: give the anonymous memory back until the next firing
     memcpy(logits_out, logits_tmp, MOE_VOCAB * sizeof(float));
 
     for (int l = 0; l < MOE_NL; l++)
@@ -5599,7 +5626,61 @@ static int moe_attrib_role_valid_at(MoeAttribRole role, int layer) {
             return 1;   // q_proj/o_proj: both architectures, every layer
     }
 }
-static int g_moe_attrib_on = 0;   // QWEN_MOE_ATTRIB, default off -- zero cost unless a real flip triggers it anyway
+static int g_moe_attrib_on = 0;   // QWEN_MOE_ATTRIB, default off
+// D-d5-21: 0 = additive only (pre-D-d5-21 behavior), 1 = ablative only, 2 = both sweeps.
+// QWEN_MOE_ATTRIB_MODE = add | ablate | both.
+static int g_moe_attrib_mode = 0;   // zero cost unless a real flip triggers it anyway
+// D-d5-22 (2026-09-03): QWEN_MOE_ATTRIB_COUNT_INEFFECTIVE=1 restores the pre-D-d5-22 sweep
+// (every architecture-valid combo tested and counted, registration miss or not).
+static int g_moe_attrib_count_ineffective = 0;
+// D-d5-22: "valid" (this architecture has this role at this layer) is NOT the same as "effective"
+// (promoting/demoting it would actually change a weight). moe_resolve_ffn_tensors_hi() and the
+// attn_hi resolvers leave the PRODUCTION pointer in place on a registry miss, so an unregistered
+// combo replays the baseline verbatim and can never hit in either direction -- add starts from
+// all-4-bit and returns orig (!= corrected), ablate starts from all-hi and returns corrected
+// (also not a hit). It still costs a full [0..pos] forward pass and still increments `tested`.
+// WHY: on Qwen3-30B-A3B the routed-expert hi mirrors are 58GB and are never registered, so 144 of
+//   338 combos (42.6%) were untestable no-ops reported as tested. The first real flip's honest
+//   result is "0/194", not "0/338" -- and the 144 that could not be tested are exactly where
+//   OLMoE's own attribution puts 77% of its hits (58/75). The pre-existing denominator read as
+//   "no single role explains this flip" when the measurement never asked most of the question.
+//   This is the same defect D-d5-10 already fixed for MLA-vs-GQA attention roles ("a silent no-op
+//   that still consumed a combination slot and inflated the tested denominator") -- that fix
+//   gated on architecture, which does not cover a role the architecture HAS but that was not
+//   registered for this run.
+// COST: one pointer comparison per combo per sweep. Sweep wall time falls by the same fraction the
+//   denominator does, because every combo skipped here was a real forward pass.
+// EXIT: QWEN_MOE_ATTRIB_COUNT_INEFFECTIVE=1.
+// The ablate column is separate because the all-hi baseline is built by copying g_moe_lt_hi[] --
+// layer tensors only. moe_neartie_reverify_hi() produces corrected_argmax with PRODUCTION embed/
+// lm_head (it passes t_embed/t_lmhead straight through), so those two are not in the ablate
+// baseline at all and there is nothing to demote; asking "is embed necessary" of a baseline that
+// never promoted it is not a question this sweep can answer.
+static int moe_attrib_combo_effective(MoeAttribRole role, int layer, int ablate) {
+    if (!moe_attrib_role_valid_at(role, layer)) return 0;
+    if (g_moe_attrib_count_ineffective) return 1;
+    if (role == MOE_ATTRIB_EMBED_TOKENS) return !ablate && g_moe_embed_hi  != NULL;
+    if (role == MOE_ATTRIB_LM_HEAD)      return !ablate && g_moe_lmhead_hi != NULL;
+    const MoeLayerTensors *p = &g_moe_lt[layer], *h = &g_moe_lt_hi[layer];
+    switch (role) {
+        case MOE_ATTRIB_Q_PROJ:      return h->q_proj      != p->q_proj;
+        case MOE_ATTRIB_KV_A_PROJ:   return h->kv_a_proj   != p->kv_a_proj;
+        case MOE_ATTRIB_KV_B_PROJ:   return h->kv_b_proj   != p->kv_b_proj;
+        case MOE_ATTRIB_O_PROJ:      return h->o_proj      != p->o_proj;
+        case MOE_ATTRIB_K_PROJ:      return h->k_proj      != p->k_proj;
+        case MOE_ATTRIB_V_PROJ:      return h->v_proj      != p->v_proj;
+        case MOE_ATTRIB_DENSE_GATE:  return h->dense_gate  != p->dense_gate;
+        case MOE_ATTRIB_DENSE_UP:    return h->dense_up    != p->dense_up;
+        case MOE_ATTRIB_DENSE_DOWN:  return h->dense_down  != p->dense_down;
+        case MOE_ATTRIB_SHARED_GATE: return h->shared_gate != p->shared_gate;
+        case MOE_ATTRIB_SHARED_UP:   return h->shared_up   != p->shared_up;
+        case MOE_ATTRIB_SHARED_DOWN: return h->shared_down != p->shared_down;
+        case MOE_ATTRIB_EXPERT_GATE: return h->switch_gate != p->switch_gate;
+        case MOE_ATTRIB_EXPERT_UP:   return h->switch_up   != p->switch_up;
+        case MOE_ATTRIB_EXPERT_DOWN: return h->switch_down != p->switch_down;
+        default: return 0;
+    }
+}
 // D-roadmap-4 Phase 5 pilot finding (2026-09-02, real measurement, not assumed): a SINGLE real-
 // flip attribution event at pos=15 (108 combos x up to 16 forward passes = up to 1728 passes)
 // did not finish within 8 real wall-clock minutes on bob (2774s user CPU, ~614% utilization) --
@@ -5632,33 +5713,63 @@ static int g_moe_attrib_max_pos = -1;   // -1 = unlimited
 // moe_V_row()) moe_neartie_reverify_hi() itself reuses -- safe for the same reason that function
 // already documents: synchronous, single-threaded, no overlapping use.
 static MoeLayerTensors g_moe_lt_mixed[MOE_MAXLAYERS];
+// D-d5-21 (2026-09-02): two opposite questions, and until now only one of them was ever asked.
+//   ablate=0 (ADD, the original): baseline all-4-bit, promote ONE combo to bits=16, and a "hit"
+//     is `am == corrected_argmax` -- this combo is SUFFICIENT on its own.
+//   ablate=1 (ABLATE, new): baseline all-bits=16, demote ONE combo back to 4-bit, and a "hit" is
+//     `am != corrected_argmax` -- this combo is NECESSARY.
+// The two sets are different, and a flip caused by error ACCUMULATED across several combos
+// produces zero additive hits while producing many ablative ones. D-roadmap-4 already recorded
+// exactly that signature ("5개 real flip 중 4개가 단일역할로 설명 안 됨") without the instrument
+// to follow it up.
+//   WHY this matters beyond bookkeeping: D-d5-13's selective-hi combo lists were built from
+//   ADDITIVE hits, i.e. from combos that individually suffice. Positions that need a COMBINATION
+//   are unrepresented, which is a better explanation for L_sel/L_sel2's accuracy shortfall
+//   (3/24 and 7/24 against full scope's 12/24) than the sample-size story recorded in D-d5-20.
+//   COST: the ablative sweep needs the FULL bits=16 table materialized as its baseline, so under
+//   lazy registration it forces every mirror in -- which is exactly what lazy exists to avoid,
+//   and on a 48-layer model's experts (58GB) is not possible at all.
+//   EXIT: QWEN_MOE_ATTRIB_MODE=add restores the pre-D-d5-21 sweep exactly.
 static int moe_attrib_replay_one(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
                                   float *w_finalnorm, int req, int pos, MoeAttribRole role, int layer,
-                                  float *logits_out) {
-    for (int l = 0; l < MOE_NL; l++) g_moe_lt_mixed[l] = g_moe_lt[l];   // production baseline, all layers
+                                  float *logits_out, int ablate) {
+    for (int l = 0; l < MOE_NL; l++)
+        g_moe_lt_mixed[l] = ablate ? g_moe_lt_hi[l] : g_moe_lt[l];
+    // D-d5-22: embed/lm_head are pointer swaps on the two args, not fields of MoeLayerTensors --
+    // they used to fall through this switch to `default: return -1`, which add mode read as "no
+    // hit" (harmless) but ablate mode read as "-1 != corrected_argmax, therefore a hit" -- a
+    // guaranteed false positive on every event, in a mode that had been built but never yet run.
+    MoeAFTensor *emb = t_embed, *lmh = t_lmhead;
+    if (layer >= 0) {
     if (!moe_attrib_role_valid_at(role, layer)) return -1;   // e.g. dense role requested at a non-dense layer
+    MoeLayerTensors *src = ablate ? &g_moe_lt[layer] : &g_moe_lt_hi[layer];
     switch (role) {
-        case MOE_ATTRIB_Q_PROJ:      g_moe_lt_mixed[layer].q_proj      = g_moe_lt_hi[layer].q_proj;      break;
-        case MOE_ATTRIB_KV_A_PROJ:   g_moe_lt_mixed[layer].kv_a_proj   = g_moe_lt_hi[layer].kv_a_proj;   break;
-        case MOE_ATTRIB_KV_B_PROJ:   g_moe_lt_mixed[layer].kv_b_proj   = g_moe_lt_hi[layer].kv_b_proj;   break;
-        case MOE_ATTRIB_O_PROJ:      g_moe_lt_mixed[layer].o_proj      = g_moe_lt_hi[layer].o_proj;      break;
-        case MOE_ATTRIB_K_PROJ:      g_moe_lt_mixed[layer].k_proj      = g_moe_lt_hi[layer].k_proj;      break;   // D-d5-10
-        case MOE_ATTRIB_V_PROJ:      g_moe_lt_mixed[layer].v_proj      = g_moe_lt_hi[layer].v_proj;      break;   // D-d5-10
-        case MOE_ATTRIB_DENSE_GATE:  g_moe_lt_mixed[layer].dense_gate  = g_moe_lt_hi[layer].dense_gate;  break;
-        case MOE_ATTRIB_DENSE_UP:    g_moe_lt_mixed[layer].dense_up    = g_moe_lt_hi[layer].dense_up;    break;
-        case MOE_ATTRIB_DENSE_DOWN:  g_moe_lt_mixed[layer].dense_down  = g_moe_lt_hi[layer].dense_down;  break;
-        case MOE_ATTRIB_SHARED_GATE: g_moe_lt_mixed[layer].shared_gate = g_moe_lt_hi[layer].shared_gate; break;
-        case MOE_ATTRIB_SHARED_UP:   g_moe_lt_mixed[layer].shared_up   = g_moe_lt_hi[layer].shared_up;   break;
-        case MOE_ATTRIB_SHARED_DOWN: g_moe_lt_mixed[layer].shared_down = g_moe_lt_hi[layer].shared_down; break;
-        case MOE_ATTRIB_EXPERT_GATE: g_moe_lt_mixed[layer].switch_gate = g_moe_lt_hi[layer].switch_gate; break;   // D-d5-9
-        case MOE_ATTRIB_EXPERT_UP:   g_moe_lt_mixed[layer].switch_up   = g_moe_lt_hi[layer].switch_up;   break;   // D-d5-9
-        case MOE_ATTRIB_EXPERT_DOWN: g_moe_lt_mixed[layer].switch_down = g_moe_lt_hi[layer].switch_down; break;   // D-d5-9
+        case MOE_ATTRIB_EMBED_TOKENS: if (!g_moe_embed_hi)  return -1; if (!ablate) emb = g_moe_embed_hi;  break;
+        case MOE_ATTRIB_LM_HEAD:      if (!g_moe_lmhead_hi) return -1; if (!ablate) lmh = g_moe_lmhead_hi; break;
+        case MOE_ATTRIB_Q_PROJ:      g_moe_lt_mixed[layer].q_proj = src->q_proj;      break;
+        case MOE_ATTRIB_KV_A_PROJ:   g_moe_lt_mixed[layer].kv_a_proj = src->kv_a_proj;   break;
+        case MOE_ATTRIB_KV_B_PROJ:   g_moe_lt_mixed[layer].kv_b_proj = src->kv_b_proj;   break;
+        case MOE_ATTRIB_O_PROJ:      g_moe_lt_mixed[layer].o_proj = src->o_proj;      break;
+        case MOE_ATTRIB_K_PROJ:      g_moe_lt_mixed[layer].k_proj = src->k_proj;      break;   // D-d5-10
+        case MOE_ATTRIB_V_PROJ:      g_moe_lt_mixed[layer].v_proj = src->v_proj;      break;   // D-d5-10
+        case MOE_ATTRIB_DENSE_GATE:  g_moe_lt_mixed[layer].dense_gate = src->dense_gate;  break;
+        case MOE_ATTRIB_DENSE_UP:    g_moe_lt_mixed[layer].dense_up = src->dense_up;    break;
+        case MOE_ATTRIB_DENSE_DOWN:  g_moe_lt_mixed[layer].dense_down = src->dense_down;  break;
+        case MOE_ATTRIB_SHARED_GATE: g_moe_lt_mixed[layer].shared_gate = src->shared_gate; break;
+        case MOE_ATTRIB_SHARED_UP:   g_moe_lt_mixed[layer].shared_up = src->shared_up;   break;
+        case MOE_ATTRIB_SHARED_DOWN: g_moe_lt_mixed[layer].shared_down = src->shared_down; break;
+        case MOE_ATTRIB_EXPERT_GATE: g_moe_lt_mixed[layer].switch_gate = src->switch_gate; break;   // D-d5-9
+        case MOE_ATTRIB_EXPERT_UP:   g_moe_lt_mixed[layer].switch_up = src->switch_up;   break;   // D-d5-9
+        case MOE_ATTRIB_EXPERT_DOWN: g_moe_lt_mixed[layer].switch_down = src->switch_down; break;   // D-d5-9
         default: return -1;
     }
+    }   // D-d5-22: layer < 0 is the baseline probe -- no swap at all, replay this mode's own
+        // starting point so moe_neartie_attribute() can check it reproduces what it should before
+        // trusting a single hit from the sweep that follows.
     g_moe_lt_cur = g_moe_lt_mixed;
     int am = -1;
     for (int p = 0; p <= pos; p++) {
-        moe_forward_token(af, t_embed, t_lmhead, w_finalnorm, rq_hist[req][p], p, logits_out, NULL, NULL, NULL);
+        moe_forward_token(af, emb, lmh, w_finalnorm, rq_hist[req][p], p, logits_out, NULL, NULL, NULL);
     }
     g_moe_lt_cur = g_moe_lt_active;   // restore -- to the CURRENT active table (D-roadmap-4 Phase 6), matches moe_neartie_reverify_hi()'s own pattern
     am = 0; float bm = logits_out[0];
@@ -5796,9 +5907,47 @@ static void moe_neartie_attribute(const uint8_t *af, MoeAFTensor *t_embed, MoeAF
         if (!g_moe_attrib_logits_scratch) { fprintf(stderr, "FATAL: QWEN_MOE_ATTRIB=1: scratch alloc failed\n"); exit(1); }
     }
     int hits = 0, tested = 0;
+    // D-d5-21 + D-d5-19: attribution runs AFTER moe_neartie_reverify_hi() has already released
+    // the lazy mirrors, and every replay below reads g_moe_lt_hi -- so bring them back for the
+    // duration of the sweep. No-op unless lazy registration is on.
+    moe_lazy_hi_materialize_all();
+
+    // D-d5-22: probe each mode's own baseline BEFORE sweeping it. An add sweep asks "does promoting
+    // X alone reach corrected_argmax", which is only meaningful if the un-promoted all-4-bit
+    // baseline does NOT already reach it; an ablate sweep asks "does demoting X alone lose
+    // corrected_argmax", which is only meaningful if the un-demoted all-hi baseline REACHES it.
+    // If the ablate baseline misses, every single combo trivially "hits" and the whole sweep is
+    // garbage that looks like a strong result -- exactly the failure a denominator cannot show.
+    // Two extra replays per event, against 194-338 in the sweep itself.
+    int base_add = (g_moe_attrib_mode != 1)
+        ? moe_attrib_replay_one(af, t_embed, t_lmhead, w_finalnorm, req, pos, MOE_ATTRIB_Q_PROJ, -1,
+                                 g_moe_attrib_logits_scratch, 0) : -1;
+    int base_abl = (g_moe_attrib_mode >= 1)
+        ? moe_attrib_replay_one(af, t_embed, t_lmhead, w_finalnorm, req, pos, MOE_ATTRIB_Q_PROJ, -1,
+                                 g_moe_attrib_logits_scratch, 1) : -1;
+    int skip_add = 0, skip_abl = 0;
+    if (g_moe_attrib_mode != 1 && base_add == corrected_argmax) {
+        skip_add = 1;
+        fprintf(stderr, "[moe attrib] req=%d pos=%d BASELINE WARN (mode=add): all-4-bit baseline "
+                        "already yields %d -- every combo would trivially hit; add sweep skipped\n",
+                req, pos, corrected_argmax);
+    }
+    if (g_moe_attrib_mode >= 1 && base_abl != corrected_argmax) {
+        skip_abl = 1;
+        fprintf(stderr, "[moe attrib] req=%d pos=%d BASELINE WARN (mode=ablate): all-hi baseline "
+                        "yields %d, not the corrected %d -- every combo would trivially hit; "
+                        "ablate sweep skipped\n", req, pos, base_abl, corrected_argmax);
+    }
+
     for (int r = 0; r < MOE_ATTRIB_ROLE_COUNT; r++) {
         for (int l = 0; l < MOE_NL; l++) {
-            if (!moe_attrib_role_valid_at((MoeAttribRole)r, l)) continue;   // e.g. dense role at a shared-expert layer
+            // D-d5-22: architecture validity AND registration effectiveness. Per-mode, because
+            // embed/lm_head are add-only (see moe_attrib_combo_effective()'s own comment).
+            int eff_add = (g_moe_attrib_mode != 1) && !skip_add
+                          && moe_attrib_combo_effective((MoeAttribRole)r, l, 0);
+            int eff_abl = (g_moe_attrib_mode >= 1) && !skip_abl
+                          && moe_attrib_combo_effective((MoeAttribRole)r, l, 1);
+            if (!eff_add && !eff_abl) continue;   // invalid for this architecture, or hi mirror never registered
             // ROI-G Phase 1 (2026-09-02): reuse the same QWEN_MOE_NEARTIE_HI_COMBOS restriction
             // (D-d5-13) here, not just at registration -- without this, a combo-restricted run
             // still pays for the FULL 267-combo replay sweep (each combo replays baseline, a
@@ -5810,12 +5959,33 @@ static void moe_neartie_attribute(const uint8_t *af, MoeAFTensor *t_embed, MoeAF
             // MOE_ATTRIB_ROLE_COUNT, defined after this function -- moved earlier.
             if (g_moe_hi_combos_on && !moe_hi_combo_wanted(r, l)) continue;
             tested++;
-            int am = moe_attrib_replay_one(af, t_embed, t_lmhead, w_finalnorm, req, pos,
-                                            (MoeAttribRole)r, l, g_moe_attrib_logits_scratch);
-            if (am != corrected_argmax) continue;
+            // D-d5-21: run whichever sweep(s) the mode asks for. ADD asks "is this combo
+            // sufficient alone" (promote it into an all-4-bit baseline and see if the corrected
+            // answer comes back); ABLATE asks "is it necessary" (demote it out of an all-16-bit
+            // baseline and see if the corrected answer is lost).
+            int did_hit = 0;
+            if (eff_add) {
+                int am = moe_attrib_replay_one(af, t_embed, t_lmhead, w_finalnorm, req, pos,
+                                                (MoeAttribRole)r, l, g_moe_attrib_logits_scratch, 0);
+                if (am >= 0 && am == corrected_argmax) {   // D-d5-22: -1 means "not testable", never a value
+                    did_hit = 1;
+                    fprintf(stderr, "[moe attrib] hit req=%d pos=%d role=%s layer=%d mode=add "
+                                    "(single-role promotion reproduces corrected argmax=%d)\n",
+                            req, pos, MOE_ATTRIB_ROLE_NAMES[r], l, corrected_argmax);
+                }
+            }
+            if (eff_abl) {
+                int am2 = moe_attrib_replay_one(af, t_embed, t_lmhead, w_finalnorm, req, pos,
+                                                 (MoeAttribRole)r, l, g_moe_attrib_logits_scratch, 1);
+                if (am2 >= 0 && am2 != corrected_argmax) {   // D-d5-22: same guard -- -1 used to read as a hit here
+                    did_hit = 1;
+                    fprintf(stderr, "[moe attrib] hit req=%d pos=%d role=%s layer=%d mode=ablate "
+                                    "(demoting it alone loses corrected argmax=%d, got %d)\n",
+                            req, pos, MOE_ATTRIB_ROLE_NAMES[r], l, corrected_argmax, am2);
+                }
+            }
+            if (!did_hit) continue;
             hits++;
-            fprintf(stderr, "[moe attrib] hit req=%d pos=%d role=%s layer=%d (single-role promotion reproduces corrected argmax=%d)\n",
-                    req, pos, MOE_ATTRIB_ROLE_NAMES[r], l, corrected_argmax);
             if (g_moe_attrib_fp) {
                 fprintf(g_moe_attrib_fp,
                         "{\"kind\":\"attribution\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,\"role\":\"%s\",\"layer\":%d,"
@@ -5832,8 +6002,10 @@ static void moe_neartie_attribute(const uint8_t *af, MoeAFTensor *t_embed, MoeAF
     // valid at a subset of layers). Cost note: 189/108 = ~1.75x this event's worst-case replay
     // count vs. the attention-only round -- QWEN_MOE_ATTRIB_MAX_EVENTS/_MAX_POS still bound total
     // cost the same way, just against a larger per-event ceiling now.
-    fprintf(stderr, "[moe attrib] req=%d pos=%d done: %d/%d combos individually reproduced the corrected answer\n",
-            req, pos, hits, tested);
+    moe_lazy_hi_release_all();   // D-d5-19: hand the anonymous memory back
+    fprintf(stderr, "[moe attrib] req=%d pos=%d done: %d/%d effective combos flagged (mode=%s)\n",
+            req, pos, hits, tested,
+            g_moe_attrib_mode == 0 ? "add" : (g_moe_attrib_mode == 1 ? "ablate" : "both"));
 }
 
 // D-roadmap-3 correction path: default off, moved up here (from its original site just after
@@ -6281,6 +6453,8 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     // D-roadmap-4 Phase 5: role x layer attribution, only meaningful (and only ever called)
     // when correction is also on -- attribution needs a confirmed real flip to attribute.
     const char *env_attrib = getenv("QWEN_MOE_ATTRIB");
+    if (getenv("QWEN_MOE_ATTRIB_COUNT_INEFFECTIVE")) g_moe_attrib_count_ineffective = 1;   // D-d5-22 EXIT
+    const char *env_attrib_mode = getenv("QWEN_MOE_ATTRIB_MODE");   // D-d5-21
     const char *env_attrib_max_events = getenv("QWEN_MOE_ATTRIB_MAX_EVENTS");
     const char *env_attrib_max_pos = getenv("QWEN_MOE_ATTRIB_MAX_POS");
     const char *env_neartie_correct_thr   = getenv("QWEN_MOE_NEARTIE_CORRECT_THRESHOLD");
@@ -6330,8 +6504,21 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     g_moe_attrib_on = env_attrib && env_attrib[0] && atoi(env_attrib) != 0;
     g_moe_attrib_max_events = env_attrib_max_events && env_attrib_max_events[0] ? atoi(env_attrib_max_events) : -1;
     g_moe_attrib_max_pos = env_attrib_max_pos && env_attrib_max_pos[0] ? atoi(env_attrib_max_pos) : -1;
-    if (g_moe_attrib_on) fprintf(stderr, "[moe attrib] enabled -- %d role x layer combos tested per confirmed real flip (attention roles only, see moe_neartie_attribute()'s own scope comment), max_events=%d max_pos=%d\n",
-            MOE_ATTRIB_ROLE_COUNT * MOE_NL, g_moe_attrib_max_events, g_moe_attrib_max_pos);
+    if (env_attrib_mode && env_attrib_mode[0]) {
+        if      (!strcmp(env_attrib_mode, "add"))    g_moe_attrib_mode = 0;
+        else if (!strcmp(env_attrib_mode, "ablate")) g_moe_attrib_mode = 1;
+        else if (!strcmp(env_attrib_mode, "both"))   g_moe_attrib_mode = 2;
+        else { fprintf(stderr, "FATAL: QWEN_MOE_ATTRIB_MODE=%s unknown (add|ablate|both)\n", env_attrib_mode); exit(1); }
+        fprintf(stderr, "[moe attrib] mode=%s (D-d5-21)\n", env_attrib_mode);
+    }
+    // D-d5-22: this is a compile-time CEILING (every role at every layer), not what gets tested.
+    // The old wording printed it as the tested count and said "attention roles only", both stale
+    // since D-d5-9/10/15 added expert/GQA/global roles. The real per-event figure is architecture
+    // validity AND hi-mirror registration, neither known until the model is loaded -- it is the
+    // denominator moe_neartie_attribute() prints on its own "done:" line.
+    if (g_moe_attrib_on) fprintf(stderr, "[moe attrib] enabled -- ceiling %d role x layer combos (%d roles x %d layers); the per-event effective count is reported on each done: line, max_events=%d max_pos=%d\n",
+            MOE_ATTRIB_ROLE_COUNT * MOE_NL, MOE_ATTRIB_ROLE_COUNT, MOE_NL,
+            g_moe_attrib_max_events, g_moe_attrib_max_pos);
     if (g_moe_neartie_correct_on) {
         if (!env_neartie_correct_st || !env_neartie_correct_st[0]) {
             fprintf(stderr, "FATAL: QWEN_MOE_NEARTIE_CORRECT=1 requires QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS "
@@ -12733,6 +12920,21 @@ static MoeAFTensor *st_register_moe_experts_f16_as_af(const char *name_pattern, 
     size_t total_bytes = moe_gguf_mul_checked("f16 experts total_bytes",
                             moe_gguf_mul_checked("f16 experts total_bytes", (size_t)E, per_expert),
                             sizeof(_Float16));
+
+    // D-d5-19: see the single-tensor sibling. This is where the memory actually is -- an
+    // E-stacked expert projection is 369MB on DeepSeek-V2-Lite, 268MB on OLMoE.
+    if (g_moe_hi_lazy) {
+        MoeAFTensor *wl = &g_moe_af[g_moe_naf++];
+        snprintf(wl->name, sizeof wl->name, "%s", engine_name);
+        wl->E = E; wl->out = out; wl->in = in; wl->ng = 0;
+        wl->packed_off = 0; wl->packed_bytes = (long)total_bytes;
+        wl->scale_off = -1; wl->bias_off = -1;
+        wl->base = NULL; wl->sym = 0; wl->bits = 16;
+        wl->lz_kind = 2; snprintf(wl->lz_name, sizeof wl->lz_name, "%s", name_pattern);
+        wl->lz_layer = layer; wl->lz_E = E;
+        return wl;
+    }
+
     uint8_t *base = malloc(total_bytes);
     if (!base) {
         fprintf(stderr, "FATAL: safetensors moe f16-experts alloc failed for '%s' (%zu bytes)\n", engine_name, total_bytes);
@@ -12765,6 +12967,73 @@ static MoeAFTensor *st_register_moe_experts_f16_as_af(const char *name_pattern, 
     w->scale_off = -1; w->bias_off = -1;   // never dereferenced for bits==16
     w->base = base; w->sym = 0; w->bits = 16;
     return w;
+}
+
+// D-d5-19: convert one lazy hi tensor from the bf16 checkpoint into an f16 buffer, and free it
+// again. Same arithmetic the eager registrars do -- this only moves WHEN it happens.
+//   WHY: a statically promoted tensor is read on every token and must be resident; a correction
+//   mirror is read only while a replay runs. Materializing every mirror at load time made the
+//   runtime path cost the same resident bytes as blanket promotion (D-d5-12/16), which removed
+//   its only remaining advantage.
+//   COST: the conversion is paid per replay instead of once. With a blanket combo set that is
+//   strictly worse -- every mirror materializes on the first firing anyway. It only pays off
+//   with a selective set (D-d5-13), where |S| tensors materialize instead of all of them.
+//   EXIT: QWEN_MOE_NEARTIE_HI_LAZY unset restores eager registration exactly.
+static void moe_af_materialize(MoeAFTensor *t) {
+    if (!t || t->lz_kind == 0 || t->base) return;
+    SafetensorsMulti *saved = g_st_moe;
+    g_st_moe = g_moe_hi_st;
+    if (t->lz_kind == 1) {
+        SafetensorsFile *shard = NULL;
+        const SafetensorsInfo *st = safetensors_multi_find_tensor(g_st_moe, t->lz_name, &shard);
+        if (!st) { fprintf(stderr, "FATAL: lazy hi: missing '%s'\n", t->lz_name); exit(1); }
+        size_t n = (size_t)t->out * (size_t)t->in;
+        float *tmp = malloc(n * sizeof(float));
+        uint8_t *base = malloc(n * sizeof(_Float16));
+        if (!tmp || !base) { fprintf(stderr, "FATAL: lazy hi alloc failed for '%s'\n", t->name); exit(1); }
+        safetensors_dequant_row(st->dtype, safetensors_tensor_data(shard, st), tmp, (uint64_t)n);
+        _Float16 *h = (_Float16 *)base;
+        for (size_t i = 0; i < n; i++) h[i] = (_Float16)tmp[i];
+        free(tmp);
+        t->base = base;
+    } else {
+        size_t per = (size_t)t->out * (size_t)t->in;
+        uint8_t *base = malloc((size_t)t->lz_E * per * sizeof(_Float16));
+        float *tmp = malloc(per * sizeof(float));
+        if (!tmp || !base) { fprintf(stderr, "FATAL: lazy hi alloc failed for '%s'\n", t->name); exit(1); }
+        for (long e = 0; e < t->lz_E; e++) {
+            char nm[160];
+            snprintf(nm, sizeof nm, t->lz_name, t->lz_layer, (int)e);
+            SafetensorsFile *shard = NULL;
+            const SafetensorsInfo *st = safetensors_multi_find_tensor(g_st_moe, nm, &shard);
+            if (!st) { fprintf(stderr, "FATAL: lazy hi: missing '%s'\n", nm); exit(1); }
+            safetensors_dequant_row(st->dtype, safetensors_tensor_data(shard, st), tmp, (uint64_t)per);
+            _Float16 *h = (_Float16 *)base + (size_t)e * per;
+            for (size_t i = 0; i < per; i++) h[i] = (_Float16)tmp[i];
+        }
+        free(tmp);
+        t->base = base;
+    }
+    g_moe_lazy_live_bytes += t->packed_bytes;
+    g_st_moe = saved;
+}
+
+static void moe_af_release(MoeAFTensor *t) {
+    if (!t || t->lz_kind == 0 || !t->base) return;
+    free((void *)t->base);
+    t->base = NULL;
+    g_moe_lazy_live_bytes -= t->packed_bytes;
+}
+
+// Materialize / release every lazy hi tensor. Called around a correction replay: with a
+// selective combo list only |S| tensors exist to walk, which is the whole point.
+static void moe_lazy_hi_materialize_all(void) {
+    if (!g_moe_hi_lazy) return;
+    for (int i = 0; i < g_moe_naf; i++) moe_af_materialize(&g_moe_af[i]);
+}
+static void moe_lazy_hi_release_all(void) {
+    if (!g_moe_hi_lazy) return;
+    for (int i = 0; i < g_moe_naf; i++) moe_af_release(&g_moe_af[i]);
 }
 
 // Per-expert mixed-precision sibling of st_register_moe_experts_q4g64_as()/q8g64_as()
@@ -12998,6 +13267,21 @@ static MoeAFTensor *st_register_moe_f16_as_af(const char *name, const char *engi
         exit(1);
     }
     size_t n_elem = (size_t)moe_gguf_mul_checked("f16-as-af n_elem", (size_t)out, (size_t)in);
+
+    // D-d5-19: lazy mode records the descriptor and stops here -- no conversion, no anonymous
+    // memory. moe_af_materialize() does the work below at replay time instead.
+    if (g_moe_hi_lazy) {
+        MoeAFTensor *wl = &g_moe_af[g_moe_naf++];
+        snprintf(wl->name, sizeof wl->name, "%s", engine_name);
+        wl->E = 1; wl->out = out; wl->in = in; wl->ng = 0;
+        wl->packed_off = 0; wl->packed_bytes = (long)(n_elem * sizeof(_Float16));
+        wl->scale_off = -1; wl->bias_off = -1;
+        wl->base = NULL; wl->sym = 0; wl->bits = 16;
+        wl->lz_kind = 1; snprintf(wl->lz_name, sizeof wl->lz_name, "%s", name);
+        wl->lz_layer = -1; wl->lz_E = 1;
+        return wl;
+    }
+
     float *tmp32 = malloc(n_elem * sizeof(float));
     if (!tmp32) { fprintf(stderr, "FATAL: safetensors moe f16-as-af tmp alloc failed for '%s' (%zu elems)\n", engine_name, n_elem); exit(1); }
     safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), tmp32, (uint64_t)n_elem);
@@ -13252,8 +13536,13 @@ static void moe_neartie_correct_load_attn_hi(const char *safetensors_path) {
         : sizeof(MOE_ST_ATTN_ROLES_GQA)/sizeof(MOE_ST_ATTN_ROLES_GQA[0]);
     size_t n_dense_roles = sizeof(MOE_ST_DENSE_ROLES)/sizeof(MOE_ST_DENSE_ROLES[0]);
     size_t n_shared_roles = sizeof(MOE_ST_SHARED_ROLES)/sizeof(MOE_ST_SHARED_ROLES[0]);
+    // D-d5-19: lazy mode keeps this handle for the process lifetime -- a lazy tensor is
+    // converted at replay time, long after this function returns.
+    const char *lz_env = getenv("QWEN_MOE_NEARTIE_HI_LAZY");
+    g_moe_hi_lazy = lz_env && lz_env[0] && atoi(lz_env) != 0;
     SafetensorsMulti *saved = g_st_moe;
     g_st_moe = safetensors_open_multi(safetensors_path);
+    g_moe_hi_st = g_st_moe;
     char name[160], ename[160];
     int n_dense_registered = 0, n_shared_registered = 0;
     for (int l = 0; l < MOE_NL; l++) {
