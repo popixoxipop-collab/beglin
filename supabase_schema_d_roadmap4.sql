@@ -303,3 +303,115 @@ returns void as $$
       last_updated = now()
   where model = p_model and role = p_role and layer = p_layer;
 $$ language sql;
+
+-- =============================================================================
+-- D-quant-supabase-2 (2026-09-02, executed live, verified via independent
+-- SELECT + PK-definition + RPC-call-and-revert -- same discipline as
+-- D-quant-supabase-1 above):
+--   WHY: moe_neartie_events already tags every row with `corpus`;
+--   moe_role_precision_state didn't. WikiText-103 (Phase 7/8) is about to
+--   push into the same table -- without this, its hits would silently
+--   blend into the same (model,role,layer) rows as WikiText-2's, making
+--   "is this finding dataset-specific" unanswerable. Same fix as
+--   D-quant-supabase-1, one dimension further.
+--   COST: PK widens to (model, corpus, role, layer); existing 191 rows
+--   backfilled with the one real corpus string already in use
+--   ('wikitext-2-raw-v1-validation-short-fullext', confirmed by querying
+--   moe_neartie_events directly); increment_role_precision() becomes
+--   5-arg (old 4-arg dropped, not kept as dead code). Seeding a NEW
+--   (model,corpus) pair is no longer a hardcoded block in this file --
+--   use tools/seed_precision_map.py <model> <corpus> | psql "$CONN"
+--   instead (same 191-row shape, parameterized).
+--   EXIT: same widen-the-PK pattern again if another dimension is needed.
+-- =============================================================================
+
+alter table moe_role_precision_state add column if not exists corpus text;
+
+update moe_role_precision_state set corpus = 'wikitext-2-raw-v1-validation-short-fullext' where corpus is null;
+
+alter table moe_role_precision_state alter column corpus set not null;
+
+alter table moe_role_precision_state drop constraint if exists moe_role_precision_state_pkey;
+alter table moe_role_precision_state add primary key (model, corpus, role, layer);
+
+drop function if exists increment_role_precision(text, integer, double precision);
+
+create or replace function increment_role_precision(p_model text, p_corpus text, p_role text, p_layer integer, p_margin double precision default null)
+returns void as $$
+  update moe_role_precision_state
+  set event_count = event_count + 1,
+      min_margin_observed = case
+        when p_margin is null then min_margin_observed
+        when min_margin_observed is null then p_margin
+        else least(min_margin_observed, p_margin)
+      end,
+      last_updated = now()
+  where model = p_model and corpus = p_corpus and role = p_role and layer = p_layer;
+$$ language sql;
+
+-- =============================================================================
+-- D-quant-mono-1 (2026-09-02, executed live): durable, corpus-tagged home for
+-- ROI-G's arbitrary-n quantization sweep data (tools/quant_sim_n.py /
+-- quant_sim_analyze.py / quant_search_n.py).
+--   WHY: the first 90 real sweep data points (6 targets x n=2..16, all
+--   WikiText-2) only existed as local TSV files -- exactly the kind of
+--   thing that should be in the shared map. Without a durable, queryable,
+--   corpus-tagged store, "is this target's monotonicity violation
+--   WikiText-2-specific" has nowhere to be answered once WikiText-103
+--   data exists to compare against.
+--   COST: one new table, raw per-n-value rows (source of truth).
+--   Classification (knee, tier-or-not, monotonic-or-not) stays a derived
+--   query/script output, not a second table that can drift from the raw
+--   rows.
+--   EXIT: promote to a materialized view over this table if classification
+--   needs to be queried frequently instead of recomputed.
+-- =============================================================================
+
+create table if not exists moe_quant_sweep_results (
+  id bigserial primary key,
+  model text not null,
+  corpus text not null,
+  role text not null,
+  layer integer not null,
+  req integer not null,
+  pos integer not null,
+  n integer not null,
+  eff_bpw double precision not null,
+  pass boolean not null,
+  rel_l2 double precision,
+  tested_at timestamptz not null default now()
+);
+
+create index if not exists moe_quant_sweep_results_target_idx
+  on moe_quant_sweep_results (model, corpus, role, layer);
+
+-- =============================================================================
+-- D-quant-supabase-3 (2026-09-02, executed live, verified via independent
+-- SELECT): moe_role_precision_state gets a 5th role family, ROUTED EXPERTS.
+--   WHY: the user reviewed the SLAM MAP artifact (4 families: ATTENTION/
+--   DENSE FFN/SHARED FFN/GLOBAL) and asked directly whether it showed every
+--   independently-precision-controllable element of the engine. It didn't --
+--   qwen_infer.c registers a 5th family, MOE_ST_EXPERT_ROLES (expert_gate_
+--   proj/expert_up_proj/expert_down_proj, qwen_infer.c:13376), via
+--   st_register_moe_role() at every l >= MOE_FIRST_DENSE_LAYERS (:13749-13754,
+--   same layer range as MOE_ST_SHARED_ROLES), and it is also a first-class
+--   member of the attribution role vocabulary (MOE_ATTRIB_EXPERT_GATE/UP/
+--   DOWN, :5583, D-d5-9). tools/seed_precision_map.py simply never seeded it
+--   -- an oversight in the seed script, not a deliberate scope decision, so
+--   the dashboard was silently incomplete since it was first built.
+--   COST: 78 new rows per (model,corpus) pair (3 roles x layers 1..26; layer
+--   0 has no routed experts, same architecture fact as DENSE FFN being
+--   layer-0-only in reverse). Backfilled live for the one existing pair
+--   (deepseek-v2-lite, wikitext-2-raw-v1-validation-short-fullext):
+--   191 -> 269 rows, verified via SELECT count(*) filter (role like
+--   'expert%') = 78. Every new row starts at event_count=0 -- checked live
+--   before seeding (moe_role_precision_state had zero expert_* rows,
+--   moe_neartie_events has no per-combo role column to check, and every
+--   WikiText-2 raw JSONL still on bob was grepped for expert_gate_proj/
+--   expert_up_proj/expert_down_proj with zero matches) -- no real
+--   attribution run has ever swept these roles yet, so 0 hits is an honest
+--   "trackable, unmeasured" state, not a finding.
+--   EXIT: per-expert-index granularity (vs. today's per-layer-promotes-all-
+--   64-experts) would need a new `expert_idx` PK column -- this change is
+--   additive only, no migration of the 191 already-seeded rows required.
+-- =============================================================================

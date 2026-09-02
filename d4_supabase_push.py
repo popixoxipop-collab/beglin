@@ -36,15 +36,15 @@ def post(url, key, path, rows):
         print(f"[d4 push] WARN {type(e).__name__} pushing {len(rows)} rows to {path}: {e}", file=sys.stderr)
         return False
 
-def rpc_increment(url, key, model, role, layer, margin=None):
-    # D-quant-supabase-1: increment_role_precision() now takes p_model too --
-    # moe_role_precision_state's PK widened to (model,role,layer) so a
-    # concurrent session pushing a different model's data (e.g. Qwen3-30B-A3B
-    # on macstudio) can't silently conflate its counts with DeepSeek's under
-    # the same (role,layer) row. See migrate_model_pk.sql / RESULTS.md.
+def rpc_increment(url, key, model, corpus, role, layer, margin=None):
+    # D-quant-supabase-2: increment_role_precision() now takes p_corpus too --
+    # moe_role_precision_state's PK widened to (model,corpus,role,layer) so a
+    # different corpus's data (e.g. WikiText-103, once Phase 7/8 pushes it)
+    # can't silently conflate its counts with WikiText-2's under the same
+    # (model,role,layer) row. See migrate_corpus_pk.sql / RESULTS.md.
     req = urllib.request.Request(
         url + "/rest/v1/rpc/increment_role_precision",
-        data=json.dumps({"p_model": model, "p_role": role, "p_layer": layer, "p_margin": margin}).encode(),
+        data=json.dumps({"p_model": model, "p_corpus": corpus, "p_role": role, "p_layer": layer, "p_margin": margin}).encode(),
         headers={
             "apikey": key,
             "Authorization": f"Bearer {key}",
@@ -57,7 +57,7 @@ def rpc_increment(url, key, model, role, layer, margin=None):
         urllib.request.urlopen(req, timeout=10)
         return True
     except Exception as e:
-        print(f"[d4 push] WARN increment_role_precision({model},{role},{layer}) failed: {e}", file=sys.stderr)
+        print(f"[d4 push] WARN increment_role_precision({model},{corpus},{role},{layer}) failed: {e}", file=sys.stderr)
         return False
 
 def main():
@@ -91,15 +91,15 @@ def main():
                 })
                 n_events += 1
             elif row.get("kind") == "attribution":
-                attribs.append((row["model"], row["role"], row["layer"]))
+                attribs.append((row["model"], row["corpus"], row["role"], row["layer"]))
                 n_attribs += 1
             if len(events) >= BATCH:
                 post(url, key, "/rest/v1/moe_neartie_events", events); events = []
         new_offset = f.tell()
 
     post(url, key, "/rest/v1/moe_neartie_events", events)
-    for model, role, layer in attribs:
-        rpc_increment(url, key, model, role, layer)
+    for model, corpus, role, layer in attribs:
+        rpc_increment(url, key, model, corpus, role, layer)
 
     with open(offset_path, "w") as f:
         f.write(str(new_offset))

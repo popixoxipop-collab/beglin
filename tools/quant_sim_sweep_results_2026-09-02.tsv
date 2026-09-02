@@ -44,3 +44,48 @@ shared_gate_l25	shared_gate_proj	25	13	1	[moe attrib] req=5 pos=4 done: 1/1 comb
 shared_gate_l25	shared_gate_proj	25	14	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
 shared_gate_l25	shared_gate_proj	25	15	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
 shared_gate_l25	shared_gate_proj	25	16	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	2	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	3	0	
+o_proj_l6	o_proj	6	4	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	5	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	6	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	7	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	8	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	9	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	10	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	11	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	12	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	13	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	14	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	15	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+o_proj_l6	o_proj	6	16	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_b_l6	kv_b_proj	6	2	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_b_l6	kv_b_proj	6	3	0	
+kv_b_l6	kv_b_proj	6	4	0	
+kv_b_l6	kv_b_proj	6	5	0	
+kv_b_l6	kv_b_proj	6	6	0	
+kv_b_l6	kv_b_proj	6	7	0	
+kv_b_l6	kv_b_proj	6	8	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_b_l6	kv_b_proj	6	9	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_b_l6	kv_b_proj	6	10	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_b_l6	kv_b_proj	6	11	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_b_l6	kv_b_proj	6	12	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_b_l6	kv_b_proj	6	13	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_b_l6	kv_b_proj	6	14	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_b_l6	kv_b_proj	6	15	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_b_l6	kv_b_proj	6	16	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_up_l16	shared_up_proj	16	2	0	
+shared_up_l16	shared_up_proj	16	3	0	
+shared_up_l16	shared_up_proj	16	4	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_up_l16	shared_up_proj	16	5	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_up_l16	shared_up_proj	16	6	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_up_l16	shared_up_proj	16	7	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_up_l16	shared_up_proj	16	8	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_up_l16	shared_up_proj	16	9	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_up_l16	shared_up_proj	16	10	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_up_l16	shared_up_proj	16	11	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_up_l16	shared_up_proj	16	12	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_up_l16	shared_up_proj	16	13	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_up_l16	shared_up_proj	16	14	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_up_l16	shared_up_proj	16	15	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_up_l16	shared_up_proj	16	16	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
