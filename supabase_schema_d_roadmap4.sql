@@ -16,6 +16,13 @@ create table if not exists moe_neartie_events (
   attributed_layer integer
 );
 
+-- D-quant-supabase-1 note (2026-09-02): this table's PK was originally just
+-- (role, layer) -- widened to (model, role, layer) by the migration block
+-- near the end of this file. The create-table below is kept as the
+-- original historical shape (a fresh DB run of this whole file still ends
+-- up correct, since the migration block runs right after); do not add
+-- `model` here directly, the migration block documents WHY that column
+-- exists.
 create table if not exists moe_role_precision_state (
   role text not null,
   layer integer not null,
@@ -249,3 +256,50 @@ insert into moe_role_precision_state (role, layer, current_bits) values
 ('embed_tokens', -1, 32),
 ('lm_head', -1, 32)
 on conflict (role, layer) do nothing;
+
+-- =============================================================================
+-- D-quant-supabase-1 (2026-09-02, executed live against the real DB, verified
+-- via independent SELECT + a live RPC-call-and-revert round-trip -- not just
+-- trusted from the ALTER/UPDATE statements' own row counts):
+--   WHY: schema was single-model (DeepSeek-V2-Lite only, seeded above). A
+--   concurrent session (macstudio, user eoe) runs a DIFFERENT architecture
+--   (Qwen3-30B-A3B, GQA) against this SAME Supabase project/URL/key. Role
+--   names overlap by coincidence (q_proj/o_proj exist in both role tables)
+--   at the same layer index, so a cross-model push would silently conflate
+--   two unrelated models' accumulated event_count/min_margin under one
+--   (role,layer) row. moe_neartie_events already tracked `model` per-event;
+--   the aggregate map didn't -- this closes that gap.
+--   COST: existing 191 rows backfilled with the one real model string
+--   already in use ('deepseek-v2-lite', confirmed from the actually-pushed
+--   JSONL, not guessed); increment_role_precision()'s old 3-arg signature
+--   was dropped (not kept as dead code -- a stale caller using it would
+--   otherwise silently match nothing, or the wrong row, once the PK
+--   widened). d4_supabase_push.py updated to pass model through.
+--   EXIT: to widen further (e.g. per-corpus too), same pattern -- add
+--   column, backfill, drop+recreate PK, update the RPC signature and the
+--   push script together.
+-- =============================================================================
+
+alter table moe_role_precision_state add column if not exists model text;
+
+update moe_role_precision_state set model = 'deepseek-v2-lite' where model is null;
+
+alter table moe_role_precision_state alter column model set not null;
+
+alter table moe_role_precision_state drop constraint if exists moe_role_precision_state_pkey;
+alter table moe_role_precision_state add primary key (model, role, layer);
+
+drop function if exists increment_role_precision(text, integer, double precision);
+
+create or replace function increment_role_precision(p_model text, p_role text, p_layer integer, p_margin double precision default null)
+returns void as $$
+  update moe_role_precision_state
+  set event_count = event_count + 1,
+      min_margin_observed = case
+        when p_margin is null then min_margin_observed
+        when min_margin_observed is null then p_margin
+        else least(min_margin_observed, p_margin)
+      end,
+      last_updated = now()
+  where model = p_model and role = p_role and layer = p_layer;
+$$ language sql;

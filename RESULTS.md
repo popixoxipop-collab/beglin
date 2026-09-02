@@ -8544,3 +8544,356 @@ stand -- neither uses promotion). Both queued campaigns were stopped before thei
 `B_exp` / `B_all` arms ran, since all of them would have been no-ops for the same reason. Both
 are being re-run end to end on the fixed binary, which also removes the cross-binary
 comparability problem that motivated the separate `A_new` equivalence arm.
+
+### D-d5-12: the runtime path's real advantage is memory, and the current implementation does not deliver it
+
+Raised by the user after the OLMoE result showed static attention promotion reproducing the
+runtime path on 19 of 24 requests: judging the runtime path on accuracy-per-token misses its
+actual purpose. Static promotion has to keep the promoted weights resident; the runtime path is
+supposed to be what lets a bigger model fit in constrained RAM and still get corrected where it
+matters. Measured against the implementation, that reading is right about the goal and wrong
+about the present state.
+
+**Measured resident cost of the bits=16 mirror** (startup line, `attn_hi_bytes`):
+
+| model | attn_hi resident | shadow pool |
+|---|---|---|
+| OLMoE-1B-7B | 0.50 GiB | 256 MiB |
+| DeepSeek-V2-Lite | 0.69 GiB | 320 MiB |
+| Qwen3-30B-A3B | 1.81 GiB | 64 MiB |
+
+**Why the runtime path pays it too**: `moe_neartie_reverify_hi()` does
+`g_moe_lt_cur = g_moe_lt_hi` -- it swaps the WHOLE table, so the replay runs bits=16 at every
+layer and therefore needs every layer's hi tensor resident. So today:
+
+| | resident memory | inference cost |
+|---|---|---|
+| static blanket promotion | full hi table | none (-1.3% on the CPU path) |
+| runtime adaptive | **the same full hi table** | +15.1% |
+
+The runtime path currently buys no memory advantage and pays the compute. On a 64GB box with
+these models that is invisible; it is exactly what breaks first on a bigger model or a smaller
+machine.
+
+**The parts for the memory-frugal version already exist**, which is why this is a wiring gap
+rather than a redesign: `moe_attrib_replay_one()` already replays with a SINGLE role x layer
+promoted (`g_moe_lt_mixed`), the 189-combination attribution already identifies which combos
+reproduce a corrected answer, and Phase-6 promotion already applies at (role, layer) granularity.
+What is missing is (i) a correction replay that uses only the implicated combos instead of the
+whole table, and (ii) on-demand registration of just those combos instead of eager full loading.
+
+**Scale of the difference**, from this round's own measurements:
+
+| | blanket, all layers | implicated combos only |
+|---|---|---|
+| Qwen3-30B attention | 192 tensors = **1.81 GiB** | 13 tensors ~ **126 MiB** (14.7x) |
+| DeepSeek routed experts | 26 layers = **28.8 GB** | 1 layer = **1.107 GB** (26x) |
+
+The expert row is not hypothetical: 28.8GB did not fit in the ~26GB actually available, which is
+why D-d5-9 had to ship a per-layer opt-in loader and a subset fallback in the first place.
+
+**D-d5-12 -- selective-hi correction, deferred to its own round**
+  WHY: it is the only version of the runtime path that has an advantage static promotion cannot
+  match. Measured today, blanket promotion wins on every axis -- same memory, less compute, and
+  on the CPU path it is actually FASTER than 4-bit because bits=16 skips nibble unpack and
+  per-group scale entirely (OLMoE: -24.5% wall with experts promoted). Without the memory axis
+  there is no argument left for the runtime path.
+  COST: it changes the correction path's semantics. Today's replay is "recompute this position
+  with full-precision attention everywhere", which needs no prior knowledge. A selective replay
+  needs an implicated-combo set first, so it depends on attribution having run -- a cold start
+  with no attribution history has nothing to select, and would have to fall back to the blanket
+  replay (and its memory) or skip correction entirely.
+  EXIT: keep `moe_neartie_reverify_hi()`'s whole-table swap as the fallback path; add a selective
+  variant that takes a combo list and builds `g_moe_lt_mixed` from it, and gate hi registration
+  on that same list. Both `moe_attrib_replay_one()` and `QWEN_MOE_PROMOTION_FILE` already speak
+  exactly that vocabulary.
+
+### D-d5-13: selective-hi correction implemented, and the memory claim put on the clock
+
+Implements what D-d5-12 identified as the runtime path's only defensible advantage: correct at
+inference time WITHOUT keeping every layer's bits=16 mirror resident.
+
+**Mechanism** (`QWEN_MOE_NEARTIE_HI_COMBOS=<file>`, same `"<role> <layer>"` format
+`QWEN_MOE_PROMOTION_FILE` uses, so an attribution result feeds either without translation):
+1. The combo list loads **before** `moe_neartie_correct_load_attn_hi()`, which now skips any
+   (role, layer) not on it -- that skip is where the memory saving comes from.
+2. `moe_lt_sel_init()` builds `g_moe_lt_sel[]`: production everywhere, bits=16 only at the listed
+   combos (same role -> field switch `moe_promotion_apply_one()` uses).
+3. `moe_neartie_reverify_hi()` swaps to `g_moe_lt_sel` instead of the whole `g_moe_lt_hi`.
+Unset = register everything and swap the whole table, i.e. pre-D-d5-13 behavior unchanged.
+
+**A bug this change surfaced in its own design**: with selective registration a hi lookup MISS is
+now normal, but `moe_resolve_attn_tensors_{gqa,mla}_hi()` and `moe_resolve_ffn_tensors_hi()` all
+used `moe_find_af()` -- hard FATAL on miss -- plus `moe_check_af_shape()` calls that would have
+been handed a production pointer under a `__neartie_hi` name. All three resolvers now use
+`moe_find_af_opt()` and leave the production 4-bit pointer in place when a combo was not
+registered. Caught by reasoning through the new path before running it, not by a crash.
+
+**Measurement campaign** (OLMoE, macstudio, same 24x6 corpus, peak RSS via `/usr/bin/time -l`):
+
+| arm | combos registered |
+|---|---|
+| `C_blanket` | all (today's behavior) |
+| `S_full` | all 64 attention combos -- **equivalence check**, must reproduce `C_blanket` exactly |
+| `S_16` | `q_proj` at every layer |
+| `S_4` | `q_proj` layers 0-3 |
+| `S_1` | `q_proj` layer 0 |
+
+`S_full` is the correctness gate: same combos as blanket, different code path, so any token
+difference is a bug in the selective machinery rather than a property of selection. `S_16/4/1`
+give the memory curve against how much correction capability survives.
+
+**D-d5-13 -- measure the curve, do not pick the combo set yet**
+  WHY: which combos matter is an attribution question this round has not answered for GQA
+  (attribution has only ever run on DeepSeek/MLA). The memory *curve* is measurable without that
+  answer, and it is what decides whether the idea is worth pursuing at all.
+  COST: the token-accuracy column for `S_16/4/1` is not a fair test of "selective correction
+  works" -- `q_proj`-only is an arbitrary set, not an attribution-derived one, so a poor accuracy
+  result there says nothing about a well-chosen set.
+  EXIT: once GQA attribution runs, feed its implicated combos in as the combo file; the
+  measurement harness needs no change.
+
+### D-d5-13 results: selective-hi is equivalent at full scope and saves 1.0 GiB at minimum scope
+
+OLMoE, macstudio, same 24x6 corpus, peak RSS from `/usr/bin/time -l`.
+
+| arm | combos registered | `attn_hi_bytes` | peak RSS | vs blanket |
+|---|---|---|---|---|
+| `C_blanket` | all | 512 MiB | **5.03 GiB** | -- |
+| `S_full` | 64 (all attention) | 512 MiB | **5.03 GiB** | +0.00 |
+| `S_16` | 16 | 224 MiB | **4.26 GiB** | **-0.77 GiB** |
+| `S_4` | 4 | 152 MiB | **4.07 GiB** | **-0.96 GiB** |
+| `S_1` | 1 | 134 MiB | **4.03 GiB** | **-1.00 GiB** |
+
+**Equivalence gate passed**: `S_full` reproduced `C_blanket`'s emitted tokens exactly (24/24
+requests, compared req-by-req after sorting), at identical `attn_hi_bytes` and RSS within 65KB.
+Same combos through a different code path produce the same answer, so the selective machinery is
+not changing results -- only what it keeps resident.
+
+**`attn_hi_bytes` is NOT a clean metric here and should not be quoted as one.** With selective
+registration the unregistered slots keep their production pointers in `g_moe_lt_hi`, and that
+accounting loop sums whatever pointer it finds -- so `S_1`'s 134 MiB is 8 MiB of real f16 plus 63
+production 4-bit tensors counted by mistake. Peak RSS is the honest number.
+
+**Scale**: 1.0 GiB saved on a model whose 4-bit blob is 4.0 GB -- about 20% of peak. The saving
+is the resident bits=16 mirror, so it grows with the model: the same mechanism on Qwen3-30B-A3B
+would be releasing 1.81 GiB, and on the routed experts 28.8 GB (which is why D-d5-9 needed a
+subset fallback in the first place).
+
+**Honest limit on the accuracy column**: `S_16/4/1` used `q_proj`-only combo sets, chosen for the
+memory curve, not derived from attribution. A poor accuracy result on an arbitrary set says
+nothing about a well-chosen one -- which is what the GQA attribution run is for.
+
+### D-d5-14: first GQA attribution -- and a parameterization error caught mid-run
+
+With `S_FULL_EQUIVALENT` the chain launched attribution automatically. The first run produced
+**zero** attributions:
+
+```
+[moe attrib] req=0 pos=10 SKIPPED -- pos exceeds QWEN_MOE_ATTRIB_MAX_POS=6
+[moe attrib] req=1 pos=11 SKIPPED -- ...
+[moe attrib] req=3 pos=12 SKIPPED -- ...
+```
+
+`QWEN_MOE_ATTRIB_MAX_POS=6` was set to bound cost, but this corpus uses 9-token prompts, so every
+generated position is `pos >= 9` and the cap excluded all of them by construction. Stopped and
+re-run with `MAX_POS=16` (covers the whole 9+6 window) and `MAX_EVENTS=3` (each combo replays
+`pos+1` forwards, so ~112 valid combos x ~11 positions x 3 events is already ~3.7k forward passes).
+
+Worth recording because the run looked healthy: corrections fired, real flips were found and
+corrected, tokens changed. Only the attribution -- the thing the run existed for -- was silently
+producing nothing, and it announced that in a line that reads like normal operation.
+
+Also noted: the startup banner says `240 role x layer combos tested per confirmed real flip
+(attention roles only...)`. Both halves are now stale -- 240 is 15 roles x 16 layers before
+`moe_attrib_role_valid_at()` filters (the real count on OLMoE is 7 x 16 = 112: q/k/v/o plus the
+three expert roles; `kv_a`/`kv_b` are MLA-only, dense needs `FIRST_DENSE_LAYERS>0`, shared needs
+`N_SHARED>0`), and "attention roles only" predates the dense/shared and expert extensions.
+
+## D-quant-supabase-1: Supabase precision map made model-aware
+
+`moe_role_precision_state`'s PK was `(role, layer)` only -- a real cross-model
+collision risk once a concurrent session (macstudio) started pushing a
+different architecture's (Qwen3-30B-A3B, GQA) attribution data against the
+same Supabase project. Migrated live: added `model text not null` (backfilled
+191 existing rows with `'deepseek-v2-lite'`, the one real value already in
+use), widened the PK to `(model, role, layer)`, replaced
+`increment_role_precision()` with a 4-arg version (`p_model` added, old 3-arg
+signature dropped, not left as dead code), updated `d4_supabase_push.py` to
+pass `model` through. Verified independently: `count(*)=191, count(distinct
+model)=1` after migration (no row loss/duplication), the new PK constraint
+confirmed via `pg_get_constraintdef`, and the new RPC signature live-tested
+on a harmless wildcard row (`embed_tokens`, layer=-1) -- incremented then
+manually reverted to its exact prior state, no permanent side effect on real
+data. Full migration SQL kept in `supabase_schema_d_roadmap4.sql` (appended,
+not rewritten in place, so the file's own history stays a truthful record).
+
+### D-d5-16: correcting "memory ties" -- the axis is access frequency, not combo count
+
+Written after the user pushed back on this section's own claim that, post-D-d5-13, static
+promotion and the runtime path cost the same memory. That claim is true of the current
+implementation and false as a statement about the approach, and the difference matters.
+
+**Why they tie today**: for the same combo set S, both hold |S| resident, because
+`st_register_moe_f16_as_af()` **malloc**s the f16 copy eagerly at startup -- it converts
+bf16 -> f16 up front whether the correction path ever fires or not.
+
+**Why they should not tie**: the two use S with completely different access patterns.
+
+| | when S is read | can it be file-backed? |
+|---|---|---|
+| static promotion | **every token** (hot) | no -- a page-out costs a fault per token |
+| runtime adaptive | only when a near-tie fires (25% on this corpus, 1-2% on a quieter one) | **yes** -- cold data |
+
+The bf16 safetensors are *already* mmap'd (`safetensors_open_multi`). The anonymous memory
+comes entirely from materializing the f16 conversion ahead of time, not from needing the source
+resident. Converting at correction time instead would drop the anonymous cost to ~0 and pay
+conversion per firing.
+
+| axis | static promotion | adaptive (today) | adaptive (lazy conversion) |
+|---|---|---|---|
+| resident memory | \|S\|, unavoidable (hot path) | \|S\| (an implementation choice) | **~0, file-backed** |
+| time | negative on CPU, positive on GPU | +15-28% | larger -- converts per firing |
+
+**Static promotion cannot have that third column.** Weights read on every token cannot live on
+disk. So the "runtime correction is what lets a bigger model fit" argument is sound at the level
+of the approach; it is simply not implemented yet.
+
+**Relation to D-d5-13**: that round reduced |S| (fewer combos resident). This is a different
+axis -- keep |S| and remove residency altogether. They multiply rather than overlap.
+
+**D-d5-16 -- lazy hi conversion, deferred**
+  WHY: it is the only remaining construction in which the runtime path beats static promotion on
+  an axis static promotion can reach at all. Every measured axis so far -- time, accuracy,
+  resident bytes at equal S -- either ties or favours static.
+  COST: conversion per firing instead of once at startup, so the time overhead grows with the
+  near-tie rate. On this corpus (25% firing) that is likely a bad trade; the argument only works
+  where near-ties are rare, which is exactly the regime this round did NOT measure.
+  EXIT: keep `st_register_moe_f16_as_af()` as the eager path; add a lazy variant that records the
+  (shard, offset, dtype) triple and converts into a small reusable scratch buffer inside
+  `moe_neartie_reverify_hi()`. `moe_find_af_opt()`'s miss-tolerance (D-d5-13) already models
+  "this combo is not materialized right now".
+
+### D-d5-17: building a low-near-tie corpus, because every measurement so far ran in the regime worst for the runtime path
+
+Every result in D-d5-6 through D-d5-16 comes from one corpus (WikiText-2, 9-token prompts,
+greedy) on which corrections fire on **25-30% of emitted tokens**. That is the regime where
+static promotion should win and does: it pays its cost once, the runtime path pays per firing.
+The regime where the runtime path could win -- near-ties rare, memory tight -- has not been
+measured at all. This round builds it.
+
+**Circularity has to be avoided in the construction.** A near-tie is *defined* by the output
+logit margin, so a corpus cannot be declared low-firing in advance; it has to be measured and
+then selected. Two passes:
+
+1. 96-prompt OLMoE pool from the same WikiText-2 distribution, run through arm A with
+   `QWEN_MOE_NEARTIE_THRESHOLD=1000` -- above any real top1-vs-top2 gap, so **every** emitted
+   token logs its margin (the force-trigger technique D-roadmap-3's own smoke test used).
+   Correction stays OFF: this pass observes the baseline, it must not change it.
+2. Select the 24 prompts with the largest minimum margin -> the low-firing corpus. The existing
+   24-prompt corpus is kept as the high-firing contrast, so the two differ only in selection.
+
+**D-d5-17 -- select on measured margin, from the same text distribution**
+  WHY: the alternative -- switching to obviously-predictable text (code, lists, boilerplate) to
+  get confident predictions -- would confound "near-ties are rare" with "the text is different",
+  and any accuracy difference could then be attributed to either. Selecting within one
+  distribution isolates the firing rate as the variable.
+  COST: a selection effect. Choosing prompts this model is confident on is not the same as
+  sampling a naturally low-firing workload, and the selected set is easier for the model in ways
+  beyond margin. Results describe "the confident tail of this distribution", not "a different
+  workload".
+  EXIT: to remove the selection effect, sample a genuinely different corpus (a code or
+
+## D-quant Phase 1: offline arbitrary-n simulation -- real result, monotonicity mostly fails
+
+Opus's arbitrary-bit-width plan (`.claude/history/2026-09-02_arbitrary_
+bitwidth_quantization_plan.md`) named Phase 1 (offline software simulation,
+zero kernel risk) as the required first step before building any real n-bit
+format. Built and run for real this round, end to end:
+
+**Tooling** (`tools/quant_sim_n.py`, stdlib-only Python -- no numpy/
+safetensors package installed locally, matches this project's zero-new-
+dependency preference): reads a real tensor's BF16 bytes straight out of
+the local checkpoint, quantizes+dequantizes at every n in software (group-64
+symmetric RTN, `qmax=2^(n-1)-1`, generalizing `gguf_quantize_q4g64_error_
+feedback()`'s own convention, plain round-to-nearest-even, no error-feedback
+residual -- Phase 1 only needs "good enough" quantization to locate the
+knee), writes each result as a real single-tensor F32 safetensors override
+file. Sanity-checked: monotonic, smooth rel-L2 decay from n=2 (0.72) to
+n=16 (2.3e-5), roughly halving per +1 bit -- exactly the expected shape for
+a correct quantizer, ~2s per n on a 5.8M-element tensor.
+
+**Engine wiring** (`qwen_infer.c`, opt-in, default-off, regression-verified
+byte-identical when unset): a new `moe_register_hi_role()` helper in
+`moe_neartie_correct_load_attn_hi()` lets ONE (role,layer)'s hi-mirror be
+sourced from the simulated override file instead of the real bf16
+checkpoint (`QWEN_MOE_ATTRIB_SIM_ROLE`/`_LAYER`/`_PATH`), reusing
+`st_register_moe_f32_as_af()` completely unchanged -- zero new parsing,
+zero new decode arithmetic, exactly as promised. Two more small fixes
+along the way, both real: (1) `moe_neartie_attribute()`'s 267-combo sweep
+didn't respect the existing `QWEN_MOE_NEARTIE_HI_COMBOS` selective-registration
+restriction (`D-d5-13`), so a combo-restricted run still replayed all 267
+combos' full forward passes every time -- added the same restriction to the
+attribution loop itself, cutting one n-sweep run from ~15-20min (measured)
+to ~90s; (2) `moe_resolve_ffn_tensors_hi()`'s dense/shared `up_proj` lookup
+used the unguarded `moe_find_af()` (FATAL on a registration miss) while the
+adjacent gate/down lookups on the same lines already used the safe
+`moe_find_af_opt()` -- an asymmetry that FATALed the moment any combo
+restriction excluded `up_proj`, fixed to match the established pattern.
+
+**Pipeline sanity check** (before trusting any sweep number, per the plan):
+a pure F32 passthrough override (zero quantization) reproduced the exact
+same 17/267-hit attribution result as the real, non-simulated run --
+including the specific target combo (`kv_a_proj_with_mqa` layer=13) still
+showing as a hit. Whole-pipeline correctness confirmed before any n-value
+result was trusted.
+
+**Real sweep**: 3 representative (role,layer) targets from req5/pos4's real
+17-hit list (a q_proj attention hit, an MLA-specific kv_a_proj_with_mqa
+attention hit, a shared-FFN hit), n=2..16 each (45 real engine runs, all
+on bob, sequential):
+
+| target | knee (lowest passing n) | knee eff. bpw | knee is a tier (4/8/16) | monotonicity |
+|---|---|---|---|---|
+| `q_proj` layer 5 | **3** | 3.167 | **No** | **VIOLATED** (fails at n=4,5 after passing at n=3; stable from n=6) |
+| `kv_a_proj_with_mqa` layer 13 | 4 | 4.125 | Yes | **VIOLATED** (fails at n=5,6 after passing at n=4; stable from n=7) |
+| `shared_gate_proj` layer 25 | 4 | 4.125 | Yes | OK (stable from n=4 onward) |
+
+**The honest, load-bearing finding**: the weight-level rel-L2 error curve is
+clean and monotonic for all three tensors (as it must be, by construction).
+The DOWNSTREAM argmax-correctness signal is NOT -- 2 of 3 targets show a
+real pass at some low n, a real regression to fail at the next 1-2 n values,
+then a stable pass from a higher n onward. This is not noise from a flaky
+harness: each data point is one full, real engine run reproducing (or not)
+the SAME known-correct answer (473) for the SAME real flip (req5/pos4), and
+the pattern is directly analogous to what D-roadmap-2's local-vs-upstream
+finding already established -- a single role's local precision interacts
+with 26 other layers' worth of accumulated residual state in ways that
+aren't guaranteed to move in one direction as that one role's precision
+increases.
+
+**Direct consequence for the arbitrary-n program's own open questions**:
+- **D-quant-1** (range [2..16]) and **D-quant-2** (n's definition) are
+  unaffected by this finding.
+- **D-quant-3** (ablation-priority search, §3.3 of the Opus plan) assumed
+  "M-scalar" monotonicity (`if n works, so does n'>n`) as its load-bearing
+  premise for turning the search into an efficient bisection. **That premise
+  is now falsified in 2 of 3 real test cases**, in exactly the low-n region
+  where a real search would spend most of its effort. Per the Opus plan's
+  own §3.5 fallback (written in anticipation of exactly this outcome): do
+  not force a bisection onto a non-monotone function. A real Phase 2 search
+  needs either (a) an exhaustive scan over a small restricted ladder (no
+  monotonicity assumed), or (b) a "smallest n that ever passed" report
+  stated honestly as non-monotone, not a bisected "the" knee.
+- **The central go/no-go question Phase 1 was built to answer**: does any
+  knee land at a non-tier value? **Yes** -- `q_proj`/layer5's true stable
+  knee is n=6, not 4 or 8. This alone means the arbitrary-n program is not
+  automatically unjustified (unlike the "every knee lands on 4/8/16, close
+  here" scenario the plan named as its kill condition) -- but the
+  monotonicity finding means Phase 2's search design needs revisiting
+  before committing further, not a straight green light to Phase 3.
+
+Full per-n data (both pass/fail and rel-L2) is in the sweep summary; not
+reproduced verbatim here since the table above already carries the
+load-bearing numbers.
+  boilerplate set) and report the firing rate that comes out, rather than selecting for it.

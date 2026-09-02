@@ -3291,6 +3291,20 @@ static MoeLayerTensors *g_moe_lt_cur = g_moe_lt;
 // below can reference it without a forward declaration.
 static MoeLayerTensors g_moe_lt_active[MOE_MAXLAYERS];
 
+// D-d5-13: selective-hi correction. The blanket correction path swaps the WHOLE table to
+// g_moe_lt_hi, so it needs every layer's bits=16 mirror resident -- the same memory static
+// promotion costs, which is why the runtime path currently buys no memory advantage at all
+// (D-d5-12). With a combo list active, only the listed (role, layer) pairs are registered and
+// only those are swapped in; everything else stays 4-bit.
+static MoeLayerTensors g_moe_lt_sel[MOE_MAXLAYERS];
+static int g_moe_hi_combos_on = 0;
+
+// D-d5-15: embed_tokens/lm_head live outside MoeLayerTensors -- they are passed as arguments
+// (t_embed/t_lmhead) rather than looked up per layer -- so promoting them needs its own pair of
+// active pointers instead of a field swap. NULL until moe_lt_active_init() runs.
+static MoeAFTensor *g_moe_embed_active = NULL, *g_moe_lmhead_active = NULL;
+static MoeAFTensor *g_moe_embed_hi = NULL, *g_moe_lmhead_hi = NULL;
+
 // Phase 4 sub-part 1, Step 1: shape cross-checks. Every (out,in) pair here was confirmed by
 // reading the real call sites, not assumed -- moe_mla_attention() (q_proj/kv_a_proj/kv_b_proj/
 // o_proj) and moe_forward_token()'s dense/switch/shared branches (dense_*/switch_*/shared_*,
@@ -3351,14 +3365,14 @@ static void moe_resolve_attn_tensors_gqa(int l, MoeLayerTensors *t) {
 // speculatively -- MOE_ST_ATTN_ROLES_MLA already exists and is unused by this pass).
 static void moe_resolve_attn_tensors_gqa_hi(int l, MoeLayerTensors *t) {
     char nm[256];
-    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.q_proj__neartie_hi",l); t->q_proj = moe_find_af(nm);
-    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.k_proj__neartie_hi",l); t->k_proj = moe_find_af(nm);
-    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.v_proj__neartie_hi",l); t->v_proj = moe_find_af(nm);
-    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.o_proj__neartie_hi",l); t->o_proj = moe_find_af(nm);
-    moe_check_af_shape(t->q_proj, "q_proj__neartie_hi", l, (long)MOE_N_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
-    moe_check_af_shape(t->k_proj, "k_proj__neartie_hi", l, (long)MOE_N_KV_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
-    moe_check_af_shape(t->v_proj, "v_proj__neartie_hi", l, (long)MOE_N_KV_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
-    moe_check_af_shape(t->o_proj, "o_proj__neartie_hi", l, MOE_HIDDEN, (long)MOE_N_HEADS*MOE_HEAD_DIM);
+    // D-d5-13: moe_find_af_opt, not moe_find_af. With a selective combo list only the listed
+    // (role, layer) pairs are registered, so a lookup miss is expected and must leave the
+    // production 4-bit pointer the struct-copy already placed here -- not FATAL.
+
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.q_proj__neartie_hi",l); { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->q_proj = h_; }
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.k_proj__neartie_hi",l); { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->k_proj = h_; }
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.v_proj__neartie_hi",l); { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->v_proj = h_; }
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.o_proj__neartie_hi",l); { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->o_proj = h_; }
 }
 
 // D-roadmap-3 MLA extension: mirrors moe_resolve_attn_tensors_mla() (production) exactly, but
@@ -3368,14 +3382,14 @@ static void moe_resolve_attn_tensors_gqa_hi(int l, MoeLayerTensors *t) {
 // a norm tensor (already F32) and not one of MOE_ST_ATTN_ROLES_MLA's is_af==1 entries.
 static void moe_resolve_attn_tensors_mla_hi(int l, MoeLayerTensors *t) {
     char nm[256];
-    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.q_proj__neartie_hi",l);            t->q_proj = moe_find_af(nm);
-    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.kv_a_proj_with_mqa__neartie_hi",l); t->kv_a_proj = moe_find_af(nm);
-    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.kv_b_proj__neartie_hi",l);          t->kv_b_proj = moe_find_af(nm);
-    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.o_proj__neartie_hi",l);             t->o_proj = moe_find_af(nm);
-    moe_check_af_shape(t->q_proj,    "q_proj__neartie_hi",    l, MOE_QDIM,    MOE_HIDDEN);
-    moe_check_af_shape(t->kv_a_proj, "kv_a_proj__neartie_hi", l, MOE_KVA_OUT, MOE_HIDDEN);
-    moe_check_af_shape(t->kv_b_proj, "kv_b_proj__neartie_hi", l, MOE_KVB_OUT, MOE_KV_LORA_RANK);
-    moe_check_af_shape(t->o_proj,    "o_proj__neartie_hi",    l, MOE_HIDDEN,  MOE_ATTN_OUT);
+    // D-d5-13: moe_find_af_opt, not moe_find_af. With a selective combo list only the listed
+    // (role, layer) pairs are registered, so a lookup miss is expected and must leave the
+    // production 4-bit pointer the struct-copy already placed here -- not FATAL.
+
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.q_proj__neartie_hi",l);            { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->q_proj = h_; }
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.kv_a_proj_with_mqa__neartie_hi",l); { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->kv_a_proj = h_; }
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.kv_b_proj__neartie_hi",l);          { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->kv_b_proj = h_; }
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.o_proj__neartie_hi",l);             { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->o_proj = h_; }
 }
 
 // D-roadmap-4 FFN extension (2026-09-02): mirrors production's dense/shared resolve (see
@@ -3396,20 +3410,23 @@ static void moe_resolve_attn_tensors_mla_hi(int l, MoeLayerTensors *t) {
 // already uses for kv_a_ln.
 static void moe_resolve_ffn_tensors_hi(int l, MoeLayerTensors *t) {
     char nm[256];
+    // D-d5-13: moe_find_af_opt, not moe_find_af. With a selective combo list only the listed
+    // (role, layer) pairs are registered, so a lookup miss is expected and must leave the
+    // production 4-bit pointer the struct-copy already placed here -- not FATAL.
+
     if (l < MOE_FIRST_DENSE_LAYERS) {
-        snprintf(nm,sizeof nm,"model.layers.%d.mlp.gate_proj__neartie_hi",l); t->dense_gate = moe_find_af(nm);
-        snprintf(nm,sizeof nm,"model.layers.%d.mlp.up_proj__neartie_hi",l);   t->dense_up   = moe_find_af(nm);
-        snprintf(nm,sizeof nm,"model.layers.%d.mlp.down_proj__neartie_hi",l); t->dense_down = moe_find_af(nm);
-        moe_check_af_shape(t->dense_gate, "dense_gate__neartie_hi", l, MOE_DENSE_IM, MOE_HIDDEN);
-        moe_check_af_shape(t->dense_up,   "dense_up__neartie_hi",   l, MOE_DENSE_IM, MOE_HIDDEN);
-        moe_check_af_shape(t->dense_down, "dense_down__neartie_hi", l, MOE_HIDDEN,   MOE_DENSE_IM);
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.gate_proj__neartie_hi",l); { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->dense_gate = h_; }
+        // ROI-G Phase 1 fix: was moe_find_af() (unguarded, FATAL on miss) -- the lone asymmetry
+        // against gate/down's already-guarded moe_find_af_opt() pattern on this same line pair,
+        // found live: a QWEN_MOE_NEARTIE_HI_COMBOS restriction naming only gate/down (or a
+        // different role entirely) still unconditionally required up_proj to be registered,
+        // FATALing instead of falling back to the production pointer like every other role here.
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.up_proj__neartie_hi",l);   { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->dense_up = h_; }
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.down_proj__neartie_hi",l); { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->dense_down = h_; }
     } else if (MOE_N_SHARED > 0) {
-        snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.gate_proj__neartie_hi",l); t->shared_gate = moe_find_af(nm);
-        snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.up_proj__neartie_hi",l);   t->shared_up   = moe_find_af(nm);
-        snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.down_proj__neartie_hi",l); t->shared_down = moe_find_af(nm);
-        moe_check_af_shape(t->shared_gate, "shared_gate__neartie_hi", l, MOE_SH_IM,  MOE_HIDDEN);
-        moe_check_af_shape(t->shared_up,   "shared_up__neartie_hi",   l, MOE_SH_IM,  MOE_HIDDEN);
-        moe_check_af_shape(t->shared_down, "shared_down__neartie_hi", l, MOE_HIDDEN, MOE_SH_IM);
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.gate_proj__neartie_hi",l); { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->shared_gate = h_; }
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.up_proj__neartie_hi",l);   { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->shared_up = h_; }
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.down_proj__neartie_hi",l); { MoeAFTensor *h_ = moe_find_af_opt(nm); if (h_) t->shared_down = h_; }
     }
     // D-d5-9: routed experts, only for layers whose hi tensors were actually registered
     // (QWEN_MOE_NEARTIE_HI_EXPERT_LAYERS). A layer that was not loaded keeps the production
@@ -5165,7 +5182,9 @@ static void moe_neartie_reverify_hi(const uint8_t *af, MoeAFTensor *t_embed, Moe
 
     float *logits_tmp = g_mnc_logits_hi;
     int n_scalar = 0;
-    g_moe_lt_cur = g_moe_lt_hi;   // swap -- moe_forward_token()'s one g_moe_lt_cur reference now reads bits=16
+    // D-d5-13: selective table when a combo list is active, whole hi table otherwise (the
+    // original behavior, kept as the no-attribution-history fallback -- see D-d5-12's COST).
+    g_moe_lt_cur = g_moe_hi_combos_on ? g_moe_lt_sel : g_moe_lt_hi;
     for (int p = start; p <= pos; p++) {
         moe_forward_token(af, t_embed, t_lmhead, w_finalnorm, rq_hist[req][p], p, logits_tmp, NULL, NULL, NULL);
         n_scalar++;
@@ -5535,6 +5554,11 @@ typedef enum {
     // that layer's projection together, matching how dense/shared are already treated (whole
     // tensors) and how the engine stores them (one E-stacked AF tensor per projection).
     MOE_ATTRIB_EXPERT_GATE, MOE_ATTRIB_EXPERT_UP, MOE_ATTRIB_EXPERT_DOWN,
+    // D-d5-15: the two global (non-per-layer) tensors. lm_head is the one that produces the very
+    // logits whose top1-vs-top2 margin this whole mechanism keys off, so leaving it at 4 bits
+    // put a quantized tensor inside the reference every other arm is scored against. Layer index
+    // is 0 by convention -- neither is per-layer.
+    MOE_ATTRIB_EMBED_TOKENS, MOE_ATTRIB_LM_HEAD,
     MOE_ATTRIB_ROLE_COUNT
 } MoeAttribRole;
 static const char *MOE_ATTRIB_ROLE_NAMES[MOE_ATTRIB_ROLE_COUNT] = {
@@ -5545,6 +5569,7 @@ static const char *MOE_ATTRIB_ROLE_NAMES[MOE_ATTRIB_ROLE_COUNT] = {
     "dense_gate_proj", "dense_up_proj", "dense_down_proj",
     "shared_gate_proj", "shared_up_proj", "shared_down_proj",
     "expert_gate_proj", "expert_up_proj", "expert_down_proj",   // D-d5-9
+    "embed_tokens", "lm_head",                                  // D-d5-15 (global, layer 0)
 };
 // Layer-dependent validity: attention roles are valid at every layer; dense only at the (single,
 // deepseek_v2) dense layer; shared only at MoE layers, and only when this model actually has
@@ -5568,6 +5593,8 @@ static int moe_attrib_role_valid_at(MoeAttribRole role, int layer) {
             return MOE_ATTN_KIND == MOE_ATTN_MLA;
         case MOE_ATTRIB_K_PROJ: case MOE_ATTRIB_V_PROJ:
             return MOE_ATTN_KIND == MOE_ATTN_GQA;
+        case MOE_ATTRIB_EMBED_TOKENS: case MOE_ATTRIB_LM_HEAD:
+            return layer == 0;   // D-d5-15: global tensors, addressed at layer 0 by convention
         default:
             return 1;   // q_proj/o_proj: both architectures, every layer
     }
@@ -5746,6 +5773,10 @@ static void moe_attrib_combo87_test(const uint8_t *af, MoeAFTensor *t_embed, Moe
 // MOE_VOCAB is a runtime value (varies per model), not a compile-time constant -- can't be a
 // fixed-size file-scope array (matches g_mnc_logits_hi's own malloc-at-init pattern just above).
 static float *g_moe_attrib_logits_scratch = NULL;
+// ROI-G Phase 1: forward decl only -- g_moe_hi_combo's array declaration (further down) needs
+// MOE_ATTRIB_ROLE_COUNT, which isn't defined until after this function. A function prototype
+// has no such ordering requirement.
+static int moe_hi_combo_wanted(int role, int layer);
 static void moe_neartie_attribute(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
                                    float *w_finalnorm, int req, int pos, int corrected_argmax) {
     if (!g_moe_attrib_on) return;
@@ -5768,6 +5799,16 @@ static void moe_neartie_attribute(const uint8_t *af, MoeAFTensor *t_embed, MoeAF
     for (int r = 0; r < MOE_ATTRIB_ROLE_COUNT; r++) {
         for (int l = 0; l < MOE_NL; l++) {
             if (!moe_attrib_role_valid_at((MoeAttribRole)r, l)) continue;   // e.g. dense role at a shared-expert layer
+            // ROI-G Phase 1 (2026-09-02): reuse the same QWEN_MOE_NEARTIE_HI_COMBOS restriction
+            // (D-d5-13) here, not just at registration -- without this, a combo-restricted run
+            // still pays for the FULL 267-combo replay sweep (each combo replays baseline, a
+            // real forward pass, not a free no-op) even though only 1 combo's hi-mirror is
+            // actually non-production. Cuts an n-sweep run from ~15-20min (measured, Step 0/3 of
+            // the arbitrary-n plan) to ~seconds of attribution overhead. moe_hi_combo_wanted()
+            // is forward-declared (defined next to g_moe_hi_combo itself, further down) so this
+            // doesn't need g_moe_hi_combo's array declaration -- which depends on
+            // MOE_ATTRIB_ROLE_COUNT, defined after this function -- moved earlier.
+            if (g_moe_hi_combos_on && !moe_hi_combo_wanted(r, l)) continue;
             tested++;
             int am = moe_attrib_replay_one(af, t_embed, t_lmhead, w_finalnorm, req, pos,
                                             (MoeAttribRole)r, l, g_moe_attrib_logits_scratch);
@@ -5827,8 +5868,72 @@ static int g_moe_neartie_correct_on = 0;   // QWEN_MOE_NEARTIE_CORRECT, default 
 //   deliberate -- the engine's job is "apply promotions it's told about," not "decide when."
 //   EXIT: point moe_promotion_maybe_apply() at Supabase instead of a file; everything else
 //   (g_moe_lt_active, moe_promotion_apply_one(), the admission-loop call site) is unchanged.
+// D-d5-13: which (role, layer) pairs get a bits=16 mirror. Same "<role> <layer>" file format
+// QWEN_MOE_PROMOTION_FILE already uses, so an attribution result can be fed to either without
+// translation. Declared after the role enum so it can be indexed by MoeAttribRole.
+static int g_moe_hi_combo[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
+
+// ROI-G Phase 1: definition for the forward decl above moe_neartie_attribute().
+static int moe_hi_combo_wanted(int role, int layer) { return g_moe_hi_combo[role][layer]; }
+
+// Forward decl: moe_attrib_role_from_name() is defined further down (next to the promotion-file
+// parser that also uses it); same "declare up front, define later" pattern this file already
+// uses for moe_neartie_correct_load_attn_hi().
+static int moe_attrib_role_from_name(const char *name);
+
+static int moe_hi_combos_load(const char *path) {
+    FILE *f = fopen(path, "r");
+    if (!f) { fprintf(stderr, "FATAL: QWEN_MOE_NEARTIE_HI_COMBOS: cannot open '%s'\n", path); exit(1); }
+    char role_buf[64]; int layer, n = 0;
+    while (fscanf(f, "%63s %d", role_buf, &layer) == 2) {
+        if (layer < 0 || layer >= MOE_NL) continue;
+        int r = moe_attrib_role_from_name(role_buf);
+        if (r < 0) { fprintf(stderr, "FATAL: QWEN_MOE_NEARTIE_HI_COMBOS: unknown role '%s'\n", role_buf); exit(1); }
+        if (!g_moe_hi_combo[r][layer]) { g_moe_hi_combo[r][layer] = 1; n++; }
+    }
+    fclose(f);
+    g_moe_hi_combos_on = 1;
+    return n;
+}
+
+// Production everywhere, bits=16 only at the listed combos. Mirrors moe_promotion_apply_one()'s
+// switch -- same role -> field mapping, different destination table.
+static void moe_lt_sel_init(void) {
+    for (int l = 0; l < MOE_NL; l++) g_moe_lt_sel[l] = g_moe_lt[l];
+    if (!g_moe_hi_combos_on) return;
+    int applied = 0;
+    for (int r = 0; r < MOE_ATTRIB_ROLE_COUNT; r++)
+        for (int l = 0; l < MOE_NL; l++) {
+            if (!g_moe_hi_combo[r][l]) continue;
+            MoeLayerTensors *d = &g_moe_lt_sel[l], *h = &g_moe_lt_hi[l];
+            switch ((MoeAttribRole)r) {
+                case MOE_ATTRIB_Q_PROJ:      d->q_proj      = h->q_proj;      break;
+                case MOE_ATTRIB_KV_A_PROJ:   d->kv_a_proj   = h->kv_a_proj;   break;
+                case MOE_ATTRIB_KV_B_PROJ:   d->kv_b_proj   = h->kv_b_proj;   break;
+                case MOE_ATTRIB_O_PROJ:      d->o_proj      = h->o_proj;      break;
+                case MOE_ATTRIB_K_PROJ:      d->k_proj      = h->k_proj;      break;
+                case MOE_ATTRIB_V_PROJ:      d->v_proj      = h->v_proj;      break;
+                case MOE_ATTRIB_DENSE_GATE:  d->dense_gate  = h->dense_gate;  break;
+                case MOE_ATTRIB_DENSE_UP:    d->dense_up    = h->dense_up;    break;
+                case MOE_ATTRIB_DENSE_DOWN:  d->dense_down  = h->dense_down;  break;
+                case MOE_ATTRIB_SHARED_GATE: d->shared_gate = h->shared_gate; break;
+                case MOE_ATTRIB_SHARED_UP:   d->shared_up   = h->shared_up;   break;
+                case MOE_ATTRIB_SHARED_DOWN: d->shared_down = h->shared_down; break;
+                case MOE_ATTRIB_EXPERT_GATE: d->switch_gate = h->switch_gate; break;
+                case MOE_ATTRIB_EXPERT_UP:   d->switch_up   = h->switch_up;   break;
+                case MOE_ATTRIB_EXPERT_DOWN: d->switch_down = h->switch_down; break;
+                default: continue;
+            }
+            applied++;
+        }
+    fprintf(stderr, "[moe neartie] selective-hi table built: %d role x layer combos at bits=16, "
+                    "rest stays 4-bit\n", applied);
+}
+
 static void moe_lt_active_init(void) {
     for (int l = 0; l < MOE_NL; l++) g_moe_lt_active[l] = g_moe_lt[l];
+    g_moe_embed_active  = moe_find_af("model.embed_tokens");   // D-d5-15: production until promoted
+    g_moe_lmhead_active = moe_find_af("lm_head");
 }
 
 static int g_moe_promoted[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];   // avoid redundant reapply/logging on repeat polls
@@ -5855,6 +5960,9 @@ static void moe_promotion_apply_one(MoeAttribRole role, int layer) {
         case MOE_ATTRIB_EXPERT_GATE: g_moe_lt_active[layer].switch_gate = g_moe_lt_hi[layer].switch_gate; break;
         case MOE_ATTRIB_EXPERT_UP:   g_moe_lt_active[layer].switch_up   = g_moe_lt_hi[layer].switch_up;   break;
         case MOE_ATTRIB_EXPERT_DOWN: g_moe_lt_active[layer].switch_down = g_moe_lt_hi[layer].switch_down; break;
+        // D-d5-15: pointer swap, not a field swap -- see g_moe_embed_active's own comment.
+        case MOE_ATTRIB_EMBED_TOKENS: if (!g_moe_embed_hi)  return; g_moe_embed_active  = g_moe_embed_hi;  break;
+        case MOE_ATTRIB_LM_HEAD:      if (!g_moe_lmhead_hi) return; g_moe_lmhead_active = g_moe_lmhead_hi; break;
         default: return;
     }
     g_moe_promoted[role][layer] = 1;
@@ -6230,8 +6338,17 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
                             "(genuine bf16/original checkpoint -- see ROADMAP.md D-roadmap-3)\n");
             exit(1);
         }
+        // D-d5-13: the combo list must load BEFORE registration -- registration filters on it,
+        // which is where the memory saving actually comes from. Unset = register everything and
+        // swap the whole table, i.e. the pre-D-d5-13 behavior byte for byte.
+        const char *env_hi_combos = getenv("QWEN_MOE_NEARTIE_HI_COMBOS");
+        if (env_hi_combos && env_hi_combos[0]) {
+            int n = moe_hi_combos_load(env_hi_combos);
+            fprintf(stderr, "[moe neartie] selective-hi: %d combos from '%s'\n", n, env_hi_combos);
+        }
         moe_neartie_correct_load_attn_hi(env_neartie_correct_st);
         moe_resolve_layer_tensors_hi();
+        moe_lt_sel_init();          // D-d5-13, no-op table copy when no combo list is active
         moe_neartie_correct_init();
         long attn_hi_bytes = 0;
         // D-roadmap-3 MLA extension bugfix (2026-09-01, found live via a real SIGSEGV on
@@ -6348,6 +6465,13 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
             if (mcb_freed_before[s]) admitted_after_evict++;
             rq_slot_of[r] = s;
             moe_promotion_maybe_apply();   // D-roadmap-4 Phase 6 (D6): once per admission, not per token
+            // D-d5-15: re-read the global tensors after promotion. Everything else the forward
+            // uses is reached through g_moe_lt_cur, which promotion updates in place; these two
+            // are locals captured before the loop, so they have to be refreshed here or a
+            // promotion of embed_tokens/lm_head would apply to nothing -- the same shape of
+            // failure D-d5-11 was.
+            if (g_moe_embed_active)  t_embed  = g_moe_embed_active;
+            if (g_moe_lmhead_active) t_lmhead = g_moe_lmhead_active;
 
             // Phase MoE-4c 조정2: 요청ID로 키잉되는 Tier2 replay가 필요로 하는 실제 토큰열.
             // prompt 구간은 두 PREFILL_MODE 모두 admission 시점에 이미 확정돼있음.
@@ -13095,6 +13219,32 @@ static const MoeStExpertRole MOE_ST_EXPERT_ROLES[] = {   // always 3, every rout
 //   registers MOE_ST_DENSE_ROLES (l < MOE_FIRST_DENSE_LAYERS) and MOE_ST_SHARED_ROLES
 //   (l >= MOE_FIRST_DENSE_LAYERS, MOE_N_SHARED>0) alongside the existing attention roles, same
 //   "__neartie_hi" suffix convention, same st_register_moe_f16_as_af() call -- no new mechanism.
+// ROI-G Phase 1 (2026-09-02): opt-in override so ONE (role,layer)'s hi-mirror can be sourced
+// from a software-simulated arbitrary-n quantized tensor (tools/quant_sim_n.py) instead of the
+// real bf16 checkpoint -- see .claude/history/2026-09-02_arbitrary_bitwidth_quantization_plan.md
+// Phase 1. Reuses st_register_moe_f32_as_af() UNCHANGED (it already reads any dtype from
+// whatever g_st_moe currently points at) via the same save/restore-g_st_moe idiom this function
+// already uses once for the whole correction checkpoint -- here narrowed to one tensor. All
+// three env vars unset (the default) is a straight passthrough to the original
+// st_register_moe_f16_as_af() call -- byte-identical to before this existed (regression-verified).
+static MoeAFTensor *moe_register_hi_role(const char *role_name, int layer,
+                                          const char *st_name, const char *ename) {
+    const char *sim_role  = getenv("QWEN_MOE_ATTRIB_SIM_ROLE");
+    const char *sim_layer = getenv("QWEN_MOE_ATTRIB_SIM_LAYER");
+    const char *sim_path  = getenv("QWEN_MOE_ATTRIB_SIM_PATH");
+    if (sim_role && sim_role[0] && sim_layer && sim_layer[0] && sim_path && sim_path[0]
+        && layer == atoi(sim_layer) && !strcmp(role_name, sim_role)) {
+        SafetensorsMulti *saved = g_st_moe;
+        g_st_moe = safetensors_open_multi(sim_path);
+        MoeAFTensor *w = st_register_moe_f32_as_af("sim", ename);
+        g_st_moe = saved;
+        fprintf(stderr, "[moe attrib sim] role=%s layer=%d overridden from '%s' (bits=32, simulated)\n",
+                role_name, layer, sim_path);
+        return w;
+    }
+    return st_register_moe_f16_as_af(st_name, ename);
+}
+
 static void moe_neartie_correct_load_attn_hi(const char *safetensors_path) {
     const MoeStRole *attn_roles = (MOE_ATTN_KIND == MOE_ATTN_MLA) ? MOE_ST_ATTN_ROLES_MLA : MOE_ST_ATTN_ROLES_GQA;
     size_t n_attn_roles = (MOE_ATTN_KIND == MOE_ATTN_MLA)
@@ -13110,30 +13260,42 @@ static void moe_neartie_correct_load_attn_hi(const char *safetensors_path) {
         for (size_t r = 0; r < n_attn_roles; r++) {
             const MoeStRole *role = &attn_roles[r];
             if (!role->is_af) continue;   // skip q_norm/k_norm (GQA) or kv_a_layernorm (MLA) -- already F32
+            if (g_moe_hi_combos_on) {     // D-d5-13: register only what the combo list asks for
+                int ri = moe_attrib_role_from_name(role->role);
+                if (ri < 0 || !g_moe_hi_combo[ri][l]) continue;
+            }
             snprintf(name, sizeof name, role->st_pattern, l);
             snprintf(ename, sizeof ename, role->engine_pattern, l);
             size_t n = strlen(ename);
             snprintf(ename + n, sizeof ename - n, "__neartie_hi");
-            st_register_moe_f16_as_af(name, ename);
+            moe_register_hi_role(role->role, l, name, ename);
         }
         if (l < MOE_FIRST_DENSE_LAYERS) {
             for (size_t r = 0; r < n_dense_roles; r++) {
                 const MoeStRole *role = &MOE_ST_DENSE_ROLES[r];
+                if (g_moe_hi_combos_on) {   // D-d5-13
+                    int ri = moe_attrib_role_from_name(role->role);
+                    if (ri < 0 || !g_moe_hi_combo[ri][l]) continue;
+                }
                 snprintf(name, sizeof name, role->st_pattern, l);
                 snprintf(ename, sizeof ename, role->engine_pattern, l);
                 size_t n = strlen(ename);
                 snprintf(ename + n, sizeof ename - n, "__neartie_hi");
-                st_register_moe_f16_as_af(name, ename);
+                moe_register_hi_role(role->role, l, name, ename);
                 n_dense_registered++;
             }
         } else if (MOE_N_SHARED > 0) {
             for (size_t r = 0; r < n_shared_roles; r++) {
                 const MoeStRole *role = &MOE_ST_SHARED_ROLES[r];
+                if (g_moe_hi_combos_on) {   // D-d5-13
+                    int ri = moe_attrib_role_from_name(role->role);
+                    if (ri < 0 || !g_moe_hi_combo[ri][l]) continue;
+                }
                 snprintf(name, sizeof name, role->st_pattern, l);
                 snprintf(ename, sizeof ename, role->engine_pattern, l);
                 size_t n = strlen(ename);
                 snprintf(ename + n, sizeof ename - n, "__neartie_hi");
-                st_register_moe_f16_as_af(name, ename);
+                moe_register_hi_role(role->role, l, name, ename);
                 n_shared_registered++;
             }
         }
@@ -13176,13 +13338,28 @@ static void moe_neartie_correct_load_attn_hi(const char *safetensors_path) {
         };
         for (int l = MOE_FIRST_DENSE_LAYERS; l < MOE_NL; l++) {
             if (!want[l]) continue;
+            static const int ex_role[3] = { MOE_ATTRIB_EXPERT_GATE, MOE_ATTRIB_EXPERT_UP,
+                                            MOE_ATTRIB_EXPERT_DOWN };
             for (int r = 0; r < 3; r++) {
+                if (g_moe_hi_combos_on && !g_moe_hi_combo[ex_role[r]][l]) continue;   // D-d5-13
                 snprintf(ename, sizeof ename, ex_en[r], l);
                 st_register_moe_experts_f16_as_af(ex_st[r], l, MOE_N_EXPERTS, ename);
                 n_expert_registered++;
             }
             fprintf(stderr, "[moe neartie] expert hi layer %d registered (3 roles, E=%d)\n", l, MOE_N_EXPERTS);
         }
+    }
+
+    // D-d5-15: the two global tensors. E=1, so st_register_moe_f16_as_af() covers them directly.
+    {
+        int want_e = !g_moe_hi_combos_on || g_moe_hi_combo[MOE_ATTRIB_EMBED_TOKENS][0];
+        int want_l = !g_moe_hi_combos_on || g_moe_hi_combo[MOE_ATTRIB_LM_HEAD][0];
+        if (want_e) g_moe_embed_hi  = st_register_moe_f16_as_af("model.embed_tokens.weight",
+                                                                 "model.embed_tokens__neartie_hi");
+        if (want_l) g_moe_lmhead_hi = st_register_moe_f16_as_af("lm_head.weight",
+                                                                 "lm_head__neartie_hi");
+        if (want_e || want_l)
+            fprintf(stderr, "[moe neartie] global hi registered: embed=%d lm_head=%d\n", want_e, want_l);
     }
 
     g_st_moe = saved;

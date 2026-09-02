@@ -1,0 +1,46 @@
+target	role	layer	n	pass	logline
+q_proj_l5	q_proj	5	2	0	
+q_proj_l5	q_proj	5	3	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+q_proj_l5	q_proj	5	4	0	
+q_proj_l5	q_proj	5	5	0	
+q_proj_l5	q_proj	5	6	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+q_proj_l5	q_proj	5	7	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+q_proj_l5	q_proj	5	8	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+q_proj_l5	q_proj	5	9	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+q_proj_l5	q_proj	5	10	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+q_proj_l5	q_proj	5	11	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+q_proj_l5	q_proj	5	12	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+q_proj_l5	q_proj	5	13	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+q_proj_l5	q_proj	5	14	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+q_proj_l5	q_proj	5	15	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+q_proj_l5	q_proj	5	16	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_a_l13	kv_a_proj_with_mqa	13	2	0	
+kv_a_l13	kv_a_proj_with_mqa	13	3	0	
+kv_a_l13	kv_a_proj_with_mqa	13	4	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_a_l13	kv_a_proj_with_mqa	13	5	0	
+kv_a_l13	kv_a_proj_with_mqa	13	6	0	
+kv_a_l13	kv_a_proj_with_mqa	13	7	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_a_l13	kv_a_proj_with_mqa	13	8	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_a_l13	kv_a_proj_with_mqa	13	9	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_a_l13	kv_a_proj_with_mqa	13	10	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_a_l13	kv_a_proj_with_mqa	13	11	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_a_l13	kv_a_proj_with_mqa	13	12	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_a_l13	kv_a_proj_with_mqa	13	13	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_a_l13	kv_a_proj_with_mqa	13	14	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_a_l13	kv_a_proj_with_mqa	13	15	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+kv_a_l13	kv_a_proj_with_mqa	13	16	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_gate_l25	shared_gate_proj	25	2	0	
+shared_gate_l25	shared_gate_proj	25	3	0	
+shared_gate_l25	shared_gate_proj	25	4	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_gate_l25	shared_gate_proj	25	5	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_gate_l25	shared_gate_proj	25	6	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_gate_l25	shared_gate_proj	25	7	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_gate_l25	shared_gate_proj	25	8	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_gate_l25	shared_gate_proj	25	9	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_gate_l25	shared_gate_proj	25	10	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_gate_l25	shared_gate_proj	25	11	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_gate_l25	shared_gate_proj	25	12	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_gate_l25	shared_gate_proj	25	13	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_gate_l25	shared_gate_proj	25	14	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_gate_l25	shared_gate_proj	25	15	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
+shared_gate_l25	shared_gate_proj	25	16	1	[moe attrib] req=5 pos=4 done: 1/1 combos individually reproduced the corrected answer
