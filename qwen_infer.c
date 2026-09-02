@@ -2409,17 +2409,28 @@ static uint8_t *moe_mmap_file(const char *path, long *out_bytes) {
     return (uint8_t *)p;
 }
 
+// D-d5-4 (2026-09-02): the AF-tensor registry capacity, previously the bare literal 512
+// repeated across one calloc() and nine bounds checks.
+//   WHY: Qwen3-30B-A3B registers 338 production AF tensors, and turning the D-roadmap-3
+//   correction path on adds one bits=16 "__neartie_hi" mirror per attention role per layer
+//   (48*4 = 192) -> 530, over the old cap. It failed loudly ("FATAL: >MOE_MAX_AF_TENSORS moe af tensors
+//   (safetensors)"), not silently, but it failed -- no model this project had run before was
+//   deep enough to reach it (DeepSeek 27 layers, OLMoE 16).
+//   COST: sizeof(MoeAFTensor) * 512 extra bytes of zero-filled calloc, once, at load.
+//   EXIT: if a model ever needs more, raise this one constant rather than the literals.
+#define MOE_MAX_AF_TENSORS 1024
+
 static MoeAFTensor *g_moe_af = NULL;
 static int g_moe_naf = 0;
 static void moe_load_layout_af(const char *path) {
     FILE *f = fopen(path, "r");
     if (!f) { perror(path); exit(1); }
-    g_moe_af = calloc(512, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
+    g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
     char name[128];
     long E, out, in, ng, po, pb, so, bo;
     while (fscanf(f, "%127s %ld %ld %ld %ld %ld %ld %ld %ld",
                   name, &E, &out, &in, &ng, &po, &pb, &so, &bo) == 9) {
-        if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors\n"); exit(1); }
+        if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors\n"); exit(1); }
         MoeAFTensor *t = &g_moe_af[g_moe_naf++];
         strncpy(t->name, name, sizeof t->name - 1);
         t->E = E; t->out = out; t->in = in; t->ng = ng;
@@ -2434,6 +2445,14 @@ static void moe_load_layout_af(const char *path) {
 static MoeAFTensor *moe_find_af(const char *name) {
     for (int i = 0; i < g_moe_naf; i++) if (!strcmp(g_moe_af[i].name, name)) return &g_moe_af[i];
     fprintf(stderr, "FATAL: moe af tensor not found: %s\n", name); exit(1);
+}
+// D-d5-9: miss-tolerant sibling. The routed-expert "__neartie_hi" tensors are registered
+// per-layer on demand (28.8GB if every layer were loaded eagerly on DeepSeek-V2-Lite), so the
+// hi-resolver has to cope with a layer whose experts were deliberately not loaded -- every other
+// role is all-or-nothing and keeps using moe_find_af()'s hard FATAL.
+static MoeAFTensor *moe_find_af_opt(const char *name) {
+    for (int i = 0; i < g_moe_naf; i++) if (!strcmp(g_moe_af[i].name, name)) return &g_moe_af[i];
+    return NULL;
 }
 // Q-LUT research spike (RESULTS.md's TurboQuant-adjacent PolarQuant/Lloyd-Max writeup):
 // off by default (g_moe_lut_enabled==0 keeps moe_lut_apply()==(float)nib, i.e. every existing
@@ -3263,6 +3282,15 @@ static MoeLayerTensors g_moe_lt[MOE_MAXLAYERS];
 static MoeLayerTensors g_moe_lt_hi[MOE_MAXLAYERS];
 static MoeLayerTensors *g_moe_lt_cur = g_moe_lt;
 
+// D-roadmap-4 Phase 6 (D5): the PERMANENTLY-active per-role table, distinct from g_moe_lt_hi's
+// ephemeral swap-then-restore pattern above. Only run_moe_cbatch_verify_mode() (the online
+// scheduler -- the one gate with correction/attribution/promotion wired up) ever points
+// g_moe_lt_cur at this; every other verify-mode gate is untouched and keeps reading production
+// g_moe_lt via g_moe_lt_cur's original default. Declared here (not down near the Phase 5/6 logic
+// that uses it) so the two "restore" sites inside moe_neartie_reverify_hi()/moe_attrib_replay_one()
+// below can reference it without a forward declaration.
+static MoeLayerTensors g_moe_lt_active[MOE_MAXLAYERS];
+
 // Phase 4 sub-part 1, Step 1: shape cross-checks. Every (out,in) pair here was confirmed by
 // reading the real call sites, not assumed -- moe_mla_attention() (q_proj/kv_a_proj/kv_b_proj/
 // o_proj) and moe_forward_token()'s dense/switch/shared branches (dense_*/switch_*/shared_*,
@@ -3333,15 +3361,84 @@ static void moe_resolve_attn_tensors_gqa_hi(int l, MoeLayerTensors *t) {
     moe_check_af_shape(t->o_proj, "o_proj__neartie_hi", l, MOE_HIDDEN, (long)MOE_N_HEADS*MOE_HEAD_DIM);
 }
 
+// D-roadmap-3 MLA extension: mirrors moe_resolve_attn_tensors_mla() (production) exactly, but
+// looks up the "__neartie_hi" bits=16 registry entries instead. kv_a_ln is deliberately NOT
+// overridden here (same reasoning as GQA's un-promoted q_norm/k_norm above) -- it stays as
+// whatever moe_resolve_layer_tensors_hi()'s struct-copy already set from production, since it's
+// a norm tensor (already F32) and not one of MOE_ST_ATTN_ROLES_MLA's is_af==1 entries.
+static void moe_resolve_attn_tensors_mla_hi(int l, MoeLayerTensors *t) {
+    char nm[256];
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.q_proj__neartie_hi",l);            t->q_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.kv_a_proj_with_mqa__neartie_hi",l); t->kv_a_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.kv_b_proj__neartie_hi",l);          t->kv_b_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.o_proj__neartie_hi",l);             t->o_proj = moe_find_af(nm);
+    moe_check_af_shape(t->q_proj,    "q_proj__neartie_hi",    l, MOE_QDIM,    MOE_HIDDEN);
+    moe_check_af_shape(t->kv_a_proj, "kv_a_proj__neartie_hi", l, MOE_KVA_OUT, MOE_HIDDEN);
+    moe_check_af_shape(t->kv_b_proj, "kv_b_proj__neartie_hi", l, MOE_KVB_OUT, MOE_KV_LORA_RANK);
+    moe_check_af_shape(t->o_proj,    "o_proj__neartie_hi",    l, MOE_HIDDEN,  MOE_ATTN_OUT);
+}
+
+// D-roadmap-4 FFN extension (2026-09-02): mirrors production's dense/shared resolve (see
+// moe_resolve_layer_tensors() below) exactly, but looks up "__neartie_hi" entries. dense only
+// valid at l < MOE_FIRST_DENSE_LAYERS, shared only at l >= MOE_FIRST_DENSE_LAYERS with
+// MOE_N_SHARED>0 -- same gating moe_attrib_role_valid_at() uses, kept in sync by hand (both are
+// small and static, not worth a shared table lookup here).
+//   COST (computed, not measured yet -- bob has no headroom to verify RSS while this fork runs):
+//   DeepSeek-V2-Lite's dense layer (MOE_DENSE_IM=10944, MOE_HIDDEN=2048, F16) is
+//   ~42.75MB/tensor x 3 = ~128MB for the one dense layer; each shared layer (MOE_SH_IM=2816) is
+//   ~11MB/tensor x 3 = ~33MB, x 26 shared layers = ~858MB. Combined ~986MB ADDED to the existing
+//   ~709MiB attention-only hi-mirror (RESULTS.md) -- attn_hi_bytes will roughly 2.4x once this is
+//   measured live. Real number owed in RESULTS.md once bob is free to run it, not asserted here.
+// Leaves the OTHER branch's fields as whatever the g_moe_lt[l] struct-copy already set (production)
+// -- e.g. at a dense layer,
+// t->shared_gate/up/down stay production (there IS no shared-expert tensor at that layer to
+// promote), same "don't touch what wasn't registered" discipline moe_resolve_attn_tensors_mla_hi
+// already uses for kv_a_ln.
+static void moe_resolve_ffn_tensors_hi(int l, MoeLayerTensors *t) {
+    char nm[256];
+    if (l < MOE_FIRST_DENSE_LAYERS) {
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.gate_proj__neartie_hi",l); t->dense_gate = moe_find_af(nm);
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.up_proj__neartie_hi",l);   t->dense_up   = moe_find_af(nm);
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.down_proj__neartie_hi",l); t->dense_down = moe_find_af(nm);
+        moe_check_af_shape(t->dense_gate, "dense_gate__neartie_hi", l, MOE_DENSE_IM, MOE_HIDDEN);
+        moe_check_af_shape(t->dense_up,   "dense_up__neartie_hi",   l, MOE_DENSE_IM, MOE_HIDDEN);
+        moe_check_af_shape(t->dense_down, "dense_down__neartie_hi", l, MOE_HIDDEN,   MOE_DENSE_IM);
+    } else if (MOE_N_SHARED > 0) {
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.gate_proj__neartie_hi",l); t->shared_gate = moe_find_af(nm);
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.up_proj__neartie_hi",l);   t->shared_up   = moe_find_af(nm);
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.shared_experts.down_proj__neartie_hi",l); t->shared_down = moe_find_af(nm);
+        moe_check_af_shape(t->shared_gate, "shared_gate__neartie_hi", l, MOE_SH_IM,  MOE_HIDDEN);
+        moe_check_af_shape(t->shared_up,   "shared_up__neartie_hi",   l, MOE_SH_IM,  MOE_HIDDEN);
+        moe_check_af_shape(t->shared_down, "shared_down__neartie_hi", l, MOE_HIDDEN, MOE_SH_IM);
+    }
+    // D-d5-9: routed experts, only for layers whose hi tensors were actually registered
+    // (QWEN_MOE_NEARTIE_HI_EXPERT_LAYERS). A layer that was not loaded keeps the production
+    // 4-bit pointer the struct-copy already put here.
+    if (l >= MOE_FIRST_DENSE_LAYERS) {
+        MoeAFTensor *hg, *hu, *hd;
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.switch_mlp.gate_proj__neartie_hi",l); hg = moe_find_af_opt(nm);
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.switch_mlp.up_proj__neartie_hi",l);   hu = moe_find_af_opt(nm);
+        snprintf(nm,sizeof nm,"model.layers.%d.mlp.switch_mlp.down_proj__neartie_hi",l); hd = moe_find_af_opt(nm);
+        if (hg) t->switch_gate = hg;
+        if (hu) t->switch_up   = hu;
+        if (hd) t->switch_down = hd;
+    }
+}
+
 // Must run AFTER moe_resolve_layer_tensors() (production) and AFTER moe_neartie_correct_load_
 // attn_hi() (registers the "__neartie_hi" entries this looks up). Struct-copies each layer's
-// production tensor set first -- brings along FFN/expert/norm/q_norm/k_norm pointers unchanged
-// (D-roadmap-2 (b): FFN precision doesn't move this phenomenon, no reason to promote/duplicate
-// it) -- then overrides only the 4 attention-role pointers with the bits=16 versions.
+// production tensor set first -- brings along expert/norm/q_norm/k_norm pointers unchanged
+// (D-roadmap-2 (b): routed-expert precision doesn't move this phenomenon, no reason to promote/
+// duplicate it -- still true, unrelated to the dense/shared extension below) -- then overrides
+// the attention-role pointers with the bits=16 versions (branching on MOE_ATTN_KIND exactly like
+// production moe_resolve_layer_tensors() does), AND (D-roadmap-4, 2026-09-02) the dense/shared
+// FFN role pointers, per moe_resolve_ffn_tensors_hi() above.
 static void moe_resolve_layer_tensors_hi(void) {
     for (int l = 0; l < MOE_NL; l++) {
         g_moe_lt_hi[l] = g_moe_lt[l];
-        moe_resolve_attn_tensors_gqa_hi(l, &g_moe_lt_hi[l]);
+        if (MOE_ATTN_KIND == MOE_ATTN_MLA) moe_resolve_attn_tensors_mla_hi(l, &g_moe_lt_hi[l]);
+        else moe_resolve_attn_tensors_gqa_hi(l, &g_moe_lt_hi[l]);
+        moe_resolve_ffn_tensors_hi(l, &g_moe_lt_hi[l]);
     }
 }
 
@@ -4155,6 +4252,24 @@ static MoeExpertBucket *g_moe_bucket;
 // one set per function.
 static float *g_mfb_router_scores; static int *g_mfb_top_idx;
 static float *g_mfnb_router_scores; static int *g_mfnb_top_idx;
+// D-roadmap-4 routing sensor (2026-09-02): g_mfb_top_idx above is a per-(token,layer) SCRATCH
+// buffer, overwritten every iteration of moe_ffn_batched()'s router loop -- by the time
+// moe_neartie_maybe_log() runs (after moe_cbatch_step()'s full MOE_NL-layer loop returns), only
+// the LAST (token,layer) processed survives in it; the near-tie's own (slot,layer) routing is
+// already gone. This buffer persists across the whole step instead: [slot][layer][k], refreshed
+// every moe_cbatch_step() call (each step's own forward pass fully overwrites its own slots'
+// entries before that step's near-tie check ever reads them -- no stale-step readback risk).
+//   WHY: capture at the only point the real per-(slot,layer) routing decision is still in scope
+//   (inside moe_ffn_batched()'s router loop itself), not retroactively -- there is no cheaper
+//   place to read it from, confirmed by tracing moe_cbatch_step()'s call structure.
+//   COST: MOE_BATCH_MAX(64) x MOE_MAXLAYERS(64) x MOE_TOP_K ints -- e.g. DeepSeek's TOP_K=6:
+//   64*64*6*4 bytes = ~98KB. Negligible next to this engine's multi-GB tensor footprint.
+//   Write itself is one extra int per k inside an already-existing per-(b,layer) loop iteration
+//   -- no new GEMM, no new thread dispatch, no change to router_scores/top_idx/mlp_out_batch
+//   (the values moe_ffn_batched() actually computes and returns are untouched).
+//   EXIT: if a future round needs finer granularity (e.g. per-position history, not just
+//   latest-step-per-slot), extend the trailing dimension; the capture call site doesn't change.
+static int *g_moe_routing_capture;   // flat [slot*MOE_MAXLAYERS*MOE_TOP_K + layer*MOE_TOP_K + k]
 // Phase 4 sub-part 1, Step 11 (sweep): moe_ffn_naive_batched()'s own per-token FFN scratch --
 // found in the final literal-array sweep, missed by Group C (which only covered moe_forward_
 // token()/moe_cbatch_step_scalar_one()). Same Rule 3 reasoning: own set, not shared.
@@ -4276,6 +4391,17 @@ static void moe_sme2_ensure_ready(const uint8_t *af, MoeAFTensor *tsr, long blob
     int f16lhs = moe_sme2_f16lhs_mode();
     MoeSme2Slot *slot = f16lhs ? moe_sme2_f16lhs_slot(layer,cache_e,proj_idx) : moe_sme2_slot(layer,cache_e,proj_idx);
     if (slot->ready != 0) return;
+    // Opus-plan hazard fix (2026-09-02, ROI-G planning pass): everything below this point
+    // unconditionally assumes q4g64 packed-nibble layout (row_pbytes=in/2, row_words=in/8,
+    // nibble unpacking) regardless of tsr->bits -- kai_sme2_shape_ok()/kai_sme2_available()
+    // only gate on hardware+shape, never on bit-width (sme2_kai.c:59-60), so nothing upstream
+    // of this function protects a promoted (QWEN_MOE_ROLE_BITS or Phase-6 g_moe_lt_active
+    // closed-loop promotion) bits=8/16/32 tensor from being misread here as int4. Must check
+    // the SAME ebits-vs-uniform source moe_decode_af()/moe_matvec_af_row() already use (a
+    // mixed-expert tensor's per-expert bits, not just tsr->bits) -- bail to the scalar
+    // moe_matvec_af() fallback, which already branches correctly on every bit-width.
+    int actual_bits = tsr->ebits ? tsr->ebits[blob_e] : tsr->bits;
+    if (actual_bits != 4) { slot->ready = -1; return; }
     int out = tsr->out, in = tsr->in, ng = tsr->ng;
     if (f16lhs) {
         if (!kai_sme2_f16lhs_available() || !kai_sme2_f16lhs_shape_ok(out, in)) { slot->ready = -1; return; }
@@ -4394,7 +4520,7 @@ static float *g_mfb_x_group, *g_mfb_gate_group, *g_mfb_up_group, *g_mfb_down_gro
 static float *g_mfb_sgate_group, *g_mfb_sup_group, *g_mfb_sdown_group;
 
 static void moe_ffn_batched(const uint8_t *af, MoeLayerTensors *t, int l, int B,
-                             float *h2_batch, float *mlp_out_batch) {
+                             float *h2_batch, float *mlp_out_batch, const int *slot) {
     for (int b = 0; b < B; b++) for (int c = 0; c < MOE_HIDDEN; c++) mlp_out_batch[(size_t)b*MOE_HIDDEN+c] = 0.0f;
 
     for (int e = 0; e < MOE_N_EXPERTS; e++) g_moe_bucket[e].n_members = 0;
@@ -4406,6 +4532,16 @@ static void moe_ffn_batched(const uint8_t *af, MoeLayerTensors *t, int l, int B,
         int *top_idx = g_mfb_top_idx;
         moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
         if (MOE_NORM_TOPK_PROB) moe_topk_renorm(router_scores, top_idx, MOE_TOP_K);
+        // D-roadmap-4 routing sensor: pure observation copy, computed values (router_scores/
+        // top_idx) themselves untouched below -- `b` here is moe_cbatch_step()'s COMPACT index
+        // (0..A-1), NOT the physical batch slot; `slot[b]` (passed in by the only caller) is the
+        // real slot moe_neartie_maybe_log() keys off of, since compaction can reorder/reuse slots
+        // across steps -- indexing by `b` directly would silently mislabel captured routing.
+        if (g_moe_routing_capture && slot) {   // slot==NULL: caller has no meaningful slot mapping (moe_forward_batch()'s benchmark gate), skip capture
+            int s = slot[b];
+            int *dst = g_moe_routing_capture + ((size_t)s*MOE_MAXLAYERS + l)*MOE_TOP_K;
+            for (int k = 0; k < MOE_TOP_K; k++) dst[k] = top_idx[k];
+        }
         for (int k = 0; k < MOE_TOP_K; k++) {
             int e = top_idx[k];
             MoeExpertBucket *bk = &g_moe_bucket[e];
@@ -4521,7 +4657,12 @@ static void moe_forward_batch(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
         for (int c = 0; c < MOE_HIDDEN; c++) x[(size_t)b*MOE_HIDDEN+c] = moe_decode_af(af, t_embed, 0, token_ids[b], c);
 
     for (int l = 0; l < MOE_NL; l++) {
-        MoeLayerTensors *t = &g_moe_lt[l];
+        // D-d5-11: g_moe_lt_cur, not g_moe_lt. moe_forward_token() has read the indirect table
+        // since D-roadmap-3, but this path never did -- so every Phase-6 promotion landed in
+        // g_moe_lt_active[] and was then ignored by the batched/online forward that actually
+        // serves tokens. g_moe_lt_cur defaults to g_moe_lt (declaration, ~:3283), so with no
+        // promotion active this is the same pointer and the same arithmetic.
+        MoeLayerTensors *t = &g_moe_lt_cur[l];
         float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
         float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
 
@@ -4552,7 +4693,7 @@ static void moe_forward_batch(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
                 }
             }
         } else if (use_gather) {
-            moe_ffn_batched(af, t, l, B, h2, mlp_out);
+            moe_ffn_batched(af, t, l, B, h2, mlp_out, NULL);   // benchmark-comparison gate, not the online scheduler moe_neartie_maybe_log() reads from -- no slot mapping to capture against
         } else {
             moe_ffn_naive_batched(af, t, B, h2, mlp_out);
         }
@@ -4772,7 +4913,12 @@ static void moe_cbatch_step(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor
         for (int c = 0; c < MOE_HIDDEN; c++) x[(size_t)m*MOE_HIDDEN+c] = moe_decode_af(af, t_embed, 0, token_ids[m], c);
 
     for (int l = 0; l < MOE_NL; l++) {
-        MoeLayerTensors *t = &g_moe_lt[l];
+        // D-d5-11: g_moe_lt_cur, not g_moe_lt. moe_forward_token() has read the indirect table
+        // since D-roadmap-3, but this path never did -- so every Phase-6 promotion landed in
+        // g_moe_lt_active[] and was then ignored by the batched/online forward that actually
+        // serves tokens. g_moe_lt_cur defaults to g_moe_lt (declaration, ~:3283), so with no
+        // promotion active this is the same pointer and the same arithmetic.
+        MoeLayerTensors *t = &g_moe_lt_cur[l];
         float *w_inln = (float *)(g_moe_f32_blob + t->input_ln->off);
         float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);
 
@@ -4789,7 +4935,7 @@ static void moe_cbatch_step(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor
             for (int m = 0; m < A; m++) moe_swiglu_inplace(dgate_group + (size_t)m*MOE_DENSE_IM, dup_group + (size_t)m*MOE_DENSE_IM, MOE_DENSE_IM);
             moe_matvec_af_group_smart(af, t->dense_down, 0, MOE_SME2_SLOT_DENSE, l, 2, dgate_group, A, mlp_out);
         } else {
-            moe_ffn_batched(af, t, l, A, h2, mlp_out);
+            moe_ffn_batched(af, t, l, A, h2, mlp_out, slot);
         }
 
         for (int m = 0; m < A; m++)
@@ -5024,7 +5170,7 @@ static void moe_neartie_reverify_hi(const uint8_t *af, MoeAFTensor *t_embed, Moe
         moe_forward_token(af, t_embed, t_lmhead, w_finalnorm, rq_hist[req][p], p, logits_tmp, NULL, NULL, NULL);
         n_scalar++;
     }
-    g_moe_lt_cur = g_moe_lt;   // restore -- single straight-line exit above, exactly one restore site
+    g_moe_lt_cur = g_moe_lt_active;   // restore -- to the CURRENT active table (D-roadmap-4 Phase 6: may include permanent promotions), not frozen production g_moe_lt -- single straight-line exit above, exactly one restore site
     memcpy(logits_out, logits_tmp, MOE_VOCAB * sizeof(float));
 
     for (int l = 0; l < MOE_NL; l++)
@@ -5075,6 +5221,23 @@ static double moe_cb4c_margin(const float *logits) {
     for (int v = 1; v < MOE_VOCAB; v++) if (logits[v] > bm) { bm = logits[v]; am = v; }
     float second = -1e30f;
     for (int v = 0; v < MOE_VOCAB; v++) if (v != am && logits[v] > second) second = logits[v];
+    return bm - second;
+}
+
+// D-roadmap-4: sibling of moe_cb4c_margin() above, not a signature change -- that function has
+// 4 existing call sites (moe_cb4c_maybe_reverify's threshold gate/log, unrelated SME2-vs-scalar
+// axis) that don't need the runner-up token id and shouldn't be touched (Rule: stay within
+// scope). Only moe_neartie_maybe_log() (the near-tie telemetry this round extends) needs it.
+// *out_competing_token receives the vocab id of the second-highest logit -- previously computed
+// transiently inside moe_cb4c_margin() and discarded (only the scalar gap was ever kept). This
+// is the missing piece for a "confused token pair" dataset: margin alone can't tell you WHICH
+// two tokens were near-tied, only how close they were.
+static double moe_cb4c_margin_ex(const float *logits, int *out_competing_token) {
+    int am = 0; float bm = logits[0];
+    for (int v = 1; v < MOE_VOCAB; v++) if (logits[v] > bm) { bm = logits[v]; am = v; }
+    int as = -1; float second = -1e30f;
+    for (int v = 0; v < MOE_VOCAB; v++) if (v != am && logits[v] > second) { second = logits[v]; as = v; }
+    if (out_competing_token) *out_competing_token = as;
     return bm - second;
 }
 
@@ -5261,18 +5424,469 @@ static void moe_neartie_attn_bits_summary(char *buf, size_t bufsz) {
              cnt4, cnt8, cnt16, cnt32, cnt_other, total, MOE_NL);
 }
 
+// D-roadmap-4 Phase 3: local structured event log (JSONL), independent of Supabase (Phase 4
+// pushes THIS file's rows over the network, batched -- kept as a separate step so the local
+// event shape can be verified in isolation before any network code exists, per this project's
+// phased-verification discipline). QWEN_MOE_NEARTIE_EVENTS_LOG=<path> to enable; unset = zero
+// extra cost (same "disabled costs nothing" rule this subsystem already follows). QWEN_MOE_
+// NEARTIE_MODEL/QWEN_MOE_NEARTIE_CORPUS label the run (default "unknown") -- the same binary
+// serves multiple models/corpora across runs, so this can't be a compile-time constant.
+static FILE *g_moe_nt_events_fp = NULL;
+static char g_moe_nt_events_model[64] = "unknown";
+static char g_moe_nt_events_corpus[64] = "unknown";
+static FILE *g_moe_attrib_fp = NULL;   // D-roadmap-4 Phase 5: set alongside g_moe_nt_events_fp below, declared here (not in Phase 5's own block further down) so moe_neartie_events_init() can assign it without a forward reference
+static void moe_neartie_events_init(void) {
+    const char *path = getenv("QWEN_MOE_NEARTIE_EVENTS_LOG");
+    if (!path || !path[0]) return;
+    g_moe_nt_events_fp = fopen(path, "a");
+    if (!g_moe_nt_events_fp) { fprintf(stderr, "FATAL: QWEN_MOE_NEARTIE_EVENTS_LOG: cannot open '%s'\n", path); exit(1); }
+    const char *model = getenv("QWEN_MOE_NEARTIE_MODEL");
+    const char *corpus = getenv("QWEN_MOE_NEARTIE_CORPUS");
+    if (model && model[0]) snprintf(g_moe_nt_events_model, sizeof g_moe_nt_events_model, "%s", model);
+    if (corpus && corpus[0]) snprintf(g_moe_nt_events_corpus, sizeof g_moe_nt_events_corpus, "%s", corpus);
+    fprintf(stderr, "[moe neartie events] logging to '%s' (model=%s corpus=%s)\n", path, g_moe_nt_events_model, g_moe_nt_events_corpus);
+    g_moe_attrib_fp = g_moe_nt_events_fp;   // D-roadmap-4 Phase 5: attribution rows share this same file, tagged kind="attribution"
+}
+
 // Per-call check: disabled (the default) costs exactly one bool compare. Enabled and above
-// threshold costs moe_cb4c_margin()'s O(MOE_VOCAB) scan (same cost moe_cb4c already pays on
+// threshold costs moe_cb4c_margin_ex()'s O(MOE_VOCAB) scan (same cost moe_cb4c already pays on
 // its own axis). Returns -1.0 (sentinel, margin is always >=0 by construction) on no-trigger,
-// else the margin that triggered the log line.
+// else the margin that triggered the log line. D-roadmap-4: now also captures the competing
+// (runner-up) token id -- previously computed transiently inside the margin scan and discarded
+// -- and, if QWEN_MOE_NEARTIE_EVENTS_LOG is set, appends a JSONL row Phase 4 will batch-push to
+// Supabase's moe_neartie_events table.
+// D-roadmap-4 routing sensor: renders g_moe_routing_capture[slot][*][*] (this step's per-layer
+// top-k expert selection, captured live inside moe_ffn_batched()'s router loop -- see that
+// buffer's own declaration comment) as a JSON array-of-arrays, one inner array per MoE layer
+// (dense layers, l < MOE_FIRST_DENSE_LAYERS, have no routing -- emitted as an empty []).
+// Heap-sized (not a fixed stack buffer): MOE_NL/MOE_TOP_K are runtime values with no small
+// compile-time bound, and this only runs on the rare near-tie trigger, not the hot path.
+static char *moe_routing_capture_json(int slot) {
+    size_t cap = (size_t)MOE_NL * (MOE_TOP_K * 8 + 4) + 16;
+    char *buf = malloc(cap);
+    if (!buf) return NULL;
+    size_t off = 0;
+    off += snprintf(buf + off, cap - off, "[");
+    for (int l = 0; l < MOE_NL; l++) {
+        off += snprintf(buf + off, cap - off, "%s[", l ? "," : "");
+        if (l >= MOE_FIRST_DENSE_LAYERS) {
+            int *row = g_moe_routing_capture + ((size_t)slot*MOE_MAXLAYERS + l)*MOE_TOP_K;
+            for (int k = 0; k < MOE_TOP_K; k++) off += snprintf(buf + off, cap - off, "%s%d", k ? "," : "", row[k]);
+        }
+        off += snprintf(buf + off, cap - off, "]");
+    }
+    snprintf(buf + off, cap - off, "]");
+    return buf;
+}
+
 static double moe_neartie_maybe_log(int slot, int req, int pos, int token_id, int argmax, const float *logits) {
     if (!g_moe_neartie_log_on) return -1.0;
-    double margin = moe_cb4c_margin(logits);
+    int competing_token = -1;
+    double margin = moe_cb4c_margin_ex(logits, &competing_token);
     double threshold = moe_neartie_threshold();
     if (margin >= threshold) return -1.0;
-    fprintf(stderr, "[moe neartie] event req=%d slot=%d pos=%d token=%d argmax=%d margin=%.6f threshold=%.6f\n",
-            req, slot, pos, token_id, argmax, margin, threshold);
+    fprintf(stderr, "[moe neartie] event req=%d slot=%d pos=%d token=%d argmax=%d vs_token=%d margin=%.6f threshold=%.6f\n",
+            req, slot, pos, token_id, argmax, competing_token, margin, threshold);
+    if (g_moe_nt_events_fp) {
+        char *routing_json = g_moe_routing_capture ? moe_routing_capture_json(slot) : NULL;
+        fprintf(g_moe_nt_events_fp,
+                "{\"kind\":\"event\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,\"predicted_token\":%d,\"competing_token\":%d,"
+                "\"margin\":%.6f,\"active_experts_by_layer\":%s,\"model\":\"%s\",\"corpus\":\"%s\"}\n",
+                (long)time(NULL), req, pos, argmax, competing_token, margin, routing_json ? routing_json : "null",
+                g_moe_nt_events_model, g_moe_nt_events_corpus);
+        fflush(g_moe_nt_events_fp);
+        free(routing_json);
+    }
     return margin;
+}
+
+// D-roadmap-4 Phase 5: live role x layer attribution for a CONFIRMED real flip (full-hi replay's
+// argmax differs from the original production argmax -- not every flagged near-tie is a real
+// flip, D-roadmap-3's own MLA round found baseline can already be correct at a flagged position;
+// attribution only runs on the rare subset that IS real, per the plan's own cost discipline).
+//
+// SCOPE (2026-09-02, explicit, not silently narrowed): attention roles only (q_proj/kv_a_proj/
+// kv_b_proj/o_proj x MOE_NL) -- 108 combos for DeepSeek's NL=27. Dense/shared FFN roles
+// (gate/up/down) are OUT of scope this round: `g_moe_lt_hi[]` (built by moe_resolve_layer_
+// tensors_hi()) only ever promotes attention roles to bits=16 -- FFN role pointers in g_moe_lt_hi
+// are still the SAME production pointers (moe_resolve_layer_tensors_hi()'s struct-copy leaves
+// them untouched), so "override with the hi pointer" would be a no-op for those roles as things
+// stand. Extending FFN roles into the hi-mirror needs a prerequisite change (st_register_moe_
+// role()'s allow_f32=0 gate for dense/shared call sites, qwen_infer.c:12579/12590, currently
+// blocks bits=16/32 for them) -- deferred, not silently dropped: this project's own earlier
+// measurement (ROADMAP.md D-roadmap-2 Track A/B) already found FFN/expert precision promotion
+// doesn't close near-ties, so this is a low-expected-value extension, not a free one.
+// D-roadmap-4 (2026-09-02, user-requested extension): originally attention-only (4 roles) --
+// user pointed out directly that the engine's own stated design goal ("q/k/v/o_proj, dense-layer
+// gate/up/down, shared-experts gate/up/down each independently precision-controllable") means
+// attribution covering only attention is an incomplete sensor set, not a deferred nice-to-have.
+// Extended to 10 roles: 4 attention (all NL layers) + 3 dense (only l < MOE_FIRST_DENSE_LAYERS)
+// + 3 shared (only l >= MOE_FIRST_DENSE_LAYERS, MOE_N_SHARED>0) -- validity is layer-dependent,
+// enforced in moe_neartie_attribute()'s loop (moe_attrib_role_valid_at()), not by this enum.
+typedef enum {
+    MOE_ATTRIB_Q_PROJ = 0, MOE_ATTRIB_KV_A_PROJ, MOE_ATTRIB_KV_B_PROJ, MOE_ATTRIB_O_PROJ,
+    // D-d5-10: GQA's own two attention roles. Before this the vocabulary was MLA-shaped, so on a
+    // GQA model k_proj/v_proj could be neither attributed nor promoted, while kv_a/kv_b_proj --
+    // fields that are NULL on GQA -- were still swept, silently replaying the baseline.
+    MOE_ATTRIB_K_PROJ, MOE_ATTRIB_V_PROJ,
+    MOE_ATTRIB_DENSE_GATE, MOE_ATTRIB_DENSE_UP, MOE_ATTRIB_DENSE_DOWN,
+    MOE_ATTRIB_SHARED_GATE, MOE_ATTRIB_SHARED_UP, MOE_ATTRIB_SHARED_DOWN,
+    // D-d5-9: routed experts, at PER-LAYER granularity -- one entry promotes all E experts of
+    // that layer's projection together, matching how dense/shared are already treated (whole
+    // tensors) and how the engine stores them (one E-stacked AF tensor per projection).
+    MOE_ATTRIB_EXPERT_GATE, MOE_ATTRIB_EXPERT_UP, MOE_ATTRIB_EXPERT_DOWN,
+    MOE_ATTRIB_ROLE_COUNT
+} MoeAttribRole;
+static const char *MOE_ATTRIB_ROLE_NAMES[MOE_ATTRIB_ROLE_COUNT] = {
+    // matches MOE_ST_ATTN_ROLES_MLA / MOE_ST_DENSE_ROLES / MOE_ST_SHARED_ROLES's own `role`
+    // strings (Supabase key / QWEN_MOE_ROLE_BITS key -- same names, one shared vocabulary)
+    "q_proj", "kv_a_proj_with_mqa", "kv_b_proj", "o_proj",
+    "k_proj", "v_proj",                                         // D-d5-10 (GQA)
+    "dense_gate_proj", "dense_up_proj", "dense_down_proj",
+    "shared_gate_proj", "shared_up_proj", "shared_down_proj",
+    "expert_gate_proj", "expert_up_proj", "expert_down_proj",   // D-d5-9
+};
+// Layer-dependent validity: attention roles are valid at every layer; dense only at the (single,
+// deepseek_v2) dense layer; shared only at MoE layers, and only when this model actually has
+// shared experts. Central so moe_neartie_attribute()'s loop and moe_attrib_replay_one() agree.
+static int moe_attrib_role_valid_at(MoeAttribRole role, int layer) {
+    switch (role) {
+        case MOE_ATTRIB_DENSE_GATE: case MOE_ATTRIB_DENSE_UP: case MOE_ATTRIB_DENSE_DOWN:
+            return layer < MOE_FIRST_DENSE_LAYERS;
+        case MOE_ATTRIB_SHARED_GATE: case MOE_ATTRIB_SHARED_UP: case MOE_ATTRIB_SHARED_DOWN:
+            return layer >= MOE_FIRST_DENSE_LAYERS && MOE_N_SHARED > 0;
+        case MOE_ATTRIB_EXPERT_GATE: case MOE_ATTRIB_EXPERT_UP: case MOE_ATTRIB_EXPERT_DOWN:
+            // D-d5-9: routed experts exist on every MoE layer (no N_SHARED-style condition), but
+            // only where the hi tensors were actually registered -- moe_resolve_ffn_tensors_hi()
+            // leaves the production pointer in place otherwise, so an unloaded layer replays the
+            // baseline and simply never hits, exactly like a role that is invalid here.
+            return layer >= MOE_FIRST_DENSE_LAYERS;
+        // D-d5-10: attention roles are valid at every layer, but only for the architecture that
+        // actually has them. Sweeping MLA-only roles on a GQA model (or the reverse) used to be a
+        // silent no-op that still consumed a combination slot and inflated the tested denominator.
+        case MOE_ATTRIB_KV_A_PROJ: case MOE_ATTRIB_KV_B_PROJ:
+            return MOE_ATTN_KIND == MOE_ATTN_MLA;
+        case MOE_ATTRIB_K_PROJ: case MOE_ATTRIB_V_PROJ:
+            return MOE_ATTN_KIND == MOE_ATTN_GQA;
+        default:
+            return 1;   // q_proj/o_proj: both architectures, every layer
+    }
+}
+static int g_moe_attrib_on = 0;   // QWEN_MOE_ATTRIB, default off -- zero cost unless a real flip triggers it anyway
+// D-roadmap-4 Phase 5 pilot finding (2026-09-02, real measurement, not assumed): a SINGLE real-
+// flip attribution event at pos=15 (108 combos x up to 16 forward passes = up to 1728 passes)
+// did not finish within 8 real wall-clock minutes on bob (2774s user CPU, ~614% utilization) --
+// cost scales with pos and is severe. On this same tiny 8-slot/8-request pilot corpus (57 decode
+// tokens), 2 of 4 correction-triggered events were real flips (measured, not guessed) -- a WikiText-
+// 103-scale corpus (this project's own ~30K-position precedent, ROADMAP.md's WikiText-103-scale
+// near-tie recurrence scan) at even this small a real-flip rate would need many hours to days of
+// unattended compute for full attribution on every flip. QWEN_MOE_ATTRIB_MAX_EVENTS bounds TOTAL
+// cost predictably (cap the NUMBER of fully-attributed flips across the whole run, not combos per
+// event -- a per-event cap would degrade every attribution's quality instead of just limiting
+// volume). Once the cap is hit, subsequent real flips are still detected/corrected, just logged
+// as "flip, not attributed" instead of running the full 108-combo replay. Unset = unlimited
+// (matches this subsystem's "opt-in features default to their most complete behavior" pattern) --
+// the WikiText-103 run itself sets this explicitly, not relying on the default.
+static int g_moe_attrib_max_events = -1;   // -1 = unlimited
+static int g_moe_attrib_events_done = 0;
+// Orthogonal to the above: bounds the WORST-CASE cost of any SINGLE event (cost ~ 108*(pos+1)
+// forward passes, measured to scale with pos -- the pos=15 pilot event alone didn't finish in 8
+// wall-clock minutes). QWEN_MOE_ATTRIB_MAX_POS skips attribution (not correction) for flips at a
+// position beyond this -- unset = unlimited, same "explicit-only" default as the count cap above.
+static int g_moe_attrib_max_pos = -1;   // -1 = unlimited
+
+// Builds ONE mixed layer-tensor table (production everywhere, ONE role at ONE layer promoted to
+// the g_moe_lt_hi mirror) and runs the full [0..pos] replay through it -- same shape as
+// moe_neartie_reverify_hi() (full-hi's own replay), deliberately NOT sharing that function's
+// shadow-lane K/V cache (each of the ~108 attribution attempts needs its OWN from-scratch K/V
+// history, since a different single-role promotion changes hidden states -> K/V from that layer
+// forward; sharing cache across attempts would silently mix histories from different mixed
+// configs). Reuses the SAME single-sequence scratch (g_moe_K_flat/g_moe_V_flat via moe_K_row()/
+// moe_V_row()) moe_neartie_reverify_hi() itself reuses -- safe for the same reason that function
+// already documents: synchronous, single-threaded, no overlapping use.
+static MoeLayerTensors g_moe_lt_mixed[MOE_MAXLAYERS];
+static int moe_attrib_replay_one(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
+                                  float *w_finalnorm, int req, int pos, MoeAttribRole role, int layer,
+                                  float *logits_out) {
+    for (int l = 0; l < MOE_NL; l++) g_moe_lt_mixed[l] = g_moe_lt[l];   // production baseline, all layers
+    if (!moe_attrib_role_valid_at(role, layer)) return -1;   // e.g. dense role requested at a non-dense layer
+    switch (role) {
+        case MOE_ATTRIB_Q_PROJ:      g_moe_lt_mixed[layer].q_proj      = g_moe_lt_hi[layer].q_proj;      break;
+        case MOE_ATTRIB_KV_A_PROJ:   g_moe_lt_mixed[layer].kv_a_proj   = g_moe_lt_hi[layer].kv_a_proj;   break;
+        case MOE_ATTRIB_KV_B_PROJ:   g_moe_lt_mixed[layer].kv_b_proj   = g_moe_lt_hi[layer].kv_b_proj;   break;
+        case MOE_ATTRIB_O_PROJ:      g_moe_lt_mixed[layer].o_proj      = g_moe_lt_hi[layer].o_proj;      break;
+        case MOE_ATTRIB_K_PROJ:      g_moe_lt_mixed[layer].k_proj      = g_moe_lt_hi[layer].k_proj;      break;   // D-d5-10
+        case MOE_ATTRIB_V_PROJ:      g_moe_lt_mixed[layer].v_proj      = g_moe_lt_hi[layer].v_proj;      break;   // D-d5-10
+        case MOE_ATTRIB_DENSE_GATE:  g_moe_lt_mixed[layer].dense_gate  = g_moe_lt_hi[layer].dense_gate;  break;
+        case MOE_ATTRIB_DENSE_UP:    g_moe_lt_mixed[layer].dense_up    = g_moe_lt_hi[layer].dense_up;    break;
+        case MOE_ATTRIB_DENSE_DOWN:  g_moe_lt_mixed[layer].dense_down  = g_moe_lt_hi[layer].dense_down;  break;
+        case MOE_ATTRIB_SHARED_GATE: g_moe_lt_mixed[layer].shared_gate = g_moe_lt_hi[layer].shared_gate; break;
+        case MOE_ATTRIB_SHARED_UP:   g_moe_lt_mixed[layer].shared_up   = g_moe_lt_hi[layer].shared_up;   break;
+        case MOE_ATTRIB_SHARED_DOWN: g_moe_lt_mixed[layer].shared_down = g_moe_lt_hi[layer].shared_down; break;
+        case MOE_ATTRIB_EXPERT_GATE: g_moe_lt_mixed[layer].switch_gate = g_moe_lt_hi[layer].switch_gate; break;   // D-d5-9
+        case MOE_ATTRIB_EXPERT_UP:   g_moe_lt_mixed[layer].switch_up   = g_moe_lt_hi[layer].switch_up;   break;   // D-d5-9
+        case MOE_ATTRIB_EXPERT_DOWN: g_moe_lt_mixed[layer].switch_down = g_moe_lt_hi[layer].switch_down; break;   // D-d5-9
+        default: return -1;
+    }
+    g_moe_lt_cur = g_moe_lt_mixed;
+    int am = -1;
+    for (int p = 0; p <= pos; p++) {
+        moe_forward_token(af, t_embed, t_lmhead, w_finalnorm, rq_hist[req][p], p, logits_out, NULL, NULL, NULL);
+    }
+    g_moe_lt_cur = g_moe_lt_active;   // restore -- to the CURRENT active table (D-roadmap-4 Phase 6), matches moe_neartie_reverify_hi()'s own pattern
+    am = 0; float bm = logits_out[0];
+    for (int v = 1; v < MOE_VOCAB; v++) if (logits_out[v] > bm) { bm = logits_out[v]; am = v; }
+    return am;
+}
+
+// D-roadmap-4 ddmin-plan prerequisite check (2026-09-02): monotonicity has NEVER been tested --
+// every existing attribution data point is a k=1 (single role,layer) test. Before building any
+// combinatorial/ddmin search, the cheapest possible check is: does the UNION of already-known
+// k=1 hits, promoted TOGETHER, still reproduce the corrected answer? If not, monotonicity fails
+// and ddmin-style bisection (which assumes "superset of a working set also works") is unsound
+// here without a fallback. One-shot, hardcoded to req5/pos4's real 17 hits from this session's
+// own pilot run (q_proj L5/11/13, kv_a_proj_with_mqa L13/16/19/23, kv_b_proj L6/11/16, o_proj
+// L6/7/11, shared_gate_proj L25, shared_up_proj L16/26, shared_down_proj L17) -- not a general
+// feature, gated behind QWEN_MOE_ATTRIB_COMBO17_TEST so it costs nothing unset.
+typedef struct { MoeAttribRole role; int layer; } MoeAttribComboEntry;
+
+// Generalized version of the req5/pos4 one-shot check above -- takes ANY combo array so it can
+// be reused for other flips' known hit-sets (e.g. req32/pos8's 87 hits) without copy-pasting the
+// override-loop/replay/argmax boilerplate again. Still a one-shot diagnostic tool, not a general
+// feature -- no env-var gate of its own, callers decide when to invoke it.
+static int moe_attrib_replay_combo(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
+                                    float *w_finalnorm, int req, int pos,
+                                    const MoeAttribComboEntry *combo, int n) {
+    for (int l = 0; l < MOE_NL; l++) g_moe_lt_mixed[l] = g_moe_lt[l];
+    for (int i = 0; i < n; i++) {
+        int l = combo[i].layer;
+        switch (combo[i].role) {
+            case MOE_ATTRIB_Q_PROJ:      g_moe_lt_mixed[l].q_proj      = g_moe_lt_hi[l].q_proj;      break;
+            case MOE_ATTRIB_KV_A_PROJ:   g_moe_lt_mixed[l].kv_a_proj   = g_moe_lt_hi[l].kv_a_proj;   break;
+            case MOE_ATTRIB_KV_B_PROJ:   g_moe_lt_mixed[l].kv_b_proj   = g_moe_lt_hi[l].kv_b_proj;   break;
+            case MOE_ATTRIB_O_PROJ:      g_moe_lt_mixed[l].o_proj      = g_moe_lt_hi[l].o_proj;      break;
+            case MOE_ATTRIB_DENSE_GATE:  g_moe_lt_mixed[l].dense_gate  = g_moe_lt_hi[l].dense_gate;  break;
+            case MOE_ATTRIB_DENSE_UP:    g_moe_lt_mixed[l].dense_up    = g_moe_lt_hi[l].dense_up;    break;
+            case MOE_ATTRIB_DENSE_DOWN:  g_moe_lt_mixed[l].dense_down  = g_moe_lt_hi[l].dense_down;  break;
+            case MOE_ATTRIB_SHARED_GATE: g_moe_lt_mixed[l].shared_gate = g_moe_lt_hi[l].shared_gate; break;
+            case MOE_ATTRIB_SHARED_UP:   g_moe_lt_mixed[l].shared_up   = g_moe_lt_hi[l].shared_up;   break;
+            case MOE_ATTRIB_SHARED_DOWN: g_moe_lt_mixed[l].shared_down = g_moe_lt_hi[l].shared_down; break;
+            default: break;
+        }
+    }
+    g_moe_lt_cur = g_moe_lt_mixed;
+    float *logits = malloc(MOE_VOCAB * sizeof(float));
+    for (int p = 0; p <= pos; p++)
+        moe_forward_token(af, t_embed, t_lmhead, w_finalnorm, rq_hist[req][p], p, logits, NULL, NULL, NULL);
+    g_moe_lt_cur = g_moe_lt_active;
+    int am = 0; float bm = logits[0];
+    for (int v = 1; v < MOE_VOCAB; v++) if (logits[v] > bm) { bm = logits[v]; am = v; }
+    free(logits);
+    return am;
+}
+
+static void moe_attrib_combo17_test(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
+                                     float *w_finalnorm, int req, int pos) {
+    static const MoeAttribComboEntry combo[] = {
+        {MOE_ATTRIB_Q_PROJ, 5}, {MOE_ATTRIB_Q_PROJ, 11}, {MOE_ATTRIB_Q_PROJ, 13},
+        {MOE_ATTRIB_KV_A_PROJ, 13}, {MOE_ATTRIB_KV_A_PROJ, 16}, {MOE_ATTRIB_KV_A_PROJ, 19}, {MOE_ATTRIB_KV_A_PROJ, 23},
+        {MOE_ATTRIB_KV_B_PROJ, 6}, {MOE_ATTRIB_KV_B_PROJ, 11}, {MOE_ATTRIB_KV_B_PROJ, 16},
+        {MOE_ATTRIB_O_PROJ, 6}, {MOE_ATTRIB_O_PROJ, 7}, {MOE_ATTRIB_O_PROJ, 11},
+        {MOE_ATTRIB_SHARED_GATE, 25}, {MOE_ATTRIB_SHARED_UP, 16}, {MOE_ATTRIB_SHARED_UP, 26}, {MOE_ATTRIB_SHARED_DOWN, 17},
+    };
+    int n = (int)(sizeof combo / sizeof combo[0]);
+    int am = moe_attrib_replay_combo(af, t_embed, t_lmhead, w_finalnorm, req, pos, combo, n);
+    fprintf(stderr, "[moe combo17 test] req=%d pos=%d n=%d union_argmax=%d (expect 473 if monotone)\n", req, pos, n, am);
+}
+
+// Second monotonicity data point: req32/pos8's 87 real hits (the most fragile near-tie found in
+// the full WikiText-2-short re-run, ~46% of all 189 combos individually flip it). Real correct
+// answer (per D-roadmap-3's own full-hi correction) is 245. Hardcoded from the actual attribution
+// log, same one-shot diagnostic pattern as combo17 above -- reuses moe_attrib_replay_combo().
+static void moe_attrib_combo87_test(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
+                                     float *w_finalnorm, int req, int pos) {
+    static const MoeAttribComboEntry combo[] = {
+        {MOE_ATTRIB_Q_PROJ, 1}, {MOE_ATTRIB_Q_PROJ, 2}, {MOE_ATTRIB_Q_PROJ, 3}, {MOE_ATTRIB_Q_PROJ, 5},
+        {MOE_ATTRIB_Q_PROJ, 6}, {MOE_ATTRIB_Q_PROJ, 7}, {MOE_ATTRIB_Q_PROJ, 11}, {MOE_ATTRIB_Q_PROJ, 12},
+        {MOE_ATTRIB_Q_PROJ, 13}, {MOE_ATTRIB_Q_PROJ, 17}, {MOE_ATTRIB_Q_PROJ, 25},
+        {MOE_ATTRIB_KV_A_PROJ, 0}, {MOE_ATTRIB_KV_A_PROJ, 2}, {MOE_ATTRIB_KV_A_PROJ, 3}, {MOE_ATTRIB_KV_A_PROJ, 4},
+        {MOE_ATTRIB_KV_A_PROJ, 5}, {MOE_ATTRIB_KV_A_PROJ, 6}, {MOE_ATTRIB_KV_A_PROJ, 7}, {MOE_ATTRIB_KV_A_PROJ, 9},
+        {MOE_ATTRIB_KV_A_PROJ, 10}, {MOE_ATTRIB_KV_A_PROJ, 13}, {MOE_ATTRIB_KV_A_PROJ, 14}, {MOE_ATTRIB_KV_A_PROJ, 16},
+        {MOE_ATTRIB_KV_A_PROJ, 19}, {MOE_ATTRIB_KV_A_PROJ, 21}, {MOE_ATTRIB_KV_A_PROJ, 22}, {MOE_ATTRIB_KV_A_PROJ, 23},
+        {MOE_ATTRIB_KV_B_PROJ, 0}, {MOE_ATTRIB_KV_B_PROJ, 1}, {MOE_ATTRIB_KV_B_PROJ, 3}, {MOE_ATTRIB_KV_B_PROJ, 4},
+        {MOE_ATTRIB_KV_B_PROJ, 7}, {MOE_ATTRIB_KV_B_PROJ, 8}, {MOE_ATTRIB_KV_B_PROJ, 9}, {MOE_ATTRIB_KV_B_PROJ, 10},
+        {MOE_ATTRIB_KV_B_PROJ, 13}, {MOE_ATTRIB_KV_B_PROJ, 15}, {MOE_ATTRIB_KV_B_PROJ, 17}, {MOE_ATTRIB_KV_B_PROJ, 19},
+        {MOE_ATTRIB_KV_B_PROJ, 20}, {MOE_ATTRIB_KV_B_PROJ, 22}, {MOE_ATTRIB_KV_B_PROJ, 23}, {MOE_ATTRIB_KV_B_PROJ, 25},
+        {MOE_ATTRIB_O_PROJ, 0}, {MOE_ATTRIB_O_PROJ, 1}, {MOE_ATTRIB_O_PROJ, 2}, {MOE_ATTRIB_O_PROJ, 4},
+        {MOE_ATTRIB_O_PROJ, 5}, {MOE_ATTRIB_O_PROJ, 7}, {MOE_ATTRIB_O_PROJ, 10}, {MOE_ATTRIB_O_PROJ, 13},
+        {MOE_ATTRIB_O_PROJ, 16}, {MOE_ATTRIB_O_PROJ, 19},
+        {MOE_ATTRIB_DENSE_GATE, 0}, {MOE_ATTRIB_DENSE_DOWN, 0},
+        {MOE_ATTRIB_SHARED_GATE, 3}, {MOE_ATTRIB_SHARED_GATE, 4}, {MOE_ATTRIB_SHARED_GATE, 5}, {MOE_ATTRIB_SHARED_GATE, 6},
+        {MOE_ATTRIB_SHARED_GATE, 7}, {MOE_ATTRIB_SHARED_GATE, 8}, {MOE_ATTRIB_SHARED_GATE, 11}, {MOE_ATTRIB_SHARED_GATE, 15},
+        {MOE_ATTRIB_SHARED_GATE, 25}, {MOE_ATTRIB_SHARED_GATE, 26},
+        {MOE_ATTRIB_SHARED_UP, 3}, {MOE_ATTRIB_SHARED_UP, 6}, {MOE_ATTRIB_SHARED_UP, 7}, {MOE_ATTRIB_SHARED_UP, 9},
+        {MOE_ATTRIB_SHARED_UP, 10}, {MOE_ATTRIB_SHARED_UP, 13}, {MOE_ATTRIB_SHARED_UP, 14}, {MOE_ATTRIB_SHARED_UP, 15},
+        {MOE_ATTRIB_SHARED_UP, 17}, {MOE_ATTRIB_SHARED_UP, 19}, {MOE_ATTRIB_SHARED_UP, 26},
+        {MOE_ATTRIB_SHARED_DOWN, 1}, {MOE_ATTRIB_SHARED_DOWN, 3}, {MOE_ATTRIB_SHARED_DOWN, 4}, {MOE_ATTRIB_SHARED_DOWN, 5},
+        {MOE_ATTRIB_SHARED_DOWN, 7}, {MOE_ATTRIB_SHARED_DOWN, 15}, {MOE_ATTRIB_SHARED_DOWN, 17}, {MOE_ATTRIB_SHARED_DOWN, 18},
+        {MOE_ATTRIB_SHARED_DOWN, 20}, {MOE_ATTRIB_SHARED_DOWN, 22}, {MOE_ATTRIB_SHARED_DOWN, 26},
+    };
+    int n = (int)(sizeof combo / sizeof combo[0]);
+    int am = moe_attrib_replay_combo(af, t_embed, t_lmhead, w_finalnorm, req, pos, combo, n);
+    fprintf(stderr, "[moe combo87 test] req=%d pos=%d n=%d union_argmax=%d (expect 245 if monotone)\n", req, pos, n, am);
+}
+
+// Driver: called only when moe_neartie_maybe_correct() (below) confirms a REAL flip (full-hi
+// argmax != original production argmax). Tests each of the 108 (role,layer) combos; any combo
+// whose SINGLE promotion alone reproduces the full-hi corrected argmax gets logged as an
+// attribution hit. Expect MOST attempts to fail individually -- this session's own local-vs-
+// upstream finding (residual accumulation across POSITIONS/layers dominates over any single
+// local substitution) predicts this, and a mostly-empty attribution result is itself a real,
+// reportable finding, not a bug in this mechanism.
+// MOE_VOCAB is a runtime value (varies per model), not a compile-time constant -- can't be a
+// fixed-size file-scope array (matches g_mnc_logits_hi's own malloc-at-init pattern just above).
+static float *g_moe_attrib_logits_scratch = NULL;
+static void moe_neartie_attribute(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
+                                   float *w_finalnorm, int req, int pos, int corrected_argmax) {
+    if (!g_moe_attrib_on) return;
+    if (g_moe_attrib_max_events >= 0 && g_moe_attrib_events_done >= g_moe_attrib_max_events) {
+        fprintf(stderr, "[moe attrib] req=%d pos=%d SKIPPED -- QWEN_MOE_ATTRIB_MAX_EVENTS=%d reached (real flip still corrected, just not attributed)\n",
+                req, pos, g_moe_attrib_max_events);
+        return;
+    }
+    if (g_moe_attrib_max_pos >= 0 && pos > g_moe_attrib_max_pos) {
+        fprintf(stderr, "[moe attrib] req=%d pos=%d SKIPPED -- pos exceeds QWEN_MOE_ATTRIB_MAX_POS=%d (real flip still corrected, just not attributed)\n",
+                req, pos, g_moe_attrib_max_pos);
+        return;
+    }
+    g_moe_attrib_events_done++;
+    if (!g_moe_attrib_logits_scratch) {   // lazy alloc, once -- only reached when a real flip actually fires
+        g_moe_attrib_logits_scratch = malloc(MOE_VOCAB * sizeof(float));
+        if (!g_moe_attrib_logits_scratch) { fprintf(stderr, "FATAL: QWEN_MOE_ATTRIB=1: scratch alloc failed\n"); exit(1); }
+    }
+    int hits = 0, tested = 0;
+    for (int r = 0; r < MOE_ATTRIB_ROLE_COUNT; r++) {
+        for (int l = 0; l < MOE_NL; l++) {
+            if (!moe_attrib_role_valid_at((MoeAttribRole)r, l)) continue;   // e.g. dense role at a shared-expert layer
+            tested++;
+            int am = moe_attrib_replay_one(af, t_embed, t_lmhead, w_finalnorm, req, pos,
+                                            (MoeAttribRole)r, l, g_moe_attrib_logits_scratch);
+            if (am != corrected_argmax) continue;
+            hits++;
+            fprintf(stderr, "[moe attrib] hit req=%d pos=%d role=%s layer=%d (single-role promotion reproduces corrected argmax=%d)\n",
+                    req, pos, MOE_ATTRIB_ROLE_NAMES[r], l, corrected_argmax);
+            if (g_moe_attrib_fp) {
+                fprintf(g_moe_attrib_fp,
+                        "{\"kind\":\"attribution\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,\"role\":\"%s\",\"layer\":%d,"
+                        "\"corrected_argmax\":%d,\"model\":\"%s\",\"corpus\":\"%s\"}\n",
+                        (long)time(NULL), req, pos, MOE_ATTRIB_ROLE_NAMES[r], l, corrected_argmax,
+                        g_moe_nt_events_model, g_moe_nt_events_corpus);
+                fflush(g_moe_attrib_fp);
+            }
+        }
+    }
+    // D-roadmap-4 FFN extension (2026-09-02): `tested` is now the REAL valid-combo count (varies
+    // by model -- DeepSeek: 27x4 attention + 1x3 dense + 26x3 shared = 189), not the old flat
+    // MOE_ATTRIB_ROLE_COUNT*MOE_NL (which would over-count now that dense/shared roles are only
+    // valid at a subset of layers). Cost note: 189/108 = ~1.75x this event's worst-case replay
+    // count vs. the attention-only round -- QWEN_MOE_ATTRIB_MAX_EVENTS/_MAX_POS still bound total
+    // cost the same way, just against a larger per-event ceiling now.
+    fprintf(stderr, "[moe attrib] req=%d pos=%d done: %d/%d combos individually reproduced the corrected answer\n",
+            req, pos, hits, tested);
+}
+
+// D-roadmap-3 correction path: default off, moved up here (from its original site just after
+// moe_neartie_maybe_correct()'s own leading comment, below) so moe_promotion_maybe_apply()
+// (D-roadmap-4 Phase 6, next) can reference it without a forward declaration.
+static int g_moe_neartie_correct_on = 0;   // QWEN_MOE_NEARTIE_CORRECT, default off
+
+// D-roadmap-4 Phase 6 (D5/D6, plan `serene-finding-ullman.md`): closes the loop -- a (role,layer)
+// that accumulates enough attribution evidence (Phase 5, above) gets PERMANENTLY promoted to
+// bits=16 in the running engine, without a restart. g_moe_lt_active (declared next to g_moe_lt_hi,
+// ~line 3264) starts as an exact struct-copy of production g_moe_lt -- moe_lt_active_init()
+// below does that copy, called once per run_moe_cbatch_verify_mode() invocation right after that
+// gate's own moe_resolve_layer_tensors() call. A promotion is a single pointer assignment
+// (g_moe_lt_active[layer].<role> = g_moe_lt_hi[layer].<role>) -- permanent for the process
+// lifetime; demotion is out of scope this round (plan's own honest limit, D5 COST).
+//
+// D6: promotion SOURCE is deliberately decoupled from the polling mechanism. This round reads a
+// local file (QWEN_MOE_PROMOTION_FILE, "<role> <layer>" one pair per line, e.g.
+// "kv_a_proj_with_mqa 9") because the Supabase REST credentials the full design calls for aren't
+// wired up yet (user's own service_role/anon key still pending) -- swapping the source for a
+// live REST GET against moe_role_precision_state's `promoted=true` rows later only touches
+// moe_promotion_maybe_apply()'s body, not moe_promotion_apply_one() or the admission-loop call
+// site below.
+//   WHY local-file, not block until Supabase is ready: the plan's own D5/D6 (closing the loop)
+//   is independently valuable and independently verifiable (hand-write a promotion file, watch
+//   the engine pick it up and never revert) without waiting on an external credential.
+//   COST: this is a SEPARATE mechanism from Phase 5's own accumulation (JSONL/Supabase counters)
+//   -- nothing in THIS file automatically decides when a role×layer has "enough" evidence and
+//   writes it to the promotion file; that decision is made by whoever/whatever writes
+//   QWEN_MOE_PROMOTION_FILE (a human today, eventually a small script reading
+//   moe_role_precision_state). Not wiring that decision logic into the engine itself is
+//   deliberate -- the engine's job is "apply promotions it's told about," not "decide when."
+//   EXIT: point moe_promotion_maybe_apply() at Supabase instead of a file; everything else
+//   (g_moe_lt_active, moe_promotion_apply_one(), the admission-loop call site) is unchanged.
+static void moe_lt_active_init(void) {
+    for (int l = 0; l < MOE_NL; l++) g_moe_lt_active[l] = g_moe_lt[l];
+}
+
+static int g_moe_promoted[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];   // avoid redundant reapply/logging on repeat polls
+static const char *g_moe_promotion_file = NULL;   // QWEN_MOE_PROMOTION_FILE, unset = feature off
+
+static void moe_promotion_apply_one(MoeAttribRole role, int layer) {
+    if (g_moe_promoted[role][layer]) return;
+    switch (role) {
+        case MOE_ATTRIB_Q_PROJ:    g_moe_lt_active[layer].q_proj    = g_moe_lt_hi[layer].q_proj;    break;
+        case MOE_ATTRIB_KV_A_PROJ: g_moe_lt_active[layer].kv_a_proj = g_moe_lt_hi[layer].kv_a_proj; break;
+        case MOE_ATTRIB_KV_B_PROJ: g_moe_lt_active[layer].kv_b_proj = g_moe_lt_hi[layer].kv_b_proj; break;
+        case MOE_ATTRIB_O_PROJ:    g_moe_lt_active[layer].o_proj    = g_moe_lt_hi[layer].o_proj;    break;
+        case MOE_ATTRIB_K_PROJ:    g_moe_lt_active[layer].k_proj    = g_moe_lt_hi[layer].k_proj;    break;   // D-d5-10
+        case MOE_ATTRIB_V_PROJ:    g_moe_lt_active[layer].v_proj    = g_moe_lt_hi[layer].v_proj;    break;   // D-d5-10
+        // D-d5-9: dense/shared/expert FFN promotion. Before this the switch covered attention
+        // only, so a promotion file naming an FFN role silently fell through `default: return;`
+        // -- it logged nothing and changed nothing.
+        case MOE_ATTRIB_DENSE_GATE:  g_moe_lt_active[layer].dense_gate  = g_moe_lt_hi[layer].dense_gate;  break;
+        case MOE_ATTRIB_DENSE_UP:    g_moe_lt_active[layer].dense_up    = g_moe_lt_hi[layer].dense_up;    break;
+        case MOE_ATTRIB_DENSE_DOWN:  g_moe_lt_active[layer].dense_down  = g_moe_lt_hi[layer].dense_down;  break;
+        case MOE_ATTRIB_SHARED_GATE: g_moe_lt_active[layer].shared_gate = g_moe_lt_hi[layer].shared_gate; break;
+        case MOE_ATTRIB_SHARED_UP:   g_moe_lt_active[layer].shared_up   = g_moe_lt_hi[layer].shared_up;   break;
+        case MOE_ATTRIB_SHARED_DOWN: g_moe_lt_active[layer].shared_down = g_moe_lt_hi[layer].shared_down; break;
+        case MOE_ATTRIB_EXPERT_GATE: g_moe_lt_active[layer].switch_gate = g_moe_lt_hi[layer].switch_gate; break;
+        case MOE_ATTRIB_EXPERT_UP:   g_moe_lt_active[layer].switch_up   = g_moe_lt_hi[layer].switch_up;   break;
+        case MOE_ATTRIB_EXPERT_DOWN: g_moe_lt_active[layer].switch_down = g_moe_lt_hi[layer].switch_down; break;
+        default: return;
+    }
+    g_moe_promoted[role][layer] = 1;
+    fprintf(stderr, "[moe promotion] role=%s layer=%d PROMOTED to bits=16 -- permanent, no restart\n",
+            MOE_ATTRIB_ROLE_NAMES[role], layer);
+}
+
+static int moe_attrib_role_from_name(const char *name) {
+    for (int r = 0; r < MOE_ATTRIB_ROLE_COUNT; r++)
+        if (!strcmp(name, MOE_ATTRIB_ROLE_NAMES[r])) return r;
+    return -1;
+}
+
+// Called once per request admission (D6: bounds file-poll cost to the online scheduler's own
+// admission cadence, not per-token). Best-effort: a missing file is not fatal (the file may not
+// exist yet if nothing has been promoted), matching D3's "telemetry/control-plane reads must
+// never break serving" spirit already established for the Phase 4 push path. Re-reads the whole
+// file every call -- simple and correct; promotion events are rare and the file is tiny, not
+// worth a stat()-based skip-if-unchanged optimization this round.
+static void moe_promotion_maybe_apply(void) {
+    if (!g_moe_promotion_file) return;
+    if (!g_moe_neartie_correct_on) return;   // g_moe_lt_hi (the promotion source) is only populated when correction is on
+    FILE *f = fopen(g_moe_promotion_file, "r");
+    if (!f) return;
+    char role_buf[64]; int layer;
+    while (fscanf(f, "%63s %d", role_buf, &layer) == 2) {
+        if (layer < 0 || layer >= MOE_NL) continue;
+        int role = moe_attrib_role_from_name(role_buf);
+        if (role < 0) continue;
+        moe_promotion_apply_one((MoeAttribRole)role, layer);
+    }
+    fclose(f);
 }
 
 // D-roadmap-3 correction path: cheap-gate-first, same shape as moe_cb4c_maybe_reverify() (bool
@@ -5282,7 +5896,6 @@ static double moe_neartie_maybe_log(int slot, int req, int pos, int token_id, in
 // ("reuse [the existing mechanism's] cost discipline, don't re-derive from scratch") and bounds
 // a real risk: without a shared cap, many concurrent requests triggering correction in the same
 // step could dominate that step's wall-clock.
-static int g_moe_neartie_correct_on = 0;   // QWEN_MOE_NEARTIE_CORRECT, default off
 
 static void moe_neartie_maybe_correct(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
                                        float *w_finalnorm, int req, int pos, float *logits_inout,
@@ -5298,11 +5911,31 @@ static void moe_neartie_maybe_correct(const uint8_t *af, MoeAFTensor *t_embed, M
                 req, pos, cost, *budget_inout);
         return;
     }
+    // D-roadmap-4 Phase 5: capture the ORIGINAL (pre-correction) argmax before it gets
+    // overwritten below -- moe_neartie_attribute() needs both endpoints (original vs. corrected)
+    // to know whether this was a REAL flip worth attributing, not just a flagged-but-already-
+    // correct position (D-roadmap-3's own MLA round found that's common).
+    int orig_argmax = 0; float orig_bm = logits_inout[0];
+    for (int v = 1; v < MOE_VOCAB; v++) if (logits_inout[v] > orig_bm) { orig_bm = logits_inout[v]; orig_argmax = v; }
+
     int n_scalar = 0;
     moe_neartie_reverify_hi(af, t_embed, t_lmhead, w_finalnorm, req, pos, g_mnc_logits_hi, &n_scalar);
     *budget_inout -= n_scalar;
     fprintf(stderr, "[moe neartie] correct req=%d pos=%d n_scalar=%d margin_before=%.6f threshold=%.6f\n",
             req, pos, n_scalar, margin_before, moe_neartie_correct_threshold());
+
+    int corrected_argmax = 0; float corrected_bm = g_mnc_logits_hi[0];
+    for (int v = 1; v < MOE_VOCAB; v++) if (g_mnc_logits_hi[v] > corrected_bm) { corrected_bm = g_mnc_logits_hi[v]; corrected_argmax = v; }
+    if (corrected_argmax != orig_argmax) {
+        fprintf(stderr, "[moe neartie] correct req=%d pos=%d REAL FLIP orig=%d corrected=%d -- running attribution\n",
+                req, pos, orig_argmax, corrected_argmax);
+        moe_neartie_attribute(af, t_embed, t_lmhead, w_finalnorm, req, pos, corrected_argmax);
+        if (getenv("QWEN_MOE_ATTRIB_COMBO17_TEST") && req == 5 && pos == 4)
+            moe_attrib_combo17_test(af, t_embed, t_lmhead, w_finalnorm, req, pos);
+        if (getenv("QWEN_MOE_ATTRIB_COMBO87_TEST") && req == 32 && pos == 8)
+            moe_attrib_combo87_test(af, t_embed, t_lmhead, w_finalnorm, req, pos);
+    }
+
     memcpy(logits_inout, g_mnc_logits_hi, MOE_VOCAB * sizeof(float));
 }
 
@@ -5537,7 +6170,15 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     // (see moe_neartie_maybe_correct()/the shadow-pool comment for the full rationale).
     const char *env_neartie_correct       = getenv("QWEN_MOE_NEARTIE_CORRECT");
     const char *env_neartie_correct_st    = getenv("QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS");
+    // D-roadmap-4 Phase 5: role x layer attribution, only meaningful (and only ever called)
+    // when correction is also on -- attribution needs a confirmed real flip to attribute.
+    const char *env_attrib = getenv("QWEN_MOE_ATTRIB");
+    const char *env_attrib_max_events = getenv("QWEN_MOE_ATTRIB_MAX_EVENTS");
+    const char *env_attrib_max_pos = getenv("QWEN_MOE_ATTRIB_MAX_POS");
     const char *env_neartie_correct_thr   = getenv("QWEN_MOE_NEARTIE_CORRECT_THRESHOLD");
+    // D-roadmap-4 Phase 6 (D6): closed-loop promotion source, see moe_promotion_maybe_apply()'s
+    // own comment for why this is a local file this round, not Supabase directly.
+    const char *env_promotion_file = getenv("QWEN_MOE_PROMOTION_FILE");
 
     int B            = env_slots  && env_slots[0]  ? atoi(env_slots)  : 4;
     int R            = env_reqs   && env_reqs[0]   ? atoi(env_reqs)   : 12;
@@ -5570,6 +6211,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
         moe_neartie_attn_bits_summary(cfgbuf, sizeof cfgbuf);
         fprintf(stderr, "[moe neartie] cfg attn_kind=%d nl=%d %s threshold=%.6f\n",
                 MOE_ATTN_KIND, MOE_NL, cfgbuf, moe_neartie_threshold());
+        moe_neartie_events_init();   // D-roadmap-4 Phase 3: no-op unless QWEN_MOE_NEARTIE_EVENTS_LOG set
     }
 
     // D-roadmap-3 correction path init -- FATAL if enabled without a checkpoint, not a guessed
@@ -5577,24 +6219,50 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     g_moe_neartie_correct_on = env_neartie_correct && env_neartie_correct[0] && atoi(env_neartie_correct) != 0;
     g_moe_neartie_correct_threshold_override = env_neartie_correct_thr && env_neartie_correct_thr[0]
         ? atof(env_neartie_correct_thr) : -1.0;
+    g_moe_attrib_on = env_attrib && env_attrib[0] && atoi(env_attrib) != 0;
+    g_moe_attrib_max_events = env_attrib_max_events && env_attrib_max_events[0] ? atoi(env_attrib_max_events) : -1;
+    g_moe_attrib_max_pos = env_attrib_max_pos && env_attrib_max_pos[0] ? atoi(env_attrib_max_pos) : -1;
+    if (g_moe_attrib_on) fprintf(stderr, "[moe attrib] enabled -- %d role x layer combos tested per confirmed real flip (attention roles only, see moe_neartie_attribute()'s own scope comment), max_events=%d max_pos=%d\n",
+            MOE_ATTRIB_ROLE_COUNT * MOE_NL, g_moe_attrib_max_events, g_moe_attrib_max_pos);
     if (g_moe_neartie_correct_on) {
         if (!env_neartie_correct_st || !env_neartie_correct_st[0]) {
             fprintf(stderr, "FATAL: QWEN_MOE_NEARTIE_CORRECT=1 requires QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS "
                             "(genuine bf16/original checkpoint -- see ROADMAP.md D-roadmap-3)\n");
             exit(1);
         }
-        moe_neartie_correct_load_attn_hi(env_neartie_correct_st);   // FATALs itself on non-GQA (scope guard)
+        moe_neartie_correct_load_attn_hi(env_neartie_correct_st);
         moe_resolve_layer_tensors_hi();
         moe_neartie_correct_init();
         long attn_hi_bytes = 0;
-        for (int l = 0; l < MOE_NL; l++)
-            attn_hi_bytes += g_moe_lt_hi[l].q_proj->packed_bytes + g_moe_lt_hi[l].k_proj->packed_bytes
-                            + g_moe_lt_hi[l].v_proj->packed_bytes + g_moe_lt_hi[l].o_proj->packed_bytes;
+        // D-roadmap-3 MLA extension bugfix (2026-09-01, found live via a real SIGSEGV on
+        // DeepSeek): this diagnostic accounting loop was never updated when the MLA branch was
+        // added above -- it kept referencing k_proj/v_proj (GQA-only fields) unconditionally,
+        // which are NULL under MLA (moe_resolve_attn_tensors_mla_hi() never sets them, same as
+        // production moe_resolve_attn_tensors_mla()), so ->packed_bytes was a NULL deref. Must
+        // branch on MOE_ATTN_KIND exactly like every other g_moe_lt_hi[] reader in this file.
+        for (int l = 0; l < MOE_NL; l++) {
+            if (MOE_ATTN_KIND == MOE_ATTN_MLA)
+                attn_hi_bytes += g_moe_lt_hi[l].q_proj->packed_bytes + g_moe_lt_hi[l].kv_a_proj->packed_bytes
+                                + g_moe_lt_hi[l].kv_b_proj->packed_bytes + g_moe_lt_hi[l].o_proj->packed_bytes;
+            else
+                attn_hi_bytes += g_moe_lt_hi[l].q_proj->packed_bytes + g_moe_lt_hi[l].k_proj->packed_bytes
+                                + g_moe_lt_hi[l].v_proj->packed_bytes + g_moe_lt_hi[l].o_proj->packed_bytes;
+        }
         long shadow_pool_bytes = (long)MOE_MAXLAYERS*MOE_NEARTIE_LANES*MOE_CBATCH_MAXPOS*MOE_KROW*(long)sizeof(float)
                                 + (long)MOE_MAXLAYERS*MOE_NEARTIE_LANES*MOE_CBATCH_MAXPOS*MOE_VROW*(long)sizeof(float);
         fprintf(stderr, "[moe neartie] correct cfg safetensors=%s threshold=%.6f attn_hi_bytes=%ld shadow_pool_bytes=%ld\n",
                 env_neartie_correct_st, moe_neartie_correct_threshold(), attn_hi_bytes, shadow_pool_bytes);
     }
+
+    // D-roadmap-4 Phase 6: g_moe_lt_active starts as an exact copy of production g_moe_lt --
+    // unconditional and always safe (identical tensor pointers until something actually gets
+    // promoted), so no separate "is this feature on" branch is needed here. This gate
+    // (run_moe_cbatch_verify_mode()) is the ONLY one that repoints g_moe_lt_cur at
+    // g_moe_lt_active -- every other verify-mode gate is untouched.
+    moe_lt_active_init();
+    g_moe_lt_cur = g_moe_lt_active;
+    g_moe_promotion_file = (env_promotion_file && env_promotion_file[0]) ? env_promotion_file : NULL;
+    if (g_moe_promotion_file) fprintf(stderr, "[moe promotion] polling '%s' once per request admission (D6)\n", g_moe_promotion_file);
 
     if (B < 1 || B > MOE_BATCH_MAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS=%d out of [1,%d]\n", B, MOE_BATCH_MAX); exit(1); }
     if (R < 1 || R > MOE_CB4B_RMAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_REQS=%d out of [1,%d]\n", R, MOE_CB4B_RMAX); exit(1); }
@@ -5679,6 +6347,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
             rq_t_admit[r] = nowt();
             if (mcb_freed_before[s]) admitted_after_evict++;
             rq_slot_of[r] = s;
+            moe_promotion_maybe_apply();   // D-roadmap-4 Phase 6 (D6): once per admission, not per token
 
             // Phase MoE-4c 조정2: 요청ID로 키잉되는 Tier2 replay가 필요로 하는 실제 토큰열.
             // prompt 구간은 두 PREFILL_MODE 모두 admission 시점에 이미 확정돼있음.
@@ -5963,6 +6632,13 @@ static void alloc_moe_buffers(void) {
     g_mcs_router_scores  = malloc((size_t)MOE_N_EXPERTS*sizeof(float)); g_mcs_top_idx  = malloc((size_t)MOE_TOP_K*sizeof(int));
     g_mfb_router_scores  = malloc((size_t)MOE_N_EXPERTS*sizeof(float)); g_mfb_top_idx  = malloc((size_t)MOE_TOP_K*sizeof(int));
     g_mfnb_router_scores = malloc((size_t)MOE_N_EXPERTS*sizeof(float)); g_mfnb_top_idx = malloc((size_t)MOE_TOP_K*sizeof(int));
+    // D-roadmap-4 routing sensor -- see g_moe_routing_capture's own declaration comment (near
+    // g_mfb_top_idx) for the WHY/COST/EXIT. Unconditional alloc (like every other buffer in this
+    // block) -- the size is negligible (~98KB for DeepSeek's TOP_K=6) and the capture write itself
+    // is a no-op cost until QWEN_MOE_NEARTIE_LOG actually reads it, matching this subsystem's
+    // established "disabled costs nothing real" pattern closely enough not to warrant a second
+    // env-gated allocation path.
+    g_moe_routing_capture = malloc((size_t)MOE_BATCH_MAX*MOE_MAXLAYERS*MOE_TOP_K*sizeof(int));
     g_moe_bucket = malloc((size_t)MOE_N_EXPERTS*sizeof(MoeExpertBucket));
 
     // Step 7 (Group E): token-major batch/ragged buffers, flat, MOE_BATCH_MAX*MOE_HIDDEN each --
@@ -6042,6 +6718,7 @@ static void alloc_moe_buffers(void) {
         !g_mcs_sgate_v || !g_mcs_sup_v || !g_mcs_sdown_v ||
         !g_mft_router_scores || !g_mft_top_idx || !g_mcs_router_scores || !g_mcs_top_idx ||
         !g_mfb_router_scores || !g_mfb_top_idx || !g_mfnb_router_scores || !g_mfnb_top_idx ||
+        !g_moe_routing_capture ||
         !g_moe_bucket ||
         !g_mfob_x || !g_mfob_h || !g_mfob_h2 || !g_mfob_mlp_out ||
         !g_mcbs_x || !g_mcbs_h || !g_mcbs_h2 || !g_mcbs_mlp_out ||
@@ -6605,7 +7282,7 @@ static MoeAFTensor *gguf_register_moe_q4g64_as(const char *gguf_name, const char
                 gguf_name, (int)t->type);
         exit(1);
     }
-    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (gguf)\n"); exit(1); }
+    if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors (gguf)\n"); exit(1); }
 
     long ng = in / 64;
     size_t row_pbytes = (size_t)(in / 2);
@@ -6791,7 +7468,7 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     moe_init_rope_gqa();
     fprintf(stderr, "[gguf moe yarn] rope_mscale=%.10f attn_scale=%.10f\n", g_moe_rope_mscale, g_moe_attn_scale);
 
-    g_moe_af = calloc(512, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
+    g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
     g_moe_f32 = malloc(sizeof(MoeF32Tensor) * 512);
 
     for (int l = 0; l < MOE_NL; l++) {
@@ -7273,7 +7950,7 @@ static int run_moe_gpu_full_gate(int argc, char **argv) {
                             MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
                             g_moe_yarn_freqs, MOE_RMS_EPS) ||
         !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                               MOE_TOP_K, 64)) {
+                               MOE_TOP_K, 64, MOE_NORM_TOPK_PROB)) {
         fprintf(stderr, "FATAL: [moe gpu full] mlx_gpu_*_config failed\n");
         exit(1);
     }
@@ -7518,7 +8195,7 @@ static int run_moe_gpu_fused_gate(int argc, char **argv) {
                             MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
                             g_moe_yarn_freqs, MOE_RMS_EPS) ||
         !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                               MOE_TOP_K, 64)) {
+                               MOE_TOP_K, 64, MOE_NORM_TOPK_PROB)) {
         fprintf(stderr, "FATAL: [moe gpu fused] mlx_gpu_*_config failed\n");
         exit(1);
     }
@@ -7754,7 +8431,7 @@ static int run_moe_gpu_generate_gate(int argc, char **argv) {
                             MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
                             g_moe_yarn_freqs, MOE_RMS_EPS) ||
         !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                               MOE_TOP_K, 64)) {
+                               MOE_TOP_K, 64, MOE_NORM_TOPK_PROB)) {
         fprintf(stderr, "FATAL: [moe gpu generate] mlx_gpu_*_config failed\n");
         exit(1);
     }
@@ -8057,9 +8734,9 @@ static int run_moe_gpu_gqa_fused_gate(int argc, char **argv) {
 
     double attn_scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
     if (!mlx_gpu_gqa_config(MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_ROPE_THETA,
-                             attn_scale, MOE_RMS_EPS) ||
+                             attn_scale, MOE_RMS_EPS, MOE_QKNORM_WHOLE_VECTOR) ||
         !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                               MOE_TOP_K, 64)) {
+                               MOE_TOP_K, 64, MOE_NORM_TOPK_PROB)) {
         fprintf(stderr, "FATAL: [moe gpu gqa fused] mlx_gpu_*_config failed\n");
         exit(1);
     }
@@ -8418,7 +9095,7 @@ static int run_moe_gpu_batch_gate(int argc, char **argv) {
                             MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
                             g_moe_yarn_freqs, MOE_RMS_EPS) ||
         !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                               MOE_TOP_K, 64) ||
+                               MOE_TOP_K, 64, MOE_NORM_TOPK_PROB) ||
         !mlx_gpu_set_batch(B)) {
         fprintf(stderr, "FATAL: [moe gpu batch] mlx_gpu_*_config/mlx_gpu_set_batch failed\n");
         exit(1);
@@ -8669,9 +9346,9 @@ static int run_moe_gpu_gqa_batch_gate(int argc, char **argv) {
 
     double attn_scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
     if (!mlx_gpu_gqa_config(MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_ROPE_THETA,
-                             attn_scale, MOE_RMS_EPS) ||
+                             attn_scale, MOE_RMS_EPS, MOE_QKNORM_WHOLE_VECTOR) ||
         !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                               MOE_TOP_K, 64) ||
+                               MOE_TOP_K, 64, MOE_NORM_TOPK_PROB) ||
         !mlx_gpu_set_batch(B)) {
         fprintf(stderr, "FATAL: [moe gpu gqa batch] mlx_gpu_*_config/mlx_gpu_set_batch failed\n");
         exit(1);
@@ -8957,7 +9634,7 @@ static int run_moe_gpu_cbatch_gate(int argc, char **argv) {
                             MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
                             g_moe_yarn_freqs, MOE_RMS_EPS) ||
         !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                               MOE_TOP_K, 64) ||
+                               MOE_TOP_K, 64, MOE_NORM_TOPK_PROB) ||
         !mlx_gpu_set_batch(MOE_CBATCH_N)) {
         fprintf(stderr, "FATAL: [moe gpu cbatch] mlx_gpu_*_config/mlx_gpu_set_batch failed\n");
         exit(1);
@@ -9323,9 +10000,9 @@ static int run_moe_gpu_gqa_generate_gate(int argc, char **argv) {
 
     double attn_scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
     if (!mlx_gpu_gqa_config(MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_ROPE_THETA,
-                             attn_scale, MOE_RMS_EPS) ||
+                             attn_scale, MOE_RMS_EPS, MOE_QKNORM_WHOLE_VECTOR) ||
         !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                               MOE_TOP_K, 64)) {
+                               MOE_TOP_K, 64, MOE_NORM_TOPK_PROB)) {
         fprintf(stderr, "FATAL: [moe gpu gqa generate] mlx_gpu_*_config failed\n");
         exit(1);
     }
@@ -9534,9 +10211,9 @@ static int run_moe_gpu_gqa_cbatch_gate(int argc, char **argv) {
 
     double attn_scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
     if (!mlx_gpu_gqa_config(MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_ROPE_THETA,
-                             attn_scale, MOE_RMS_EPS) ||
+                             attn_scale, MOE_RMS_EPS, MOE_QKNORM_WHOLE_VECTOR) ||
         !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                               MOE_TOP_K, 64) ||
+                               MOE_TOP_K, 64, MOE_NORM_TOPK_PROB) ||
         !mlx_gpu_set_batch(MOE_CBATCH_N)) {
         fprintf(stderr, "FATAL: [moe gpu gqa cbatch] mlx_gpu_*_config/mlx_gpu_set_batch failed\n");
         exit(1);
@@ -9708,9 +10385,9 @@ static int run_moe_gpu_gqa_cbatch_prefill_gate(int argc, char **argv) {
 
     double attn_scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
     if (!mlx_gpu_gqa_config(MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_ROPE_THETA,
-                             attn_scale, MOE_RMS_EPS) ||
+                             attn_scale, MOE_RMS_EPS, MOE_QKNORM_WHOLE_VECTOR) ||
         !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                               MOE_TOP_K, 64) ||
+                               MOE_TOP_K, 64, MOE_NORM_TOPK_PROB) ||
         !mlx_gpu_set_batch(MOE_CBATCH_N)) {
         fprintf(stderr, "FATAL: [moe gpu gqa cbatch prefill] mlx_gpu_*_config/mlx_gpu_set_batch failed\n");
         exit(1);
@@ -10169,9 +10846,9 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
 
     double attn_scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
     if (!mlx_gpu_gqa_config(MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_ROPE_THETA,
-                             attn_scale, MOE_RMS_EPS) ||
+                             attn_scale, MOE_RMS_EPS, MOE_QKNORM_WHOLE_VECTOR) ||
         !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                               MOE_TOP_K, 64) ||
+                               MOE_TOP_K, 64, MOE_NORM_TOPK_PROB) ||
         !mlx_gpu_set_batch(B)) {
         fprintf(stderr, "FATAL: [moe gpu gqa cb online] mlx_gpu_*_config/mlx_gpu_set_batch failed\n");
         exit(1);
@@ -10484,7 +11161,7 @@ static int run_moe_gpu_cbatch_prefill_gate(int argc, char **argv) {
                             MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
                             g_moe_yarn_freqs, MOE_RMS_EPS) ||
         !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                               MOE_TOP_K, 64) ||
+                               MOE_TOP_K, 64, MOE_NORM_TOPK_PROB) ||
         !mlx_gpu_set_batch(MOE_CBATCH_N)) {
         fprintf(stderr, "FATAL: [moe gpu cbatch prefill] mlx_gpu_*_config/mlx_gpu_set_batch failed\n");
         exit(1);
@@ -10862,7 +11539,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                             MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
                             g_moe_yarn_freqs, MOE_RMS_EPS) ||
         !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                               MOE_TOP_K, 64) ||
+                               MOE_TOP_K, 64, MOE_NORM_TOPK_PROB) ||
         !mlx_gpu_set_batch(B)) {
         fprintf(stderr, "FATAL: [moe gpu cb online] mlx_gpu_*_config/mlx_gpu_set_batch failed\n");
         exit(1);
@@ -11164,7 +11841,7 @@ static int run_moe_gqa_gpu_gate(int argc, char **argv) {
 
     double attn_scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
     if (!mlx_gpu_gqa_config(MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_ROPE_THETA,
-                             attn_scale, MOE_RMS_EPS)) {
+                             attn_scale, MOE_RMS_EPS, MOE_QKNORM_WHOLE_VECTOR)) {
         fprintf(stderr, "FATAL: [gqa olmoe gpu] mlx_gpu_gqa_config() failed\n");
         exit(1);
     }
@@ -11408,9 +12085,9 @@ static int run_moe_verify_mode(int argc, char **argv) {
             }
             double attn_scale_bc = 1.0 / sqrt((double)MOE_HEAD_DIM);
             if (!mlx_gpu_gqa_config(MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_ROPE_THETA,
-                                     attn_scale_bc, MOE_RMS_EPS) ||
+                                     attn_scale_bc, MOE_RMS_EPS, MOE_QKNORM_WHOLE_VECTOR) ||
                 !mlx_gpu_layer_config(MOE_HIDDEN, MOE_IM_DIM, MOE_DENSE_IM, MOE_N_EXPERTS, MOE_N_SHARED,
-                                       MOE_TOP_K, 64)) {
+                                       MOE_TOP_K, 64, MOE_NORM_TOPK_PROB)) {
                 fprintf(stderr, "FATAL: [bindconfig] mlx_gpu_*_config failed\n");
                 exit(1);
             }
@@ -11699,7 +12376,7 @@ static SafetensorsMulti *g_st_moe = NULL;   // separate from the dense loader's 
 // fallback on in%64!=0 -- FATAL instead (no AF-family MoE consumer supports F32, unlike the
 // dense safetensors loader's soft fallback).
 static MoeAFTensor *st_register_moe_experts_q4g64_as(const char *name_pattern, int layer, int E, const char *engine_name) {
-    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (safetensors)\n"); exit(1); }
+    if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors (safetensors)\n"); exit(1); }
 
     char name0[160];
     snprintf(name0, sizeof name0, name_pattern, layer, 0);
@@ -11777,7 +12454,7 @@ static MoeAFTensor *st_register_moe_experts_q4g64_as(const char *name_pattern, i
 // lm_head.weight (both real targets use this q4g64 path for embed/lm_head, matching
 // gguf_register_moe_q4g64_as()'s identical calls for "token_embd.weight"/"output.weight").
 static MoeAFTensor *st_register_moe_dense_af_q4g64_as(const char *name, const char *engine_name) {
-    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (safetensors)\n"); exit(1); }
+    if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors (safetensors)\n"); exit(1); }
     SafetensorsFile *shard = NULL;
     const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
     if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
@@ -11826,7 +12503,7 @@ static MoeAFTensor *st_register_moe_dense_af_q4g64_as(const char *name, const ch
 // nibble-packed) and gguf_quantize_q8g64() instead of the error-feedback int4 transcoder. Sets
 // bits=8 so moe_decode_af()/moe_matvec_af_row() take their bits==8 branch.
 static MoeAFTensor *st_register_moe_experts_q8g64_as(const char *name_pattern, int layer, int E, const char *engine_name) {
-    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (safetensors)\n"); exit(1); }
+    if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors (safetensors)\n"); exit(1); }
 
     char name0[160];
     snprintf(name0, sizeof name0, name_pattern, layer, 0);
@@ -11897,6 +12574,75 @@ static MoeAFTensor *st_register_moe_experts_q8g64_as(const char *name_pattern, i
     return w;
 }
 
+// D-d5-9: f16 sibling of st_register_moe_experts_q8g64_as() above -- same per-expert dequant
+// loop and shape checks, but each expert is stored as a raw _Float16 with no scale/group, which
+// is exactly the "raw-passthrough" container moe_decode_af()'s bits0==16 branch already reads
+// and st_register_moe_f16_as_af() already produces for single tensors.
+//   WHY: the routed experts had no promotable representation at all. st_register_moe_f16_as_af()
+//   registers E=1 tensors only, while the engine's routed-expert AF tensors are E-stacked, so
+//   "promote layer L's experts to bits=16" had nothing to point at.
+//   COST: E*out*in*2 bytes of anonymous memory per (layer, role) -- 369MB each on
+//   DeepSeek-V2-Lite (E=64, 1408x2048), 1.107GB for a layer's three roles, 28.8GB for all 26 MoE
+//   layers. That is why the caller registers these per-layer on demand rather than eagerly.
+//   EXIT: to halve the footprint, call st_register_moe_experts_q8g64_as() instead -- the
+//   attribution and promotion machinery is bit-width agnostic, only this registration differs.
+static MoeAFTensor *st_register_moe_experts_f16_as_af(const char *name_pattern, int layer, int E,
+                                                        const char *engine_name) {
+    if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors (safetensors)\n"); exit(1); }
+
+    char name0[160];
+    snprintf(name0, sizeof name0, name_pattern, layer, 0);
+    SafetensorsFile *shard0 = NULL;
+    const SafetensorsInfo *t0 = safetensors_multi_find_tensor(g_st_moe, name0, &shard0);
+    if (!t0) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name0); exit(1); }
+    long out = (long)t0->shape[0], in = (long)t0->shape[1];
+    if (out <= 0 || in <= 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s has non-positive dims (out=%ld in=%ld)\n", name0, out, in);
+        exit(1);
+    }
+    if (!safetensors_dequant_supported(t0->dtype)) {
+        fprintf(stderr, "FATAL: safetensors moe tensor '%s' has unsupported dtype %s\n", name0, safetensors_type_name(t0->dtype));
+        exit(1);
+    }
+
+    size_t per_expert = moe_gguf_mul_checked("f16 experts per_expert", (size_t)out, (size_t)in);
+    size_t total_bytes = moe_gguf_mul_checked("f16 experts total_bytes",
+                            moe_gguf_mul_checked("f16 experts total_bytes", (size_t)E, per_expert),
+                            sizeof(_Float16));
+    uint8_t *base = malloc(total_bytes);
+    if (!base) {
+        fprintf(stderr, "FATAL: safetensors moe f16-experts alloc failed for '%s' (%zu bytes)\n", engine_name, total_bytes);
+        exit(1);
+    }
+    float *deq = malloc(moe_gguf_mul_checked("f16 experts deq", per_expert, sizeof(float)));
+    if (!deq) { fprintf(stderr, "FATAL: safetensors moe f16-experts scratch alloc failed for '%s'\n", engine_name); exit(1); }
+
+    for (long e = 0; e < E; e++) {
+        char name[160];
+        snprintf(name, sizeof name, name_pattern, layer, (int)e);
+        SafetensorsFile *shard = NULL;
+        const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
+        if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
+        if ((long)t->shape[0] != out || (long)t->shape[1] != in) {
+            fprintf(stderr, "FATAL: safetensors moe: %s shape [%llu,%llu] disagrees with expert 0's [%ld,%ld]\n",
+                    name, (unsigned long long)t->shape[0], (unsigned long long)t->shape[1], out, in);
+            exit(1);
+        }
+        safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), deq, (uint64_t)per_expert);
+        _Float16 *h = (_Float16 *)base + (size_t)e * per_expert;
+        for (size_t i = 0; i < per_expert; i++) h[i] = (_Float16)deq[i];
+    }
+    free(deq);
+
+    MoeAFTensor *w = &g_moe_af[g_moe_naf++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->E = E; w->out = out; w->in = in; w->ng = 0;
+    w->packed_off = 0; w->packed_bytes = (long)total_bytes;
+    w->scale_off = -1; w->bias_off = -1;   // never dereferenced for bits==16
+    w->base = base; w->sym = 0; w->bits = 16;
+    return w;
+}
+
 // Per-expert mixed-precision sibling of st_register_moe_experts_q4g64_as()/q8g64_as()
 // (profiling-driven expert promotion follow-up, 2026-08-29): same shape/dtype checks and
 // per-expert dequant loop, but each expert e is transcoded to q4g64 int4 or q8g64 int8
@@ -11907,7 +12653,7 @@ static MoeAFTensor *st_register_moe_experts_q8g64_as(const char *name_pattern, i
 // independent, confirmed against both uniform siblings' own scale_bytes computation).
 static MoeAFTensor *st_register_moe_experts_mixed_as(const char *name_pattern, int layer, int E,
                                                        const int *ebits_in, const char *engine_name) {
-    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (safetensors)\n"); exit(1); }
+    if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors (safetensors)\n"); exit(1); }
 
     char name0[160];
     snprintf(name0, sizeof name0, name_pattern, layer, 0);
@@ -12020,7 +12766,7 @@ static MoeAFTensor *st_register_moe_experts_mixed_as(const char *name_pattern, i
 // experts pair above. Used for this round's attention (q_proj/kv_a_proj_with_mqa/kv_b_proj/
 // o_proj), dense-layer FFN, and shared_experts FFN registrations.
 static MoeAFTensor *st_register_moe_dense_af_q8g64_as(const char *name, const char *engine_name) {
-    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (safetensors)\n"); exit(1); }
+    if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors (safetensors)\n"); exit(1); }
     SafetensorsFile *shard = NULL;
     const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
     if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
@@ -12075,7 +12821,7 @@ static MoeAFTensor *st_register_moe_dense_af_q8g64_as(const char *name, const ch
 // produces float32 (its normal job for every dtype), this just keeps that output as-is instead
 // of feeding it into gguf_quantize_q8g64()/q4g64_error_feedback() afterward.
 static MoeAFTensor *st_register_moe_f32_as_af(const char *name, const char *engine_name) {
-    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (safetensors)\n"); exit(1); }
+    if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors (safetensors)\n"); exit(1); }
     SafetensorsFile *shard = NULL;
     const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
     if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
@@ -12114,7 +12860,7 @@ static MoeAFTensor *st_register_moe_f32_as_af(const char *name, const char *engi
 // just narrows that to 2 bytes/element instead of keeping all 4 -- no new quantization math, no
 // group/scale/bias (same as bits==32, F16 is a float container, not an integer code).
 static MoeAFTensor *st_register_moe_f16_as_af(const char *name, const char *engine_name) {
-    if (g_moe_naf >= 512) { fprintf(stderr, "FATAL: >512 moe af tensors (safetensors)\n"); exit(1); }
+    if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors (safetensors)\n"); exit(1); }
     SafetensorsFile *shard = NULL;
     const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
     if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
@@ -12308,46 +13054,6 @@ static const MoeStRole MOE_ST_ATTN_ROLES_GQA[] = {   // qwen3_moe/olmoe -- both 
     { "model.layers.%d.self_attn.k_norm.weight", "model.layers.%d.self_attn.k_norm.weight", 0 },
 };
 
-// D-roadmap-3 correction path: registers bits=16 attention-only tensors for ALL layers, sourced
-// from a genuine bf16/original safetensors checkpoint (QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS),
-// into the SAME shared g_moe_af[] registry the production AF-blob loader already populated --
-// reuses st_register_moe_f16_as_af() verbatim (already-tested code, no new quant/dequant math),
-// just under "__neartie_hi"-suffixed engine names so lookups can never collide with production
-// entries. WHY no new export tool/blob format: the AF-blob-FILE format (layout_af.txt+.bin) has
-// no on-disk representation for raw F16 tensors -- reusing the safetensors loader's existing
-// live-dequant path is real, tested machinery already in this file, not new engineering.
-//   COST: opens a SECOND independent SafetensorsMulti handle concurrently with the production
-//   AF-blob deployment (verified no shared/singleton global state between the two loader
-//   subsystems before relying on this) -- one-time startup cost (~512MiB eager, see RESULTS.md
-//   memory math), not a hot-path cost.
-//   EXIT: MLA support is a structurally-identical follow-up (swap MOE_ST_ATTN_ROLES_GQA for
-//   MOE_ST_ATTN_ROLES_MLA, add a kv_a_proj/kv_b_proj-shaped hi-resolve mirror) -- deferred, not
-//   implemented speculatively, since this round's real bf16 source (DeepSeek) isn't available yet.
-static void moe_neartie_correct_load_attn_hi(const char *safetensors_path) {
-    if (MOE_ATTN_KIND != MOE_ATTN_GQA) {
-        fprintf(stderr, "FATAL: QWEN_MOE_NEARTIE_CORRECT=1 only implemented for GQA models this round "
-                        "(MLA is a deferred follow-up -- see ROADMAP.md D-roadmap-3)\n");
-        exit(1);
-    }
-    SafetensorsMulti *saved = g_st_moe;
-    g_st_moe = safetensors_open_multi(safetensors_path);
-    char name[160], ename[160];
-    for (int l = 0; l < MOE_NL; l++) {
-        for (size_t r = 0; r < sizeof(MOE_ST_ATTN_ROLES_GQA)/sizeof(MOE_ST_ATTN_ROLES_GQA[0]); r++) {
-            const MoeStRole *role = &MOE_ST_ATTN_ROLES_GQA[r];
-            if (!role->is_af) continue;   // skip q_norm/k_norm -- already F32, no promotion needed
-            snprintf(name, sizeof name, role->st_pattern, l);
-            snprintf(ename, sizeof ename, role->engine_pattern, l);
-            size_t n = strlen(ename);
-            snprintf(ename + n, sizeof ename - n, "__neartie_hi");
-            st_register_moe_f16_as_af(name, ename);
-        }
-    }
-    g_st_moe = saved;
-    fprintf(stderr, "[moe neartie] correct attn_hi registered: %d layers x 4 roles from '%s'\n",
-            MOE_NL, safetensors_path);
-}
-
 static const MoeStRole MOE_ST_DENSE_ROLES[] = {   // only l < MOE_FIRST_DENSE_LAYERS (deepseek_v2)
     { "model.layers.%d.mlp.gate_proj.weight", "model.layers.%d.mlp.gate_proj", 1, "dense_gate_proj" },
     { "model.layers.%d.mlp.up_proj.weight",   "model.layers.%d.mlp.up_proj",   1, "dense_up_proj" },
@@ -12366,6 +13072,123 @@ static const MoeStExpertRole MOE_ST_EXPERT_ROLES[] = {   // always 3, every rout
     { "model.layers.%d.mlp.experts.%d.up_proj.weight",   "model.layers.%d.mlp.switch_mlp.up_proj" },
     { "model.layers.%d.mlp.experts.%d.down_proj.weight", "model.layers.%d.mlp.switch_mlp.down_proj" },
 };
+
+// D-roadmap-3 correction path (extended D-roadmap-4, 2026-09-02): registers bits=16 tensors for
+// ALL layers, sourced from a genuine bf16/original safetensors checkpoint (QWEN_MOE_NEARTIE_
+// CORRECT_SAFETENSORS), into the SAME shared g_moe_af[] registry the production AF-blob loader
+// already populated -- reuses st_register_moe_f16_as_af() verbatim (already-tested code, no new
+// quant/dequant math), just under "__neartie_hi"-suffixed engine names so lookups can never
+// collide with production entries. WHY no new export tool/blob format: the AF-blob-FILE format
+// (layout_af.txt+.bin) has no on-disk representation for raw F16 tensors -- reusing the
+// safetensors loader's existing live-dequant path is real, tested machinery already in this
+// file, not new engineering. Moved to AFTER MOE_ST_DENSE_ROLES/MOE_ST_SHARED_ROLES (both used
+// below now) -- forward-declared near moe_neartie_maybe_log(), so callers above this point in
+// the file are unaffected by the move.
+//   COST: opens a SECOND independent SafetensorsMulti handle concurrently with the production
+//   AF-blob deployment (verified no shared/singleton global state between the two loader
+//   subsystems before relying on this) -- one-time startup cost (~512MiB eager for attention
+//   alone, see RESULTS.md memory math; dense+shared adds more, see moe_resolve_ffn_tensors_hi()'s
+//   own comment), not a hot-path cost.
+//   EXIT (2026-09-01: MLA support shipped; 2026-09-02: dense/shared FFN roles added -- user
+//   pointed out attribution covering attention only was an incomplete sensor set for the engine's
+//   own stated "independently precision-controllable per role" design, not a deferrable gap):
+//   registers MOE_ST_DENSE_ROLES (l < MOE_FIRST_DENSE_LAYERS) and MOE_ST_SHARED_ROLES
+//   (l >= MOE_FIRST_DENSE_LAYERS, MOE_N_SHARED>0) alongside the existing attention roles, same
+//   "__neartie_hi" suffix convention, same st_register_moe_f16_as_af() call -- no new mechanism.
+static void moe_neartie_correct_load_attn_hi(const char *safetensors_path) {
+    const MoeStRole *attn_roles = (MOE_ATTN_KIND == MOE_ATTN_MLA) ? MOE_ST_ATTN_ROLES_MLA : MOE_ST_ATTN_ROLES_GQA;
+    size_t n_attn_roles = (MOE_ATTN_KIND == MOE_ATTN_MLA)
+        ? sizeof(MOE_ST_ATTN_ROLES_MLA)/sizeof(MOE_ST_ATTN_ROLES_MLA[0])
+        : sizeof(MOE_ST_ATTN_ROLES_GQA)/sizeof(MOE_ST_ATTN_ROLES_GQA[0]);
+    size_t n_dense_roles = sizeof(MOE_ST_DENSE_ROLES)/sizeof(MOE_ST_DENSE_ROLES[0]);
+    size_t n_shared_roles = sizeof(MOE_ST_SHARED_ROLES)/sizeof(MOE_ST_SHARED_ROLES[0]);
+    SafetensorsMulti *saved = g_st_moe;
+    g_st_moe = safetensors_open_multi(safetensors_path);
+    char name[160], ename[160];
+    int n_dense_registered = 0, n_shared_registered = 0;
+    for (int l = 0; l < MOE_NL; l++) {
+        for (size_t r = 0; r < n_attn_roles; r++) {
+            const MoeStRole *role = &attn_roles[r];
+            if (!role->is_af) continue;   // skip q_norm/k_norm (GQA) or kv_a_layernorm (MLA) -- already F32
+            snprintf(name, sizeof name, role->st_pattern, l);
+            snprintf(ename, sizeof ename, role->engine_pattern, l);
+            size_t n = strlen(ename);
+            snprintf(ename + n, sizeof ename - n, "__neartie_hi");
+            st_register_moe_f16_as_af(name, ename);
+        }
+        if (l < MOE_FIRST_DENSE_LAYERS) {
+            for (size_t r = 0; r < n_dense_roles; r++) {
+                const MoeStRole *role = &MOE_ST_DENSE_ROLES[r];
+                snprintf(name, sizeof name, role->st_pattern, l);
+                snprintf(ename, sizeof ename, role->engine_pattern, l);
+                size_t n = strlen(ename);
+                snprintf(ename + n, sizeof ename - n, "__neartie_hi");
+                st_register_moe_f16_as_af(name, ename);
+                n_dense_registered++;
+            }
+        } else if (MOE_N_SHARED > 0) {
+            for (size_t r = 0; r < n_shared_roles; r++) {
+                const MoeStRole *role = &MOE_ST_SHARED_ROLES[r];
+                snprintf(name, sizeof name, role->st_pattern, l);
+                snprintf(ename, sizeof ename, role->engine_pattern, l);
+                size_t n = strlen(ename);
+                snprintf(ename + n, sizeof ename - n, "__neartie_hi");
+                st_register_moe_f16_as_af(name, ename);
+                n_shared_registered++;
+            }
+        }
+    }
+    // D-d5-9: routed-expert hi tensors, opt-in per layer via QWEN_MOE_NEARTIE_HI_EXPERT_LAYERS
+    // ("all", or a comma-separated layer list). Unset = none registered, which is the exact
+    // pre-D-d5-9 behavior -- every earlier result stays reproducible byte-for-byte.
+    //   WHY per-layer opt-in rather than eager: 1.107GB per layer on DeepSeek-V2-Lite, 28.8GB for
+    //   all 26 MoE layers, against ~24.5GB actually available on the box this runs on. Eager
+    //   loading would swap-thrash the machine, which is the failure this project already had once.
+    //   COST: an all-layer expert arm needs a machine with the headroom; anything less is a
+    //   subset measurement and has to be reported as one.
+    //   EXIT: switch the call below to st_register_moe_experts_q8g64_as() for a bits=8 tier at
+    //   half the footprint, or stream layers in and out if a true all-layer f16 arm is required.
+    int n_expert_registered = 0;
+    const char *hi_expert_env = getenv("QWEN_MOE_NEARTIE_HI_EXPERT_LAYERS");
+    if (hi_expert_env && hi_expert_env[0]) {
+        int want[MOE_MAXLAYERS];
+        for (int l = 0; l < MOE_MAXLAYERS; l++) want[l] = 0;
+        if (!strcmp(hi_expert_env, "all")) {
+            for (int l = 0; l < MOE_NL && l < MOE_MAXLAYERS; l++) want[l] = 1;
+        } else {
+            char buf[1024]; snprintf(buf, sizeof buf, "%s", hi_expert_env);
+            for (char *tok = strtok(buf, ","); tok; tok = strtok(NULL, ",")) {
+                int l = atoi(tok);
+                if (l >= 0 && l < MOE_NL && l < MOE_MAXLAYERS) want[l] = 1;
+            }
+        }
+        // g_st_moe is already the opened multi at this point (set at the top of this function),
+        // so no re-open here -- an earlier draft opened a second handle and leaked it.
+        static const char *ex_st[3] = {
+            "model.layers.%d.mlp.experts.%d.gate_proj.weight",
+            "model.layers.%d.mlp.experts.%d.up_proj.weight",
+            "model.layers.%d.mlp.experts.%d.down_proj.weight",
+        };
+        static const char *ex_en[3] = {
+            "model.layers.%d.mlp.switch_mlp.gate_proj__neartie_hi",
+            "model.layers.%d.mlp.switch_mlp.up_proj__neartie_hi",
+            "model.layers.%d.mlp.switch_mlp.down_proj__neartie_hi",
+        };
+        for (int l = MOE_FIRST_DENSE_LAYERS; l < MOE_NL; l++) {
+            if (!want[l]) continue;
+            for (int r = 0; r < 3; r++) {
+                snprintf(ename, sizeof ename, ex_en[r], l);
+                st_register_moe_experts_f16_as_af(ex_st[r], l, MOE_N_EXPERTS, ename);
+                n_expert_registered++;
+            }
+            fprintf(stderr, "[moe neartie] expert hi layer %d registered (3 roles, E=%d)\n", l, MOE_N_EXPERTS);
+        }
+    }
+
+    g_st_moe = saved;
+    fprintf(stderr, "[moe neartie] correct hi registered: %d layers x %zu attn roles + %d dense + %d shared + %d expert from '%s'\n",
+            MOE_NL, n_attn_roles, n_dense_registered, n_shared_registered, n_expert_registered, safetensors_path);
+}
 
 // Step 1 scope: config + derived dims only, no g_st_moe open yet -- gate-testable with nothing
 // but a few-KB config.json, no checkpoint download needed. Registration/resolution/forward-pass
@@ -12428,7 +13251,7 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
     fprintf(stderr, "[moe safetensors yarn] rope_mscale=%.10f attn_scale=%.10f\n", g_moe_rope_mscale, g_moe_attn_scale);
 
     g_st_moe = safetensors_open_multi(path);   // eager multi-shard open -- every real target is sharded
-    g_moe_af = calloc(512, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
+    g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
     g_moe_f32 = malloc(sizeof(MoeF32Tensor) * 512);
 
     // Per-expert mixed-precision expert promotion (profiling-driven follow-up, 2026-08-29;
@@ -12530,7 +13353,20 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
                 // dense-layer gate/up/down each independently selectable (QWEN_MOE_ROLE_BITS) --
                 // there is only ever one real dense layer (l < MOE_FIRST_DENSE_LAYERS), but the
                 // per-layer key still applies generically, not hardcoded to l==0.
-                st_register_moe_role(name, ename, moe_role_bits(role->role, l, 8), role->role, 0, 0);
+                // D-roadmap-4 ROI-D (2026-09-02): allow_f32/f32_as_af flipped 0,0 -> 1,1 to match
+                // the attention roles' own treatment above -- dense_gate/up/down are MoeAFTensor*
+                // fields (qwen_infer.c:3239), same pointer type attention roles use, so they need
+                // f32_as_af=1 too (not just allow_f32=1), otherwise bits=16 still FATALs
+                // ("not implemented for non-AF roles") and bits=32 would route through
+                // st_register_moe_f32_as() instead of st_register_moe_f32_as_af(), producing the
+                // wrong tensor type for this struct field. WHY: ROADMAP.md D-roadmap-2 Track A/B
+                // already measured FFN/expert precision promotion doesn't close near-ties -- this
+                // change doesn't assume it will, it only makes the request structurally possible
+                // (previously a hard FATAL) so QWEN_MOE_ROLE_BITS is uniformly capable across
+                // every AF role, attention or FFN. COST: none at the disabled default (bits=8
+                // unchanged unless explicitly requested higher). EXIT: revert allow_f32/f32_as_af
+                // to 0,0 if this proves to want re-blocking for some future reason.
+                st_register_moe_role(name, ename, moe_role_bits(role->role, l, 8), role->role, 1, 1);
             }
         } else {
             snprintf(name, sizeof name, "model.layers.%d.mlp.gate.weight", l);
@@ -12541,7 +13377,9 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
                     snprintf(name, sizeof name, role->st_pattern, l);
                     snprintf(ename, sizeof ename, role->engine_pattern, l);
                     // shared-experts gate/up/down each independently selectable, per layer.
-                    st_register_moe_role(name, ename, moe_role_bits(role->role, l, 8), role->role, 0, 0);
+                    // D-roadmap-4 ROI-D: same allow_f32/f32_as_af 0,0->1,1 fix as dense-layer
+                    // above (shared_gate/up/down are also MoeAFTensor*, qwen_infer.c:3241).
+                    st_register_moe_role(name, ename, moe_role_bits(role->role, l, 8), role->role, 1, 1);
                 }
             }
             for (size_t r = 0; r < sizeof(MOE_ST_EXPERT_ROLES)/sizeof(MOE_ST_EXPERT_ROLES[0]); r++) {

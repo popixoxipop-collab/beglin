@@ -407,13 +407,55 @@ static double g_gqa_rope_theta = 0.0, g_gqa_attn_scale = 0.0, g_gqa_rms_eps = 1e
 // GPU arm's own K/V cache (separate from g_mla_K/V above and from
 // qwen_infer.c's CPU-side cache -- D-gpu-2). Layout [layer][kv_head][pos][dim].
 #define GQA_L0_MAXPOS 32
-#define GQA_MAXLAYERS 32
+// D-d5-1 (2026-09-02): raised 32 -> 64. WHY: Qwen3-30B-A3B has 48 layers and hit this bound
+// exactly at layer 32 (`mlx_gpu_gqa_layer_step_lazy` returned 0), the first GQA model in this
+// project deeper than OLMoE's 16. Every use of this constant is either a K/V cache sizing loop
+// or an `l >= GQA_MAXLAYERS` bounds check -- purely a capacity limit, no algorithmic meaning
+// (verified by reading all 6 use sites before changing it).
+// COST: the fused caches are allocated at this bound regardless of the model's real depth, so
+// every GQA run now reserves 2x the K/V slots it did before: at B=1 that is a few MB; at B=64
+// it is ~537MB for Qwen3 (KVH=4) and ~2.1GB for OLMoE (KVH=16, up from ~1.07GB). Fine on the
+// 64GB M1 Max this was raised for; re-check before running B=64 OLMoE on bob's 16GB again.
+// EXIT: if the doubled reservation ever matters, grow g_fused_gqa_K/V on demand from the real
+// layer index instead of pre-filling to this bound.
+#define GQA_MAXLAYERS 64
 static std::vector<float> g_gqa_K;  // GQA_MAXLAYERS * n_kv_heads * GQA_L0_MAXPOS * head_dim
 static std::vector<float> g_gqa_V;
 
+// D-d5-2 (2026-09-02): q/k-norm has TWO real conventions among this project's GQA models, and
+// the GPU path had only ever implemented one of them (hardcoded, with a comment asserting it).
+//   whole_vector=1 (OLMoE): ONE RMSNorm over the full pre-reshape (units*dim) vector, weight
+//     shaped [units*dim] -- mlx_lm.models.olmoe's own nn.RMSNorm(n_heads*head_dim).
+//   whole_vector=0 (Qwen3-MoE, and the HF default): an INDEPENDENT RMSNorm per head over dim,
+//     the same [dim]-shaped weight reused for every head.
+// Mirrors qwen_infer.c's own moe_qknorm_apply() exactly -- same two branches, same math.
+//   WHY: Qwen3-30B-A3B (48 layers, q_norm/k_norm shaped [128], not [4096]) produced pure garbage
+//   through the GQA GPU generate gate. The hardcoded whole-vector wrap built a {H*HD}={4096}
+//   array over a 128-float weight buffer -- an out-of-bounds read of adjacent F32-blob memory.
+//   Silent: no crash, no MLX error, just wrong numbers. Found by diffing the two models' own
+//   layout_f32.txt shapes (128 vs 2048), not by reading the code.
+//   COST: one extra reshape pair on the per-head branch. The whole-vector branch is unchanged,
+//   re-verified byte-identical on the OLMoE gates after this change.
+//   EXIT: a third convention goes here, and qwen_infer.c's moe_qknorm_apply() is the one place
+//   that must stay in sync with this function.
+static int g_gqa_qknorm_whole = 1;   // default = the pre-D-d5-2 behavior (OLMoE convention)
+
+static mx::array gqa_qknorm_rows(const mx::array &rows, const float *w, int nrows,
+                                  int units, int dim) {
+    if (g_gqa_qknorm_whole) {
+        mx::array wv((void *)w, {units * dim}, mx::float32, noop_deleter);
+        return mx::fast::rms_norm(rows, wv, (float)g_gqa_rms_eps);
+    }
+    mx::array wv((void *)w, {dim}, mx::float32, noop_deleter);
+    mx::array per = mx::fast::rms_norm(mx::reshape(rows, {nrows * units, dim}), wv,
+                                        (float)g_gqa_rms_eps);
+    return mx::reshape(per, {nrows, units * dim});
+}
+
 int mlx_gpu_gqa_config(int n_heads, int n_kv_heads, int head_dim, double rope_theta,
-                        double attn_scale, double rms_eps) {
+                        double attn_scale, double rms_eps, int qknorm_whole_vector) {
     if (!mlx_gpu_available()) return 0;
+    g_gqa_qknorm_whole = qknorm_whole_vector ? 1 : 0;   // D-d5-2
     g_gqa_n_heads = n_heads;
     g_gqa_n_kv_heads = n_kv_heads;
     g_gqa_head_dim = head_dim;
@@ -459,11 +501,9 @@ static int mlx_gpu_gqa_layer_impl(int l, const float *h, int pos,
         // `self.q_norm = nn.RMSNorm(n_heads*head_dim, ...)`, confirmed
         // directly from its source, applied to `queries` pre-reshape).
         mx::array qin((void *)q.data(), {1, qdim}, mx::float32, noop_deleter);
-        mx::array wqn((void *)w_qnorm, {qdim}, mx::float32, noop_deleter);
-        mx::array qnormed = mx::fast::rms_norm(qin, wqn, (float)g_gqa_rms_eps);
+        mx::array qnormed = gqa_qknorm_rows(qin, w_qnorm, 1, H, HD);        // D-d5-2
         mx::array kin((void *)k.data(), {1, kdim}, mx::float32, noop_deleter);
-        mx::array wkn((void *)w_knorm, {kdim}, mx::float32, noop_deleter);
-        mx::array knormed = mx::fast::rms_norm(kin, wkn, (float)g_gqa_rms_eps);
+        mx::array knormed = gqa_qknorm_rows(kin, w_knorm, 1, KVH, HD);      // D-d5-2
         mx::eval(qnormed);
         mx::eval(knormed);
         std::memcpy(q.data(), qnormed.data<float>(), sizeof(float) * qdim);
@@ -552,9 +592,30 @@ int mlx_gpu_gqa_layer0(const float *h, int pos, const float *w_qnorm, const floa
 static int g_layer_hidden = 0, g_layer_im_dim = 0, g_layer_dense_im = 0,
            g_layer_n_experts = 0, g_layer_n_shared = 0, g_layer_top_k = 0, g_layer_group = 64;
 
+// D-d5-3 (2026-09-02): Qwen3-MoE renormalizes the selected top-k router probabilities so they
+// sum to 1 (`norm_topk_prob: true` in its config.json); DeepSeek-V2-Lite and OLMoE do not.
+// qwen_infer.c's CPU path has implemented this since Phase 4 (`moe_topk_renorm()`, gated on
+// MOE_NORM_TOPK_PROB) -- the GPU path never did, it only carried a comment saying DeepSeek
+// doesn't need it. That was true for every model the GPU path had run until Qwen3-30B-A3B.
+//   WHY: without the renorm the routed-FFN contribution is scaled by sum(top-8 of a 128-way
+//   softmax) instead of 1.0 -- a systematic, every-layer shrink of the MoE block's output, not
+//   a rounding difference.
+//   COST: one divide per token per layer on the GPU path; exactly zero change for any model
+//   with norm_topk_prob=0, which is every model this path had run before (flag defaults to 0).
+//   EXIT: qwen_infer.c's moe_topk_renorm() is the reference this must stay identical to.
+static int g_layer_norm_topk_prob = 0;
+
+// Softmax outputs are strictly positive, so the CPU twin's `if (!(s > 0.0)) return;` guard can
+// never fire here; kept as a note rather than a branch.
+static mx::array moe_topk_renorm_rows(const mx::array &top_wgt) {
+    if (!g_layer_norm_topk_prob) return top_wgt;
+    return mx::divide(top_wgt, mx::sum(top_wgt, std::vector<int>{-1}, /*keepdims=*/true));
+}
+
 int mlx_gpu_layer_config(int hidden, int im_dim, int dense_im, int n_experts, int n_shared,
-                          int top_k, int group_size) {
+                          int top_k, int group_size, int norm_topk_prob) {
     if (!mlx_gpu_available()) return 0;
+    g_layer_norm_topk_prob = norm_topk_prob ? 1 : 0;   // D-d5-3
     g_layer_hidden = hidden; g_layer_im_dim = im_dim; g_layer_dense_im = dense_im;
     g_layer_n_experts = n_experts; g_layer_n_shared = n_shared; g_layer_top_k = top_k;
     g_layer_group = group_size;
@@ -648,8 +709,15 @@ int mlx_gpu_layer_step(int l, int pos, int is_dense,
         host_softmax(router_scores.data(), NE);
         std::vector<int> top_idx(TOPK);
         host_top_k_select(router_scores.data(), NE, TOPK, top_idx.data());
-        // DeepSeek-V2-Lite: MOE_NORM_TOPK_PROB=0, no renorm of the selected scores (F-config) --
-        // this gate is scoped to that fixture, matching qwen_infer.c's own golden-path default.
+        // D-d5-3: post-top-k renormalization, mirroring qwen_infer.c's moe_topk_renorm() exactly
+        // (including its `s > 0` guard). No-op for DeepSeek-V2-Lite/OLMoE (norm_topk_prob=0).
+        if (g_layer_norm_topk_prob) {
+            double s_tk = 0.0;
+            for (int k = 0; k < TOPK; k++) s_tk += router_scores[top_idx[k]];
+            if (s_tk > 0.0)
+                for (int k = 0; k < TOPK; k++)
+                    router_scores[top_idx[k]] = (float)(router_scores[top_idx[k]] / s_tk);
+        }
 
         std::vector<float> gate_all((size_t)TOPK*IM), up_all((size_t)TOPK*IM);
         snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
@@ -722,8 +790,15 @@ int mlx_gpu_layer_step_dbg(int l, int pos, int is_dense,
         host_softmax(router_scores.data(), NE);
         std::vector<int> top_idx(TOPK);
         host_top_k_select(router_scores.data(), NE, TOPK, top_idx.data());
-        // DeepSeek-V2-Lite: MOE_NORM_TOPK_PROB=0, no renorm of the selected scores (F-config) --
-        // this gate is scoped to that fixture, matching qwen_infer.c's own golden-path default.
+        // D-d5-3: post-top-k renormalization, mirroring qwen_infer.c's moe_topk_renorm() exactly
+        // (including its `s > 0` guard). No-op for DeepSeek-V2-Lite/OLMoE (norm_topk_prob=0).
+        if (g_layer_norm_topk_prob) {
+            double s_tk = 0.0;
+            for (int k = 0; k < TOPK; k++) s_tk += router_scores[top_idx[k]];
+            if (s_tk > 0.0)
+                for (int k = 0; k < TOPK; k++)
+                    router_scores[top_idx[k]] = (float)(router_scores[top_idx[k]] / s_tk);
+        }
 
         std::vector<float> gate_all((size_t)TOPK*IM), up_all((size_t)TOPK*IM);
         snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
@@ -1080,6 +1155,7 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
             mx::array top_idx_u = mx::slice(order, {0, NE - TOPK}, {B, NE});         // {B,TOPK}
             mx::array top_idx = mx::astype(top_idx_u, mx::int32);
             mx::array top_wgt = mx::take_along_axis(scores, top_idx, 1);             // {B,TOPK}
+            top_wgt = moe_topk_renorm_rows(top_wgt);                                 // D-d5-3
 
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
             QTensor &tg = g_tensors.at(nm);
@@ -1414,6 +1490,7 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
             mx::array top_idx_u = mx::slice(order, {0, NE - TOPK}, {A, NE});         // {A,TOPK}
             mx::array top_idx = mx::astype(top_idx_u, mx::int32);
             mx::array top_wgt = mx::take_along_axis(scores, top_idx, 1);             // {A,TOPK}
+            top_wgt = moe_topk_renorm_rows(top_wgt);                                 // D-d5-3
 
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
             QTensor &tg = g_tensors.at(nm);
@@ -1580,8 +1657,8 @@ int mlx_gpu_gqa_layer_step_lazy(int l, int pos, int is_dense,
 
         // OLMoE whole-vector qknorm: applied over the FULL pre-reshape vector, matching
         // mlx_gpu_gqa_layer_impl()'s own eager math exactly (kept lazy here, not eval()'d).
-        mx::array q_normed = mx::fast::rms_norm(q, wrap_host_f32(w_qnorm, {H * HD}), (float)g_gqa_rms_eps);
-        mx::array k_normed = mx::fast::rms_norm(k, wrap_host_f32(w_knorm, {KVH * HD}), (float)g_gqa_rms_eps);
+        mx::array q_normed = gqa_qknorm_rows(q, w_qnorm, B, H, HD);        // D-d5-2
+        mx::array k_normed = gqa_qknorm_rows(k, w_knorm, B, KVH, HD);      // D-d5-2
 
         mx::array q_r = mx::reshape(q_normed, {B, H, HD});
         mx::array k_r = mx::reshape(k_normed, {B, KVH, HD});
@@ -1657,6 +1734,7 @@ int mlx_gpu_gqa_layer_step_lazy(int l, int pos, int is_dense,
             mx::array top_idx_u = mx::slice(order, {0, NE - TOPK}, {B, NE});         // {B,TOPK}
             mx::array top_idx = mx::astype(top_idx_u, mx::int32);
             mx::array top_wgt = mx::take_along_axis(scores, top_idx, 1);             // {B,TOPK}
+            top_wgt = moe_topk_renorm_rows(top_wgt);                                 // D-d5-3
 
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
             QTensor &tg = g_tensors.at(nm);
@@ -1826,8 +1904,8 @@ int mlx_gpu_gqa_cbatch_layer_step_lazy(int l, int A, const int *slot, const int 
         mx::array k = lazy_matvec_e0(nk, h);   // {A, KVH*HD}
         mx::array v = lazy_matvec_e0(nv, h);   // {A, KVH*HD}
 
-        mx::array q_normed = mx::fast::rms_norm(q, wrap_host_f32(w_qnorm, {H * HD}), (float)g_gqa_rms_eps);
-        mx::array k_normed = mx::fast::rms_norm(k, wrap_host_f32(w_knorm, {KVH * HD}), (float)g_gqa_rms_eps);
+        mx::array q_normed = gqa_qknorm_rows(q, w_qnorm, A, H, HD);        // D-d5-2
+        mx::array k_normed = gqa_qknorm_rows(k, w_knorm, A, KVH, HD);      // D-d5-2
 
         mx::array q_r = mx::reshape(q_normed, {A, H, HD});
         mx::array k_r = mx::reshape(k_normed, {A, KVH, HD});
@@ -1918,6 +1996,7 @@ int mlx_gpu_gqa_cbatch_layer_step_lazy(int l, int A, const int *slot, const int 
             mx::array top_idx_u = mx::slice(order, {0, NE - TOPK}, {B, NE});         // {B,TOPK}
             mx::array top_idx = mx::astype(top_idx_u, mx::int32);
             mx::array top_wgt = mx::take_along_axis(scores, top_idx, 1);             // {B,TOPK}
+            top_wgt = moe_topk_renorm_rows(top_wgt);                                 // D-d5-3
 
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
             QTensor &tg = g_tensors.at(nm);

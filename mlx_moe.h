@@ -93,7 +93,7 @@ int mlx_gpu_mla_layer0(const float *h, int pos, const float *kv_a_ln_w, float *o
 // exemption mlx_moe.h's own file header already states). Returns 1 on
 // success, 0 if MLX is unavailable.
 int mlx_gpu_gqa_config(int n_heads, int n_kv_heads, int head_dim, double rope_theta,
-                        double attn_scale, double rms_eps);
+                        double attn_scale, double rms_eps, int qknorm_whole_vector);
 
 // V5i Phase B: layer-0 GQA attention for one token position, on GPU. Looks up
 // "model.layers.0.self_attn.{q_proj,k_proj,v_proj,o_proj}" from tensors
@@ -116,7 +116,7 @@ int mlx_gpu_gqa_layer0(const float *h, int pos, const float *w_qnorm, const floa
 // V5c: full-layer config -- call once, after mlx_gpu_mla_config(), before any
 // mlx_gpu_layer_step() call.
 int mlx_gpu_layer_config(int hidden, int im_dim, int dense_im, int n_experts, int n_shared,
-                          int top_k, int group_size);
+                          int top_k, int group_size, int norm_topk_prob);
 
 // V5c: full transformer block (attention + FFN) for layer `l`, one token position, on GPU.
 // Mirrors moe_forward_token()'s per-layer loop body. w_inln/w_postln/w_kvaln/w_gate are raw

@@ -7546,3 +7546,1001 @@ investigated further this round, noted for anyone extending this work.
 Full logs: `/Users/bob/vdsp_m4_bench/bf16valid_run_{a2_default,
 b2_blanket16,c2_precise,d2_f32,e_int4all}_matched.log`. Ground truth:
 `/Users/eoe/deepseek_bf16_groundtruth.json` (macstudio).
+
+## D-deepseek-precint-5: the correction engine itself, live-tested against the D-deepseek-precint-4 flip
+
+D-deepseek-precint-4 above found a real int4 near-tie flip via STATIC
+config comparison (5 separate runs, each a fixed precision assignment).
+It never exercised D-roadmap-3's actual adaptive correction engine --
+that mechanism was GQA/OLMoE-only at the time. This round extends it to
+MLA and runs it live against the exact flip D-deepseek-precint-4 found,
+closing the gap directly (user's own challenge: "지금까지 만든 적응형
+동적 엔진은 왜 테스트 안해"). Full mechanism/code-change description
+lives in `ROADMAP.md` D-roadmap-3's own 2026-09-01 MLA update, not
+duplicated here -- this section is the result record.
+
+**A real crash, found by this live test, root-caused without a
+debugger**: force-triggering correction on real DeepSeek MLA data
+SIGSEGV'd immediately after tensor registration. `lldb` (even batch
+mode, `-o run`) refused to attach over non-interactive SSH ("cannot get
+permission to debug processes" -- the same TCC wall this project's infra
+memory already documents for a different machine). Root-caused by
+elimination instead: reasoned from the exact crash point (right after
+the "attn_hi registered" log line, before any request-processing output)
+that the FATAL-checked registration and shape-check code must have
+already succeeded (both print on failure, neither did), narrowing the
+search to the 3-line call sequence right after -- found a diagnostic
+byte-accounting loop (added when the correction path was first built,
+GQA-only) unconditionally dereferencing `g_moe_lt_hi[l].k_proj->
+packed_bytes` / `.v_proj->...` -- NULL under MLA, since neither the
+production nor the hi-mirror MLA resolver ever sets those GQA-only
+fields. Branched the loop on `MOE_ATTN_KIND`, same pattern every other
+`g_moe_lt_hi[]` reader in the file already uses; rebuilt, crash gone.
+
+**Regression check (bob, standard 8-slot/8-request DeepSeek corpus,
+correction disabled)**: MLA-extended binary vs. the pre-extension
+`010c465` binary -- token output byte-identical across all 8 requests;
+only `ttft_ms` (wall-clock, expected to vary run-to-run) differed.
+
+**The honest, not-forced live result**: baseline (production AF-blob,
+100% int4 attention per this session's own earlier `[moe neartie] cfg`
+dump, correction OFF) on the exact 7-token prefix that produces
+D-deepseek-precint-4's flagged position -- predicted **8872**, the
+CORRECT token, not the 344 the static safetensors-mode int4 test found.
+Real measured margin at this position: **0.7116**, well above both the
+0.5 logging threshold and the 0.1 correction threshold -- under real
+(non-forced) thresholds this position would never trigger correction at
+all. Force-triggering anyway (`QWEN_MOE_NEARTIE_CORRECT_THRESHOLD=100.0`)
+confirmed the mechanism runs cleanly end-to-end on MLA: replayed 7
+positions from scratch (`n_scalar=7`, first correction call for this
+request), bits=16 answer = 8872, agreeing with both the baseline and
+ground truth. **There was nothing to catch in this exact scenario** --
+the mechanism is verified structurally correct, not verified catching a
+real production flip.
+
+**Why the flip didn't reproduce (plausible, not yet independently
+confirmed)**: D-deepseek-precint-4's int4 result came from a live
+Python-side RTN quant/dequant of the genuine bf16 weights. This engine's
+production AF-blob was built by a separate export pipeline at an earlier
+point in this project -- its own int4 quantization (grouping/rounding
+specifics not re-derived here) is evidently NOT numerically identical to
+that RTN path, even though both are nominally "int4." Two different
+int4 quantizations of the same underlying near-tie (bf16 top-2 gap only
+0.75) landed on different sides of it. This round did not search for a
+different position/prompt where the AF-blob's own int4 deployment does
+flip -- an open follow-up, not resolved here.
+
+**Real measurements, not estimated**: MLA hi-mirror registry
+743,178,240 bytes (~708.8MiB) + shadow K/V pool 335,544,320 bytes
+(~320.0MiB), both within ~1% of this round's pre-implementation
+estimate (`ROADMAP.md`'s own plan text). Real peak RSS (`/usr/bin/time
+-l`): 7.79GiB disabled -> 9.04GiB enabled (+1.25GiB), comfortable under
+bob's 16GiB total.
+
+**Honest limits**: the crash was in this feature's own earlier-round
+code, not upstream -- "mirrors the already-proven GQA path" needed real
+execution to trust, structural symmetry alone wasn't enough. The AF-
+blob-vs-live-RTN int4 divergence is a real open question. No git
+commit/push this round (per this session's own established practice --
+commit only on explicit request).
+
+Full logs: `/tmp/mla_baseline2.log`, `/tmp/mla_forcetrigger3.log`,
+`/tmp/regress_pre.log`, `/tmp/regress_post.log`, `/tmp/rss_off.log`,
+`/tmp/rss_on.log` (all on bob).
+
+## D-roadmap-4: live role x layer near-tie attribution -- real data
+
+Full mechanism description in `ROADMAP.md` D-roadmap-4. This section is
+the result record.
+
+**Method**: on a confirmed real flip (production argmax != full-hi
+correction's argmax), `moe_neartie_attribute()` tests all 27x4=108
+attention (role,layer) combinations individually (pointer-swap onto the
+existing `g_moe_lt_hi` mirror, one at a time, full [0..pos] replay per
+attempt) and logs which combos alone reproduce the corrected answer.
+
+**Results, 5 confirmed real flips across two runs**:
+
+| source | req/pos | orig->corrected | hits / 108 | which roles |
+|---|---|---|---|---|
+| pilot (8-slot corpus) | req5/pos4 | 276->473 | 13 | q_proj (l5,11,13), kv_a_proj_with_mqa (l13,16,19,23), kv_b_proj (l6,11,16), o_proj (l6,7,11) |
+| WikiText-2-val (short window) | req25/pos8 | 207->254 | 0 | -- |
+| WikiText-2-val (short window) | req46/pos8 | 4191->21628 | 2 | kv_a_proj_with_mqa (l9), kv_b_proj (l11) |
+| WikiText-2-val (short window) | req47/pos8 | 317->643 | 0 | -- |
+| WikiText-2-val (short window) | req52/pos8 | 41661->11299 | 0 | -- |
+
+**4 of 5 (80%) have ZERO single-role attribution** -- no individual
+(role,layer) promotion, tested alone, reproduces the corrected answer.
+This is a real, live confirmation of the project's existing offline
+finding (local-vs-upstream residual accumulation dominates, 6.7-11.3x)
+-- most near-ties are NOT fixable by promoting one weight, they need the
+full multi-layer replay D-roadmap-3's correction path already does.
+
+**Real cost data (not estimated)**: a single attribution event's cost
+scales with position -- pos=4 (540 max forward passes across 108
+combos) completed within a session's early ~34min CPU budget alongside
+other work; pos=15 (1728 max passes) did not finish in 8 real wall-clock
+minutes and was killed deliberately after establishing the cost curve;
+pos=8 (972 max passes) typically took several CPU-minutes per event.
+`QWEN_MOE_ATTRIB_MAX_EVENTS`/`QWEN_MOE_ATTRIB_MAX_POS` were added as a
+direct result of this measurement, not designed speculatively.
+
+**WikiText-2 corpus scale, explicit and disclosed**: original ask was
+WikiText-103 at ~30K-position scale (matching this project's own prior
+offline scan). Given the measured per-event attribution cost, running
+that scale with live attribution would need many hours to days of
+unattended compute -- disclosed to the user directly, who chose to cut
+to WikiText-2 (200 short windows, prompt length 9 so real flips land
+inside the `MAX_POS` cap and actually get attributed, not just
+corrected-and-skipped). First WikiText-2 corpus attempt (prompt length
+24, `MAX_POS=10`) found 10/10 real flips landed at position 23 (the
+corpus's own single decode step) and ALL were skipped by the cost cap --
+a real, honest corpus/cap mismatch, not a bug, fixed by shortening the
+window so flips land inside the cap.
+
+**A real production incident, root-caused with hard evidence**: running
+this pilot's concurrent-verification pattern (own WikiText-2 run + 2
+parallel fork verification runs, 3 total qwen_infer instances on bob,
+16GB RAM, ~9.8-10.9GB each) crashed bob. Root cause confirmed via
+`uptime` after recovery (`up 6:43`, vs the pre-incident `up 7 days` --
+proof of an actual reboot, not just a stalled SSH daemon) and via
+`tailscale status` independently reporting bob "offline" (not just
+locally unreachable -- macstudio stayed "direct" throughout, ruling out
+a client-side network issue). Fixed structurally: new PreToolUse:Bash
+hook (`~/.claude/hooks/scripts/bob-macstudio-concurrent-load-guard.py`,
+global, not vdsp-repo-local since it covers any project's SSH-to-these-
+hosts pattern) live-checks the target host's existing heavy-process
+count and real available memory (via `ps`/`vm_stat`/`sysctl` over SSH,
+6s timeout, fails to a WARN not a silent pass) before allowing another
+qwen_infer launch, blocking when projected demand exceeds 80% of
+available memory. Verified live against a real Bash tool call (not just
+piped stdin), correctly fired.
+
+**Honest limits, this round**: Supabase persistence layer (schema +
+seed + push script) is built (`supabase_schema_d_roadmap4.sql`,
+`d4_supabase_push.py`) but never actually exercised against a live
+Supabase project -- blocked on REST API credentials (a project-scoped
+MCP server was registered mid-session but needs one-time interactive
+approval this headless session couldn't complete). Closed-loop
+promotion (`g_moe_lt_active`) implemented and locally compile-verified
+only, not yet live-tested against bob. Only 2 of 4 WikiText-2 chunks
+processed at time of writing (60 requests each) -- the other roles/
+layers this corpus would have surfaced are simply unmeasured, not
+absent.
+
+Full logs (bob): `/tmp/d4_pilot_events.jsonl`, `/tmp/d4_wikitext2_resume_aa2.log`,
+`/tmp/d4_wikitext2_ab.log`, `/tmp/d4_wikitext2_short.jsonl`.
+
+All 4 WikiText-2-short chunks (aa/ab/ac/ad, 60 requests each) completed
+cleanly, sequentially (never running >1 heavy instance concurrently on
+bob after the incident above) -- `aa`/`ab` each surfaced real flips
+attributed above; `ac`/`ad` triggered correction 3-4 times but with
+zero real flips (corrected answer == original in every case), an
+honest, valid outcome, not a gap.
+
+## D-roadmap-4 extension: attribution widened to dense/shared FFN roles + live routing sensor
+
+User's direct challenge: the original vision was explicitly "q/k/v/o_proj,
+dense-layer gate/up/down, shared-experts gate/up/down each independently
+diagnosable" -- Phase 5 above only ever covered the 4 attention roles.
+Deferring the rest was treated as premature, not earned caution; built
+same-day, same round.
+
+**Attribution widened 108 -> 189 combos**: `moe_neartie_correct_load_attn_hi()`
+now also registers `__neartie_hi` bits=16 mirrors of `MOE_ST_DENSE_ROLES`/
+`MOE_ST_SHARED_ROLES` (real registration log: `27 layers x 5 attn roles +
+3 dense + 78 shared`); `moe_resolve_ffn_tensors_hi()` (new, mirrors
+production's dense/shared resolve) wires them into `g_moe_lt_hi`;
+`MoeAttribRole` grew from 4 to 10 roles with a `moe_attrib_role_valid_at()`
+gate (dense only valid at layer < `MOE_FIRST_DENSE_LAYERS`, shared only
+at layer >= it) so the loop tests exactly the real 189 valid combos, not
+a padded 270.
+
+**Real result, same req5/pos4 event from the pilot (re-run on the
+extended binary, deterministic)**: hit count grew from 13/108 (attention
+only) to **17/189** -- the 4 new hits are `shared_gate_proj` (layer 25),
+`shared_up_proj` (layers 16, 26), `shared_down_proj` (layer 17). This is
+live, direct evidence that shared-expert FFN roles DO independently
+contribute to at least some real near-ties -- not the "FFN doesn't
+respond to precision promotion" null result this project's earlier
+offline sweep found for a different question (whether static blanket
+promotion improves *overall* accuracy); attribution is asking a
+narrower, different question ("does promoting just this one weight fix
+just this one flip") and gets a real, non-empty answer here. Dense
+roles (only 3 combos total, layer 0 only) found no hits on this
+particular event -- too small a sample to conclude dense never
+contributes, just that it didn't on this one flip.
+
+**Live routing sensor, also real and verified**: `g_moe_routing_capture`
+(new global, `[slot][layer][MOE_TOP_K]` flat int array, ~98KB for
+DeepSeek's TOP_K=6 -- negligible) captures the actual top-k expert
+selection inside `moe_ffn_batched()`'s hot loop, threaded through the
+real physical `slot[]` array (a real bug the implementing fork caught
+in its own directive: the naive compact batch index does NOT equal the
+physical slot under admission/eviction reuse -- would have silently
+mislabeled every capture). Every near-tie JSONL event now carries
+`active_experts_by_layer` (27-layer array). Verified with real data,
+not just "didn't crash": layer 0 is an empty array (correct -- layer 0
+is DeepSeek's one dense layer, no routing exists there), layer 13 shows
+real, varied expert ids (`[39, 27, 7, 4, 32, 1]`, not all-zero/stale).
+
+**Standard regression, extended binary**: byte-identical to the
+pre-extension binary's own known-good token output on the standard
+8-slot corpus (`254 4794 5110 317` / `245 5505 3169 280 1728 11` / ...,
+matching every prior round's own reference values) when the new
+features are left disabled -- confirmed directly, not assumed.
+
+**Full-corpus re-run, all 4 WikiText-2-short chunks, extended binary
+(`/tmp/qwen_d4_full_bin`)**: 78 near-tie events (margin<0.5), 6 confirmed
+real flips, 89 total attribution hits across 88 distinct (role,layer)
+combos. Role-level totals: `kv_a_proj_with_mqa` 17, `kv_b_proj` 17,
+`q_proj` 11, `shared_up_proj` 11, `shared_down_proj` 11, `o_proj` 10,
+`shared_gate_proj` 10, `dense_gate_proj` 1, `dense_down_proj` 1 --
+**dense DOES contribute** (not zero, as the single-event req5/pos4
+sample alone suggested) once measured across more real flips. Shared-
+expert roles combined (32 hits) are a real, non-trivial fraction next
+to attention's combined total (55) -- direct, live confirmation that
+the user's original "each FFN role needs independent diagnosis" request
+was correct, not premature. Hit-count distribution across the 6 flips
+was highly skewed: 4 flips had 0-2 hits (mostly unexplained by any
+single promotion, matching local-vs-upstream dominance), 1 had 87/189
+(a near-tie so fragile that nearly half of all individual promotions
+alone flip it), 1 (req5/pos4, the pilot event) had 17/189. Zero crashes
+across all 4 chunks.
+
+**Monotonicity check (prerequisite for any future ddmin-style minimal-
+subset search, see `.claude/history/2026-09-02_minimal-sufficient-
+subset-search-plan.md`)**: every attribution data point up to this
+point was k=1 (single role,layer) -- monotonicity (does the UNION of
+known-working single promotions also work?) had never been tested.
+One-shot check on req5/pos4's 17 known hits, promoted together in a
+single replay: **union_argmax=473, matching the known-correct answer**
+-- monotonicity holds for this one case. Run locally (M1 Max, NEON
+fallback, no SME2) after transferring the AF-blob (9.8GB) and genuine
+bf16 checkpoint (31GB, 4 shards) over a newly-connected Thunderbolt/
+USB4 link (real measured throughput 243MB/s on the correct bridge IP,
+~500x faster than the existing local-relay path) -- avoids adding any
+load to bob during its own sequential corpus run. Single data point,
+not yet generalized; a real ddmin implementation would need this
+checked across more flips before trusting bisection search.
+
+**Honest limits**: only 1 of 6 real flips has had its monotonicity
+checked. Routing-sensor data hasn't yet been cross-referenced against
+which layers' attribution hits actually landed (the natural next
+analysis: does a near-tie's attributed layer correlate with an unusual/
+low-confidence expert selection at that same layer -- not yet checked).
+
+## D-roadmap-4 closeout: second monotonicity point, Phase 6 live-verified, ROI-C/D closed
+
+**Second monotonicity data point (req32/pos8, the 87/189-hit flip)**:
+same one-shot union-replay check as req5/pos4, run locally over the
+Thunderbolt/USB4 link. `union_argmax=245`, matching the known-correct
+answer exactly. Monotonicity now holds in 2/2 checked cases (both from
+this corpus, still a small sample -- not a proof, a repeated
+observation).
+
+**Phase 6 (closed-loop promotion, `g_moe_lt_active`) live-verified on
+bob**: standard regression (no promotion file) byte-identical to the
+existing reference token output. Forced promotion test:
+`QWEN_MOE_PROMOTION_FILE` pointed at a 2-line file naming `kv_a_proj_
+with_mqa 9` and `kv_b_proj 11` (both real attribution hits from req46/
+pos8) -- both promoted **without a restart** (`[moe promotion] role=...
+PROMOTED to bits=16 -- permanent, no restart`, exactly once each, no
+duplicate reapplication on later admissions per the `g_moe_promoted[][]`
+guard), and the run completed all 60 requests cleanly afterward (no
+crash, no regression in the rest of the run). RSS delta measurement
+still not done (deferred, low-risk given attn_hi_bytes is already
+measured and promotion only repoints existing pointers, no new
+allocation).
+
+**ROI-C (auto role_bits generation) fully closed**: the earlier
+"exit=1, no message" mystery is resolved -- NOT a code bug. Root cause:
+bob's reboot wiped `/tmp`, deleting the generated role_bits file
+mid-session; the original "no FATAL message" observation was a
+separate artifact of stderr being fully-buffered under file redirection
+combined with the process losing its connection before the buffer
+flushed (both now directly confirmed, not just hypothesized). Re-run
+with `script` for a real pseudo-TTY (keeps stderr line-buffered) and
+the regenerated file: 13 role/layer overrides load correctly, the
+engine resolves all 27 layers, and completes an 8-position forward pass
+with sane logits/argmax throughout. `moe_role_bits()`/`st_register_moe_
+role()`/`moe_resolve_layer_tensors()` have no bits=16-specific bug.
+
+**ROI-D (FFN 16/32-bit allow) fully closed**: standard regression
+(cbatch path) byte-identical. Real effect A/B (safetensors path, same
+prompt/ground-truth as D-deepseek-precint-4): default (dense/shared
+bits=8) matches ground truth on all 8 positions; dense/shared promoted
+to bits=16 (`6 role/layer overrides loaded`) also matches ground truth
+on all 8 positions, with argmax unchanged at every position (logits
+shift by <1 in absolute terms, e.g. pos6 29.6613->29.6114) -- **directly
+reconfirms ROADMAP.md's own D-roadmap-2 Track A/B finding ("FFN/expert
+side doesn't respond to precision promotion at all")** on a real,
+independent re-test. Honest, not inflated: the code change is real and
+safe (previously FATAL, now works), but this specific precision lever
+shows no measurable accuracy benefit here.
+
+**`moe_sme2_ensure_ready()` bits-check hazard fix (2026-09-02, from the Opus
+ROI-G plan's §1.3 finding)**: the function unconditionally treated every
+tensor as q4g64-packed (`row_pbytes=in/2`, `row_words=in/8`) with no check
+of `tsr->bits`/`tsr->ebits[e]` -- confirmed by direct code trace that
+`kai_sme2_shape_ok()`/`kai_sme2_available()` (`sme2_kai.c:59-60`) gate only
+on hardware+shape, never bit-width, so nothing upstream protected a
+promoted (ROI-D's `QWEN_MOE_ROLE_BITS`, or Phase 6's live
+`g_moe_lt_active` closed-loop promotion -- `moe_promotion_apply_one()`
+covers all 10 attribution roles including every FFN/routed-expert one,
+not just attention) bits=8/16/32 tensor from being misread as int4 if it
+ever reached this SME2 dispatch. Fix: bail to the scalar `moe_matvec_af()`
+fallback (already correct for every bit-width, verified by direct read)
+whenever `bits != 4`, using the same ebits-vs-uniform source
+`moe_decode_af()`/`moe_matvec_af_row()` already use. **Verified**: compiles
+clean locally and natively on bob; standard 8-slot cbatch regression is
+byte-identical pre-fix vs post-fix (every slot's generated tokens match
+exactly). **Live end-to-end reproduction, completed (2026-09-02, second pass)**: the
+first reproduction attempt was blocked by two unrelated harness mistakes
+-- `QWEN_MOE_CB_ONLINE=1` was missing (the function's default `!online`
+branch is a legacy static scheduler that `return`s before ever reaching
+the neartie-correct/promotion code at all, traced by bisecting with three
+canary `fprintf`s), and the bob test binary was a stale snapshot predating
+a concurrent session's own fix (`D-d5-9`) to `moe_promotion_apply_one()`
+that had silently left every non-attention role falling through
+`default: return;` with no log and no effect. Both are harness artifacts,
+not engine bugs, and are documented in full in
+`.claude/history/2026-09-02_moe_sme2_hazard_reproduction.md`.
+
+With both fixed (`QWEN_MOE_CB_ONLINE=1`, current source, correct
+`.index.json` path), a real `shared_gate_proj` layer-5 promotion via
+`QWEN_MOE_PROMOTION_FILE` was exercised on bob against two builds from the
+CURRENT source (both carrying a separate concurrent session's `D-d5-9`/
+`D-d5-11` fixes, which are what makes Phase 6 promotion actually reach
+`moe_cbatch_step()`'s real serving path for the first time -- see that
+session's own `~/Downloads/2026-09-02_vdsp-dwq-vs-adaptive.md`): one with
+this fix reverted, one with it applied. **Final generated tokens were
+byte-identical between the two** -- but targeted instrumentation showed
+why: with the fix reverted, the promoted bits=16 tensor DOES enter the
+vulnerable q4g64-assuming code (`sym=0 ng=0 packed_off=0 scale_off=-1
+bias_off=-1` -- the real values read off a live F16-as-AF tensor, `ng=0`
+because `st_register_moe_f16_as_af()` never sets it), which means
+`sym_scales = malloc(out*ng*sizeof(float))` is a **zero-byte allocation**,
+`sym_packed` gets filled from the wrong byte strides (an F16 buffer
+misread as int4-packed), and `kai_sme2_repack_q4g64_f16lhs()` is called
+on this garbage input. It returned `rc=-1` (rejected) for this specific
+tensor -- **that rejection, not the missing bits-check, is what kept the
+output correct this time.** `ng=0`/`bias_off=-1`/`scale_off=-1` would
+dereference out-of-bounds memory the moment any tensor's `ng` happens to
+be nonzero, and nothing guarantees the vendor kernel rejects every
+malformed input it's handed. **The hazard is confirmed real and reachable
+in production, not merely theoretical** -- this specific case was caught
+by an unrelated internal validation inside the vendor repack kernel, not
+by design, and the fix removes the dependency on that luck.
+
+**Separate discovery made while investigating this**: `qwen_infer.c` is
+being edited concurrently by another session right now (`D-d5-1` through
+`D-d5-11`, per the user-supplied handoff doc above) -- confirmed no
+conflict (that session works on macstudio, this one on the local machine
++ bob) and, as it turned out, that session's own `D-d5-9`/`D-d5-11` fixes
+were a *precondition* for this hazard becoming live-reachable at all.
+
+**Phase 1/4 (Supabase persistence) closed**: schema executed directly
+via `psql` (session pooler, `aws-0-ap-northeast-1.pooler.supabase.com`
+-- the REST API cannot run DDL by design, confirmed by trying it first
+rather than assuming), 191-row role table seeded. `d4_supabase_push.py`
+pushed the real WikiText-2-fullext dataset (78 events, 89 attribution
+increments) -- verified directly via `psql` afterward, not trusted from
+the push script's own "success" print: `moe_neartie_events` has exactly
+78 rows, `sum(event_count)` across `moe_role_precision_state` is exactly
+89, and spot-checked individual rows (e.g. `kv_a_proj_with_mqa` layer 9
+= 2, matching the two real flips -- req46 and req32 -- that both hit
+this exact combo). The "map" the user asked for (Supabase table
+mirroring `QWEN_MOE_ROLE_BITS`'s real role structure, accumulating from
+live observation) now genuinely exists and is queryable.
+
+## D-d5: Qwen3-30B-A3B on the GPU path (M1 Max / macstudio), three real bugs, and the DWQ-vs-adaptive comparison
+
+Two questions from the user, one round: (1) use **DWQ** -- a 4-bit checkpoint whose
+weights were *distilled* to track the original model's outputs, i.e. the quantization
+error fixed at quantization time -- as the comparison arm for this engine's own
+**adaptive** path, which fixes the same error at inference time; and (2) run this
+engine on macstudio (M1 Max) as a control against the published
+`drivetechodyssey-tech/hermes-m5max-setup` M5 Max + MLX numbers.
+
+### Model selection, and a correction to the premise
+
+The hermes writeup's benchmark tables are all measured on **`Qwen3.6-35B-A3B`**, not
+on the `qwen3.6:27b` that also appears in that repo (the 27B is its installer's
+32-48GB "pro" tier and a GGUF entry in its model inventory; a later commit,
+`fix: use 35B mxfp8 as main model for 64GB, align with wiki`, moved the 64GB profile
+to the 35B). Checked by pulling the repo and grepping every file, after the user
+flagged the model mismatch.
+
+`Qwen3.6-35B-A3B`'s real `config.json` (fetched, not assumed) is
+`model_type: qwen3_5_moe`: 40 layers of which only 10 are full attention and 30 are
+linear/GatedDeltaNet, 256 experts top-8, shared experts, 16 q / 2 kv heads at
+head_dim 256, mrope + partial_rotary_factor 0.25, an MTP layer, and a vision tower.
+**This engine cannot run it** -- no linear-attention path, no MTP, no mrope/partial
+rotary. So the closest runnable analogue was used instead: **Qwen3-30B-A3B**, same
+A3B MoE class and the same 4-bit footprint (19.07GB vs 19.0/19.3GB), but 48 full
+attention layers, 128 experts, no shared experts, and plain rotary.
+
+The AF blob for it already existed on macstudio (`~/vdsp_qwen3_moe_weights`, exported
+2026-08-27). V5i's "Qwen3-30B-A3B is hardware-infeasible" finding was **bob-specific**
+(18.5GB vs bob's 12.71GB working-set ceiling); macstudio's 64GB removes it entirely.
+
+### Three real bugs, all of which only this model could expose
+
+1. **D-d5-1 -- `GQA_MAXLAYERS 32`.** A 48-layer model failed at exactly layer 32
+   (`mlx_gpu_gqa_layer_step_lazy` returning 0). All six uses are K/V-cache sizing loops
+   or `l >= GQA_MAXLAYERS` bounds checks -- pure capacity, no algorithmic meaning
+   (read all six before changing it). Raised to 64.
+
+2. **D-d5-2 -- the GPU hardcoded OLMoE's q/k-norm convention.** With the bound fixed
+   the model ran end to end and emitted pure garbage (`315 315 315 315 ...`). Root
+   cause found by diffing the two models' own `layout_f32.txt`: OLMoE's
+   `q_norm.weight` is **2048** elements (whole pre-reshape vector), Qwen3-MoE's is
+   **128** (per head). The GPU wrapped it unconditionally as `{H*HD}` = `{4096}` --
+   a 16KB read over a 512-byte tensor, running straight through the neighbouring
+   `k_norm` (adjacent in the blob: offsets 24576 and 25088) and into the next layer's
+   weights. Inside the mmap, so no crash and no MLX error: just wrong numbers. The CPU
+   path had branched on `MOE_QKNORM_WHOLE_VECTOR` correctly since Phase 4; the GPU
+   never had the branch at all. Added `gqa_qknorm_rows()` mirroring
+   `moe_qknorm_apply()`'s two branches exactly, plumbed the flag through
+   `mlx_gpu_gqa_config()` (signature change, so the compiler forced every one of the
+   8 call sites to be visited rather than relying on a defaulted setter that a future
+   model could silently forget).
+
+3. **D-d5-3 -- `norm_topk_prob` was never implemented on the GPU.** Output became
+   coherent English but still diverged from MLX at generated index 3. `qwen_infer.c`
+   has had `moe_topk_renorm()` since Phase 4; `mlx_moe.cpp` had only a comment saying
+   DeepSeek doesn't need it -- true for every model the GPU path had run before.
+   Qwen3-MoE sets `norm_topk_prob: true`, so without the renorm the routed-FFN
+   contribution is scaled by sum(top-8 of a 128-way softmax) instead of 1.0: a
+   systematic, every-layer shrink, not rounding noise. Added at all six router sites
+   (4 lazy + 2 eager), plumbed through `mlx_gpu_layer_config()` (14 call sites).
+
+4. **D-d5-4 -- AF registry capped at 512.** Turning the D-roadmap-3 correction path on
+   adds one bits=16 `__neartie_hi` mirror per attention role per layer (48*4 = 192) on
+   top of 338 production tensors = 530. Failed loudly, not silently. Replaced the nine
+   repeated `512` literals with `MOE_MAX_AF_TENSORS 1024`.
+
+### Verification
+
+The reference is a **real MLX forward with the model upcast to float32**
+(`model.set_dtype(mx.float32)`), teacher-forced over a 13-token real prompt. Upcasting
+matters: for a 4-bit checkpoint it leaves the packed weights untouched and only
+promotes scales/biases/norms, so the reference runs the same float32 activation math
+the C engine does -- isolating engine-vs-MLX differences from dtype differences.
+
+D5 gate (`QWEN_MOE_GPU_GQA_FUSED`), which scores CPU, GPU and the MLX truth against
+each other at every position:
+
+| arm | argmax parity | worst gpu_vs_truth rel-L2 | worst gpu_vs_cpu |
+|---|---|---|---|
+| Qwen3-30B-A3B 4-bit (plain) | **13/13** | 4.055e-06 | 2.354e-06 |
+| Qwen3-30B-A3B 4-bit (DWQ)   | **13/13** | 3.033e-06 | 1.887e-06 |
+
+Four orders of magnitude tighter than the OLMoE track's own 1.1e-02 (that gate's
+reference was bf16-derived; this one is float32-matched). Free-running greedy
+generation independently matches MLX float32 **16/16 tokens exactly**
+(`" Tokyo. So, the capital of the United States is Washington D.C. ("`).
+
+**An artifact worth recording**: the first greedy comparison appeared to diverge at
+index 3 even after all three fixes. The cause was the *reference*, not the engine --
+the MLX script was running the model at its shipped bfloat16. Matching dtypes made the
+two agree token for token. A bf16-vs-float32 difference is easily large enough to tip a
+near-tied argmax; anything comparing this engine against MLX must control for it.
+
+OLMoE's own generate gate was re-run after every single one of these changes and stayed
+byte-identical (`310 2120 273 6667 273 10950 665 452 1160 1270 32912 407`), so none of
+the four is a behavior change for the models that already worked.
+
+### The DWQ arm is the distilled weights themselves, not a re-quantization
+
+`mlx_moe_to_q4g64af.py` (new, generalizes `mlx_olmoe_full_to_q4g64af.py`) converts an
+MLX 4-bit checkpoint into this engine's AF format by copying the packed int4 bytes and
+the real per-group scale/bias through unchanged -- no re-quantization anywhere. So the
+engine runs `mlx-community/Qwen3-30B-A3B-4bit-DWQ`'s distilled weights bit for bit.
+Two deltas over the OLMoE exporter, both forced by this model: `QKNORM_WHOLE_VECTOR` is
+**derived** from the real `q_norm` numel rather than hardcoded (getting it wrong is the
+silent D-d5-2 failure), and the blob is streamed to disk rather than accumulated in a
+bytearray (19GB, with a 16GB model already resident).
+
+Validated by running it on the *plain* checkpoint first and comparing against the
+2026-08-27 blob: **identical byte counts** (19,074,580,480 AF / 51,175,424 F32) and
+identical tensor counts (338 AF / 241 F32). The plain and DWQ `config.json` differ in
+**nothing at all** -- same architecture, same `{group_size: 64, bits: 4}` -- so the two
+arms differ only in the *values* of the weights, and any throughput difference between
+them would be measurement noise by construction.
+
+### Axis A -- DWQ (fix at quantization time) vs the adaptive path (fix at inference time)
+
+Both arms: same engine, same 24-prompt WikiText-2 manifest (9-token prompts,
+6 generated tokens each = 144 emitted tokens), same near-tie threshold 0.5, same
+correction reference (`~/qwen3_30b_a3b_hf`, the original bf16 checkpoint both 4-bit
+checkpoints derive from), same `attn_hi_bytes=1811939328` / `shadow_pool_bytes=67108864`.
+`QWEN_MOE_NEARTIE_CORRECT_THRESHOLD` was raised from its 0.1 default to 0.5, matching the
+logging threshold, so **every** logged near-tie gets a bits=16 ground-truth replay --
+at 0.1 the arms would differ mostly in near-tie COUNT, which is a property of the text as
+much as of the weights, and the quantity that actually separates the two repair strategies
+is how many of those near-ties are REAL flips.
+
+| metric | plain 4-bit | 4-bit DWQ | Fisher exact (2-sided) |
+|---|---|---|---|
+| emitted tokens | 144 | 144 | -- |
+| corrections triggered | 44 | 51 | -- |
+| corrections skipped (budget) | 0 | 0 | -- |
+| **REAL flips** | **10 (6.94%)** | **6 (4.17%)** | **p = 0.441** |
+| hit rate (flips/correction) | 22.7% | 11.8% | p = 0.178 |
+| residual near-tie events | 34 | 39 | -- |
+| mean residual margin | 0.1916 | 0.2257 | -- |
+| min residual margin | 0.0064 | 0.0068 | -- |
+| wall | 1,133,093 ms | 1,399,316 ms | -- |
+
+**Counter semantics, because they are easy to misreport**: `moe_neartie_maybe_correct()`
+runs BEFORE `moe_neartie_maybe_log()` at both emit sites and overwrites `logits_inout`
+with the corrected logits. So "corrections" counts positions whose RAW 4-bit margin was
+under threshold (the engine's own decision to spend a replay), while "near-tie events"
+counts the margin AFTER correction (residual fragility). That is why corrections (44/51)
+exceed events (34/39), not a bug.
+
+**Neither engine-level difference is significant at n=144** (Wilson CI for 10/144 is
+[3.82%, 12.31%]; 6/144 is [1.92%, 8.79%]). Holding these rates, p ~ 0.10 at 432 tokens
+per arm and p < 0.05 needs roughly 600-800 -- 4-5x this corpus, ~1.5-2.5h per arm.
+Reported as directional, not as evidence on its own.
+
+**Perplexity, the axis that does have power** (WikiText-2 test, 256 samples x 512 tokens,
+seed 123, identical for both arms):
+
+| | perplexity | |
+|---|---|---|
+| plain 4-bit | 15.367 +/- 0.150 | |
+| **4-bit DWQ** | **12.979 +/- 0.108** | **-15.5%** |
+
+Gap 2.388 against a combined standard error of ~0.185 -- about 13 sigma, ~131k tokens
+per arm. The two checkpoints are confirmed to be the same base model: their `config.json`
+files differ in no key at all, and their teacher-forced argmaxes over the 13-token probe
+are identical at every position.
+
+**Cost, measured rather than estimated.** Summing `n_scalar` over every correction:
+
+| | inference cost (measured wall clock) | resident memory | disk | knows when it is unsure |
+|---|---|---|---|---|
+| DWQ | none | none | +0.3GB (19.0->19.3GB) | no |
+| adaptive | **+13.1% (plain) / +42.4% (DWQ)** | **+1.81GB** attn_hi + 64MB shadow pool | needs the bf16 checkpoint on disk | yes |
+
+Measured by re-running the identical 24-prompt corpus with near-tie detection and
+correction fully off (`run_adaptive_off.sh`):
+
+| arm | wall OFF | wall ON | overhead |
+|---|---|---|---|
+| plain | 1,001,883 ms | 1,133,093 ms | +13.1% |
+| DWQ   |   982,764 ms | 1,399,316 ms | +42.4% |
+
+The two OFF runs reproduce the ON runs' scheduling structure exactly (`steps=39`,
+`admitted_after_evict=20`, `queue_wait_events=20`, `queue_wait_max_steps=33` in all four),
+so the workloads are comparable, not merely similar.
+
+**Correction to an earlier figure in this section's own drafting**: the replayed-position
+ratio (255 / 276 hi-precision positions against a 360-position baseline, i.e. +71% / +77%)
+is a *work* ratio and was briefly reported as if it were a wall-clock cost. It is not --
+the baseline path processes up to B=4 requests per step in batched matmuls while the hi
+replay is single-sequence, so positions do not map linearly onto time. The wall-clock
+numbers above are the ones to quote. Left unexplained: the two arms' overheads differ
+(13% vs 42%) by far more than their correction counts do (44 vs 51), on one measurement
+per cell, with the OFF runs sharing the machine with a large download.
+
+**Scope asymmetry, stated rather than glossed**: Qwen3-30B-A3B has no dense layers and no
+shared experts, so `moe_resolve_layer_tensors_hi()` promotes **attention projections only**
+(the startup line reads `48 layers x 6 attn roles + 0 dense + 0 shared`, and of those 6
+roles only q/k/v/o_proj are AF -- q_norm/k_norm are already F32). Routed-expert
+quantization error is never corrected. So a "REAL flip" here means precisely *full-precision
+attention alone changes this token*, not *the 4-bit answer differs from bf16*. DWQ improves
+every weight. The two methods are not measured over the same repair surface.
+
+**Conclusion**: not alternatives. DWQ moves the whole distribution for free; the adaptive
+path costs ~1.8x compute and moves individual tokens -- and **DWQ did not eliminate the
+flips** (6 survived). DWQ as default weights, adaptive armed only where a wrong token is
+worth 1.8x, is what these numbers support.
+
+### Axis B -- M1 Max + this engine vs M5 Max + MLX
+
+Decode throughput, Qwen3-30B-A3B, macstudio (M1 Max), medians of three **alternating**
+A/B/A/B rounds (the hermes writeup documents a real order effect: "whichever model runs
+second is always slower"). Every vdsp figure comes from a D5 gate run that also reported
+13/13 argmax parity, so each throughput number ships with its own correctness proof.
+
+| arm | plain 4-bit | 4-bit DWQ |
+|---|---|---|
+| vdsp engine (float32) | **52.77** | 52.33 |
+| mlx-lm (bfloat16, shipped default) | 57.37 | 57.47 |
+| mlx-lm (float32, precision-matched) | 59.90 | 59.73 |
+
+vdsp reaches **92% of mlx-lm bf16** and 88% of mlx-lm float32 on the same machine. DWQ and
+plain are within noise everywhere, as they must be -- identical shapes and arithmetic.
+
+**Removing the model confound.** hermes' numbers are on `Qwen3.6-35B-A3B`, which this
+engine cannot run, but which mlx_lm 0.31.3 CAN (`qwen3_5_moe.py`, GatedDeltaNet linear
+attention, `full_attention_interval`, mrope, MTP, vision-weight `sanitize()`). Running
+hermes' exact checkpoint (`mlx-community/Qwen3.6-35B-A3B-4bit-DWQ`) on this M1 Max leaves
+only hardware and stack. Two repetitions per length, highly reproducible (554.2/554.8
+prefill at 2048; 28.01/28.40 decode at 8192):
+
+| prompt length | prefill tok/s | decode tok/s |
+|---|---|---|
+| 13 | 168 | 46.9 |
+| 512 | 459 | 47.3 |
+| 2,048 | 554 | 30.2 |
+| 8,192 | 485 | 28.2 |
+
+**This resolves the apparent contradiction in the published numbers.** hermes quotes
+47.3-49.1 tok/s for DWQ in one table and 100.3 tok/s for the same family in another. The
+M1 Max curve shows decode roughly halving between a short prompt and a few thousand tokens
+of context -- so 100.3 is the short-prompt measurement and 47-49 is the agent operating
+point (their own average call prefills ~60k tokens).
+
+| operating point | M1 Max | M5 Max | ratio |
+|---|---|---|---|
+| prefill, 7-8K prompt | 485 tok/s | 4,167 tok/s | **8.6x** |
+| decode, short prompt | 47.3 tok/s | 100.3 tok/s | 2.1x |
+| decode, long context | 28-30 tok/s | 47.3-49.1 tok/s | 1.6x |
+
+Internally consistent with what the two chips are: prefill is GEMM-bound and M5's per-core
+neural accelerators are exactly that unit; decode is bandwidth-bound and ~2x is a
+generation of memory bandwidth. Caveat stated plainly: different serving stacks (mlx-lm
+here, oMLX there), so machine-scale, not kernel-level.
+
+**Answer to the original hypothesis** ("M5 Max + MLX should be matched by M1 Max + our
+engine"): at face value yes -- 52.8 tok/s vs a published 47.3-49.1. But that matches a
+short-context number against a long-context one. Controlled: this engine is 92% of MLX on
+the same machine, roughly half an M5 Max at a matched short-context point, and ~1/8.6 for
+prompt processing. The apparent parity comes from M5 Max decode also degrading ~2x at the
+operating point those published numbers were taken from.
+
+### Honest limits of this round
+
+- **Context window.** This engine's MoE gates carry a hard-compiled 32-position K/V window
+  (`MOE_MAXPOS`). Every vdsp figure above is short-context by construction; the
+  long-context and prefill comparisons are mlx-lm on both sides, not this engine.
+- **The flip comparison is underpowered** (p=0.441) and is reported only because it is
+  directionally consistent with a perplexity result that is decisive.
+- **One corpus, one prompt style**: WikiText-2 test paragraphs, 9-token prompts, greedy
+  decode. No instruction-following, code, or long-form generation measured.
+- **Not yet done**: the non-DWQ `Qwen3.6-35B-A3B-4bit` build was still downloading, so the
+  DWQ-vs-plain speed check on hermes' exact model is not included. A no-adaptive wall-time
+  baseline on the identical 24-prompt corpus was scripted (`run_adaptive_off.sh`) but not
+  run -- the +71/77% figure above is derived from summed `n_scalar`, not from an A/B wall
+  clock.
+
+### Artifacts
+
+- `mlx_moe_to_q4g64af.py` (macstudio) -- generic MLX-4bit -> AF exporter, derives
+  `QKNORM_WHOLE_VECTOR` from the real q_norm numel, streams the blob to disk.
+- `mlx_ref_capture.py` / `mlx_greedy32.py` / `mlx_ctx_bench.py` / `make_corpus.py` /
+  `make_ppl_data.py` (macstudio `~/vdsp_d5_bench/`).
+- Blobs: `~/vdsp_qwen3_base` (plain, symlinks the 2026-08-27 export + EOS-corrected
+  arch_config), `~/vdsp_qwen3_plain_export` (exporter self-check), `~/vdsp_qwen3_dwq_export`.
+- Logs: `/tmp/bench_decode.log`, `/tmp/adaptive.log`, `/tmp/ppl.log`,
+  `/tmp/q36_dwq_bench2.log` (macstudio).
+- Report: https://claude.ai/code/artifact/927832fd-5437-40ae-936f-577551b882ca
+
+### Why is this engine 8-12% behind mlx-lm on the same machine? -- what has been ruled out
+
+Asked directly, and worth recording because three plausible explanations are now
+eliminated with evidence rather than argument.
+
+| candidate | verdict | evidence |
+|---|---|---|
+| different quantization | **rejected** | the AF blob is a lossless format conversion of the same MLX 4-bit checkpoint; re-running the exporter on the plain checkpoint reproduced the 2026-08-27 blob's byte counts (19,074,580,480 / 51,175,424) and tensor counts (338 / 241) exactly, and the D5 gate scores rel-L2 4e-06 against MLX |
+| activation dtype | **rejected** | this engine is float32, and mlx-lm float32 (59.90 tok/s) is *faster* here than its shipped bfloat16 (57.37), so the precision-matched arm is the harder comparison, not an excuse |
+| per-layer host weight upload | **rejected** | `wrap_host_f32()` is `mx::array(ptr, shape, float32, noop_deleter)` -- a zero-copy wrap over unified memory, not a transfer |
+| unused K/V arrays in the per-token `mx::eval` | **rejected, measured** | `mlx_gpu_gqa_forward_finalize()` pushes every `g_fused_gqa_K/V` entry into the eval set, and that vector is sized to `GQA_MAXLAYERS`, so a 48-layer model evaluates 32 arrays for nothing. Built a `GQA_MAXLAYERS=48` variant and measured it alternating against the shipped 64: medians **52.355 vs 52.247 tok/s**, a 0.2% difference. (The first round's 49.495 was a cold-start outlier -- the second and third rounds put both builds within noise.) Also confirms D-d5-1's 32->64 raise costs nothing. |
+| CPU-side per-token work | **rejected by arithmetic** | the embedding dequant loop (2048 scalar `moe_decode_af()` calls) plus the full-vocab argmax and 608KB logits memcpy total well under 1% of a ~19ms token |
+
+**Not yet explained**: none of the specific mechanisms checked accounts for 8-12%. The
+remaining hypothesis is per-op graph-construction and dispatch overhead -- this engine
+builds its lazy graph through ~48 separate C entry points per token where mlx-lm's module
+constructs it in one pass -- but that is **unmeasured**, and confirming it needs a Metal
+capture or per-phase instrumentation, not another A/B. Recorded as open rather than
+asserted.
+
+### D-d5-5: the static-promotion ladder is blocked on GQA -- `k_proj`/`v_proj` are not in the role vocabulary
+
+Raised by the user while reviewing the DWQ-vs-adaptive framing above: this project has
+THREE levers, not two, and they compose rather than substitute --
+
+| lever | when | what it changes |
+|---|---|---|
+| DWQ | quantization time | the 4-bit *values* (distilled to track the original outputs) |
+| `QWEN_MOE_ROLE_BITS` / Phase-6 promotion | load time, static | *which tensors are 4-bit at all* (per role x layer) |
+| `QWEN_MOE_NEARTIE_CORRECT` | inference time, dynamic | margin-gated promotion of the residual one-off cases |
+
+and the intended order of attack is static-first: (a) causally validate the bits=16
+attention promotion in the real generation gate and make it the default, (b) extend the
+same sweep to FFN/expert tensors, (c) leave only what survives to the runtime path. The
+DWQ comparison above measured (c) in isolation against DWQ, which under-sells (c) -- it is
+designed as the residual handler, not the whole strategy. Recorded as a framing correction
+to that section.
+
+**Two code facts found while scoping (a), both verified by reading the call sites, not assumed:**
+
+1. **`QWEN_MOE_ROLE_BITS` is safetensors-mode-only.** All six `st_register_moe_role()` call
+   sites (`:13146`, `:13170`, `:13183`, `:13208`, `:13214`) are inside
+   `run_moe_safetensors_verify_mode()` (`:12997`), and its per-role default there is
+   **8 bits** (`moe_role_bits(role->role, l, 8)`), not 4. The AF-blob path every gate in
+   the D-d5 round used has no role-bits hook at all -- which is why the DWQ comparison's
+   "quantization is identical to MLX" claim holds (startup line, both arms:
+   `attn_af_bits: 4=192 8=0 16=0 32=0 other=0 (of 192 tensors, NL=48)`), and equally why
+   that round did not exercise this engine's actual per-role differentiator.
+
+2. **The attribution/promotion role vocabulary is MLA-shaped.**
+   `MOE_ATTRIB_ROLE_NAMES` is `q_proj, kv_a_proj_with_mqa, kv_b_proj, o_proj` + dense +
+   shared. There is **no `k_proj` / `v_proj`**. Consequences on a GQA model:
+   - `moe_attrib_replay_one()`'s `case MOE_ATTRIB_KV_A_PROJ:` assigns
+     `g_moe_lt_mixed[l].kv_a_proj = g_moe_lt_hi[l].kv_a_proj`, and BOTH are NULL on GQA
+     (only `moe_resolve_attn_tensors_mla()` ever sets that field) -- a **silent no-op**.
+     Those combos replay the unmodified baseline, cannot hit except by coincidence, and
+     inflate the tested denominator by 2*NL dead entries.
+   - `k_proj`/`v_proj`, the two GQA attention roles that actually matter, can be neither
+     attributed nor promoted.
+   - `moe_promotion_apply_one()` has the same switch, so Phase-6 static promotion reaches
+     only `q_proj` and `o_proj` on GQA.
+
+   **Scope of the damage: none to date.** Every attribution run so far is DeepSeek-V2-Lite
+   (MLA): 108 = 27 layers x 4 attention roles, 189 = 27 x 7 with shared-expert roles. GQA
+   attribution has never been run. The correction path itself is unaffected --
+   `moe_resolve_attn_tensors_gqa_hi()` handles q/k/v/o correctly, which is what the D-d5
+   flip measurements used.
+
+**D-d5-5 -- deferred, not implemented this round**
+  WHY: adding `k_proj`/`v_proj` to `MoeAttribRole` + `MOE_ATTRIB_ROLE_NAMES` +
+  `moe_attrib_replay_one()` + `moe_promotion_apply_one()`, and making
+  `moe_attrib_role_valid_at()` exclude MLA-only roles on GQA models (and vice versa) so the
+  dead combos stop being counted, is what unblocks step (a) for Qwen3/OLMoE. It is a
+  well-scoped change to one file.
+  COST: that file (`qwen_infer.c`) is being edited concurrently by another session (it grew
+  by 101 lines at 13:08 with `moe_attrib_replay_combo` / `moe_attrib_combo17_test` /
+  `moe_attrib_combo87_test` while this round's build was already compiled from the 11:26
+  snapshot). Read-modify-write from two sessions on the same uncommitted file risks losing
+  one side's edits, and this round has no lock or branch to prevent that.
+  EXIT: either (i) take the file over for one round and add the two roles, then re-run the
+  (a) validation on Qwen3-30B-A3B, or (ii) run the (a) validation on DeepSeek-V2-Lite
+  first, where the existing MLA role vocabulary already covers all four attention roles and
+  no code change is needed at all.
+
+**The (a) validation design, once unblocked** (stated now so it is not re-derived later):
+scoring static promotion with the adaptive path is circular -- both promote the same
+tensors, so the correction would find zero flips by construction. Instead compare emitted
+token sequences across three runs on the identical corpus:
+
+- **A** = 4-bit, adaptive OFF  (already captured, `/tmp/adaptive_off.log`)
+- **C** = 4-bit, adaptive ON   (already captured, `/tmp/adaptive.log`)
+- **B** = statically promoted attention, adaptive OFF
+
+If **B == C**, static blanket promotion reproduces the adaptive path's output at zero
+runtime cost and (c) is unnecessary for those positions. Only positions where B != C are
+genuine one-off cases that justify the runtime mechanism.
+
+### D-d5-7: "DWQ" is not one thing -- mlx-community's Qwen3.6 build also reallocates bits, and that costs decode
+
+Closing the D-d5 round's own deferred item (benchmark the non-DWQ Qwen3.6 build on M1 Max)
+turned up something that changes how the whole DWQ comparison should be read.
+
+**The two mlx-community Qwen3.6 builds use different quantization schemes**, not just
+different weight values (read straight from each `config.json`'s `quantization` block):
+
+| build | top-level default | per-tensor overrides |
+|---|---|---|
+| `Qwen3.6-35B-A3B-4bit` | **bits=4**, group 64 | 80 tensors at 8-bit (per layer: `mlp.gate` router + `shared_expert_gate`) |
+| `Qwen3.6-35B-A3B-4bit-DWQ` | **bits=8**, group 64 | 240 at 4-bit (`switch_mlp` gate/up/down 120 + `shared_expert` gate/up/down 120) |
+
+So the DWQ build carries **8-bit attention** where the plain build is 4-bit. Both land near
+19GB because expert FFNs dominate parameter count and both keep those at 4 bits -- the
+difference is invisible in file size and very visible per token.
+
+**Contrast with this round's own DWQ arm**: `Qwen3-30B-A3B-4bit` and
+`Qwen3-30B-A3B-4bit-DWQ` both report `{group_size: 64, bits: 4}` with **zero per-tensor
+overrides** (checked explicitly). That comparison really was values-only, so the Axis-A
+perplexity and flip results above stand as stated.
+
+**Measured, alternating plain/DWQ three rounds in one session** (the two builds were first
+measured in separate sessions, and cross-session spread on this machine is ~7% -- enough to
+manufacture or hide the effect):
+
+| | ctx=13 decode | ctx=512 decode | prefill |
+|---|---|---|---|
+| plain 4-bit | 51.60 / 51.07 / 51.29 -> **51.29** | 51.97 / 52.70 / 52.04 -> **52.04** | 174.1-175.0 · 458.1-458.6 |
+| 4-bit DWQ | 47.41 / 47.83 / 46.95 -> **47.41** | 42.55 / 46.72 / 45.56 -> **45.56** | 174.3-175.3 · 459.8-460.6 |
+| delta | **plain +8.2%** | **plain +14.2%** | **none** |
+
+Decode ranges do not overlap. Prefill is identical to within 0.4%.
+
+**The mechanism matches the measurement exactly**: attention weights are read on *every*
+decode step while only 8 of 256 experts are, so moving attention 4->8 bits raises per-token
+weight traffic materially. Decode is bandwidth-bound and pays it; prefill is GEMM-bound and
+hides it. Nothing else about the two builds differs structurally.
+
+**This contradicts the hermes table**, which reports DWQ generation at 47.3-49.1 tok/s
+against plain 4-bit at 42.7-47.0 -- i.e. DWQ *faster*. Measured here on the same two
+checkpoints, DWQ is slower at every context length tested. That writeup warns about order
+effects itself and attributes its task-completion speedup to DWQ spending 2.2x fewer
+reasoning tokens rather than to generation speed, so its generation-speed rows are the most
+likely place for that confound to sit.
+
+**Why this matters for the static-vs-runtime ladder** (D-d5-5): what mlx-community did to
+the Qwen3.6 DWQ build *is* step (a)/(b) -- a static, per-tensor-class bit reallocation
+promoting attention above 4 bits. And it is **not free**: it costs 8-14% of decode, on
+every token, forever. The runtime path costs more when it fires (+13-42% wall on the D-d5
+corpus) but **nothing on tokens where it does not**. So "can static promotion replace the
+runtime path?" is not only an accuracy question; it is a question of whether an
+always-paid bandwidth tax is cheaper than an occasionally-paid replay. Both halves need
+measuring, and D-d5-6 (below) measures the accuracy half.
+
+### D-d5-8: the (b) FFN extension -- planned, and what it can and cannot reach
+
+Requested as the follow-on to D-d5-6: if static blanket attention promotion reproduces the
+runtime path's output (B == C), run the same three-arm design over the FFN roles.
+
+**Scoping fact found before running it**: `MoeAttribRole` has ten entries --
+4 attention + `dense_gate/up/down` + `shared_gate/up/down` -- and **no routed-expert role
+at all** (`grep` for any expert/switch_mlp role: 0 hits). `moe_resolve_ffn_tensors_hi()`
+confirms the same split: dense at `l < MOE_FIRST_DENSE_LAYERS`, shared at
+`l >= MOE_FIRST_DENSE_LAYERS && MOE_N_SHARED > 0`, nothing else. On DeepSeek-V2-Lite that
+means (b) can reach:
+
+| group | promotable | promotion-file entries |
+|---|---|---|
+| dense FFN | yes, layer 0 only (`FIRST_DENSE_LAYERS=1`) | 3 |
+| shared experts | yes, layers 1-26 | 78 |
+| **routed experts (64/layer x 26)** | **no -- no role exists** | 0 |
+
+So (b) as currently implementable tests dense + shared only, and leaves untouched the
+tensors that hold most of the FFN parameters. This is the same class of vocabulary gap as
+D-d5-5's missing GQA `k_proj`/`v_proj`, and it bounds what a "(b) resolves most of it
+statically" result could mean: it would be a statement about dense/shared FFN, not about
+the experts.
+
+**D-d5-8 -- run (b) over dense+shared, do not add a routed-expert role this round**
+  WHY: dense+shared is runnable today with zero engine changes, on the same corpus and the
+  same A/C reference runs D-d5-6 already produces, so it costs two more arms and nothing
+  else. A routed-expert role is a much larger change (per-expert or per-layer-all-experts
+  granularity is a real design question -- 64 experts x 26 layers is 1664 combinations at
+  per-expert granularity, versus 26 at per-layer granularity) and would land in the same
+  concurrently-edited file D-d5-5 already flagged.
+  COST: the result cannot speak for the routed experts, which is where most FFN parameters
+  and most of the 4-bit error budget live. A "(b) closes most of it" conclusion would be
+  unsupported for the model as a whole; only "for dense and shared FFN" is supportable.
+  EXIT: add `MOE_ATTRIB_EXPERT_{GATE,UP,DOWN}` at per-layer granularity (promote all 64
+  experts of a layer together, matching how `moe_resolve_ffn_tensors_hi()` already treats
+  dense/shared as whole tensors) -- then the same promotion-file mechanism covers them with
+  26 more entries per role and no change to the A/B/C design.
+
+**Arms, once D-d5-6 lands** (same corpus, same binary, same A and C runs reused):
+- `B_ffn`  -- promotion file = dense+shared only (81 entries), attention left at 4-bit
+- `B_all`  -- promotion file = attention + dense + shared (189 entries)
+
+`B_all == C` would say the static ladder fully subsumes the runtime path on this corpus;
+`B_attn == C` already saying so would make `B_ffn` a measurement of how much of that the
+attention half alone was responsible for.
+
+### D-d5-9: routed-expert role added, at per-layer granularity
+
+Requested directly after D-d5-8 flagged that the role vocabulary had no routed-expert entry.
+Implemented against a snapshot of `qwen_infer.c` taken first
+(`scratchpad/snapshots/qwen_infer.c.pre-D-d5-9-1405`, md5 `433af1ae...`) -- the file was
+confirmed unchanged since the other session's 13:08 edit before touching it, and the
+in-flight D-d5-6 campaign uses an already-loaded binary, so the edit could not disturb it.
+
+**What the change had to solve, which dense/shared did not**: `st_register_moe_f16_as_af()`
+registers `E=1` tensors only, while the engine stores routed experts as one `E`-stacked AF
+tensor per projection (`t->switch_gate/up/down`, from
+`model.layers.%d.mlp.switch_mlp.{gate,up,down}_proj`). The checkpoint side is the opposite
+shape again -- 4,992 separate per-expert tensors
+(`model.layers.L.mlp.experts.E.gate_proj.weight`). So "promote layer L's experts to
+bits=16" had nothing to point at until a stacking registration existed.
+
+**Changes** (all additive; every new path is off unless explicitly enabled):
+1. `st_register_moe_experts_f16_as_af()` -- f16 sibling of the existing
+   `st_register_moe_experts_q8g64_as()`, same per-expert dequant loop and shape checks, raw
+   `_Float16` container with no scale/group (what `moe_decode_af()`'s `bits0==16` branch
+   already reads).
+2. `MOE_ATTRIB_EXPERT_{GATE,UP,DOWN}` + names `expert_{gate,up,down}_proj`, valid at
+   `layer >= MOE_FIRST_DENSE_LAYERS`.
+3. `moe_find_af_opt()` -- miss-tolerant lookup, because expert hi tensors are registered
+   per-layer on demand and `moe_resolve_ffn_tensors_hi()` must leave the production pointer
+   in place for a layer that was not loaded.
+4. `QWEN_MOE_NEARTIE_HI_EXPERT_LAYERS` (`"all"` or a comma-separated layer list; unset =
+   none). Unset reproduces pre-D-d5-9 behavior exactly.
+5. Cases added to `moe_attrib_replay_one()` and `moe_promotion_apply_one()`.
+
+**Latent bug found while doing (5)**: `moe_promotion_apply_one()`'s switch covered the four
+attention roles and fell through `default: return;` for everything else. **Phase-6 static
+promotion of any dense or shared FFN role has always been a silent no-op** -- no log line,
+no pointer swap, no error. Nothing measured to date depended on it (every promotion-file
+entry used so far named an attention role), but "(b) resolves most of it statically" could
+not have been tested at all before this. Nine cases added (3 dense + 3 shared + 3 expert).
+
+**Verified live** (2-request smoke, layers 1,2 requested):
+```
+[moe neartie] expert hi layer 1 registered (3 roles, E=64)
+[moe neartie] expert hi layer 2 registered (3 roles, E=64)
+[moe neartie] correct hi registered: 27 layers x 5 attn roles + 3 dense + 78 shared + 6 expert
+RESULT: MoE-4b online cbatch complete, B=2 R=2 PREFILL_MODE=1
+```
+
+**D-d5-9 -- per-layer granularity, f16, opt-in loading**
+  WHY per-layer: it matches how the engine already stores the tensors (one stacked tensor per
+  projection per layer) and how dense/shared are already promoted (whole tensors), so it needs
+  no new addressing. Per-expert granularity would mean 64 x 26 = 1664 combinations per role
+  and a mixed-bits path (`st_register_moe_experts_mixed_as()` exists but is a different
+  mechanism), for a resolution nothing has yet shown is needed.
+  COST: 369MB per (layer, role) on DeepSeek-V2-Lite -- 1.107GB per layer, 28.8GB for all 26
+  MoE layers, against ~26GB actually available on this box. An all-layer f16 expert arm is at
+  or over the ceiling and has to be probed before it is run, not assumed.
+  EXIT: swap the call for `st_register_moe_experts_q8g64_as()` to get a bits=8 tier at half the
+  footprint -- promotion and attribution are bit-width agnostic, only the registration differs.
+
+### D-d5-10 / D-d5-11: the GQA role gap closed, and a promotion path that never reached the serving loop
+
+**D-d5-10 -- GQA `k_proj`/`v_proj` added.** `MOE_ATTRIB_K_PROJ`/`V_PROJ` + names, cases in
+`moe_attrib_replay_one()` and `moe_promotion_apply_one()`, and -- newly -- architecture-gated
+validity: `moe_attrib_role_valid_at()` now returns MLA-only roles (`kv_a`/`kv_b_proj`) only when
+`MOE_ATTN_KIND == MOE_ATTN_MLA` and the GQA pair only when it is GQA. Previously every attention
+role was "valid at every layer", which is why a GQA sweep silently spent 2*NL combinations
+replaying an unmodified baseline. OLMoE's GPU generate gate stayed byte-identical after the
+change (`310 2120 273 6667 273 10950 665 452 1160 1270 32912 407`).
+
+**D-d5-11 -- the one that invalidated a finished measurement.** The first DeepSeek A/B/C run came
+back with a result that looked clean and was wrong:
+
+| | value |
+|---|---|
+| emitted tokens per arm | 144 |
+| A vs C differ (runtime adaptive) | 34 |
+| **A vs B differ (static promotion)** | **0** |
+| wall A / C / B | 963,465 / 1,060,975 / 951,554 ms |
+
+Zero difference, and arm B's wall time within noise of the un-promoted baseline -- while the
+runtime path, using the *same* bits=16 tensors, changed 34 positions. The promotion log showed
+all 108 `PROMOTED` lines, so the mechanism had run.
+
+**Root cause**: `g_moe_lt_cur[l]` had exactly ONE reader in the whole file.
+
+| function | table read | role |
+|---|---|---|
+| `moe_forward_token()` | `g_moe_lt_cur` | correction / attribution replay |
+| `moe_forward_batch()` | `g_moe_lt` | batched forward |
+| `moe_cbatch_step()` | `g_moe_lt` | **the online serving path** |
+
+`moe_promotion_apply_one()` writes into `g_moe_lt_active[]`, and `g_moe_lt_cur` points there --
+but the two functions that actually emit tokens read frozen production `g_moe_lt` directly. So
+**Phase-6 closed-loop promotion has never affected serving output**, only the replay paths.
+
+This is a verification-shaped failure as much as a code one: D-roadmap-4's own Phase-6 check was
+"hand-write a promotion file, watch the engine pick it up and never revert" -- watching the log
+line, which is precisely the evidence that cannot distinguish "applied" from "applied to a table
+nobody reads".
+
+**Fix**: both functions read `g_moe_lt_cur[l]`. `g_moe_lt_cur` defaults to `g_moe_lt` at its
+declaration, so with no promotion active the pointer and the arithmetic are unchanged.
+
+**Verified, 4 requests, two claims:**
+
+| claim | result |
+|---|---|
+| no regression -- promotion OFF (new binary) vs the old binary's arm A | **0 differences, PASS** |
+| fix works -- promotion OFF vs ON | **9 differences, PASS** |
+
+Before the fix the same ON/OFF pair differed in 0 positions while logging 108 promotions.
+
+**Early signal from those 4 requests** -- static promotion is reproducing the runtime path's own
+corrections at some positions and not others, which is exactly what the B-vs-C test is for:
+
+| position | static promotion | runtime (arm C) | same |
+|---|---|---|---|
+| req2 pos3 | 11 -> 35390 | 11 -> 35390 | yes |
+| req2 pos4 | 699 -> 11 | 699 -> 11 | yes |
+| req3 pos1 | 5575 -> 3074 | 5575 -> 3682 | **no** |
+
+**Consequences for the campaign**: arm B of the completed DeepSeek run is void (arms A and C
+stand -- neither uses promotion). Both queued campaigns were stopped before their `B_ffn` /
+`B_exp` / `B_all` arms ran, since all of them would have been no-ops for the same reason. Both
+are being re-run end to end on the fixed binary, which also removes the cross-binary
+comparability problem that motivated the separate `A_new` equivalence arm.

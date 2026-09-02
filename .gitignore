@@ -11,3 +11,6 @@ kleidiai/*.o.tmp
 node_modules/
 .build/
 .claude/history/
+.claude/settings.local.json
+__pycache__/
+*.pyc

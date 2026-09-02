@@ -2588,3 +2588,54 @@ position이라 정밀config가 blanket16 대비 메모리절감 외 정확도
 이점이 있는지는 이걸로 구분 안 됨(그건 여전히 1453-position Python
 스윕 근거), blanket16≡bits32 logit 완전동일이라는 미해명 현상도
 발견됨(미조사). fork에겐 이 이후 작업 중단 요청함(중복편집 방지).
+
+★★★★★★**D-roadmap-3 correction 경로 MLA 확장(2026-09-01, 같은
+세션 후속) — 사용자의 직접 지적("적응형 동적 엔진은 왜 테스트
+안해")으로 착수, 진짜 SIGSEGV 발견+수정, 실제 flip은 재현 안 됨을
+정직히 보고**: correction 경로는 D-deepseek-precint-4가 찾은 int4
+flip(pos6, 8872↔344)에 대해 한 번도 실제로 돌려본 적이 없었음 —
+static config 비교(D-deepseek-precint-4)와 adaptive correction
+엔진(D-roadmap-3)이 서로 다른 축이라는 걸 사용자가 정확히 짚음.
+Plan Mode로 MLA용 3곳 코드수정(GQA전용 FATAL가드→role테이블
+분기, `moe_resolve_attn_tensors_mla_hi()` 신규, `moe_resolve_
+layer_tensors_hi()` 분기) 완료+로컬/bob 양쪽 클린 컴파일 후 실
+라이브테스트 착수.
+
+**force-trigger 첫 실행 SIGSEGV**: lldb가 비대화형SSH에서 TCC로
+막힘([[reference_bob_lldb_needs_local_terminal]]과 동일 계열 벽,
+이번엔 다른 머신) → 정적분석+소거법으로 직접 원인규명: 크래시가
+"attn_hi registered" 로그 직후·다음 로그 이전이라는 사실만으로
+등록/shape체크(둘 다 실패시 FATAL 출력함)는 통과했다고 확정 →
+남은 3줄 호출 시퀀스 중 attn_hi_bytes 진단 합산 루프가
+`g_moe_lt_hi[l].k_proj->packed_bytes`를 무조건 참조 — **이 필드는
+GQA전용이라 MLA에선 NULL**(프로덕션 MLA resolver도 안 채움),
+전형적 NULL역참조. 이번에 새로 쓴 3곳 코드가 아니라 원래 GQA전용
+라운드에서 만든 진단코드가 MLA 분기 추가 때 안 고쳐진 것 —
+"GQA에서 이미 검증된 패턴을 그대로 미러링"이라는 자신감이 구조적
+대칭성만으론 부족하고 실제 실행이 필요함을 재확인. `MOE_ATTN_KIND`
+분기로 수정, 재빌드 후 크래시 사라짐.
+
+**표준회귀**: 8슬롯/8요청 코퍼스에서 MLA확장 바이너리 vs 010c465
+바이너리 토큰열 완전동일(ttft_ms만 차이, 정상). **실측치**(추정
+아님): attn_hi_bytes=743,178,240(~708.8MiB)+shadow_pool_bytes=
+335,544,320(~320.0MiB) — plan의 사전추정과 1% 이내 일치. 실RSS
+(`/usr/bin/time -l`) 7.79GiB(비활성)→9.04GiB(활성), +1.25GiB,
+bob 16GiB 대비 여유충분.
+
+**정직한 실제 결과 — flip이 재현 안 됨**: 프로덕션 AF-blob(항상
+int4) baseline(보정off)이 D-deepseek-precint-4와 정확히 같은
+7토큰 프리픽스에서 **정답 8872를 이미 냄**(오답 344 아님), 실측
+margin=0.7116으로 로깅임계값0.5·보정임계값0.1 둘 다 훨씬 위 —
+실사용 조건에서 이 위치는 애초에 보정 안 걸림. 강제트리거
+(threshold=100)로 메커니즘 자체는 검증: 7포지션 전체 replay
+정상완주, bits=16 답도 8872로 baseline·ground truth와 일치 —
+**메커니즘은 구조적으로 정상이지만 이 시나리오엔 "잡을 flip"이
+없었음**. 원인 추정(미검증): AF-blob 자체 export-time int4
+양자화가 D-deepseek-precint-4가 쓴 실시간 Python RTN int4
+양자화와 수치적으로 동일하지 않음 — 같은 근접동점(gap 0.75)의
+서로 다른 int4 경로가 반대편으로 떨어진 것. 다른 위치/프롬프트로
+실제 flip을 찾아나서는 건 이번 라운드에서 안 함(열린 후속과제).
+
+ROADMAP.md D-roadmap-3 세번째 Update + RESULTS.md 신규
+"D-deepseek-precint-5" 섹션. git 커밋/push 미실행(명시요청 없으면
+안 함, 이 세션 정책 일관유지).

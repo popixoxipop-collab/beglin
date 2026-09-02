@@ -410,6 +410,159 @@ an already-4bit source, not directly from bf16) means this round's
 case) rather than an assumption inherited from the Track A/B sweep
 data, which used a different baseline.
 
+**Update (2026-09-01): extended to MLA (DeepSeek-V2-Lite), real-execution-
+verified, plus a real crash found and fixed by this same live test.**
+User directly challenged the previous update's own deferral: the
+correction engine had never been tested against the actual DeepSeek
+int4 flip this session found live (`RESULTS.md` "D-deepseek-precint-4",
+position 6: genuine bf16/int8+ all agree on token 8872, int4-all
+predicts 344). Closing that gap required MLA support, not just a
+re-run.
+
+**Mechanism, mirrored from the GQA version above**: `moe_neartie_
+correct_load_attn_hi()`'s FATAL-on-non-GQA guard replaced with a role-
+table branch (`MOE_ST_ATTN_ROLES_MLA` vs. `_GQA`, both already existed);
+new `moe_resolve_attn_tensors_mla_hi()` mirrors production `moe_resolve_
+attn_tensors_mla()` exactly, looking up `__neartie_hi`-suffixed
+q_proj/kv_a_proj/kv_b_proj/o_proj (kv_a_ln deliberately left as the
+struct-copied production F32 value, same treatment as GQA's un-promoted
+q_norm/k_norm); `moe_resolve_layer_tensors_hi()` branches on
+`MOE_ATTN_KIND` exactly like production `moe_resolve_layer_tensors()`
+already does. No changes needed to the shadow K/V pool, the table-swap
+mechanism, or the manifest loader -- all already generic over `MOE_KROW`/
+`MOE_VROW`/architecture, confirmed by reading, not assumed.
+
+**A real bug, found by this round's own live test, not by static
+review**: force-triggering correction on real DeepSeek MLA data
+immediately SIGSEGV'd. `lldb` couldn't attach (non-interactive SSH,
+same TCC wall documented elsewhere in this project's infra memory) --
+root-caused by static analysis + elimination instead: a diagnostic
+byte-accounting loop (`attn_hi_bytes` sum, added alongside the original
+GQA-only correction path) unconditionally read `g_moe_lt_hi[l].k_proj`/
+`.v_proj` -- GQA-only fields, NULL under MLA (the production MLA
+resolver never sets them either) -- a straight NULL-pointer dereference
+that had nothing to do with the 3 planned MLA changes themselves; it was
+old code that silently assumed GQA was the only architecture that would
+ever reach it. Fixed by branching the same accounting loop on
+`MOE_ATTN_KIND`, same pattern as every other `g_moe_lt_hi[]` reader in
+the file. This is exactly the class of bug a live test surfaces that a
+static-config-only comparison (this session's earlier D-deepseek-
+precint-4 work) structurally cannot -- the correction path itself was
+never exercised until this round.
+
+**Real verification (bob, real DeepSeek-V2-Lite AF-blob `/Users/bob/
+moe_base_deepseek` + genuine bf16 `/Volumes/D50/deepseek_v2lite_bf16_
+safetensors`)**: disabled-by-construction regression against the pre-
+MLA-extension binary (`010c465`) on the standard 8-slot/8-request
+corpus -- token output byte-identical across all 8 requests, only
+`ttft_ms` (wall-clock) differed, as expected; attn_hi byte accounting
+now correct post-fix, real measured **743,178,240 bytes (~708.8MiB)**
+for the MLA hi-mirror registry and **335,544,320 bytes (~320.0MiB)** for
+the shadow K/V pool -- both within ~1% of this round's own pre-
+implementation estimate; real peak RSS (`/usr/bin/time -l`) **7.79GiB
+disabled -> 9.04GiB enabled (+1.25GiB)**, comfortable under bob's 16GiB.
+
+**The honest, not-forced result on the specific int4 flip**: the
+online-cbatch/AF-blob production deployment does **NOT** reproduce the
+position-6 flip found in the earlier static safetensors-mode comparison
+-- baseline (correction off) already predicts the correct token 8872,
+with a real measured margin of **0.7116** (well above both the 0.5
+logging threshold and the 0.1 correction threshold -- this position
+would never trigger correction under real, non-forced thresholds).
+Force-triggering correction anyway (`THRESHOLD=100.0`) confirms the
+mechanism itself is structurally sound for MLA: it replays cleanly
+(n_scalar=7, full from-scratch replay on the first call for this
+request) and its bits=16 answer agrees with both the baseline and
+ground truth (8872) -- but there was nothing to "catch" in this exact
+scenario. Root cause, not yet independently re-verified: the AF-blob's
+own export-time int4 quantization (a separate pipeline from the live
+Python-side RTN int4 quant/dequant used in the safetensors-mode
+comparison that found the 344 flip) is evidently NOT numerically
+identical to that RTN path, even though both are nominally "int4" --
+two different int4 quantizations of the same near-tie landed on
+different sides of it. This session did not go hunt for a different
+position/prompt where the AF-blob's own int4 deployment does flip; the
+mechanism is verified working, not verified catching a real flip in
+production.
+
+**Honest limits, not glossed over**: the crash this round found was in
+code this same feature's own earlier round wrote (the accounting loop),
+not in anything upstream -- a reminder that "mirrors the already-proven
+GQA path" claims still need real execution, not just structural
+symmetry, to trust. The AF-blob-vs-live-RTN int4 quantization
+discrepancy is a real, named open question, not resolved here.
+
+## D-roadmap-4: live role x layer near-tie attribution + persistent map (2026-09-02)
+
+**WHY**: D-roadmap-3's correction path only ever knew ONE signal (final-
+output margin) -- it had no way to say WHICH role x layer inside the
+forward pass actually caused a given near-tie. User's request: build
+the live version of that attribution (SLAM-map analogy -- accumulates
+from real observations, not a one-shot snapshot), persist it externally
+(Supabase, schema mirroring `QWEN_MOE_ROLE_BITS`'s real role table), and
+close the loop so a role x layer that accumulates enough evidence gets
+promoted to bits=16 without a restart.
+
+**Shipped this round**: (1) `moe_cb4c_margin_ex()` -- sibling of the
+existing margin function, also returns the competing (runner-up) token
+id, previously computed and discarded (`qwen_infer.c`). (2) Local JSONL
+event log (`QWEN_MOE_NEARTIE_EVENTS_LOG`), zero-cost when unset. (3)
+Live role x layer attribution (`moe_neartie_attribute()`): on a
+CONFIRMED real flip (full-hi replay's argmax differs from production's),
+tests each of 108 (role,layer) attention combos via a pointer-swap
+"mixed" table (production everywhere, one role at one layer promoted to
+the existing `g_moe_lt_hi` mirror) -- zero new tensor loading, only
+bookkeeping. Cost-capped (`QWEN_MOE_ATTRIB_MAX_EVENTS`/`_MAX_POS`) after
+real pilot data showed a single event's attribution can take minutes
+and scale with position.
+
+**Real attribution data (5 confirmed flips, pilot 8-slot corpus +
+WikiText-2-validation short-window run)**: 4 of 5 flips (80%) could NOT
+be individually reproduced by ANY single (role,layer) promotion (0/108
+hits each) -- directly confirms the local-vs-upstream residual-
+accumulation finding this project already had from offline analysis,
+now with live evidence. 1 of 5 had partial attribution (2/108 and,
+separately in the very first pilot event, 13/108, spread across
+multiple roles/layers) -- no single-point fix exists for most real
+flips; D-roadmap-3's own "replay the whole position across all
+attention layers" design is the right shape, not a single-role patch.
+
+**A real production incident this round caused, fixed structurally, not
+just apologized for**: launched 3 concurrent heavy qwen_infer instances
+on bob (16GB RAM, each needing ~9.8-10.9GB) -- bob's own uptime after
+recovery (`up 6:43` vs the prior `up 7 days`) confirms an actual reboot,
+not just a slow SSH daemon. New `bob-macstudio-concurrent-load-guard.py`
+PreToolUse:Bash hook (global, `~/.claude/hooks/scripts/`) now live-
+checks the target host's existing heavy-process count + real available
+memory before allowing another SSH-launched qwen_infer invocation,
+blocking when projected demand exceeds a safety margin -- verified live
+(pipe-tested and fired for real against an actual Bash tool call).
+
+**Extended same round, user's direct challenge**: attribution widened
+from attention-only (108 combos) to also cover dense/shared FFN roles
+(189 combos total) -- the ORIGINAL "each role independently diagnosable"
+vision, not deferred. Real result on a re-tested known flip: hit count
+grew 13/108 -> 17/189, the 4 new hits all `shared_*_proj` roles --
+direct live evidence FFN roles DO independently matter for at least
+some real flips. A live per-layer routing/expert-selection sensor
+(`g_moe_routing_capture`, threaded through the real physical slot array
+after the implementing fork caught a compact-index-vs-slot bug in the
+parent's own directive) also shipped and verified with real, non-stale
+captured data. See RESULTS.md for the full record.
+
+**Honest limits**: Supabase persistence (the actual "map in a DB" part
+of the original request) is built and schema-ready (`supabase_schema_
+d_roadmap4.sql`, `d4_supabase_push.py`) but blocked on REST API
+credentials -- a project-scoped MCP server was registered but needs a
+one-time interactive approval this session couldn't complete headlessly.
+Closed-loop promotion (`g_moe_lt_active`, D5/D6) is implemented locally
+(fork, not yet live-tested against bob -- see RESULTS.md for the
+checklist). WikiText-2 run only 1-2 of 4 planned chunks completed by
+the time this was written -- corpus scale was deliberately cut down
+from the user's original "WikiText-103" ask after this round's own
+pilot measured attribution cost as prohibitive at that scale (an
+explicit, disclosed scope reduction, not a silent one).
+
 ## Explicitly not decided yet
 
 - Priority order for architectures beyond the current 3 (pick by
