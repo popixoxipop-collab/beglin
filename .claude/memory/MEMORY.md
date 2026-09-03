@@ -18,6 +18,8 @@ memory(`~/.claude/projects/-Users-xox/memory/`)에 있던 vdsp_*.md 11개를
 
 - [vdsp_hiddenstate_signal_and_file_map](vdsp_hiddenstate_signal_and_file_map.md) — ★★ hidden-state-magnitude 신호 정확한 계산레시피(cleanlab 대신 채택, D1 WHY/COST/EXIT) + MoE 근접동점 조사 전체 파일지도(macstudio/bob/repo 스크립트·JSON·qwen_infer.c 함수명·RESULTS.md 섹션명). 새 아키텍처 이식 전 재검증 체크리스트 포함.
 
+- ★★★[vdsp_roig_phase2_corpus_provenance](vdsp_roig_phase2_corpus_provenance.md) — D-roadmap-4 후속(2026-09-02~03): Supabase corpus-aware PK 확장(D-quant-supabase-2)+SLAM MAP에서 빠져있던 5번째 role family(routed experts, D-quant-supabase-3) 발견+추가. WikiText-103 재수집 중 실버그 2개(MAX_POS 생성토큰 스킵, NEARTIE_LOG gate 누락) 발견+수정, 비용 폭증(이벤트당 31분) 확인 후 조기중단+partial push. **Step 6 cross-corpus 실측(60 n-sweep)**: builtin-corpus의 "attention만 위반" role-family 패턴이 재현 안 됨 — WikiText-2는 두 타겟 다 clean, WikiText-103은 두 타겟 다 동일 모양으로 위반, corpus/flip 요인이 role family보다 강할 가능성(target 2개 표본, 확장 진행중). UPDATE-only RPC는 seed 먼저 안 하면 hit이 조용히 증발한다는 교훈 재확인.
+
 ## 과거 완료/참고 트랙
 - [vdsp_kleidiai_sme2_padding_mimicry](vdsp_kleidiai_sme2_padding_mimicry.md) — ARM KleidiAI SME2 프로덕션 통합 SHIPPED. Qwen B=64 +37%, Llama B=16 +26%, 지는 케이스 없음. M1Max가 M4보다 범용성능 우세(SME2 발동구간에서만 M4 역전)
 - [vdsp_smallgicp_neon_omp_port](vdsp_smallgicp_neon_omp_port.md) — small_gicp Mac 포팅 + NEON 커널 5종 + libomp, KITTI N=100 회전오차 37%↓ 유의
