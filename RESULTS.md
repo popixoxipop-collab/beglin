@@ -9782,3 +9782,53 @@ GiB advantage is real at that scale) -- but it is not a generally superior selec
 and neither approach found a combo set that scales toward blanket `E0.5`'s accuracy without
 approaching blanket's memory cost. The paper draft in progress (`~/Desktop/vdsp_moe_precision_paper/`)
 stated the small-sample finding as if it generalized; this section is the correction.
+
+## Step 6: cross-corpus n-monotonicity check -- the role-family pattern doesn't replicate; a corpus/flip-level one might
+
+**WHY**: ROI-G Phase 1 (builtin-corpus, 6 targets) found monotonicity violation concentrated in
+attention-family roles (4/4 violated) vs. shared-FFN (0/2 clean) -- a single-corpus finding.
+Phase 7/8 revived WikiText-103 specifically to get an independent corpus to test whether that
+pattern is architecture-general or an artifact of the builtin corpus.
+
+**Method**: 2 targets picked as one from each family -- `kv_b_proj` layer 8 (attention) and
+`shared_down_proj` layer 26 (shared-FFN) -- both confirmed as real attribution hits in both
+WikiText-2-fullext and WikiText-103 (Step 6's own overlap query: 85 role×layer combos hit in
+both corpora; these 2 picked as one from each family). For each (target, corpus) pair, a real
+n=2..16 arbitrary-n sweep using the same mechanism as ROI-G Phase 1
+(`tools/quant_sim_n.py` override files + `qwen_infer.c`'s `QWEN_MOE_ATTRIB_SIM_ROLE/_LAYER/
+_PATH`), isolated to a single-request manifest so each test only needs the combo-restricted
+attribution path (`QWEN_MOE_NEARTIE_HI_COMBOS`), not a full 405-combo replay -- 60 real engine
+runs total, all completed cleanly, no FATALs.
+
+**Mandatory reproduction check caught a real provenance bug before any sweep number was
+trusted**: isolating a request into its own single-line manifest re-numbers it as req=0, so the
+original global req index has to be re-derived, not assumed. WikiText-103's isolation worked on
+the first try (req=17's manifest line reproduced the exact original `corrected_argmax=1`).
+WikiText-2-fullext's did NOT: the original run processed all 4 manifest chunks back-to-back in
+one process, and **req numbering restarts at 0 per chunk** -- "req=32" was ambiguous across the
+full run without knowing which chunk. The first attempt (chunk_aa's local req=32) reproduced
+zero near-ties at all. Traced which chunk segment actually contained the hit lines (chunk_ac);
+the real source was chunk_ac's local req=32, global manifest line `p152.i32` -- re-running with
+that corrected single-request manifest reproduced the exact original `corrected_argmax=245`.
+Exactly the kind of silent-provenance mistake this step's reproduction-check gate exists to
+catch before it corrupts a real result.
+
+**Result** (independently verified via direct SELECT against `moe_quant_sweep_results`, not
+trusted from the sweep script's own report -- 60/60 rows present, 15 per target×corpus, n=2-16):
+
+| target | corpus | knee | monotonic |
+|---|---|---|---|
+| `kv_b_proj` layer 8 (attention) | wikitext-2-fullext | 4 | Yes |
+| `kv_b_proj` layer 8 (attention) | wikitext-103 | 3 | **No** -- fails at n=4 after passing at n=3, recovers n=5+ |
+| `shared_down_proj` layer 26 (shared-FFN) | wikitext-2-fullext | 2 | Yes |
+| `shared_down_proj` layer 26 (shared-FFN) | wikitext-103 | 3 | **No** -- fails at n=4 after passing at n=3, recovers n=5+ (identical shape to the attention target) |
+
+**The honest finding**: the builtin-corpus role-family pattern ("attention violates, shared-FFN
+doesn't") does not replicate here. Both targets are clean on WikiText-2-fullext; both violate,
+with the identically-shaped pass-fail-recover curve, on WikiText-103 -- regardless of role
+family. This points at a corpus- or flip-specific factor (not yet identified -- candidates
+include the specific margin/logit-gap of each corpus's real flip, not tested here) as more
+load-bearing than role family for this particular pair of targets. **Small-sample caveat,
+stated plainly**: this is 2 targets, 1 flip-point each, 2 corpora -- a real, directly-measured
+signal, not a confirmed general mechanism. A larger target set per corpus would be needed before
+treating "corpus matters more than role family" as established rather than observed.
