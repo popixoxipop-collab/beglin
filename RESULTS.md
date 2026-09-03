@@ -9530,3 +9530,135 @@ measurements together as if repeated trials of the same quantity -- one of them 
 contaminated by known, identified contention and should be treated as displaced, not as a sample
 from the same distribution as `L_nec_r2`. Cite `L_nec_r2`'s 500,614ms as `L_nec`'s wall time
 going forward; RESULTS.md keeps both numbers on the record for the audit trail.
+
+## Phase 7/8: WikiText-103 attribution run -- two real bugs, a cost explosion, and a partial-but-honest dataset
+
+**WHY this run exists**: every attribution/near-tie data point on record up to this point came
+from a single corpus (WikiText-2-fullext, or the engine's own hardcoded 12-request corpus).
+A second, independent corpus was needed to answer whether the attention-family monotonicity
+violation (ROI-G Phase 2, above) and the role×layer hit distribution are properties of the
+architecture or artifacts of one specific corpus.
+
+**Bug 1 -- `QWEN_MOE_ATTRIB_MAX_POS=8` silently skipped almost every attribution.** The corpus
+prep script (`make_wikitext103_manifest.py`) used `PROMPT_LEN=9` (positions 0-8), so
+`MAX_POS=8` covered only the very last prompt token and excluded every generated-token flip
+(pos>=9) -- a regression of the exact bug class already found and fixed once this session for
+GQA (`D-d5-14`, `MAX_POS=6` on a 9-token-prompt corpus). Real measurement from the first
+(buggy) run's chunk 00: 7 REAL FLIPs found, 6/7 SKIPPED, only the one flip at exactly pos=8
+got attributed.
+
+**Bug 2 -- `QWEN_MOE_NEARTIE_LOG` never set.** `moe_neartie_events_init()` (which opens the
+`QWEN_MOE_NEARTIE_EVENTS_LOG` JSONL file) is gated behind this separate env var
+(`qwen_infer.c:6395-6400`), not behind `QWEN_MOE_NEARTIE_EVENTS_LOG` itself. The run script set
+the events-log *path* but not the *enable* flag, so `/tmp/d4_wikitext103.jsonl` never got
+created despite real flips firing and attribution running -- confirmed live: `ls` on bob found
+no such file after 2 full chunks. Per-combo `[moe attrib] hit ...` lines still print to the
+plain-text chunk log regardless of this gate, so the data was NOT lost, just not going to the
+structured export path the Supabase push script needs.
+
+**Fix + re-run**: killed the buggy run (chunks 00-01 done, chunk 02 in progress, all archived to
+`/tmp/d4_wikitext103_run1_maxpos8_buggy/` on bob for reference, not used for any real number
+below), corrected `QWEN_MOE_ATTRIB_MAX_POS=8 -> 19` (covers the full 9-token prompt + up to
+10 generated tokens, `MAXNEW_CYCLE=[4,6,8,10]`'s max) and added `QWEN_MOE_NEARTIE_LOG=1`,
+restarted. Confirmed live: chunk 00 completed **13/13 REAL FLIPs attributed, 0 SKIPPED**
+(vs. 6/7 skipped in the buggy run) -- both fixes verified working end-to-end.
+
+**Real cost discovered, not estimated**: chunk 00 (60 requests, 13 real-flip attribution
+events) took **6h45m48s wall-clock** (00:11:27 -> 06:57:15) -- an average of ~31 minutes per
+attribution event. Root cause, confirmed by direct evidence (`ps` showed the process alive at
+382.9% CPU throughout, not hung): this run's attribution vocabulary is 405 role×layer combos
+(vs. 108-192 in the earlier GQA pilot that already measured "one event at pos=15 didn't finish
+in 8 minutes," `D-d5-14`'s own writeup above), `QWEN_MOE_ATTRIB_MAX_EVENTS` was never set (no
+cap, unlike that pilot's deliberate `MAX_EVENTS=3`), and MAX_POS=19 (vs. the pilot's smaller
+window) means each event replays up to 20 forward passes × 405 combos. Extrapolated cost for
+the full planned 4×60-request run: roughly 24-30 hours, two orders of magnitude past the
+original (buggy, mostly-skipped) run's ~40 minutes for 3 chunks.
+
+**Decision (user, informed by the above)**: stop after chunk 00 fully completed + chunk 01
+partially completed (6/7 in-flight events done), rather than run the full 24-30h. Killed live
+at that point (`kill` on driver pid 45415 + qwen binary pid 3461), confirmed both processes
+gone.
+
+**What actually shipped to Supabase (verified via independent SELECT, not the push script's own
+report)**:
+
+| | value |
+|---|---|
+| raw JSONL rows | 703 (204 `event` + 499 `attribution`) |
+| `moe_neartie_events` rows pushed | 204 (matches JSONL event count exactly) |
+| `moe_role_precision_state` seed | 269 rows for `(deepseek-v2-lite, wikitext-103-raw-v1-validation-short)`, same shape as the WikiText-2 seed (D-quant-supabase-3's 5-family layout) |
+| `event_count` sum after push | 499 (matches JSONL attribution count exactly) |
+
+Hit breakdown by family (this partial sample, honest small-n numbers, not a final verdict):
+
+| family | hits | rows with >=1 hit |
+|---|---|---|
+| ATTENTION | 298 | 100 |
+| SHARED_FFN | 191 | 73 |
+| DENSE_FFN | 10 | 3 |
+| GLOBAL | 0 | 0 |
+| ROUTED (experts) | 0 | 0 |
+
+ROUTED experts scoring 0 hits here, even with attribution genuinely running (not skipped),
+is consistent with the standing finding this session already recorded twice independently
+(ROADMAP.md D-roadmap-2 Track A/B; `D-d5-8`/`D-d5-9` above): routed-expert weight precision
+does not appear to independently move this near-tie phenomenon. This is a third, corpus-
+independent data point toward the same conclusion, not a new one.
+
+**Honest scope note**: this is chunk 00 (complete, 13/13 attributed) plus a partial chunk 01
+(6/7 in-flight events done) -- not the originally planned 4×60=240-request corpus. The
+cross-corpus generalization check (Step 6, comparing monotonicity classification against
+WikiText-2's known targets) should be scoped to whatever overlapping (role,layer) hits this
+partial sample actually contains, and reported as partial-sample, not full-corpus, findings.
+
+## D-d5-26 -- the necessity/sufficiency efficiency gap was a small-sample artifact, not a persistent property (2026-09-03)
+
+D-d5-24 found `L_nec` (7 necessary combos, 3 attributed events) at 0.610 exact/GiB -- ~2x
+`L_sel2` (55 sufficient combos, 12 events, 0.294) and ~1.5x blanket `E0.5` (0.414) -- and left
+open whether that edge survives the same 3->12 event expansion `L_sel2` itself got. `L_nec12`
+(80 necessary combos, union over the same 12 events) answers it.
+
+**Result** (`/tmp/lnec12.log`, macstudio, `qwen_d522_bin`, same corpus/config as every other
+`L_*` arm): **6/24 exact, 18/24 first-tok, 23.67 GiB** peak RSS.
+
+| arm | combos | events | method | memory | exact | first-tok | exact/GiB |
+|---|---|---|---|---|---|---|---|
+| `L_sel` | 14 | 3 | add (sufficient) | 10.05 GiB | 3/24 | -- | 0.299 |
+| `L_nec` | 7 | 3 | ablate (necessary) | 6.56 GiB | 4/24 | 16/24 | 0.610 |
+| `L_sel2` | 55 | 12 | add (sufficient) | 23.78 GiB | 7/24 | 18/24 | 0.294 |
+| **`L_nec12`** | **80** | **12** | **ablate (necessary)** | **23.67 GiB** | **6/24** | **18/24** | **0.253** |
+| `E0.5` | blanket | -- | -- | 29.01 GiB | 12/24 | 20/24 | 0.414 |
+| `B_truth` | everything | -- | static | 25.13 GiB | 24/24 | 24/24 | 0.955 |
+
+**The efficiency edge does not survive the expansion -- it collapses past parity.** At matched
+12-event sample size, necessity-selection (0.253) is not just no-longer-2x-better than
+sufficiency-selection (0.294), it is measurably *worse*. `L_nec12`'s memory footprint (23.67
+GiB) converged to within 0.5% of `L_sel2`'s (23.78 GiB) despite a completely different
+combo-selection method and 80 vs 55 combos -- both selection strategies, expanded far enough,
+are approaching the same practical ceiling on this workload rather than two distinct operating
+points on a shared efficiency curve.
+
+**This revises D-d5-23/24's own reading, not just their scale.** D-d5-24 read `L_nec`'s
+advantage as evidence that "a union built from *sufficient* roles is a set of alternatives, not
+requirements" and that necessity-selection avoids paying for redundant alternatives. That
+mechanism isn't wrong at 3 events -- but it does not compound favorably as more events are
+attributed. The likely reason, visible in the `L_nec12` union itself: 12-event necessity is not
+a clean, small, load-bearing "core" -- one single event (`req=7 pos=10`, D-d5-23's companion
+run) alone needed 67 of 112 combos necessary (near-total fragility for that one flip), while 6 of
+12 events needed zero. Pooling a few "almost everything is necessary" events into the union
+inflates it just as fast as sufficiency's redundant-alternatives problem inflates `L_sel2` --
+different failure mode, similar growth rate once enough events are sampled.
+
+**Caveat on `L_nec12`'s own wall time**: NOT reported here, deliberately. `uptime` load average
+climbed from 2.58 (run start, 10:56:20) to 15.98 (run end, 11:05:27) -- an order-of-magnitude
+spike during the run, the same class of shared-machine contention D-d5-25 just confirmed and
+controlled for. `L_nec12`'s wall_ms is not trustworthy for cross-arm comparison without its own
+control re-run; accuracy and peak RSS are unaffected by CPU contention (same deterministic
+computation regardless of how slow it runs) and are reported above with confidence.
+
+**Standing conclusion, revised**: necessity-based selective-hi is a better choice than
+sufficiency-based selection when few events have been attributed (cheap, and the accuracy-per-
+GiB advantage is real at that scale) -- but it is not a generally superior selection *strategy*,
+and neither approach found a combo set that scales toward blanket `E0.5`'s accuracy without
+approaching blanket's memory cost. The paper draft in progress (`~/Desktop/vdsp_moe_precision_paper/`)
+stated the small-sample finding as if it generalized; this section is the correction.
