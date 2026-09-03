@@ -9483,3 +9483,50 @@ different subset of decode steps hit a promoted tensor and take the slow path --
 threshold are identical, but the *identity* of which steps fire is not, since `REAL FLIP` is
 determined against whichever hi combos are currently active. Flagged as open rather than
 explained; no hypothesis here has been checked against evidence.
+
+## D-d5-25 -- the wall-time anomaly was shared-machine contention, not the necessary-role combo set (2026-09-03)
+
+D-d5-24 flagged `L_nec`'s wall time (568,661ms -- slowest of five arms despite the fewest
+combos, lowest memory, fewest near-tie firings, and lowest total scalar-replay volume of any
+arm measured) as unexplained. Three hypotheses, checked in order:
+
+**H1 -- more bits=16 compute per combo.** REJECTED. `L_nec`'s 7 combos (6.56 GiB) did LESS
+total correction work than `L_sel2`'s 55 combos (23.78 GiB) by every internal engine metric:
+65 firings vs 89, Sigma n_scalar 288 vs 296. If per-combo compute cost were the driver, `L_nec`
+should have been faster, not slower.
+
+**H2 -- different scheduling/admission pattern.** REJECTED. `steps=39 admitted_after_evict=20
+queue_wait_events=20 queue_wait_max_steps=33` -- identical between the two runs, down to the
+integer. Scheduling shape is not the differentiator.
+
+**H3 -- shared-machine resource contention.** CONFIRMED. `ps` on macstudio during the original
+`L_nec` window found `brain.selfplay` (Finance repo's MCTS self-play training,
+`--sim-budget=100 --mcts-budget=1000`, PID 15180) running continuously from 00:54:58, having
+spawned a fresh multiprocessing worker (`resource_tracker`, PID 48064) at 01:33:52 -- 21 minutes
+before `L_nec` started, and still alive through its entire 01:54:28-02:03:57 window. This is the
+same resident job already flagged as a known confound on this machine (this project's own
+`feedback_studio_resident_cpu_jobs.md` memory).
+
+**Confirmation, not just correlation.** `L_nec_r2`: an exact repeat of `L_nec` -- same binary,
+same 7-combo file, same corpus, same everything -- run later once `brain.selfplay`'s load had
+dropped (`uptime` load average 3.71 -> 2.58 by the time of the repeat). Per-request token output
+was **byte-for-byte identical across all 24 requests** (fully deterministic correction path, as
+expected -- only wall-clock differed):
+
+| | `L_nec` (orig) | `L_nec_r2` (repeat) |
+|---|---|---|
+| wall_ms | 568,661.28 | **500,614.26** (-12.0%) |
+| peak RSS | 6.56 GiB | 6.56 GiB (identical) |
+| tokens (all 24 reqs) | -- | **identical to orig, 0 differences** |
+| rank among the 5-arm scoreboard | slowest (slower than 55-combo `L_sel2`) | **correctly ordered**: faster than `L_sel2` (530,464), still behind blanket `E0.5` (461,239) |
+
+Same computation, same result, different wall time, only external system load changed in
+between. `L_nec_r2` lands exactly where combo-count/memory would predict -- between blanket
+scope and the larger selective union. The original number was noise from a co-resident job on
+a shared machine, not a property of the necessary-role combo set. **Closed.**
+
+**Rejected-hypothesis note for anyone reusing this data**: do not average `L_nec`'s two wall-time
+measurements together as if repeated trials of the same quantity -- one of them (568,661ms) is
+contaminated by known, identified contention and should be treated as displaced, not as a sample
+from the same distribution as `L_nec_r2`. Cite `L_nec_r2`'s 500,614ms as `L_nec`'s wall time
+going forward; RESULTS.md keeps both numbers on the record for the audit trail.
