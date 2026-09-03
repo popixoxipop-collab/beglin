@@ -44,11 +44,22 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
 - **재현성 검증에서 진짜 버그 하나 잡음**: WikiText-2-fullext 원본 런이 4개 manifest
   chunk를 한 프로세스에서 연속 처리해서 req 번호가 **chunk마다 0부터 재시작** — "req=32"가
   파일 전체에서 모호했음(실제로는 chunk_ac의 local req=32 = 전역 `p152.i32`).
-- **핵심 결과**: builtin-corpus의 role-family 패턴(attention 위반/shared-FFN 안전)이
+- **1차 결과(target 2개)**: builtin-corpus의 role-family 패턴(attention 위반/shared-FFN 안전)이
   재현 안 됨. WikiText-2에서는 두 타겟 다 clean(knee 4/2), WikiText-103에서는 **두 타겟
   다 동일한 pass@3→fail@4→recover@5 모양으로 위반**. role family보다 corpus/flip 자체가
-  더 강한 요인일 가능성 — 단 target 2개 표본, 확정 아님.
-- 60행 전부 `moe_quant_sweep_results`에 push+독립 SELECT 검증 완료.
+  더 강한 요인일 가능성 제기 — 단 target 2개 표본, 확정 아님(2026-09-03 표본 확장으로 반증).
+- **2차 결과(target 2개 추가, 2026-09-03)**: `q_proj`L1(attention)+`dense_down_proj`L0(DENSE FFN,
+  처음 테스트) 추가 → **정반대 방향** — WikiText-2에서 두 타겟 다 위반(knee2/fail@4,
+  knee3/fail@6), WikiText-103에서 두 타겟 다 clean. 4개 타겟 종합: 2개는 "WT2 clean/WT103
+  위반", 2개는 "WT2 위반/WT103 clean" — **corpus-level 패턴이 살아남지 못함**. 정직한 결론:
+  위반 여부는 role family도 corpus도 아니라 **개별 target/flip 특이적**으로 보임. 1차의
+  "corpus가 강한 요인" 결론 자체가 표본 2개짜리 성급한 판단이었음 — 데이터를 더 모아서
+  스스로 반증한 사례(round1/round2 둘 다 데이터 부족으로 인한 오판, 재측정으로 교정).
+- WikiText-103 재현성 검증에서 추가 버그 발견: 격리 시 correction eligibility margin이
+  threshold(0.1) 바로 근처에 있으면 배치 구성에 따라 넘나들 수 있음(생성 토큰 자체는
+  동일해도) — req=10/pos=11, req=40/pos=9 둘 다 재현 실패 후 req=46/pos=9에서 성공.
+  single-request 격리가 항상 안전한 재현 방법은 아님, (req,pos)별로 재확인 필요.
+- 총 120행(4 target × 2 corpus × 15 n) `moe_quant_sweep_results`에 push+독립 SELECT 검증 완료.
 
 ## 교훈
 - **UPDATE-only RPC + 새 corpus/role은 항상 seed 먼저** — 안 하면 에러 없이 hit이 증발.
