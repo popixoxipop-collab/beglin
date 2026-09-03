@@ -9197,22 +9197,6 @@ own GPU serving layer is ~18% slower than just calling `mlx_lm.generate`
 directly. That's a real gap, and in the opposite direction from what this
 session expected going in.
 
-**Why this narrows the "own serving layer" thesis rather than killing
-it**: `mlx_lm.generate` has no concept of concurrent-request serving --
-it's a single-stream CLI. There is no direct vanilla-MLX equivalent to
-vdsp's own B=32/48/64 aggregate numbers (334.3 / 397.4 / 472.6 tok/s, same
-V5j-batch table) because N sequential `mlx_lm.generate` calls get zero
-batching benefit and would top out near the B=1 number regardless of N.
-**The narrower, defensible claim this data actually supports**: vdsp's
-scheduling/serving layer's value is concurrent-request throughput on one
-device, not single-user latency. At B=1 it has no speed claim over calling
-MLX directly -- the honest pitch is "serve many users on one Mac," not
-"faster inference than MLX." A true apples-to-apples multi-request MLX-only
-baseline (N independent `mlx_lm.generate` processes run concurrently, real
-wall-clock aggregate throughput measured, not assumed from the B=1 number)
-is the natural next step if this claim needs harder numbers to stand on --
-not done this round.
-
 **Side effect, disclosed rather than hidden**: patching a local
 `config.json` copy (mlx_lm's OLMoE loader requires `rms_norm_eps`, absent
 from the source HF checkpoint's `config.json`) was attempted via a
@@ -9227,11 +9211,62 @@ the field was genuinely missing (a bug-fix side effect, not corruption) --
 flagged here per this project's own no-silent-changes convention rather
 than left undisclosed.
 
-**Status**: OPEN. B=1 single-stream comparison closed with a real,
-unfavorable-to-vdsp number, honestly reported. The claim that actually
-matters for a consumer-serving pitch -- many concurrent users on one Mac --
-still needs its own direct measurement against N-parallel vanilla-MLX
-processes, not inferred from the B=1 gap.
+**Follow-up, same day: the full B-sweep, closing the "narrows to
+concurrent-serving" hedge above.** The B=1 result left one claim standing
+-- that vdsp's serving layer might still win on concurrent-request
+throughput even after losing on single-stream latency. `mlx_lm`'s own
+`batch_generate` (one process, one model load, MLX's in-process batching --
+see `vdsp_mlx_batch_bench.py`, added this round) is the like-for-like way
+to test that without N independent processes exceeding this machine's RAM
+(D1 in that script's own header). Resource-gated via
+`vdsp_mlx_bench_runner.sh` (no run while bob's other-session jobs were
+active; fired automatically once bob held 5 consecutive idle checks, 10
+minutes apart, all-clear logged at both ends) and run against the same
+`mlx-community/OLMoE-1B-7B-0125-4bit` checkpoint, same prompt, warmed per
+batch shape before timing (same shape-JIT cold-start trap V5g already
+documented).
+
+**Result, full B sweep**:
+
+| B | vdsp (V5j-batch, existing) | MLX vanilla (`batch_generate`) | ratio (vdsp/MLX) | MLX peak mem |
+|---:|---:|---:|---:|---:|
+| 1  | 105.8 | 122.84 | 0.86 | 3.94 GB |
+| 8  | 194.2 | 303.28 | **0.64** | 4.30 GB |
+| 16 | 277.3 | 324.92 | 0.85 | 4.81 GB |
+| 32 | 334.3 | 561.20 | **0.60** | 5.94 GB |
+| 64 | 472.6 | 558.03 | 0.85 | 6.21 GB |
+
+**Honest read: the hedge doesn't survive.** Vanilla MLX's own batching wins
+at every B tested, not just B=1 -- by as much as 40% (B=8, B=32), never
+worse than 14% (B=16, B=64). The gap does not shrink monotonically with B
+the way a "vdsp's scheduler pays off at scale" story would predict (0.86 ->
+0.64 -> 0.85 -> 0.60 -> 0.85 -- no trend, not a curve). Peak memory for MLX
+batching stays remarkably flat too (3.94 -> 6.21 GB across the whole B=1..64
+range), so this isn't a case where vdsp's memory-sharing design is winning
+on a resource MLX is burning through instead. On raw batched throughput,
+against this model on this hardware, vdsp's custom GPU serving layer has no
+measured advantage over calling MLX's own batching API directly, at any
+tested concurrency. Most likely explanation, not yet verified: `batch_generate`
+is a maintained MLX-team library feature; this project's own GPU batching
+(V5a-V5l) was built primarily for numerical-correctness verification, with
+throughput as a secondary, less-optimized concern.
+
+**What's still genuinely untested, and is the only claim left standing**:
+`batch_generate` takes one fixed-size batch that arrives and departs
+together -- it does not model ragged/asynchronous arrival, the thing
+vdsp's own online-admission scheduler (V5h/V5j-ragged Phase D) specifically
+exists for. Whether vdsp holds any advantage there (e.g. under staggered
+arrival, mixed prompt lengths, or a continuously-refilling request queue)
+is not answered by this round's data one way or the other -- not measured
+favorably, not measured unfavorably, simply not measured. That comparison
+would need `mlx_lm.server` (or equivalent) driven by concurrent independent
+clients with real arrival-time jitter, not a single `batch_generate` call.
+
+**Status**: CLOSED for uniform-batch throughput -- vdsp loses at every
+tested B, honestly reported, hedge retracted rather than left standing on
+old data. OPEN only for the ragged/online-arrival serving pattern, which is
+untested in either direction and is the one place a "why build vdsp's own
+layer instead of just using MLX" answer could still legitimately live.
 
 ## D-d5-22 -- the attribution denominator counted questions it never asked (2026-09-03)
 
