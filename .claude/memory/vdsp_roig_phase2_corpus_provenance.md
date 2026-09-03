@@ -58,8 +58,21 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
   "비용이 감당 가능한 것"은 별개 문제, 고치기 전에 반드시 예상 비용을 어림잡을 것
   (`QWEN_MOE_ATTRIB_MAX_EVENTS`로 캡 안 걸면 무제한 이벤트가 전부 풀 attribution 돔).
 
+## Step 6 표본 확장 (round 2, 2026-09-03) — round 1의 "corpus-level 패턴" 결론을 뒤집음
+- 타겟 2개 추가: `q_proj`@L1(attention 2번째)+`dense_down_proj`@L0(DENSE FFN, 처음 테스트).
+- **재현성 검증에서 방법론적 발견**: WikiText-103 후보 (req,pos) 3개 중 2개가 재현 실패
+  — 단일요청으로 격리하면 원래 60-request batch 문맥과 margin이 threshold(0.1)를 넘나들며
+  바뀜(생성토큰 자체는 동일, correction 발동 여부만 달라짐). 재현성 검증은 "통과 관문"이
+  아니라 그 자체로 정보 — 실패하면 그 (req,pos)는 이 방식으론 테스트 불가라는 뜻.
+- **결과가 round 1과 정반대 방향**: round1(kv_b_proj/shared_down_proj)은 WT2 clean/WT103
+  위반이었는데, round2(q_proj/dense_down_proj)는 WT2 위반/WT103 clean. 4개 타겟 전부 합치면
+  2:2로 코퍼스 방향성이 전혀 없음 — **corpus-level 패턴이라는 round1의 결론 자체가 표본
+  2개짜리 성급한 일반화였음이 표본을 늘리자마자 드러남**. 최종 결론: 위반은 role family도
+  corpus도 아니라 **target/flip 개별 특성**으로 보임(둘 다 이 세션 스스로 뒤집은 결론).
+- 독립 SELECT 검증 완료(60/60 row, knee/violation 정확히 일치), RESULTS.md 반영+커밋.
+
 ## 남은 것
-- Step 6 표본 확장 진행 중(2026-09-03) — target 2-3개 추가해 corpus-level 패턴이
-  우연인지 재현 가능한지 확인.
 - WikiText-103 나머지 chunk(01 후반+02+03)는 미실행 — 필요하면 비용 인지 하에 재개.
 - graphify --update가 세션 토큰 한도로 9개 chunk 중 5개(4/5/6/8) 미완료.
+- target/flip-specific 결론이 맞다면, 다음 단계는 "무엇이 그 flip을 개별적으로 만드는가"
+  (margin 크기, 특정 role의 파라미터 분포 등) — 아직 가설조차 없음, 완전히 열린 질문.

@@ -9832,3 +9832,42 @@ load-bearing than role family for this particular pair of targets. **Small-sampl
 stated plainly**: this is 2 targets, 1 flip-point each, 2 corpora -- a real, directly-measured
 signal, not a confirmed general mechanism. A larger target set per corpus would be needed before
 treating "corpus matters more than role family" as established rather than observed.
+
+### Step 6 round 2: sample expansion reverses the round-1 read -- the honest conclusion is target/flip-specific, not corpus-level
+
+Two more targets, same mechanism, same independent-SELECT-verified discipline: `q_proj`
+layer 1 (a second attention datapoint, since round 1's `kv_b_proj` result could have been
+role-specific rather than family-general) and `dense_down_proj` layer 0 (DENSE FFN -- a third
+family, never tested in ROI-G Phase 1 or Step 6 round 1).
+
+**A real methodological finding surfaced before any sweep number was trusted**: the mandatory
+reproduction check failed for 2 of 3 candidate WikiText-103 (req,pos) pairs. Isolating a
+single request out of its original 60-request batch context shifted a razor-thin near-tie
+margin across the 0.1 correction threshold -- the actual generated tokens still matched, but
+whether the correction mechanism fired at all changed with batch composition. The third
+candidate (req=46, pos=9) reproduced cleanly (`corrected_argmax=1296` exact match) and was
+used. **Practical implication for any future single-request isolation test on this corpus**:
+not every (req,pos) pair is safely testable this way -- the reproduction check is not
+optional, and a failure there is informative on its own, not just a gate to pass through.
+
+**Result** (independently verified via SELECT, 60/60 rows, 15 per target x corpus, n=2-16):
+
+| target | corpus | knee | monotonic |
+|---|---|---|---|
+| `q_proj` layer 1 (attention) | wikitext-2-fullext | 2 | **No** -- fails at n=4 after passing at n=2,3, recovers n=5+ |
+| `q_proj` layer 1 (attention) | wikitext-103 | 2 | Yes |
+| `dense_down_proj` layer 0 (DENSE FFN) | wikitext-2-fullext | 3 | **No** -- fails at n=6 after passing at n=3-5, recovers n=7+ |
+| `dense_down_proj` layer 0 (DENSE FFN) | wikitext-103 | 2 | Yes |
+
+**This is the opposite direction from round 1.** Round 1 (`kv_b_proj`, `shared_down_proj`):
+both clean on WikiText-2, both violate on WikiText-103. Round 2 (these 2 targets): both
+violate on WikiText-2, both clean on WikiText-103. Across all 4 targets now measured: 2 show
+"WT2-clean/WT103-violates," 2 show "WT2-violates/WT103-clean" -- **no consistent corpus-level
+direction survives at n=4 targets**. Round 1's tentative "corpus matters more than role
+family" read was itself premature (a 2-target sample). The updated, honest conclusion:
+monotonicity violation looks **target/flip-specific** -- not systematically tied to either
+role family (ROI-G Phase 1's original read) or corpus identity (round 1's read) alone. Both
+of this session's own earlier generalizations were real, measured signals at their sample
+size, and both were superseded by measuring more -- the data-first-numerics discipline this
+project follows caught its own overreach twice in the same investigation, which is the
+system working as intended, not a failure.
