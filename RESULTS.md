@@ -9268,6 +9268,91 @@ old data. OPEN only for the ragged/online-arrival serving pattern, which is
 untested in either direction and is the one place a "why build vdsp's own
 layer instead of just using MLX" answer could still legitimately live.
 
+## Follow-up, next day: ragged/online arrival -- the one claim still standing, now tested
+
+Closes the item the previous section left OPEN. `batch_generate` cannot
+model asynchronous arrival at all (one fixed batch, in and out together),
+so the comparison needed a real server: `mlx_lm.server` (this MLX version
+ships one, with `--decode-concurrency`/`--prompt-concurrency` -- genuine
+continuous-batching admission control, not a naive queue) driven by an
+async HTTP client sending requests with real wall-clock stagger
+(`vdsp_mlx_ragged_client.py`, added this round). Target workload matched to
+vdsp's own V5j-ragged Phase D measurement (this file, "V5j-ragged" section):
+`--decode-concurrency 4` = vdsp's B=4, R=12 requests, 8 distinct prompts
+cycled `r % 8` matching vdsp's own cycled-corpus convention.
+
+**First attempt's stagger scale was wrong, caught before trusting the
+number**: initial run used an arbitrary 1.0s per vdsp scheduler-step
+(vdsp's "step" has no defined wall-clock length -- see the script's own D1).
+Result: 12 requests spread over ~19.8s, each landing on a free slot before
+the next arrived -- latencies of 0.34-0.85s per request, essentially zero
+queueing contention. A "ragged arrival" test that never actually contends
+for a slot isn't testing what it claims to. Fixed by deriving the stagger
+scale from this server's OWN measured behavior instead of a guess: default-
+arrival agg tok/s / decode_concurrency gives a real per-slot decode rate,
+whose reciprocal is a genuine per-step duration on this hardware (~0.05s/step
+here) -- rerun with that scale produced real overlapping completions (see
+below), confirming the fix.
+
+**Result, corrected run (scale=0.05s/step, ~0.95s stagger span for 12
+requests)**:
+
+| workload | MLX server agg tok/s | wall | latency (min/mean/max) | ok |
+|---|---:|---:|---:|---:|
+| default (burst)      | 95.56 (79.24 on an earlier run -- see variance note) | 4.02s | 1.02 / 2.49 / 3.99s | 12/12 |
+| staggered (corrected) | 77.83 | 4.93s | 1.44 / 2.98 / 4.17s | 12/12 |
+
+Staggered held to 81% of the (same-run) burst throughput despite requests
+arriving over a full second rather than all at once, and the completion log
+shows genuine wave-like bunching (e.g. reqs 5-7 all completing at 12.69s
+despite arriving 9.39-9.58s) -- real queueing behavior this time, not the
+first attempt's near-sequential pass-through.
+
+**Comparison against vdsp's own default-arrival number (171.6 tok/s, same
+B=4/R=12 shape)**: **vdsp is 1.8-2.2x faster than `mlx_lm.server`** across
+both MLX runs (171.6 / 95.56 = 1.80, 171.6 / 79.24 = 2.17) -- the opposite
+direction from the `batch_generate` result immediately above. **This is not
+a contradiction, because it is not the same comparison**: `batch_generate`
+is an in-process library call (no HTTP, no JSON, no network stack, same
+process as the weights) -- the MLX-vs-vdsp comparison there isolated
+compute/scheduling efficiency. `mlx_lm.server` adds a real HTTP round trip,
+async request handling, and JSON (de)serialization per request -- exactly
+the layer this project's own C engine skips entirely by being an in-process
+binary with no serving protocol at all. Read honestly: **vdsp's advantage
+here is "a native serving binary beats a Python reference HTTP server,"
+not "vdsp computes faster than MLX"** -- the earlier `batch_generate` result
+already settled the compute question, unfavorably to vdsp. Both are true
+simultaneously and measure different things; neither should be quoted
+without the other.
+
+**Disclosed, not smoothed over**: `mlx_lm.server`'s own default-arrival
+number moved from 79.24 to 95.56 tok/s (+21%) between two nominally
+identical runs, minutes apart, same machine, same idle-checked resource
+state. This project's own C engine has repeatedly demonstrated
+byte-identical, deterministic reruns (V5j-batch B=64 2x reproduction, V5l's
+manifest verification, etc.) -- a Python/asyncio/HTTP stack evidently does
+not hold to the same standard, for reasons not investigated this round
+(GC pauses, OS scheduling jitter, and JIT/shape-cache warmth are plausible
+candidates, not confirmed). Both numbers are reported above rather than
+picking the more flattering (to either engine) one.
+
+**What remains genuinely untested**: this workload used `--decode-concurrency
+4` server-side but delivered <=4 truly-concurrent in-flight requests at
+peak -- vdsp's own online scheduler is also verified under real eviction and
+FIFO head-of-line blocking at higher R/B ratios (RESULTS.md "V5h", B=8 R=16,
+double the slot count). An MLX-server run at a comparable R/B ratio (e.g.
+R=32, decode-concurrency=8) would be needed before claiming this result
+generalizes past the specific 4-slot/12-request shape tested here.
+
+**Status**: The ragged-arrival gap is CLOSED for this specific shape
+(B=4/R=12, HTTP-served) -- vdsp wins by ~2x, but for a reason (native
+binary vs. reference Python server) that is honestly a different claim than
+"vdsp's scheduling algorithm is better." Open items: higher R/B ratios
+untested; the `mlx_lm.server` run-to-run variance is unexplained; no
+attempt has been made to strip `mlx_lm.server`'s HTTP layer to isolate
+whether its *scheduling logic* (as opposed to its serving protocol) is
+competitive with vdsp's once transport overhead is removed from both sides.
+
 ## D-d5-22 -- the attribution denominator counted questions it never asked (2026-09-03)
 
 **Trigger.** D-d5-20's Qwen3-30B-A3B sparsity probe reported its first real flip as
