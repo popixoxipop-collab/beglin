@@ -9871,3 +9871,57 @@ of this session's own earlier generalizations were real, measured signals at the
 size, and both were superseded by measuring more -- the data-first-numerics discipline this
 project follows caught its own overreach twice in the same investigation, which is the
 system working as intended, not a failure.
+
+## Step 6 sample expansion: the corpus-level pattern doesn't survive a 4th target either
+
+**WHY**: Step 6's first round (2 targets) found "both clean on WikiText-2, both violate on
+WikiText-103" and explicitly flagged this as a 2-target sample, not a confirmed mechanism.
+2 more targets picked from the 85 overlapping-hit pool -- `q_proj` layer 1 (a second attention
+role, distinct from `kv_b_proj`) and `dense_down_proj` layer 0 (DENSE FFN family, never tested
+in ROI-G Phase 1 or Step 6 round 1) -- to see if the corpus-level direction holds.
+
+**Reproduction check found a real, useful negative result before any sweep number was
+trusted**: WikiText-2's known-good req=32/chunk_ac manifest reproduced cleanly for both new
+targets on the first try. WikiText-103 did NOT -- the first two candidate (req,pos) pairs for
+these targets (req=10/pos=11, req=40/pos=9) both **failed to reproduce**: isolating the request
+into a single-request manifest changed whether the near-tie correction triggered at all (the
+correction-eligibility margin sits right at the 0.1 threshold and shifts across it depending on
+what else is batched alongside the request -- confirmed the actual *generated tokens* were
+identical in both contexts, only the near-tie margin computed for the reverify/correction gate
+differed). A third candidate, req=46/pos=9, reproduced cleanly (`corrected_argmax=1296` exact
+match for both targets) and was used for the real sweep. **This means single-request isolation
+is not universally safe for reproducing a specific near-tie event** -- it happened to work for
+every target tested so far except these two WikiText-103 attempts, and should be spot-checked
+per (req,pos), not assumed from one prior success.
+
+**Result** (60/60 new tests ran clean, no FATALs; independently verified via SELECT):
+
+| target | corpus | knee | monotonic |
+|---|---|---|---|
+| `q_proj` layer 1 (attention) | wikitext-2-fullext | 2 | **No** -- fails at n=4 after passing at n=2,3, recovers n=5+ |
+| `q_proj` layer 1 (attention) | wikitext-103 | 2 | Yes |
+| `dense_down_proj` layer 0 (DENSE FFN) | wikitext-2-fullext | 3 | **No** -- fails at n=6 after passing at n=3-5, recovers n=7+ |
+| `dense_down_proj` layer 0 (DENSE FFN) | wikitext-103 | 2 | Yes |
+
+**This reverses the direction of Step 6 round 1's pattern.** Combined across all 4 targets now
+tested (independently re-verified in one query against `moe_quant_sweep_results`):
+
+| target | wikitext-2-fullext | wikitext-103 |
+|---|---|---|
+| `kv_b_proj` L8 (attention) | clean | **violates** |
+| `shared_down_proj` L26 (shared-FFN) | clean | **violates** |
+| `q_proj` L1 (attention) | **violates** | clean |
+| `dense_down_proj` L0 (dense-FFN) | **violates** | clean |
+
+2 targets go one direction, 2 go the other -- **no consistent corpus-level direction survives
+at n=4**. The round-1 read ("corpus matters more than role family") was itself premature, drawn
+from a 2-target sample that happened to agree by chance. The honest updated read: whether an
+(n)-monotonicity violation occurs looks **specific to the individual target/flip**, not
+systematically predictable from either role family (ROI-G Phase 1's original builtin-corpus
+finding) or corpus identity (Step 6 round 1's finding) alone. Both of the smaller-sample
+theories got falsified in sequence by adding more real data, not by re-analysis of the same
+data -- consistent with the discipline the section immediately above this one already
+describes.
+
+**Push**: 60/60 rows added to `moe_quant_sweep_results` (total 120 rows across the 4-target Step
+6 investigation), independently confirmed via SELECT.
