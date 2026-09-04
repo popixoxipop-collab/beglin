@@ -10062,3 +10062,49 @@ not a new fact about this specific flip.
 real convergence run. Ablate-direction has not yet been tried on a case where k=1 necessity
 scan hasn't already run first (which would be the first genuinely novel use of it) -- a natural
 next step, not attempted here.
+
+## D-d5-29 -- the first genuinely novel ddmin use: 112 combos to 1, no prior scan, 10 tests
+
+D-d5-28 closed with the honest caveat that its own validation reused an already-k1-scanned
+starting set, so it demonstrated ddmin's cost advantage but not new discovery. This closes that
+gap: a target with **no prior attribution of any kind** (add or ablate), started from the full
+effective ground set instead of a known subset.
+
+**Code**: `moe_attrib_build_full_ground_set()` enumerates every `(role, layer)` pair this run's
+`moe_attrib_combo_effective(role, layer, ablate=1)` (D-d5-22) reports effective, and
+`moe_attrib_ddmin_full_test()` runs `moe_ddmin_shrink()` straight from that set -- no
+prerequisite replay needed first, unlike every earlier ddmin hook. That is not a shortcut, it is
+exact: demoting *every* effective combo is definitionally the pre-correction production path,
+which by construction produced `orig_argmax`, and `orig_argmax != corrected_argmax` is the literal
+definition of a real flip. The starting condition ddmin needs is true by the flip having fired at
+all, not by anything this function checks. Reusable target via
+`QWEN_MOE_ATTRIB_DDMIN_FULL_REQ`/`_POS` (both must name the exact flip), not hardcoded to one
+dataset the way the three earlier hooks are.
+
+**Target**: OLMoE req=9/pos=12 (`orig=4782 corrected=4668`), a real flip from D-d5-28's own run
+that fell outside the original 12-event add/ablate attribution window (D-d5-20/23/26/27) --
+never attributed by any k=1 sweep before this.
+
+**Result** (`/tmp/ddmin_full.log`, macstudio, `qwen_d529_bin`, same corpus/config as every
+other OLMoE arm this session):
+
+```
+[moe ddmin full] req=9 pos=12 ground set: 112 effective combos
+[moe ddmin] (necessity) chunk hit: 112 -> 56 -> 28 -> 14 -> 7 -> 4 -> 2 -> 1 (tests #1,2,4,5,6,8,10)
+[moe ddmin] (necessity) CONVERGED: 1 combos, 10 tests
+[moe ddmin] req=9 pos=12 (novel, full ground set) result: 1 combos: o_proj@L1
+```
+
+**This is real new information, not a cheaper re-derivation.** No k=1 scan has ever touched
+req=9/pos=12 -- the 112-combo haystack was never individually tested, so nothing about this
+flip's necessary set was previously knowable at any cost. ddmin found it directly: `o_proj`
+layer 1 alone is necessary from the full-demotion baseline, in 10 tests against a 112-item
+ground set that would have cost 112 tests to scan exhaustively at k=1 (an 11.2x reduction, and
+the ONLY way this specific fact could have been obtained short of that full scan).
+
+**Status**: both ddmin directions now have one validation-only run (D-d5-27 req32/pos8,
+D-d5-28 req0/pos10, both reusing already-scanned sets) and this is the first run of either
+direction used as the plan always intended -- a genuine substitute for an expensive exhaustive
+scan, not a confirmation of one already paid for. Single data point; whether single-tensor
+convergence (also seen in D-d5-27's req32/pos8 and D-d5-28's req0/pos10) is typical or a
+property of the specific flips checked so far remains open.

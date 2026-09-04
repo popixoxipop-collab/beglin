@@ -6048,6 +6048,45 @@ static void moe_attrib_ablate7_test(const uint8_t *af, MoeAFTensor *t_embed, Moe
     }
 }
 
+// D-d5-29: the genuinely novel use case D-d5-28 flagged as not attempted -- ablate-ddmin on a
+// flip that has never had ANY k=1 scan (add or ablate) run against it, starting from the FULL
+// effective ground set rather than an already-known necessary union. Unlike ablate7_test's
+// prerequisite (which needed a real replay to confirm, since a partial union's effect is not
+// obvious a priori), this starting point's "demoting it breaks the fix" property needs no
+// verification at all: demoting EVERY effective combo is definitionally the all-4bit production
+// path, which by construction produced orig_argmax -- and orig_argmax != corrected_argmax is
+// literally what makes this a REAL FLIP in the first place. No wasted prerequisite test.
+// Opt-in per event via QWEN_MOE_ATTRIB_DDMIN_FULL_REQ/_POS (both must match, unlike the three
+// hardcoded hooks above -- this one is reusable across any flip, not tied to one dataset).
+static int moe_attrib_build_full_ground_set(MoeAttribComboEntry *out, int max_out) {
+    int n = 0;
+    for (int r = 0; r < MOE_ATTRIB_ROLE_COUNT; r++) {
+        for (int l = 0; l < MOE_NL; l++) {
+            if (!moe_attrib_combo_effective((MoeAttribRole)r, l, 1)) continue;   // ablate=1: excludes embed/lm_head by construction
+            if (n >= max_out) { fprintf(stderr, "[moe ddmin full] ground set truncated at %d (increase buffer)\n", max_out); return n; }
+            out[n].role = (MoeAttribRole)r; out[n].layer = l; n++;
+        }
+    }
+    return n;
+}
+
+static void moe_attrib_ddmin_full_test(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
+                                        float *w_finalnorm, int req, int pos, int corrected_argmax) {
+    MoeAttribComboEntry cur[512];
+    int cur_n = moe_attrib_build_full_ground_set(cur, 512);
+    fprintf(stderr, "[moe ddmin full] req=%d pos=%d ground set: %d effective combos (no prerequisite "
+                    "replay needed -- demoting all of it is definitionally the pre-correction production "
+                    "path, guaranteed != corrected_argmax=%d)\n", req, pos, cur_n, corrected_argmax);
+    if (cur_n < 2) { fprintf(stderr, "[moe ddmin full] req=%d pos=%d ground set too small to search, skipping\n", req, pos); return; }
+    int max_tests = 900;   // O(n log n) ~ 114*log2(114) ~ 779 typical for OLMoE's full set -- give real headroom
+    const char *env_max = getenv("QWEN_MOE_ATTRIB_DDMIN_MAX_TESTS");
+    if (env_max && env_max[0]) max_tests = atoi(env_max);
+    moe_ddmin_shrink(af, t_embed, t_lmhead, w_finalnorm, req, pos, corrected_argmax, cur, &cur_n, max_tests, 1);
+    fprintf(stderr, "[moe ddmin] req=%d pos=%d (novel, full ground set) result: %d combos:", req, pos, cur_n);
+    for (int i = 0; i < cur_n; i++) fprintf(stderr, " %s@L%d", MOE_ATTRIB_ROLE_NAMES[cur[i].role], cur[i].layer);
+    fprintf(stderr, "\n");
+}
+
 // Driver: called only when moe_neartie_maybe_correct() (below) confirms a REAL flip (full-hi
 // argmax != original production argmax). Tests each of the 108 (role,layer) combos; any combo
 // whose SINGLE promotion alone reproduces the full-hi corrected argmax gets logged as an
@@ -6390,6 +6429,13 @@ static void moe_neartie_maybe_correct(const uint8_t *af, MoeAFTensor *t_embed, M
             moe_attrib_combo87_test(af, t_embed, t_lmhead, w_finalnorm, req, pos);
         if (getenv("QWEN_MOE_ATTRIB_ABLATE7_TEST") && req == 0 && pos == 10)
             moe_attrib_ablate7_test(af, t_embed, t_lmhead, w_finalnorm, req, pos, corrected_argmax);
+        {   // D-d5-29: reusable target, not hardcoded to one dataset -- both env vars must name
+            // THIS flip exactly, so setting them costs nothing on every other real flip in a run.
+            const char *er = getenv("QWEN_MOE_ATTRIB_DDMIN_FULL_REQ");
+            const char *ep = getenv("QWEN_MOE_ATTRIB_DDMIN_FULL_POS");
+            if (er && ep && atoi(er) == req && atoi(ep) == pos)
+                moe_attrib_ddmin_full_test(af, t_embed, t_lmhead, w_finalnorm, req, pos, corrected_argmax);
+        }
     }
 
     memcpy(logits_inout, g_mnc_logits_hi, MOE_VOCAB * sizeof(float));
