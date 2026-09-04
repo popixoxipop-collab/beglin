@@ -10008,3 +10008,57 @@ two full ddmin runs. This is not treated as a gap requiring a fourth guess -- re
 already the more demanding case (87 individually-sufficient combos vs. 17), so it is the
 stronger of the two data points ddmin could have been checked against, not a lesser
 substitute for the missing one.
+
+## D-d5-28 -- ablate-direction ddmin, the plan's other half
+
+D-d5-27 implemented ddmin for the sufficiency (add) direction only, flagging necessity (ablate)
+as "a natural follow-up, not started" -- it needed `moe_attrib_replay_combo()` extended with an
+`ablate` parameter (it had none: always started from the all-4bit baseline) and the shrink loop
+generalized to invert its success test. Both done this round.
+
+**Code**: `moe_attrib_replay_combo()` gains `ablate` (0 = existing behavior unchanged, every
+prior caller updated to pass 0 explicitly; 1 = start from the all-16bit baseline and demote the
+listed combos back to production, mirroring the field-by-field `src->` pattern
+`moe_attrib_replay_one()` already used for the same distinction). The driver
+(`moe_ddmin_minimal_sufficient` -> renamed `moe_ddmin_shrink`, both call sites updated) takes the
+same flag and inverts its own success test: add asks "does this chunk, promoted alone, still
+equal `corrected_argmax`" (Zeller polarity-flipped, per D-d5-27); ablate asks "does this chunk,
+demoted alone, still differ from `corrected_argmax`" -- Zeller's **original**, unflipped ddmin,
+since "necessity breaks the fix" already has the shape of a minimal failure-inducing input.
+
+**Validation target**: OLMoE req=0/pos=10's 7 known-necessary combos (D-d5-23's original 3-event
+ablate run: `o_proj L12, v_proj L13, expert_up_proj L14, expert_down_proj L9/L12/L13/L15`).
+New prerequisite check (`moe_attrib_ablate7_test()`, mirrors the add-direction's own
+monotonicity check, D-roadmap-4) -- each combo breaking the fix ALONE does not automatically
+imply the union of all 7, demoted together, also breaks it (a compensating interaction is
+possible in principle); this was untested before this run, unlike the add-direction's
+union-replay check which had already run twice before any ddmin code existed.
+
+**Result** (`/tmp/ablate7_ddmin.log`, macstudio, `qwen_d528_bin`, same corpus/config as D-d5-23's
+original ablate run):
+
+```
+[moe ablate7 test] req=0 pos=10 n=7 demoted_argmax=3924 corrected=20021 broke=1
+[moe ddmin] (necessity) chunk hit: 7 -> 4 -> 2 -> 1 combos (tests #1-3)
+[moe ddmin] (necessity) CONVERGED: 1 combos, 3 tests
+[moe ddmin] req0/pos10 (ablate) result: 1/7 combos: o_proj@L12
+```
+
+Prerequisite held (`broke=1`) -- necessity-monotonicity confirmed for this flip, first time this
+specific assumption has been checked. ddmin converged in **3 tests**, even fewer than the
+add-direction's req32/pos8 case (7 tests for 87->1).
+
+**Honest scope of this result, unlike req32/pos8's**: all 7 starting combos were themselves
+already found via the original k=1 ablate scan (each individually necessary, D-d5-23) -- so
+ddmin re-deriving a size-1 answer here does not tell us something the k=1 scan couldn't already
+see, the way req32/pos8's 87->1 compression did (that scan never singled out one dominant
+tensor from an 87-combo haystack; this one started from a haystack of only 7, all already known
+individually sufficient to break it alone). What this result actually demonstrates is **cost**,
+not discovery: the same fact reachable in 7 separate k=1 tests is reachable in 3 ddmin tests --
+useful for a real unknown-necessary-set search where the k=1 scan hasn't already been run, but
+not a new fact about this specific flip.
+
+**Status**: both directions of the plan's ddmin proposal are now implemented and each has one
+real convergence run. Ablate-direction has not yet been tried on a case where k=1 necessity
+scan hasn't already run first (which would be the first genuinely novel use of it) -- a natural
+next step, not attempted here.
