@@ -69,8 +69,21 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
   "비용이 감당 가능한 것"은 별개 문제, 고치기 전에 반드시 예상 비용을 어림잡을 것
   (`QWEN_MOE_ATTRIB_MAX_EVENTS`로 캡 안 걸면 무제한 이벤트가 전부 풀 attribution 돔).
 
+## margin_before 상관관계 탐색 (2026-09-04, 기존 데이터만 사용, 새 bob 컴퓨팅 없음)
+- 8개 target×corpus 조합이 실제로는 3개의 서로 다른 flip event로 압축됨(A: WikiText-2
+  req32/pos8 margin=0.000513, B: WikiText-103 req17/pos9 margin=0.097809, C: WikiText-103
+  req46/pos9 margin=0.003763).
+- **margin 크기와 위반율 사이 깔끔한 관계 없음**: margin이 threshold(0.1)에 제일 가까운(가장
+  큰) event B가 100% 위반, 제일 작은(가장 깊은 near-tie) event A는 target별로 갈림(mixed),
+  중간 크기인 event C는 100% clean — 단조적이지 않음.
+- **event A 내부 관찰**: 같은 event인데도 round1 쌍(kv_b_proj/shared_down_proj)은 clean,
+  round2 쌍(q_proj/dense_down_proj)은 위반 — event 단위 속성도 아니고 target×event 개별
+  상호작용임을 시사. n=3 event로는 결론 못 냄, 진짜 풀려면 더 많은 서로 다른 real flip
+  event가 필요(비용 큰 새 attribution 필요, 미시도).
+
 ## 남은 것
 - WikiText-103 나머지 chunk(01 후반+02+03)는 미실행 — 필요하면 비용 인지 하에 재개.
 - graphify --update가 세션 토큰 한도로 9개 chunk 중 5개(4/5/6/8) 미완료.
-- target/flip-specific 결론이 맞다면, 다음 단계는 "무엇이 그 flip을 개별적으로 만드는가"
-  (margin 크기, 특정 role의 파라미터 분포 등) — 아직 가설조차 없음, 완전히 열린 질문.
+- target/flip-specific 결론의 진짜 원인(무엇이 특정 target×event 조합을 취약하게 만드는가)은
+  margin_before로 설명 안 됨(위 항목) — 여전히 완전히 열린 질문, 더 많은 real flip event
+  수집이 필요.

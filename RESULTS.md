@@ -9940,3 +9940,44 @@ this whole plan exists to answer, and this is one real data point toward it, not
 recoverable from bob (not committed to this repo, not in any local backup found). Until then,
 this session has ddmin validated against monotonicity (D-d5-23's 2/2 union-replay spot-checks)
 and one full convergence run, not two.
+
+## Step 6 follow-up: does margin_before predict violation? No clean signal at n=3 events
+
+**WHY**: Step 6 round 2 concluded violation looks target/flip-specific rather than tied to
+role family or corpus. The next cheap thing to check with data already on disk (no new bob
+compute): does the near-tie's `margin_before` (how close to the correction threshold the
+original event was) predict whether it later shows a monotonicity violation?
+
+**Data**: the 4 targets x 2 corpora sweep only actually touched 3 DISTINCT (corpus,req,pos)
+flip events, not 8 -- `kv_b_proj`/`shared_down_proj` shared one event per corpus, and
+`q_proj`/`dense_down_proj` shared one event per corpus (WikiText-2's round-1 and round-2
+events also turned out to be the *same* req/pos, since the reproduction check reused the same
+manifest both times). Real `margin_before` values pulled directly from each event's own log
+line (`[moe neartie] correct req=0 pos=X n_scalar=Y margin_before=Z threshold=0.1`):
+
+| event | corpus | req/pos | margin_before | targets tested | outcome |
+|---|---|---|---|---|---|
+| A | wikitext-2-fullext | 32/8 | 0.000513 (deep inside near-tie territory) | `kv_b_proj` clean, `shared_down_proj` clean, `q_proj` **violates**, `dense_down_proj` **violates** | mixed within the same event |
+| B | wikitext-103 | 17/9 | 0.097809 (right at the 0.1 threshold boundary) | `kv_b_proj` **violates**, `shared_down_proj` **violates** | both violate |
+| C | wikitext-103 | 46/9 | 0.003763 | `q_proj` clean, `dense_down_proj` clean | both clean |
+
+**No clean monotonic relationship between margin size and violation rate**: the event with the
+*largest* margin (B, closest to the threshold, barely qualified as a near-tie at all) violates
+100% of the time; the event with the *smallest* margin (A, deepest into near-tie territory) is
+mixed; the middle-margin event (C) is 100% clean. If margin size alone drove violation risk,
+B and C would not have landed on opposite ends while A sat in between with a mixed result.
+
+**A second, real observation inside event A**: the same flip event splits cleanly along which
+2-target pair was tested together (round 1's pair clean, round 2's pair violates) -- meaning
+violation isn't purely an event-level property either, it's a genuine per-(target,event)
+interaction. Which factor actually drives that split (which weight matrix's rows dominate that
+specific event's logit gap, something about `q_proj`/`dense_down_proj`'s specific role in
+computing the position-8 hidden state vs `kv_b_proj`/`shared_down_proj`'s) is not established
+by this data -- flagged as an open question, not answered.
+
+**Honest conclusion**: n=3 distinct events is too small to rule margin out as a factor, but it
+does not show the simple story ("tighter margin = more fragile to quantization") one might
+hope for. Resolving this for real would need many more distinct real flip events (not more
+re-tests of the same few events against more targets), which requires new, expensive
+attribution runs -- not attempted here, reported as the honest limit of what today's already-
+collected data can answer.
