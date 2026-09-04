@@ -5790,37 +5790,134 @@ typedef struct { MoeAttribRole role; int layer; } MoeAttribComboEntry;
 
 // Generalized version of the req5/pos4 one-shot check above -- takes ANY combo array so it can
 // be reused for other flips' known hit-sets (e.g. req32/pos8's 87 hits) without copy-pasting the
-// override-loop/replay/argmax boilerplate again. Still a one-shot diagnostic tool, not a general
-// feature -- no env-var gate of its own, callers decide when to invoke it.
+// override-loop/replay/argmax boilerplate again. Originally a one-shot diagnostic with no callers
+// beyond the two COMBO tests below; D-d5-27 promotes it to the plan's own
+// `moe_attrib_replay_set()` (.claude/history/2026-09-02_minimal-sufficient-subset-search-plan.md
+// section 4: "Generalizing to a set is mechanical... no new tensor loading, no new state") and
+// reuses it as ddmin's test() function, unchanged in shape -- it already IS the generalized
+// replay the plan asked for, just missing two things a real search driver needs:
+//   1. embed_tokens/lm_head cases -- D-d5-22 fixed this exact gap in moe_attrib_replay_one()
+//      (silent fallthrough to `default: break` read as "not promoted", never a crash, but a
+//      combo set containing either role would silently promote neither). Same fix, same reason.
+//   2. a per-element moe_attrib_role_valid_at() guard -- the plan's own section 4 says a
+//      ddmin-candidate set is always "a subset of the same 189 pre-validated (role,layer)
+//      pairs, no new validity logic needed", which is true for THIS session's own combos, but a
+//      defensive skip-not-abort guard costs one function call per element and prevents a future
+//      caller's not-yet-validated set from silently mis-promoting a wrong layer/role pair.
 static int moe_attrib_replay_combo(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
                                     float *w_finalnorm, int req, int pos,
                                     const MoeAttribComboEntry *combo, int n) {
     for (int l = 0; l < MOE_NL; l++) g_moe_lt_mixed[l] = g_moe_lt[l];
+    MoeAFTensor *emb = t_embed, *lmh = t_lmhead;
     for (int i = 0; i < n; i++) {
+        MoeAttribRole role = combo[i].role;
         int l = combo[i].layer;
-        switch (combo[i].role) {
+        if (l >= 0 && !moe_attrib_role_valid_at(role, l)) continue;   // D-d5-27: skip, don't abort the whole set
+        switch (role) {
+            case MOE_ATTRIB_EMBED_TOKENS: if (g_moe_embed_hi)  emb = g_moe_embed_hi;  break;   // D-d5-27
+            case MOE_ATTRIB_LM_HEAD:      if (g_moe_lmhead_hi) lmh = g_moe_lmhead_hi; break;   // D-d5-27
             case MOE_ATTRIB_Q_PROJ:      g_moe_lt_mixed[l].q_proj      = g_moe_lt_hi[l].q_proj;      break;
             case MOE_ATTRIB_KV_A_PROJ:   g_moe_lt_mixed[l].kv_a_proj   = g_moe_lt_hi[l].kv_a_proj;   break;
             case MOE_ATTRIB_KV_B_PROJ:   g_moe_lt_mixed[l].kv_b_proj   = g_moe_lt_hi[l].kv_b_proj;   break;
             case MOE_ATTRIB_O_PROJ:      g_moe_lt_mixed[l].o_proj      = g_moe_lt_hi[l].o_proj;      break;
+            case MOE_ATTRIB_K_PROJ:      g_moe_lt_mixed[l].k_proj      = g_moe_lt_hi[l].k_proj;      break;   // D-d5-27
+            case MOE_ATTRIB_V_PROJ:      g_moe_lt_mixed[l].v_proj      = g_moe_lt_hi[l].v_proj;      break;   // D-d5-27
             case MOE_ATTRIB_DENSE_GATE:  g_moe_lt_mixed[l].dense_gate  = g_moe_lt_hi[l].dense_gate;  break;
             case MOE_ATTRIB_DENSE_UP:    g_moe_lt_mixed[l].dense_up    = g_moe_lt_hi[l].dense_up;    break;
             case MOE_ATTRIB_DENSE_DOWN:  g_moe_lt_mixed[l].dense_down  = g_moe_lt_hi[l].dense_down;  break;
             case MOE_ATTRIB_SHARED_GATE: g_moe_lt_mixed[l].shared_gate = g_moe_lt_hi[l].shared_gate; break;
             case MOE_ATTRIB_SHARED_UP:   g_moe_lt_mixed[l].shared_up   = g_moe_lt_hi[l].shared_up;   break;
             case MOE_ATTRIB_SHARED_DOWN: g_moe_lt_mixed[l].shared_down = g_moe_lt_hi[l].shared_down; break;
+            case MOE_ATTRIB_EXPERT_GATE: g_moe_lt_mixed[l].switch_gate = g_moe_lt_hi[l].switch_gate; break;   // D-d5-27
+            case MOE_ATTRIB_EXPERT_UP:   g_moe_lt_mixed[l].switch_up   = g_moe_lt_hi[l].switch_up;   break;   // D-d5-27
+            case MOE_ATTRIB_EXPERT_DOWN: g_moe_lt_mixed[l].switch_down = g_moe_lt_hi[l].switch_down; break;   // D-d5-27
             default: break;
         }
     }
     g_moe_lt_cur = g_moe_lt_mixed;
     float *logits = malloc(MOE_VOCAB * sizeof(float));
     for (int p = 0; p <= pos; p++)
-        moe_forward_token(af, t_embed, t_lmhead, w_finalnorm, rq_hist[req][p], p, logits, NULL, NULL, NULL);
+        moe_forward_token(af, emb, lmh, w_finalnorm, rq_hist[req][p], p, logits, NULL, NULL, NULL);
     g_moe_lt_cur = g_moe_lt_active;
     int am = 0; float bm = logits[0];
     for (int v = 1; v < MOE_VOCAB; v++) if (logits[v] > bm) { bm = logits[v]; am = v; }
     free(logits);
     return am;
+}
+
+// D-d5-27: ddmin (Zeller delta debugging, success-polarity -- our target is a MINIMAL
+// success-inducing set, the mirror image of Zeller's original minimal failure-inducing input),
+// per .claude/history/2026-09-02_minimal-sufficient-subset-search-plan.md section 3. `full`/
+// `full_n` is a known-sufficient starting set (already verified elsewhere to reproduce
+// `corrected_argmax` when promoted together -- this function does not re-verify that itself,
+// callers must pass a set already known to work); shrinks it in place toward a smaller
+// (ideally minimal, budget permitting) subset that alone still reproduces `corrected_argmax`.
+// WHY ddmin and not exhaustive k-subset enumeration: C(189,2)=17,766, C(189,3)~1.1M -- ddmin
+// never has to name a k, converging to whatever size the true minimal set is at roughly
+// O(n log n) tests in the typical case (plan's own cost estimate: ~1,430 tests for n=189,
+// vs. 17,766 for exhaustive k=2 alone).
+// COST: each test is a full moe_attrib_replay_combo() call, i.e. up to pos+1 forward passes --
+// same per-test cost as the existing k=1 scan, just many more tests. Hard-capped by max_tests
+// (plan section 5: "must never run unbounded or by default") -- on exhaustion this returns
+// the smallest set found SO FAR, logged explicitly as not-fully-minimized, never silently
+// claiming a false minimality.
+// EXIT: QWEN_MOE_ATTRIB_DDMIN unset -> this function is never called (see call sites below).
+static int g_moe_ddmin_test_count = 0;
+static void moe_ddmin_minimal_sufficient(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
+                                          float *w_finalnorm, int req, int pos, int corrected_argmax,
+                                          MoeAttribComboEntry *cur, int *cur_n, int max_tests) {
+    g_moe_ddmin_test_count = 0;
+    int n = 2;
+    MoeAttribComboEntry comp[512];
+    while (*cur_n >= 2) {
+        if (g_moe_ddmin_test_count >= max_tests) {
+            fprintf(stderr, "[moe ddmin] req=%d pos=%d BUDGET EXHAUSTED at %d tests -- reporting "
+                            "smallest set found so far (%d combos), NOT fully minimized\n",
+                    req, pos, g_moe_ddmin_test_count, *cur_n);
+            return;
+        }
+        int chunk_size = (*cur_n + n - 1) / n;   // ceil division -> n roughly-equal chunks
+        int reduced = 0;
+        for (int c = 0; c < n && !reduced; c++) {   // try each chunk alone
+            int start = c * chunk_size;
+            int len = chunk_size; if (start + len > *cur_n) len = *cur_n - start;
+            if (len <= 0) continue;
+            if (g_moe_ddmin_test_count >= max_tests) break;
+            g_moe_ddmin_test_count++;
+            int am = moe_attrib_replay_combo(af, t_embed, t_lmhead, w_finalnorm, req, pos, cur + start, len);
+            if (am == corrected_argmax) {
+                memmove(cur, cur + start, (size_t)len * sizeof(MoeAttribComboEntry));
+                *cur_n = len; n = 2; reduced = 1;
+                fprintf(stderr, "[moe ddmin] req=%d pos=%d chunk hit: shrank to %d combos (test #%d)\n",
+                        req, pos, *cur_n, g_moe_ddmin_test_count);
+            }
+        }
+        if (reduced) continue;
+        for (int c = 0; c < n && !reduced; c++) {   // try each complement
+            int start = c * chunk_size;
+            int len = chunk_size; if (start + len > *cur_n) len = *cur_n - start;
+            if (len <= 0) continue;
+            int comp_n = *cur_n - len;
+            if (comp_n < 1) continue;
+            int k = 0;
+            for (int i = 0; i < *cur_n; i++) if (i < start || i >= start + len) comp[k++] = cur[i];
+            if (g_moe_ddmin_test_count >= max_tests) break;
+            g_moe_ddmin_test_count++;
+            int am = moe_attrib_replay_combo(af, t_embed, t_lmhead, w_finalnorm, req, pos, comp, comp_n);
+            if (am == corrected_argmax) {
+                memcpy(cur, comp, (size_t)comp_n * sizeof(MoeAttribComboEntry));
+                *cur_n = comp_n; n = n - 1; if (n < 2) n = 2; reduced = 1;
+                fprintf(stderr, "[moe ddmin] req=%d pos=%d complement hit: shrank to %d combos (test #%d)\n",
+                        req, pos, *cur_n, g_moe_ddmin_test_count);
+            }
+        }
+        if (!reduced) {
+            if (n >= *cur_n) break;   // can't split further -> converged
+            n = n * 2; if (n > *cur_n) n = *cur_n;
+        }
+    }
+    fprintf(stderr, "[moe ddmin] req=%d pos=%d CONVERGED: %d combos, %d tests\n",
+            req, pos, *cur_n, g_moe_ddmin_test_count);
 }
 
 static void moe_attrib_combo17_test(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
@@ -5835,6 +5932,19 @@ static void moe_attrib_combo17_test(const uint8_t *af, MoeAFTensor *t_embed, Moe
     int n = (int)(sizeof combo / sizeof combo[0]);
     int am = moe_attrib_replay_combo(af, t_embed, t_lmhead, w_finalnorm, req, pos, combo, n);
     fprintf(stderr, "[moe combo17 test] req=%d pos=%d n=%d union_argmax=%d (expect 473 if monotone)\n", req, pos, n, am);
+    // D-d5-27: monotonicity confirmed above (am==473) is ddmin's own load-bearing precondition
+    // (plan section 2) -- only proceed to search if this run's own union replay actually held.
+    if (getenv("QWEN_MOE_ATTRIB_DDMIN") && am == 473) {
+        MoeAttribComboEntry cur[17]; memcpy(cur, combo, sizeof combo);
+        int cur_n = n;
+        int max_tests = 400;
+        const char *env_max = getenv("QWEN_MOE_ATTRIB_DDMIN_MAX_TESTS");
+        if (env_max && env_max[0]) max_tests = atoi(env_max);
+        moe_ddmin_minimal_sufficient(af, t_embed, t_lmhead, w_finalnorm, req, pos, am, cur, &cur_n, max_tests);
+        fprintf(stderr, "[moe ddmin] req=%d pos=%d req5/pos4 result: %d/17 combos:", req, pos, cur_n);
+        for (int i = 0; i < cur_n; i++) fprintf(stderr, " %s@L%d", MOE_ATTRIB_ROLE_NAMES[cur[i].role], cur[i].layer);
+        fprintf(stderr, "\n");
+    }
 }
 
 // Second monotonicity data point: req32/pos8's 87 real hits (the most fragile near-tie found in
@@ -5872,6 +5982,19 @@ static void moe_attrib_combo87_test(const uint8_t *af, MoeAFTensor *t_embed, Moe
     int n = (int)(sizeof combo / sizeof combo[0]);
     int am = moe_attrib_replay_combo(af, t_embed, t_lmhead, w_finalnorm, req, pos, combo, n);
     fprintf(stderr, "[moe combo87 test] req=%d pos=%d n=%d union_argmax=%d (expect 245 if monotone)\n", req, pos, n, am);
+    // D-d5-27: same ddmin hook as combo17_test above -- gated on this run's own union replay
+    // having actually confirmed monotonicity (am==245) before trusting bisection on it.
+    if (getenv("QWEN_MOE_ATTRIB_DDMIN") && am == 245) {
+        MoeAttribComboEntry cur[87]; memcpy(cur, combo, sizeof combo);
+        int cur_n = n;
+        int max_tests = 400;
+        const char *env_max = getenv("QWEN_MOE_ATTRIB_DDMIN_MAX_TESTS");
+        if (env_max && env_max[0]) max_tests = atoi(env_max);
+        moe_ddmin_minimal_sufficient(af, t_embed, t_lmhead, w_finalnorm, req, pos, am, cur, &cur_n, max_tests);
+        fprintf(stderr, "[moe ddmin] req=%d pos=%d req32/pos8 result: %d/87 combos:", req, pos, cur_n);
+        for (int i = 0; i < cur_n; i++) fprintf(stderr, " %s@L%d", MOE_ATTRIB_ROLE_NAMES[cur[i].role], cur[i].layer);
+        fprintf(stderr, "\n");
+    }
 }
 
 // Driver: called only when moe_neartie_maybe_correct() (below) confirms a REAL flip (full-hi

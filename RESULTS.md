@@ -9872,3 +9872,71 @@ size, and both were superseded by measuring more -- the data-first-numerics disc
 project follows caught its own overreach twice in the same investigation, which is the
 system working as intended, not a failure.
 
+
+## D-d5-27 -- ddmin implemented per the standing plan; one of two validation targets converges 87->1 in 7 tests
+
+Implements `.claude/history/2026-09-02_minimal-sufficient-subset-search-plan.md` sections 3-6
+(the part D-d5-23's own writeup explicitly left undone). Bottom-up (k=1 attribution + union,
+D-d5-9 through D-d5-26) already existed all session; this is the top-down half the plan called
+"mixing" the two approaches -- start from a known-working full set, bisect toward a minimal one,
+instead of enumerating singletons and taking their union.
+
+**Code** (`qwen_infer.c`):
+- `moe_attrib_replay_combo()` (pre-existing, previously a one-shot diagnostic with exactly 2
+  callers) promoted to the plan's own `moe_attrib_replay_set()` -- fixed the same embed_tokens/
+  lm_head gap D-d5-22 fixed in `moe_attrib_replay_one()` (silent fallthrough, harmless here since
+  this function has no ablate mode yet), added a per-element `moe_attrib_role_valid_at()` guard
+  (skip, don't abort the whole set), added K/V_PROJ and EXPERT_* cases it was missing entirely.
+- `moe_ddmin_minimal_sufficient()` -- Zeller delta-debugging, success-polarity (minimal
+  *success*-inducing set, not Zeller's original minimal failure-inducing one), exactly the
+  pseudocode in the plan's section 3: split into n chunks, test each chunk alone, test each
+  complement, double n on failure to reduce, reset to 2 on any reduction. Hard-capped
+  (`QWEN_MOE_ATTRIB_DDMIN_MAX_TESTS`, default 400) -- reports the smallest set found so far and
+  says so explicitly if the cap is hit before convergence, never claims false minimality.
+- Wired into the two existing monotonicity-check hooks (`moe_attrib_combo17_test`/`_combo87_test`)
+  behind `QWEN_MOE_ATTRIB_DDMIN=1`, gated on that run's OWN union-replay having reproduced the
+  known-correct answer first (473 / 245) -- ddmin never runs on an unverified starting set.
+- Add-direction only this round, per the plan's own primary-target framing; ablate-direction
+  ddmin (minimal *necessary* complement) is a natural follow-up, not started.
+
+**Corpus provenance, two wrong guesses before the right one** -- worth recording since it is
+exactly the trap `.claude/history/`'s reproduction-check convention exists to catch, and this
+session fell into a variant of it twice on the same two targets:
+
+1. First attempt used `local_24x6.txt` (D-d5-15's B_truth corpus, an unrelated 24-request
+   manifest) -- completed cleanly, req=5's real flip landed at **pos=9**, not pos=4, and req=32
+   does not exist in a 24-request run at all. Zero ddmin firings.
+2. Second attempt used `manifest_chunk_aa`/`manifest_chunk_ac` (the real 60-request WikiText-2-
+   short chunks, RESULTS.md's own D-roadmap-4 section) -- manifests' embedded paths were stale
+   `/Users/bob/...` absolutes from the original bob run, rewritten to local paths, all 120
+   referenced `.i32` files verified present before running. This got req32/pos8 exactly right
+   (RESULTS.md line ~9809 already documents chunk_ac, not chunk_aa, as req32's real source --
+   a previously-caught instance of this exact trap that I re-derived independently rather than
+   having read first). req5/pos4 still did not fire -- req=5 had **zero** near-tie activity at
+   any position in chunk_aa, not even a margin check. Root cause: RESULTS.md line 7646 labels
+   it "pilot (**8-slot corpus**)" -- an entirely separate, smaller corpus from the 60-request
+   chunk series, not a subset of chunk_aa. That pilot manifest was not found on this machine
+   (`find` across the whole home directory: no match) -- it likely only ever existed on bob.
+
+**Result -- req32/pos8 (chunk_ac, local req=32)**:
+
+```
+[moe combo87 test] req=32 pos=8 n=87 union_argmax=245 (expect 245 if monotone)
+[moe ddmin] chunk hit: shrank to 44, 22, 11, 6, 3, 2, 1 combos (tests #1-7)
+[moe ddmin] CONVERGED: 1 combos, 7 tests
+[moe ddmin] req32/pos8 result: 1/87 combos: q_proj@L1
+```
+
+The most fragile near-tie measured all session (87 of 189 combos individually sufficient) has a
+single-tensor explanation: `q_proj` layer 1 alone reproduces the full correction. ddmin found
+this in **7 tests**, versus the 87 the original k=1 exhaustive scan needed to discover the same
+fact indirectly (by finding every individually-sufficient combo, `q_proj@L1` among them, then
+requiring a human/analysis pass to notice one might suffice alone). This is not evidence the
+189-combo union is usually this compressible -- it is the single hardest case in this session's
+own data, and it compressed to size 1. Whether that generalizes is exactly the open question
+this whole plan exists to answer, and this is one real data point toward it, not a proof.
+
+**Status**: req5/pos4 unresolved -- needs the original 8-slot pilot corpus, most likely only
+recoverable from bob (not committed to this repo, not in any local backup found). Until then,
+this session has ddmin validated against monotonicity (D-d5-23's 2/2 union-replay spot-checks)
+and one full convergence run, not two.
