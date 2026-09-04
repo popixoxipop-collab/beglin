@@ -9981,3 +9981,30 @@ hope for. Resolving this for real would need many more distinct real flip events
 re-tests of the same few events against more targets), which requires new, expensive
 attribution runs -- not attempted here, reported as the honest limit of what today's already-
 collected data can answer.
+
+## D-d5-27 closeout: req5/pos4's source corpus is unrecoverable -- three specific guesses ruled out
+
+Closing the open item D-d5-27 left. Three corpora were tried and ruled out with real
+measurements, recorded here so a future session does not repeat any of them:
+
+| attempt | corpus | result |
+|---|---|---|
+| 1 | `local_24x6.txt` (D-d5-15's B_truth corpus, 24 req) | req=5's real flip is at **pos=9**, not pos=4 -- different prompt content entirely |
+| 2 | `manifest_chunk_aa` (WikiText-2-short, 60 req, local paths fixed) | req=5 has **zero** near-tie activity at any position -- not even a margin check |
+| 3 | `d4_wikitext2_manifest` non-short, first 8 lines, `CB_REQS=8` (the literal "8-slot" reading) | `summary events=0` -- zero near-ties across all 8 requests |
+
+Also confirmed absent as a file: searched this machine (full home directory) and bob (home
+directory, `/tmp`, shell history) for anything named `*pilot*` or manifest-shaped with 6-10
+lines referencing `.i32` paths -- no match. `/tmp/d4_pilot_events.jsonl`, the original log
+RESULTS.md's own D-roadmap-4 section cites, no longer exists on bob (`/tmp` has clearly been
+reused/cleared since -- other `/tmp/d4_*` files there now all postdate the pilot work).
+
+**Conclusion: the original 8-slot pilot corpus that produced req5/pos4's 17-hit event is not
+recoverable from this repo's surviving artifacts.** It was evidently a one-off manifest,
+generated and consumed without ever being committed or durably archived. D-d5-27's ddmin
+validation stands on one full convergence run (req32/pos8, 87 combos -> 1, `q_proj@L1`, 7
+tests) plus the two pre-existing union-replay monotonicity spot-checks (D-d5-23) rather than
+two full ddmin runs. This is not treated as a gap requiring a fourth guess -- req32/pos8 was
+already the more demanding case (87 individually-sufficient combos vs. 17), so it is the
+stronger of the two data points ddmin could have been checked against, not a lesser
+substitute for the missing one.
