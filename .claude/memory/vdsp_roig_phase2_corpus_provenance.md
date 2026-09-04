@@ -87,9 +87,39 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
   상호작용임을 시사. n=3 event로는 결론 못 냄, 진짜 풀려면 더 많은 서로 다른 real flip
   event가 필요(비용 큰 새 attribution 필요, 미시도).
 
+## Step 6 round 3 (2026-09-05, WikiText-103 전체 완주 후): margin 8개 event로 확장 — 여전히 신호 없음, 그러나 더 날카로운 가설
+- WikiText-103 500개 이벤트 pool에서 margin 0.002~0.100(threshold 전체 범위) 걸친 새 event 7개
+  선정 → fork 실행. **2/7은 재현성 검증에서 탈락**(margin=0.002는 격리 시 flip 자체가 안 남,
+  margin=0.038은 격리 시 완전히 다른 event로 바뀜 — round2에서 이미 확인된 격리-불안정성
+  재확인).
+- **진짜 방법론적 함정 하나 더 발견+수정**: `shared_down_proj`@L26의 n=2,4에서 SIM override가
+  그 role 자체를 훼손할 만큼 낮은 정밀도라 "corrected" 기준값 자체가 오염됨(839/298, 진짜
+  기준은 1222 — 재현성검증+n=3/5-16 전부 1222로 일치해서 확인). fork가 스스로 잡아서 두
+  행 수동 재분류 후 push. **앞으로 이 방식으로 sweep할 때 항상 corrected가 n 전체에서
+  불변인지 확인 필요** — role/layer hit line만 grep하면 이 오염을 놓친다.
+- **5개 성공 결과**(margin 오름차순): kv_a_proj_with_mqa@L0(0.004)=clean knee5,
+  q_proj@L3(0.021)=위반 knee4/fail@6, shared_down_proj@L26(0.044)=위반 knee3/fail@2,4,
+  kv_a_proj_with_mqa@L1(0.080)=위반 knee4/fail@5, q_proj@L0(0.100)=위반 knee2/fail@4.
+- **8개 event 종합 — 여전히 margin과 위반 사이 단조 관계 없음**(낮은/중간/높은 margin 전부
+  위반과 clean 둘 다 나옴). 8개면 여전히 작은 표본이지만 margin 전체 구간을 다 커버했는데도
+  패턴이 안 나온다는 게 정직한 결론.
+- **더 날카로운 새 가설(독립검증됨)**: `shared_down_proj`@L26이 완전히 다른 두 real event
+  (round1: corrected=1, round3: corrected=1222 — 서로 다른 corpus position, 다른 정답 토큰,
+  중복 push 아님, SELECT로 확인)에서 **완전히 동일한 위반 모양**(n=2,4에서만 fail)과
+  **byte-identical한 rel_l2**를 보임. rel_l2가 텐서 자체의 함수라 같은 건 당연하지만, pass/fail
+  패턴까지 일치하는 건 우연이 아닐 수 있음 — **"target/flip-specific"보다 "target-tensor 고유
+  quantization curve"가 더 정확한 설명일 가능성**. 텐서 하나만 2회 확인된 거라 확정은 아니고,
+  다음에 이 질문을 다시 판다면 여러 텐서를 각각 2개 이상 event로 테스트해서 이 가설을
+  검증하는 게 자연스러운 다음 단계.
+- 스키마 주의사항: 격리 후 req는 항상 0으로 재시작되므로, 원본 pos가 같은 두 개의 다른
+  real event는 `(req,pos)`만으로 `moe_quant_sweep_results`에서 구별 불가(위 shared_down_proj
+  사례처럼 30행이 15+15로 겹쳐 보임 — unique 제약이 없어서 버그는 아니지만 향후 조회 시 주의).
+- 75행 push+독립검증. Step6 전체 누적 195행(12개 target×event 조합), 전체 테이블(builtin
+  corpus 90행 포함) 285행 — 전부 SELECT로 확인.
+
 ## 남은 것
-- WikiText-103 나머지 chunk(01 후반+02+03)는 미실행 — 필요하면 비용 인지 하에 재개.
+- WikiText-103은 이제 완전히 완주됨(1846행, 4번째 ROUTED=0 확인 포함).
 - graphify --update가 세션 토큰 한도로 9개 chunk 중 5개(4/5/6/8) 미완료.
-- target/flip-specific 결론의 진짜 원인(무엇이 특정 target×event 조합을 취약하게 만드는가)은
-  margin_before로 설명 안 됨(위 항목) — 여전히 완전히 열린 질문, 더 많은 real flip event
-  수집이 필요.
+- margin_before는 위반 예측 변수가 아닌 것으로 8개 event에서 확인됨 — 다음으로 풀어볼 가치
+  있는 건 "target-tensor 고유 quantization curve" 가설(여러 텐서 × 여러 event로 검증), 아직
+  미시도.

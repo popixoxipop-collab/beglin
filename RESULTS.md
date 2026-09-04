@@ -10222,3 +10222,74 @@ wall_ms=7,178,576 (~2.0 hours) for the full corpus pass including all 30 searche
 actual price of the generalization -- a single-flip full-ground-set search (D-d5-29) cost ~9
 minutes total; batching 30 of them into one pass cost ~2 hours, not 30x that, but still a real
 multi-hour commitment, honestly reported rather than left implicit.
+
+## Step 6 round 3: 5 more margin-diverse events -- still no margin signal, but a sharper hypothesis emerges
+
+With the full WikiText-103 corpus now available (Phase 7/8, above -- 500 real flip events),
+7 new events were picked deliberately spanning the full margin_before range (0.002 to 0.100,
+essentially the entire 0-0.1 near-tie window) to build statistical power on the open question
+from the previous section.
+
+**2 of 7 failed the mandatory reproduction check** -- consistent with round 2's own finding
+that isolation isn't universally safe: the margin=0.002243 candidate produced no flip at all
+when isolated (the correction path never triggered), and the margin=0.038361 candidate
+produced a completely different event (different margin, position, and corrected token) that
+only coincidentally shared the same role/layer as intended. Both discarded rather than forced.
+
+**A second, more consequential methodological catch, found and fixed before pushing**: for
+`shared_down_proj` layer 26 at n=2 and n=4, the single-role SIM override degraded that one
+tensor enough to corrupt the "corrected" ground-truth value itself (the override source is
+shared between the real-flip-detection's full-hi computation and the attribution replay's
+promotion target for that one role -- see the mechanism description in the earlier Step 6
+sections). The run reported `corrected=839` and `corrected=298` at those two n instead of the
+true `1222` confirmed by the reproduction check and by every other n (3, 5-16) agreeing. Both
+rows were manually reclassified to `fail` against the true reference before pushing; all 75
+new rows were audited for this same drift and only these 2 were affected. Recorded here
+because it's a real trap in this exact methodology, not specific to this one event -- any
+future arbitrary-n sweep against a target whose own hi-tensor is being simulated should sanity-
+check `corrected` stays constant across n before trusting a "pass," not just grep for the hit
+line.
+
+**Results** (5 events reproduced cleanly and swept; independently verified via SELECT,
+post-correction):
+
+| margin_before | target | knee | monotonic | violation |
+|---|---|---|---|---|
+| 0.004366 | `kv_a_proj_with_mqa` L0 | 5 | Yes | -- |
+| 0.020933 | `q_proj` L3 | 4 | No | fail@n=6 |
+| 0.044357 | `shared_down_proj` L26 | 3 | No | fail@n=2,4 |
+| 0.080469 | `kv_a_proj_with_mqa` L1 | 4 | No | fail@n=5 |
+| 0.099552 | `q_proj` L0 | 2 | No | fail@n=4 |
+
+Combined with the 3 events already on record (margins 0.000513 mixed, 0.097809 violate,
+0.003763 clean), 8 distinct real flip events now span the full margin range with violations
+and clean results scattered throughout -- **still no monotonic margin-to-violation
+relationship**, low margin and high margin both produce both outcomes. Stated plainly, not
+oversold: 8 events remains a small sample, but it now spans the entire measurable margin
+window without a pattern emerging.
+
+**A sharper hypothesis than "target/flip-specific," independently verified**: `shared_down_proj`
+layer 26 was tested against two genuinely different real flip events -- round 1's (WikiText-103
+chunk 00, corrected=1) and this round's (chunk 03, corrected=1222; confirmed different corpus
+position, different corrected token, not a duplicate push). Both show the **identical**
+violation shape (fail only at n=2 and n=4, `rel_l2` byte-identical at every n, confirmed via
+direct SELECT). Since `rel_l2` is a pure function of the tensor's own weights (unaffected by
+which position triggered the test), this was expected -- but the pass/fail pattern matching
+too was not guaranteed, and suggests violation may be closer to a property of **this specific
+tensor's own quantization curve** than of the specific flip or margin that happened to surface
+it. This can't be confirmed from one repeated tensor -- it would need several tensors each
+tested against 2+ independent real events -- but it's a sharper, more falsifiable hypothesis
+than "target/flip-specific" and the natural next thing to check if this question gets revisited.
+
+**Schema note for future work**: after single-request isolation, `req` always resets to 0, so
+two different real events that happen to share the same original `pos` value become
+indistinguishable in `moe_quant_sweep_results` by `(req,pos)` alone (both `shared_down_proj`
+pushes above landed on the identical `req=0,pos=9` key). Not a bug -- the table has no unique
+constraint on this combination, so both pushes coexist as distinct rows -- but anyone querying
+this table later should not assume `(model,corpus,role,layer,req,pos)` uniquely identifies one
+real-world event.
+
+**Push**: 75 rows (5 targets x 15 n) pushed and independently verified. Total across all Step 6
+rounds: 195 rows (12 distinct target x event combinations); grand total in
+`moe_quant_sweep_results` including the original ROI-G Phase 1 builtin-corpus data: 285 rows,
+independently confirmed via `SELECT count(*)`.
