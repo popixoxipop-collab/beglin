@@ -35,6 +35,12 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
   attribution) push+독립검증(SELECT로 count 일치 확인). ROUTED 0 hit — routed-expert
   정밀도가 near-tie에 안 영향을 준다는 기존 결론(ROADMAP D-roadmap-2 Track A/B)의 세 번째
   독립 재확인.
+- **완주(2026-09-04~05)**: 나머지 chunk01 잔여14건+chunk02+chunk03 재개해 18시간 만에 전부
+  완료(exit=0, FATAL 없음). 최종 1846행(500 event+1346 attribution) push+독립검증 완료.
+  ROUTED/GLOBAL 여전히 0 hit(4번째 독립 재확인, 이번엔 전체 코퍼스 기준). **주의**: 이걸로
+  event pool만 커진 것이지 n-monotonicity 데이터가 자동으로 느는 건 아님 — margin↔위반
+  상관관계를 진짜 통계적으로 풀려면 이 큰 pool에서 target을 더 뽑아 Step 6와 같은 arbitrary-n
+  sweep을 추가로 돌려야 함(비용 있음, 아직 미시도).
 
 ## Step 6: cross-corpus n-monotonicity 실측 (fork로 실행, 60개 실측 테스트)
 - 겹치는 hit target 85개 중 attention 1개(`kv_b_proj` L8)+shared-FFN 1개

@@ -9731,6 +9731,47 @@ cross-corpus generalization check (Step 6, comparing monotonicity classification
 WikiText-2's known targets) should be scoped to whatever overlapping (role,layer) hits this
 partial sample actually contains, and reported as partial-sample, not full-corpus, findings.
 
+### Phase 7/8 completed (2026-09-04~05): the remaining 3.25 chunks, resumed and finished
+
+The partial-stop above wasn't the end -- the run was resumed later (chunk 01's remaining 14
+requests, req=46-59, re-run whole rather than trusting a torn mid-attribution write; then
+chunks 02 and 03 in full) at the same fixed config (`MAX_POS=19`, `NEARTIE_LOG=1`). All 3
+remaining segments completed clean (`exit=0` each), no FATALs, running end-to-end from
+2026-09-04 10:29 to 2026-09-05 04:31 (~18 hours wall-clock, consistent with the ~31min/event
+cost already measured -- 34 more REAL FLIPs at that rate lands right in this range).
+
+**Full corpus, final numbers** (independently verified via SELECT after push, not trusted from
+the push script's own report):
+
+| | value |
+|---|---|
+| raw JSONL rows (full corpus) | 1846 (500 `event` + 1346 `attribution`) |
+| `moe_neartie_events` rows for this corpus | 500 (matches exactly) |
+| `event_count` sum in `moe_role_precision_state` | 1346 (matches exactly) |
+
+Hit breakdown by family, full corpus:
+
+| family | hits | rows with >=1 hit (of 269 tracked) |
+|---|---|---|
+| ATTENTION | 826 | 106 |
+| SHARED_FFN | 495 | 77 |
+| DENSE_FFN | 25 | 3 |
+| GLOBAL | 0 | 0 |
+| ROUTED (experts) | 0 | 0 |
+
+ROUTED and GLOBAL both still at 0 hits across the full corpus (not just the earlier partial
+sample) -- a fourth independent confirmation that routed-expert precision doesn't move this
+phenomenon, now on a corpus roughly 2.6x the size of the partial one.
+
+**What this does and doesn't unlock**: this is a much larger pool of real (role,layer) hits
+and (req,pos,margin) flip events to pick FUTURE Step-6-style arbitrary-n sweep targets from --
+it does not, by itself, produce any new n-monotonicity data. Every n-sweep number on record
+(Step 6, both rounds) still traces back to only 4 distinct flip events total. Turning this
+larger event pool into a real statistical answer on "does margin predict violation" requires
+running the same arbitrary-n sweep mechanism (expensive per-event) against a meaningfully
+larger, deliberately sampled set of these newly available flips -- not attempted in this pass,
+noted as the concrete next step if that question is worth resolving further.
+
 ## D-d5-26 -- the necessity/sufficiency efficiency gap was a small-sample artifact, not a persistent property (2026-09-03)
 
 D-d5-24 found `L_nec` (7 necessary combos, 3 attributed events) at 0.610 exact/GiB -- ~2x
