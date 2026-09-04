@@ -5878,6 +5878,7 @@ static int moe_attrib_replay_combo(const uint8_t *af, MoeAFTensor *t_embed, MoeA
 // claiming a false minimality.
 // EXIT: QWEN_MOE_ATTRIB_DDMIN unset -> this function is never called (see call sites below).
 static int g_moe_ddmin_test_count = 0;
+static int g_moe_ddmin_full_all_count = 0;   // D-d5-30: events dispatched under QWEN_MOE_ATTRIB_DDMIN_FULL_ALL
 static void moe_ddmin_shrink(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
                               float *w_finalnorm, int req, int pos, int corrected_argmax,
                               MoeAttribComboEntry *cur, int *cur_n, int max_tests, int ablate) {
@@ -6435,6 +6436,28 @@ static void moe_neartie_maybe_correct(const uint8_t *af, MoeAFTensor *t_embed, M
             const char *ep = getenv("QWEN_MOE_ATTRIB_DDMIN_FULL_POS");
             if (er && ep && atoi(er) == req && atoi(ep) == pos)
                 moe_attrib_ddmin_full_test(af, t_embed, t_lmhead, w_finalnorm, req, pos, corrected_argmax);
+        }
+        // D-d5-30: generalize D-d5-29 from "one named flip" to "every real flip this pass, up to
+        // a cap" -- one 24-request corpus pass was already producing ~19 unattributed flips
+        // (D-d5-28's own run); re-running the whole corpus once per flip to answer "does ddmin
+        // always converge to a single tensor, or was n=1 a fluke" would cost 19x the wall time
+        // for zero additional information (each pass is fully deterministic and re-derives the
+        // same 19 flips). Same cap pattern as QWEN_MOE_ATTRIB_MAX_EVENTS (D-roadmap-4): bounds
+        // TOTAL cost across the run, not per-event, so it degrades by volume, not per-result
+        // quality -- once the cap is hit, subsequent real flips are still corrected, just not
+        // ddmin'd. Independent of _FULL_REQ/_POS above -- both can fire on the same event.
+        if (getenv("QWEN_MOE_ATTRIB_DDMIN_FULL_ALL")) {
+            int max_events = 30;
+            const char *env_max = getenv("QWEN_MOE_ATTRIB_DDMIN_FULL_ALL_MAX_EVENTS");
+            if (env_max && env_max[0]) max_events = atoi(env_max);
+            if (g_moe_ddmin_full_all_count < max_events) {
+                g_moe_ddmin_full_all_count++;
+                moe_attrib_ddmin_full_test(af, t_embed, t_lmhead, w_finalnorm, req, pos, corrected_argmax);
+            } else if (g_moe_ddmin_full_all_count == max_events) {
+                g_moe_ddmin_full_all_count++;   // log the cap exactly once, not on every subsequent flip
+                fprintf(stderr, "[moe ddmin full] cap reached (%d events) -- subsequent real flips "
+                                "still corrected, just not ddmin'd\n", max_events);
+            }
         }
     }
 

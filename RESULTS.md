@@ -10108,3 +10108,76 @@ direction used as the plan always intended -- a genuine substitute for an expens
 scan, not a confirmation of one already paid for. Single data point; whether single-tensor
 convergence (also seen in D-d5-27's req32/pos8 and D-d5-28's req0/pos10) is typical or a
 property of the specific flips checked so far remains open.
+
+## D-d5-30 -- generalizing n=3: single-tensor convergence is common, not universal (30%)
+
+D-d5-29 closed on "single data point... whether single-tensor convergence is typical or a
+property of the specific flips checked so far remains open." This answers it: `moe_attrib_
+ddmin_full_test()` was already correct as a per-flip function (D-d5-29); the only change was
+wiring it to fire on every real flip in one pass instead of one hardcoded target
+(`QWEN_MOE_ATTRIB_DDMIN_FULL_ALL=1`, capped at `_MAX_EVENTS` events, same cost-bounding pattern
+as `QWEN_MOE_ATTRIB_MAX_EVENTS`), so the SAME 24-request corpus that produced D-d5-28's 19
+unattributed flips could ddmin all of them in one pass instead of one 8-minute corpus pass per
+flip (19x the wall time for zero new information, since the corpus is fully deterministic).
+
+**Result** (`/tmp/ddmin_full_all_FINAL.log`, macstudio, `qwen_d530_bin`, cap=30 events,
+`QWEN_MOE_ATTRIB_DDMIN_MAX_TESTS=900`): 30 flips converged, **zero hit the budget cap** (worst
+case 539/900 tests, req11/pos11).
+
+| minimal set size | count | flips |
+|---|---|---|
+| 1 | 9 (30%) | req3/12, req7/9, req7/10, req9/12, req13/9, req16/10, req18/12, req19/13, req22/12 |
+| 2 | 4 | req0/10, req4/8, req14/13, req20/8 |
+| 3 | 4 | req11/9, req15/8, req13/11, req17/13 |
+| 4 | 3 | req5/8, req5/13, req23/11 |
+| 6 | 4 | req1/11, req4/11, req14/10, req17/12 |
+| 7, 11, 12, 14, 18, 21 | 1 each | req19/8, req20/9, req11/13, req9/8, req11/11, req0/12 |
+
+**Single-tensor convergence is the single most common outcome (mode, 30%) but not the majority
+and nowhere close to universal.** Mean set size 4.93, median 3, max 21 (19% of the entire
+112-combo ground set). The n=3 sample this whole thread rested on until now (req32/pos8 -> 1,
+req0/pos10 -> 1, and this same req0/pos10 again in D-d5-28) was not representative -- it was an
+unweighted, no-random-sampling convenience set (two reused a pre-existing 3-event ablate list,
+the third was the first unattributed flip encountered in file order), and happened to land 3/3
+on the mode. **This is exactly the small-sample trap D-d5-26 already documented once this
+session** (necessity's 3-event efficiency edge collapsing at 12 events) -- the same project
+re-discovering, on a different measurement, why n=3 is not evidence of "always."
+
+**The five originally "0 individually-necessary" flips (D-d5-23/26's own "fully redundant"
+reading) all resolve to real, substantial JOINT necessary sets under full-ground-set ddmin:**
+
+| flip | k=1 individually-necessary (D-d5-23/26) | ddmin minimal necessary SET (this round) |
+|---|---|---|
+| req0/pos12 | 0 | 21 |
+| req1/pos11 | 0 | 6 |
+| req5/pos8 | 0 | 4 |
+| req4/pos11 | 0 | 6 |
+| req5/pos13 | 0 | 4 |
+
+**This overturns the "fully redundant, unexplainable" reading, not just refines it.** A k=1 scan
+can only ever report "0 necessary" when no *single* combo suffices to break the fix alone -- it
+has no way to see a 4-, 6-, or 21-way joint requirement, because it never tests combinations.
+"0 individually-necessary" was never evidence of redundancy; it was evidence of the search
+method's own blind spot. Every one of these five flips has a well-defined minimal explanation --
+it is simply not a singleton, and finding it required exactly the tool (ddmin over the full set)
+that a k=1-only methodology structurally cannot substitute for.
+
+**Minimal necessary sets are not unique -- a real non-obvious finding, not a bug.** req0/pos10
+appears in both D-d5-28 (started from the known 7-item union, converged to `o_proj@L12` alone,
+3 tests) and this round (started from the full 112-item ground set, converged to
+`{expert_gate_proj@L13, expert_gate_proj@L14}`, 13 tests). Both are independently verified
+minimal sets for the SAME flip -- ddmin's chunk-splitting order depends on where a search
+starts, and a "minimal" result means no proper subset of *that particular found set* also
+works, not that it is the unique smallest explanation. Both `moe_ddmin_shrink()` call sites and
+any future caller should report results as "a minimal necessary set," never "the."
+
+**Role composition** (member-appearances summed across all 30 minimal sets, 148 total slots):
+`expert_gate_proj` 45, `expert_down_proj` 36, `expert_up_proj` 34, `o_proj` 21, `v_proj` 10,
+`q_proj` 1, `k_proj` 1 -- routed experts are 115/148 (77.7%), consistent with D-d5-20/23's
+independent 76-77% figures from entirely different (k=1 union) methodology on the same model.
+
+**Real cost, not estimated**: ~2698 total ddmin tests across 30 flips (mean ~90, worst 539),
+wall_ms=7,178,576 (~2.0 hours) for the full corpus pass including all 30 searches. This is the
+actual price of the generalization -- a single-flip full-ground-set search (D-d5-29) cost ~9
+minutes total; batching 30 of them into one pass cost ~2 hours, not 30x that, but still a real
+multi-hour commitment, honestly reported rather than left implicit.
