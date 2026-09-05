@@ -10507,9 +10507,13 @@ assumption) -- the plan's own pre-written fallback (an exhaustive scan over a re
 section 3.5) remains the right response, not a bisection.
 
 **Data**: 180 rows in `/tmp/mono_sweep/sweep_results.tsv` on bob (pass/fail per target per n,
-plus per-n raw engine logs for all 180 runs) -- not yet pushed to Supabase (unlike Step 6 rounds
-1-4, this round's results are local-only pending a decision on whether to extend
-`moe_quant_sweep_results` further). No engine source changes, no commits.
+plus per-n raw engine logs for all 180 runs), pushed to `moe_quant_sweep_results`
+(model=deepseek-v2-lite, corpus=wikitext-103-raw-v1-validation-short) -- independently
+verified via REST count: 480 total rows (was 300 before this push, +180 exact), 330 for this
+corpus alone (150 from rounds 1-4 + 180 here, exact). rel_l2 included (the push script's
+`sim_<target>` discovery convention required a small rename from this round's own
+`sim/<role>_L<layer>` directory layout; the pushed values were spot-checked against the raw
+engine logs' pass/fail before trusting them). No engine source changes.
 
 ## D-d5-31 -- a data-derived default promotion set: 88 of 269 combos reproduces bf16 exactly
 
