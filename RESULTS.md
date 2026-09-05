@@ -10344,3 +10344,42 @@ this leaves open: D-d5-30's n=30 mechanistic sample is OLMoE-only; whether the s
 distribution holds on DeepSeek or Qwen3 is untested, and this closeout does not claim it does --
 only that the OLMoE evidence is strong enough on its own to close this project's own further
 investment in the selective-memory thesis, not to make a cross-architecture universal claim.
+
+## Correction: req32/pos8 is DeepSeek-V2-Lite, not OLMoE -- model identity was left ambiguous across D-d5-27/29/30
+
+Caught by the paper-orchestra fork while integrating this material into the paper -- it read the
+primary source, not the cross-references, and flagged the mismatch rather than trusting a
+summary that named the wrong model. Worth recording exactly why that check mattered.
+
+**The fact**: `moe_attrib_combo87_test()`'s hardcoded combo array (D-d5-27) contains
+`MOE_ATTRIB_KV_A_PROJ`/`MOE_ATTRIB_KV_B_PROJ` (MLA-only, gated `valid iff MOE_ATTN_KIND ==
+MOE_ATTN_MLA` per D-d5-10) and `MOE_ATTRIB_DENSE_GATE`/`MOE_ATTRIB_SHARED_GATE` (DeepSeek-V2-
+Lite's dense/shared-FFN split, which OLMoE does not have at all -- OLMoE is pure routed-expert,
+no dense/shared roles, confirmed independently in the Precision Map artifact's own OLMoE family
+definition). 189 combos matches DeepSeek's 27-layer role count exactly, not OLMoE's 112-114.
+req32/pos8 (D-d5-27's ddmin target, 87->1 -> `q_proj@L1`) is unambiguously **DeepSeek-V2-Lite**,
+run locally on this machine (M1 Max) against `moe_base_deepseek`/`deepseek_v2lite_bf16_
+safetensors` -- not OLMoE, and not run on macstudio.
+
+**What was actually ambiguous, not flatly wrong**: no RESULTS.md sentence explicitly states
+"OLMoE req32/pos8" -- but D-d5-29's own "Status" paragraph lists "D-d5-27 req32/pos8, D-d5-28
+req0/pos10" side by side with no model qualifier on either, immediately after a section that is
+explicitly about OLMoE, which reads as same-model to anyone who doesn't already know otherwise.
+This session's own chat responses to the user DID say "OLMoE req32/pos8" outright when framing
+D-d5-30's generalization -- a real error, not just an omission, introduced when summarizing for
+the paper-orchestra resume message.
+
+**What this revises**: D-d5-30's "generalizing n=3 to n=30" framing is imprecise. The original
+n=3 was **2 OLMoE points (req0/pos10 D-d5-28, req9/pos12 D-d5-29) + 1 DeepSeek point (req32/pos8
+D-d5-27)**, not 3 same-model points. The n=30 batch (D-d5-30) is **OLMoE-only** -- already
+correctly caveated in D-d5-30's own text ("the n=30 mechanistic sample is OLMoE-only") and in
+the closeout section above, so the *scope* of the generalization claim was already stated
+correctly; what was missing was making clear that the n=3 baseline it replaced was not a clean
+single-model precedent either. Read D-d5-30's distribution (mean 4.93, 30% singleton) as
+**OLMoE's own distribution**, informed by but not merged with DeepSeek's single (req32/pos8)
+data point, which remains its own separate, single-model, single-flip result.
+
+**No individual measurement is affected** -- every number in D-d5-27 through D-d5-30 is correct
+for whichever model actually produced it; only the cross-references linking them together left
+the model boundary implicit. Fixed going forward: any future reference to req32/pos8 should
+name DeepSeek-V2-Lite explicitly, the same way D-d5-28/29/30's OLMoE references already do.
