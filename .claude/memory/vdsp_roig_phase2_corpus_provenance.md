@@ -117,9 +117,21 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
 - 75행 push+독립검증. Step6 전체 누적 195행(12개 target×event 조합), 전체 테이블(builtin
   corpus 90행 포함) 285행 — 전부 SELECT로 확인.
 
+## Step 6 round 4 (2026-09-06): "target-tensor 고유 curve" 가설 — 2번째 텐서로 확인됨
+- `kv_b_proj`@L8(round1 WT103 req17/pos9=위반 knee3 fail@4)에 대해 WT103 내 다른 real event
+  (req35/pos12, corrected=438) 하나 더 찾아서 sweep. **rel_l2/pass 패턴이 pos=9와 완전
+  byte-identical**(독립 SELECT 확인, 30행: 15+15).
+- **2/2 텐서가 이제 가설을 지지함**(shared_down_proj@L26에 이어). rel_l2 동일은 당연하지만
+  pass/fail 패턴까지 일치하는 건 우연이 아닐 가능성 — 아직 반증 시도는 안 해봄(다른 텐서 
+  선택 편향 가능성 존재), 확정은 아니지만 두 번 연속 생존.
+- moe_quant_sweep_results 총 300행, SELECT로 확인.
+- graphify --update는 실제로 9개 chunk 전부 이미 완료돼있었음(제가 세션 중간에 몰랐던
+  부분 — dedup guard가 재추출 시도를 막아서 발견) → 나머지 파이프라인(merge/cluster/
+  label/HTML) 직접 완주. `graphify-out/graph.html`+`GRAPH_REPORT.md` 생성됨(1249 노드,
+  3239 엣지, 90 커뮤니티, 토큰절감 60.2배).
+
 ## 남은 것
-- WikiText-103은 이제 완전히 완주됨(1846행, 4번째 ROUTED=0 확인 포함).
-- graphify --update가 세션 토큰 한도로 9개 chunk 중 5개(4/5/6/8) 미완료.
-- margin_before는 위반 예측 변수가 아닌 것으로 8개 event에서 확인됨 — 다음으로 풀어볼 가치
-  있는 건 "target-tensor 고유 quantization curve" 가설(여러 텐서 × 여러 event로 검증), 아직
-  미시도.
+- WikiText-103은 완전히 완주됨(1846행, 4번째 ROUTED=0 확인 포함).
+- graphify 파이프라인 완주됨(HTML+리포트 생성 완료).
+- "target-tensor 고유 curve" 가설이 2/2 텐서에서 지지됨 — 다음 단계는 반증 시도(다른 특성의
+  텐서, 예: 항상 clean이었던 텐서로도 확인)이거나 표본을 더 늘리는 것, 아직 미시도.

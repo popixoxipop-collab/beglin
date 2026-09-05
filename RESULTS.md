@@ -10410,3 +10410,29 @@ re-briefing on what's already been tried.
 
 Final: `~/Desktop/vdsp_moe_precision_paper/workspace/final/paper.pdf`, 9 body / 10 total pages,
 delivered to the user.
+
+## Step 6 round 4: the "target-tensor curve" hypothesis confirmed for a second tensor
+
+Round 3's closing hypothesis -- that monotonicity violation may be a property of a specific
+tensor's own quantization curve rather than of the specific flip/margin that surfaces it --
+had only one confirming data point (`shared_down_proj` layer 26, identical shape across two
+WikiText-103 events). Tested against a second tensor: `kv_b_proj` layer 8, already on record
+from Step 6 round 1 at WikiText-103 req=17/pos=9 (corrected=1, knee=3, violates -- fails at
+n=4 after passing at n=3, recovers n=5+).
+
+A second, independent WikiText-103 real flip event hitting the same tensor was found (req=35,
+pos=12, corrected_argmax=438) and swept the same way (reproduction check confirmed
+margin_before=0.048599 and corrected=438 exactly before trusting anything).
+
+**Result, independently verified via SELECT**: `pass`/`rel_l2` at every n=2..16 are **byte-
+identical** between the two events (pos=9: rel_l2 0.718...->2.32e-5; pos=12: the exact same
+15 values). Knee=3, violation shape identical (fail@n=4, recover n=5+) at both positions.
+
+**Two for two now**: both tensors tested against a second within-corpus event reproduced the
+identical violation shape and rel_l2 curve. `rel_l2` being identical is expected (it's a pure
+function of the tensor's own weights, independent of which position triggered the test) --
+but the pass/fail curve matching too was not guaranteed, and now holds for 2/2 tensors
+checked. The hypothesis is still not proven in general (2 tensors, both from WikiText-103
+only, no counterexample sought yet), but it has survived its first real attempt at
+falsification. Total `moe_quant_sweep_results` row count: 300, independently confirmed via
+`SELECT count(*)`.
