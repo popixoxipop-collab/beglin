@@ -130,8 +130,21 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
   label/HTML) 직접 완주. `graphify-out/graph.html`+`GRAPH_REPORT.md` 생성됨(1249 노드,
   3239 엣지, 90 커뮤니티, 토큰절감 60.2배).
 
-## 남은 것
-- WikiText-103은 완전히 완주됨(1846행, 4번째 ROUTED=0 확인 포함).
-- graphify 파이프라인 완주됨(HTML+리포트 생성 완료).
-- "target-tensor 고유 curve" 가설이 2/2 텐서에서 지지됨 — 다음 단계는 반증 시도(다른 특성의
-  텐서, 예: 항상 clean이었던 텐서로도 확인)이거나 표본을 더 늘리는 것, 아직 미시도.
+## Step 6 round 5 (2026-09-06, 같은 세션 후속): "target-tensor curve" 가설 반증 + 위반율 83%로 상승
+- WikiText-103 재개(chunk01_tail+02+03, 53 real flip event 확보) 완료 데이터에서 12개 신규
+  (event,target) 쌍을 골라 n=2..16 스윕(180회 엔진실행, 전부 exit=0). **10/12(83%) 위반** —
+  기존 표본(2/3, Step6 절반 정도)보다 훨씬 높음. role family/hit count/corpus 위치 전부 예측력
+  없음, 기존 결론("target×event 고유 상호작용") 유지·강화.
+- **★★"target-tensor curve"(round3/4, 2/2 텐서에서 지지됐던 가설) 반증**: `shared_down_proj`
+  L26을 세 번째로 3개 이벤트(t06/t07/t08)에서 테스트했는데, override 파일이 (role,layer)로만
+  결정돼 **세 이벤트가 물리적으로 완전히 동일한 override**를 쓰는데도 pass/fail 모양이 3가지로
+  갈림(t06=t07: n=4만 실패, t08: n=3만 실패 — round1/round3의 n=2,4 실패와도 다름). override가
+  구조적으로 동일 보장되므로 이건 통계적 우연이 아니라 **텐서만의 속성이 아니라는 확정적 증거** —
+  진짜 결정 요인은 텐서 양자화 오차와 각 이벤트 고유의 로컬 margin/context 간 상호작용. (round3/4가
+  본 t06=t07류 "완전일치"도 여전히 실재 — 텐서 요인이 무관하다는 게 아니라 그것만으론 부족하다는 것.)
+- 초기 검증 중 자체 실수 발견+정정: `corrected=` 값을 grep -tail1로 뽑았다가 같은 로그 안의
+  무관한 다른 position near-tie를 잘못 집어 "값이 오염된 것처럼" 보였음 — (req,pos) 정확히
+  필터링해 재검증, 진짜 결과는 클린(round3가 겪은 override-corrupts-ground-truth류 문제 아님).
+- 상세: RESULTS.md "Step 6 round 5" 섹션. 원자료: bob `/tmp/mono_sweep/sweep_results.tsv`(180행)
+  + 개별 로그 180개, 로컬 전용(Supabase 미push, 사용자 결정 대기).
+- graphify 파이프라인 완주됨(HTML+리포트 생성 완료, 1249 노드/3239 엣지/90 커뮤니티).

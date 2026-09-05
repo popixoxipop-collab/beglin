@@ -10437,6 +10437,80 @@ only, no counterexample sought yet), but it has survived its first real attempt 
 falsification. Total `moe_quant_sweep_results` row count: 300, independently confirmed via
 `SELECT count(*)`.
 
+## Step 6 round 5: 12-target expansion from the full WikiText-103 resume dataset -- violation rate climbs to 83%, and the "target-tensor curve" hypothesis is falsified by a same-tensor, same-override, different-outcome case
+
+The WikiText-103 resume (chunk01_tail + chunk02 + chunk03, "Phase 7/8" continuation, above)
+pushed the local corpus from the 3 REAL FLIP events on record when round 3/4 were written to
+53 total, 37 of them with >=1 attribution hit. A fork picked 12 new (event, target) pairs from
+this pool -- deliberately excluding anything already tested by rounds 1-4 -- and swept each
+across n=2..16 (180 engine runs total, all exit=0, no FATALs). Chunk provenance (which
+manifest/prompt each event's local `req` actually maps to, since `req` resets to 0 at the start
+of every chunk) was resolved via the same `ts_unix`-jump method used to find the
+chunk00/chunk01_tail boundary earlier, cross-validated against each target's own
+`corrected_argmax` -- 12/12 matched their assigned chunk with zero ambiguity.
+
+**Results**:
+
+| target | event (req/pos, chunk) | role/layer | ever-passes-from | stable knee | monotonic |
+|---|---|---|---|---|---|
+| p3 | 3/14, chunk00 | `q_proj` L6 | 2 | 7 | **VIOLATED** |
+| t02 | 42/12, chunk01-orig | `kv_a_proj_with_mqa` L11 | 2 | 2 | OK |
+| t03 | 10/8, chunk00 | `o_proj` L10 | 3 | 3 | OK |
+| t04 | 3/16, chunk02 | `shared_up_proj` L26 | 4 | 4 | OK |
+| t05 | 32/10, chunk00 | `q_proj` L2 | 2 | 6 | **VIOLATED** |
+| t06 | 33/11, chunk00 | `shared_down_proj` L26 | 2 | 5 | **VIOLATED** (fail@n=4 only) |
+| t07 | 38/8, chunk00 | `shared_down_proj` L26 | 2 | 5 | **VIOLATED** (fail@n=4 only, identical to t06) |
+| t08 | 0/10, chunk01_tail (redone req46) | `shared_down_proj` L26 | 2 | 4 | **VIOLATED** (fail@n=3 only) |
+| t09 | 5/17, chunk01_tail | `kv_a_proj_with_mqa` L3 | 5 | 11 | **VIOLATED** (3 fail regions) |
+| t10 | 18/11, chunk02 | `kv_b_proj` L13 | 2 | 7 | **VIOLATED** (2 fail regions) |
+| t11 | 9/10, chunk02 | `o_proj` L4 | 2 | 7 | **VIOLATED** (2 fail regions) |
+| t12 | 55/10, chunk03 | `kv_a_proj_with_mqa` L9 | 2 | 6 | **VIOLATED** |
+
+**10/12 (83%) violate** -- higher than every prior sample (Phase 1: 2/3; Step 6 rounds 1-4
+combined: roughly half). No predictor in role family (every family violates except the single
+`shared_up_proj` sample), hit count, or chunk/text position.
+
+**The target-tensor curve hypothesis (round 3/4) does not survive this round, and the reason is
+airtight, not just statistical.** `shared_down_proj` layer 26 was hit by three of the twelve
+targets (t06, t07, t08), each from a genuinely different real flip event -- and per the engine's
+own log line (`[moe attrib sim] role=shared_down_proj layer=26 overridden from
+'.../sim/shareddown_L26/sim_n{N}.safetensors'`), all three targets read the *exact same*
+simulated override file at every n, because the override path is keyed on (role, layer) alone,
+not on which event is being tested. The override -- and therefore its rel_l2 quantization-error
+curve -- is byte-identical across t06/t07/t08 by construction, not by measurement. Yet the
+pass/fail curves differ: t06 and t07 fail only at n=4 (identical to each other); t08 fails only
+at n=3. Verified directly against each target's own true reference (from its own
+reproduction-check log, filtered to the exact target position -- an initial pass mistakenly
+grepped the last `corrected=` line in each multi-near-tie log and had to be redone): t06/t07's
+true corrected token is 18 at every passing n, t08's is 11652 at every passing n, and the n
+where each fails simply shows no REAL FLIP at all (the near-tie doesn't fire under that n, not a
+wrong-token substitution) -- clean data, not the ground-truth corruption round 3 had to
+hand-correct for a different pair of n values on this same tensor.
+
+Combined with round 1/round 3's own two `shared_down_proj`/L26 tests (both fail@n=2,4, matching
+each other but neither of this round's three shapes), the tensor now has five independent tests
+producing three distinct shapes (2/2/1). Since the override is provably identical across all
+five, the shape cannot be a pure function of the tensor's own weights as round 3/4 framed it --
+**the outcome is the interaction between the tensor's quantization error and each event's own
+local margin/decision boundary, not a property of the tensor in isolation.** What round 3/4's
+finding does still hold: two events *can* share an identical curve (t06=t07 exactly,
+round1=round3 exactly) -- so the tensor's error curve is clearly one real input to the outcome,
+just not the only one, and not sufficient on its own to predict it.
+
+**Revised standing conclusion**: after 4 rounds and now 15 target x event tests total (3
+original + 4 Step 6 + 12 here, with 3 of the 15 pointing at the same tensor), no single-factor
+predictor (role family, corpus, margin size, or tensor identity alone) explains monotonicity
+violation. Violation is now the majority outcome (10/12 this round) rather than a minority edge
+case, which itself argues against treating monotonicity as a safe default assumption for any
+future n-bit search algorithm design (the Opus arbitrary-bitwidth plan, section 3.2's M-scalar
+assumption) -- the plan's own pre-written fallback (an exhaustive scan over a restricted ladder,
+section 3.5) remains the right response, not a bisection.
+
+**Data**: 180 rows in `/tmp/mono_sweep/sweep_results.tsv` on bob (pass/fail per target per n,
+plus per-n raw engine logs for all 180 runs) -- not yet pushed to Supabase (unlike Step 6 rounds
+1-4, this round's results are local-only pending a decision on whether to extend
+`moe_quant_sweep_results` further). No engine source changes, no commits.
+
 ## D-d5-31 -- a data-derived default promotion set: 88 of 269 combos reproduces bf16 exactly
 
 Closes the original D-d5-5 request this whole D-d5 series was scoped around: "(a) validate
