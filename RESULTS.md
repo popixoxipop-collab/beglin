@@ -10383,3 +10383,30 @@ data point, which remains its own separate, single-model, single-flip result.
 for whichever model actually produced it; only the cross-references linking them together left
 the model boundary implicit. Fixed going forward: any future reference to req32/pos8 should
 name DeepSeek-V2-Lite explicitly, the same way D-d5-28/29/30's OLMoE references already do.
+
+## D-paper-1: accept the paper's 9-page body over EfficientSys's stated 8pp limit
+
+**WHY**: the ddmin mechanism material (D-d5-27 through D-d5-30) is the reason this revision
+cycle exists -- it supplies the explanation for the paper's own central empirical result (the
+necessity/sufficiency efficiency collapse, D-d5-26) and corrects a specific existing claim
+("zero individually-necessary = redundancy") that was wrong in the sense the paper stated it.
+Two compression passes already recovered 2 pages (11 body -> 9) by cutting genuinely
+non-essential material (a holdover DWQ subsection, a denominator-bug subsection folded into a
+shorter passage, tightened Related Work and prose, two figures that were pure restatements of
+already-tabulated numbers) without touching the ddmin content or the correction itself. The
+named remaining page sits behind three pieces of the paper's own core empirical material
+(accuracy-per-GiB trajectory, the redundancy-correction table/figure, the monotonicity
+heatmap) -- closing it means cutting requested content, not trimming fat.
+
+**COST**: 1 page over a workshop's own stated limit, unresolved. If EfficientSys enforces the
+8pp limit strictly (not all workshop CFPs do), this specific submission would need either a
+fourth compression pass that removes one of the three named pieces, or a different venue.
+
+**EXIT**: to revisit, name which of the three remaining pieces to cut (accuracy-per-GiB
+figure/table, redundancy-correction table/figure, or the monotonicity heatmap subsection) and
+resume the same paper-orchestra session (agent `a51fa4a`, `~/Desktop/vdsp_moe_precision_paper/`)
+-- it already has full context of every prior compression decision and does not need
+re-briefing on what's already been tried.
+
+Final: `~/Desktop/vdsp_moe_precision_paper/workspace/final/paper.pdf`, 9 body / 10 total pages,
+delivered to the user.
