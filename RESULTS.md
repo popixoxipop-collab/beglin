@@ -10293,3 +10293,54 @@ real-world event.
 rounds: 195 rows (12 distinct target x event combinations); grand total in
 `moe_quant_sweep_results` including the original ROI-G Phase 1 builtin-corpus data: 285 rows,
 independently confirmed via `SELECT count(*)`.
+
+## D-roadmap-4/D-d5 closeout: the selective-hi memory thesis is closed, negatively, on two independent lines of evidence
+
+Synthesis, not new measurement -- the individual results this draws on (D-d5-12 through D-d5-30)
+are each already recorded; this states the conclusion they jointly support, because it took
+walking the whole arc back-to-back to see it, and the next reader of this file (including a
+future session) should not have to redo that walk.
+
+**The question this whole sub-thread existed to answer**: static role-precision promotion
+(the (a)+(b) rungs of the original ladder reframe) already dominates runtime margin-gated
+correction ((c)) on accuracy and wall-clock time (D-d5-18/19/20, closed). The one remaining
+axis where (c) could still win is memory, *if* a small, selectively-promoted combo set could
+cover realistic near-tie diversity instead of blanket-promoting everything. Everything from
+D-d5-12 (selective-hi implemented) through D-d5-30 (ddmin generalized to n=30) was testing
+that one conditional.
+
+**Line 1 -- union-level, empirical (D-d5-23/24/26)**: at small sample (3 events), a
+necessity-selected combo union was ~2x more accuracy-per-GiB efficient than a
+sufficiency-selected one (`L_nec` 0.610 vs `L_sel` 0.299). Expanding both to the same larger
+sample (12 events) collapsed that edge past parity (`L_nec12` 0.253 vs `L_sel2` 0.294) -- both
+selection *methods*, given enough events, converge toward blanket scope's own memory footprint
+(23-24 GiB vs `E0.5`'s 29.01 GiB) rather than staying small.
+
+**Line 2 -- per-flip level, mechanistic (D-d5-27 through D-d5-30)**: ddmin measures the actual
+minimal necessary set per individual flip, not just k=1 individual tests. Across 30 flips: mean
+size 4.93 (of 112 possible), only 30% singleton, five flips need 11-21 roles jointly. This is
+the *reason* Line 1's union doesn't stay small -- if most individual flips already need several
+roles, and different flips need different roles (role composition is expert-dominated at 78%
+but spread across many distinct layers per flip), unioning more flips' necessary sets cannot
+saturate at a small size. D-d5-26 discovered the symptom; D-d5-27-30 found the mechanism.
+
+**Conclusion**: the conditional this sub-thread was testing is false on this workload, on two
+independently-obtained lines of evidence that agree with each other. No combo-selection
+heuristic (sufficiency, necessity, or some smarter alternative not yet tried) is likely to
+rescue it, because the limiting factor is not which selection rule is used -- it is that
+individual near-ties typically require multi-way, poorly-overlapping support in the first
+place. **Static promotion remains the dominant choice on every axis this project measured:
+accuracy, wall-clock time, and now memory-via-selective-scope.** Runtime margin-gated
+correction's defensible niche, if one still exists, is not "smaller memory via a clever combo
+set" -- it would have to be something this investigation did not test (e.g., a workload with
+much lower near-tie diversity than WikiText-2/WikiText-103 short corpora, or hardware where
+blanket promotion's absolute footprint is itself the constraint regardless of selectivity).
+
+**Explicitly not pursued, and why that's a decision, not an omission**: further combo-search
+variants (a smarter selection heuristic, DeepSeek's own ablate sweep, ddmin on Qwen3) are
+de-prioritized from here -- not because they are uninteresting, but because the mechanism
+(Line 2) already explains why they would not change Line 1's conclusion. The honest limitation
+this leaves open: D-d5-30's n=30 mechanistic sample is OLMoE-only; whether the same size
+distribution holds on DeepSeek or Qwen3 is untested, and this closeout does not claim it does --
+only that the OLMoE evidence is strong enough on its own to close this project's own further
+investment in the selective-memory thesis, not to make a cross-architecture universal claim.
