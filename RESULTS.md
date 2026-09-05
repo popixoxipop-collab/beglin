@@ -10436,3 +10436,58 @@ checked. The hypothesis is still not proven in general (2 tensors, both from Wik
 only, no counterexample sought yet), but it has survived its first real attempt at
 falsification. Total `moe_quant_sweep_results` row count: 300, independently confirmed via
 `SELECT count(*)`.
+
+## D-d5-31 -- a data-derived default promotion set: 88 of 269 combos reproduces bf16 exactly
+
+Closes the original D-d5-5 request this whole D-d5 series was scoped around: "(a) validate
+static 16-bit attention promotion as an actual production gate, with a default promotion set
+derived from measurement, not architectural scope." Every prior static arm (`B_attn` 108,
+`B_scope` 189, `B_all` 267, `B_truth` 269) promoted by *architecture-scope* (all of attention, or
+attention+FFN, or everything) -- none was chosen by *measured attribution hits*. The Precision
+Map's own DeepSeek dataset (191 attention/dense/shared combos + 78 routed-expert placeholders,
+78 events) has exactly the data needed: of 269 tracked combos, only **88 (32.7%) ever recorded a
+real attribution hit** across every event measured so far.
+
+**Arm**: `promote_hits88.txt` -- the 88 hit-bearing `(role, layer)` pairs read directly from the
+Precision Map artifact's own `DEEPSEEK_DATA` array (16 `kv_a_proj_with_mqa`, 17 `kv_b_proj`, 11
+`q_proj`, 10 `o_proj`, 11 `shared_gate_proj`, 11 `shared_up_proj`, 11 `shared_down_proj`, 1
+`dense_gate_proj`, 1 `dense_down_proj` -- no `expert_*`, `embed_tokens`, or `lm_head`, all of
+which sit at 0 hits in that dataset). Run with `QWEN_MOE_NEARTIE_CORRECT=0` (no runtime
+safety net -- see the methodology note below for why this matters) against a freshly-generated
+`B_truth` reference run under the identical config (same corpus, same `CORRECT=0`, promoting all
+269), rather than reusing an older `B_truth` log whose own `CORRECT=1 THRESHOLD=0` setting makes
+it a different measurement (see next paragraph).
+
+**Methodology correction caught before it corrupted the comparison**: every prior `B_*` arm
+(`run_truth.sh`, `run_b_scope.sh`) ran with `QWEN_MOE_NEARTIE_CORRECT=1
+QWEN_MOE_NEARTIE_CORRECT_THRESHOLD=0` -- force-triggering the runtime correction safety net on
+*every* position. That setting makes any promotion file's *output tokens* trivially match bf16
+by construction (the safety net silently repairs anything the static set misses), so the
+historical "79%/83%" figures from those arms were never a token-accuracy metric -- they measured
+something else (how often static's fixed list overlapped the runtime path's own independently-
+discovered promotions). Comparing this round's arm against a token-accuracy standard would have
+been comparing two different measurements under the same-looking config. Fixed by running both
+`B_hits88` and its own `B_truth` control with `CORRECT=0` -- no safety net, so a miss in the
+promoted set actually produces a wrong token, and 24/24 means the static set alone, unassisted,
+reaches bf16.
+
+**Result** (`/tmp/b_hits88_raw.log` / `/tmp/b_truth_nosafety_FINAL.log`, local M1 Max,
+`qwen_d527_local_bin`, `local_24x6.txt` corpus):
+
+| arm | combos promoted | exact match vs bf16 | wall_ms |
+|---|---|---|---|
+| `B_truth` (no safety net) | 269 | 24/24 (by construction) | 982,982.76 |
+| **`B_hits88`** | **88 (32.7%)** | **24/24** | **955,387.33 (-2.8%)** |
+
+**88 measured combos reproduce bf16 exactly on this corpus, at a real (not just theoretical)
+wall-time improvement.** This is the first static promotion set in the whole D-d5 series chosen
+by *what was actually measured to matter*, not by architectural boundary -- and it is
+substantially smaller than every scope-based arm that came before it (108/189/267/269) while
+matching the best of them (`B_truth`) on accuracy exactly.
+
+**Scope, stated plainly**: this is 1 corpus (`local_24x6.txt`, the same 24-request/78-event
+corpus the Precision Map's own DeepSeek data comes from) -- the 88-combo set is derived from and
+validated against the *same* underlying event population, so this confirms internal consistency
+(the measured hit set explains the events that produced it) rather than out-of-sample
+generalization. Whether 88 combos hold on WikiText-103 or a different corpus entirely is
+untested, the same honest caveat this project has applied to every promotion-scope claim so far.
