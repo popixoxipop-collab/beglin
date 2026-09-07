@@ -10569,3 +10569,96 @@ validated against the *same* underlying event population, so this confirms inter
 (the measured hit set explains the events that produced it) rather than out-of-sample
 generalization. Whether 88 combos hold on WikiText-103 or a different corpus entirely is
 untested, the same honest caveat this project has applied to every promotion-scope claim so far.
+
+## D-gpu-4/D-gpu-5: GPU mixed-precision (bits=8 quantized + bits=16/32 dense binding)
+
+Answers the earlier open question "does the GPU path support mixed precision like the CPU
+path does?" -- it didn't (`mlx_gpu_bind_af()` hard-refused anything but bits=4). This closes
+bits=8 end-to-end (binding + full hot-path compute) and bits=16/32 for binding + the two
+standalone probes; the hot-path FFN compute branch for bits=16/32 (`gather_mm` instead of
+`gather_qmm`) is scoped out below, not silently missing.
+
+**bits=8 (`mlx_moe.cpp`)**: `mlx_gpu_bind_af()`'s gate widened from `bits != 4` to accept
+4/8/16/32. CPU's `gguf_quantize_q8g64()` is signed int8, symmetric (no bias array, `bias_off`
+is a -1 sentinel), unpacked (1 byte/element) -- MLX's own `quantized_matmul`/`gather_qmm`
+kernels read bits=8 weights as unsigned bytes, affine, word-packed per `mx::quantize()`'s own
+convention. Rather than hand-deriving that packing order (unverified, unlike bits=4's D-gpu-3
+byte-for-byte finding), the bind path dequantizes with the known-simple symmetric formula
+(`value = code * scale`, via `mx::astype`+group-broadcast-multiply) and calls MLX's own
+`mx::quantize(dequant, 64, 8, "affine")` to repack -- guaranteed self-consistent with whatever
+`gather_qmm`/`quantized_matmul` actually expect, at a one-time bind-time cost (not zero-copy
+for this bit-width, unlike bits=4). All 28 compute call sites across the file (25 `gather_qmm`,
+2 `quantized_matmul`, 1 `dequantize`) now read the tensor's own `.bits` field instead of a
+hardcoded literal 4 -- includes the standalone probes (`mlx_gpu_dequant_probe`,
+`mlx_gpu_matvec_probe`, `gather_qmm_probe`, `lazy_matvec_e0`) and all 4 structurally-duplicated
+FFN hot-path blocks (gate/up/down x sorted/unsorted).
+
+**bits=16/32 (`mlx_moe.cpp`)**: CPU-side these tiers are raw dense fp16/fp32 with no
+scale/group at all (`st_register_moe_experts_f16_as_af()` and its f32 sibling) -- not a
+quantized format `gather_qmm` can consume. New `DTensor` struct + `g_dtensors` map, bound
+directly as `mx::float16`/`mx::float32` dense arrays (zero-copy, no repack needed --
+simpler than bits=8, ironically). `mlx_gpu_dequant_probe`/`mlx_gpu_matvec_probe` check
+`g_dtensors` first and fall back to a dense read / `mx::matmul` against a transposed weight.
+**Scope cut, explicit**: the 4 FFN hot-path blocks' `gather_qmm` calls do NOT yet have a
+`gather_mm`-based dense branch (MLX's `gather_mm(a, b, lhs_indices, rhs_indices,
+sorted_indices)` has a parameter shape close enough to `gather_qmm`'s that this should be a
+mechanical follow-up, not a redesign) -- a shared/dense-role tensor promoted to bits=16/32
+today binds fine and is dequant/matvec-probeable, but would throw inside `lazy_matvec_e0()`
+or the routed-FFN hot path if actually routed through full generation. Flagged in-code
+(`lazy_matvec_e0`'s own comment) so this surfaces as a known gap, not a future crash mystery.
+
+**qwen_infer.c**: "Gate 2" (`run_moe_gpu_mode()`'s bits-sanity diagnostic loop) widened from
+`bits==4` to `bits in {4,8,16,32}` to match what `mlx_gpu_bind_af()` now actually accepts --
+was already soft (log-only, not a hard exit; the real enforcement was always
+`mlx_gpu_bind_af()`'s own return value), fixed so it stops crying wolf on a tensor that now
+binds successfully.
+
+**Verification (bob, idle, `qwen_infer_gpu` rebuilt clean -- 2 benign SDK-version linker
+warnings, no errors)**, four independent angles, all passing:
+
+1. **Regression** (`QWEN_MOE_GPU=1`, no promotion): Gate3 max_abs_diff=0 (269 tensors, 400
+   sampled coords), Gate4 worst_rel_l2=2.13e-07 (8 tensors) -- byte-identical to pre-change
+   behavior.
+2. **Gate3/4 with bits=8 promoted** (`QWEN_MOE_ROLE_BITS`: `q_proj 5 8`, separately
+   `shared_gate_proj 10 8` + `shared_down_proj 15 8`): bound 269/269 both times, Gate3
+   max_abs_diff=0 (same bar as bits=4), Gate4 worst_rel_l2=2.13e-07 (unchanged -- the fixed
+   8-tensor GEMM sample happens not to include the promoted layers, so this arm is really
+   confirming no regression elsewhere, not the promoted tensor itself; Gate3's 400 random
+   coords across all 269 tensors is the arm that actually samples the promoted ones).
+3. **Real end-to-end generation** (`QWEN_MOE_GPU_GENERATE=1`, V5k MLA gate, DeepSeek-V2-Lite,
+   `shared_gate_proj 10 8` + `shared_down_proj 15 8` promoted, WikiText-2 prompt
+   `p0.i32`, 9-token prompt): GPU generated 24 tokens (hit the 32-position cache window).
+   CPU-side (`QWEN_MOE_CBATCH=1` single-request online mode, same prompt, same
+   `QWEN_MOE_ROLE_BITS`) generated 9. **The overlapping 9 are byte-identical**: both
+   `44742 50870 11 317 245 8217 280 26075 50870` -- this is the arm that actually exercises
+   the modified FFN hot-path `gather_qmm` calls (not just static dequant), and it matches.
+
+**Data-loss note, unrelated to correctness**: the original WikiText-103 `pN.i32` prompt
+corpus (`/tmp/d4_wikitext103_short_manifest/` on bob) was found emptied (directory mtime
+today, contents gone) partway through this verification -- another instance of bob's `/tmp`
+being cleaned, consistent with prior sessions' findings on this same machine. Substituted a
+WikiText-2 prompt from `/Users/bob/d4_wikitext2_short_manifest/` (outside `/tmp`, survived)
+for the same model/architecture; the substitution doesn't affect what's being verified
+(CPU-vs-GPU agreement at a given precision, not any particular corpus's content).
+
+**D-gpu-4/5-repack -- dequantize-then-let-MLX-requantize for bits=8, instead of hand-rolling
+the packed-word layout**
+  WHY: bits=4's zero-copy bind only works because D-gpu-3 independently verified vdsp's own
+       int4g64 packing is byte-for-byte compatible with MLX's unpacking -- no equivalent
+       check exists for q8g64 vs MLX's bits=8 packing, and q8g64's signed/symmetric/unpacked
+       layout is already known to differ from MLX's unsigned/affine/word-packed convention on
+       at least two of those three axes. Re-deriving the exact packing order by hand repeats
+       the kind of subtle off-by-one this project has hit before (D-gpu-3's own f-1 finding,
+       the q4g256sf sub_code work); letting MLX's own `mx::quantize()` do the packing removes
+       that whole class of risk at the cost of one extra dequant+requant pass at bind time.
+  COST: not zero-copy for bits=8 (a real, if small, one-time memory copy + compute cost per
+        promoted tensor at bind time, unlike bits=4). A second-order quantization-error
+        question -- q8g64's own rounding vs MLX's own rounding at the same bits/group_size --
+        is unmeasured; Gate3's max_abs_diff=0 result suggests it's not observable at this
+        precision, but that's an empirical result of this specific test, not a proof.
+  EXIT: if bind-time cost becomes a real problem (unlikely at today's promotion scale --
+        bits=8 promotions are a handful of tensors, not the whole model), revisit with a
+        verified byte-level packing derivation the way D-gpu-3 did for bits=4.
+
+**Not done this round**: bits=16/32's FFN hot-path `gather_mm` branch (see scope cut above).
+No commits pushed to remote. Local commit only, per this repo's standing convention.

@@ -8143,14 +8143,18 @@ static int run_moe_gpu_mode(int argc, char **argv) {
     long af_bytes; uint8_t *af_blob = moe_mmap_file(path, &af_bytes);
     fprintf(stderr, "[moe gpu] af blob %ld bytes, %d tensors\n", af_bytes, g_moe_naf);
 
-    // Gate 2: bits-field sanity -- every AF-blob tensor must be bits==4, ebits==NULL (F-13:
-    // this format predates the per-tensor mixed-precision system entirely). Asserted, not
-    // just assumed, so a future loader change trips this loudly instead of silently mis-binding.
+    // Gate 2: bits-field sanity -- every AF-blob tensor must be a bits value
+    // mlx_gpu_bind_af() actually supports (4/8/16/32, D-gpu-4/D-gpu-5) with
+    // ebits==NULL (per-expert mixed bits is still out of scope for the GPU path --
+    // mlx_gpu_bind_af's signature has no parameter for it). Asserted, not just
+    // assumed, so a future loader change (a new tier, or ebits) trips this loudly
+    // instead of silently mis-binding.
     int gate2_fail = 0;
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
-        if (t->bits != 4 || t->ebits != NULL) {
-            fprintf(stderr, "[moe gpu] GATE2 FAIL: tensor %s has bits=%d ebits=%p (expected bits=4, ebits=NULL)\n",
+        int bits_ok = (t->bits == 4 || t->bits == 8 || t->bits == 16 || t->bits == 32);
+        if (!bits_ok || t->ebits != NULL) {
+            fprintf(stderr, "[moe gpu] GATE2 FAIL: tensor %s has bits=%d ebits=%p (expected bits in {4,8,16,32}, ebits=NULL)\n",
                     t->name, t->bits, (void *)t->ebits);
             gate2_fail = 1;
         }

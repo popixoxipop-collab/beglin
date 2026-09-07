@@ -22,15 +22,37 @@
 
 namespace mx = mlx::core;
 
+// D-gpu-4/D-gpu-5 disclosure (Int4-Residual Guard): this file's existing int4 (bits=4) path
+// below is UNCHANGED by this round -- no residual/error-feedback question applies to it,
+// same as this file's own D18 exemption already states (quantize/dequantize happens
+// upstream on the CPU side; this file only binds and dequantizes bytes an existing
+// quantizer already produced). What follows extends binding to bits=8 (still MLX's own
+// affine group-64 int8, native gather_qmm/quantized_matmul support, no new quantizer) and
+// bits=16/32 (CPU-side dense fp16/fp32, not quantized at all -- see DTensor below). Neither
+// addition introduces new fp32->intN encoding, so D18's residual-vs-stochastic-rounding
+// tradeoff doesn't apply to this round either, for the same reason it didn't apply to bits=4.
 struct QTensor {
-    mx::array w;       // {E, out, in/8} uint32 -- packed int4 codes, row-major per expert
+    mx::array w;       // {E, out, in/8} uint32 (bits=4) or {E, out, in} uint32 (bits=8) --
+                       // packed codes, row-major per expert. Unused for bits>=16 (see w_dense).
     mx::array scales;  // {E, out, ng} float32
     mx::array biases;  // {E, out, ng} float32
     long E, out, in, ng;
     int bits;
 };
 
+// D-gpu-4/D-gpu-5: bits>=16 tensors are CPU-side raw dense fp16/fp32 (no group/scale at
+// all -- st_register_moe_experts_f16_as_af() etc.), not a quantized format MLX's
+// gather_qmm/quantized_matmul machinery can consume. Bound and consumed through a
+// separate map + gather_mm() instead of extending QTensor with always-empty quantized
+// fields for this case.
+struct DTensor {
+    mx::array w;  // {E, out, in} float16 or float32, dense, zero-copy from the AF blob
+    long E, out, in;
+    int bits;  // 16 or 32
+};
+
 static std::unordered_map<std::string, QTensor> g_tensors;
+static std::unordered_map<std::string, DTensor> g_dtensors;  // bits=16/32, dense (D-gpu-5)
 static int g_bound_count = 0;
 
 static void noop_deleter(void *) {
@@ -60,35 +82,84 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
                      long packed_off, long scale_off, long bias_off, int bits) {
     (void)blob_bytes;  // reserved for a future bounds-check gate, unused for now
     if (!mlx_gpu_available()) return 0;
-    // V5a targets this fixture's real bits value only (F-13: every AF-blob
-    // tensor is bits==4) -- refusal rather than silently mis-decoding a
-    // bit-width this gate hasn't verified.
-    if (bits != 4) return 0;
-    if (E <= 0 || out <= 0 || in <= 0 || ng <= 0 || (in % 8) != 0) return 0;
+    // D-gpu-4/D-gpu-5: bits=4 (original V5a scope, F-13) plus bits=8 (quantized,
+    // repacked below) and bits=16/32 (dense, bound below) -- everything else still
+    // refused rather than silently mis-decoded, same principle as the original gate.
+    if (bits != 4 && bits != 8 && bits != 16 && bits != 32) return 0;
+    if (E <= 0 || out <= 0 || in <= 0) return 0;
+
+    if (bits == 16 || bits == 32) {
+        // D-gpu-5: dense, not quantized at all on the CPU side (no scale/group --
+        // st_register_moe_experts_f16_as_af() and its bits=32 sibling write raw
+        // _Float16/float bytes only) -- bind directly, zero-copy, same principle
+        // as the bits=4 path's own doc comment (D-gpu-3), just no packing to undo.
+        try {
+            void *w_ptr = (void *)(blob + packed_off);
+            mx::Dtype dt = (bits == 16) ? mx::float16 : mx::float32;
+            mx::array w(w_ptr, {(int)E, (int)out, (int)in}, dt, noop_deleter);
+            g_dtensors.insert_or_assign(std::string(name), DTensor{w, E, out, in, bits});
+            g_bound_count++;
+            return 1;
+        } catch (...) {
+            return 0;
+        }
+    }
+
+    if (ng <= 0 || (in % 8) != 0) return 0;
 
     try {
-        long row_words = in / 8;
-        void *w_ptr = (void *)(blob + packed_off);
         void *scale_ptr = (void *)(blob + scale_off);
-        void *bias_ptr = (void *)(blob + bias_off);
-
-        // NOTE (real finding, this round): mx::allocator::can_reuse_alien_buffer()
-        // segfaults unconditionally on this host's installed MLX build when called
-        // from a plain C++ (non-Python) process -- reproduced in isolation with a
-        // trivial malloc'd pointer, both before and after warming up MLX's
-        // allocator/Metal device via a real eval(). The raw-pointer mx::array
-        // constructor itself works fine without it (also reproduced in isolation);
-        // this call was only ever an optional informational check for Gate 5's
-        // zero-copy accounting, never required for correctness (mlx_moe.h's own
-        // doc comment already said as much) -- so it is skipped entirely here.
-        // Gate 5 residency instead relies solely on mlx_gpu_report_memory()'s
-        // active/peak/cache counters, which don't go through this function.
-        mx::array w(w_ptr, {(int)E, (int)out, (int)row_words}, mx::uint32,
-                    noop_deleter);
         mx::array scales(scale_ptr, {(int)E, (int)out, (int)ng}, mx::float32,
                           noop_deleter);
-        mx::array biases(bias_ptr, {(int)E, (int)out, (int)ng}, mx::float32,
-                          noop_deleter);
+
+        mx::array w = mx::array({0}, mx::uint32);   // placeholder, replaced below
+        mx::array biases = mx::array({0}, mx::float32);  // placeholder, replaced below
+
+        if (bits == 4) {
+            long row_words = in / 8;
+            void *w_ptr = (void *)(blob + packed_off);
+            void *bias_ptr = (void *)(blob + bias_off);
+
+            // NOTE (real finding, this round): mx::allocator::can_reuse_alien_buffer()
+            // segfaults unconditionally on this host's installed MLX build when called
+            // from a plain C++ (non-Python) process -- reproduced in isolation with a
+            // trivial malloc'd pointer, both before and after warming up MLX's
+            // allocator/Metal device via a real eval(). The raw-pointer mx::array
+            // constructor itself works fine without it (also reproduced in isolation);
+            // this call was only ever an optional informational check for Gate 5's
+            // zero-copy accounting, never required for correctness (mlx_moe.h's own
+            // doc comment already said as much) -- so it is skipped entirely here.
+            // Gate 5 residency instead relies solely on mlx_gpu_report_memory()'s
+            // active/peak/cache counters, which don't go through this function.
+            w = mx::array(w_ptr, {(int)E, (int)out, (int)row_words}, mx::uint32,
+                           noop_deleter);
+            biases = mx::array(bias_ptr, {(int)E, (int)out, (int)ng}, mx::float32,
+                                noop_deleter);
+        } else {
+            // D-gpu-4: bits==8. CPU's q8g64 (gguf_quantize_q8g64()) is SIGNED int8,
+            // symmetric (no bias array -- bias_off is a -1 sentinel here, never
+            // dereferenced), unpacked (1 byte/element, not word-packed). MLX's own
+            // quantized_matmul/gather_qmm kernels read bits=8 weights as UNSIGNED
+            // bytes, affine (value = code*scale + bias), word-packed per mx::quantize()'s
+            // own convention (not verified byte-for-byte against q8g64's layout, unlike
+            // bits=4's D-gpu-3 finding) -- rather than hand-deriving that packing order,
+            // dequantize with the known-simple symmetric formula and let MLX's own
+            // mx::quantize() repack it, guaranteeing self-consistency with whatever
+            // mx::gather_qmm/quantized_matmul actually expect. One-time cost at bind,
+            // not zero-copy for this bit-width (disclosed, matches the plan).
+            void *code_ptr = (void *)(blob + packed_off);
+            mx::array codes_i8(code_ptr, {(int)E, (int)out, (int)in}, mx::int8,
+                                noop_deleter);
+            mx::array codes_f32 = mx::astype(codes_i8, mx::float32);
+            mx::array codes_grouped = mx::reshape(codes_f32, {(int)E, (int)out, (int)ng, 64});
+            mx::array scales_grouped = mx::reshape(scales, {(int)E, (int)out, (int)ng, 1});
+            mx::array dequant = mx::reshape(codes_grouped * scales_grouped,
+                                             {(int)E, (int)out, (int)in});
+            auto qrs = mx::quantize(dequant, /*group_size=*/64, /*bits=*/8, "affine");
+            w = qrs[0];
+            scales = qrs[1];
+            biases = qrs[2];
+        }
 
         // insert_or_assign, not operator[]= -- QTensor holds mx::array
         // fields with no default constructor, so operator[]'s implicit
@@ -117,6 +188,24 @@ int mlx_gpu_zerocopy_count(int *zero_copy, int *copied, size_t *bytes_copied) {
 
 int mlx_gpu_dequant_probe(const char *name, long e, long row, long col0, int ncols,
                            float *out_vals) {
+    auto dit = g_dtensors.find(name);
+    if (dit != g_dtensors.end()) {
+        // D-gpu-5: bits=16/32, already dense -- "dequantize" is just reading the value.
+        DTensor &d = dit->second;
+        if (e < 0 || e >= d.E || row < 0 || row >= d.out) return 0;
+        if (ncols <= 0 || col0 < 0 || col0 + ncols > d.in) return 0;
+        try {
+            mx::array row_arr = mx::astype(
+                mx::take(mx::take(d.w, (int)e, 0), (int)row, 0), mx::float32);  // {in}
+            mx::eval(row_arr);
+            const float *ptr = row_arr.data<float>();
+            std::memcpy(out_vals, ptr + col0, sizeof(float) * (size_t)ncols);
+            return 1;
+        } catch (...) {
+            return 0;
+        }
+    }
+
     auto it = g_tensors.find(name);
     if (it == g_tensors.end()) return 0;
     QTensor &t = it->second;
@@ -135,8 +224,10 @@ int mlx_gpu_dequant_probe(const char *name, long e, long row, long col0, int nco
         mx::array b_row = mx::expand_dims(
             mx::take(mx::take(t.biases, (int)e, 0), (int)row, 0), 0);  // {1, ng}
 
+        // D-gpu-4: bits threaded from the tensor's own record (was a hardcoded 4) --
+        // group_size stays 64, the only value this project's AF-blob formats use.
         mx::array deq = mx::dequantize(w_row, s_row, b_row,
-                                        /*group_size=*/64, /*bits=*/4);  // {1, in}
+                                        /*group_size=*/64, /*bits=*/t.bits);  // {1, in}
         mx::eval(deq);
         const float *ptr = deq.data<float>();
         // Real finding (this round): earlier version always read columns [0,ncols) regardless
@@ -150,21 +241,41 @@ int mlx_gpu_dequant_probe(const char *name, long e, long row, long col0, int nco
 }
 
 int mlx_gpu_matvec_probe(const char *name, long e, const float *x, float *y) {
+    auto dit = g_dtensors.find(name);
+    if (dit != g_dtensors.end()) {
+        // D-gpu-5: bits=16/32, plain matmul against the dense weight (transpose=true's
+        // quantized_matmul equivalent -- weight stored [out,in], transpose for x@w^T).
+        DTensor &d = dit->second;
+        if (e < 0 || e >= d.E) return 0;
+        try {
+            mx::array w_e = mx::astype(mx::take(d.w, (int)e, 0), mx::float32);  // {out, in}
+            mx::array xin((void *)x, {1, (int)d.in}, mx::float32, noop_deleter);
+            mx::array yout = mx::matmul(xin, mx::transpose(w_e));  // {1, out}
+            mx::eval(yout);
+            const float *ptr = yout.data<float>();
+            std::memcpy(y, ptr, sizeof(float) * (size_t)d.out);
+            return 1;
+        } catch (...) {
+            return 0;
+        }
+    }
+
     auto it = g_tensors.find(name);
     if (it == g_tensors.end()) return 0;
     QTensor &t = it->second;
     if (e < 0 || e >= t.E) return 0;
 
     try {
-        mx::array w_e = mx::take(t.w, (int)e, 0);            // {out, in/8}
+        mx::array w_e = mx::take(t.w, (int)e, 0);            // {out, in/8} or {out,in} (bits=8)
         mx::array s_e = mx::take(t.scales, (int)e, 0);        // {out, ng}
         mx::array b_e = mx::take(t.biases, (int)e, 0);        // {out, ng}
 
         mx::array xin((void *)x, {1, (int)t.in}, mx::float32, noop_deleter);
 
+        // D-gpu-4: bits threaded from the tensor's own record (was a hardcoded 4).
         mx::array yout = mx::quantized_matmul(
             xin, w_e, s_e, b_e, /*transpose=*/true,
-            /*group_size=*/64, /*bits=*/4);
+            /*group_size=*/64, /*bits=*/t.bits);
         mx::eval(yout);
         const float *ptr = yout.data<float>();
         std::memcpy(y, ptr, sizeof(float) * (size_t)t.out);
@@ -665,7 +776,7 @@ static int gather_qmm_probe(const char *name, const float *x, const int *top_idx
         mx::array xin((void *)x, {1, (int)t.in}, mx::float32, noop_deleter);
         mx::array idxa(idx32.data(), {1, top_k}, mx::int32, noop_deleter);
         mx::array out_arr = mx::gather_qmm(xin, t.w, t.scales, t.biases, std::nullopt, idxa,
-                                            /*transpose=*/true, g_layer_group, 4, "affine", false);
+                                            /*transpose=*/true, g_layer_group, t.bits, "affine", false);
         mx::eval(out_arr);
         std::memcpy(out, out_arr.data<float>(), sizeof(float) * (size_t)top_k * t.out);
         return 1;
@@ -1000,11 +1111,17 @@ static mx::array lazy_silu(const mx::array &x) { return mx::multiply(x, mx::sigm
 // naturally batches via quantized_matmul's own broadcasting -- no expand_dims needed
 // here, only for gather_qmm's per-expert-selection calls below.
 static mx::array lazy_matvec_e0(const char *name, const mx::array &x) {
+    // D-gpu-4: bits threaded from the tensor's own record. NOTE (D-gpu-5 scope): this
+    // function does not yet check g_dtensors -- a shared/dense role promoted to
+    // bits=16/32 would throw here (g_tensors.at() on a name that only exists in
+    // g_dtensors). Binding (mlx_gpu_bind_af) and the standalone probes already handle
+    // bits=16/32; wiring this lazy-graph path's dense fallback is deferred, not silently
+    // dropped -- flagging explicitly rather than leaving it to be discovered as a crash.
     QTensor &t = g_tensors.at(name);
     mx::array w_e = mx::take(t.w, 0, 0);
     mx::array s_e = mx::take(t.scales, 0, 0);
     mx::array b_e = mx::take(t.biases, 0, 0);
-    return mx::quantized_matmul(x, w_e, s_e, b_e, /*transpose=*/true, g_layer_group, 4);
+    return mx::quantized_matmul(x, w_e, s_e, b_e, /*transpose=*/true, g_layer_group, t.bits);
 }
 
 int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
@@ -1184,12 +1301,12 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
                 mx::array idx_sorted = mx::take(flat_idx, order);        // {B*TOPK}
 
                 mx::array gate_all_s = mx::gather_qmm(x_sorted, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                                                       idx_sorted, true, g_layer_group, tg.bits, "affine", true);
                 mx::array up_all_s = mx::gather_qmm(x_sorted, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                     idx_sorted, true, g_layer_group, 4, "affine", true);
+                                                     idx_sorted, true, g_layer_group, tu.bits, "affine", true);
                 mx::array swiglu_3d_s = mx::reshape(lazy_silu(gate_all_s) * up_all_s, {B * TOPK, 1, IM});
                 mx::array down_all_s = mx::gather_qmm(swiglu_3d_s, td.w, td.scales, td.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                                                       idx_sorted, true, g_layer_group, td.bits, "affine", true);
                 mx::array down_flat_s = mx::reshape(down_all_s, {B * TOPK, HIDDEN});
                 mx::array down_unsorted = mx::take(down_flat_s, inv_order, 0);   // scatter-unsort
                 down_flat_opt = mx::reshape(down_unsorted, {B, TOPK, HIDDEN});
@@ -1206,9 +1323,9 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
                 // possible pairing -- it was never actually being exercised at B=1.
                 mx::array h2_expanded = mx::expand_dims(h2, std::vector<int>{-2, -3});   // {B,1,1,HIDDEN}
                 mx::array gate_all = mx::gather_qmm(h2_expanded, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                     top_idx, true, g_layer_group, 4, "affine", false);
+                                                     top_idx, true, g_layer_group, tg.bits, "affine", false);
                 mx::array up_all = mx::gather_qmm(h2_expanded, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                   top_idx, true, g_layer_group, 4, "affine", false);
+                                                   top_idx, true, g_layer_group, tu.bits, "affine", false);
                 // switch_down: B*TOPK rows, each already belonging to its OWN selected
                 // expert (unlike gate/up above, which share one h2 row per batch entry across
                 // its TOPK experts) -- flatten to {B*TOPK,1,IM} and omit lhs_indices entirely,
@@ -1223,7 +1340,7 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
                 mx::array swiglu_3d = mx::reshape(lazy_silu(gate_all) * up_all, {B * TOPK, 1, IM});
                 mx::array top_idx_1d = mx::reshape(top_idx, {B * TOPK});
                 mx::array down_all = mx::gather_qmm(swiglu_3d, td.w, td.scales, td.biases, std::nullopt,
-                                                     top_idx_1d, true, g_layer_group, 4, "affine", false);
+                                                     top_idx_1d, true, g_layer_group, td.bits, "affine", false);
                 down_flat_opt = mx::reshape(down_all, {B, TOPK, HIDDEN});
             }
             mx::array down_flat = *down_flat_opt;
@@ -1513,25 +1630,25 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
                 mx::array idx_sorted = mx::take(flat_idx, order2);       // {A*TOPK}
 
                 mx::array gate_all_s = mx::gather_qmm(x_sorted, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                                                       idx_sorted, true, g_layer_group, tg.bits, "affine", true);
                 mx::array up_all_s = mx::gather_qmm(x_sorted, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                     idx_sorted, true, g_layer_group, 4, "affine", true);
+                                                     idx_sorted, true, g_layer_group, tu.bits, "affine", true);
                 mx::array swiglu_3d_s = mx::reshape(lazy_silu(gate_all_s) * up_all_s, {A * TOPK, 1, IM});
                 mx::array down_all_s = mx::gather_qmm(swiglu_3d_s, td.w, td.scales, td.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                                                       idx_sorted, true, g_layer_group, td.bits, "affine", true);
                 mx::array down_flat_s = mx::reshape(down_all_s, {A * TOPK, HIDDEN});
                 mx::array down_unsorted = mx::take(down_flat_s, inv_order, 0);   // scatter-unsort
                 down_flat_opt = mx::reshape(down_unsorted, {A, TOPK, HIDDEN});
             } else {
                 mx::array h2_expanded = mx::expand_dims(h2, std::vector<int>{-2, -3});   // {A,1,1,HIDDEN}
                 mx::array gate_all = mx::gather_qmm(h2_expanded, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                     top_idx, true, g_layer_group, 4, "affine", false);
+                                                     top_idx, true, g_layer_group, tg.bits, "affine", false);
                 mx::array up_all = mx::gather_qmm(h2_expanded, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                   top_idx, true, g_layer_group, 4, "affine", false);
+                                                   top_idx, true, g_layer_group, tu.bits, "affine", false);
                 mx::array swiglu_3d = mx::reshape(lazy_silu(gate_all) * up_all, {A * TOPK, 1, IM});
                 mx::array top_idx_1d = mx::reshape(top_idx, {A * TOPK});
                 mx::array down_all = mx::gather_qmm(swiglu_3d, td.w, td.scales, td.biases, std::nullopt,
-                                                     top_idx_1d, true, g_layer_group, 4, "affine", false);
+                                                     top_idx_1d, true, g_layer_group, td.bits, "affine", false);
                 down_flat_opt = mx::reshape(down_all, {A, TOPK, HIDDEN});
             }
             mx::array down_flat = *down_flat_opt;
@@ -1755,25 +1872,25 @@ int mlx_gpu_gqa_layer_step_lazy(int l, int pos, int is_dense,
                 mx::array idx_sorted = mx::take(flat_idx, order2);       // {B*TOPK}
 
                 mx::array gate_all_s = mx::gather_qmm(x_sorted, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                                                       idx_sorted, true, g_layer_group, tg.bits, "affine", true);
                 mx::array up_all_s = mx::gather_qmm(x_sorted, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                     idx_sorted, true, g_layer_group, 4, "affine", true);
+                                                     idx_sorted, true, g_layer_group, tu.bits, "affine", true);
                 mx::array swiglu_3d_s = mx::reshape(lazy_silu(gate_all_s) * up_all_s, {B * TOPK, 1, IM});
                 mx::array down_all_s = mx::gather_qmm(swiglu_3d_s, td.w, td.scales, td.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                                                       idx_sorted, true, g_layer_group, td.bits, "affine", true);
                 mx::array down_flat_s = mx::reshape(down_all_s, {B * TOPK, HIDDEN});
                 mx::array down_unsorted = mx::take(down_flat_s, inv_order, 0);
                 down_flat_opt = mx::reshape(down_unsorted, {B, TOPK, HIDDEN});
             } else {
                 mx::array h2_expanded = mx::expand_dims(h2, std::vector<int>{-2, -3});   // {B,1,1,HIDDEN}
                 mx::array gate_all = mx::gather_qmm(h2_expanded, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                     top_idx, true, g_layer_group, 4, "affine", false);
+                                                     top_idx, true, g_layer_group, tg.bits, "affine", false);
                 mx::array up_all = mx::gather_qmm(h2_expanded, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                   top_idx, true, g_layer_group, 4, "affine", false);
+                                                   top_idx, true, g_layer_group, tu.bits, "affine", false);
                 mx::array swiglu_3d = mx::reshape(lazy_silu(gate_all) * up_all, {B * TOPK, 1, IM});
                 mx::array top_idx_1d = mx::reshape(top_idx, {B * TOPK});
                 mx::array down_all = mx::gather_qmm(swiglu_3d, td.w, td.scales, td.biases, std::nullopt,
-                                                     top_idx_1d, true, g_layer_group, 4, "affine", false);
+                                                     top_idx_1d, true, g_layer_group, td.bits, "affine", false);
                 down_flat_opt = mx::reshape(down_all, {B, TOPK, HIDDEN});
             }
             mx::array down_flat = *down_flat_opt;
@@ -2017,25 +2134,25 @@ int mlx_gpu_gqa_cbatch_layer_step_lazy(int l, int A, const int *slot, const int 
                 mx::array idx_sorted = mx::take(flat_idx, order2);       // {B*TOPK}
 
                 mx::array gate_all_s = mx::gather_qmm(x_sorted, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                                                       idx_sorted, true, g_layer_group, tg.bits, "affine", true);
                 mx::array up_all_s = mx::gather_qmm(x_sorted, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                     idx_sorted, true, g_layer_group, 4, "affine", true);
+                                                     idx_sorted, true, g_layer_group, tu.bits, "affine", true);
                 mx::array swiglu_3d_s = mx::reshape(lazy_silu(gate_all_s) * up_all_s, {B * TOPK, 1, IM});
                 mx::array down_all_s = mx::gather_qmm(swiglu_3d_s, td.w, td.scales, td.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, 4, "affine", true);
+                                                       idx_sorted, true, g_layer_group, td.bits, "affine", true);
                 mx::array down_flat_s = mx::reshape(down_all_s, {B * TOPK, HIDDEN});
                 mx::array down_unsorted = mx::take(down_flat_s, inv_order, 0);
                 down_flat_opt = mx::reshape(down_unsorted, {B, TOPK, HIDDEN});
             } else {
                 mx::array h2_expanded = mx::expand_dims(h2, std::vector<int>{-2, -3});   // {B,1,1,HIDDEN}
                 mx::array gate_all = mx::gather_qmm(h2_expanded, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                     top_idx, true, g_layer_group, 4, "affine", false);
+                                                     top_idx, true, g_layer_group, tg.bits, "affine", false);
                 mx::array up_all = mx::gather_qmm(h2_expanded, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                   top_idx, true, g_layer_group, 4, "affine", false);
+                                                   top_idx, true, g_layer_group, tu.bits, "affine", false);
                 mx::array swiglu_3d = mx::reshape(lazy_silu(gate_all) * up_all, {B * TOPK, 1, IM});
                 mx::array top_idx_1d = mx::reshape(top_idx, {B * TOPK});
                 mx::array down_all = mx::gather_qmm(swiglu_3d, td.w, td.scales, td.biases, std::nullopt,
-                                                     top_idx_1d, true, g_layer_group, 4, "affine", false);
+                                                     top_idx_1d, true, g_layer_group, td.bits, "affine", false);
                 down_flat_opt = mx::reshape(down_all, {B, TOPK, HIDDEN});
             }
             mx::array down_flat = *down_flat_opt;
