@@ -175,10 +175,27 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
 - 이 push는 안 함(기존 event 재검증용이라 중복행 방지 목적으로 의도적으로 skip).
 - RESULTS.md "Step 6 closure addendum" + "ROI-G Phase 2: quant_search_n.py live oracle" 섹션.
 
-## 남은 것 (2026-09-07 기준)
-- ROI-G Phase 2 원래 계획(스키마/코퍼스/탐색도구/교차검증) 전부 완료. quant_search_n.py도
-  이제 historical+live 둘 다 검증됨.
-- 남은 진짜 열린 질문은 없음 — "무엇이 위반을 예측하는가"는 round5에서 "단일 요인 없음,
-  텐서×이벤트 고유 상호작용"으로 이미 답변됨. 더 파려면: (a) live 모드로 미검증
-  role/layer 조합에 실제 배포해서 프로덕션 정밀도맵 갱신에 쓰기, (b) bisection이 실제로
-  트리거되는 첫 사례를 기다리기(현재는 전량 exhaustive) — 둘 다 사용자 확인 후 진행할 것.
+## (a) live 모드 프로덕션 배포 -- 24개 미검증 조합, 단일 event, 58% 위반 (2026-09-07)
+- WikiText-103 `/tmp` 프롬프트 파일이 **또** 사라짐(이번 세션 3번째 재현 — D-gpu-4/5, live
+  오라클 검증, 이번 건). round5의 `/tmp/mono_sweep/`(하루 전 생성)도 이미 사라짐. bob `/tmp`는
+  며칠 못 버팀이 이제 확정적 패턴 — WikiText-103을 또 쓰려면 `/Users/bob/...`류 영구경로로
+  재배치할 것(할 일로 남김, 이번엔 안 함). WikiText-2는 `/Users/bob/d4_wikitext2_short_manifest/`
+  라 안전 — 이번 라운드는 전부 WikiText-2로 진행.
+- WikiText-2 200개 프롬프트 중 196개가 한 번도 안 건드려짐. 새 후보 탐색(HI_COMBOS 제한 없는
+  discovery pass)으로 p60/pos=14에서 real flip 발견 → **24개 서로 다른 role/layer가 전부
+  개별적으로 correction 재현**(전 role family 포함). discovery 15개 큐잉했다가 p60 하나만으로
+  round5 전체(12개)보다 많은 타겟을 확보해 나머지 취소 — 비용 통제(discovery 1건 ~20분).
+- 24개 타겟 × n=2..16 스윕(360회, 전부 exit=0) → **14/24(58%) 위반**, 어떤 role family도
+  면제 안 됨(kv_a_proj_with_mqa 6/8, kv_b_proj 4/6, o_proj 1/4, q_proj 1/1, shared_up 1/2,
+  shared_down 1/2). round5(같은 텐서·다른 event)의 정반대 축(같은 event·다른 텐서)에서 같은
+  결론 재확인 — "단일 요인 예측력 없음"이 양방향에서 성립.
+- 360행 push+독립검증(총 840행, 480+360 정확히 일치). rel_l2 파싱 버그(단일자리 n의 공백
+  정렬로 필드 밀림) 발견+수정 후 push.
+- RESULTS.md "ROI-G Phase 2: live-mode production deployment" 섹션.
+
+## 남은 것 (2026-09-07 기준, (a) 완료 후)
+- ROI-G Phase 2 전체 계획 완료 + live 모드 실배포 1건(24타겟) 완료. 검증축 3개 모두 동일결론:
+  같은 텐서·다른 event(round5), 다른 코퍼스(round1/2/closure), 같은 event·다른 텐서(이번)
+  — 전부 "단일 요인 예측력 없음"으로 수렴.
+- 남은 선택지: (b) bisection이 실제로 트리거되는 첫 사례를 기다리기(여전히 전량 exhaustive),
+  (c) WikiText-103을 영구경로로 재배치 후 재개, (d) 여기서 종결. 사용자 확인 후 진행할 것.

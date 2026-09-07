@@ -10749,3 +10749,97 @@ wired, but has not yet had a single target to legitimately apply to. That's the 
 conservative behavior given the data -- not a bug, and not a wasted implementation, since
 it'll activate automatically the moment (if ever) some target is found clean across 2+
 corpora, without needing a human to remember to re-check.
+
+## ROI-G Phase 2: live-mode production deployment -- 24 untested combos from one real event,
+## 58% violate, no role family is immune
+
+**Goal**: apply the newly-wired live oracle to genuinely untested (role,layer) combos, not just
+re-verify a known one. This is a different axis from every prior round: rounds 1-5 all held a
+*target* fixed and varied the *event* (or corpus); this holds one *event* fixed and sweeps every
+role/layer that event actually hit -- a within-event, cross-target view that hadn't been run yet.
+
+**Corpus reality check, before any new sweep**: the WikiText-103 corpus's isolated prompt files
+were confirmed gone again (`/tmp/d4_wikitext103_short_manifest/`, wiped a second time since the
+live-oracle validation above found it empty) -- bob's `/tmp` does not reliably survive more than
+a few days, this is now the third independent hit on the same failure mode this session
+(D-gpu-4/5's note, the live-oracle validation, and this). Round 5's own `/tmp/mono_sweep/`
+artifacts (one day old at the time) are now gone too. Rather than pay to re-tokenize
+WikiText-103 (a real Phase-7-scale cost) just to unblock this round, targets were sourced from
+WikiText-2-fullext instead, whose prompt files live under `/Users/bob/d4_wikitext2_short_manifest/`
+(outside `/tmp`, survived every check this whole session) -- the durable-location fix Phase 7's
+own corpus never got. **Open item, not done here**: move WikiText-103's corpus to the same kind
+of durable path if it's going to be reused again; regenerating it from `/tmp` every time this
+comes up is the wrong long-term fix.
+
+**Finding untested candidates**: only 4 (role,layer,pos) combos existed in
+`moe_quant_sweep_results` for WikiText-2-fullext before this round (all at pos=8, from rounds
+1-4) -- out of 200 available prompt files, 196 had never been touched. Ran a plain, unrestricted
+near-tie + attribution discovery pass (no `HI_COMBOS` restriction, no sim override) against a
+handful of fresh prompt indices to find one with a real flip: p50 (pos=9/13/14/15 near-ties, no
+actual flip) came up empty in ~35s; p60 produced a REAL FLIP at pos=14 (`orig=8713
+corrected=4794`) with a rich attribution result -- **24 distinct role/layer combos individually
+reproduce the correction** on their own, spanning every role family (`kv_a_proj_with_mqa` x8,
+`kv_b_proj` x6, `o_proj` x4, `shared_up_proj`/`shared_down_proj` x2 each, `q_proj` x1,
+`shared_gate_proj` x1). A batch discovery loop queued 15 total candidate prompts, but p60's
+single-event yield already exceeded round 5's entire 12-target batch, so the remaining 13 were
+not run -- correctly scoped down rather than paying for marginal additional discovery cost (each
+unrestricted attribution discovery pass costs meaningfully more than a single-combo-restricted
+sweep test; p60's alone took roughly 20 minutes).
+
+**Sweep**: all 24 combos, n=2..16 each (360 real engine runs, same isolated single-request
+manifest + `QWEN_MOE_ATTRIB_SIM_*` override + per-target `HI_COMBOS` restriction mechanism as
+every prior round), driven by a bob-side loop script (not 360 individual local `--live` calls --
+mechanically equivalent to `quant_search_n.py`'s own live oracle, run as a shell loop for
+throughput). All 360 exit=0, no FATALs.
+
+**Result**:
+
+| target | knee | monotonic |
+|---|---|---|
+| `kv_a_proj_with_mqa` L2 | 4 | **VIOLATED** |
+| `kv_a_proj_with_mqa` L4 | 2 | **VIOLATED** |
+| `kv_a_proj_with_mqa` L5 | 2 | clean |
+| `kv_a_proj_with_mqa` L6 | 5 | **VIOLATED** |
+| `kv_a_proj_with_mqa` L7 | 2 | **VIOLATED** |
+| `kv_a_proj_with_mqa` L8 | 3 | **VIOLATED** |
+| `kv_a_proj_with_mqa` L11 | 2 | clean |
+| `kv_a_proj_with_mqa` L21 | 2 | **VIOLATED** |
+| `kv_b_proj` L5 | 3 | **VIOLATED** |
+| `kv_b_proj` L6 | 4 | clean |
+| `kv_b_proj` L8 | 2 | **VIOLATED** |
+| `kv_b_proj` L9 | 2 | **VIOLATED** |
+| `kv_b_proj` L18 | 3 | clean |
+| `kv_b_proj` L26 | 2 | **VIOLATED** |
+| `o_proj` L4 | 2 | clean |
+| `o_proj` L9 | 2 | clean |
+| `o_proj` L12 | 5 | clean |
+| `o_proj` L16 | 2 | **VIOLATED** |
+| `q_proj` L3 | 3 | **VIOLATED** |
+| `shared_down_proj` L5 | 2 | clean |
+| `shared_down_proj` L8 | 3 | **VIOLATED** |
+| `shared_gate_proj` L14 | 5 | clean |
+| `shared_up_proj` L7 | 3 | **VIOLATED** |
+| `shared_up_proj` L15 | 6 | clean |
+
+**14/24 (58%) violate, for the exact same corrected token, same margin, same event** -- only the
+target tensor changes. No role family is immune: `kv_a_proj_with_mqa` 6/8 violate, `kv_b_proj`
+4/6, `o_proj` 1/4, `q_proj` 1/1, `shared_up_proj` 1/2, `shared_down_proj` 1/2,
+`shared_gate_proj` 0/1 (n=1, not evidence of immunity). This is the within-event complement to
+round 5's within-target finding: round 5 held a target fixed and found different events produce
+different curves; this holds an event fixed and finds different targets produce different
+curves. Both point at the same conclusion from opposite directions -- **there is no stable
+single-factor predictor along either axis (target identity or event identity) considered
+alone.**
+
+**Pushed and independently verified**: 360 new rows to `moe_quant_sweep_results`
+(model=deepseek-v2-lite, corpus=wikitext-2-raw-v1-validation-short-fullext, req=0, pos=14) --
+REST count confirms 840 total (was 480, +360 exact). `rel_l2`/`eff_bpw` extraction from
+`quant_sim_n.py`'s own generation logs needed a regex fix mid-push (a naive whitespace-split
+parse silently misaligned fields for single-digit n values, e.g. `n= 2` right-padded vs `n=10`
+-- caught before pushing by requiring every row to resolve a metric or the whole push aborts,
+not by trusting a partial result).
+
+**Standing conclusion reaffirmed a third way**: exhaustive scan remains the only safe default
+for this model's arbitrary-n search; `quant_search_n.py`'s `classify()` correctly returns
+`exhaustive_required` for essentially everything tested so far, from either direction of
+cross-checking (same target/different event, same event/different target).
