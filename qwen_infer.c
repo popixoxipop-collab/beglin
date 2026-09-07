@@ -5440,6 +5440,8 @@ static double moe_neartie_correct_threshold(void) {
 // front, define later" pattern this file already uses elsewhere (e.g. moe_mla_attention_ragged()'s
 // own forward decl next to moe_forward_token()), C99+ has no implicit function declaration.
 static void moe_neartie_correct_load_attn_hi(const char *safetensors_path);
+static MoeAFTensor *st_register_moe_dense_af_q8g64_as(const char *name, const char *engine_name);  // D-gpu-6c forward decl
+static SafetensorsMulti *g_st_moe;  // D-gpu-6d forward decl (defined qwen_infer.c ~13065)
 
 // One-time (startup) tally of the actually-active attention-role bit-width distribution,
 // read straight off each MoeAFTensor's own resolved .bits field (set at load time by
@@ -8343,6 +8345,53 @@ static int run_moe_gpu_mode(int argc, char **argv) {
             }
             fprintf(stderr, "[moe gpu] GATE6 (real hi-mirror promotion): %d rebound, %d mismatched\n",
                     hi_rebound, hi_mismatch);
+
+            // D-gpu-6c: bits=8 real-data test. The hi-mirror path above only ever produces
+            // bits=16 (st_register_moe_f16_as_af, attention-only) -- st_register_moe_dense_
+            // af_q8g64_as() is a SEPARATE, already-tested function (used for dense/shared-FFN
+            // roles' int8 default elsewhere in this file) that reads the SAME already-open
+            // g_st_moe handle and returns a real q8g64 MoeAFTensor directly, no g_moe_lt_hi/
+            // combo machinery needed -- genuinely simpler than the bits=16 path, not a
+            // second bridge to build.
+            char q8_name[160], q8_ename[160];
+            int q8_test_layer = 10;
+            snprintf(q8_name, sizeof q8_name, "model.layers.%d.mlp.shared_experts.gate_proj.weight", q8_test_layer);
+            snprintf(q8_ename, sizeof q8_ename, "model.layers.%d.mlp.shared_experts.gate_proj__q8_test", q8_test_layer);
+            // D-gpu-6d: root cause of the earlier SIGSEGV -- st_register_moe_dense_af_q8g64_as()
+            // reads the shared g_st_moe handle, but moe_neartie_correct_load_attn_hi() only
+            // ever points g_st_moe at the real checkpoint (g_moe_hi_st) TEMPORARILY (save/
+            // swap/restore, qwen_infer.c ~13372-13406) and restores it to NULL (nothing else
+            // opened it in this QWEN_MOE_GPU=1 context) before returning. g_moe_hi_st itself
+            // stays open and valid -- swap to it explicitly, same pattern the existing
+            // save/restore code already uses, rather than assuming g_st_moe stays live.
+            SafetensorsMulti *saved_st_moe = g_st_moe;
+            g_st_moe = g_moe_hi_st;
+            MoeAFTensor *q8t = st_register_moe_dense_af_q8g64_as(q8_name, q8_ename);
+            g_st_moe = saved_st_moe;
+            if (q8t && q8t->ebits == NULL) {
+                int ok = mlx_gpu_bind_af(q8t->base ? q8t->base : af_blob, af_bytes, q8t->name, q8t->E, q8t->out, q8t->in, q8t->ng,
+                                          q8t->packed_off, q8t->scale_off, q8t->bias_off, q8t->bits);
+                if (ok) {
+                    float gpu_vals[8];
+                    int ncols = q8t->in < 8 ? (int)q8t->in : 8;
+                    if (mlx_gpu_dequant_probe(q8t->name, 0, 0, 0, ncols, gpu_vals)) {
+                        double max_diff = 0.0;
+                        for (int c2 = 0; c2 < ncols; c2++) {
+                            float cpu_val = moe_decode_af(af_blob, q8t, 0, 0, c2);
+                            double d = fabs((double)gpu_vals[c2] - (double)cpu_val);
+                            if (d > max_diff) max_diff = d;
+                        }
+                        fprintf(stderr, "[moe gpu] GATE6b %s (bits=%d, real q8g64 repack): max_abs_diff=%.6e over %d coords\n",
+                                q8t->name, q8t->bits, max_diff, ncols);
+                    } else {
+                        fprintf(stderr, "[moe gpu] GATE6b FAIL: dequant probe failed for %s\n", q8t->name);
+                    }
+                } else {
+                    fprintf(stderr, "[moe gpu] GATE6b FAIL: bind failed for %s (bits=%d)\n", q8t->name, q8t->bits);
+                }
+            } else {
+                fprintf(stderr, "[moe gpu] GATE6b SKIP: could not register real q8g64 test tensor\n");
+            }
         }
     }
 

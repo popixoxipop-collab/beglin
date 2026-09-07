@@ -10946,3 +10946,53 @@ is also still unverified against real promoted data (hi-mirror covers attention 
 not `switch_mlp`/shared FFN, so nothing exercises that guard here). Both remain open.
 
 No commits pushed to remote (local only, per this repo's convention).
+
+## D-gpu-6c/6d: bits=8 real-data verification -- genuinely nonzero, and why that's expected
+
+Extended Gate 6 with a second real-data path for bits=8 (the hi-mirror mechanism above only
+ever produces bits=16). `st_register_moe_dense_af_q8g64_as()` -- already-tested production code
+used elsewhere for dense/shared-FFN roles' int8 default -- reads a real tensor straight from the
+same open bf16 checkpoint and returns a genuine q8g64 `MoeAFTensor`, no new loading machinery
+needed.
+
+**A second SIGSEGV, found and fixed (D-gpu-6d)**: `st_register_moe_dense_af_q8g64_as()` reads
+the shared `g_st_moe` handle -- but `moe_neartie_correct_load_attn_hi()` only ever points
+`g_st_moe` at the real checkpoint handle (`g_moe_hi_st`) *temporarily* (an existing save/swap/
+restore block, qwen_infer.c ~13372-13406) and restores it to NULL before returning (nothing
+else opens `g_st_moe` in this `QWEN_MOE_GPU=1` context). Calling the registration function
+after that point dereferences a NULL handle. Diagnosed via the same checkpoint-print bisection
+technique as D-gpu-6b's `MOE_NL` bug -- one round trip, not guesswork -- landing on `g_st_moe`
+printing `0x0` right before the crash. Fixed by swapping `g_st_moe = g_moe_hi_st` before the
+call and restoring after, the same pattern the existing code already uses elsewhere.
+
+**Real result**: `model.layers.10.mlp.shared_experts.gate_proj__q8_test` (bits=8, real weights
+read from the actual bf16 checkpoint, dequantized via q8g64 then repacked through MLX's own
+`mx::quantize()`) bound to GPU and compared against CPU's `moe_decode_af()` on the identical
+tensor: **max_abs_diff=1.33e-04 over 8 real coordinates** -- genuinely nonzero, unlike bits=16's
+0.0.
+
+**This is expected, not a bug**: bits=4 (zero-copy passthrough) and bits=16 (dense, no
+quantization at all) both have no reason to differ from CPU. bits=8 is the one tier whose GPU
+path does a real dequant-then-MLX-requantize round trip (D-gpu-4's own documented design
+choice, made specifically because q8g64's packing wasn't verified compatible with MLX's own
+bits=8 convention) -- CPU decodes q8g64's stored scale directly, GPU derives its own scale/bias
+via `mx::quantize()`'s own min-max computation, and the two can differ by a sub-quantization-
+step rounding amount. 1.33e-4 is roughly two orders of magnitude below one int8 quantization
+step for a typical bf16 weight's dynamic range, consistent with rounding noise rather than an
+algorithmic error, though no direct scale-vs-scale comparison was done to confirm this beyond
+the order-of-magnitude argument.
+
+**Correction to D-gpu-4's own earlier record**: that section's Gate 3 "max_abs_diff=0" claim
+for a bits=8-promoted tensor was itself one of the invalid `QWEN_MOE_ROLE_BITS`-based results
+(D-gpu-6's opening paragraph) -- it was never actually comparing a real bits=8 tensor. This
+section's 1.33e-4 is the real number and should be read as superseding it.
+
+**Still open**: the FFN hot-path's `ffn_role_require_uniform` mixed-precision guard remains
+unverified against real promoted data -- exercising it requires a promoted tensor reaching
+`g_moe_lt_active`/`g_moe_lt_cur` during an actual generation pass through the 4 duplicated
+gather_qmm/gather_mm blocks, which needs bridging the FFN-role equivalent of what this section
+built for attention (the hi-mirror mechanism only populates attention roles) -- a comparable
+scope of work to D-gpu-6, not attempted this round given context budget.
+
+Regression re-confirmed unaffected (no hi-mirror/q8-test env vars: byte-identical to every
+earlier round). No commits pushed to remote yet.
