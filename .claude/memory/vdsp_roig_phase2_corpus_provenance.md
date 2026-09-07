@@ -193,9 +193,26 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
   정렬로 필드 밀림) 발견+수정 후 push.
 - RESULTS.md "ROI-G Phase 2: live-mode production deployment" 섹션.
 
-## 남은 것 (2026-09-07 기준, (a) 완료 후)
-- ROI-G Phase 2 전체 계획 완료 + live 모드 실배포 1건(24타겟) 완료. 검증축 3개 모두 동일결론:
-  같은 텐서·다른 event(round5), 다른 코퍼스(round1/2/closure), 같은 event·다른 텐서(이번)
-  — 전부 "단일 요인 예측력 없음"으로 수렴.
-- 남은 선택지: (b) bisection이 실제로 트리거되는 첫 사례를 기다리기(여전히 전량 exhaustive),
-  (c) WikiText-103을 영구경로로 재배치 후 재개, (d) 여기서 종결. 사용자 확인 후 진행할 것.
+## (b)+(c) 병행 완료 (2026-09-07)
+- **(b) bisection 최초 트리거**: 840행 전체에 classify() 돌려서 2개 코퍼스 모두 clean인
+  타겟 발견 — `kv_a_proj_with_mqa`/L11(n=2~16 전부 pass, WT103 round5 t02 + WT2 이번 배치
+  둘 다). `quant_search_n.py --live` 실제 재실행 → `mode=bisection` 처음 선택됨, **15번
+  대신 2번**만에 knee=2 확정(두 코퍼스 exhaustive 결과와 정확히 일치). push 안 함(기존
+  이벤트 재검증). → classify() 설계가 실전에서 진짜로 작동함을 증명.
+- **(c) WikiText-103 영구경로 재배치**: macstudio에 원본 Phase7 프롬프트 40개(p200~239,
+  9/2)가 `~/d4_wikitext103_short_manifest/`에 생존해있던 걸 이번에 처음 발견(이전 탐색이
+  놓쳤던 것 — 그래도 40개론 부족해서 어차피 재생성 필요했음). 새로 200개 토큰화(real
+  DeepSeek tokenizer, `datasets` validation split, non-streaming) → macstudio→bob 직접
+  전송(`bob-lan`, 로컬 경유 안 함) → `/Users/bob/d4_wikitext103_short_manifest/`(영구경로,
+  `/tmp` 아님). **버그 발견+수정**: manifest.txt가 macstudio 자기 경로(`/Users/eoe/...`)를
+  그대로 담고 있어서 bob에서 그대로 쓰면 전부 FATAL 났을 것 — sed로 `/Users/bob/...`로
+  치환 후 실제 엔진 1회 실행으로 검증(정상 로드+10토큰 생성, FATAL 없음).
+- 이번 라운드에서 새 WT103 200개 프롬프트로 flip 헌팅은 안 함(범위 밖, 의도적 보류).
+- RESULTS.md "ROI-G Phase 2: bisection triggers..." 섹션.
+
+## 남은 것 (2026-09-07 기준, (a)+(b)+(c) 전부 완료 후)
+- ROI-G Phase 2 전체 계획 + live 배포 2건(24타겟 discovery, bisection 트리거 검증) +
+  WikiText-103 영구 코퍼스 재구축까지 전부 완료. classify()/bisection_search() 설계가
+  이론에서 실전까지 검증 완료.
+- 남은 선택지: (e) 새 WT103 200개로 flip 헌팅해서 더 많은 프로덕션 데이터 쌓기, (f) 여기서
+  종결. 사용자 확인 후 진행할 것.

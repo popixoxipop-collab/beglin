@@ -10843,3 +10843,51 @@ not by trusting a partial result).
 for this model's arbitrary-n search; `quant_search_n.py`'s `classify()` correctly returns
 `exhaustive_required` for essentially everything tested so far, from either direction of
 cross-checking (same target/different event, same event/different target).
+
+## ROI-G Phase 2: bisection triggers for the first time; WikiText-103 gets a durable corpus
+
+Two follow-ups, done together: (b) find the first target where `classify()` actually returns
+`bisection` instead of `exhaustive_required`, and prove `bisection_search()` gets the right
+answer in real use, not just in `--validate`; (c) fix WikiText-103's recurring `/tmp`-wipe
+problem (hit three times this session -- D-gpu-4/5, the live-oracle validation, and the 24-target
+deployment above) by giving it a durable corpus the way WikiText-2 already has one.
+
+**(b) -- bisection triggers**: querying `classify()` against every (model,role,layer) now in
+Supabase (840 rows) found one target already clean in both tested corpora:
+`kv_a_proj_with_mqa`/L11 -- monotonic (in fact passing at every single n from 2 to 16) on both
+WikiText-103 (round 5's t02) and WikiText-2 (this session's 24-target batch above, pos=14). Ran
+`quant_search_n.py --live` against it for real, reusing the already-built WikiText-2/pos=14
+override files: `classify()` correctly picked `mode=bisection` (first time all session), and
+`bisection_search()` converged to `knee=2` in **2 real engine calls instead of the naive 15** --
+a 7.5x reduction, matching the true knee both corpora's exhaustive data already established.
+Not pushed (re-tests an existing event, no new ground truth). This is the concrete answer to
+"does the classification-gated design actually pay off, or does it only ever choose the safe
+slow path": yes, the instant a target legitimately qualifies, it does -- the mechanism was
+correct, it just needed a qualifying target to exist first.
+
+**(c) -- WikiText-103's corpus, on a durable path this time**: the search for a surviving copy
+found something the very first search this session missed -- 40 of the *original* Phase 7
+prompt files (`p200.i32`-`p239.i32`, 2026-09-02) were still sitting in
+`~/d4_wikitext103_short_manifest/` on macstudio (outside `/tmp`, why they survived) -- the
+initial "no persistent copy exists anywhere" conclusion earlier in this file was itself wrong,
+just not wrong in a way that changed what to do (regenerating was going to be needed regardless
+of those 40, since bob's own copies were still gone and 40 prompts isn't much of a corpus).
+Wrote a fresh tokenization script (`datasets.load_dataset("wikitext", "wikitext-103-raw-v1",
+split="validation")`, non-streaming per the original Phase 7 plan's own guidance, real DeepSeek
+tokenizer from `~/deepseek_tokenizer/`) and generated 200 new 9-token prompt windows
+(`p0.i32`-`p199.i32`) on macstudio, sanity-checked by decoding 3 of them back to real English
+text. Transferred macstudio -> bob directly (not relayed through this machine -- `bob-lan`,
+per this session's own established direct-trust convention) into
+`/Users/bob/d4_wikitext103_short_manifest/`, a home-directory path this time, not `/tmp`.
+
+**A real bug caught before it became a silent wrong-corpus test**: the generated `manifest.txt`
+listed macstudio's own path (`/Users/eoe/d4_wikitext103_short_manifest/...`), since the script
+had no way to know it would run somewhere else -- copied verbatim, every manifest entry would
+have pointed at a nonexistent path on bob and every prompt load would have failed with a clear
+`FATAL`, not silently misbehaved, but still needed a `sed` fix (`/Users/eoe/` ->
+`/Users/bob/`) before use. Verified end-to-end with one real engine run
+(`QWEN_MOE_NEARTIE_CORPUS=wikitext-103-raw-v1-validation-short`, `p0.i32`): loaded, ran 10
+real generated tokens, no FATAL -- the corpus is live and durable, ready for the next
+WikiText-103 round without paying regeneration cost again. No flip search was run on the new
+200 prompts this round (that's a separate, open-ended cost -- scoped out here deliberately,
+same "don't silently balloon a bounded task" discipline as the 24-target round above).
