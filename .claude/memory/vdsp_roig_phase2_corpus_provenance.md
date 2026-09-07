@@ -146,5 +146,39 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
   무관한 다른 position near-tie를 잘못 집어 "값이 오염된 것처럼" 보였음 — (req,pos) 정확히
   필터링해 재검증, 진짜 결과는 클린(round3가 겪은 override-corrupts-ground-truth류 문제 아님).
 - 상세: RESULTS.md "Step 6 round 5" 섹션. 원자료: bob `/tmp/mono_sweep/sweep_results.tsv`(180행)
-  + 개별 로그 180개, 로컬 전용(Supabase 미push, 사용자 결정 대기).
+  + 개별 로그 180개. **push 완료**(2026-09-06, 커밋 `babbc1c`) — moe_quant_sweep_results 총
+  480행(builtin 90 + wikitext-2 60 + wikitext-103 330), 독립 REST count로 확인됨. 이 메모리
+  파일의 예전 "로컬 전용/미push" 기록은 그 이후 stale이 됨(2026-09-07 재확인 시 발견 —
+  compaction으로 컨텍스트 유실된 뒤 같은 세션이 자기 자신의 이전 작업을 몰랐던 사례).
 - graphify 파이프라인 완주됨(HTML+리포트 생성 완료, 1249 노드/3239 엣지/90 커뮤니티).
+
+## Step 6 종결 + quant_search_n.py 프로덕션 배포 (2026-09-07, 같은 세션 재개 후)
+- round5가 이미 "target-tensor curve" 가설을 same-override/different-outcome으로 확정적으로
+  반증했음을 compaction 이후 재발견(위 항목). 병행으로 진행한 cross-corpus 각도(5개 target,
+  WT2 vs WT103 100% 불일치)는 round5와 같은 결론의 보완적 재확인 — 새 bob 컴퓨팅 불필요,
+  기존 DB 데이터만으로 확인. RESULTS.md에 짧은 addendum으로 정리(중복 재도출 부분은 축약).
+- `tools/quant_search_n.py`에 **live 오라클 백엔드 구현+실제 bob 라운드트립 검증 완료**:
+  `fetch_prior_points_by_corpus()`(Supabase 실측 조회) + `make_live_oracle()`(SSH로 실제
+  엔진 1회 실행, stdout의 `hit req=.. pos=.. role=.. layer=..` 라인 파싱). 검증 과정에서
+  실버그 2개 발견+수정: (1) 원격 커맨드에 `cd /Users/bob/vdsp_m4_bench` 누락 — 없어도 에러
+  안 나고 조용히 전부 fail로 보임(weights_moe/arch_config_moe.txt 상대경로 로드 실패가
+  원인). (2) WikiText-103 `/tmp/d4_wikitext103_short_manifest/`가 또 비어있어서(★bob /tmp
+  주기적 정리, D-gpu-4/5 섹션과 같은 날 별도 재현) WikiText-2 타겟(q_proj@L1, req=0/pos=8)으로
+  전환 — 이번엔 `manifest_wt2_req32.txt`(chunk_aa, 틀림) vs `manifest_wt2_req32_ac.txt`
+  (chunk_ac, 맞음)를 착각해 D-d5-27이 이미 문서화한 "req32 두 번 틀린 추측" 함정을 독립적으로
+  재현. 최종적으로 기존 known-good 값(fail@n=4만, 나머지 pass)과 정확히 일치하는 실측 재현
+  성공 — 라이브 오라클 배선 검증 완료.
+- **실전 배포 함의**: 현재 Supabase에 실측 데이터가 있는 모든 (model,role,layer)가
+  `classify()`에서 `exhaustive_required`로 분류됨(2개 코퍼스 모두 clean인 타겟이 아직 하나도
+  없음 — round5의 83% 위반율과 정합) → 지금은 항상 전수스캔만 선택. bisection 경로는 배선은
+  됐지만 아직 한 번도 실제 트리거된 적 없음 — 버그 아니라 현재 데이터의 정직한 반영.
+- 이 push는 안 함(기존 event 재검증용이라 중복행 방지 목적으로 의도적으로 skip).
+- RESULTS.md "Step 6 closure addendum" + "ROI-G Phase 2: quant_search_n.py live oracle" 섹션.
+
+## 남은 것 (2026-09-07 기준)
+- ROI-G Phase 2 원래 계획(스키마/코퍼스/탐색도구/교차검증) 전부 완료. quant_search_n.py도
+  이제 historical+live 둘 다 검증됨.
+- 남은 진짜 열린 질문은 없음 — "무엇이 위반을 예측하는가"는 round5에서 "단일 요인 없음,
+  텐서×이벤트 고유 상호작용"으로 이미 답변됨. 더 파려면: (a) live 모드로 미검증
+  role/layer 조합에 실제 배포해서 프로덕션 정밀도맵 갱신에 쓰기, (b) bisection이 실제로
+  트리거되는 첫 사례를 기다리기(현재는 전량 exhaustive) — 둘 다 사용자 확인 후 진행할 것.

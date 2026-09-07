@@ -10662,3 +10662,90 @@ the packed-word layout**
 
 **Not done this round**: bits=16/32's FFN hot-path `gather_mm` branch (see scope cut above).
 No commits pushed to remote. Local commit only, per this repo's standing convention.
+
+## Step 6 closure addendum: a cross-corpus angle on the same conclusion round 5 already reached
+
+Round 5 (above) already falsified the round 3/4 "target-tensor curve" hypothesis directly and
+more rigorously than what follows here -- same override file, byte-identical by construction
+(not by measurement), still 3 different pass/fail shapes across `shared_down_proj`/L26's three
+tested events. That is the definitive version of this finding; this addendum was written
+before re-discovering round 5 was already committed (`42f634c`/`babbc1c`, same session, this
+context just didn't carry it forward after a compaction) and turned out to mostly re-derive
+the same conclusion from a different angle -- kept short, as a complementary data point rather
+than a second closing argument.
+
+**The cross-corpus angle**: `rel_l2` (weight reconstruction error vs n) is, trivially,
+identical across corpora for a fixed (model,role,layer) -- it doesn't depend on which token is
+being predicted, only on the weight tensor itself. What varies is `pass` (does the correction
+still fire), because that depends on the interaction between `rel_l2` and the specific event's
+near-tie margin. Every (role,layer) pair tested in both WikiText-2 and WikiText-103 so far (5
+targets, all from rounds 1-4) shows the same direction of disagreement round 5 found within a
+single corpus: either the target flips clean<->violates between corpora, or violates in both
+but with a different exact failing n. `q_proj`/L1 is the cleanest single example (already in
+round 2, above): WikiText-2 fails at n=4, WikiText-103 passes at n=4, byte-identical `rel_l2`
+at that n either way. No new bob compute was needed for this -- it was already on disk.
+
+**No further action on this question** -- round 5's same-override falsification plus this
+cross-corpus consistency check both point the same direction, and round 5's own "Revised
+standing conclusion" (no single-factor predictor, exhaustive scan is the right default) already
+covers the practical implication.
+
+## ROI-G Phase 2: `quant_search_n.py` live oracle wired and validated with a real bob round-trip
+
+**WHY**: `quant_search_n.py` (Step 5, this session's earlier work) had `classify()` +
+`bisection_search()`/`exhaustive_search()` implemented and validated against 6 known targets,
+but only via a *historical* oracle (reads an already-completed sweep TSV, makes zero new
+engine calls). The module's own docstring said live wiring (real SSH calls to bob, reusing the
+same `QWEN_MOE_ATTRIB_SIM_*` override mechanism every Step 6 round already used) was "a
+natural follow-up" -- this closes that gap: `fetch_prior_points_by_corpus()` (queries
+Supabase directly for classify()'s real prior data) and `make_live_oracle()` (drives one real
+engine invocation per `test(n)` call, parses the real stdout for a `hit req=.. pos=.. role=..
+layer=..` line -- doesn't trust exit code alone).
+
+**Two real bugs found getting the first live round-trip to reproduce known ground truth**,
+both silent (no crash, no error, just a wrong-looking result) -- worth recording since either
+would have quietly produced a wrong "knee" if not caught by checking against a known answer
+first:
+
+1. **Missing `cd` into the engine's working directory.** The binary loads
+   `weights_moe/arch_config_moe.txt` via a path relative to CWD. Without `cd
+   /Users/bob/vdsp_m4_bench` first, the run doesn't error -- it just proceeds with no real
+   near-tie event ever firing, so every n in a 15-value sweep silently reports `pass=0`. First
+   attempt (target: `kv_b_proj`/L8, wikitext-103, reusing round 4's own `/private/tmp/step6b/`
+   artifacts) hit this and returned `knee=None` across the board.
+
+2. **The WikiText-103 corpus's isolated prompt files are gone.** `/tmp/d4_wikitext103_short_
+   manifest/` on bob was found emptied (directory freshly re-created today, `p*.i32` files
+   gone) -- consistent with `/tmp` being periodically cleaned on this machine (same failure
+   class the D-gpu-4/5-repack section above hit independently, same day). Switched validation
+   targets to a WikiText-2-fullext event whose artifacts live outside `/tmp`
+   (`/Users/bob/d4_wikitext2_short_manifest/`, survived) -- `q_proj`/L1, req=0/pos=8, reusing
+   `/private/tmp/step6/`'s already-built sim override files from round 2.
+
+3. **Wrong same-req manifest picked on the first retry.** Two manifests both claim to be
+   "req32" for this event: `manifest_wt2_req32.txt` (points at `p32.i32`, chunk_aa -- wrong)
+   and `manifest_wt2_req32_ac.txt` (points at `p152.i32`, chunk_ac -- correct). This is the
+   exact "two wrong guesses before the right one" trap `D-d5-27` (above) already documented
+   for this identical req32/pos8 event, hit independently a second time. The wrong manifest
+   doesn't error either -- it runs a real near-tie check at a *different* pos, which the
+   `hit req=0 pos=8 ...` needle correctly never matches, again reading as all-fail. Caught by
+   diffing the live run's own engine log against the known-good `log_q_proj_l1_..._n3.log`
+   already on disk from round 2, not by the tool reporting an error.
+
+**Result, third attempt (correct cd + correct manifest)**: 15 real, freshly-run engine calls,
+n=2..16, reproduced the exact known ground truth (fail only at n=4, pass at n=2,3,5-16) --
+confirms the live oracle is wired correctly end-to-end, via genuinely new inference, not a
+cached read. These 15 rows were **not** pushed to Supabase (this was a wiring check re-testing
+an already-recorded event; pushing would just add more duplicate rows to a table that already
+has one such duplicate for a different target -- see the round-3 `shared_down_proj`/L26 pos=9
+note above).
+
+**Practical implication for actual production use, stated plainly**: `classify()` run against
+every (model,role,layer) with real sweep data in Supabase today returns `exhaustive_required`
+for all of them -- a violation has been observed in every tested corpus for every tested
+target (this is the same 5/5-disagreement finding from the closure section above). So right
+now, live mode always chooses the full 15-value scan; the bisection fast path exists and is
+wired, but has not yet had a single target to legitimately apply to. That's the correct,
+conservative behavior given the data -- not a bug, and not a wasted implementation, since
+it'll activate automatically the moment (if ever) some target is found clean across 2+
+corpora, without needing a human to remember to re-check.
