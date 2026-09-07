@@ -97,6 +97,14 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
             void *w_ptr = (void *)(blob + packed_off);
             mx::Dtype dt = (bits == 16) ? mx::float16 : mx::float32;
             mx::array w(w_ptr, {(int)E, (int)out, (int)in}, dt, noop_deleter);
+            // D-gpu-7-fix: a name previously bound at bits=4/8 leaves a stale g_tensors
+            // entry that resolve_ffn_role() (mlx_moe.cpp) checks BEFORE g_dtensors --
+            // without erasing it here, rebinding the same name at bits=16/32 silently
+            // never takes effect for any caller that resolves by name. Found live: a
+            // real-data guard test (Gate 7, qwen_infer.c) rebound a tensor to bits=16
+            // and the mixed-precision check still read it back as quantized. A tensor
+            // must exist in exactly one of g_tensors/g_dtensors at a time.
+            g_tensors.erase(std::string(name));
             g_dtensors.insert_or_assign(std::string(name), DTensor{w, E, out, in, bits});
             g_bound_count++;
             return 1;
@@ -164,6 +172,9 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
         // insert_or_assign, not operator[]= -- QTensor holds mx::array
         // fields with no default constructor, so operator[]'s implicit
         // default-then-assign doesn't compile.
+        // D-gpu-7-fix: symmetric with the bits=16/32 branch's own erase above -- a name
+        // previously bound dense must not leave a stale g_dtensors entry either.
+        g_dtensors.erase(std::string(name));
         g_tensors.insert_or_assign(
             std::string(name),
             QTensor{w, scales, biases, E, out, in, ng, bits});
@@ -1130,6 +1141,28 @@ static void ffn_role_require_uniform(const FfnRoleRef &g, const FfnRoleRef &u, c
     if (g.is_dense != u.is_dense || g.is_dense != d.is_dense) {
         throw std::runtime_error(
             std::string("mixed dense/quantized gate/up/down not supported at ") + layer_desc);
+    }
+}
+
+// D-gpu-7: direct test hook for ffn_role_require_uniform()'s guard logic, callable from
+// qwen_infer.c without needing a full layer-step/generation harness (MLA/GQA config, rope
+// tables, host input buffers) just to exercise a 3-way boolean comparison. Returns 1 if the
+// three named, already-bound tensors were accepted as uniform (no throw), 0 if the guard
+// correctly refused a mixed dense/quantized triple. Returns -1 if any name isn't bound at all
+// (a test-setup error, not a guard result).
+int mlx_gpu_test_ffn_uniform(const char *gate_name, const char *up_name, const char *down_name) {
+    try {
+        FfnRoleRef g = resolve_ffn_role(gate_name);
+        FfnRoleRef u = resolve_ffn_role(up_name);
+        FfnRoleRef d = resolve_ffn_role(down_name);
+        ffn_role_require_uniform(g, u, d, "mlx_gpu_test_ffn_uniform");
+        return 1;
+    } catch (const std::out_of_range &) {
+        return -1;
+    } catch (const std::runtime_error &) {
+        return 0;
+    } catch (...) {
+        return -1;
     }
 }
 

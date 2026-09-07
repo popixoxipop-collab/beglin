@@ -5442,6 +5442,7 @@ static double moe_neartie_correct_threshold(void) {
 static void moe_neartie_correct_load_attn_hi(const char *safetensors_path);
 static MoeAFTensor *st_register_moe_dense_af_q8g64_as(const char *name, const char *engine_name);  // D-gpu-6c forward decl
 static SafetensorsMulti *g_st_moe;  // D-gpu-6d forward decl (defined qwen_infer.c ~13065)
+static MoeAFTensor *st_register_moe_experts_f16_as_af(const char *name_pattern, int layer, int E, const char *engine_name);  // D-gpu-7 forward decl
 
 // One-time (startup) tally of the actually-active attention-role bit-width distribution,
 // read straight off each MoeAFTensor's own resolved .bits field (set at load time by
@@ -8289,8 +8290,9 @@ static int run_moe_gpu_mode(int argc, char **argv) {
             snprintf(cfg_path, sizeof cfg_path, "%s/arch_config_moe.txt", moe_dir);
             MOE_NL = (int)moe_cfg_get(cfg_path, "NL");
             MOE_ATTN_KIND = (int)moe_cfg_get_opt(cfg_path, "ATTN_KIND", (double)MOE_ATTN_MLA);
-            fprintf(stderr, "[moe gpu] GATE6: MOE_NL=%d MOE_ATTN_KIND=%d (resolved from %s)\n",
-                    MOE_NL, MOE_ATTN_KIND, cfg_path);
+            MOE_N_EXPERTS = (int)moe_cfg_get(cfg_path, "N_EXPERTS");  // D-gpu-7: same class of gap as MOE_NL -- Gate 7 needs a real E for st_register_moe_experts_f16_as_af()
+            fprintf(stderr, "[moe gpu] GATE6: MOE_NL=%d MOE_ATTN_KIND=%d MOE_N_EXPERTS=%d (resolved from %s)\n",
+                    MOE_NL, MOE_ATTN_KIND, MOE_N_EXPERTS, cfg_path);
 
             const char *hi_combos = getenv("QWEN_MOE_NEARTIE_HI_COMBOS");
             if (hi_combos && hi_combos[0]) {
@@ -8391,6 +8393,63 @@ static int run_moe_gpu_mode(int argc, char **argv) {
                 }
             } else {
                 fprintf(stderr, "[moe gpu] GATE6b SKIP: could not register real q8g64 test tensor\n");
+            }
+
+            // D-gpu-7: real-data test of the FFN hot path's mixed dense/quantized guard
+            // (ffn_role_require_uniform in mlx_moe.cpp). Registers real routed-expert
+            // (switch_mlp) tensors at bits=16 -- st_register_moe_experts_f16_as_af(), the
+            // E=64 sibling of the E=1 functions used above, same already-open g_moe_hi_st
+            // checkpoint -- and rebinds them UNDER THEIR PRODUCTION ENGINE NAMES (no test
+            // suffix), so mlx_gpu_test_ffn_uniform()'s resolve_ffn_role() lookups find the
+            // promoted version exactly as the real FFN hot path would.
+            {
+                int ffn_test_layer = 12;
+                char en_gate[160], en_up[160], en_down[160];
+                snprintf(en_gate, sizeof en_gate, "model.layers.%d.mlp.switch_mlp.gate_proj", ffn_test_layer);
+                snprintf(en_up, sizeof en_up, "model.layers.%d.mlp.switch_mlp.up_proj", ffn_test_layer);
+                snprintf(en_down, sizeof en_down, "model.layers.%d.mlp.switch_mlp.down_proj", ffn_test_layer);
+
+                SafetensorsMulti *saved2 = g_st_moe;
+                g_st_moe = g_moe_hi_st;
+                MoeAFTensor *eg = st_register_moe_experts_f16_as_af(
+                    "model.layers.%d.mlp.experts.%d.gate_proj.weight", ffn_test_layer, MOE_N_EXPERTS, en_gate);
+                g_st_moe = saved2;
+
+                if (eg) {
+                    int ok_g = mlx_gpu_bind_af(eg->base ? eg->base : af_blob, af_bytes, eg->name, eg->E, eg->out, eg->in, eg->ng,
+                                                eg->packed_off, eg->scale_off, eg->bias_off, eg->bits);
+                    fprintf(stderr, "[moe gpu] GATE7 prep: rebound %s (bits=%d) under production name: %s\n",
+                            eg->name, eg->bits, ok_g ? "ok" : "FAILED");
+
+                    if (ok_g) {
+                        // Case A: gate promoted to bits=16, up/down still at base bits=4 --
+                        // must be refused.
+                        int r_mixed = mlx_gpu_test_ffn_uniform(en_gate, en_up, en_down);
+                        fprintf(stderr, "[moe gpu] GATE7a (mixed gate=16/up=4/down=4): mlx_gpu_test_ffn_uniform=%d (expect 0)\n", r_mixed);
+
+                        // Case B: promote up/down to bits=16 too -- now uniform, must be accepted.
+                        SafetensorsMulti *saved3 = g_st_moe;
+                        g_st_moe = g_moe_hi_st;
+                        MoeAFTensor *eu = st_register_moe_experts_f16_as_af(
+                            "model.layers.%d.mlp.experts.%d.up_proj.weight", ffn_test_layer, MOE_N_EXPERTS, en_up);
+                        MoeAFTensor *ed = st_register_moe_experts_f16_as_af(
+                            "model.layers.%d.mlp.experts.%d.down_proj.weight", ffn_test_layer, MOE_N_EXPERTS, en_down);
+                        g_st_moe = saved3;
+                        int ok_u = eu && mlx_gpu_bind_af(eu->base ? eu->base : af_blob, af_bytes, eu->name, eu->E, eu->out, eu->in, eu->ng,
+                                                          eu->packed_off, eu->scale_off, eu->bias_off, eu->bits);
+                        int ok_d = ed && mlx_gpu_bind_af(ed->base ? ed->base : af_blob, af_bytes, ed->name, ed->E, ed->out, ed->in, ed->ng,
+                                                          ed->packed_off, ed->scale_off, ed->bias_off, ed->bits);
+                        if (ok_u && ok_d) {
+                            int r_uniform = mlx_gpu_test_ffn_uniform(en_gate, en_up, en_down);
+                            fprintf(stderr, "[moe gpu] GATE7b (uniform gate=16/up=16/down=16): mlx_gpu_test_ffn_uniform=%d (expect 1)\n", r_uniform);
+                        } else {
+                            fprintf(stderr, "[moe gpu] GATE7b SKIP: up/down rebind failed (up=%s down=%s)\n",
+                                    ok_u ? "ok" : "FAILED", ok_d ? "ok" : "FAILED");
+                        }
+                    }
+                } else {
+                    fprintf(stderr, "[moe gpu] GATE7 SKIP: could not register real bits=16 expert tensor\n");
+                }
             }
         }
     }

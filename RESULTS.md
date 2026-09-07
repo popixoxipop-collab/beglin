@@ -10996,3 +10996,43 @@ scope of work to D-gpu-6, not attempted this round given context budget.
 
 Regression re-confirmed unaffected (no hi-mirror/q8-test env vars: byte-identical to every
 earlier round). No commits pushed to remote yet.
+
+## D-gpu-7: FFN mixed-precision guard verified against real data -- and a real cross-map bug found+fixed
+
+Added `mlx_gpu_test_ffn_uniform()` (mlx_moe.h/mlx_moe.cpp): a direct test hook for
+`ffn_role_require_uniform()` that resolves three already-bound tensor names and reports whether
+they'd be accepted as a uniform gate/up/down triple, without needing a full layer-step/
+generation harness (MLA config, rope tables, host input buffers). Registered a real routed-
+expert tensor (`switch_mlp.gate_proj`, layer 12, E=64) at bits=16 via
+`st_register_moe_experts_f16_as_af()` (already-tested production code, the E=64 sibling of the
+E=1 functions used above) and rebound it **under its production engine name** (no test suffix),
+so `resolve_ffn_role()` finds it exactly as the real FFN hot path would.
+
+**A third real bug, same class as D-gpu-6b**: `MOE_N_EXPERTS` was also never set in
+`run_moe_gpu_mode()`'s context (`st_register_moe_experts_f16_as_af()` received `E=0`, and
+`mlx_gpu_bind_af`'s own `E <= 0` check silently rejected the bind). Added to the same
+`arch_config_moe.txt` resolution block as `MOE_NL`/`MOE_ATTN_KIND`.
+
+**A fourth real bug, found by the test actually being correct enough to catch it**: with binding
+fixed, Gate 7a (gate promoted to bits=16, up/down left at base bits=4 -- a genuine mismatch)
+still reported "uniform" (accepted) instead of refusing. Root cause: `mlx_gpu_bind_af()`'s
+bits=16/32 branch inserted into `g_dtensors` but never erased the tensor's *existing* bits=4/8
+entry in `g_tensors` -- both maps held an entry under the same name, and `resolve_ffn_role()`
+checks `g_tensors` first, so the stale quantized entry always won regardless of what was
+rebound. Fixed both directions (bits=16/32 branch now erases from `g_tensors`, bits=4/8 branch
+now erases from `g_dtensors`) so a name exists in exactly one map at a time. **This bug would
+have silently broken any real future promotion path that rebinds an already-bound tensor** --
+found only because Gate 7 checked the guard's actual behavior, not just that binding succeeded.
+
+**Real result, after both fixes**:
+```
+GATE7a (mixed gate=16/up=4/down=4):    mlx_gpu_test_ffn_uniform=0  (expect 0)  -- correctly refused
+GATE7b (uniform gate=16/up=16/down=16): mlx_gpu_test_ffn_uniform=1  (expect 1)  -- correctly accepted
+```
+
+Regression re-confirmed unaffected. All three items flagged as open in D-gpu-6 (bits=8 real
+data, bits=16 real data, FFN mixed guard) are now genuinely verified -- this closes the GPU
+mixed-precision work opened by the original "does the GPU path support mixed precision"
+question. Total this arc: 4 real bugs found and fixed (`t->base` ignored at 18 call sites,
+`MOE_NL`/`MOE_ATTN_KIND` unset, `MOE_N_EXPERTS` unset, stale cross-map entries on rebind), none
+of them hypothetical -- each reproduced live and confirmed fixed before moving to the next.

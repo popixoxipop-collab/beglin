@@ -251,6 +251,13 @@ int mlx_gpu_gqa_cbatch_layer_step_lazy(int l, int A, const int *slot, const int 
                                         const float *w_knorm, const float *w_gate);
 int mlx_gpu_gqa_cbatch_forward_finalize(const float *w_finalnorm, float *logits_out);
 
+// D-gpu-7: test hook for the FFN hot path's mixed dense/quantized precision guard
+// (ffn_role_require_uniform() in mlx_moe.cpp) -- lets a caller check whether three already-
+// bound tensor names (gate/up/down) would be accepted as a uniform triple, without needing a
+// full layer-step/generation call. Returns 1 (uniform, accepted), 0 (mixed, guard refused),
+// or -1 (a name isn't bound at all -- a test-setup error, not a guard result).
+int mlx_gpu_test_ffn_uniform(const char *gate_name, const char *up_name, const char *down_name);
+
 #ifdef __cplusplus
 }
 #endif
