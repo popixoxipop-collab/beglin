@@ -10891,3 +10891,58 @@ real generated tokens, no FATAL -- the corpus is live and durable, ready for the
 WikiText-103 round without paying regeneration cost again. No flip search was run on the new
 200 prompts this round (that's a separate, open-ended cost -- scoped out here deliberately,
 same "don't silently balloon a bounded task" discipline as the 24-target round above).
+
+## D-gpu-6: the bits=8/16 "verification" earlier this round was invalid -- real hi-mirror bridge built, genuinely verified
+
+**What was wrong**: every "promoted precision" GPU test earlier this round (D-gpu-4/D-gpu-5 above)
+used `QWEN_MOE_ROLE_BITS`, which turned out to reach neither `run_moe_gpu_mode()`/
+`run_moe_gpu_generate_gate()` (the static AF-blob path, whose `layout_af.txt` has no bits
+column and is loaded uniformly at bits=4) nor `run_moe_cbatch_verify_mode()` (CPU serving) --
+`moe_load_role_bits()` has exactly one caller, `run_moe_safetensors_verify_mode()`, which never
+binds to GPU at all. Every earlier "CPU=GPU token match at bits=8" result was comparing bits=4
+against itself. Caught by the user asking directly whether the tests were real; confirmed via a
+temp bits-histogram diagnostic (`4=269 8=0 16=0 32=0` regardless of any `QWEN_MOE_ROLE_BITS`
+file).
+
+**The real mechanism**: CPU serving's actual mixed-precision path is the hi-mirror
+architecture -- `g_moe_lt_hi[]`, populated by `moe_neartie_correct_load_attn_hi()` from a real
+bf16 safetensors checkpoint (`QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS`), consumed via
+`g_moe_lt_active`/`g_moe_lt_cur` pointer-swap. It produces genuine `MoeAFTensor`s (same type
+GPU already binds) at bits=16, but with `packed_off` relative to a **per-tensor `t->base`
+pointer**, not the shared `af_blob` -- all 18 existing `mlx_gpu_bind_af()` call sites ignored
+`t->base` entirely.
+
+**Fixes** (D-gpu-6a/6b):
+- All 18 call sites now pass `t->base ? t->base : af_blob` (matches the CPU-side idiom already
+  used in `moe_decode_af()` etc.).
+- New Gate 6 in `run_moe_gpu_mode()`: opt-in (same `QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS` +
+  `QWEN_MOE_NEARTIE_HI_COMBOS` env vars CPU correction already uses), reuses
+  `moe_neartie_correct_load_attn_hi()`/`moe_resolve_layer_tensors_hi()` verbatim rather than
+  writing new loading/selection code, then rebinds each populated hi tensor to GPU under its
+  own name (`<tensor>__neartie_hi`, distinct from the base binding -- not an overwrite) and
+  compares GPU dequant against CPU's `moe_decode_af()` on the same real tensor.
+- **A second real bug found while wiring Gate 6**: `run_moe_gpu_mode()` never sets
+  `MOE_NL`/`MOE_ATTN_KIND` (Gate 2-5 only ever walk the flat `g_moe_af[]` array and never
+  needed them) -- `QWEN_MOE_NEARTIE_HI_COMBOS`' bounds check (`layer >= MOE_NL`) silently
+  discarded every combo entry as "out of range" against `MOE_NL=0`, with no error. Fixed by
+  resolving both from `arch_config_moe.txt` (same file `moe_dir` already points at) right
+  before Gate 6 uses them. Diagnosed via temp instrumentation (a bits histogram, a
+  combo-parse trace) rather than by inspection -- confirmed `script -q` (pseudo-TTY) made no
+  difference, ruling out the stderr-buffering trap this project has hit before on this exact
+  machine.
+
+**Real result** (bob, `QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS=<real DeepSeek-V2-Lite bf16
+checkpoint>`, `QWEN_MOE_NEARTIE_HI_COMBOS` selecting `q_proj 5`): `model.layers.5.self_attn.
+q_proj__neartie_hi` (bits=16, real weights dequantized from the actual bf16 checkpoint, not a
+base-vs-base comparison) bound to GPU and compared against CPU's own decode of the identical
+tensor: **max_abs_diff=0.0 over 8 real coordinates**. Baseline regression (no hi-mirror env
+vars) re-confirmed unaffected -- byte-identical to every earlier round's numbers.
+
+**Honest scope note**: this verifies bits=16 dense binding+dequant against real production
+data. bits=8's *repack* path (D-gpu-4, the `mx::quantize()`-based q8g64 dequant+repack) has
+no equivalent real-promoted-data test yet -- the hi-mirror mechanism only produces bits=16
+attention mirrors today, not bits=8. The FFN hot-path `ffn_role_require_uniform` mixed-guard
+is also still unverified against real promoted data (hi-mirror covers attention roles only,
+not `switch_mlp`/shared FFN, so nothing exercises that guard here). Both remain open.
+
+No commits pushed to remote (local only, per this repo's convention).

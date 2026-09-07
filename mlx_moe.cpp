@@ -1100,6 +1100,57 @@ static void ensure_fused_kv_init() {
     g_fused_kv_inited_B = B;
 }
 
+// D-gpu-5-hotpath: resolves an FFN role name to either its quantized (QTensor) or
+// dense (DTensor) binding -- the routed-FFN hot-path blocks below need to pick
+// gather_qmm vs gather_mm per (gate,up,down) triple, and this is the single lookup
+// point both branches share instead of duplicating g_tensors/g_dtensors probing.
+struct FfnRoleRef {
+    bool is_dense;
+    QTensor *q;
+    DTensor *d;
+};
+static FfnRoleRef resolve_ffn_role(const char *name) {
+    auto qit = g_tensors.find(name);
+    if (qit != g_tensors.end()) return FfnRoleRef{false, &qit->second, nullptr};
+    auto dit = g_dtensors.find(name);
+    if (dit != g_dtensors.end()) return FfnRoleRef{true, nullptr, &dit->second};
+    throw std::out_of_range(std::string("resolve_ffn_role: tensor not bound: ") + name);
+}
+// D-gpu-5-hotpath: gate/up/down promoted to DIFFERENT tiers (e.g. gate at bits=16,
+// up/down still int4) is a real config QWEN_MOE_ROLE_BITS can express per-role, but
+// mixing gather_qmm and gather_mm outputs within one gate*up*down composition isn't
+// implemented -- refuse loudly (caught by this function's own outer try/catch,
+// same "refusal over silent mis-decoding" principle as mlx_gpu_bind_af's bits gate)
+// rather than silently computing something. Routed-expert precision promotion has
+// never shown a measured accuracy effect in this project (ROADMAP D-roadmap-2 Track
+// A/B, confirmed independently multiple times) -- this case is expected to be rare
+// in practice, not a gap anyone is currently blocked on.
+static void ffn_role_require_uniform(const FfnRoleRef &g, const FfnRoleRef &u, const FfnRoleRef &d,
+                                      const char *layer_desc) {
+    if (g.is_dense != u.is_dense || g.is_dense != d.is_dense) {
+        throw std::runtime_error(
+            std::string("mixed dense/quantized gate/up/down not supported at ") + layer_desc);
+    }
+}
+
+// D-gpu-5-hotpath: one "selected matmul" that dispatches to gather_qmm (quantized,
+// bits=4/8) or gather_mm (dense, bits=16/32) depending on which map the role was
+// bound into -- factors the branch out so the 4 duplicated FFN hot-path blocks below
+// each call one line instead of carrying two parallel gather_qmm/gather_mm copies.
+// gather_mm has no transpose flag (unlike gather_qmm) -- pre-transposing the last two
+// axes per-expert reproduces the same x @ w^T semantics gather_qmm's transpose=true
+// gives, matching mlx_gpu_matvec_probe's own dense branch (mx::transpose(w_e)).
+static mx::array ffn_gather(const FfnRoleRef &t, const mx::array &x,
+                             const std::optional<mx::array> &lhs_indices,
+                             const mx::array &rhs_indices, bool transpose, bool sorted) {
+    if (t.is_dense) {
+        mx::array w = transpose ? mx::transpose(t.d->w, std::vector<int>{0, 2, 1}) : t.d->w;
+        return mx::gather_mm(x, w, lhs_indices, rhs_indices, sorted);
+    }
+    return mx::gather_qmm(x, t.q->w, t.q->scales, t.q->biases, lhs_indices, rhs_indices,
+                           transpose, g_layer_group, t.q->bits, "affine", sorted);
+}
+
 static mx::array wrap_host_f32(const float *p, std::initializer_list<int> shape) {
     return mx::array((void *)p, mx::Shape(shape), mx::float32, noop_deleter);
 }
@@ -1275,11 +1326,12 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
             top_wgt = moe_topk_renorm_rows(top_wgt);                                 // D-d5-3
 
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
-            QTensor &tg = g_tensors.at(nm);
+            FfnRoleRef tg = resolve_ffn_role(nm);
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.up_proj", l);
-            QTensor &tu = g_tensors.at(nm);
+            FfnRoleRef tu = resolve_ffn_role(nm);
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.down_proj", l);
-            QTensor &td = g_tensors.at(nm);
+            FfnRoleRef td = resolve_ffn_role(nm);
+            ffn_role_require_uniform(tg, tu, td, nm);
 
             std::optional<mx::array> down_flat_opt;
             if ((long)B * TOPK >= g_gpu_sort_threshold) {
@@ -1300,13 +1352,10 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
                 mx::array x_sorted = mx::take(x_flat3, row_sel, 0);      // {B*TOPK,1,HIDDEN}
                 mx::array idx_sorted = mx::take(flat_idx, order);        // {B*TOPK}
 
-                mx::array gate_all_s = mx::gather_qmm(x_sorted, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, tg.bits, "affine", true);
-                mx::array up_all_s = mx::gather_qmm(x_sorted, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                     idx_sorted, true, g_layer_group, tu.bits, "affine", true);
+                mx::array gate_all_s = ffn_gather(tg, x_sorted, std::nullopt, idx_sorted, true, true);
+                mx::array up_all_s = ffn_gather(tu, x_sorted, std::nullopt, idx_sorted, true, true);
                 mx::array swiglu_3d_s = mx::reshape(lazy_silu(gate_all_s) * up_all_s, {B * TOPK, 1, IM});
-                mx::array down_all_s = mx::gather_qmm(swiglu_3d_s, td.w, td.scales, td.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, td.bits, "affine", true);
+                mx::array down_all_s = ffn_gather(td, swiglu_3d_s, std::nullopt, idx_sorted, true, true);
                 mx::array down_flat_s = mx::reshape(down_all_s, {B * TOPK, HIDDEN});
                 mx::array down_unsorted = mx::take(down_flat_s, inv_order, 0);   // scatter-unsort
                 down_flat_opt = mx::reshape(down_unsorted, {B, TOPK, HIDDEN});
@@ -1322,10 +1371,8 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
                 // happened to look identical to correct pairing when there is only one
                 // possible pairing -- it was never actually being exercised at B=1.
                 mx::array h2_expanded = mx::expand_dims(h2, std::vector<int>{-2, -3});   // {B,1,1,HIDDEN}
-                mx::array gate_all = mx::gather_qmm(h2_expanded, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                     top_idx, true, g_layer_group, tg.bits, "affine", false);
-                mx::array up_all = mx::gather_qmm(h2_expanded, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                   top_idx, true, g_layer_group, tu.bits, "affine", false);
+                mx::array gate_all = ffn_gather(tg, h2_expanded, std::nullopt, top_idx, true, false);
+                mx::array up_all = ffn_gather(tu, h2_expanded, std::nullopt, top_idx, true, false);
                 // switch_down: B*TOPK rows, each already belonging to its OWN selected
                 // expert (unlike gate/up above, which share one h2 row per batch entry across
                 // its TOPK experts) -- flatten to {B*TOPK,1,IM} and omit lhs_indices entirely,
@@ -1339,8 +1386,7 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
                 // consumption of an already-quantized weight, not a new requantization.)
                 mx::array swiglu_3d = mx::reshape(lazy_silu(gate_all) * up_all, {B * TOPK, 1, IM});
                 mx::array top_idx_1d = mx::reshape(top_idx, {B * TOPK});
-                mx::array down_all = mx::gather_qmm(swiglu_3d, td.w, td.scales, td.biases, std::nullopt,
-                                                     top_idx_1d, true, g_layer_group, td.bits, "affine", false);
+                mx::array down_all = ffn_gather(td, swiglu_3d, std::nullopt, top_idx_1d, true, false);
                 down_flat_opt = mx::reshape(down_all, {B, TOPK, HIDDEN});
             }
             mx::array down_flat = *down_flat_opt;
@@ -1610,11 +1656,12 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
             top_wgt = moe_topk_renorm_rows(top_wgt);                                 // D-d5-3
 
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
-            QTensor &tg = g_tensors.at(nm);
+            FfnRoleRef tg = resolve_ffn_role(nm);
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.up_proj", l);
-            QTensor &tu = g_tensors.at(nm);
+            FfnRoleRef tu = resolve_ffn_role(nm);
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.down_proj", l);
-            QTensor &td = g_tensors.at(nm);
+            FfnRoleRef td = resolve_ffn_role(nm);
+            ffn_role_require_uniform(tg, tu, td, nm);
 
             std::optional<mx::array> down_flat_opt;
             if ((long)A * TOPK >= g_gpu_sort_threshold) {
@@ -1629,26 +1676,20 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
                 mx::array x_sorted = mx::take(x_flat3, row_sel, 0);      // {A*TOPK,1,HIDDEN}
                 mx::array idx_sorted = mx::take(flat_idx, order2);       // {A*TOPK}
 
-                mx::array gate_all_s = mx::gather_qmm(x_sorted, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, tg.bits, "affine", true);
-                mx::array up_all_s = mx::gather_qmm(x_sorted, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                     idx_sorted, true, g_layer_group, tu.bits, "affine", true);
+                mx::array gate_all_s = ffn_gather(tg, x_sorted, std::nullopt, idx_sorted, true, true);
+                mx::array up_all_s = ffn_gather(tu, x_sorted, std::nullopt, idx_sorted, true, true);
                 mx::array swiglu_3d_s = mx::reshape(lazy_silu(gate_all_s) * up_all_s, {A * TOPK, 1, IM});
-                mx::array down_all_s = mx::gather_qmm(swiglu_3d_s, td.w, td.scales, td.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, td.bits, "affine", true);
+                mx::array down_all_s = ffn_gather(td, swiglu_3d_s, std::nullopt, idx_sorted, true, true);
                 mx::array down_flat_s = mx::reshape(down_all_s, {A * TOPK, HIDDEN});
                 mx::array down_unsorted = mx::take(down_flat_s, inv_order, 0);   // scatter-unsort
                 down_flat_opt = mx::reshape(down_unsorted, {A, TOPK, HIDDEN});
             } else {
                 mx::array h2_expanded = mx::expand_dims(h2, std::vector<int>{-2, -3});   // {A,1,1,HIDDEN}
-                mx::array gate_all = mx::gather_qmm(h2_expanded, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                     top_idx, true, g_layer_group, tg.bits, "affine", false);
-                mx::array up_all = mx::gather_qmm(h2_expanded, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                   top_idx, true, g_layer_group, tu.bits, "affine", false);
+                mx::array gate_all = ffn_gather(tg, h2_expanded, std::nullopt, top_idx, true, false);
+                mx::array up_all = ffn_gather(tu, h2_expanded, std::nullopt, top_idx, true, false);
                 mx::array swiglu_3d = mx::reshape(lazy_silu(gate_all) * up_all, {A * TOPK, 1, IM});
                 mx::array top_idx_1d = mx::reshape(top_idx, {A * TOPK});
-                mx::array down_all = mx::gather_qmm(swiglu_3d, td.w, td.scales, td.biases, std::nullopt,
-                                                     top_idx_1d, true, g_layer_group, td.bits, "affine", false);
+                mx::array down_all = ffn_gather(td, swiglu_3d, std::nullopt, top_idx_1d, true, false);
                 down_flat_opt = mx::reshape(down_all, {A, TOPK, HIDDEN});
             }
             mx::array down_flat = *down_flat_opt;
@@ -1854,11 +1895,12 @@ int mlx_gpu_gqa_layer_step_lazy(int l, int pos, int is_dense,
             top_wgt = moe_topk_renorm_rows(top_wgt);                                 // D-d5-3
 
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
-            QTensor &tg = g_tensors.at(nm);
+            FfnRoleRef tg = resolve_ffn_role(nm);
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.up_proj", l);
-            QTensor &tu = g_tensors.at(nm);
+            FfnRoleRef tu = resolve_ffn_role(nm);
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.down_proj", l);
-            QTensor &td = g_tensors.at(nm);
+            FfnRoleRef td = resolve_ffn_role(nm);
+            ffn_role_require_uniform(tg, tu, td, nm);
 
             std::optional<mx::array> down_flat_opt;
             if ((long)B * TOPK >= g_gpu_sort_threshold) {
@@ -1871,26 +1913,20 @@ int mlx_gpu_gqa_layer_step_lazy(int l, int pos, int is_dense,
                 mx::array x_sorted = mx::take(x_flat3, row_sel, 0);      // {B*TOPK,1,HIDDEN}
                 mx::array idx_sorted = mx::take(flat_idx, order2);       // {B*TOPK}
 
-                mx::array gate_all_s = mx::gather_qmm(x_sorted, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, tg.bits, "affine", true);
-                mx::array up_all_s = mx::gather_qmm(x_sorted, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                     idx_sorted, true, g_layer_group, tu.bits, "affine", true);
+                mx::array gate_all_s = ffn_gather(tg, x_sorted, std::nullopt, idx_sorted, true, true);
+                mx::array up_all_s = ffn_gather(tu, x_sorted, std::nullopt, idx_sorted, true, true);
                 mx::array swiglu_3d_s = mx::reshape(lazy_silu(gate_all_s) * up_all_s, {B * TOPK, 1, IM});
-                mx::array down_all_s = mx::gather_qmm(swiglu_3d_s, td.w, td.scales, td.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, td.bits, "affine", true);
+                mx::array down_all_s = ffn_gather(td, swiglu_3d_s, std::nullopt, idx_sorted, true, true);
                 mx::array down_flat_s = mx::reshape(down_all_s, {B * TOPK, HIDDEN});
                 mx::array down_unsorted = mx::take(down_flat_s, inv_order, 0);
                 down_flat_opt = mx::reshape(down_unsorted, {B, TOPK, HIDDEN});
             } else {
                 mx::array h2_expanded = mx::expand_dims(h2, std::vector<int>{-2, -3});   // {B,1,1,HIDDEN}
-                mx::array gate_all = mx::gather_qmm(h2_expanded, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                     top_idx, true, g_layer_group, tg.bits, "affine", false);
-                mx::array up_all = mx::gather_qmm(h2_expanded, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                   top_idx, true, g_layer_group, tu.bits, "affine", false);
+                mx::array gate_all = ffn_gather(tg, h2_expanded, std::nullopt, top_idx, true, false);
+                mx::array up_all = ffn_gather(tu, h2_expanded, std::nullopt, top_idx, true, false);
                 mx::array swiglu_3d = mx::reshape(lazy_silu(gate_all) * up_all, {B * TOPK, 1, IM});
                 mx::array top_idx_1d = mx::reshape(top_idx, {B * TOPK});
-                mx::array down_all = mx::gather_qmm(swiglu_3d, td.w, td.scales, td.biases, std::nullopt,
-                                                     top_idx_1d, true, g_layer_group, td.bits, "affine", false);
+                mx::array down_all = ffn_gather(td, swiglu_3d, std::nullopt, top_idx_1d, true, false);
                 down_flat_opt = mx::reshape(down_all, {B, TOPK, HIDDEN});
             }
             mx::array down_flat = *down_flat_opt;
@@ -2116,11 +2152,12 @@ int mlx_gpu_gqa_cbatch_layer_step_lazy(int l, int A, const int *slot, const int 
             top_wgt = moe_topk_renorm_rows(top_wgt);                                 // D-d5-3
 
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.gate_proj", l);
-            QTensor &tg = g_tensors.at(nm);
+            FfnRoleRef tg = resolve_ffn_role(nm);
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.up_proj", l);
-            QTensor &tu = g_tensors.at(nm);
+            FfnRoleRef tu = resolve_ffn_role(nm);
             snprintf(nm, sizeof nm, "model.layers.%d.mlp.switch_mlp.down_proj", l);
-            QTensor &td = g_tensors.at(nm);
+            FfnRoleRef td = resolve_ffn_role(nm);
+            ffn_role_require_uniform(tg, tu, td, nm);
 
             std::optional<mx::array> down_flat_opt;
             if ((long)B * TOPK >= g_gpu_sort_threshold) {
@@ -2133,26 +2170,20 @@ int mlx_gpu_gqa_cbatch_layer_step_lazy(int l, int A, const int *slot, const int 
                 mx::array x_sorted = mx::take(x_flat3, row_sel, 0);      // {B*TOPK,1,HIDDEN}
                 mx::array idx_sorted = mx::take(flat_idx, order2);       // {B*TOPK}
 
-                mx::array gate_all_s = mx::gather_qmm(x_sorted, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, tg.bits, "affine", true);
-                mx::array up_all_s = mx::gather_qmm(x_sorted, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                     idx_sorted, true, g_layer_group, tu.bits, "affine", true);
+                mx::array gate_all_s = ffn_gather(tg, x_sorted, std::nullopt, idx_sorted, true, true);
+                mx::array up_all_s = ffn_gather(tu, x_sorted, std::nullopt, idx_sorted, true, true);
                 mx::array swiglu_3d_s = mx::reshape(lazy_silu(gate_all_s) * up_all_s, {B * TOPK, 1, IM});
-                mx::array down_all_s = mx::gather_qmm(swiglu_3d_s, td.w, td.scales, td.biases, std::nullopt,
-                                                       idx_sorted, true, g_layer_group, td.bits, "affine", true);
+                mx::array down_all_s = ffn_gather(td, swiglu_3d_s, std::nullopt, idx_sorted, true, true);
                 mx::array down_flat_s = mx::reshape(down_all_s, {B * TOPK, HIDDEN});
                 mx::array down_unsorted = mx::take(down_flat_s, inv_order, 0);
                 down_flat_opt = mx::reshape(down_unsorted, {B, TOPK, HIDDEN});
             } else {
                 mx::array h2_expanded = mx::expand_dims(h2, std::vector<int>{-2, -3});   // {B,1,1,HIDDEN}
-                mx::array gate_all = mx::gather_qmm(h2_expanded, tg.w, tg.scales, tg.biases, std::nullopt,
-                                                     top_idx, true, g_layer_group, tg.bits, "affine", false);
-                mx::array up_all = mx::gather_qmm(h2_expanded, tu.w, tu.scales, tu.biases, std::nullopt,
-                                                   top_idx, true, g_layer_group, tu.bits, "affine", false);
+                mx::array gate_all = ffn_gather(tg, h2_expanded, std::nullopt, top_idx, true, false);
+                mx::array up_all = ffn_gather(tu, h2_expanded, std::nullopt, top_idx, true, false);
                 mx::array swiglu_3d = mx::reshape(lazy_silu(gate_all) * up_all, {B * TOPK, 1, IM});
                 mx::array top_idx_1d = mx::reshape(top_idx, {B * TOPK});
-                mx::array down_all = mx::gather_qmm(swiglu_3d, td.w, td.scales, td.biases, std::nullopt,
-                                                     top_idx_1d, true, g_layer_group, td.bits, "affine", false);
+                mx::array down_all = ffn_gather(td, swiglu_3d, std::nullopt, top_idx_1d, true, false);
                 down_flat_opt = mx::reshape(down_all, {B, TOPK, HIDDEN});
             }
             mx::array down_flat = *down_flat_opt;
