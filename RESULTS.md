@@ -11287,3 +11287,73 @@ round). If n=7 GPU support is ever required, it needs either a genuine custom Me
 or padding/promoting to n=8 for GPU purposes only (loses the exactness this round established).
 
 Not pushed (local commits only, per this repo's convention -- push only on explicit request).
+
+## D-qNg64-2 -- L2 step 3/4: real kernel vs simulated oracle, regression check (2026-09-08)
+
+**WHY**: the plan's L2 step 3 (from the Opus L2/L3a review) found that BOTH the pure-Python
+simulated F32-override path (`tools/quant_sim_n.py`) and a hypothetical "real-kernel-dequant-then-
+F32-override" path route through `moe_decode_af()`'s bits==32 raw-passthrough branch, not the real
+packed qNg64 decode (scale-per-group, error-feedback-quantized) that now exists after D-qNg64-1.
+Near-tie margins in this project run ~1e-3 to ~5e-1 (see below); the question is whether that
+arithmetic gap is large enough to flip a real pass/fail decision, not just perturb a margin
+slightly. This section answers that empirically, not by assumption.
+
+**Mechanism**: added `QWEN_MOE_ATTRIB_SIM_QN` (new env var, `moe_register_hi_role()` in
+`qwen_infer.c`, commit `1ed4f13`) as a real-kernel sibling to the existing
+`QWEN_MOE_ATTRIB_SIM_PATH` F32-override path. When set to an integer n, the target role/layer is
+bound via `st_register_moe_dense_af_qNg64_as()` against the **already-open real bf16 checkpoint**
+(no swap-to-a-simulated-file needed, unlike the F32 path, since quantization now happens
+in-process from real data) -- this exercises the actual packed decode/matvec arithmetic the
+production serving path would use, not a raw-passthrough approximation.
+
+**Test targets**: reused the existing, still-intact `p60`/pos=14 event infrastructure on bob
+(`/private/tmp/step7/manifest_p60.txt` + per-target `combo_*.txt` files -- the same real flip
+[orig=8713, corrected=4794, margin_before=0.027483] documented in this file's ROI-G Phase 2
+live-mode section, "confirmed single-flip" per that section's own note, distinct from the
+multi-flip-contaminated p10 batch retracted in `c3bcf81`). Picked two of that round's 24 targets
+at their exact simulated decision boundaries (not mid-stable-run n values, where a small
+arithmetic difference is least likely to matter):
+
+1. `shared_gate_proj` L14 (simulated: clean/monotonic, knee=5 -- fails n<5, passes n>=5):
+   - n=3: simulated FAIL. **Real kernel: FAIL** (argmax stays 8713, wrong) -- match.
+   - n=5: simulated PASS (margin_before after correction 0.007277). **Real kernel: PASS**
+     (`hit req=0 pos=14 role=shared_gate_proj layer=14`, margin_before after correction 0.013859)
+     -- match, though the margin value itself differs (0.007277 sim vs 0.013859 real -- the
+     arithmetic IS genuinely different, it just didn't flip the decision here).
+
+2. `kv_b_proj` L9 (simulated: **VIOLATED** -- n=2 PASS, n=3 **FAIL**, n=4 PASS, n=5-8 PASS):
+   - n=2: simulated PASS. **Real kernel: PASS** -- match.
+   - n=3: simulated FAIL. **Real kernel: PASS** (`hit req=0 pos=14 role=kv_b_proj layer=9`,
+     margin_before after correction 0.490179) -- **MISMATCH**.
+   - n=4: simulated PASS. **Real kernel: FAIL** (no hit line) -- **MISMATCH**.
+
+**Result: the oracle trust concern is real, not theoretical, and target-dependent -- exactly what
+the plan predicted, now with actual data.** `shared_gate_proj` L14's boundary reproduced exactly.
+`kv_b_proj` L9's did not: the real kernel shows its OWN non-monotonic curve (pass, pass, fail at
+n=2,3,4) that is a *different shape* from the simulated one (pass, fail, pass), not just a shifted
+threshold. This means the simulated 840-row dataset's per-target knee/violation labels cannot be
+assumed to carry over to the real kernel target-by-target -- some will, some won't, and which is
+which isn't predictable without testing. **Confirms the plan's conclusion**: F32-override sweep
+data (all 840 existing rows) is a wiring/discovery smoke test, not a source for real precision
+decisions -- those need the real kernel, per-target, going forward. Only 2 targets tested here
+(time-bounded, honestly reported as 2, not padded) -- not enough to say what fraction of the full
+24-target (or 840-row) set would diverge, only that divergence is real and already found twice out
+of two attempts at points specifically chosen to be sensitive.
+
+**Step 4 (regression/negative check)**: not run -- `kv_b_proj` L9 has exactly one event on record
+in this repo (`p60`/pos=14, the one tested above); no second known event exists for this
+(role,layer) to check against for a promotion-breaks-something-else regression. This is not a
+failure of the check, just an honest statement that it has nothing to test against yet for this
+target. `shared_gate_proj` L14 is in the same position (also single-event). Revisit once a target
+accumulates 2+ independently-verified events.
+
+**COST**: 2 targets x 2-3 n values each = 5 real engine runs on bob, ~1-3 min each (model load +
+27-layer forward pass dominates, not the new qNg64 path itself).
+
+**EXIT**: broader real-vs-simulated coverage (more targets, more n values per target, ideally the
+full 24-target p60 set or a fresh multi-event target) is follow-on work, not blocking -- the
+qualitative finding (divergence is real, not negligible, target-dependent) is what step 3 needed
+to establish, and it's established. `QWEN_MOE_ATTRIB_SIM_QN` is reusable for that follow-on without
+further C changes.
+
+Commit: `1ed4f13`. Not pushed (local commits only, per this repo's convention).
