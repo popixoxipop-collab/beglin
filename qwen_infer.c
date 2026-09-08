@@ -14315,8 +14315,24 @@ static void moe_promotion_nq_init(void) {
             fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s not valid at layer=%d\n", role_buf, layer);
             exit(1);
         }
-        if (n < 2 || n > 16) {
-            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s layer=%d n=%d out of [2,16]\n", role_buf, layer, n);
+        // D-qNg64-10: was `n < 2 || n > 16` -- far too permissive. This function unconditionally
+        // calls st_register_moe_dense_af_qNg64_as()/st_register_moe_experts_qNg64_as(), whose
+        // bit-plane decode is only wired into moe_decode_af()/moe_matvec_af_row() for
+        // n in {2,3,5,6,7} (the sym==1 bit-plane gate) -- n=4 falls through to the NIBBLE path
+        // (wrong: qNg64's own bit-plane bytes reinterpreted as q4g64 nibbles), n=8 hits the
+        // signed-int8 branch BEFORE the qNg64 gate (coincidentally same buffer size, no crash),
+        // n=9..16 fall through to nibble too. All silently produce garbage weights, no crash, no
+        // warning -- exactly the class of bug this project's "refuse rather than silently
+        // mis-decode" philosophy exists to prevent. Opus review (L3b Phase C design, 2026-09-08)
+        // found this reachable today via a hand-edited QWEN_MOE_PROMOTION_FILE_NQ line, no
+        // automation needed. EXIT: if n=4/8/16/32 promotion via this path is ever wanted, dispatch
+        // to the EXISTING correct registrars (q4g64/q8g64/f16/f32) instead of widening this check
+        // -- do not just widen the range again.
+        if (!(n == 2 || n == 3 || n == 5 || n == 6 || n == 7)) {
+            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s layer=%d n=%d not in "
+                            "{2,3,5,6,7} -- the only bit-widths the qNg64 bit-plane decoder actually "
+                            "supports (n=4/8 use a DIFFERENT format+registrar, not this path)\n",
+                    role_buf, layer, n);
             exit(1);
         }
 
@@ -14448,6 +14464,13 @@ static MoeAFTensor *moe_register_hi_role(const char *role_name, int layer,
     if (sim_role && sim_role[0] && sim_layer && sim_layer[0] && sim_qn && sim_qn[0]
         && layer == atoi(sim_layer) && !strcmp(role_name, sim_role)) {
         int n = atoi(sim_qn);
+        // D-qNg64-10: same class of gap as moe_promotion_nq_init's n-range check, same fix --
+        // st_register_moe_dense_af_qNg64_as() is only decodable for n in {2,3,5,6,7}.
+        if (!(n == 2 || n == 3 || n == 5 || n == 6 || n == 7)) {
+            fprintf(stderr, "FATAL: QWEN_MOE_ATTRIB_SIM_QN=%d not in {2,3,5,6,7} -- the only "
+                            "bit-widths the qNg64 bit-plane decoder actually supports\n", n);
+            exit(1);
+        }
         MoeAFTensor *w = st_register_moe_dense_af_qNg64_as(st_name, n, ename);
         fprintf(stderr, "[moe attrib sim] role=%s layer=%d overridden with REAL qNg64(n=%d) kernel from real checkpoint\n",
                 role_name, layer, n);
