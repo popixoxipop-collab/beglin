@@ -65,6 +65,28 @@ L3b에만 있고 L3a는 오프라인 정적 배정일 뿐. 이 격차를 사용�
   다른 모양. **결론: 기존 840행 시뮬레이션 데이터는 배포 결정 근거로 못 씀(plan의 결론이 실측으로
   확정됨)** — RESULTS.md `D-qNg64-2` 참고. Step 4(회귀검사)는 두 타겟 다 알려진 이벤트가 1개뿐이라
   실행 대상 없음(정직히 기록, 실패 아님).
+- **L3a 구현 완료+검증** (2026-09-08): `g_moe_lt_nq[]`(별도 shadow table, g_moe_lt_hi는
+  그대로 attribution 기준선으로 보존) + `g_moe_promoted_nq[role][layer]`(bool 아니라 n 자체 저장)
+  + `moe_promotion_nq_init()`(n>=base_bits 강제, 위반시 거부+로그) + `QWEN_MOE_PROMOTION_FILE_NQ`
+  (기존 2열 포맷과 분리) + `tools/promotion_writeback.py`(이벤트 max→corpus max 집계, 합성데이터
+  3케이스로 검증) + `moe_lazy_hi_release_all()`의 실제 UAF 선수정. 실버그 1건(g_st_moe NULL,
+  D-gpu-6c/6d와 같은 계열, g_moe_hi_st 재스왑으로 수정, fprintf 이분탐색). **검증**: p60/pos=14
+  실이벤트로 shared_gate_proj L14→n=5 실제 승격 후 정답 재현(REAL FLIP 로그 없이 base pass만으로
+  정답), n=3(<base_bits) 거부 확인. 전체 benefit-metric(vs D-d5-31 baseline) 비교는 미완(별도
+  대규모 측정 필요, 정직히 follow-up으로 남김). commit `106abad`/`6587ec7`/`d6514e7`.
+- **L3b 설계 문서 작성**(구현 아님, 2026-09-08): `.claude/history/2026-09-08_l3b-design.md`(비커밋,
+  로컬 전용 — .gitignore). **핵심 발견: 사용자가 원한 "서빙 시점 인지+구조적 우회"는 이미
+  `moe_neartie_maybe_correct()`+`moe_neartie_reverify_hi()`로 존재함**(margin 체크→bits=16 전체
+  재실행 전역포인터스왑, 매 토큰). 진짜 gap은 "적응형 n으로 무엇을 escalate할지"가 아니라(그건
+  이미 active보다 높은 정밀도여야 해서 의미없음) — "라이브로 감지된 반복 flip을 L3a 승격으로
+  영구화하는 학습 루프"가 진짜 buildable minimal-viable. 단, L3a의 B2 결정(hot-reload 포기, 시작시
+  1회 빌드)과 정면충돌 — 세션 내 반영이 아니라 재시작 간 학습 루프만 가능. **권고: 지금 만들지
+  말 것** — D-qNg64-4의 benefit-metric이 충분히 검증되기 전까지 보류.
+- **D-qNg64-4(부분 benefit-metric)**: `shared_gate_proj/L14`(p60 flip의 실제 귀속 텐서, D-d5-31
+  자체 24-corpus의 일부이기도 함)가 **D-d5-31의 88-combo bits=16 세트엔 없음**(직접 파일 확인,
+  `/Users/xox/vdsp_local_data/promote_hits88.txt`). qNg64 n=5(eff_bpw=5.1)가 bits=16(eff_bpw≈16.03)
+  대비 훨씬 낮은 비트폭으로 D-d5-31이 놓친 타겟을 직접 커버 — 유리한 데이터포인트지만 **N=1**,
+  전체 비교는 아님(정직히 명시). RESULTS.md `D-qNg64-4` 참고.
 - 다른 세션(`vdsp_engine_main`)이 같은 repo에서 병행 작업 중 — 이번 라운드에 `c3bcf81`
   "retract 89-target sweep, multi-flip contamination" 커밋 확인(840행 기준 유효, 이 계획의 수치와
   일치). 커밋 전 매번 git log/status 재확인 중.
