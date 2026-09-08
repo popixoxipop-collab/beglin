@@ -231,6 +231,9 @@ def run_one_triple(model, corpus, role, layer, req, pos, detail, args, ledger, l
 
 
 def run_mode(args):
+    if not args.paths:
+        print("FATAL: --run needs at least one JSONL path/glob", file=sys.stderr)
+        sys.exit(1)
     rows = load_attributions(args.paths)
     if not rows:
         print("No attribution rows found. Nothing to run.", file=sys.stderr)
@@ -264,6 +267,9 @@ def run_mode(args):
 
 
 def report_mode(args):
+    if not args.paths:
+        print("FATAL: --report needs at least one JSONL path/glob", file=sys.stderr)
+        sys.exit(1)
     rows = load_attributions(args.paths)
     if not rows:
         print("No attribution rows found in the given path(s). Nothing to report.", file=sys.stderr)
@@ -309,6 +315,45 @@ def report_mode(args):
         print(f"wrote {args.json}")
 
 
+def reset_backoff_mode(args):
+    """D-qNg64-15: the operator escape hatch named in the original Phase C design (Opus review,
+    'a --reset-backoff <target> escape hatch') but never implemented -- D-qNg64-13 worked around
+    its absence by deleting the entire ledger file, which resets EVERY target's backoff state,
+    not just the stuck one. This removes only the entries for the named (role,layer) pair(s),
+    across every (event,corpus,manifest) key that target has accumulated -- _ledger_key() is a
+    7-tuple (model,corpus,role,layer,req,pos,manifest), so one target can have several independent
+    entries, and all of them need clearing for a clean retry, not just one."""
+    targets = set()
+    for chunk in args.reset_backoff.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        role, _, layer_s = chunk.rpartition(":")
+        if not role or not layer_s.lstrip("-").isdigit():
+            print(f"FATAL: --reset-backoff entry '{chunk}' is not ROLE:LAYER", file=sys.stderr)
+            sys.exit(1)
+        targets.add((role, int(layer_s)))
+
+    ledger = qsn.load_ledger(args.ledger)
+    kept, removed = {}, 0
+    for key_str, entry in ledger.items():
+        try:
+            model, corpus, role, layer, req, pos, manifest = json.loads(key_str)
+        except (ValueError, TypeError):
+            kept[key_str] = entry  # not a well-formed key this function understands -- preserve, don't guess
+            continue
+        if (role, layer) in targets:
+            removed += 1
+            print(f"  removing: role={role} layer={layer} corpus={corpus} req={req} pos={pos} "
+                  f"(was: attempts={entry.get('attempts')}, last_outcome={entry.get('last_outcome')})")
+        else:
+            kept[key_str] = entry
+
+    qsn.save_ledger(args.ledger, kept)
+    print(f"reset {removed} ledger entr{'y' if removed == 1 else 'ies'} for {sorted(targets)} "
+          f"-- {len(kept)} other entries untouched")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     mode = ap.add_mutually_exclusive_group(required=True)
@@ -318,7 +363,19 @@ def main():
                        help="Phase C, D-qNg64-12: drive real engine sweeps for the top "
                             "--max-sweeps manifest-resolvable, backoff-eligible (triple,event) "
                             "candidates, push verified results, update the live promotion file.")
-    ap.add_argument("paths", nargs="+", help="JSONL log file(s) or glob pattern(s)")
+    mode.add_argument("--reset-backoff", metavar="ROLE:LAYER",
+                       help="Operator escape hatch (named in the original Phase C design, never "
+                            "implemented until D-qNg64-15 -- D-qNg64-13 worked around its absence "
+                            "by deleting the whole ledger file, which also discards backoff state "
+                            "for every OTHER target, not just the one being unstuck). Removes every "
+                            "ledger entry for this (role,layer) -- across all its events/corpora/"
+                            "manifests, since one target can accumulate several independent ledger "
+                            "keys (see _ledger_key()'s 7-tuple) -- so the next --run treats it as "
+                            "never-attempted. Comma-separated for multiple targets, e.g. "
+                            "'shared_gate_proj:14,kv_b_proj:9'. Does not touch --run/--report.")
+    ap.add_argument("paths", nargs="*",
+                     help="JSONL log file(s) or glob pattern(s) -- required for --report/--run, "
+                          "not used by --reset-backoff")
     ap.add_argument("--json", help="--report: also write the worklist to this JSON path")
     ap.add_argument("--pat-env", default=None,
                      help="shell var name already holding the Management API PAT (skip live Supabase check if unset)")
@@ -336,7 +393,9 @@ def main():
     ap.add_argument("--timeout", type=int, default=180, help="--run: per-invocation remote timeout in seconds (Step-0 and each n)")
     args = ap.parse_args()
 
-    if args.run:
+    if args.reset_backoff:
+        reset_backoff_mode(args)
+    elif args.run:
         run_mode(args)
     else:
         report_mode(args)
