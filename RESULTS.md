@@ -11569,3 +11569,36 @@ comparison is a real token-accuracy measurement, not the same "safety net silent
 trap D-d5-31 itself found and fixed in its own predecessor arms. Blocked on Supabase access to
 scale target selection beyond what's already locally known, not on anything this round could
 resolve.
+
+## ROI-G Phase 2: redone flip hunt, single-flip discipline applied -- 2 clean, monotonic targets
+
+Direct follow-up to the retracted 89-target round (`c3bcf81`) -- same corpus
+(`wikitext-103-raw-v1-validation-short`, the durably-relocated one), but with the two fixes
+that round's own lesson called for applied from the start: (1) `grep -c "REAL FLIP"` checked
+on every discovery candidate *before* sizing a sweep, single-flip only accepted; (2) the
+mandatory reproduction check run in full before committing to a sweep, no exceptions.
+
+**Discovery, single-flip only**: swept 19 fresh WikiText-103 prompts looking for exactly one
+real flip. 8 came back with zero flips. One (`p95`) hung -- 46+ minutes of 100%+ CPU with zero
+attribution-hit growth in its log, unlike every other candidate's steady progress; killed
+rather than waited out further (a real anomaly, not investigated further here -- possibly a
+routed-expert-heavy combo space for that specific near-tie, flagged for a future session).
+`p105` produced exactly one real flip (`pos=13`, `orig=11 corrected=13`, margin_before=0.099848
+-- razor-thin, 99.8% of the way to the 0.1 correction threshold) with 2 hits:
+`kv_a_proj_with_mqa`/L14, `kv_b_proj`/L11.
+
+**Reproduction check, run this time**: re-isolated `p105` and confirmed byte-identical
+`margin_before=0.099848`, `corrected_argmax=13`, and both original hits reproduced exactly --
+despite the razor-thin margin (thinner, as a fraction of threshold, than any prior round's
+tested event), this one held up under isolation. Proceeded only after this confirmation.
+
+**Sweep** (30 real engine runs, n=2..16 x 2 targets): both targets monotonic --
+`kv_a_proj_with_mqa`/L14 knee=8, `kv_b_proj`/L11 knee=5, no violations, no `corrected`-value
+drift across n (spot-checked, matching the clean p60 pattern rather than the p10 one). Pushed
+and independently verified: 870 total rows (was 840, +30 exact).
+
+**In parallel**, discovery continued past p105 looking for a second candidate: `p115`-`p145`
+came back empty, `p155` produced exactly one real flip (`pos=12`, `orig=317 corrected=438`)
+with 13 hits across every role family (`kv_a_proj_with_mqa` x4, `o_proj` x4, `kv_b_proj` x2,
+`dense_gate_proj`/`dense_up_proj`/`dense_down_proj` x1 each) -- its own mandatory reproduction
+check is running; sweep and push to follow once confirmed, same discipline.
