@@ -6269,11 +6269,33 @@ static void moe_neartie_attribute(const uint8_t *af, MoeAFTensor *t_embed, MoeAF
             if (!did_hit) continue;
             hits++;
             if (g_moe_attrib_fp) {
-                fprintf(g_moe_attrib_fp,
-                        "{\"kind\":\"attribution\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,\"role\":\"%s\",\"layer\":%d,"
-                        "\"corrected_argmax\":%d,\"model\":\"%s\",\"corpus\":\"%s\"}\n",
-                        (long)time(NULL), req, pos, MOE_ATTRIB_ROLE_NAMES[r], l, corrected_argmax,
-                        g_moe_nt_events_model, g_moe_nt_events_corpus);
+                // D-qNg64-9: added "manifest" field -- Opus review of the L3b design found req
+                // numbering restarts at 0 per manifest file, so (req,pos) alone is ambiguous
+                // across different manifests/chunks and cannot be safely resolved back to a
+                // runnable sweep without it (this already caused two silent, non-erroring
+                // provenance mix-ups in this project -- D-d5-27 and its documented repeat,
+                // RESULTS.md). QWEN_MOE_CB_PROMPT_MANIFEST is read fresh here via getenv() rather
+                // than threaded through the call chain -- it's a process-lifetime env var, set
+                // once at manifest-load time and never changed, so re-reading it here is
+                // equivalent to passing it down and needs no new plumbing. NULL (no manifest env
+                // var set -- e.g. a fixed-corpus test harness, not the V5l manifest path) is
+                // emitted as JSON null, not a placeholder string, so downstream consumers can
+                // distinguish "known, no manifest" from "field absent" (older log lines, before
+                // this change, simply lack the key -- also distinguishable).
+                const char *manifest_env = getenv("QWEN_MOE_CB_PROMPT_MANIFEST");
+                if (manifest_env && manifest_env[0]) {
+                    fprintf(g_moe_attrib_fp,
+                            "{\"kind\":\"attribution\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,\"role\":\"%s\",\"layer\":%d,"
+                            "\"corrected_argmax\":%d,\"model\":\"%s\",\"corpus\":\"%s\",\"manifest\":\"%s\"}\n",
+                            (long)time(NULL), req, pos, MOE_ATTRIB_ROLE_NAMES[r], l, corrected_argmax,
+                            g_moe_nt_events_model, g_moe_nt_events_corpus, manifest_env);
+                } else {
+                    fprintf(g_moe_attrib_fp,
+                            "{\"kind\":\"attribution\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,\"role\":\"%s\",\"layer\":%d,"
+                            "\"corrected_argmax\":%d,\"model\":\"%s\",\"corpus\":\"%s\",\"manifest\":null}\n",
+                            (long)time(NULL), req, pos, MOE_ATTRIB_ROLE_NAMES[r], l, corrected_argmax,
+                            g_moe_nt_events_model, g_moe_nt_events_corpus);
+                }
                 fflush(g_moe_attrib_fp);
             }
         }

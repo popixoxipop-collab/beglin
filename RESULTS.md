@@ -11891,3 +11891,72 @@ are both explicitly NOT built -- deliberate, not an oversight, per the review's 
 
 Commit: (this section + `tools/promotion_controller.py`). Not pushed (local commits only, per
 this repo's convention).
+
+## D-qNg64-9 -- L3b Phase B part 1/2: manifest-identity logging + prepared DB migration (2026-09-08)
+
+**WHY**: the Opus review of the L3b autopilot design (this session, prior to Phase A) found two
+prerequisites needed before any auto-triggered real sweep (Phase C) is safe: (1) resolving a
+live-detected (req,pos) back to a runnable sweep manifest is currently ambiguous -- `req`
+numbering restarts at 0 per manifest file, and this has already caused two silent, non-erroring
+provenance corruptions in this project (`D-d5-27`: the original req5/pos4 pilot manifest is now
+permanently unrecoverable, three later guesses all ruled out by real measurement, RESULTS.md
+"D-d5-27 closeout"; and its exact repeat on req32/pos8, two different files both claiming to be
+"req32", caught only by manually diffing engine logs against a known-good reference,
+RESULTS.md's "Follow-up... two real bugs found" section) -- and (2) `moe_quant_sweep_results` has
+no way to distinguish simulated from real-kernel rows (D-qNg64-6). This section does (1) in full
+and prepares (not applies) (2).
+
+**Mechanism (1, C-side, DONE)**: `moe_neartie_attribute()`'s attribution JSONL line
+(qwen_infer.c, the `g_moe_attrib_fp` fprintf) now includes a `"manifest"` field --
+`getenv("QWEN_MOE_CB_PROMPT_MANIFEST")`, re-read at the logging call site rather than threaded
+through the call chain (it's a process-lifetime env var set once at manifest-load time and never
+changed within one process, so re-reading it is equivalent and needs no new plumbing). Emitted as
+JSON string when set, JSON `null` when not (distinguishable from older log lines that simply
+predate this field and lack the key). Additive only -- verified `d4_supabase_push.py` and
+`tools/promotion_controller.py` both access specific known keys (`row["role"]` etc.), not all
+keys, so an unrecognized extra field breaks neither.
+
+**Verification (1)**: real run on bob, the same `p60`/pos=14 event this whole D-qNg64-* series has
+used (`QWEN_MOE_NEARTIE_CORRECT=1`+`QWEN_MOE_NEARTIE_LOG=1`+`QWEN_MOE_ATTRIB=1`, manifest
+`/private/tmp/step7/manifest_p60.txt`, combo `combo_shared_gate_proj_L14.txt`). Real output line:
+```
+{"kind":"attribution","ts_unix":1788866315,"req":0,"pos":14,"role":"shared_gate_proj","layer":14,
+"corrected_argmax":4794,"model":"deepseek-v2-lite","corpus":"wikitext-2-raw-v1-validation-short-fullext",
+"manifest":"/private/tmp/step7/manifest_p60.txt"}
+```
+(engine log confirms this is the real, already-known flip: `REAL FLIP orig=8713 corrected=4794`,
+`hit req=0 pos=14 role=shared_gate_proj layer=14`, matching D-qNg64-1/2/3 exactly.)
+`tools/promotion_controller.py --report` re-run against this log parses it correctly (1
+triple, 1 attribution row) -- confirmed the new field doesn't break Phase A's tool.
+
+**Prepared, NOT applied (2)**: `supabase_migration_qng64_source.sql` (new file) --
+`alter table moe_quant_sweep_results add column if not exists source text not null default 'sim'`.
+Existing 1065+ rows default correctly (they predate the real kernel). Per this project's own
+Management API usage principle (DDL/DML needs explicit user go-ahead, see
+`.claude/memory/reference_supabase_management_api_access.md`), **this migration has not been run
+against the live database** -- it's a reviewable artifact only, ready for the user (or a future
+explicitly-authorized step) to apply. The Python-side change to actually set `source='qng64_real'`
+on future real-kernel pushes is not done either (deliberately -- there is no push code for
+`QWEN_MOE_ATTRIB_SIM_QN` results yet at all, per D-qNg64-6's finding (iv); that's Phase C
+territory, still not started).
+
+**Status**: this is Phase B, 1 of 2 parts done (C-side), 1 prepared-not-executed (DB-side).
+**Phase C (the actual auto-triggered-sweep autopilot) is still not built** -- both Phase B pieces
+were prerequisites for it, not the autopilot itself. Building Phase C safely still additionally
+needs (per the Opus review, not re-derived here): a max-sweeps-per-run cap and per-triple
+backoff (unbounded-cost risk), the actual push code from a real sweep into
+`moe_quant_sweep_results` (doesn't exist), the `corrected_argmax` reproduction gate before
+trusting any sweep result, and fixing `promotion_writeback.py`'s truncating `--out` write to
+merge instead.
+
+**COST**: one new field in the attribution JSONL format (a few bytes/line, only written when
+`QWEN_MOE_NEARTIE_CORRECT`+`QWEN_MOE_ATTRIB` are both already on, i.e. only on the already-rare
+attribution-replay path, not the per-token hot path).
+
+**EXIT**: if manifest-identity ever needs to be more than a path string (e.g. a content hash, for
+detecting if a manifest file's contents changed under a stable path), extend the same field --
+additive, no migration of already-logged lines needed (older lines simply lack it or have the
+older bare-path form, both distinguishable).
+
+Not pushed (local commits only, per this repo's convention). Migration SQL file included in the
+commit as a reviewable artifact, not executed.

@@ -1,0 +1,48 @@
+-- =============================================================================
+-- D-qNg64-9 Phase B part 2 (2026-09-08, PREPARED NOT EXECUTED -- this file is a
+-- reviewable artifact, has NOT been run against the live database. Applying it
+-- requires explicit user authorization; the Management API credential this
+-- project uses (.claude/memory/reference_supabase_management_api_access.md)
+-- is read-only-by-convention in this repo's own tooling and DDL/DML through it
+-- needs a human go-ahead first, per that doc's own stated principle):
+--   WHY: moe_quant_sweep_results currently has no way to distinguish a row
+--   produced by the pure-Python, no-error-feedback simulation
+--   (tools/quant_sim_n.py, all ~1065+ existing rows) from one produced by the
+--   real qNg64 kernel (QWEN_MOE_ATTRIB_SIM_QN, D-qNg64-2). D-qNg64-6 found
+--   this is not a theoretical gap: fetch_prior_points_by_event()'s
+--   sorted(set(...)) + dict() collapse lets a simulated PASS silently
+--   overwrite a real-kernel FAIL on the exact same (n) when both exist for
+--   one event (verified by execution, kv_b_proj/L9 is the real instance --
+--   simulated says n=4 passes, real kernel says it fails). Without a
+--   provenance column, no query can even ask "give me only the trustworthy
+--   rows" -- this is one of the two prerequisites the Opus review of the L3b
+--   autopilot design named as required before any auto-triggered real sweep
+--   (Phase C) is safe to build; the other (manifest-identity logging, C-side)
+--   is done, see D-qNg64-9 in RESULTS.md.
+--   COST: existing 1065+ rows all default to 'sim' (accurate -- they predate
+--   D-qNg64-1's real kernel and were produced by quant_sim_n.py or the
+--   historical q4g64-only sweep). No backfill needed beyond the column
+--   default itself. Future pushes (tools/quant_sim_analyze.py --push,
+--   tools/quant_search_n.py driving QWEN_MOE_ATTRIB_SIM_QN, or whatever
+--   Phase C eventually builds) need one new field in their insert payload --
+--   small, mechanical, not done in this migration (this file only adds the
+--   column; the Python push-side changes are separate, deliberately not
+--   bundled here so this DDL stays minimal and independently reviewable).
+--   EXIT: if a richer provenance model is ever needed (e.g. which exact
+--   commit/kernel-version produced a row, not just sim-vs-real), add more
+--   columns additively the same way -- this one only answers the single
+--   question D-qNg64-6 showed actually matters today.
+-- =============================================================================
+
+alter table moe_quant_sweep_results add column if not exists source text not null default 'sim';
+
+-- Rows written by a real qNg64-kernel-backed sweep (QWEN_MOE_ATTRIB_SIM_QN, not
+-- QWEN_MOE_ATTRIB_SIM_PATH -- D-qNg64-6 found the latter, despite the "live oracle"
+-- name, only ever drives the simulated F32-override path) should set:
+--   source = 'qng64_real'
+-- Every other value defaults to 'sim' and is presumed simulated/untrusted for
+-- real deployment decisions per D-qNg64-plan-1/2/5/6's established conclusion.
+
+-- Verification query to run AFTER applying, before trusting this migration:
+--   select source, count(*) from moe_quant_sweep_results group by source;
+-- Expected immediately after applying: a single row, source='sim', count=<current total>.
