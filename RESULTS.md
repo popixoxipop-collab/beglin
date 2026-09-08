@@ -12044,3 +12044,96 @@ column) is now fully landed. Phase C (the actual auto-triggered sweep loop) stil
 the schema/logging prerequisites exist now, but Phase C's own remaining Opus-review findings
 (max-sweeps cap, corrected_argmax reproduction gate, promotion_writeback.py's truncating-write
 fix, wiring QWEN_MOE_ATTRIB_SIM_QN into an actual push path) are unaddressed.
+
+## D-qNg64-11 -- L3b Phase C: safety-critical prerequisites built+verified, sweep loop not yet built (2026-09-08)
+
+**WHY**: a second, more severe Opus review of the L3b Phase C ("autopilot") design found the
+first revised design still had multiple critical bugs -- most severely, the per-n sim/real
+fallback could emit undecodable n values (n=4, n=11) into a production promotion file, the
+reproduction gate as specified would reject exactly the informative data it exists to collect,
+and there was no actual mechanism to go from a live-serving (manifest, req) to a runnable sweep
+(the "biggest structural gap"). This section documents what got built and real-verified against
+that review's findings, and what did not.
+
+**Built and verified, in order**:
+
+1. **c36aadc regression-tested**: `n=4` via `QWEN_MOE_PROMOTION_FILE_NQ` now FATALs
+   (`role=shared_gate_proj layer=14 n=4 not in {2,3,5,6,7}`); `n=5` still promotes exactly as
+   D-qNg64-3's original test showed (`PROMOTED to qNg64(n=5)`). Real engine runs on bob, both
+   confirmed via grep on actual stdout.
+
+2. **`orig_argmax`+`threshold` fields** added to the attribution JSONL (`edc3d73`). Real run
+   confirms `orig_argmax=8713 threshold=0.100000` alongside the existing `corrected_argmax=4794`,
+   exactly matching the pre-existing `REAL FLIP orig=8713` stderr line. Phase A's
+   `promotion_controller.py --report` still parses correctly (defensive parsing confirmed, not
+   assumed).
+
+3. **Source-aware aggregation, no more mixing** (`92b3482`): `fetch_prior_points_by_event()` now
+   groups by `source` in addition to corpus/event; `promotion_writeback.py`'s `target_safe_n()`
+   only trusts `source='qng64_real'` rows for a deployment decision -- a target with sim-only
+   data anywhere is refused wholesale, not partially promoted. Verified against the REAL current
+   database: `kv_b_proj`/L9 (15 sim rows, 0 real rows -- confirmed via a live Management API
+   query) now correctly returns "refuse" instead of the dangerous `n=4` the old code would have
+   emitted (n=4 is both a measured real-kernel FAIL for this exact target, D-qNg64-2, and outside
+   the decodable ladder). A second test with one synthetic real row added confirmed the
+   real-data-only path correctly computes `n=5` when real data exists. Also added explicit
+   same-source contradiction detection (never silently resolve a same-n True/False collision by
+   sort order) and the real kernel's actual deployable ladder `{5,6,7}`, not the sim data's
+   historical `n∈2..16` range.
+
+4. **The core of the "biggest structural gap" fix** (`93cb8ec`): `derive_isolated_manifest()`
+   mirrors `qwen_infer.c`'s own `sp = r % MCN` (:6973) to turn a live attribution's recorded
+   `(manifest, req)` into a single-request derived manifest, with a recursive existence check
+   (the manifest file AND its referenced token file, not just the former). `step0_baseline_gate()`
+   is the actual safety mechanism the review specified in place of the original (backwards)
+   per-n reproduction gate: runs the UNMODIFIED hi mirror against the derived manifest and
+   requires it reproduce BOTH `orig_argmax` and `corrected_argmax` exactly before anything
+   downstream would be trusted -- distinguishes no-signal (nothing reached the position) from
+   wrong-signal (reached it, got a different flip) rather than collapsing both into "fail" or
+   both into "pass".
+
+   **Verification, all real**:
+   - `derive_isolated_manifest()` against a synthetic 3-entry manifest (comment + blank lines
+     included, to test the non-blank/non-`#` filter too) across `req ∈ {0,1,2,3,4,7}`: correct
+     modular cycling including wraparound (`req=3 -> idx=0`, same as `req=0`).
+   - Recursive check correctly raises when a manifest references a deleted token file (tested
+     with a real synthetic bad manifest, real error message confirmed).
+   - `step0_baseline_gate()` run against the REAL `p60`/pos=14 event (the same one D-qNg64-1/2/3
+     used throughout): **PASS**, exact match on both `orig_argmax=8713` and
+     `corrected_argmax=4794`.
+   - **Real bug found only by running it, not by inspection**: the gate was originally written
+     using GNU `timeout -k` to kill the remote process on expiry (the review's own fix for
+     `subprocess.run(timeout=T)` only killing the local ssh client). bob is macOS with neither
+     `timeout` nor `gtimeout` installed (`env: timeout: No such file or directory` -- the actual
+     failure, not a guess). Rather than install a new system package on a shared machine without
+     asking, replaced with a portable POSIX background-process-plus-watcher pattern (`cmd & ...
+     ( sleep T && kill -9 $CMD_PID ) & ... wait $CMD_PID`) -- re-verified working after the fix.
+
+**NOT built this round** (honest accounting, matching this project's established discipline of
+not claiming more than what's actually verified):
+- The per-n sweep loop itself (drive `QWEN_MOE_ATTRIB_SIM_QN` across n∈{5,6,7}, classify each
+  into the review's 5 outcomes, only after Step-0 passes).
+- Atomic push of a triple's 3 n-results to `moe_quant_sweep_results` with `source='qng64_real'`,
+  plus the post-push re-SELECT verification the review specified.
+- `promotion_writeback.py`'s write fixed to upsert-with-scoped-delete AND operate on bob's copy
+  of `QWEN_MOE_PROMOTION_FILE_NQ` over ssh (still local-only, still truncating -- this is a real,
+  disclosed, NOT-yet-fixed bug, do not use `--out` against a promotion file with other targets
+  already in it).
+- The backoff ledger (without it, a single slow/stuck triple would permanently block a worklist).
+- `--max-sweeps N` and the `--run` mode tying everything above together into `promotion_controller.py`.
+
+**COST**: this round used real bob compute for every verification claim above (no shortcuts),
+each Step-0-style run taking roughly the same ~1-3 min this project has measured for this event
+shape throughout (D-qNg64-2 established this; the earlier 46+ minute figure some designs
+mis-imported was from a structurally different, unrestricted workload, per the second Opus
+review's own correction).
+
+**EXIT**: the remaining pieces are additive on top of what's built here -- `derive_isolated_manifest`
++ `step0_baseline_gate` are the load-bearing safety primitives the rest of Phase C would call,
+already real-verified. A future round wiring the per-n loop, atomic push+verify, the
+promotion_writeback.py bob-side fix, and the backoff ledger on top of these should not need to
+re-derive or re-verify the manifest/reproduction logic itself.
+
+Commits: `c36aadc` (n-range guard, prerequisite), `edc3d73` (JSONL fields), `92b3482`
+(source-aware aggregation), `93cb8ec` (derivation + Step-0 gate). Not pushed (local commits only,
+per this repo's convention).
