@@ -12409,3 +12409,74 @@ complete.
 
 Not pushed (local commits only, per this repo's convention -- includes `.gitignore`; `.env` itself
 is untracked and will never be committed).
+
+## D-qNg64-16 -- broad real-kernel re-sweep attempt: infra progress, stopped on real resource contention (2026-09-08)
+
+**WHY**: user picked this as the explicit next step -- sweep the 31 real-attribution-backed targets
+from D-qNg64-7's 35-target overlap with the real kernel, to replace the simulated-data benefit-metric
+preview with real numbers. **Outcome: real infrastructure progress and one real bug fixed, but zero
+new benefit-metric data points -- stopped on a genuine resource-contention finding, not pushed through.**
+
+**Finding 1 -- almost no existing attribution history is actually usable by `--run`**: of 749
+attribution lines across all bob-side JSONL logs, only 1 (`shared_gate_proj`/L14, D-qNg64-13's own
+test) carries the `manifest`/`orig_argmax`/`threshold` fields D-qNg64-9 added -- everything else
+predates that fix. `--run`'s eligibility filter correctly requires all three (real defense against
+the req-ambiguity corruption class), so 30 of the 31 "actionable" targets from Phase A's looser
+confidence tiering were NOT actually runnable as-is.
+
+**Worked around by regenerating, not weakening the check**: the 31 targets trace back to only **10
+distinct underlying events**, and the top event (`p60`, wikitext-2 req=0/pos=14, the one this whole
+D-qNg64-* thread already trusts) alone covers 14 of them. Re-ran a full unrestricted attribution pass
+for `p60` on the CURRENT binary (`QWEN_MOE_ATTRIB=1`, no `HI_COMBOS` restriction) -- got 18 fresh,
+fully-new-format attribution lines in one ~13-minute engine run (`kv_a_proj_with_mqa` L2/4/5/6/7/8/11/21,
+`kv_b_proj` L5/6/8/9/18/26, `o_proj` L4/9/12, `q_proj` L3), unlocking most of the VERIFIED-tier
+targets for real sweeping without touching the safety check.
+
+**Real bug found+fixed getting even this far**: `promotion_controller.py`'s `group_by_triple()` took
+the FIRST attribution row seen per event to populate `manifest`/`orig_argmax`/etc -- fine when an
+event only had one row shape, wrong now that the same event has both pre- and post-D-qNg64-9 rows
+across different log files, since `glob()` order has no reason to put the new file first. Silently
+produced "0 eligible candidates" even with 18 fresh rows present. Fixed to prefer whichever row
+actually carries a manifest (commit `00964cc`).
+
+**Also found, not fixed (worked around instead)**: `promotion_controller.py --bin`'s documented
+default (`/tmp/qwen_quantsim3_bin`) is a **Sep 2 binary that predates this entire session's L1-L3b
+work** -- zero "manifest" strings, no qNg64 support at all. Every invocation this round explicitly
+passed `--bin /Users/bob/vdsp_m4_bench_sme2/vdsp_fresh/build/qwen_infer_gpu` (the actual current
+build) instead. The default should be fixed or removed so a future `--run` without an explicit
+override doesn't silently exercise a 6-day-stale binary -- not done this round, flagging for D-qNg64-17.
+
+**Where it stopped**: after the fix, `--run --max-sweeps 3` found 18 real candidates and started on
+the first (`kv_a_proj_with_mqa`/L11). Mid-run, `ssh bob "uptime"` showed load average jump from a
+healthy ~2.3 to **17-18** (sustained, not a momentary spike), and `vm.swapusage` showed swap growing
+from 2048M/509M-used to **6144M total/4900M used** in under two minutes. Traced the actual cause:
+**a separate process, `/tmp/qwen_quantsim4_bin`, 752% CPU / 5.99GB RSS, owned by the peer interactive
+session on this same repo (`vdsp_engine_main`)**, already running heavily before this round's own
+work started. This round's own regeneration + sweep attempts added real load on top of that
+already-heavy baseline -- the combination is exactly this project's own documented incident pattern (this account's
+own memory notes: bob 16GB, 3 concurrent heavy processes across sessions/forks -> a real reboot,
+hours of recovery). Killed every process this round started (local `promotion_controller.py` orchestrator,
+remote `qwen_infer_gpu` + its wrapper shell) immediately -- did NOT touch the peer session's
+`qwen_quantsim4_bin`, that's not this session's process to kill. Verified clean after: 0 rows
+pushed for the interrupted `kv_a_proj_with_mqa`/L11 attempt (atomic-push-only-on-full-success held
+even under a hard kill), `QWEN_MOE_PROMOTION_FILE_NQ` on bob unchanged (still just
+`shared_gate_proj 14 5` from D-qNg64-14).
+
+**Net result**: infrastructure is now more correct (group_by_triple fixed, the stale-binary trap is
+documented) and one event's worth of fresh, real-sweepable data exists (`p60`, 18 targets) that
+didn't before this round -- but zero targets were actually swept with the real kernel this round, so
+the benefit-metric exit criterion (D-qNg64-3/7) is still open. This is a genuinely different kind of
+"stop" than a code bug -- the pipeline itself was working; shared-machine resource contention with a
+concurrent session was the actual blocker.
+
+**COST**: ~15-20 minutes of real bob compute (the p60 regeneration + the aborted first sweep
+attempt), no lasting side effects.
+
+**EXIT**: retry once bob's load returns to baseline AND the peer session's own heavy job (if still
+running) has finished or been coordinated around -- check `ps aux -m`/`uptime` on bob before
+launching, not just before this session's own prior heavy work (per this account's own standing
+rule, `feedback_check_other_sessions_before_heavy_compute`). The 18 p60-targets are ready to sweep
+immediately (`--run <fresh_logs incl. p60_regen_new.jsonl glob> --bin .../qwen_infer_gpu` once
+resources allow); the other 9 underlying events still need the same regeneration treatment p60 got.
+
+Not pushed (local commits only, per this repo's convention).
