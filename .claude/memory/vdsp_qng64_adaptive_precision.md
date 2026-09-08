@@ -68,6 +68,19 @@ L3b에만 있고 L3a는 오프라인 정적 배정일 뿐. 이 격차를 사용�
 - 다른 세션(`vdsp_engine_main`)이 같은 repo에서 병행 작업 중 — 이번 라운드에 `c3bcf81`
   "retract 89-target sweep, multi-flip contamination" 커밋 확인(840행 기준 유효, 이 계획의 수치와
   일치). 커밋 전 매번 git log/status 재확인 중.
+- **★★★L3a 완료+실검증** (2026-09-08, commit `106abad` 코드, `6587ec7` docs): `g_moe_lt_nq[]`
+  (g_moe_lt_hi 안 건드림)+`moe_promotion_nq_init()`(`QWEN_MOE_PROMOTION_FILE_NQ`, 시작시 1회) +
+  `n>=base_bits` 강제 + `moe_lazy_hi_release_all()` UAF 선수정 + `tools/promotion_writeback.py`
+  (write-back 집계 스크립트, 합성데이터로 검증) + 오라클 positive control(`quant_search_n.py`).
+  **실버그 1건**: `g_st_moe`가 hi-mirror 로딩함수 안에서 save/restore되며 제 코드 실행 시점엔
+  NULL — **이전 D-gpu-6c/6d와 같은 버그 계열**, `g_moe_hi_st`로 재스왑해 수정(fprintf 이분탐색,
+  bob lldb 불가 제약 재확인). **실검증(bob, DeepSeek-V2-Lite, p60/pos=14 이벤트)**: shared_gate_proj
+  L14→n=5 승격 후 실서빙에서 그 이벤트가 correction 없이도(REAL FLIP 로그 없음) 바로 정답(4794)
+  산출 — 승격 안 하면 "REAL FLIP orig=8713 corrected=4794" 로그로 확실히 틀림, 대조군 확보.
+  n=3(<base_bits=4) 거부 실검증도 확인. **정직한 스코프**: L3a는 "서빙 시점 인지"가 아니라 오프라인
+  정적 배정(계획서 자체가 처음부터 명시). D-d5-31 대비 benefit-metric 전체 비교는 미실행(별도
+  대규모 측정 필요, 의도적 후속과제). Point6(corpus간 최댓값)은 실 멀티코퍼스 데이터 없어 합성
+  데이터로만 검증. Supabase credential 미해결 상태 지속.
 
 ## 실행 규칙
 - `subagent_type: "Plan"` + `model: "opus"`만 Opus 허용(다른 조합은 `agent-model-policy-guard` 훅
