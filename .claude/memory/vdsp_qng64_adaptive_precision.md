@@ -109,3 +109,14 @@ L3b에만 있고 L3a는 오프라인 정적 배정일 뿐. 이 격차를 사용�
   차단 — [[feedback_agent_opus_plan_type_only]] 참고, 전역 메모리에 별도 기록됨).
 - 헤드리스 검증 2연속 실패 시 우회 말고 중단+보고. Phase 경계에서만 사용자에게 보고.
 - 빌드/실행은 bob, 로컬 커밋만(push는 명시 요청시만).
+
+- **Supabase credential 발견** (2026-09-08, 사용자가 "메모리랑 hook에 기록했었어"라고 알려줌):
+  QWEN_SUPABASE_URL/KEY는 계속 못 찾았지만, `~/.claude/hooks/scripts/nvidia-keypool-guard.py`의
+  기존 주석에 Management API PAT 위치가 이미 있었음(`~/Desktop/Code_reviewer_with_feedback/.env`
+  의 `SUPABASE_MANAGEMENT_PAT`) — project_ref만 이 repo 걸로 바꿔서 작동 확인.
+  상세: [[reference_supabase_management_api_access]].
+- **B3 라이브 재측정 완료**: 실 1065행 전체로 old(corpus병합)/new(이벤트스코프) 비교 —
+  **66.7%(34/51) 위반, old/new 완전 동일, 6개 후보 타겟 전부 안 뒤집힘**. B3 수정이 불필요했다는
+  뜻이 아니라(정합성 보호 자체는 여전히 유효, `c3bcf81`과는 다른 메커니즘) 이 데이터셋엔 아직 그
+  실패모드가 없었다는 뜻. RESULTS.md `D-qNg64-5` 참고. 이제 credential 확보로
+  `promotion_writeback.py` 실데이터 검증과 넓은 benefit-metric 비교가 가능해짐 — 다음 착수 대상.
