@@ -10,6 +10,8 @@ kleidiai/kai_test_asan*
 kleidiai/*.o.tmp
 node_modules/
 .build/
+.env
+.env.*
 .claude/history/
 .claude/settings.local.json
 __pycache__/
