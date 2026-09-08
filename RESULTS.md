@@ -10570,6 +10570,75 @@ validated against the *same* underlying event population, so this confirms inter
 generalization. Whether 88 combos hold on WikiText-103 or a different corpus entirely is
 untested, the same honest caveat this project has applied to every promotion-scope claim so far.
 
+## D-d5-32 -- D-d5-31's CORRECT=0 arms never promoted anything; corrected re-run shows 3/24, not 24/24 (2026-09-08)
+
+**Reproduce**: re-ran D-d5-31's exact `B_truth`/`B_hits88` comparison -- same binary
+(`qwen_d527_local_bin`), same corpus (`local_24x6.txt`, 24 requests), same two promotion files
+(`promote_truth.txt` 269 combos, `promote_hits88.txt` 88 combos) -- changing only
+`QWEN_MOE_NEARTIE_CORRECT` from `0` to `1` and adding `QWEN_MOE_NEARTIE_CORRECT_THRESHOLD=0` +
+`QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS`, i.e. exactly `run_truth.sh`'s own original env recipe
+(D-d5-15), with only `QWEN_MOE_PROMOTION_FILE` swapped between the two arms.
+
+**Root cause, found before re-running anything**: `moe_promotion_maybe_apply()`
+(qwen_infer.c:6472) reads `if (!g_moe_neartie_correct_on) return;` -- a hard, unconditional
+bail-out. `g_moe_neartie_correct_on` is set only by `QWEN_MOE_NEARTIE_CORRECT`
+(qwen_infer.c:6318, default off). D-d5-31 set `CORRECT=0` on purpose, reasoning that the
+runtime *safety net* needed to be off for a clean token-accuracy test -- a real, separate
+problem (every arm before it ran `CORRECT=1 THRESHOLD=0`, which trivially repairs any
+promotion miss and made those older "79%/83%" figures not a token-accuracy metric at all). That
+reasoning was correct about the safety net, but `CORRECT=0` doesn't just disable the safety net
+-- it disables the *entire promotion pipeline*, including `g_moe_lt_hi` population (the
+promotion source) and the apply gate above. **Both `B_truth` and `B_hits88` ran with promotion
+structurally impossible.** Confirmed empirically before touching any code: `grep -c PROMOTED` on
+the original saved logs (`/tmp/b_hits88_raw.log`, `/tmp/b_truth_nosafety_FINAL.log`) returns
+**0 in both**. The reported 24/24 exact match was two identical, unpromoted, pure-4-bit
+production runs compared against each other -- it could not have been anything else.
+
+**Rejected alternative explanations** (checked before accepting the gate as sole cause): not a
+binary mismatch (same `qwen_d527_local_bin` used throughout, unchanged since D-d5-31); not
+corpus/config drift (same `local_24x6.txt`, same `CB_SLOTS=4`/`CB_REQS=24`); not non-determinism
+in the engine itself (the corrected re-run below, run under identical conditions to each other
+except the promotion file, produces exactly 3 identical requests and 21 consistently-different
+ones -- a deterministic split, not noise).
+
+**Corrected re-run** (`/tmp/b_truth_corrected_FINAL.log`, `/tmp/b_hits88_corrected_FINAL.log`,
+same machine/binary/corpus, `CORRECT=1 THRESHOLD=0 SAFETENSORS=deepseek_v2lite_bf16_safetensors`,
+`HI_EXPERT_LAYERS=all`):
+
+| arm | combos promoted | PROMOTED log lines | exact match vs B_truth | wall_ms |
+|---|---|---|---|---|
+| `B_truth_corrected` | 269 | 269 | -- (reference) | 891,332.10 |
+| **`B_hits88_corrected`** | **88** | **88** | **3/24 (12.5%)** | **1,067,466.01** |
+
+**The corrected result reverses D-d5-31's conclusion, not just its methodology.** Only requests
+3, 9, and 20 matched exactly; the other 21 diverge, several from the very first output token
+(e.g. req 11: `5860 11 588...` vs `1353 1298 11...`; req 6 diverges at token index 1). The
+88-combo set -- built from *which combos ever recorded a single-flip attribution hit* across the
+Precision Map's 78 measured events -- does not generalize to a full 24-request/144-token-step
+corpus, where most generation steps were never part of that 78-event measured population in the
+first place. This is consistent with, and now a second independent data point for, D-d5-27/29's
+own finding that a k=1 attribution scan has a real blind spot for joint/AND-type requirements and
+out-of-sample positions: "measured to have a hit" is not the same claim as "sufficient as a
+static policy."
+
+**Also wrong, same root cause**: the original -2.8% wall-time delta. The corrected run shows the
+*opposite* direction (`B_hits88_corrected` +19.8% slower, not faster) -- consistent with
+D-d5-25's already-established finding that this engine's wall-time is noisy/contention-sensitive
+at this scale and was never a reliable signal either way; not re-litigated further here.
+
+**Downstream correction applied**: D-qNg64-4's EXIT note (originally read: "using D-d5-31's own
+already-established `B_truth`/`CORRECT=0` no-safety-net methodology") pointed future work at the
+exact broken recipe this section just found -- fixed in place to cite the corrected
+`CORRECT=1 THRESHOLD=0` recipe instead, with a pointer back here. Checked whether this bug
+corrupts D-qNg64-4/D-qNg64-7's own reported numbers: it does not -- both sections only reuse
+`promote_hits88.txt` as a static (role, layer) list to compute effective-bits-per-weight, never
+D-d5-31's token-accuracy claim itself, so no re-measurement is needed there, only the citation
+fix already applied.
+
+**Not re-touched**: D-d5-31's own section text above is left as originally written, per this
+project's standing convention of not rewriting history -- this section is the correction of
+record.
+
 ## D-gpu-4/D-gpu-5: GPU mixed-precision (bits=8 quantized + bits=16/32 dense binding)
 
 Answers the earlier open question "does the GPU path support mixed precision like the CPU
@@ -11564,11 +11633,13 @@ not compute or methodology.
 
 **EXIT**: the real next step is unchanged from D-qNg64-3's own EXIT note -- a genuine multi-target,
 multi-event corpus run comparing a qNg64-derived promotion set against D-d5-31's bits=16 set,
-using D-d5-31's own already-established `B_truth`/`CORRECT=0` no-safety-net methodology so the
-comparison is a real token-accuracy measurement, not the same "safety net silently repairs misses"
-trap D-d5-31 itself found and fixed in its own predecessor arms. Blocked on Supabase access to
-scale target selection beyond what's already locally known, not on anything this round could
-resolve.
+using the corrected `B_truth`/`CORRECT=1 THRESHOLD=0` no-safety-net methodology (see D-d5-32 --
+D-d5-31's own `CORRECT=0` arms never applied promotion at all; `CORRECT=1 THRESHOLD=0` is the
+actual way to suppress the safety net without disabling promotion) so the comparison is a real
+token-accuracy measurement, not the same "safety net silently repairs misses" trap D-d5-31
+originally set out to avoid -- and, per D-d5-32, inadvertently replaced with a different one.
+Blocked on Supabase access to scale target selection beyond what's already locally known, not on
+anything this round could resolve.
 
 ## ROI-G Phase 2: redone flip hunt, single-flip discipline applied -- 2 clean, monotonic targets
 
