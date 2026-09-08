@@ -12137,3 +12137,98 @@ re-derive or re-verify the manifest/reproduction logic itself.
 Commits: `c36aadc` (n-range guard, prerequisite), `edc3d73` (JSONL fields), `92b3482`
 (source-aware aggregation), `93cb8ec` (derivation + Step-0 gate). Not pushed (local commits only,
 per this repo's convention).
+
+## D-qNg64-12 -- L3b Phase C: sweep loop, atomic push, backoff, --run (2026-09-08)
+
+**WHY**: D-qNg64-11 landed 4/9 Phase C pieces (n-range FATAL, orig_argmax/threshold logging,
+source-aware aggregation, derive_isolated_manifest+step0_baseline_gate) and left Priority-1-danger
+(promotion_writeback.py still local+truncating) and the rest of the pipeline (sweep loop, atomic
+push, backoff, `--run`) explicitly undone. This section closes Priority 1 and builds Priority 2,
+all per the second Opus review's specific requirements.
+
+**Priority 1 -- `promotion_writeback.py` now writes bob's live file, not a local copy**
+(`5bfa8e7`): `read_remote_promotion_file()`/`write_remote_promotion_file_atomic()` (ssh-based,
+`mkdir -p && cat > tmp && mv` for atomicity, format matches `moe_promotion_nq_init()`'s bare
+`fscanf("%63s %d %d")` exactly -- no comments, whitespace-delimited triples). `main()` now
+upserts: every target named on the CLI is in-scope (replaced if safe, REMOVED if now unsafe),
+everything else untouched.
+
+Verified real, on bob:
+- Seeded `role_alpha 5 6 / role_beta 10 7 / role_gamma 3 5`, ran an upsert removing `role_beta`
+  and adding `role_delta 1 7` -- result `role_alpha 5 6 / role_delta 1 7 / role_gamma 3 5`,
+  exactly right, no leftover `.tmp` file.
+- Round-trip re-read matched. Non-existent file returns `{}`, not an error (first-run case).
+- **The actual dangerous scenario**: seeded `kv_b_proj 9 4` (a stale entry at exactly the n
+  D-qNg64-plan-1's B1 finding says is untrustworthy) + `unrelated_role 20 6`, ran the REAL `main()`
+  CLI for `kv_b_proj:9` (target_safe_n monkeypatched to the Management-API-confirmed live DB state
+  -- 0 `source='qng64_real'` rows exist for this target, `QWEN_SUPABASE_URL`/`KEY` still
+  unavailable in this environment) -- result: `kv_b_proj 9 4` correctly REMOVED,
+  `unrelated_role 20 6` untouched. The fix removes exactly the entry the whole safety effort
+  exists to catch.
+
+**Priority 2 -- the sweep loop, atomic push, backoff, `--run`** (`3d17f6f`):
+- `sweep_one_n()`/`sweep_triple()` (`tools/quant_search_n.py`): per n in `{5,6,7}`, drives
+  `QWEN_MOE_ATTRIB_SIM_QN=n` against the Step-0-verified derived manifest, classifies into 5
+  outcomes -- `no_signal` (BASELINE WARN / nothing reaches the position / env leak -> aborts the
+  WHOLE triple, not just this n), `fail_noflip`, `fail_wrong` (flips to a DIFFERENT token than
+  recorded -- a real FAIL, never collapsed into pass, which was the original design's actual bug),
+  `pass` (flips to the exact recorded token).
+- `push_sweep_results_atomic()`: single-array POST (Postgres commits a JSON array atomically),
+  `source='qng64_real'` asserted present before serializing, post-push re-SELECT confirms exactly
+  3 rows landed -- raises `PUSH_UNVERIFIED` on any mismatch rather than silently proceeding.
+- Backoff ledger (`load_ledger`/`save_ledger`/`ledger_eligible`/`ledger_record`, local JSON,
+  atomic `os.replace`): exponential backoff on anything but success, capped at 2^6=64h, success
+  resets attempts and marks the entry eligible again in a year (an audit record, not "never
+  again"). Prevents one slow/failing triple from permanently starving the rest of the worklist.
+- `promotion_controller.py --run --max-sweeps N`: reuses Phase A's worklist, filters to
+  manifest-resolvable events (the real `manifest` field, not the old hardcoded verified-events
+  table) THEN backoff-eligible ones, ranks by attribution count, runs the top N through
+  `run_one_triple()` (derive -> Step-0 -> sweep -> atomic push -> re-run the now-fixed
+  `promotion_writeback` for that target).
+
+**Verified real** (Python execution throughout, external ssh/HTTP calls mocked at the boundary --
+same standard as every prior D-qNg64-* verification, since actually running the heavy engine
+wasn't possible this round, see below):
+- All 6 classification scenarios for `sweep_one_n` (no-signal x3 variants, fail_noflip, fail_wrong,
+  pass) -- correct outcome every time.
+- Backoff ledger: 8 real lifecycle properties (new-key eligible, post-failure ineligible, eligible
+  again after the window, exponential growth, cap at 64h, success resets, save/load round-trips,
+  atomic write leaves no `.tmp`).
+- Atomic push: correct 3-row payload construction + source assertion on success; correctly raises
+  `PUSH_UNVERIFIED` when a mocked partial-landing (1 of 3 rows) is returned by the verification
+  SELECT.
+- `run_one_triple`: missing-manifest SKIP path, full success path (mocked derive/sweep/push all
+  called exactly once, correct promoted n written), Step-0-abort path (push correctly NEVER
+  attempted after an abort).
+- `run_mode`'s candidate selection: a synthetic log where a manifest-LESS target has MORE
+  attributions (3) than a manifest-resolvable one (2) -- correctly selects only the
+  manifest-resolvable target, confirming the eligibility gate runs before attribution-count
+  ranking, not after. Separately: a target pre-seeded into an active backoff window is correctly
+  excluded even though it would otherwise be selected.
+
+**What did NOT run this round**: an actual real engine invocation (Step-0 or a real n-sweep)
+against bob. Checked bob's memory before attempting (`vm_stat`): 87MB free at the start of this
+round, 146MB by the end -- both far short of what a `qwen_*bin` instance needs
+(`bob-macstudio-concurrent-load-guard` hook's own measured ~11GB/instance), and this specific
+memory-pressure pattern is the exact one this repo's own hooks exist to prevent (a real prior
+incident: swapping -> SSH unresponsive -> hours of recovery). No `qwen_infer`/heavy process was
+actually running (checked `ps aux -m` -- top consumer was a resident background process at
+331MB), so this isn't a stale-process cleanup opportunity, just genuinely tight current headroom.
+Bypassing the guard was judged not this fork's call to make unilaterally against a safeguard tied
+to a documented severe incident, with no live user available to confirm. The manifest/combo files
+for the real p60/pos=14 event were located and confirmed present on bob
+(`/private/tmp/step7/manifest_p60.txt`, `combo_shared_gate_proj_L14.txt`) -- the pipeline is ready
+to run for real the moment bob has headroom; nothing about the delay is a code gap.
+
+**COST**: the mocked-boundary verification standard means the actual remote-execution mechanics
+(the POSIX timeout-kill wrapper's real behavior under a real hang, ssh's real behavior on a huge
+stdout, etc.) remain unverified beyond what Step-0/D-qNg64-1's own OWN earlier real runs already
+established for the same wrapper pattern (borrowed, not re-derived, from `step0_baseline_gate`).
+
+**EXIT**: run `promotion_controller.py --run --max-sweeps 1` for real once bob has real headroom
+(a few GB free) -- everything downstream of that first real invocation (classification, push,
+verify, backoff, writeback) is now real-tested at the logic level and should behave as verified
+above; if it doesn't, that's new information the mocked tests couldn't have caught (real stdout
+formatting drift, a real timeout firing, etc.) and is exactly what that first real run is for.
+
+Commits: `5bfa8e7` (Priority 1), `3d17f6f` (Priority 2). Local only, not pushed.
