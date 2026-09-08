@@ -12480,3 +12480,52 @@ immediately (`--run <fresh_logs incl. p60_regen_new.jsonl glob> --bin .../qwen_i
 resources allow); the other 9 underlying events still need the same regeneration treatment p60 got.
 
 Not pushed (local commits only, per this repo's convention).
+
+## D-qNg64-17 -- resweep retry: same peer contention, still active, stopped again (2026-09-09)
+
+**WHY**: user directly asked to retry after D-qNg64-16 stopped. Both the parent session and this
+fork re-checked bob before starting: load average had dropped from the peak 40.49 to ~33-34 and was
+flat (not climbing), no heavy non-`claude`/non-system process appeared in `ps aux -m`'s
+memory-sorted top-8 in three separate checks across ~10 minutes. Judged safe to attempt one
+cautious, closely-monitored target.
+
+**What happened**: started `--run --max-sweeps 1` against `p60_regen_new.jsonl` (the 18 fresh
+manifest-bearing lines D-qNg64-16 already produced -- not regenerated again). Selected
+`q_proj`/L3, began Step-0 baseline gate (one real engine invocation, `qwen_infer_gpu` on bob,
+~2 minutes in when stopped). A background monitor polling bob every 45s (load average +
+`ps aux` filtered to >200% CPU, not just top-8-by-memory) caught what the three prior manual
+checks missed: **`/tmp/qwen_quantsim4_bin` (the SAME peer process D-qNg64-16 found) was still
+running the entire time** -- 241% CPU, 3.24GB RSS, started 3:30AM, ~117 minutes of continuous
+runtime by the time this round's monitor caught it. It just wasn't memory-ranked into the top-6-8
+processes at the specific moments of the three manual pre-checks (CPU-heavy but not always the
+single largest RSS at a given instant) -- a real gap in "check the top-8 by memory" as a
+sufficient contention check, now known.
+
+Confirmed with a direct swap check at the same moment: `vm.swapusage` showed **5663.75M/6144M
+used (92%)**, up from 4746M/6144M (77%) less than 10 minutes earlier -- actively climbing, not
+residual decay. Killed this round's own processes immediately: local `promotion_controller.py`
+orchestrator (`kill`, confirmed exited) and the remote `qwen_infer_gpu` + its two wrapper
+shells (`pkill -f qwen_infer_gpu` on bob, confirmed gone). Did NOT touch the peer's
+`qwen_quantsim4_bin` -- not this session's process.
+
+**Verified clean afterward**: `q_proj`/L3 in `moe_quant_sweep_results` still shows only
+`source='sim', count=30` -- zero rows written, the kill landed before Step-0 even completed once,
+so there was nothing to push yet. `QWEN_MOE_PROMOTION_FILE_NQ` on bob unchanged
+(`shared_gate_proj 14 5`, same as D-qNg64-14). No local log output was even flushed before the
+kill -- the process hadn't reached its first print statement.
+
+**Net result: still zero new benefit-metric data points, two rounds in a row now.** This is not a
+problem with the pipeline, the credentials, or this session's own resource use -- both attempts
+found the exact same external cause (a different session's own long-running heavy job on the
+shared bob machine), confirmed independently each time.
+
+**COST**: ~2 minutes of real bob compute (one partial, aborted Step-0 attempt), no lasting effects.
+
+**EXIT**: retry needs the peer's `qwen_quantsim4_bin` to actually finish or be stopped by its own
+owning session -- not something to force from here. When retrying next, check contention by CPU%
+across ALL processes (`ps aux | awk '$3+0>200'`), not just the memory-sorted top-N -- this round's
+own near-miss shows memory-ranking alone can hide a real, sustained, CPU-heavy contender. The
+18-target p60 dataset and the credential/SSL-cert fixes from D-qNg64-15 remain ready and
+untouched -- next attempt can resume directly once bob is actually clear, no rework needed.
+
+Not pushed (local commits only, per this repo's convention).
