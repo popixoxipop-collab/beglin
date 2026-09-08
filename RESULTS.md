@@ -12298,3 +12298,51 @@ things needed before it can close the loop for real: (a) `QWEN_SUPABASE_URL`/`QW
 both are small, well-understood remaining gaps.
 
 Commit: `55d5efa`. Not pushed (local commits only, per this repo's convention).
+
+## D-qNg64-14 -- L3b Phase C: pipeline closed for real, first live qNg64 promotion (2026-09-08)
+
+**WHY**: D-qNg64-13 proved the pipeline mechanically end-to-end through the push boundary but
+stopped there -- `push_sweep_results_atomic()` needs `QWEN_SUPABASE_URL`/`QWEN_SUPABASE_KEY`
+(REST API), not the Management API PAT, and the fork correctly declined to substitute one for
+the other without the same explicit authorization the schema migration got. User was asked
+directly and authorized using the Management API for this specific write.
+
+**What was done** (by the orchestrating session directly, not delegated -- a small, well-defined
+completion of an already-verified pipeline):
+1. Looked up the exact `(model, corpus)` already on record for this target/event from the live DB
+   (`deepseek-v2-lite` / `wikitext-2-raw-v1-validation-short-fullext`) rather than guessing.
+2. Inserted the 3 real rows D-qNg64-13 verified (`n=5,6,7`, all `pass=true`, `source='qng64_real'`,
+   real `eff_bpw` values) via the Management API, then immediately re-SELECTed to confirm exactly
+   3 rows landed with the right shape -- same atomic-push-then-verify discipline the automated
+   pipeline itself uses, done manually since the automated push path is credential-blocked.
+3. `promotion_writeback.py`'s own data-fetch (`target_safe_n` -> `fetch_prior_points_by_event`)
+   hits the SAME REST-API credential gap, so it couldn't run end-to-end as a single command. Did
+   not reimplement its logic -- imported and reused its already-validated pieces directly: fed the
+   real `qng64_real` rows just inserted through `quant_search_n.py`'s own `suffix_closed_knee()`
+   (unmodified, source-filtered per D-qNg64-12's fix) to get `n=5` (matches D-qNg64-1/3/13's prior
+   manual/automated results exactly, now via the actual aggregation function rather than by hand),
+   then called `promotion_writeback.py`'s own `read_remote_promotion_file()`/
+   `write_remote_promotion_file_atomic()` helpers directly (unmodified) to upsert the one target
+   into bob's live file.
+4. Verified: `read_remote_promotion_file()` before -> `{}` (empty, matching D-qNg64-13's own
+   confirmation nothing existed yet). After write -> `{('shared_gate_proj', 14): 5}`, read back
+   from bob and confirmed to match exactly what was intended.
+
+**Result**: `/private/tmp/qng64_ctl/promotion_nq_live.txt` on bob now contains
+`shared_gate_proj 14 5` -- the first promotion this entire multi-phase effort (L1's kernel, L2's
+corrected search algorithm, L3a's static-promotion mechanism, L3b's live-detection-to-sweep
+pipeline) has produced end-to-end from a REAL live-detected serving flip, through a REAL
+qNg64 kernel sweep, to a file the production engine actually reads at startup. Not yet loaded by
+a running engine process in this round (that would be its own separate real-serving verification,
+not done here) -- the artifact the whole pipeline exists to produce is real and in place.
+
+**COST**: none beyond what D-qNg64-13 already spent -- this section is documentation+a few small
+read/write operations, no new compute.
+
+**EXIT**: the two gaps D-qNg64-13 named remain open for FUTURE targets going through this
+pipeline without manual intervention: `QWEN_SUPABASE_URL`/`QWEN_SUPABASE_KEY` (or a properly
+authorized, built-in Management-API push path in the scripts themselves, not a one-off manual
+step like this section), and the `--reset-backoff` CLI flag. This section closed ONE target
+manually with explicit authorization; it does not change either gap for the next one.
+
+Not pushed (local commits only, per this repo's convention).
