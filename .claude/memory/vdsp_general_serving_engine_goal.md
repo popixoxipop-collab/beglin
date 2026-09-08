@@ -2639,3 +2639,19 @@ margin=0.7116으로 로깅임계값0.5·보정임계값0.1 둘 다 훨씬 위 �
 ROADMAP.md D-roadmap-3 세번째 Update + RESULTS.md 신규
 "D-deepseek-precint-5" 섹션. git 커밋/push 미실행(명시요청 없으면
 안 함, 이 세션 정책 일관유지).
+
+
+**D-d5-31/D-d5-32 (2026-09-08) -- "no safety net" 의도로 끈 CORRECT=0가 promotion
+전체를 죽임**: D-d5-31은 (attribution 히트로 뽑은) 88-combo 정적 promotion
+세트가 bf16을 24/24 완전재현한다고 보고했으나, 비교 두 arm 모두
+`QWEN_MOE_NEARTIE_CORRECT=0`로 돌렸음 — `moe_promotion_maybe_apply()`
+(qwen_infer.c:6472)가 `g_moe_neartie_correct_on`에 게이트돼있어 CORRECT=0이면
+즉시 return, promotion 자체가 구조적으로 불가능. 원본 로그(`/tmp/
+b_hits88_raw.log`, `/tmp/b_truth_nosafety_FINAL.log`)에 "PROMOTED" 로그 0건으로
+확인 — 24/24는 "동일한 미승격 4bit 두 개를 비교"한 것에 불과. 올바른 레시피는
+`CORRECT=1 THRESHOLD=0`(safety net만 억제, promotion은 살아있음, run_truth.sh의
+원래 방식) — 이걸로 재측정하니 **88-combo 세트는 269-combo reference 대비
+3/24(12.5%)만 일치**, D-d5-31의 결론 자체가 뒤집힘. 교훈: "safety net을 끄고
+싶다"≠"CORRECT를 끈다" — 이 코드베이스에서 safety net만 억제하려면 반드시
+`THRESHOLD=0`을 쓰고 `CORRECT=1`은 유지할 것. 상세: RESULTS.md D-d5-32,
+커밋 1b0dcb6.
