@@ -228,19 +228,22 @@ def make_historical_oracle(known_results):
 
 def fetch_prior_points_by_event(model, role, layer):
     """Query moe_quant_sweep_results for every (n, pass) row already recorded
-    for this exact (model, role, layer), grouped by corpus THEN by (req,pos)
-    event (Opus B3 fix, 2026-09-08 -- the old fetch_prior_points_by_corpus()
-    merged every event into one flat per-corpus list, which classify() could
-    misread as a violation no single event exhibited; req/pos are real columns
-    on this table, supabase_schema_d_roadmap4.sql:376-377, just previously
-    unused here). Returns {corpus: {(req,pos): [(n, pass_bool), ...]}}."""
+    for this exact (model, role, layer), grouped by corpus, THEN by (req,pos)
+    event, THEN by source (D-qNg64-11, 2026-09-08 -- second Opus review of the
+    L3b Phase C design found the original per-event dict(pts) collapse lets a
+    source='sim' PASS silently overwrite a source='qng64_real' FAIL for the
+    same n on a same-event collision, sorted() putting False before True --
+    verified by execution against real kv_b_proj/L9 data. Grouping by source
+    here, one level deeper than the event, is what lets a caller keep sim and
+    real data from ever being blended into one suffix_closed_knee() call).
+    Returns {corpus: {(req,pos): {source: [(n, pass_bool), ...]}}}."""
     url = os.environ.get("QWEN_SUPABASE_URL")
     key = os.environ.get("QWEN_SUPABASE_KEY")
     if not url or not key:
         raise RuntimeError("QWEN_SUPABASE_URL / QWEN_SUPABASE_KEY must be set for live mode")
 
     qs = (f"model=eq.{model}&role=eq.{role}&layer=eq.{layer}"
-          f"&select=corpus,req,pos,n,pass")
+          f"&select=corpus,req,pos,n,pass,source")
     req_obj = urllib.request.Request(
         f"{url}/rest/v1/moe_quant_sweep_results?{qs}",
         headers={"apikey": key, "Authorization": f"Bearer {key}"},
@@ -251,13 +254,29 @@ def fetch_prior_points_by_event(model, role, layer):
     events_by_corpus = {}
     for row in rows:
         ev = (row["req"], row["pos"])
-        events_by_corpus.setdefault(row["corpus"], {}).setdefault(ev, []).append((row["n"], bool(row["pass"])))
-    # de-dup identical (n, pass) pairs within one event (the table has no unique
-    # constraint -- the same real event can be pushed more than once)
+        src = row.get("source", "sim")  # pre-D-qNg64-9 rows predate the column; treat as sim (correct: they are)
+        (events_by_corpus.setdefault(row["corpus"], {})
+                         .setdefault(ev, {})
+                         .setdefault(src, [])
+                         .append((row["n"], bool(row["pass"]))))
+    # de-dup identical (n, pass) pairs within one (event, source) -- the table has no unique
+    # constraint, the same real event can be pushed more than once
     for corpus in events_by_corpus:
         for ev in events_by_corpus[corpus]:
-            events_by_corpus[corpus][ev] = sorted(set(events_by_corpus[corpus][ev]))
+            for src in events_by_corpus[corpus][ev]:
+                events_by_corpus[corpus][ev][src] = sorted(set(events_by_corpus[corpus][ev][src]))
     return events_by_corpus
+
+
+def event_source_contradiction(pts_by_n_and_flag):
+    """pts_by_n_and_flag: [(n, pass_bool), ...] for ONE (event, source). Returns the set of n
+    values that appear with BOTH True and False -- a real contradiction within a single trusted
+    source (e.g. a retried push landed twice with different results), which must never be
+    silently resolved by sort order (D-qNg64-11's whole point). Empty set means clean."""
+    by_n = {}
+    for n, p in pts_by_n_and_flag:
+        by_n.setdefault(n, set()).add(p)
+    return {n for n, flags in by_n.items() if len(flags) > 1}
 
 
 # ---------------------------------------------------------------------------

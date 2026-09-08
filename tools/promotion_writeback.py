@@ -37,31 +37,87 @@ a new target.
 import argparse
 import sys
 
-from quant_search_n import fetch_prior_points_by_event, suffix_closed_knee
+from quant_search_n import fetch_prior_points_by_event, suffix_closed_knee, event_source_contradiction
+
+# D-qNg64-11: the only bit-widths the qNg64 bit-plane decoder actually supports for a real
+# deployment promotion (matches qwen_infer.c's moe_promotion_nq_init()/moe_register_hi_role()
+# hard allowlist, commit c36aadc). suffix_closed_knee() must be called with this explicit ladder
+# for real-sourced data -- NOT the sim data's historical n=2..16 range, which includes values
+# (4, 8, 9-16) this path cannot decode at all.
+REAL_LADDER = (5, 6, 7)
+
+TRUSTED_SOURCE = "qng64_real"
 
 
 def target_safe_n(model, role, layer):
     """Returns (n, detail) where n is the aggregated safe n (None if unsafe/no data) and detail
     is a dict with the per-corpus/per-event breakdown, for logging/audit -- never hide how a
-    number was derived."""
+    number was derived.
+
+    D-qNg64-11 (second Opus review of L3b Phase C, 2026-09-08): only source='qng64_real' rows
+    are trusted for an actual deployment decision -- source='sim' data is never mixed in, at any
+    level. This isn't a preference, it's this project's own established conclusion
+    (D-qNg64-plan-1/2/5/6: "F32-override 경유는 전부 배선 스모크테스트일 뿐 배포 결정 근거로
+    쓰지 않는다") finally enforced in code rather than only in memory. A target with real data
+    for some events but not others is refused, not partially trusted -- see per-corpus loop
+    below. Real, concrete consequence verified against this repo's own numbers: the OLD
+    (source-blind) version of this function emitted `kv_b_proj/L9 n=4` and
+    `kv_a_proj_with_mqa/L3 n=11` from mixed real+sim data -- n=4 is a measured real-kernel FAIL
+    for kv_b_proj/L9 (D-qNg64-2), and n=11 is not decodable by the qNg64 kernel at all (outside
+    REAL_LADDER, would have hit qwen_infer.c's new c36aadc FATAL if ever actually promoted). This
+    version cannot reproduce either output."""
     events_by_corpus = fetch_prior_points_by_event(model, role, layer)
     if not events_by_corpus:
         return None, {"reason": "no prior sweep data"}
 
     per_corpus = {}
+    any_real_data_anywhere = False
     for corpus, events in events_by_corpus.items():
         per_event_knees = {}
-        for ev, pts in events.items():
-            known = dict(pts)
-            per_event_knees[ev] = suffix_closed_knee(known)
-        if any(k is None for k in per_event_knees.values()):
-            unsafe_events = [ev for ev, k in per_event_knees.items() if k is None]
+        unsafe_events = []
+        no_real_data_events = []
+        for ev, by_source in events.items():
+            real_pts = by_source.get(TRUSTED_SOURCE, [])
+            if not real_pts:
+                no_real_data_events.append(ev)
+                continue
+            any_real_data_anywhere = True
+            contradictions = event_source_contradiction(real_pts)
+            if contradictions:
+                # A retried/duplicate push landed two different results for the same n within
+                # the TRUSTED source -- never resolve this by sort order, treat as unsafe and
+                # say exactly why (this table has no unique constraint; a duplicate push with a
+                # different outcome is a real, if rare, possible event, not just theoretical).
+                per_event_knees[ev] = None
+                unsafe_events.append(f"{ev}: contradictory real-kernel results at n={sorted(contradictions)}")
+                continue
+            per_event_knees[ev] = suffix_closed_knee(dict(real_pts), ladder=REAL_LADDER)
+            if per_event_knees[ev] is None:
+                unsafe_events.append(f"{ev}: no safe n in {REAL_LADDER} (real-kernel data)")
+
+        if no_real_data_events:
+            # A target where SOME events have real-kernel data and others don't is refused
+            # wholesale, not partially trusted -- promoting on a subset of known events isn't
+            # "safe against every known event", it's safe against the ones that happened to be
+            # swept. D-qNg64-plan-1's write-back principle (max across ALL known events) only
+            # holds if "all known events" actually means all of them.
+            per_corpus[corpus] = {
+                "safe_n": None, "per_event": per_event_knees,
+                "reason": f"{len(no_real_data_events)} event(s) have no source='{TRUSTED_SOURCE}' data yet: {no_real_data_events}",
+            }
+            continue
+
+        if unsafe_events or any(k is None for k in per_event_knees.values()):
             per_corpus[corpus] = {"safe_n": None, "per_event": per_event_knees, "unsafe_events": unsafe_events}
         else:
             per_corpus[corpus] = {"safe_n": max(per_event_knees.values()), "per_event": per_event_knees}
 
+    if not any_real_data_anywhere:
+        return None, {"reason": f"no source='{TRUSTED_SOURCE}' rows exist yet for this target -- "
+                                 f"sim-only data is never used for a deployment decision (D-qNg64-plan-1/2/5/6)"}
+
     if any(c["safe_n"] is None for c in per_corpus.values()):
-        return None, {"reason": "at least one corpus has an event with no safe n in the tested ladder", "per_corpus": per_corpus}
+        return None, {"reason": "at least one corpus is not fully real-kernel-verified or has an unsafe event", "per_corpus": per_corpus}
 
     final_n = max(c["safe_n"] for c in per_corpus.values())
     return final_n, {"per_corpus": per_corpus, "final_n": final_n}
