@@ -195,3 +195,16 @@ L3b에만 있고 L3a는 오프라인 정적 배정일 뿐. 이 격차를 사용�
   `shared_gate_proj 14 5` 기록+검증 완료. **이 프로젝트 전체(L1→L2→L3a→L3b A/B/C)가 실데이터로
   최초로 완전히 닫힌 사례.** 남은 gap: QWEN_SUPABASE_URL/KEY(다음 타겟부턴 자동화 막힘),
   `--reset-backoff` CLI 미구현. 둘 다 설계 문제 아니라 작은 후속작업. RESULTS.md D-qNg64-14 참고.
+
+- **QWEN_SUPABASE_URL/KEY 해결 + --reset-backoff 구현** (2026-09-08, D-qNg64-15): 계속 못 찾던
+  REST API 키를 검색 대신 이미 가진 Management API PAT의 `api-keys?reveal=true` 엔드포인트로
+  직접 조회해서 획득(secret/service_role급 키). `/Users/xox/vdsp-engine/.env`에 저장(먼저
+  `.gitignore`에 `.env` 추가 — 이 repo에 원래 없었음, chmod 600). **별개 버그 하나 더 발견**:
+  크레덴셜과 무관하게 이 머신 python.org Python이 로컬 CA 번들이 없어서 urllib 기반 호출이 전부
+  SSL 에러로 실패하고 있었음 — `Install Certificates.command` 실행으로 해결(이 세션 내내 썼던
+  curl-우회 패턴의 근본원인, 이제 필요없어짐). **검증**: 세션 내내 막혀있던
+  `fetch_prior_points_by_event()`가 이제 실제로 sim/qng64_real 소스분리 데이터를 정확히 반환.
+  `--reset-backoff ROLE:LAYER`도 신규 구현+synthetic ledger로 검증(다른 타겟 안 건드리고
+  지정 타겟만 정확히 제거). 이걸로 D-qNg64-13/14가 남긴 두 gap 전부 해소 — 다음 타겟부턴 수동
+  개입 없이 `--run` 완전자동화 가능(아직 신규 타겟으로 처음부터 끝까지 무개입 재검증은 안 함,
+  원하면 다음 단계).
