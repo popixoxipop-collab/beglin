@@ -185,3 +185,13 @@ L3b에만 있고 L3a는 오프라인 정적 배정일 뿐. 이 격차를 사용�
   Supabase push만 막힘**(QWEN_SUPABASE_URL/KEY 여전히 못 찾음 — Management API PAT과는 다른
   credential, DML이라 별도 승인 없이 우회 안 함). `--reset-backoff` CLI도 설계엔 있었지만
   미구현으로 확인. Phase C는 이제 "메커니즘 증명 완료, push credential만 남음" 상태.
+
+- **L3b Phase C 완전 종료** (2026-09-08): 실 end-to-end 파이프라인 4회 실행 후 실버그 2건 더
+  발견+수정(로그 디렉토리 미생성). 최종 실결과: `shared_gate_proj/L14`(p60 이벤트) Step-0 게이트
+  PASS, 실커널 n=5/6/7 전부 PASS(완전자동화 파이프라인 최초). Supabase push는 REST키 없어서
+  자동경로는 막혔지만, 사용자 명시 승인 받아 Management API로 직접 마무리 — 3행 INSERT+검증,
+  이미 검증된 `suffix_closed_knee()`/`read_remote_promotion_file()`/
+  `write_remote_promotion_file_atomic()` 함수 재사용해 bob의 실제 승격 파일에
+  `shared_gate_proj 14 5` 기록+검증 완료. **이 프로젝트 전체(L1→L2→L3a→L3b A/B/C)가 실데이터로
+  최초로 완전히 닫힌 사례.** 남은 gap: QWEN_SUPABASE_URL/KEY(다음 타겟부턴 자동화 막힘),
+  `--reset-backoff` CLI 미구현. 둘 다 설계 문제 아니라 작은 후속작업. RESULTS.md D-qNg64-14 참고.
