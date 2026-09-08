@@ -11779,3 +11779,43 @@ simulated-data preview of one. Combined with D-qNg64-6's conclusion, that's the 
 work either way: get real-kernel rows into `moe_quant_sweep_results`.
 
 Both sections: not pushed (local commits only, per this repo's convention).
+
+## ROI-G Phase 2: p95's "46+ minute hang" investigated -- likely genuine slow work, not a
+## deadlock or leak, but not conclusively proven either
+
+Follow-up on the anomaly flagged in the redone flip-hunt round: reproduced `p95` fresh
+(`manifest_p95.txt`, `wikitext-103-raw-v1-validation-short`, same REAL FLIP at pos=12,
+`orig=4121 corrected=8271`, `margin_before=0.060213`) and inspected it live with `/usr/bin/
+sample` (macOS's built-in sampling profiler -- note `sample` on `$PATH` resolves to an unrelated
+Python package on this machine, use the full `/usr/bin/sample` path) rather than waiting it out
+again.
+
+**Three hypotheses tested, one rejected, two remain live**:
+1. **Memory leak across the 405-combo attribution loop, causing progressive slowdown** --
+   REJECTED. RSS actually *decreased* slightly between two checks 5 minutes apart (4,757,872 KB
+   at 05:23 elapsed -> 4,613,456 KB at 10:00 elapsed). A leak would show monotonic growth; this
+   doesn't.
+2. **A true deadlock or infinite loop stuck on one specific combo** -- weakened but not fully
+   excluded. Two stack samples 5+ minutes apart show CPU at 450-550% (real multi-threaded work,
+   not an idle spin) and an *identical* call-graph shape both times: `moe_neartie_maybe_correct
+   -> moe_forward_token -> moe_attention/moe_matvec_af_row`, with wait time going through
+   `moe_scalar_pool_go_and_wait` -> `_pthread_cond_wait` -- normal thread-pool synchronization,
+   not a lock-wait deadlock signature. The two samples being shape-identical is exactly what a
+   healthy loop grinding through many similar combo-replay iterations would also look like, so
+   this alone can't distinguish "still legitimately working" from "stuck replaying the same
+   combo forever" -- the C-level stack doesn't expose which combo index is currently running,
+   and no per-combo progress line exists to check against (only "hit" lines are logged; a
+   no-hit combo is silent).
+3. **This specific near-tie event's forward-pass replay is inherently more expensive per-combo
+   than p60/p10/p105/p155's** (e.g. content-dependent MoE expert-routing overlap making the
+   matvec/attention work costlier for this particular token context) -- the hypothesis most
+   consistent with all evidence gathered (stable memory, sustained real CPU work, no deadlock
+   signature), but not conclusively provable without adding per-combo progress instrumentation
+   to the binary, which wasn't done here (out of scope for an investigation pass, would need a
+   rebuild).
+
+**Not resolved -- explicitly flagged for a future session, not silently dropped**: 2 and 3
+remain both plausible; distinguishing them needs either a debug build with per-combo logging,
+or `dtrace`/similar instrumentation on the actual `moe_neartie_attribute()` combo loop. Killed
+the reproduction (PID 89120) after gathering this evidence rather than let it run to whatever
+its actual completion time is -- the diagnostic value was already captured either way.
