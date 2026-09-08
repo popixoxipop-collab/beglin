@@ -11357,3 +11357,141 @@ to establish, and it's established. `QWEN_MOE_ATTRIB_SIM_QN` is reusable for tha
 further C changes.
 
 Commit: `1ed4f13`. Not pushed (local commits only, per this repo's convention).
+
+## D-qNg64-3 -- L3a: offline static qNg64 promotion, end-to-end (2026-09-08)
+
+**Honest framing first (plan's own point, restated so it isn't lost)**: this is NOT the
+"서빙 시점에 인지" the user originally asked for. It is offline-computed, statically-applied
+mixed precision -- decided once (by `tools/promotion_writeback.py`, below), applied once at
+process startup, permanent for the process. The dynamic per-token recognition the user's
+original vision describes is L3b, still not started. What this section delivers is real,
+load-bearing serving infrastructure (it changes what the production CPU path actually computes),
+just not that.
+
+**WHY**: qwen_infer.c:6250-6260's own comment anticipated this exact extension point ("today a
+human writes QWEN_MOE_PROMOTION_FILE, eventually a small script reading
+moe_role_precision_state") -- but for the EXISTING bits=16-only mechanism. D-qNg64-plan-1's Opus
+review (B2) found the naive version of this extension (mutate g_moe_lt_hi in place, treat
+g_moe_promoted as a bool) has a hard blocker and a real bug; this section is the corrected design.
+
+**Built** (qwen_infer.c):
+1. `g_moe_lt_nq[MOE_MAXLAYERS]` -- new shadow table, separate from `g_moe_lt_hi[]`. `g_moe_lt_hi`
+   is attribution's all-bits=16 reference baseline (53 reference sites) and is never written by
+   this path -- mutating it in place would move that baseline under every attribution result that
+   depends on it staying exactly bits=16.
+2. `g_moe_promoted_nq[role][layer]` -- stores the promoted n itself (0 = not promoted), not a
+   bool, by construction (the existing `g_moe_promoted` bool was the Opus-caught write-once bug;
+   this one was designed from scratch so there's nothing to inherit).
+3. `moe_promotion_nq_init()` -- reads `QWEN_MOE_PROMOTION_FILE_NQ` ("<role> <layer> <n>" per
+   line) ONCE at startup (not polled -- B2's decision: pre-build at startup, hot-reload traded
+   away rather than risk an admission-time build stall materializing a 369MB E-stacked shadow
+   mid-serving). Looks up each role's safetensors name pattern by searching the SAME
+   `MOE_ST_*_ROLES` tables `moe_neartie_correct_load_attn_hi()` already uses (not a re-derived
+   mapping), builds a real qNg64 shadow via `st_register_moe_*_qNg64_as()` (D-qNg64-1) into
+   `g_moe_lt_nq[layer]`, enforces `n >= base_bits` (D-qNg64-plan-1's B1 finding: a "passing" n
+   below production's own bits is not trustworthy evidence -- refuse and log, never clamp or
+   apply anyway), then pointer-swaps `g_moe_lt_active[layer].<role>`. Called right after
+   `moe_lt_active_init()`, unconditionally -- no `g_moe_neartie_correct_on` gate (plan point 7).
+   embed_tokens/lm_head explicitly out of scope this round (separate global-pointer mechanism,
+   not a `MoeLayerTensors` field) -- a promotion line naming either FATALs with a clear message.
+   GPU untouched (plan point 8 -- no live GPU promotion path exists today).
+4. Fixed a real pre-existing latent bug this design surfaced (`moe_lazy_hi_release_all()`,
+   13492-ish): it released EVERY lazy tensor unconditionally, including one an active promotion
+   currently points at -- freed `->base` out from under a live pointer, and the next decode would
+   silently reinterpret the shared af-blob using that tensor's own offsets (wrong data, no
+   crash). Latent before this round (nothing made lazy materialization the default path for an
+   actively-promoted tensor); L3a's `g_moe_lt_nq` shadows are exactly that, so this was fixed
+   FIRST, not just noted. Fix: `moe_af_reachable_from_active()`, skip release for anything
+   reachable from `g_moe_lt_active[]` for any layer.
+5. New env var `QWEN_MOE_PROMOTION_FILE_NQ`, deliberately NOT sharing the existing 2-column
+   `QWEN_MOE_PROMOTION_FILE`/`moe_hi_combos_load()` format -- feeding a 3-column file to that
+   existing `fscanf(f, "%63s %d", ...)` parser silently reads only the first line then exits the
+   loop (traced by hand, not run -- a real, disclosed risk this design avoids rather than
+   triggers).
+
+**A real bug found and fixed getting this to run** (not caught by inspection, only by running
+it): `g_st_moe` is NULL by the time `moe_promotion_nq_init()` runs.
+`moe_neartie_correct_load_attn_hi()` save/restores `g_st_moe` around its OWN body (points it at
+the just-opened checkpoint while it registers hi-mirror tensors, restores it to NULL -- the base
+model loads via AF-blob, not safetensors -- once it returns). This is the SAME bug class this
+project already found and fixed once before, in a different call path (D-gpu-6c/6d, per
+MEMORY.md). Same fix: `g_moe_hi_st` holds the same opened handle in a separate global that
+survives the restore; re-swap `g_st_moe = g_moe_hi_st` before registering, restore after.
+Diagnosed via `fprintf`+`fflush` bisection (bob's SSH access has no TCC permission for `lldb`,
+same constraint D-qNg64-1 hit) -- 3 rebuild-and-rerun cycles from "SIGSEGV, no message" down to
+the exact NULL pointer.
+
+**Verification** (all real engine runs on bob, DeepSeek-V2-Lite, the same `p60`/pos=14 confirmed-
+single-flip event D-qNg64-2 used):
+
+1. **Positive**: `shared_gate_proj` L14 (base_bits=4) promoted to n=5 via
+   `QWEN_MOE_PROMOTION_FILE_NQ`. Real run output: `[moe promotion nq] role=shared_gate_proj
+   layer=14 PROMOTED to qNg64(n=5) ... (base_bits was 4)`, then at pos=14:
+   `margin_before=0.013037` and `event ... argmax=4794 vs_token=8713` -- **no "REAL FLIP" line**.
+2. **Baseline (same event, no promotion)**: `margin_before=0.027483`, and explicitly
+   `[moe neartie] correct req=0 pos=14 REAL FLIP orig=8713 corrected=4794 -- running
+   attribution` -- the unpromoted base computation gets pos=14 WRONG (argmax=8713) and only the
+   separate correction/shadow-replay mechanism (bits=16 hi-mirror re-verification) catches and
+   fixes it.
+   **Comparison proves causality**: with the promotion, the base forward pass alone -- not the
+   correction shadow -- already produces the correct token (no flip to catch, no "REAL FLIP"
+   logged). This is the direct production-serving path, not the attribution-replay diagnostic
+   D-qNg64-2's test used.
+3. **Negative (n < base_bits)**: `shared_gate_proj 14 3` (n=3 < base_bits=4) real run: `[moe
+   promotion nq] role=shared_gate_proj layer=14 REFUSED: n=3 < base_bits=4 -- ... (D-qNg64-plan-1
+   B1)`, `0 promotions applied`. Confirms the invariant is enforced, not just present in the code.
+4. **Bonus, unplanned but real**: the qNg64(n=5) quantization of this specific real tensor
+   triggered D-qNg64-1's saturation counter for the first time on real data:
+   `qNg64(n=5): 8/5767168 codes saturated` -- 1.4e-6 rate, consistent with the Opus review's own
+   0/51200 synthetic measurement (a real tail event, not a bug).
+
+**`tools/promotion_writeback.py`** (new): the "small script" itself -- aggregates
+`quant_search_n.py`'s already-validated `fetch_prior_points_by_event()`/`suffix_closed_knee()`
+output across EVERY known event for a target (L2 gap #3), then across every corpus that has data
+(plan point 6's max-across-corpora rule -- suffix-closure means anything at or above a corpus's
+own knee is safe for that corpus, so the max across corpora is a valid conservative upper bound
+safe everywhere at once). If ANY event has no safe n within the tested ladder, the WHOLE target
+is refused (never silently dropped from the aggregation). **Verified with synthetic multi-event/
+multi-corpus data** (3 cases: 2-corpus/3-event aggregation -> correct max, one-unsafe-event ->
+correctly refuses the whole target, no-data -> correctly refuses) -- not live Supabase data,
+because `QWEN_SUPABASE_URL`/`QWEN_SUPABASE_KEY` still aren't available in this environment
+(D-qNg64-plan-1/D-qNg64-2 already logged this gap; still open, needs the user to point at where
+these are normally sourced from). The aggregation LOGIC is real and tested; running it against
+live data is blocked on the same credential gap, not a code gap.
+
+**Point 6 status, honestly**: implemented and unit-tested against synthetic data; NOT exercised
+against real multi-corpus data because no target in this project has 2+ corpora of real data yet
+(same fact D-qNg64-plan-1 already noted about `classify()`'s own cross-corpus rule).
+
+**Point 9** (oracle positive control): added to `make_live_oracle()`'s `test(n)` in
+`tools/quant_search_n.py` -- before trusting a "no hit line" as a real fail, requires a
+diagnostic line naming both the exact `req` and `pos` under test, so the two silent-failure modes
+this file's own docstring already documented (missing `cd`, wrong manifest) raise instead of
+silently reading as a clean fail. Verified against the real log lines captured in this section's
+own verification runs above (both the `correct` and `event` line formats match).
+
+**Point 10 status, honestly**: the mechanism-to-serving verification above is real and complete
+(promote -> real engine run -> the exact documented near-tie is fixed, with a clean baseline
+comparison proving it's the promotion and not something else). The full benefit-metric
+comparison ("quality-per-effective-bpw vs the D-d5-31 baseline, bits=16 at 32.7% scope") is NOT
+done this round -- that needs a broader real corpus run (not a single event), which is a genuine
+separate measurement effort, not something to rush into a weak pass. Scoped as explicit follow-on
+work, not skipped silently.
+
+**COST**: `moe_promotion_nq_init()` requires `g_st_moe`/`g_moe_hi_st` to already be populated
+(today, that means `QWEN_MOE_NEARTIE_CORRECT=1` + a valid
+`QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS` path must be set even if correction itself is never used
+for anything else) -- a real, disclosed operational dependency, not a silent requirement. Startup
+cost only (shadow building happens once, not per-request).
+
+**EXIT**: hot-reload (edit the promotion file, have it take effect without a restart) needs
+option (c) from B2 (background build + atomic swap) -- deferred, real new concurrency work.
+GPU-side live promotion is a real gap if GPU serving needs this too -- not started. L3b (the
+actual per-token "recognize at serving time" mechanism) is next, gated on L3a's full
+benefit-metric comparison landing net-positive against the existing bits=16/32.7%-scope baseline.
+
+**Files**: `qwen_infer.c` (g_moe_lt_nq/g_moe_promoted_nq/moe_promotion_nq_init/
+moe_af_reachable_from_active/moe_lazy_hi_release_all fix), `tools/quant_search_n.py`
+(make_live_oracle positive control), `tools/promotion_writeback.py` (new).
+
+Not pushed (local commits only, per this repo's convention).
