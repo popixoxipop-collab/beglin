@@ -129,3 +129,11 @@ L3b에만 있고 L3a는 오프라인 정적 배정일 뿐. 이 격차를 사용�
   N=1과 대조적) — qNg64 eff_bpw 중앙값 5.10 vs bits=16의 16.03(35/35 이김) 이지만, **이것도 같은
   시뮬레이션-데이터 한계 적용** — "이긴다"가 아니라 "실커널로 재검증되면 이 정도 차이"의 프리뷰로
   읽어야 함. RESULTS.md D-qNg64-6/7 참고. 커밋: `5cdb233`.
+
+- **L3b Phase A 완료** (2026-09-08): Opus 검증으로 원안(자동 sweep 트리거 autopilot)의 실제 위험
+  다수 발견(시뮬레이션이 실커널 결과를 조용히 덮어씀, "live" 오라클이 실은 시뮬레이션 경로만 탐,
+  req 번호가 manifest chunk마다 모호, promotion_writeback.py --out이 병합 아니라 truncate) — 전부
+  미해결로 두고 **Phase A(읽기 전용 리포트)만 구현**: `tools/promotion_controller.py --report`.
+  실데이터(bob의 step6/7/9 JSONL, 742개 attribution row) 검증: 45개 (role,layer) 타겟,
+  최다피인용 `shared_down_proj/L26`(32회/3이벤트). Phase B/C(실제 자동화)는 의도적으로 미착수 —
+  provenance 컬럼+manifest 식별자 기록이 선행돼야 함. RESULTS.md `D-qNg64-8` 참고.
