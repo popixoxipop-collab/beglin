@@ -14218,10 +14218,31 @@ static const MoeStExpertRole MOE_ST_EXPERT_ROLES[] = {   // always 3, every rout
 // already uses once for the whole correction checkpoint -- here narrowed to one tensor. All
 // three env vars unset (the default) is a straight passthrough to the original
 // st_register_moe_f16_as_af() call -- byte-identical to before this existed (regression-verified).
+// D-qNg64-2: real-kernel sibling of the F32-sim override immediately below. When
+// QWEN_MOE_ATTRIB_SIM_QN is set (an integer n), this role/layer is bound via the REAL
+// gguf_quantize_qNg64()-backed st_register_moe_dense_af_qNg64_as() against the ALREADY-open
+// real bf16 checkpoint (g_st_moe, no swap needed -- unlike the F32-sim path, which needs a
+// separate offline-simulated file because its quantization happened out-of-band in Python;
+// this path quantizes in-process from the real data) -- exercises the actual packed
+// scale-per-group decode/matvec arithmetic, not the bits==32 raw-passthrough branch the F32-sim
+// path and quant_sim_n.py's override both go through. WHY this matters: near-tie margins run
+// ~1e-3 to 1e-2, tight enough that raw-passthrough-vs-real-packed-decode arithmetic differences
+// can flip pass/fail -- see quirky-stirring-trinket.md's L2 step 3. Checked before SIM_ROLE/
+// SIM_PATH so a QN-set env always takes the real-kernel path even if a stale SIM_PATH is also
+// set from a prior run.
 static MoeAFTensor *moe_register_hi_role(const char *role_name, int layer,
                                           const char *st_name, const char *ename) {
     const char *sim_role  = getenv("QWEN_MOE_ATTRIB_SIM_ROLE");
     const char *sim_layer = getenv("QWEN_MOE_ATTRIB_SIM_LAYER");
+    const char *sim_qn    = getenv("QWEN_MOE_ATTRIB_SIM_QN");
+    if (sim_role && sim_role[0] && sim_layer && sim_layer[0] && sim_qn && sim_qn[0]
+        && layer == atoi(sim_layer) && !strcmp(role_name, sim_role)) {
+        int n = atoi(sim_qn);
+        MoeAFTensor *w = st_register_moe_dense_af_qNg64_as(st_name, n, ename);
+        fprintf(stderr, "[moe attrib sim] role=%s layer=%d overridden with REAL qNg64(n=%d) kernel from real checkpoint\n",
+                role_name, layer, n);
+        return w;
+    }
     const char *sim_path  = getenv("QWEN_MOE_ATTRIB_SIM_PATH");
     if (sim_role && sim_role[0] && sim_layer && sim_layer[0] && sim_path && sim_path[0]
         && layer == atoi(sim_layer) && !strcmp(role_name, sim_role)) {
