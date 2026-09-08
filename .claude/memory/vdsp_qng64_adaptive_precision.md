@@ -38,8 +38,17 @@ L3b에만 있고 L3a는 오프라인 정적 배정일 뿐. 이 격차를 사용�
 
 ## 진행 상황 (2026-09-08 갱신)
 - Plan Mode 완료, 사용자 승인(자율수행 옵션 선택: "이 세션 안에서 계속", /loop 아님).
-- **L1 구현**: fork(agentId 비공개, 세션 내 추적)로 위임, 진행 중 — gguf_transcode.c/.h,
-  qwen_infer.c 수정 시작 확인(git diff로 재확인). 완료시 이 파일 갱신 예정.
+- **L1 구현 완료+검증** (2026-09-08): gguf_transcode.c/.h(`gguf_quantize_qNg64`), qwen_infer.c
+  (decode/matvec/vdsp-guard/registration/bits-gate 4곳), mlx_moe.cpp(GPU 직접 리패커) 전부 구현.
+  실 버그 1건 발견+수정(GPU 리패커 row stride를 `ng`로 이중곱 → SIGBUS, fprintf 이분탐색으로 위치
+  특정 후 수정 — bob lldb는 비대화형SSH 불가라 프린트 이분탐색 사용).
+  **검증(전부 실데이터, 전부 통과)**: n=4 회귀게이트(q4g64와 코드/스케일 bit-identical, 3개 실텐서,
+  0 mismatch) · NumPy 오라클(실 GGUF 텐서 2개×n=2,3,5,6,7=10조합, 전부 cmp bit-exact) · GPU 리패커
+  (MLX affine_dequantize 커널소스로 손유도 + 실측 mx.quantize() 대조로 이중검증, 실텐서 3-포인트×
+  n=2,3,5,6=24좌표 max_abs_diff=0 정확히, n=7 GPU 거부 확인) · 실 CPU 생성(DeepSeek-V2-Lite 8-position,
+  shared_up_proj L11→n=5 승격, baseline 대비 8/8 argmax 토큰 동일+logit 전부 미세하게 다름 — promotion
+  이 실제로 반영됐다는 인과 증거) · 기존 GATE1-7 전체 회귀 없음. RESULTS.md `D-qNg64-1` 섹션 참고.
+  로컬 커밋만(미push).
 - **L2 B1/B3 코드 수정**: 완료+커밋(`d8dab02` 코드, `d13d008` docs). `tools/quant_search_n.py`의
   `exhaustive_search()`를 suffix-closed knee로, `fetch_prior_points_by_corpus()`→
   `fetch_prior_points_by_event()`로 이벤트 스코프. **실측 검증**(6-target historical TSV):

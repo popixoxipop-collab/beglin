@@ -11162,3 +11162,128 @@ clean, cross-corpus-confirmed targets exist that exhaustive's full n=2..16 cost 
 specifically prove suffix-closure with fewer than |ladder| tests -- not a drop-in swap of `bisection_search()`.
 
 Commit: `d8dab02`.
+
+## D-qNg64-1 -- Real n-bit kernel for CPU+GPU, n∈{2,3,5,6,7} (2026-09-08)
+
+**WHY**: user's explicit request after the GPU mixed-precision (bits=4/8/16/32) work landed --
+those are 4 fixed tiers, not the arbitrary-n "surgical precision correction" vision the hit-map/
+Supabase work was actually built toward. "CPU/GPU 둘 다 실제로 임의 n비트(5,6,7비트 등)를 저장·계산
+하는 진짜 커널/포맷을 만들어." D-quant-1 (prior session) had already scoped this down to
+n∈{2,3,5,6,7} specifically (4/8 exist, 9-16 are just the existing raw f16/f32 containers,
+17-32 unreachable -- every checkpoint is BF16), so this round builds exactly that gap.
+
+**Design**: A2 bit-plane format (group=64, matching q4g64/q8g64), adversarially reviewed by an
+Opus Plan-agent BEFORE any implementation (`.claude/plans/quirky-stirring-trinket.md`) -- caught
+a real spec bug (bias-must-precede-bit-extract, not the reverse) and, far more importantly, that
+the originally-planned GPU strategy (dequant-then-`mx::quantize()`, the same approach already used
+for bits=8) was **wrong**: MLX's `mx::quantize()` is min/max-affine with zero-point snapping, not
+symmetric absmax, so it only reproduces the exact intended codes when a group spans its full code
+range -- real error-feedback'd weights essentially never do (measured 0/300 synthetic groups).
+Requantizing would have silently served a *different, coarser* precision on GPU than what was
+actually measured/decided for a tensor on CPU, up to 50% of a group's max weight at n=2. Full
+review methodology and findings in the plan file; this section documents what was actually built
+and verified.
+
+**Format** (final, as implemented -- `gguf_transcode.h`'s own comment has the complete spec):
+`u = (code + 2^(n-1)) & (2^n-1)` (bias first), then plane j's bit for element i = bit j of `u`.
+n planes of 8 bytes (64 bits) per 64-element group, LE bit order (element i -> bit i&7 of byte
+i>>3 within its plane). Symmetric only, error-feedback (uniform across n∈{2..7} -- measured flat
+relative EF effect across that whole range, no bit-width-dependent reason to split q4-style EF
+from q8-style no-EF), reciprocal+`rintf()` rounding (q4's convention, not q8's division). A clean
+generalization of q4g64 (n=4 is provably bit-identical, see below) -- explicitly NOT a
+generalization of q8g64 (different clamp range, different rounding, no EF at n=8).
+
+**Files changed**: `gguf_transcode.c`/`.h` (new `gguf_quantize_qNg64()`), `qwen_infer.c` (new
+decode/matvec branches in `moe_decode_af()`/`moe_matvec_af_row()`, gated `t->sym==1 &&
+bits∈{2,3,5,6,7}` to stay clear of the pre-existing, unrelated `bits==3` LUT-decode-curve test
+harness which is always `sym==0`; explicit FATAL guard added to `moe_matvec_af_row_vdsp()`; new
+`st_register_moe_experts_qNg64_as()`/`st_register_moe_dense_af_qNg64_as()` cloned from the q8g64
+pair; the 4 bits-validation FATAL sites widened to accept 2/3/5/6/7 -- done *after* the decode/
+matvec branches existed, not before, so there was never a window where a widened gate could reach
+un-updated decode logic), `mlx_moe.cpp` (new direct bit-repack branch in `mlx_gpu_bind_af()` for
+bits∈{2,3,5,6}, explicit n=7 exclusion at the same gate MLX's own `quantized.h` static_assert
+confirms has no native kernel for), `tools/gguf_transcode_dump.c` + `tools/gguf_transcode_oracle.py`
+(extended with a `qN` mode and an `n4check` regression-gate mode).
+
+**Real bug found+fixed during implementation** (not caught by the pre-implementation review, since
+it's a pure C++ arithmetic slip, not a design issue): the GPU repacker's row-source stride was
+computed as `group_pbytes * ng` where `group_pbytes` had *already* been set to the row's full byte
+count (`ng*bits*8`), i.e. multiplied by `ng` twice -- reading `ng`x further into the source buffer
+per row than intended. Manifested as a SIGBUS (exit 138) with zero output from the new GPU test
+path, not a clean error -- bisected via temporary `fprintf`+`fflush` checkpoints (bob's SSH access
+has no TCC permission for `lldb`, so no interactive debugger backtrace was available) to
+"completes `gguf_quantize_qNg64()`, crashes before the repack loop's own first print" in two
+rebuild-and-rerun cycles, then found by re-deriving the byte math by hand. Fixed by giving the
+per-group and per-row strides distinct names (`group_stride`, `row_pbytes_src`) so the bug could
+not recur by the same confusion.
+
+**Verification**:
+
+1. **n=4 regression gate** (free, established by the design review as the highest-value cheap
+   check): `qNg64(n=4)`'s codes+scales vs `gguf_quantize_q4g64_error_feedback()`'s, unpacked and
+   compared element-by-element (packed *bytes* necessarily differ -- nibble vs bit-plane layout --
+   codes/scales must not). 3 real tensors from `qwen2.5-0.5b-instruct-q4_k_m.gguf`: `output.weight`
+   (151936x896, 136M elements), `blk.0.ffn_down.weight` (896x4864, 4.36M elements),
+   `blk.5.attn_v.weight` (128x896). **0 code mismatches, 0 scale mismatches on all three.**
+2. **NumPy oracle** (`tools/gguf_transcode_dump.c` vs `tools/gguf_transcode_oracle.py`, `cmp` on
+   raw binaries -- the same bit-exact-not-tolerance methodology q4g64/q8g64 already established,
+   explicitly *not* substituted with a pack/unpack round-trip test since the design review's own
+   point was that a round-trip test cannot catch a self-consistent-but-wrong bit-order): 2 real
+   tensors (`blk.0.ffn_down.weight`, `output.weight`) x n∈{2,3,5,6,7} = 10 combinations, **all
+   `cmp`-identical** on both `.planes.bin` and `.scales.bin`.
+3. **GPU repacker**: independently derived the exact packing rule two ways before trusting it --
+   (a) read MLX 0.32.1's own `affine_dequantize` Metal kernel source on bob, hand-derived a single
+   "flat LSB-first bitstream, no padding" rule covering every bits value; (b) wrote that rule in
+   Python and cross-checked it against real `mx.quantize()` output on synthetic full-range groups
+   for bits∈{2,3,4,5,6,8} -- **bit-exact match for 2,3,4,5,6** (8 doesn't apply: 256 codes cannot
+   fit a full-range 64-element group, unrelated to this path). Then verified the actual C++
+   implementation against real model weights via a new `GATE6c` (mirrors the existing `GATE6b`
+   bits=8 pattern): registered a real `model.layers.11.mlp.shared_experts.up_proj.weight` tensor
+   at n=2/3/5/6/7, bound to GPU, compared `mlx_gpu_dequant_probe()` against `moe_decode_af()` at 3
+   (row,group) points per n (row 0/mid/last, group 0/mid/last -- not just the origin, since the
+   stride bug above was exactly the kind of thing that would look right at row 0 and wrong
+   everywhere else) -- **max_abs_diff=0 exactly, 24 coordinates each, for n=2,3,5,6** (the `==0.0`
+   bar, matching bits=4's precedent -- not bits=8's weaker "small but nonzero" 1.33e-04 precedent).
+   n=7 bind **refused as expected**, no crash, no silent fallback.
+4. **Real CPU generation**: `QWEN_MOE_SAFETENSORS=.../deepseek_v2lite_bf16_safetensors/...` +
+   `QWEN_MOE_ROLE_BITS` promoting `shared_up_proj` layer 11 to n=5, real DeepSeek-V2-Lite
+   checkpoint, 8-position forward pass (`run_moe_safetensors_verify_mode()`) -- completed cleanly
+   (exit 0), "1 role/layer overrides loaded" confirmed the promotion was read, all 8 positions
+   produced sane argmax logits (~5-29 range, no NaN/inf).
+   Compared token-by-token against an unpromoted baseline (same prompt, same 8 positions, no
+   `QWEN_MOE_ROLE_BITS`):
+
+   | pos | token | baseline argmax (logit) | n=5-promoted argmax (logit) | logit delta |
+   |---|---|---|---|---|
+   | 0 | 100000 | 185 (4.9594) | 185 (4.9609) | +0.0015 |
+   | 1 | 549    | 207 (21.7578) | 207 (21.7851) | +0.0273 |
+   | 2 | 4345   | 280 (29.2625) | 280 (29.3275) | +0.0650 |
+   | 3 | 280    | 254 (25.7679) | 254 (25.7461) | -0.0218 |
+   | 4 | 8204   | 317 (27.2169) | 317 (27.1612) | -0.0557 |
+   | 5 | 317    | 245 (25.9645) | 245 (25.9805) | +0.0160 |
+   | 6 | 245    | 1234 (26.1728) | 1234 (26.1412) | -0.0316 |
+   | 7 | 1234   | 285 (28.1752) | 285 (28.1906) | +0.0154 |
+
+   **Argmax tokens identical at all 8 positions** (expected -- one FFN sub-layer at one of 27
+   layers, promoted from int4 to n=5, is a small perturbation on a well-trained model; a token
+   flip here would have been a yellow flag, not a green one). **Logit values measurably differ at
+   every position** (proving the promotion causally took effect, not a silent no-op), by an amount
+   consistent with a small, real precision change -- not a wild swing that would suggest
+   corruption. This is the specific before/after signature a working, correctly-wired promotion
+   should produce.
+5. **Full existing Gate suite regression** (`QWEN_MOE_GPU=1`, same run GATE6c is embedded in):
+   GATE1-5, GATE6, GATE6b, GATE7 all unchanged/still passing -- GATE3 still `max_abs_diff=0` across
+   400 coordinates/269 base tensors, GATE4 worst rel_l2 unchanged (~2.1e-07), confirming the new
+   code paths (only reachable at bits∈{2,3,5,6,7}, which nothing in the base 269-tensor set uses)
+   didn't disturb anything already working.
+
+**COST**: naive per-element CPU decode/matvec loops only (Phase 3 scope is correctness, not speed
+-- the SME2-accelerated group path already safely falls back to scalar for any non-int4 tensor, so
+this is free, not deferred work). GPU repack is a real copy (not zero-copy, same disclosed
+trade-off bits=8's path already accepted) -- one-time cost at bind, not per-token.
+
+**EXIT**: NEON/SME2-accelerated qNg64 CPU kernels are Phase 5 (explicitly out of scope this
+round). If n=7 GPU support is ever required, it needs either a genuine custom Metal kernel (large)
+or padding/promoting to n=8 for GPU purposes only (loses the exactness this round established).
+
+Not pushed (local commits only, per this repo's convention -- push only on explicit request).
