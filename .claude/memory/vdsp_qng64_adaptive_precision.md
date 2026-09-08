@@ -178,3 +178,10 @@ L3b에만 있고 L3a는 오프라인 정적 배정일 뿐. 이 격차를 사용�
   (free)로 이 프로젝트가 이미 한 번 겪은 사고(스와핑→SSH 무응답→수시간 복구)와 같은 패턴이라
   게이트를 독단적으로 우회하지 않음. 코드는 준비됐고, 여유 생기면 `--run --max-sweeps 1` 1회
   실행이 남은 유일한 검증. 상세: RESULTS.md `D-qNg64-12`.
+
+- **L3b Phase C 실 end-to-end 검증** (2026-09-08, D-qNg64-13): 파이프라인 자체는 실증됨 —
+  `shared_gate_proj/L14` 실이벤트로 Step-0 게이트 PASS + 실커널 n=5/6/7 전부 'pass'. 실행 중
+  진짜 버그 2개 더 발견+수정(로컬/원격 mkdir 누락, 둘 다 "no-signal"로 오판정되던 것). **최종
+  Supabase push만 막힘**(QWEN_SUPABASE_URL/KEY 여전히 못 찾음 — Management API PAT과는 다른
+  credential, DML이라 별도 승인 없이 우회 안 함). `--reset-backoff` CLI도 설계엔 있었지만
+  미구현으로 확인. Phase C는 이제 "메커니즘 증명 완료, push credential만 남음" 상태.
