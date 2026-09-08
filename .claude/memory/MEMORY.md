@@ -20,7 +20,9 @@ memory(`~/.claude/projects/-Users-xox/memory/`)에 있던 vdsp_*.md 11개를
   adversarial검증(설계+오케스트레이션) 거쳐 계획 확정. ★L1 완료+검증(오라클bit-exact, GPU리패커
   max_abs_diff=0, 실생성 CPU 8/8토큰동일+logit차이로 승격인과확인 — 실버그1건 GPU stride 이중곱
   SIGBUS 발견+수정). L2의 B1(suffix-closed knee)/B3(이벤트스코프)는 수정+실측검증완료(bisection이
-  6개중4개 틀렸을 것 확인). L3a는 "서빙시점 인지"가 아니라 오프라인 정적배정일 뿐임을 사용자에게
+  6개중4개 틀렸을 것 확인) + **step3(실커널 vs 시뮬레이션 오라클) 완료 — 실제로 갈리는 타겟 발견**
+  (kv_b_proj L9, 시뮬레이션 curve와 실커널 curve 모양 자체가 다름 → 기존 840행 시뮬레이션 데이터는
+  배포결정 근거 불가 확정). L3a는 "서빙시점 인지"가 아니라 오프라인 정적배정일 뿐임을 사용자에게
   명시 — 진짜 서빙시점 인지는 L3b.
 
 ## GPU mixed-precision (D-gpu-4/D-gpu-5, 2026-09-07)

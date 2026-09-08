@@ -57,6 +57,14 @@ L3b에만 있고 L3a는 오프라인 정적 배정일 뿐. 이 격차를 사용�
   미완**: `QWEN_SUPABASE_URL`/`QWEN_SUPABASE_KEY`를 xox 로컬 `.env`, bob `.env`/쉘 프로파일 어디서도
   못 찾음. 사용자에게 credential 위치 확인 필요(다음 Phase 경계 보고 때 물어볼 것, 지금은 중단 안 함).
 - L2 gap #3(오라클 신뢰계층 분리, 회귀검사 추가)과 L3a 전체는 L1 완료 후 착수.
+- **L2 step 3 완료** (2026-09-08): `QWEN_MOE_ATTRIB_SIM_QN` 신설(실커널 오라클, commit `1ed4f13`) —
+  기존 F32-sim 경로가 bits==32 raw-passthrough라 실제 packed decode와 산술이 다르다는 우려를
+  실측으로 확인. p60/pos=14 이벤트(RESULTS.md ROI-G Phase 2 확인된-단일플립)로 2개 타겟 테스트:
+  `shared_gate_proj L14`(클린)는 시뮬레이션과 실커널 일치. **`kv_b_proj L9`(VIOLATED)는 실제로
+  갈림** — 시뮬레이션 curve(n=2 pass/3 fail/4 pass)와 실커널 curve(n=2 pass/3 pass/4 **fail**)가
+  다른 모양. **결론: 기존 840행 시뮬레이션 데이터는 배포 결정 근거로 못 씀(plan의 결론이 실측으로
+  확정됨)** — RESULTS.md `D-qNg64-2` 참고. Step 4(회귀검사)는 두 타겟 다 알려진 이벤트가 1개뿐이라
+  실행 대상 없음(정직히 기록, 실패 아님).
 - 다른 세션(`vdsp_engine_main`)이 같은 repo에서 병행 작업 중 — 이번 라운드에 `c3bcf81`
   "retract 89-target sweep, multi-flip contamination" 커밋 확인(840행 기준 유효, 이 계획의 수치와
   일치). 커밋 전 매번 git log/status 재확인 중.
