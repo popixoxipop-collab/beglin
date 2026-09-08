@@ -6171,7 +6171,8 @@ static float *g_moe_attrib_logits_scratch = NULL;
 // has no such ordering requirement.
 static int moe_hi_combo_wanted(int role, int layer);
 static void moe_neartie_attribute(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
-                                   float *w_finalnorm, int req, int pos, int corrected_argmax) {
+                                   float *w_finalnorm, int req, int pos, int corrected_argmax,
+                                   int orig_argmax) {
     if (!g_moe_attrib_on) return;
     if (g_moe_attrib_max_events >= 0 && g_moe_attrib_events_done >= g_moe_attrib_max_events) {
         fprintf(stderr, "[moe attrib] req=%d pos=%d SKIPPED -- QWEN_MOE_ATTRIB_MAX_EVENTS=%d reached (real flip still corrected, just not attributed)\n",
@@ -6282,18 +6283,32 @@ static void moe_neartie_attribute(const uint8_t *af, MoeAFTensor *t_embed, MoeAF
                 // emitted as JSON null, not a placeholder string, so downstream consumers can
                 // distinguish "known, no manifest" from "field absent" (older log lines, before
                 // this change, simply lack the key -- also distinguishable).
+                // D-qNg64-11: added "orig_argmax" + "threshold" fields (Opus review of the L3b
+                // Phase C design, 2026-09-08). orig_argmax pins BOTH endpoints of the flip, not
+                // just the corrected one -- a future sweep-verification step can require an exact
+                // match on both rather than just corrected_argmax alone, a strictly stronger
+                // reproduction check. threshold records the actual QWEN_MOE_NEARTIE_CORRECT_THRESHOLD
+                // active when this fired (via moe_neartie_correct_threshold(), the same accessor
+                // the "correct req=... threshold=..." stderr line already uses) -- without it, a
+                // sweep replaying this event under a DIFFERENT default threshold could simply never
+                // trigger correction at all, reading as unexplained "no signal" with nothing in the
+                // log to diagnose why.
                 const char *manifest_env = getenv("QWEN_MOE_CB_PROMPT_MANIFEST");
                 if (manifest_env && manifest_env[0]) {
                     fprintf(g_moe_attrib_fp,
                             "{\"kind\":\"attribution\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,\"role\":\"%s\",\"layer\":%d,"
-                            "\"corrected_argmax\":%d,\"model\":\"%s\",\"corpus\":\"%s\",\"manifest\":\"%s\"}\n",
+                            "\"corrected_argmax\":%d,\"orig_argmax\":%d,\"threshold\":%.6f,"
+                            "\"model\":\"%s\",\"corpus\":\"%s\",\"manifest\":\"%s\"}\n",
                             (long)time(NULL), req, pos, MOE_ATTRIB_ROLE_NAMES[r], l, corrected_argmax,
+                            orig_argmax, moe_neartie_correct_threshold(),
                             g_moe_nt_events_model, g_moe_nt_events_corpus, manifest_env);
                 } else {
                     fprintf(g_moe_attrib_fp,
                             "{\"kind\":\"attribution\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,\"role\":\"%s\",\"layer\":%d,"
-                            "\"corrected_argmax\":%d,\"model\":\"%s\",\"corpus\":\"%s\",\"manifest\":null}\n",
+                            "\"corrected_argmax\":%d,\"orig_argmax\":%d,\"threshold\":%.6f,"
+                            "\"model\":\"%s\",\"corpus\":\"%s\",\"manifest\":null}\n",
                             (long)time(NULL), req, pos, MOE_ATTRIB_ROLE_NAMES[r], l, corrected_argmax,
+                            orig_argmax, moe_neartie_correct_threshold(),
                             g_moe_nt_events_model, g_moe_nt_events_corpus);
                 }
                 fflush(g_moe_attrib_fp);
@@ -6522,7 +6537,7 @@ static void moe_neartie_maybe_correct(const uint8_t *af, MoeAFTensor *t_embed, M
     if (corrected_argmax != orig_argmax) {
         fprintf(stderr, "[moe neartie] correct req=%d pos=%d REAL FLIP orig=%d corrected=%d -- running attribution\n",
                 req, pos, orig_argmax, corrected_argmax);
-        moe_neartie_attribute(af, t_embed, t_lmhead, w_finalnorm, req, pos, corrected_argmax);
+        moe_neartie_attribute(af, t_embed, t_lmhead, w_finalnorm, req, pos, corrected_argmax, orig_argmax);
         if (getenv("QWEN_MOE_ATTRIB_COMBO17_TEST") && req == 5 && pos == 4)
             moe_attrib_combo17_test(af, t_embed, t_lmhead, w_finalnorm, req, pos);
         if (getenv("QWEN_MOE_ATTRIB_COMBO87_TEST") && req == 32 && pos == 8)
