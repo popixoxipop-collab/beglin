@@ -165,3 +165,16 @@ L3b에만 있고 L3a는 오프라인 정적 배정일 뿐. 이 격차를 사용�
   **아직 안 만든 것(정직히 기록)**: 실제 n별 sweep 루프, atomic push+검증,
   promotion_writeback.py의 bob-side upsert 수정(여전히 로컬+truncate — 다른 타겟 있는 상태에서
   --out 쓰면 안 됨), backoff ledger, --max-sweeps/--run 모드. 상세: RESULTS.md `D-qNg64-11`.
+
+- **L3b Phase C: Priority 1(위험 해소)+Priority 2(나머지 파이프라인) 완료, 실엔진 실행만 미완**
+  (2026-09-08, D-qNg64-12): 이전 라운드가 남긴 "위험" 경고(다른 타겟 있는 상태에서 --out 쓰면
+  안 됨)를 해소 — `promotion_writeback.py`가 이제 bob의 실제 파일을 읽고
+  upsert-with-scoped-delete로 원자적 갱신(remote tempfile+mv). **실검증: kv_b_proj/L9의 위험한
+  n=4 stale 항목이 정확히 제거되고 무관한 타겟은 안 건드림**(실 DB 상태로 확인). 나머지 파이프라인
+  (per-n sweep 5-outcome 분류, atomic push+재조회검증, backoff ledger, `--run --max-sweeps`)도
+  전부 구축 — mock 경계(ssh/HTTP)를 뺀 나머지 전부 실행으로 검증(분류 6종, ledger 8개 속성,
+  push 성공/부분실패 감지, run_one_triple 3경로, run_mode의 manifest-우선 선택+backoff 제외
+  둘 다 확인). **미완**: 실제 bob 엔진 호출은 이번 라운드에 안 함 — bob 메모리가 87→146MB
+  (free)로 이 프로젝트가 이미 한 번 겪은 사고(스와핑→SSH 무응답→수시간 복구)와 같은 패턴이라
+  게이트를 독단적으로 우회하지 않음. 코드는 준비됐고, 여유 생기면 `--run --max-sweeps 1` 1회
+  실행이 남은 유일한 검증. 상세: RESULTS.md `D-qNg64-12`.
