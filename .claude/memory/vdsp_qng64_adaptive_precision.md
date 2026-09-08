@@ -154,3 +154,14 @@ L3b에만 있고 L3a는 오프라인 정적 배정일 뿐. 이 격차를 사용�
   count=1065 확인**). Phase C(실제 자동 sweep 트리거)는 설계를 Opus로 재검증 중 — Opus가
   지적한 8개 위험(무제한비용/자기재귀/잘못된매니페스트/provenance충돌/truncate 등) 전부 반영한
   구체설계를 다시 adversarial review 받는 중.
+
+- **L3b Phase C: safety prerequisites built+verified, sweep loop NOT built** (2026-09-08,
+  D-qNg64-11): 2차 Opus 검증(더 심각함)이 찾은 문제들 중 핵심 안전장치만 이번 라운드에 구축+실검증.
+  (1) c36aadc 회귀테스트(n=4 FATAL, n=5 정상) 확인. (2) attribution JSONL에 orig_argmax+threshold
+  필드 추가(실검증). (3) source 컬럼 활용해 sim/real 데이터 절대 안 섞도록 수정 — **실 DB로 확인:
+  kv_b_proj/L9(sim만 15행, real 0행)가 이제 위험한 n=4 대신 정확히 거부됨**. (4) 가장 어려운
+  부분(req%mf_n 유도 + Step-0 재현 게이트) 구축+실검증 — 실제 p60/pos=14 이벤트로 PASS 확인,
+  도중 macOS(bob)엔 GNU timeout이 없다는 실버그 발견+수정(portable POSIX 패턴으로 교체).
+  **아직 안 만든 것(정직히 기록)**: 실제 n별 sweep 루프, atomic push+검증,
+  promotion_writeback.py의 bob-side upsert 수정(여전히 로컬+truncate — 다른 타겟 있는 상태에서
+  --out 쓰면 안 됨), backoff ledger, --max-sweeps/--run 모드. 상세: RESULTS.md `D-qNg64-11`.
