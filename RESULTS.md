@@ -12529,3 +12529,50 @@ own near-miss shows memory-ranking alone can hide a real, sustained, CPU-heavy c
 untouched -- next attempt can resume directly once bob is actually clear, no rework needed.
 
 Not pushed (local commits only, per this repo's convention).
+
+## ROI-G Phase 2: p95's hang, definitively resolved -- never hung, and an apology owed to
+## D-qNg64-16/17's own concurrent work
+
+**I am the peer session `qwen_quantsim4_bin` in the two entries directly above (D-qNg64-16,
+D-qNg64-17).** Reading them after the fact: my own p95 investigation (rebuilding this exact
+binary, running it repeatedly to instrument and diagnose an unrelated anomaly) blocked this
+repo's other concurrent session's real-kernel benefit-metric sweep **twice**, at real cost --
+~15-20min the first time, ~2min the second, both times ending in that session correctly killing
+its own processes and backing off rather than touching mine (their own explicit courtesy, exactly
+matching this project's standing `feedback_check_other_sessions_before_heavy_compute` discipline
+from the other direction). Verified just now: no `qwen_quantsim*`/`qwen_infer_gpu` process of mine
+remains on bob, load average back to a 1-minute reading of 2.14, swap back to 819M/2048M (was
+92%/6144M at D-qNg64-17's worst measurement) -- bob is clear for that work to resume. Flagged to
+the user directly; this section is also that acknowledgment in writing, not just chat.
+
+**The actual p95 diagnosis, now definitive**: added `QWEN_MOE_ATTRIB_PROGRESS=1` instrumentation
+to `moe_neartie_attribute()`'s combo loop (one `fprintf` per tested combo, default off, D-p95-1)
+to answer the question stack sampling alone couldn't: is `tested` actually advancing? Getting a
+clean rebuild first required fixing a real staleness gap on bob -- `gguf_transcode.c`/`.h` there
+predated a concurrent session's `gguf_quantize_qNg64` addition by nearly two weeks (8/26 vs.
+9/8), so the current `qwen_infer.c` from `git HEAD` wouldn't compile on bob at all until those two
+files were re-synced (a pure sync fix, no code change, confirms **any** build attempt from current
+HEAD on bob was broken until this, not just mine). Regression-checked the resulting binary against
+`p105`'s already-known-good result first (exact match: `margin_before=0.099848`,
+`corrected=13`, both hits) before trusting it on `p95`.
+
+**Result**: `tested` climbed steadily -- 85/~216 combos in 10:57 elapsed, ~7.7 combos/min -- and
+the run finished cleanly at `wall_ms=1200099` (20.0 minutes) with **`0/191 effective combos
+flagged`**. Both remaining live hypotheses from the earlier investigation are now resolved:
+deadlock/infinite-loop is **rejected outright** (real, steadily-advancing progress, directly
+observed, not inferred from a stack shape); "this event is inherently 2x+ slower per-combo" is
+**also rejected** -- 20 minutes is squarely in the same range p60/p10's full scans already took,
+not anomalous at all. **The true explanation is simpler than either standing hypothesis**: this
+specific near-tie (`pos=12`, `orig=4121 corrected=8271`) has genuinely zero single-tensor
+attributable fixes among all 191 effective combos -- a normal-speed run that happened to produce
+no "hit" lines to watch, which is indistinguishable from silence-during-a-hang unless you
+instrument for it, exactly as done here. The original "46+ minutes" reading was very likely
+inflated by the CPU contention documented in this very same file (D-qNg64-16/17, above) --
+several heavy processes (mine and the other session's) were competing for bob's 64-thread pool
+during that first observation window, though this wasn't controlled for at the time and can't be
+retroactively proven, only judged consistent with everything else now known.
+
+**Code change**: `qwen_infer.c`, `QWEN_MOE_ATTRIB_PROGRESS` env var + one guarded `fprintf` in
+`moe_neartie_attribute()`'s combo loop, default off, zero behavior change for every existing
+sweep script. Committed to the repo. `gguf_transcode.c`/`.h` sync on bob was a local file-copy
+fix on that machine, not a repo change -- nothing to commit for that half.

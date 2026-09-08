@@ -5695,6 +5695,7 @@ static int moe_attrib_role_valid_at(MoeAttribRole role, int layer) {
     }
 }
 static int g_moe_attrib_on = 0;   // QWEN_MOE_ATTRIB, default off
+static int g_moe_attrib_progress_on = 0;   // D-p95-1: QWEN_MOE_ATTRIB_PROGRESS, default off
 // D-d5-21: 0 = additive only (pre-D-d5-21 behavior), 1 = ablative only, 2 = both sweeps.
 // QWEN_MOE_ATTRIB_MODE = add | ablate | both.
 static int g_moe_attrib_mode = 0;   // zero cost unless a real flip triggers it anyway
@@ -6242,6 +6243,21 @@ static void moe_neartie_attribute(const uint8_t *af, MoeAFTensor *t_embed, MoeAF
             // MOE_ATTRIB_ROLE_COUNT, defined after this function -- moved earlier.
             if (g_moe_hi_combos_on && !moe_hi_combo_wanted(r, l)) continue;
             tested++;
+            // D-p95-1: opt-in per-combo progress line (QWEN_MOE_ATTRIB_PROGRESS=1).
+            //   WHY: a real anomaly (RESULTS.md, "p95's 46+ minute hang") could not be
+            //   diagnosed as "still iterating combos" vs "stuck on one forever" from stack
+            //   sampling alone -- only "hit" lines are logged, so a long run of misses is
+            //   silent by construction. This makes that distinction directly observable.
+            //   COST: one fprintf+fflush per tested combo when enabled -- negligible next to
+            //   the forward-pass replay it wraps, and default-off so it changes nothing for
+            //   every existing sweep script.
+            //   EXIT: remove the getenv check + guard once no longer needed for diagnosis;
+            //   nothing else depends on this.
+            if (g_moe_attrib_progress_on) {
+                fprintf(stderr, "[moe attrib progress] req=%d pos=%d tested=%d role=%s layer=%d\n",
+                        req, pos, tested, MOE_ATTRIB_ROLE_NAMES[r], l);
+                fflush(stderr);
+            }
             // D-d5-21: run whichever sweep(s) the mode asks for. ADD asks "is this combo
             // sufficient alone" (promote it into an all-4-bit baseline and see if the corrected
             // answer comes back); ABLATE asks "is it necessary" (demote it out of an all-16-bit
@@ -6812,6 +6828,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     // D-roadmap-4 Phase 5: role x layer attribution, only meaningful (and only ever called)
     // when correction is also on -- attribution needs a confirmed real flip to attribute.
     const char *env_attrib = getenv("QWEN_MOE_ATTRIB");
+    const char *env_attrib_progress = getenv("QWEN_MOE_ATTRIB_PROGRESS");   // D-p95-1
     if (getenv("QWEN_MOE_ATTRIB_COUNT_INEFFECTIVE")) g_moe_attrib_count_ineffective = 1;   // D-d5-22 EXIT
     const char *env_attrib_mode = getenv("QWEN_MOE_ATTRIB_MODE");   // D-d5-21
     const char *env_attrib_max_events = getenv("QWEN_MOE_ATTRIB_MAX_EVENTS");
@@ -6861,6 +6878,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     g_moe_neartie_correct_threshold_override = env_neartie_correct_thr && env_neartie_correct_thr[0]
         ? atof(env_neartie_correct_thr) : -1.0;
     g_moe_attrib_on = env_attrib && env_attrib[0] && atoi(env_attrib) != 0;
+    g_moe_attrib_progress_on = env_attrib_progress && env_attrib_progress[0] && atoi(env_attrib_progress) != 0;   // D-p95-1
     g_moe_attrib_max_events = env_attrib_max_events && env_attrib_max_events[0] ? atoi(env_attrib_max_events) : -1;
     g_moe_attrib_max_pos = env_attrib_max_pos && env_attrib_max_pos[0] ? atoi(env_attrib_max_pos) : -1;
     if (env_attrib_mode && env_attrib_mode[0]) {
