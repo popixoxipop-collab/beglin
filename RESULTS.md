@@ -11103,3 +11103,62 @@ sizing the sweep, and treat >1 as disqualifying for the standard single-target s
 methodology (a multi-flip prompt would need a fundamentally different design -- e.g. testing
 only the last flip's own attributed combos, or restricting the manifest to end exactly at the
 first flip -- neither attempted here, out of scope for a retraction writeup).
+
+## D-qNg64-plan-1 -- L2 search algorithm: suffix-closed knee + event-scoped classify (2026-09-08)
+
+**WHY**: Opus (subagent_type="Plan", adversarial review of the L2/L3a orchestration plan) found
+`quant_search_n.py`'s `exhaustive_search()`/`bisection_search()` returned the *first* n that passes as
+"knee" -- correct only under n-monotonicity, which this project's own Step 6/ROI-G work already measured
+violating 58-83% of the time. A real counterexample already existed in this file: kv_b_proj L8 passes at
+n=3, fails at n=4, recovers at n=5+ -- "first pass" reports knee=3, which is *below the int4 production
+base* and would have been deployed as "the adaptively found answer" on the strength of a rounding
+coincidence, not adequate precision. Separately, `fetch_prior_points_by_corpus()` merged every event
+tested against a (role,layer) target into one flat per-corpus pass/fail list; two individually-monotone
+events with different knees can produce a violation neither one actually exhibits once merged and
+de-duped. A live instance of exactly this failure mode (one override perturbing a second nearby event's
+own resolution) is `c3bcf81`'s "multi-flip contamination" retraction, found independently by the peer
+session working this same repo today.
+
+**Fix**: `suffix_closed_knee()` (new) -- smallest n such that every tested n' >= n also passes, not just
+the first pass. `exhaustive_search()` now reports this. `bisection_search()` kept (useful diagnostic,
+Opus's Sec 3.3 design) but documented as never deployment-authoritative -- it cannot observe the full
+suffix above its reported knee, so "clean so far" (classify()="bisection") doesn't establish
+suffix-closure. `fetch_prior_points_by_corpus()` -> `fetch_prior_points_by_event()`, grouping by
+`(corpus, req, pos)` before checking monotonicity; `classify()` now takes that shape and flags a corpus as
+violating only when one of its *individual* events is non-monotonic, not the old merged-union check.
+
+**Verified** (`--validate` against the existing 6-target WikiText-2 historical TSV, real run, not
+simulated):
+```
+target                        true_knee  mode                 exhaustive  bisect  bisect_wrong
+kv_a_proj_with_mqa/L13                7  exhaustive_required          7       4         True
+kv_b_proj/L6                          8  exhaustive_required          8       2         True
+o_proj/L6                             4  exhaustive_required          4       2         True
+q_proj/L5                             6  exhaustive_required          6       3         True
+shared_gate_proj/L25                  4  bisection_candidate          4       4        False
+shared_up_proj/L16                    4  bisection_candidate          4       4        False
+ALL CORRECT (exhaustive, deployment-authoritative)
+bisection would have been wrong on 4/6 targets
+```
+Exhaustive search matches the (now correctly-defined) true knee on all 6 targets by construction. The
+load-bearing number: **bisection would have been wrong on 4/6 targets (67%)** on this small real-data
+set, had it ever been used for a deployment decision instead of exhaustive -- concretely quantifying why
+B1 excludes it from deployment, not just a theoretical concern.
+
+**Not yet done**: the live Supabase re-measurement of the 58-83% headline violation rate under the new
+event-scoped `classify()` (does event-scoping change that number?) is blocked -- `QWEN_SUPABASE_URL`/
+`QWEN_SUPABASE_KEY` were not found in this session's environment, `~/.env` (xox or bob), or bob's shell
+profile. Checked and ruled out those locations; did not search further to avoid burning time on credential
+hunting mid-autonomous-run. Needs the user to point at where these are normally sourced from, or to set
+them, before this specific re-measurement can run. The code fix itself does not depend on this and is
+already verified above via the historical (non-Supabase) path.
+
+**COST**: `bisection_search()`'s speed advantage is now unused for real deployment decisions (every
+target currently classifies `exhaustive_required` anyway, so this changes nothing in practice today --
+matters if/when a target ever earns a clean "bisection" classification).
+
+**EXIT**: if a genuinely fast, deployment-safe partial-scan algorithm is needed later (e.g. once enough
+clean, cross-corpus-confirmed targets exist that exhaustive's full n=2..16 cost matters), it would need to
+specifically prove suffix-closure with fewer than |ladder| tests -- not a drop-in swap of `bisection_search()`.
+
+Commit: `d8dab02`.
