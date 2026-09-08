@@ -558,7 +558,17 @@ def step0_baseline_gate(ssh_host, moe_base, bin_path, cwd, derived_manifest, com
     # POSIX background-process-plus-watcher pattern instead (background the real command, a
     # sibling `sleep T && kill -9` watcher races it, `wait` on the real command's PID, then kill
     # the watcher so it doesn't linger).
+    # D-qNg64-13: selflog_dir (SELFLOG_DIR/runs) is never created remotely before this --
+    # QWEN_MOE_NEARTIE_EVENTS_LOG fopen()s it eagerly at startup and FATALs immediately if the
+    # directory doesn't exist, before loading anything -- which this function's own output
+    # parsing correctly, but misleadingly, reports as "no-signal" (nothing WAS logged, but not
+    # because the position wasn't reached -- the engine never got that far). Found only by
+    # actually running this end-to-end: a hand-reconstructed version of this exact command
+    # against a directory that already existed reproduced the real flip perfectly, which is what
+    # exposed the gap. Same mkdir-first pattern derive_isolated_manifest() already uses.
+    selflog_parent = shlex.quote(os.path.dirname(self_log_path))
     bg_cmd = (
+        f"mkdir -p {selflog_parent} && "
         f"cd {shlex.quote(cwd)} && {unset_str} {env_str} {shlex.quote(bin_path)} & "
         f"CMD_PID=$!; "
         f"( sleep {timeout_s} && kill -9 $CMD_PID 2>/dev/null ) & WATCHER_PID=$!; "
@@ -646,7 +656,11 @@ def sweep_one_n(ssh_host, moe_base, bin_path, cwd, derived_manifest, combo_path,
 
     env_str = " ".join(f"{k}={shlex.quote(v)}" for k, v in env.items())
     unset_str = "env -u QWEN_MOE_PROMOTION_FILE_NQ -u QWEN_MOE_PROMOTION_FILE -u QWEN_MOE_NEARTIE_HI_EXPERT_LAYERS"
+    # D-qNg64-13: same missing-remote-mkdir bug as step0_baseline_gate (see its own comment) --
+    # fixed here identically.
+    selflog_parent = shlex.quote(os.path.dirname(self_log_path))
     bg_cmd = (
+        f"mkdir -p {selflog_parent} && "
         f"cd {shlex.quote(cwd)} && {unset_str} {env_str} {shlex.quote(bin_path)} & "
         f"CMD_PID=$!; "
         f"( sleep {timeout_s} && kill -9 $CMD_PID 2>/dev/null ) & WATCHER_PID=$!; "
@@ -792,6 +806,13 @@ def load_ledger(path):
 
 
 def save_ledger(path, ledger):
+    # D-qNg64-13: parent dir (DEFAULT_LEDGER=/private/tmp/qng64_ctl/...) is never created
+    # anywhere else -- first real --run crashed here with FileNotFoundError, masking whatever
+    # the actual triple outcome was (this fires from every ledger_record() call site, including
+    # the except-block ones, so the crash pre-empted the real error being visible at all).
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
     tmp = f"{path}.tmp"
     with open(tmp, "w") as f:
         json.dump(ledger, f, indent=2, sort_keys=True)
