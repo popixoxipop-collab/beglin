@@ -11495,3 +11495,77 @@ moe_af_reachable_from_active/moe_lazy_hi_release_all fix), `tools/quant_search_n
 (make_live_oracle positive control), `tools/promotion_writeback.py` (new).
 
 Not pushed (local commits only, per this repo's convention).
+
+## D-qNg64-4 -- partial benefit-metric data point vs D-d5-31 baseline (2026-09-08)
+
+**WHY**: D-qNg64-3's exit criterion (quality-per-effective-bpw vs. D-d5-31's bits=16/32.7%-scope
+baseline) was logged as unmeasured, needing "a broader real-corpus measurement." Full Supabase-scale
+coverage isn't available in this environment (credentials still not found -- see D-qNg64-plan-1/2/3).
+This section is a small, honestly-scoped real measurement using data already local to this repo --
+explicitly NOT a substitute for the full comparison, a single real data point toward it.
+
+**What was checked**: whether `shared_gate_proj`/L14 -- the real, confirmed attribution target of
+the `p60`/pos=14 flip D-qNg64-1/2/3 all used, and one of D-d5-31's own 24-request corpus targets
+(`p60` is explicitly one of that batch) -- is among D-d5-31's 88-combo bits=16 promoted set
+(`/Users/xox/vdsp_local_data/promote_hits88.txt`, the actual file D-d5-31 built its arm from, read
+directly, not inferred from RESULTS.md's own summary prose):
+
+```
+$ grep shared_gate_proj /Users/xox/vdsp_local_data/promote_hits88.txt
+shared_gate_proj 11
+shared_gate_proj 15
+shared_gate_proj 25
+shared_gate_proj 26
+shared_gate_proj 3
+shared_gate_proj 4
+shared_gate_proj 5
+shared_gate_proj 6
+shared_gate_proj 7
+shared_gate_proj 8
+```
+
+**Layer 14 is not in this list** (10 `shared_gate_proj` entries counted directly from the file;
+RESULTS.md's own D-d5-31 prose says "11" -- a minor discrepancy not chased down here, doesn't
+change the finding: 14 isn't present either way).
+
+**Finding**: D-d5-31's bits=16 static set, despite being built from measured attribution hits
+across its own 24-event corpus (which includes `p60`), does **not** cover the exact tensor
+responsible for `p60`'s own real flip. This isn't necessarily a contradiction (bits=16's *default
+runtime correction* safety net, separate from the static promoted set, may still catch this
+specific event live in that arm's actual serving -- not tested here, out of scope for this
+comparison, which is specifically about the STATIC promoted set's coverage). But it means a clean
+"same target, compare bpw" comparison isn't available from existing data -- the two approaches'
+target sets don't overlap on this specific tensor.
+
+**What IS a real comparison**: qNg64's per-event, suffix-closed-knee approach (L2+L3a, this round)
+found and applied a real, verified fix for `p60`'s flip at `shared_gate_proj`/L14 -> n=5
+(D-qNg64-3's positive verification), at `eff_bpw(5) = 5 + 32/(64*5) = 5.1` (the same formula
+`tools/quant_search_n.py` already defines, computed directly here, not estimated) -- vs.
+`eff_bpw(16) = 16 + 32/(64*16) ≈ 16.03` for what a bits=16 promotion of the same tensor would have
+cost, had D-d5-31's process chosen to include it. **qNg64 delivers a targeted fix D-d5-31's static
+set misses entirely, at ~31% of the bit-width bits=16 would need for the same tensor.**
+
+**Honest limits of this finding**:
+- **N=1.** One target, one event. This is not the "broader real-corpus measurement" the exit
+  criterion needs -- it's a single favorable data point, reported as exactly that.
+- Does not measure whether qNg64-promoted `shared_gate_proj`/L14 alone (without anything else
+  promoted) reproduces bf16 on a real multi-request corpus the way D-d5-31's 88-combo arm does --
+  that would require the same kind of `B_truth`/`CORRECT=0` methodology D-d5-31 itself established
+  (see that section's own "methodology correction" note), run against a qNg64 arm -- not done here,
+  real follow-on work.
+- Does not establish whether qNg64's approach, scaled to cover as many targets as D-d5-31's 88,
+  would still win on aggregate bpw -- some targets may need n close to 16 anyway (this project's
+  own D-qNg64-2 already found `kv_b_proj`/L9 fails even at n=4 within the range tested), so a
+  full comparison could look quite different from this one favorable point.
+
+**COST**: this check itself was cheap (one `grep` against an already-existing local file, one
+arithmetic computation) -- the limiting factor for the REAL comparison remains Supabase access,
+not compute or methodology.
+
+**EXIT**: the real next step is unchanged from D-qNg64-3's own EXIT note -- a genuine multi-target,
+multi-event corpus run comparing a qNg64-derived promotion set against D-d5-31's bits=16 set,
+using D-d5-31's own already-established `B_truth`/`CORRECT=0` no-safety-net methodology so the
+comparison is a real token-accuracy measurement, not the same "safety net silently repairs misses"
+trap D-d5-31 itself found and fixed in its own predecessor arms. Blocked on Supabase access to
+scale target selection beyond what's already locally known, not on anything this round could
+resolve.
