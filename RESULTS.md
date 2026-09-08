@@ -11625,3 +11625,52 @@ exhaustive scan remains the correct default). The methodology itself held up thi
 step -- flip-count check before sizing a sweep, mandatory reproduction check before committing
 real bob time, disk cleanup per target -- worked as designed, in contrast to the retracted
 round immediately before it.
+
+## D-qNg64-5 -- B3 live re-measurement, real Supabase data (2026-09-08)
+
+**WHY**: D-qNg64-plan-1/2/3 all logged the same gap -- B3's fix (event-scoped `classify()`)
+couldn't be re-measured against live data because `QWEN_SUPABASE_URL`/`QWEN_SUPABASE_KEY` weren't
+found anywhere in this session's environment. The user pointed at where they actually were:
+`~/.claude/hooks/scripts/nvidia-keypool-guard.py`'s own comment (2026-07-16, D1) already documents
+a Supabase **Management API** PAT at `~/Desktop/Code_reviewer_with_feedback/.env`
+(`SUPABASE_MANAGEMENT_PAT`) -- a different, more powerful credential (bypasses RLS, arbitrary SQL)
+than the REST API key the existing scripts look for, but usable for the same read purpose by
+pointing its URL at this project's own ref.
+
+**Mechanism**: verified via a plain `count(*)` query against `moe_quant_sweep_results` at
+`project_ref=btdjbfgqzglucifcnuoc` ("beglin", per this repo's own memory) -- confirmed connectivity
+and the correct project (1065 rows, up from the 840 last known count -- more data accumulated since
+D-qNg64-plan-1, from the peer session's continued work). Pulled all 1065 rows locally, reproduced
+BOTH the OLD (pre-B3-fix, corpus-merged) and NEW (event-scoped) `classify()`-style monotonicity
+check in a standalone script against the real data (not the historical TSV D-qNg64-plan-1 used).
+
+**Result**:
+```
+targets total: 51
+OLD (corpus-merged) violating: 34/51 = 66.7%
+NEW (event-scoped)  violating: 34/51 = 66.7%
+targets where verdict flipped: 0
+targets with 2+ events in some corpus (where old/new even COULD differ): 6/51
+```
+
+**Honest interpretation**: the live-measured violation rate is **66.7%**, within the previously-
+cited 58-83% range (Step 6 round 5 / ROI-G live-mode, different measurement methodologies each).
+The B3 fix produced **zero verdict changes** on this specific dataset -- of the 6 targets where old
+vs new even COULD differ (2+ events in some corpus), none actually flipped. This does NOT mean the
+B3 fix was unnecessary: it's a correctness property (protecting against a specific data-corruption
+mechanism that IS real -- see `c3bcf81`'s "multi-flip contamination" retraction, a related but
+structurally distinct bug found independently by the peer session: that one corrupted a *pass/fail
+label itself* by letting one override's forward pass perturb a second nearby event's own
+resolution during data COLLECTION; B3 protects against merging two already-clean labels during
+*aggregation* in a way that manufactures a violation neither exhibits -- different mechanism, same
+family of "don't let unrelated events interact" bug). This dataset simply doesn't yet contain a
+case that triggers B3's specific failure mode. Worth re-checking again as more multi-event data
+accumulates per target.
+
+**COST**: none -- read-only queries, ~1065 rows, sub-second.
+
+**EXIT**: n/a, this is a measurement not a design decision. Credential access itself is now
+documented for future sessions (`reference_supabase_management_api_access.md`) so this doesn't
+need re-discovering.
+
+Not pushed (local commits only, per this repo's convention).
