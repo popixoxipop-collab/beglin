@@ -128,7 +128,13 @@ def group_by_triple(rows):
         out[key]["count"] += 1
         ev = (r["req"], r["pos"])
         out[key]["events"][ev].append(r.get("corrected_argmax"))
-        if ev not in out[key]["event_detail"]:
+        # D-qNg64-16: was "first row wins" -- broke the moment an event had BOTH old-format
+        # rows (predating D-qNg64-9's manifest/orig_argmax/threshold fields) and freshly
+        # regenerated new-format rows for the SAME event, since glob() order has no reason to
+        # put the new file first. Prefer whichever row actually carries a manifest -- once one
+        # is found, don't let a later old-format row for the same event clobber it back to None.
+        existing = out[key]["event_detail"].get(ev)
+        if existing is None or (not existing.get("manifest") and r.get("manifest")):
             out[key]["event_detail"][ev] = {
                 "manifest": r.get("manifest"), "orig_argmax": r.get("orig_argmax"),
                 "corrected_argmax": r.get("corrected_argmax"), "threshold": r.get("threshold"),
