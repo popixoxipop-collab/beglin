@@ -147,3 +147,10 @@ L3b에만 있고 L3a는 오프라인 정적 배정일 뿐. 이 격차를 사용�
   (auto-triggered sweep autopilot) still not built — needs both Phase B pieces plus a cost cap,
   the corrected_argmax reproduction gate, real push code (doesn't exist), and
   promotion_writeback.py's truncating write fixed to merge. RESULTS.md `D-qNg64-9`.
+
+- **L3b Phase A+B 완료** (2026-09-08): Phase A(`tools/promotion_controller.py --report`, 읽기전용
+  워크리스트, 실 attribution 742건/45타겟 랭킹). Phase B 2/2 완료 — C쪽(매니페스트 신원 로깅,
+  qwen_infer.c, 실검증됨) + DB쪽(`source` provenance 컬럼, **사용자 승인 후 실제 적용, source='sim'
+  count=1065 확인**). Phase C(실제 자동 sweep 트리거)는 설계를 Opus로 재검증 중 — Opus가
+  지적한 8개 위험(무제한비용/자기재귀/잘못된매니페스트/provenance충돌/truncate 등) 전부 반영한
+  구체설계를 다시 adversarial review 받는 중.
