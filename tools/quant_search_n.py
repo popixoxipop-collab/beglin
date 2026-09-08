@@ -315,6 +315,25 @@ def make_live_oracle(ssh_host, moe_base, bin_path, manifest, combo_path, sim_dir
             capture_output=True, text=True, timeout=timeout,
         )
         out = result.stdout + result.stderr
+
+        # D-qNg64-3 (L3a point 9): positive control -- this module's own docstring records TWO
+        # real silent-failure modes that both look exactly like a clean "no hit" (missing cd:
+        # every n reads fail; wrong same-req manifest: a real-looking near-tie at the WRONG pos).
+        # Neither raises, neither has a distinct error signature -- absence of the hit line was
+        # being trusted as a genuine fail with no way to tell it apart from "the run never
+        # actually reached this req/pos at all". Require positive evidence the engine reached
+        # and evaluated this exact (req,pos) -- any diagnostic line naming both -- before trusting
+        # a "no hit" as a real fail rather than a silently broken run.
+        reached = any((f"req={req} " in line or f"req={req},"  in line or line.endswith(f"req={req}"))
+                      and (f"pos={pos} " in line or f"pos={pos},"  in line or line.endswith(f"pos={pos}"))
+                      for line in out.splitlines())
+        if not reached:
+            raise RuntimeError(
+                f"live oracle positive control failed: no diagnostic line mentions req={req} pos={pos} "
+                f"at n={n} -- the run likely never reached this position (wrong cd, wrong manifest, "
+                f"or a crash) rather than genuinely testing it. Full output:\n{out[-2000:]}"
+            )
+
         needle = f"hit req={req} pos={pos} role={role} layer={layer}"
         return needle in out
     return test

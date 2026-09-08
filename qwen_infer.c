@@ -3358,6 +3358,15 @@ static MoeLayerTensors *g_moe_lt_cur = g_moe_lt;
 // below can reference it without a forward declaration.
 static MoeLayerTensors g_moe_lt_active[MOE_MAXLAYERS];
 
+// D-qNg64-3 (L3a): arbitrary-n shadow table, SEPARATE from g_moe_lt_hi (which stays exactly the
+// bits=16 attribution reference -- 53 reference sites depend on it never holding anything else,
+// see quirky-stirring-trinket.md's Opus L2/L3a review point on g_moe_lt_hi aliasing risk). Built
+// once at startup by moe_promotion_nq_init() (forward-declared below, defined near the qNg64
+// registration functions it calls) from QWEN_MOE_PROMOTION_FILE_NQ -- only the (role,layer)
+// shadows that file actually asks for get built (B2's decision: pre-build at startup, hot-reload
+// traded away, see the plan). All-zero/unused when that env var is unset.
+static MoeLayerTensors g_moe_lt_nq[MOE_MAXLAYERS];
+
 // D-d5-13: selective-hi correction. The blanket correction path swaps the WHOLE table to
 // g_moe_lt_hi, so it needs every layer's bits=16 mirror resident -- the same memory static
 // promotion costs, which is why the runtime path currently buys no memory advantage at all
@@ -6384,6 +6393,15 @@ static void moe_lt_active_init(void) {
 static int g_moe_promoted[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];   // avoid redundant reapply/logging on repeat polls
 static const char *g_moe_promotion_file = NULL;   // QWEN_MOE_PROMOTION_FILE, unset = feature off
 
+// D-qNg64-3 (L3a): arbitrary-n promotion tracking, separate from g_moe_promoted (which is the
+// bits=16-only hi-mirror mechanism above and stays untouched). Stores the promoted n itself
+// (0 = not promoted) rather than a bool, by design -- avoids the write-once bug the Opus review
+// found in the bool-only g_moe_promoted (editing a promotion file entry silently no-opped).
+static int g_moe_promoted_nq[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
+// Forward decl: defined near the qNg64 registration functions it calls (st_register_moe_*_
+// qNg64_as()), which are declared later in this file than this startup call site needs.
+static void moe_promotion_nq_init(void);
+
 static void moe_promotion_apply_one(MoeAttribRole role, int layer) {
     if (g_moe_promoted[role][layer]) return;
     switch (role) {
@@ -6868,6 +6886,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     // (run_moe_cbatch_verify_mode()) is the ONLY one that repoints g_moe_lt_cur at
     // g_moe_lt_active -- every other verify-mode gate is untouched.
     moe_lt_active_init();
+    moe_promotion_nq_init();   // D-qNg64-3 (L3a): independent of g_moe_neartie_correct_on, see its own comment
     g_moe_lt_cur = g_moe_lt_active;
     g_moe_promotion_file = (env_promotion_file && env_promotion_file[0]) ? env_promotion_file : NULL;
     if (g_moe_promotion_file) fprintf(stderr, "[moe promotion] polling '%s' once per request admission (D6)\n", g_moe_promotion_file);
@@ -13691,9 +13710,34 @@ static void moe_lazy_hi_materialize_all(void) {
     if (!g_moe_hi_lazy) return;
     for (int i = 0; i < g_moe_naf; i++) moe_af_materialize(&g_moe_af[i]);
 }
+// D-qNg64-3: pre-existing latent bug the L3a design review found -- this used to release EVERY
+// lazy tensor unconditionally, including one an active promotion (g_moe_lt_active[l].<role>)
+// currently points at. Freed the tensor's ->base out from under a live pointer; the next decode
+// would see base==NULL and (moe_decode_af()'s own base = t->base ? t->base : blob fallback)
+// silently reinterpret the SHARED af-blob using this tensor's own packed_off/scale_off -- wrong
+// data, no crash, no warning. Latent before L3a (nothing made lazy materialization the default
+// path for an actively-promoted tensor); L3a's g_moe_lt_nq shadows are exactly that, so this had
+// to be fixed first, not just noted. Fix: skip release for anything reachable from
+// g_moe_lt_active[] for any layer -- small O(g_moe_naf * MOE_NL * 15) scan, only runs around a
+// correction replay (not per-token), so the cost is not on any hot path.
+static int moe_af_reachable_from_active(MoeAFTensor *t) {
+    for (int l = 0; l < MOE_NL; l++) {
+        MoeLayerTensors *a = &g_moe_lt_active[l];
+        if (a->q_proj == t || a->kv_a_proj == t || a->kv_b_proj == t || a->o_proj == t ||
+            a->k_proj == t || a->v_proj == t ||
+            a->dense_gate == t || a->dense_up == t || a->dense_down == t ||
+            a->shared_gate == t || a->shared_up == t || a->shared_down == t ||
+            a->switch_gate == t || a->switch_up == t || a->switch_down == t)
+            return 1;
+    }
+    return 0;
+}
 static void moe_lazy_hi_release_all(void) {
     if (!g_moe_hi_lazy) return;
-    for (int i = 0; i < g_moe_naf; i++) moe_af_release(&g_moe_af[i]);
+    for (int i = 0; i < g_moe_naf; i++) {
+        if (moe_af_reachable_from_active(&g_moe_af[i])) continue;
+        moe_af_release(&g_moe_af[i]);
+    }
 }
 
 // Per-expert mixed-precision sibling of st_register_moe_experts_q4g64_as()/q8g64_as()
@@ -14187,6 +14231,150 @@ static const MoeStExpertRole MOE_ST_EXPERT_ROLES[] = {   // always 3, every rout
     { "model.layers.%d.mlp.experts.%d.up_proj.weight",   "model.layers.%d.mlp.switch_mlp.up_proj" },
     { "model.layers.%d.mlp.experts.%d.down_proj.weight", "model.layers.%d.mlp.switch_mlp.down_proj" },
 };
+
+// D-qNg64-3 (L3a): the "small script"'s C-side counterpart -- reads QWEN_MOE_PROMOTION_FILE_NQ
+// ("<role> <layer> <n>" per line) ONCE at startup (not polled -- B2's decision, see the plan:
+// pre-build at startup, hot-reload traded away rather than risk an admission-time build stall
+// materializing a 369MB E-stacked shadow mid-serving). For each line: looks up the safetensors
+// name pattern for that role by searching the SAME MOE_ST_*_ROLES tables
+// moe_neartie_correct_load_attn_hi() already uses (role-name match, not a re-derived mapping),
+// builds a real qNg64 shadow via L1's st_register_moe_*_qNg64_as() into g_moe_lt_nq[layer],
+// enforces n >= base_bits (D-qNg64-plan-1's B1 finding: a "passing" n below production's own
+// bits is not trustworthy evidence -- refuse and log, never silently clamp or apply anyway),
+// then pointer-swaps g_moe_lt_active[layer].<role> to the new shadow. Deliberately a separate
+// mechanism from moe_promotion_apply_one()/g_moe_promoted (the existing bits=16-only hi-mirror
+// path) -- g_moe_lt_hi itself is never touched (it is attribution's all-bits=16 reference
+// baseline, 53 reference sites; adding qN entries into it would move that baseline out from
+// under every attribution result that depends on it staying exactly bits=16).
+//   Scope: embed_tokens/lm_head are NOT supported this round -- they use a separate
+//   g_moe_embed_active/g_moe_lmhead_active global-pointer mechanism, not a MoeLayerTensors field,
+//   and wiring that in is real additional surface area with no evidence yet that it's needed
+//   (per-layer FFN/attention roles are where this project's actual near-tie evidence lives).
+//   A promotion line naming either FATALs with a clear message, not a silent skip.
+//   GPU: out of scope this round (no live GPU promotion path exists today -- see the plan's L3a
+//   point 8) -- this function only ever touches g_moe_lt_active (CPU serving).
+static void moe_promotion_nq_init(void) {
+    const char *path = getenv("QWEN_MOE_PROMOTION_FILE_NQ");
+    if (!path || !path[0]) return;
+    // Same class of bug this project already found+fixed once (D-gpu-6c/6d, see MEMORY.md):
+    // moe_neartie_correct_load_attn_hi() save/restores g_st_moe around its OWN body (so it can
+    // point at the checkpoint it just opened while registering hi-mirror tensors), and restores
+    // g_st_moe back to whatever it was before (NULL, since the base model loads via AF-blob, not
+    // safetensors) once it returns -- by the time this function runs, g_st_moe is NULL again.
+    // g_moe_hi_st is the SAME opened handle, kept alive in a separate global for exactly this
+    // reuse. Re-swap here, same idiom as the mlx_moe.cpp GPU-binding call sites already use.
+    if (!g_moe_hi_st) {
+        fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ requires a real safetensors checkpoint "
+                        "already opened (QWEN_MOE_NEARTIE_CORRECT=1 + QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS=<path>, "
+                        "or another mechanism that populates g_moe_hi_st) -- none was open\n");
+        exit(1);
+    }
+    SafetensorsMulti *saved_st_moe = g_st_moe;
+    g_st_moe = g_moe_hi_st;
+    FILE *f = fopen(path, "r");
+    if (!f) { fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: cannot open '%s'\n", path); exit(1); }
+    char role_buf[64]; int layer, n;
+    int n_lines = 0, n_applied = 0;
+    while (fscanf(f, "%63s %d %d", role_buf, &layer, &n) == 3) {
+        n_lines++;
+        int role_i = moe_attrib_role_from_name(role_buf);
+        if (role_i < 0) { fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: unknown role '%s'\n", role_buf); exit(1); }
+        MoeAttribRole role = (MoeAttribRole)role_i;
+        if (layer < 0 || layer >= MOE_NL) {
+            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s layer=%d out of [0,%d)\n", role_buf, layer, MOE_NL);
+            exit(1);
+        }
+        if (role == MOE_ATTRIB_EMBED_TOKENS || role == MOE_ATTRIB_LM_HEAD) {
+            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s not supported this round "
+                            "(embed_tokens/lm_head use a separate global-pointer mechanism, out of L3a scope)\n", role_buf);
+            exit(1);
+        }
+        if (!moe_attrib_role_valid_at(role, layer)) {
+            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s not valid at layer=%d\n", role_buf, layer);
+            exit(1);
+        }
+        if (n < 2 || n > 16) {
+            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s layer=%d n=%d out of [2,16]\n", role_buf, layer, n);
+            exit(1);
+        }
+
+        const char *st_pattern = NULL;
+        int is_expert = (role == MOE_ATTRIB_EXPERT_GATE || role == MOE_ATTRIB_EXPERT_UP || role == MOE_ATTRIB_EXPERT_DOWN);
+        if (role == MOE_ATTRIB_EXPERT_GATE) st_pattern = MOE_ST_EXPERT_ROLES[0].st_pattern;
+        else if (role == MOE_ATTRIB_EXPERT_UP) st_pattern = MOE_ST_EXPERT_ROLES[1].st_pattern;
+        else if (role == MOE_ATTRIB_EXPERT_DOWN) st_pattern = MOE_ST_EXPERT_ROLES[2].st_pattern;
+        else {
+            const MoeStRole *tabs[3]; size_t cnts[3]; int nt = 0;
+            if (MOE_ATTN_KIND == MOE_ATTN_MLA) { tabs[nt] = MOE_ST_ATTN_ROLES_MLA; cnts[nt] = sizeof(MOE_ST_ATTN_ROLES_MLA)/sizeof(MOE_ST_ATTN_ROLES_MLA[0]); nt++; }
+            else                               { tabs[nt] = MOE_ST_ATTN_ROLES_GQA; cnts[nt] = sizeof(MOE_ST_ATTN_ROLES_GQA)/sizeof(MOE_ST_ATTN_ROLES_GQA[0]); nt++; }
+            tabs[nt] = MOE_ST_DENSE_ROLES;  cnts[nt] = sizeof(MOE_ST_DENSE_ROLES)/sizeof(MOE_ST_DENSE_ROLES[0]);  nt++;
+            tabs[nt] = MOE_ST_SHARED_ROLES; cnts[nt] = sizeof(MOE_ST_SHARED_ROLES)/sizeof(MOE_ST_SHARED_ROLES[0]); nt++;
+            for (int ti = 0; ti < nt && !st_pattern; ti++)
+                for (size_t ri = 0; ri < cnts[ti]; ri++)
+                    if (tabs[ti][ri].is_af && tabs[ti][ri].role && !strcmp(tabs[ti][ri].role, role_buf)) { st_pattern = tabs[ti][ri].st_pattern; break; }
+        }
+        if (!st_pattern) {
+            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s has no safetensors pattern "
+                            "(not applicable to this architecture, e.g. MLA-only role on a GQA model)\n", role_buf);
+            exit(1);
+        }
+
+        MoeLayerTensors *base_lt = &g_moe_lt[layer], *nq_lt = &g_moe_lt_nq[layer], *active_lt = &g_moe_lt_active[layer];
+        MoeAFTensor *base_ptr = NULL;
+        MoeAFTensor **nq_field = NULL, **active_field = NULL;
+        switch (role) {
+            case MOE_ATTRIB_Q_PROJ:      base_ptr = base_lt->q_proj;      nq_field = &nq_lt->q_proj;      active_field = &active_lt->q_proj;      break;
+            case MOE_ATTRIB_KV_A_PROJ:   base_ptr = base_lt->kv_a_proj;   nq_field = &nq_lt->kv_a_proj;   active_field = &active_lt->kv_a_proj;   break;
+            case MOE_ATTRIB_KV_B_PROJ:   base_ptr = base_lt->kv_b_proj;   nq_field = &nq_lt->kv_b_proj;   active_field = &active_lt->kv_b_proj;   break;
+            case MOE_ATTRIB_O_PROJ:      base_ptr = base_lt->o_proj;      nq_field = &nq_lt->o_proj;      active_field = &active_lt->o_proj;      break;
+            case MOE_ATTRIB_K_PROJ:      base_ptr = base_lt->k_proj;      nq_field = &nq_lt->k_proj;      active_field = &active_lt->k_proj;      break;
+            case MOE_ATTRIB_V_PROJ:      base_ptr = base_lt->v_proj;      nq_field = &nq_lt->v_proj;      active_field = &active_lt->v_proj;      break;
+            case MOE_ATTRIB_DENSE_GATE:  base_ptr = base_lt->dense_gate;  nq_field = &nq_lt->dense_gate;  active_field = &active_lt->dense_gate;  break;
+            case MOE_ATTRIB_DENSE_UP:    base_ptr = base_lt->dense_up;    nq_field = &nq_lt->dense_up;    active_field = &active_lt->dense_up;    break;
+            case MOE_ATTRIB_DENSE_DOWN:  base_ptr = base_lt->dense_down;  nq_field = &nq_lt->dense_down;  active_field = &active_lt->dense_down;  break;
+            case MOE_ATTRIB_SHARED_GATE: base_ptr = base_lt->shared_gate; nq_field = &nq_lt->shared_gate; active_field = &active_lt->shared_gate; break;
+            case MOE_ATTRIB_SHARED_UP:   base_ptr = base_lt->shared_up;   nq_field = &nq_lt->shared_up;   active_field = &active_lt->shared_up;   break;
+            case MOE_ATTRIB_SHARED_DOWN: base_ptr = base_lt->shared_down; nq_field = &nq_lt->shared_down; active_field = &active_lt->shared_down; break;
+            case MOE_ATTRIB_EXPERT_GATE: base_ptr = base_lt->switch_gate; nq_field = &nq_lt->switch_gate; active_field = &active_lt->switch_gate; break;
+            case MOE_ATTRIB_EXPERT_UP:   base_ptr = base_lt->switch_up;   nq_field = &nq_lt->switch_up;   active_field = &active_lt->switch_up;   break;
+            case MOE_ATTRIB_EXPERT_DOWN: base_ptr = base_lt->switch_down; nq_field = &nq_lt->switch_down; active_field = &active_lt->switch_down; break;
+            default: continue;   // unreachable: embed/lm_head already FATAL'd above
+        }
+        if (!base_ptr) {
+            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s layer=%d has no production tensor "
+                            "(architecture mismatch -- e.g. an MLA-only role requested on a GQA model)\n", role_buf, layer);
+            exit(1);
+        }
+        int base_bits = base_ptr->bits;
+        if (n < base_bits) {
+            fprintf(stderr, "[moe promotion nq] role=%s layer=%d REFUSED: n=%d < base_bits=%d -- a passing n "
+                            "below production's own bits is not trustworthy evidence (D-qNg64-plan-1 B1)\n",
+                    role_buf, layer, n, base_bits);
+            continue;
+        }
+
+        char st_name[192], ename[192];
+        snprintf(ename, sizeof ename, "%s_L%d__nq%d", role_buf, layer, n);
+        if (is_expert) {
+            *nq_field = st_register_moe_experts_qNg64_as(st_pattern, layer, MOE_N_EXPERTS, n, ename);
+        } else {
+            snprintf(st_name, sizeof st_name, st_pattern, layer);
+            *nq_field = st_register_moe_dense_af_qNg64_as(st_name, n, ename);
+        }
+        *active_field = *nq_field;
+
+        if (g_moe_promoted_nq[role][layer] != 0 && g_moe_promoted_nq[role][layer] != n)
+            fprintf(stderr, "[moe promotion nq] role=%s layer=%d: duplicate line, n=%d overrides earlier n=%d (last line wins)\n",
+                    role_buf, layer, n, g_moe_promoted_nq[role][layer]);
+        g_moe_promoted_nq[role][layer] = n;
+        fprintf(stderr, "[moe promotion nq] role=%s layer=%d PROMOTED to qNg64(n=%d) -- permanent, no restart "
+                        "within this process (base_bits was %d)\n", role_buf, layer, n, base_bits);
+        n_applied++;
+    }
+    fclose(f);
+    g_st_moe = saved_st_moe;
+    fprintf(stderr, "[moe promotion nq] '%s': %d lines, %d promotions applied\n", path, n_lines, n_applied);
+}
 
 // D-roadmap-3 correction path (extended D-roadmap-4, 2026-09-02): registers bits=16 tensors for
 // ALL layers, sourced from a genuine bf16/original safetensors checkpoint (QWEN_MOE_NEARTIE_
