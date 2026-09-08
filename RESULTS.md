@@ -11960,3 +11960,16 @@ older bare-path form, both distinguishable).
 
 Not pushed (local commits only, per this repo's convention). Migration SQL file included in the
 commit as a reviewable artifact, not executed.
+
+## D-qNg64-9 follow-up -- source column migration APPLIED (2026-09-08)
+
+User explicitly authorized (asked directly, per this credential's own DDL/DML confirmation
+principle). Ran `supabase_migration_qng64_source.sql`'s `alter table ... add column if not exists
+source text not null default 'sim'` against the live `moe_quant_sweep_results` table via the
+Management API. Verification query (the file's own prescribed check) confirms clean apply:
+`source='sim', count=1065` -- a single group, matching the pre-migration total exactly, no data
+loss or unexpected split. Phase B (both parts: C-side manifest logging + DB-side provenance
+column) is now fully landed. Phase C (the actual auto-triggered sweep loop) still not built --
+the schema/logging prerequisites exist now, but Phase C's own remaining Opus-review findings
+(max-sweeps cap, corrected_argmax reproduction gate, promotion_writeback.py's truncating-write
+fix, wiring QWEN_MOE_ATTRIB_SIM_QN into an actual push path) are unaddressed.
