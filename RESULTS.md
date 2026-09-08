@@ -12232,3 +12232,69 @@ above; if it doesn't, that's new information the mocked tests couldn't have caug
 formatting drift, a real timeout firing, etc.) and is exactly what that first real run is for.
 
 Commits: `5bfa8e7` (Priority 1), `3d17f6f` (Priority 2). Local only, not pushed.
+
+## D-qNg64-13 -- L3b Phase C: real end-to-end pipeline run (2026-09-08)
+
+**WHY**: D-qNg64-12 built the full Phase C pipeline (writeback fix, sweep loop, atomic push,
+backoff ledger, `--run`) but every piece was verified at the unit level (real DB reads, mocked
+external calls) except one full real triple through the whole thing -- explicitly left as the
+closing verification. This section is that run.
+
+**Real bugs found+fixed getting there (none caught by D-qNg64-12's own testing, only by actually
+running it)**:
+1. `save_ledger()` (used by every ledger-record call site) never creates its parent directory
+   (`/private/tmp/qng64_ctl/`) -- first real `--run` crashed with `FileNotFoundError` inside the
+   exception handler for a DIFFERENT failure, masking whatever that real failure was.
+2. `step0_baseline_gate()` and `sweep_one_n()` both point `QWEN_MOE_NEARTIE_EVENTS_LOG` at a
+   remote directory (`SELFLOG_DIR/runs`) that is never `mkdir -p`'d on bob before the engine
+   invocation -- the engine's `fopen()` FATALs immediately, before reaching the recorded
+   position. This function's own output-parsing correctly reported "no-signal" (nothing was
+   logged) but for the wrong underlying reason (misread as "position never reached" when the
+   real cause was "process never got past its own startup"). Root-caused by manually
+   reconstructing the exact same command by hand against an existing directory -- it reproduced
+   the real flip perfectly -- then bisecting the difference down to the missing `mkdir`. Fixed
+   with the same `mkdir -p` pattern `derive_isolated_manifest()` already used. All 3 sites fixed
+   in one commit, `55d5efa`.
+
+**Real result after both fixes** (`shared_gate_proj`/L14, req=0, pos=14, the p60 event used
+throughout D-qNg64-1/2/3/9/11/12):
+- Step-0 baseline gate: **PASS** -- derived manifest reproduces `orig_argmax=8713,
+  corrected_argmax=4794` exactly.
+- Real per-n sweep, `QWEN_MOE_ATTRIB_SIM_QN` (the actual qNg64 kernel, not simulation):
+  **n=5 pass, n=6 pass, n=7 pass** -- all three deployable real bit-widths correctly recover the
+  token for this event, live-verified through the exact automated pipeline (derive manifest ->
+  gate -> sweep -> classify), not a manually-driven test like every prior D-qNg64-* round.
+- Atomic push to `moe_quant_sweep_results`: **FAILED** -- `push_sweep_results_atomic()` requires
+  `QWEN_SUPABASE_URL`/`QWEN_SUPABASE_KEY` (the REST API path `d4_supabase_push.py` also uses),
+  which remains not found anywhere in this session's environment (same gap logged in
+  D-qNg64-plan-1/2/5/6) -- distinct from the Management API PAT (`SUPABASE_MANAGEMENT_PAT`) this
+  session found and used for reads and the one authorized schema migration. The Management API
+  *could* run the equivalent INSERT directly, but that's DML through a credential whose own usage
+  principle requires explicit authorization first (the same principle the `source` column
+  migration was correctly gated behind) -- not assumed here without asking.
+- `promotion_writeback` upsert: **never reached** (correctly gated behind the failed push,
+  confirmed no promotion file exists yet on bob).
+
+**Also found, disclosed, not fixed this round**: the backoff ledger worked exactly as designed
+(recorded the pre-fix failure, correctly excluded the target from the next run via
+`next_eligible_ts` -- verified by seeing `0 candidates` on the very next invocation) but
+`--reset-backoff <target>`, named in the original design as the operator escape hatch, was never
+actually implemented as a CLI flag -- worked around here by deleting the ledger file directly.
+
+**Verification discipline**: bob's memory was re-checked before, monitored during (free memory
+was actually healthy throughout this round, 5+GB free -- a material improvement over the ~100MB
+free that made the *previous* fork correctly decline to run an untested pipeline; both readings
+are consistent with normal fluctuation, not a resource incident), and confirmed clean after (no
+orphaned local or remote processes, swap unchanged at 565MB/2048MB).
+
+**COST**: none beyond the real compute already spent (1 failed + 1 partial + 1 full real run,
+each involving a full DeepSeek-V2-Lite checkpoint load + several forward passes, ~10-15 min total
+wall time across attempts).
+
+**EXIT**: the pipeline is real, mechanically proven end-to-end through the push boundary. Two
+things needed before it can close the loop for real: (a) `QWEN_SUPABASE_URL`/`QWEN_SUPABASE_KEY`
+(or an explicitly-authorized Management-API-based push path), (b) implementing the
+`--reset-backoff` flag the design already named but never built. Neither is a design problem --
+both are small, well-understood remaining gaps.
+
+Commit: `55d5efa`. Not pushed (local commits only, per this repo's convention).
