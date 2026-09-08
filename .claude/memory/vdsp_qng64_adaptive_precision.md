@@ -137,3 +137,13 @@ L3b에만 있고 L3a는 오프라인 정적 배정일 뿐. 이 격차를 사용�
   실데이터(bob의 step6/7/9 JSONL, 742개 attribution row) 검증: 45개 (role,layer) 타겟,
   최다피인용 `shared_down_proj/L26`(32회/3이벤트). Phase B/C(실제 자동화)는 의도적으로 미착수 —
   provenance 컬럼+manifest 식별자 기록이 선행돼야 함. RESULTS.md `D-qNg64-8` 참고.
+
+- **L3b Phase B, 1/2 done** (2026-09-08): manifest-identity logging added to attribution JSONL
+  (`"manifest":"<QWEN_MOE_CB_PROMPT_MANIFEST value>"`, resolves the req-numbering-ambiguity-across-
+  manifests risk that already caused 2 silent provenance bugs, D-d5-27 + its repeat) — real
+  verified on p60/pos=14. DB-side prereq (`source` column on `moe_quant_sweep_results`,
+  distinguishing sim vs real-kernel rows) is PREPARED not applied:
+  `supabase_migration_qng64_source.sql`, needs explicit user go-ahead to run (DDL). Phase C
+  (auto-triggered sweep autopilot) still not built — needs both Phase B pieces plus a cost cap,
+  the corrected_argmax reproduction gate, real push code (doesn't exist), and
+  promotion_writeback.py's truncating write fixed to merge. RESULTS.md `D-qNg64-9`.
