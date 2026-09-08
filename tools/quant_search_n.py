@@ -66,6 +66,8 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+import re
+import time
 
 GROUP = 64
 LADDER = list(range(2, 17))
@@ -594,6 +596,235 @@ def step0_baseline_gate(ssh_host, moe_base, bin_path, cwd, derived_manifest, com
     else:
         detail["reason"] = f"position reached, correction fired, but no REAL FLIP line at all (recorded event says there should be one) -- possible wrong derivation or non-deterministic divergence"
     return False, detail
+
+
+# D-qNg64-12 (L3b Phase C, continued): the real per-n sweep loop -- this is what actually
+# tests a triple across the deployable ladder {5,6,7}, gated on step0_baseline_gate() already
+# having passed for this exact (manifest, event). Reuses the same portable timeout-kill pattern
+# step0 established (no GNU coreutils on bob), same env-sanitization, same self-log discipline.
+REAL_LADDER = (5, 6, 7)
+
+
+def sweep_one_n(ssh_host, moe_base, bin_path, cwd, derived_manifest, combo_path,
+                 model, corpus, role, layer, n,
+                 recorded_corrected_argmax, recorded_pos,
+                 selflog_dir, run_id, safetensors_index=None, max_pos=19, timeout_s=180):
+    """Runs ONE real engine invocation with QWEN_MOE_ATTRIB_SIM_QN=n overriding role/layer's hi
+    mirror (moe_register_hi_role(), qwen_infer.c:14440+ -- real qNg64 kernel, not a simulated
+    F32 override). Classifies into 5 outcomes per the Opus review (do NOT collapse "flipped to
+    the wrong token" into PASS -- that was the original design's actual bug):
+
+      "no_signal"   -- BASELINE WARN at this pos, or nothing mentions it at all -- the run is
+                       not evidence of anything, caller should abort the WHOLE triple, not just
+                       this n (if the position can't even be reached under one n, treating other
+                       n's results as trustworthy is unfounded).
+      "fail_noflip" -- position reached, correction fired, but no REAL FLIP -- this n does not
+                       recover the token.
+      "fail_wrong"  -- REAL FLIP fired but to a DIFFERENT token than recorded -- this n recovers
+                       something, but not the right thing. A real, informative FAIL, not a PASS.
+      "pass"        -- REAL FLIP matches the recorded corrected_argmax exactly.
+
+    Returns (outcome: str, detail: dict)."""
+    self_log_path = f"{selflog_dir}/{run_id}_n{n}.jsonl"
+    env = {
+        "QWEN_MOE_BASE": moe_base,
+        "QWEN_MOE_CBATCH": "1", "QWEN_MOE_CB_ONLINE": "1",
+        "QWEN_MOE_CB_PROMPT_MANIFEST": derived_manifest, "QWEN_MOE_CB_REQS": "1",
+        "QWEN_MOE_NEARTIE_CORRECT": "1", "QWEN_MOE_NEARTIE_LOG": "1",
+        "QWEN_MOE_NEARTIE_MODEL": model, "QWEN_MOE_NEARTIE_CORPUS": corpus,
+        "QWEN_MOE_NEARTIE_EVENTS_LOG": self_log_path,
+        "QWEN_MOE_ATTRIB": "1", "QWEN_MOE_NEARTIE_HI_COMBOS": combo_path,
+        "QWEN_MOE_ATTRIB_MAX_POS": str(max_pos),
+        # The three env vars moe_register_hi_role() requires TOGETHER to take the real-kernel
+        # SIM_QN branch (qwen_infer.c:14444-14453) rather than falling through to the F32-sim
+        # path or the unmodified bits=16 hi mirror.
+        "QWEN_MOE_ATTRIB_SIM_ROLE": role, "QWEN_MOE_ATTRIB_SIM_LAYER": str(layer),
+        "QWEN_MOE_ATTRIB_SIM_QN": str(n),
+    }
+    if safetensors_index:
+        env["QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS"] = safetensors_index
+
+    env_str = " ".join(f"{k}={shlex.quote(v)}" for k, v in env.items())
+    unset_str = "env -u QWEN_MOE_PROMOTION_FILE_NQ -u QWEN_MOE_PROMOTION_FILE -u QWEN_MOE_NEARTIE_HI_EXPERT_LAYERS"
+    bg_cmd = (
+        f"cd {shlex.quote(cwd)} && {unset_str} {env_str} {shlex.quote(bin_path)} & "
+        f"CMD_PID=$!; "
+        f"( sleep {timeout_s} && kill -9 $CMD_PID 2>/dev/null ) & WATCHER_PID=$!; "
+        f"wait $CMD_PID; CMD_EXIT=$?; kill $WATCHER_PID 2>/dev/null; exit $CMD_EXIT"
+    )
+    result = subprocess.run(["ssh", ssh_host, bg_cmd], capture_output=True, text=True, timeout=timeout_s + 60)
+    out = result.stdout + result.stderr
+    detail = {"n": n, "stdout_tail": out[-2000:], "self_log": self_log_path}
+
+    if "[moe promotion nq]" in out:
+        detail["reason"] = "environment leak: sweep inherited a live promotion despite env sanitization"
+        return "no_signal", detail
+
+    if "BASELINE WARN" in out and f"pos={recorded_pos}" in out:
+        detail["reason"] = "BASELINE WARN at the recorded pos -- structurally invalid run"
+        return "no_signal", detail
+
+    correct_marker = f"correct req=0 pos={recorded_pos}"
+    if correct_marker not in out:
+        detail["reason"] = f"no-signal: nothing mentions '{correct_marker}' -- position never reached or correction never fired"
+        return "no_signal", detail
+
+    flip_marker = f"REAL FLIP orig="
+    if flip_marker not in out:
+        detail["reason"] = f"n={n} does not recover the token (correction fired, no flip)"
+        return "fail_noflip", detail
+
+    match = re.search(r"REAL FLIP orig=(\d+) corrected=(\d+)", out)
+    if not match:
+        detail["reason"] = f"n={n}: 'REAL FLIP orig=' present but line didn't parse -- treat as no-signal, don't guess"
+        return "no_signal", detail
+
+    corrected = int(match.group(2))
+    if corrected != recorded_corrected_argmax:
+        detail["reason"] = f"n={n} flips to token {corrected}, NOT the recorded {recorded_corrected_argmax} -- wrong recovery"
+        return "fail_wrong", detail
+
+    detail["reason"] = f"n={n} PASS: recovers the exact recorded token {recorded_corrected_argmax}"
+    return "pass", detail
+
+
+def sweep_triple(ssh_host, moe_base, bin_path, cwd, derived_manifest, combo_path,
+                  model, corpus, role, layer,
+                  recorded_orig_argmax, recorded_corrected_argmax, recorded_pos,
+                  selflog_dir, run_id, safetensors_index=None, max_pos=19, timeout_s=180):
+    """Runs Step-0 then the full REAL_LADDER sweep for one triple. Returns
+    (results: {n: (outcome, detail)} or None, abort_reason: str or None) -- results is None iff
+    Step-0 failed OR any n produced "no_signal" (the whole triple is aborted, per the review:
+    a triple with ANY no-signal n is not safe to push partial results for)."""
+    ok, step0_detail = step0_baseline_gate(
+        ssh_host, moe_base, bin_path, cwd, derived_manifest, combo_path, model, corpus,
+        recorded_orig_argmax, recorded_corrected_argmax, recorded_pos, selflog_dir, run_id,
+        safetensors_index=safetensors_index, max_pos=max_pos, timeout_s=timeout_s,
+    )
+    if not ok:
+        return None, f"Step-0 baseline gate failed: {step0_detail.get('reason')}"
+
+    results = {}
+    for n in REAL_LADDER:
+        outcome, detail = sweep_one_n(
+            ssh_host, moe_base, bin_path, cwd, derived_manifest, combo_path,
+            model, corpus, role, layer, n, recorded_corrected_argmax, recorded_pos,
+            selflog_dir, run_id, safetensors_index=safetensors_index, max_pos=max_pos, timeout_s=timeout_s,
+        )
+        results[n] = (outcome, detail)
+        if outcome == "no_signal":
+            return None, f"n={n}: {detail.get('reason')} -- aborting whole triple, no-signal is not evidence"
+
+    return results, None
+
+
+def push_sweep_results_atomic(model, corpus, role, layer, req, pos, results):
+    """results: {n: (outcome, detail)} from sweep_triple(), ALL n present (never called on a
+    partial/aborted triple -- sweep_triple() returns None for `results` in that case, caller
+    must not call this with that). Pushes all len(REAL_LADDER) rows in ONE array POST (Postgres
+    commits a JSON array in a single transaction via PostgREST -- this IS the atomicity, per-n
+    posting would silently lose it), source='qng64_real' EXPLICITLY asserted present before
+    serializing (a push that forgets it would be indistinguishable from real data mislabeled as
+    simulated -- the single worst outcome this whole effort exists to prevent). Then re-SELECTs
+    to confirm exactly len(REAL_LADDER) rows landed with that exact (model,corpus,role,layer,req,
+    pos,source) -- `Prefer: return=minimal` on the POST means nothing about the write result is
+    otherwise observable. Raises RuntimeError on ANY unverified state -- caller must not proceed
+    to promotion_writeback on an unverified push."""
+    url = os.environ.get("QWEN_SUPABASE_URL")
+    key = os.environ.get("QWEN_SUPABASE_KEY")
+    if not url or not key:
+        raise RuntimeError("QWEN_SUPABASE_URL / QWEN_SUPABASE_KEY must be set to push results")
+
+    rows = []
+    for n in REAL_LADDER:
+        outcome, detail = results[n]
+        row = {
+            "model": model, "corpus": corpus, "role": role, "layer": layer,
+            "req": req, "pos": pos, "n": n, "pass": (outcome == "pass"),
+            "eff_bpw": eff_bpw(n), "source": "qng64_real",
+        }
+        assert row["source"] == "qng64_real", "refusing to push a row without explicit real-source tag"
+        rows.append(row)
+
+    post_req = urllib.request.Request(
+        f"{url}/rest/v1/moe_quant_sweep_results",
+        data=json.dumps(rows).encode(),
+        headers={"apikey": key, "Authorization": f"Bearer {key}",
+                 "Content-Type": "application/json", "Prefer": "return=minimal"},
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(post_req, timeout=30)
+    except Exception as e:
+        raise RuntimeError(f"push POST failed for {role}/L{layer} req={req} pos={pos}: {e}")
+
+    verify_qs = (f"model=eq.{model}&corpus=eq.{corpus}&role=eq.{role}&layer=eq.{layer}"
+                 f"&req=eq.{req}&pos=eq.{pos}&source=eq.qng64_real&select=n,pass")
+    verify_req = urllib.request.Request(
+        f"{url}/rest/v1/moe_quant_sweep_results?{verify_qs}",
+        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+    )
+    with urllib.request.urlopen(verify_req, timeout=30) as resp:
+        landed = json.loads(resp.read())
+    landed_ns = sorted(r["n"] for r in landed)
+    if landed_ns != sorted(REAL_LADDER):
+        raise RuntimeError(f"PUSH_UNVERIFIED: expected rows for n={sorted(REAL_LADDER)}, "
+                            f"post-push SELECT found n={landed_ns} -- do NOT proceed to "
+                            f"promotion_writeback on this triple until this is resolved")
+    return landed
+
+
+# ---------------------------------------------------------------------------
+# D-qNg64-12: backoff ledger -- prevents one slow/stuck/failing triple from permanently
+# blocking the whole worklist (a real livelock the Opus review found: deterministic ranking +
+# no state means the same top-N triples get re-selected forever if they never succeed).
+# ---------------------------------------------------------------------------
+
+def _ledger_key(model, corpus, role, layer, req, pos, manifest):
+    return json.dumps([model, corpus, role, layer, req, pos, manifest], sort_keys=True)
+
+
+def load_ledger(path):
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        return json.load(f)
+
+
+def save_ledger(path, ledger):
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(ledger, f, indent=2, sort_keys=True)
+    os.replace(tmp, path)
+
+
+def ledger_eligible(ledger, key, now=None):
+    now = now if now is not None else time.time()
+    entry = ledger.get(key)
+    if entry is None:
+        return True
+    return now >= entry.get("next_eligible_ts", 0)
+
+
+def ledger_record(ledger, key, outcome, duration_s):
+    """outcome: 'success' | 'timeout' | 'no_signal' | 'gate_fail' | 'push_unverified'.
+    Exponential backoff (hours) on anything but success; success resets attempts to 0 and sets
+    next_eligible_ts far in the future (an audit record, not "never touch again" -- a real n>=8
+    knee case or new corpus data could still warrant a future re-sweep, just not automatically)."""
+    now = time.time()
+    entry = ledger.get(key, {"attempts": 0})
+    if outcome == "success":
+        entry["attempts"] = 0
+        entry["next_eligible_ts"] = now + 365 * 86400
+    else:
+        entry["attempts"] = entry.get("attempts", 0) + 1
+        backoff_hours = 2 ** min(entry["attempts"], 6)
+        entry["next_eligible_ts"] = now + backoff_hours * 3600
+    entry["last_outcome"] = outcome
+    entry["last_duration_s"] = duration_s
+    entry["last_attempt_ts"] = now
+    ledger[key] = entry
+    return entry
 
 
 def main():

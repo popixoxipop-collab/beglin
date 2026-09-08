@@ -48,9 +48,19 @@ all, event-line adjacency was a red herring.
 import argparse
 import glob as globmod
 import json
+import os
 import subprocess
 import sys
+import time
 from collections import defaultdict
+
+# D-qNg64-12: --run mode's engine-driving pieces live in quant_search_n.py/promotion_writeback.py
+# (same-directory imports, same convention promotion_writeback.py itself already uses).
+import quant_search_n as qsn
+import promotion_writeback as pwb
+
+SELFLOG_DIR = "/private/tmp/qng64_ctl/selflog"
+DEFAULT_LEDGER = "/private/tmp/qng64_ctl/backoff_ledger.json"
 
 # Events independently confirmed by this project's own manual reproduction-check discipline
 # (RESULTS.md's own "confirmed single-flip" language) -- see report_manifest_status() below for
@@ -105,12 +115,24 @@ def load_attributions(paths):
 
 
 def group_by_triple(rows):
-    """{(model,corpus,role,layer): {"count": int, "events": {(req,pos): [corrected_argmax,...]}}}"""
-    out = defaultdict(lambda: {"count": 0, "events": defaultdict(list)})
+    """{(model,corpus,role,layer): {"count": int, "events": {(req,pos): [corrected_argmax,...]},
+    "event_detail": {(req,pos): {"manifest":..., "orig_argmax":..., "corrected_argmax":...,
+    "threshold":...}}}}. event_detail (D-qNg64-12) is additive -- --report mode only ever reads
+    "count"/"events", --run mode reads event_detail for the fields a real sweep needs. Takes the
+    FIRST row seen for a given event (manifest/orig_argmax/corrected_argmax/threshold are
+    properties of the EVENT, not of which role/layer got attributed -- multiple attribution rows
+    for one event share them by construction, per qwen_infer.c's single fprintf call site)."""
+    out = defaultdict(lambda: {"count": 0, "events": defaultdict(list), "event_detail": {}})
     for r in rows:
         key = (r["model"], r["corpus"], r["role"], r["layer"])
         out[key]["count"] += 1
-        out[key]["events"][(r["req"], r["pos"])].append(r.get("corrected_argmax"))
+        ev = (r["req"], r["pos"])
+        out[key]["events"][ev].append(r.get("corrected_argmax"))
+        if ev not in out[key]["event_detail"]:
+            out[key]["event_detail"][ev] = {
+                "manifest": r.get("manifest"), "orig_argmax": r.get("orig_argmax"),
+                "corrected_argmax": r.get("corrected_argmax"), "threshold": r.get("threshold"),
+            }
     return out
 
 
@@ -145,18 +167,103 @@ def manifest_status(model, pos):
     return "unknown / needs manual verification before any real sweep"
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--report", action="store_true",
-                    help="explicit marker: this is the only mode this script has (Phase A, read-only). "
-                         "Present so a future --apply (Phase B/C, not built here) reads as a deliberate "
-                         "opt-in, not a typo away from the safe default.")
-    ap.add_argument("paths", nargs="+", help="JSONL log file(s) or glob pattern(s)")
-    ap.add_argument("--json", help="also write the worklist to this JSON path")
-    ap.add_argument("--pat-env", default=None,
-                     help="shell var name already holding the Management API PAT (skip live Supabase check if unset)")
-    args = ap.parse_args()
+def run_one_triple(model, corpus, role, layer, req, pos, detail, args, ledger, ledger_path):
+    """Drives the full real pipeline for ONE (triple,event): derive manifest -> Step-0 gate ->
+    per-n sweep -> atomic push+verify -> promotion_writeback upsert on the live remote file.
+    Returns a short outcome string for logging. Always records to the ledger, success or not --
+    that's what makes a future run's eligibility filter correct."""
+    key = qsn._ledger_key(model, corpus, role, layer, req, pos, detail.get("manifest"))
+    t0 = time.time()
+    run_id = f"{role}_{layer}_{req}_{pos}_{int(t0)}"
 
+    manifest = detail.get("manifest")
+    orig_argmax, corrected_argmax = detail.get("orig_argmax"), detail.get("corrected_argmax")
+    if not manifest or orig_argmax is None or corrected_argmax is None:
+        qsn.ledger_record(ledger, key, "no_signal", time.time() - t0)
+        qsn.save_ledger(ledger_path, ledger)
+        return f"SKIP {role}/L{layer} req={req} pos={pos}: missing manifest/orig_argmax/corrected_argmax in log (older log line predates D-qNg64-9/12 fields)"
+
+    try:
+        derived_manifest, mf_n, selected = qsn.derive_isolated_manifest(
+            args.ssh_host, manifest, req, f"{SELFLOG_DIR}/derived", run_id)
+    except RuntimeError as e:
+        qsn.ledger_record(ledger, key, "gate_fail", time.time() - t0)
+        qsn.save_ledger(ledger_path, ledger)
+        return f"ABORT {role}/L{layer} req={req} pos={pos}: manifest derivation failed: {e}"
+
+    results, abort_reason = qsn.sweep_triple(
+        args.ssh_host, args.moe_base, args.bin, args.cwd, derived_manifest, args.combo_dir + f"/combo_{role}_L{layer}.txt",
+        model, corpus, role, layer, orig_argmax, corrected_argmax, pos,
+        f"{SELFLOG_DIR}/runs", run_id, safetensors_index=args.safetensors_index,
+        max_pos=args.max_pos, timeout_s=args.timeout,
+    )
+    duration = time.time() - t0
+    if results is None:
+        qsn.ledger_record(ledger, key, "gate_fail", duration)
+        qsn.save_ledger(ledger_path, ledger)
+        return f"ABORT {role}/L{layer} req={req} pos={pos}: {abort_reason}"
+
+    outcomes = {n: o for n, (o, d) in results.items()}
+    print(f"  sweep results for {role}/L{layer} req={req} pos={pos}: {outcomes}")
+
+    try:
+        qsn.push_sweep_results_atomic(model, corpus, role, layer, req, pos, results)
+    except RuntimeError as e:
+        qsn.ledger_record(ledger, key, "push_unverified", duration)
+        qsn.save_ledger(ledger_path, ledger)
+        return f"ABORT {role}/L{layer} req={req} pos={pos}: push failed/unverified: {e}"
+
+    qsn.ledger_record(ledger, key, "success", duration)
+    qsn.save_ledger(ledger_path, ledger)
+
+    # Real data just landed for this target -- re-run the (now bob-remote, upsert-safe)
+    # write-back for it, same mechanism D-qNg64-12's Priority 1 fix verified.
+    n, wb_detail = pwb.target_safe_n(model, role, layer)
+    if n is None:
+        print(f"  promotion_writeback: {role}/L{layer} still unsafe after this sweep: {wb_detail.get('reason')}")
+        return f"DONE {role}/L{layer} req={req} pos={pos}: swept ({outcomes}), still unsafe to promote"
+
+    existing = pwb.read_remote_promotion_file(args.ssh_host, args.promotion_file)
+    merged = dict(existing)
+    merged[(role, layer)] = n
+    pwb.write_remote_promotion_file_atomic(args.ssh_host, args.promotion_file, merged)
+    return f"DONE {role}/L{layer} req={req} pos={pos}: swept ({outcomes}), promoted to n={n} on {args.ssh_host}:{args.promotion_file}"
+
+
+def run_mode(args):
+    rows = load_attributions(args.paths)
+    if not rows:
+        print("No attribution rows found. Nothing to run.", file=sys.stderr)
+        sys.exit(1)
+    grouped = group_by_triple(rows)
+
+    ledger_path = args.ledger
+    ledger = qsn.load_ledger(ledger_path)
+
+    candidates = []
+    for (model, corpus, role, layer), info in grouped.items():
+        for ev, detail in info["event_detail"].items():
+            req, pos = ev
+            key = qsn._ledger_key(model, corpus, role, layer, req, pos, detail.get("manifest"))
+            if not detail.get("manifest"):
+                continue  # no resolvable manifest recorded for this event, cannot safely sweep
+            if not qsn.ledger_eligible(ledger, key):
+                continue  # in backoff, skip until next_eligible_ts
+            candidates.append((info["count"], model, corpus, role, layer, req, pos, detail))
+
+    candidates.sort(key=lambda c: c[0], reverse=True)
+    eligible_n = len(candidates)
+    selected = candidates[: args.max_sweeps]
+    print(f"{eligible_n} manifest-resolvable, backoff-eligible (triple,event) candidate(s); "
+          f"running top {len(selected)} (--max-sweeps {args.max_sweeps})")
+
+    for count, model, corpus, role, layer, req, pos, detail in selected:
+        print(f"\n=== {role}/L{layer} req={req} pos={pos} (attribution_count={count}) ===")
+        outcome = run_one_triple(model, corpus, role, layer, req, pos, detail, args, ledger, ledger_path)
+        print(outcome)
+
+
+def report_mode(args):
     rows = load_attributions(args.paths)
     if not rows:
         print("No attribution rows found in the given path(s). Nothing to report.", file=sys.stderr)
@@ -164,7 +271,6 @@ def main():
 
     grouped = group_by_triple(rows)
 
-    import os
     pat = os.environ.get(args.pat_env) if args.pat_env else None
 
     worklist = []
@@ -201,6 +307,39 @@ def main():
         with open(args.json, "w") as f:
             json.dump(worklist, f, indent=2)
         print(f"wrote {args.json}")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    mode = ap.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--report", action="store_true",
+                       help="Phase A, read-only: print a ranked worklist, touch nothing.")
+    mode.add_argument("--run", action="store_true",
+                       help="Phase C, D-qNg64-12: drive real engine sweeps for the top "
+                            "--max-sweeps manifest-resolvable, backoff-eligible (triple,event) "
+                            "candidates, push verified results, update the live promotion file.")
+    ap.add_argument("paths", nargs="+", help="JSONL log file(s) or glob pattern(s)")
+    ap.add_argument("--json", help="--report: also write the worklist to this JSON path")
+    ap.add_argument("--pat-env", default=None,
+                     help="shell var name already holding the Management API PAT (skip live Supabase check if unset)")
+    # --run-only args
+    ap.add_argument("--max-sweeps", type=int, default=2, help="--run: cap on triples swept per invocation")
+    ap.add_argument("--ledger", default=DEFAULT_LEDGER, help="--run: backoff ledger path")
+    ap.add_argument("--ssh-host", default="bob")
+    ap.add_argument("--moe-base", default="/Users/bob/moe_base_deepseek")
+    ap.add_argument("--bin", default="/tmp/qwen_quantsim3_bin")
+    ap.add_argument("--cwd", default="/Users/bob/vdsp_m4_bench")
+    ap.add_argument("--combo-dir", default="/private/tmp/step7", help="--run: directory holding combo_<role>_L<layer>.txt files")
+    ap.add_argument("--promotion-file", default=pwb.DEFAULT_PROMOTION_FILE)
+    ap.add_argument("--safetensors-index", default="/Volumes/D50/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json")
+    ap.add_argument("--max-pos", type=int, default=19)
+    ap.add_argument("--timeout", type=int, default=180, help="--run: per-invocation remote timeout in seconds (Step-0 and each n)")
+    args = ap.parse_args()
+
+    if args.run:
+        run_mode(args)
+    else:
+        report_mode(args)
 
 
 if __name__ == "__main__":
