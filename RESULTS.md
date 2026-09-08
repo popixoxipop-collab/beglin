@@ -11674,3 +11674,108 @@ documented for future sessions (`reference_supabase_management_api_access.md`) s
 need re-discovering.
 
 Not pushed (local commits only, per this repo's convention).
+
+## D-qNg64-6 -- promotion_writeback.py real-data validation (2026-09-08)
+
+**WHY**: D-qNg64-3 built `tools/promotion_writeback.py` (aggregates events/corpora into one safe
+n) but only tested it against synthetic data. Now that live DB access works (D-qNg64-5), test it
+against the real 1065-row `moe_quant_sweep_results`.
+
+**Mechanism**: the script's core `target_safe_n()` only needs `suffix_closed_knee()` (pure,
+no DB dependency) fed real per-event data; its own data-fetch (`fetch_prior_points_by_event()`)
+goes through the REST API this session still can't reach, so this round fed it via a small
+temporary shim (Management API query -> same `{corpus: {(req,pos): [(n,pass),...]}}` shape,
+monkeypatched in) rather than modifying the committed script -- the aggregation logic under test
+is unchanged and identical to what's already committed.
+
+**Sanity check against D-qNg64-1/2/3's manual tests** (both single-event targets, so this checks
+agreement, not the multi-event aggregation path):
+- `shared_gate_proj`/L14: aggregated **n=5** -- exactly matches the n=5 D-qNg64-1 generated with and
+  D-qNg64-3 verified live-fixes the `p60`/pos=14 flip. **Agrees.**
+- `kv_b_proj`/L9: aggregated **n=4** (suffix-closed knee of the SIMULATED curve pass/fail/pass/
+  pass... at n=2/3/4/5+, i.e. `moe_quant_sweep_results` still holds only the pre-D-qNg64-1
+  simulated row for this target). D-qNg64-2's REAL-kernel test of this exact target found n=4
+  **FAILS** in reality (only n=2,3 passed real-kernel; n=4 was the divergence D-qNg64-2's whole
+  section is about). **Disagrees -- and this is the important finding, not a bug.**
+
+**7 real multi-event targets found and aggregated** (`group by ... having count(distinct
+(req,pos))>1`), exercising the max-across-events/max-across-corpora logic on real data for the
+first time:
+```
+shared_down_proj/L26    n=5  (2 corpora: wt103 safe_n=5 across 4 events, wt2 safe_n=2 across 1)
+kv_a_proj_with_mqa/L0   n=5  (2 events: knee 5 and 4 -> max 5)
+kv_a_proj_with_mqa/L1   n=6  (2 events: knee 6 and 5 -> max 6)
+dense_down_proj/L0      n=7  (2 corpora: wt103 safe_n=4, wt2 safe_n=7 -> max 7)
+kv_b_proj/L8            n=5  (2 corpora: wt103 safe_n=5, wt2 safe_n=4 -> max 5)
+kv_a_proj_with_mqa/L3   n=11 (2 events: knee 11 and 5 -> max 11, driven by one hard event)
+```
+Aggregation logic behaved exactly as designed on all 7 -- max-of-per-event-knees within a corpus,
+max-of-per-corpus-safe-n across corpora, no crashes, no silent drops. No unsafe-target case
+(`suffix_closed_knee` returning None) hit in this data.
+
+**Result: the aggregation ALGORITHM is correct (matches manual real-kernel ground truth exactly
+where that ground truth exists). The DATA IT AGGREGATES is not yet trustworthy at scale** -- the
+one target with a real-kernel cross-check contradicts the script's own DB-derived answer. This is
+not new information in principle (D-qNg64-2/D-qNg64-plan-1 already established this) but it's now
+a *concrete, reproduced* instance inside the actual write-back tool, not just the oracle test that
+originally found it. **Practical conclusion: do not run `promotion_writeback.py` against the
+current `moe_quant_sweep_results` table for a real deployment decision until it's repopulated
+with real-kernel (not simulated) rows for the targets being promoted** -- exactly the constraint
+D-qNg64-plan-1's L2 step 3 already specified, now with a second real data point supporting it.
+
+**COST**: temporary analysis shim only, not committed as a script change (the committed
+`promotion_writeback.py`/`quant_search_n.py` are unchanged by this section).
+
+**EXIT**: once `QWEN_MOE_ATTRIB_SIM_QN` real-kernel runs are pushed back to
+`moe_quant_sweep_results` for a meaningful target set (follow-on work, not done this round),
+`promotion_writeback.py` can be trusted as-is with no code changes -- the gap is data, not logic.
+
+## D-qNg64-7 -- broader benefit-metric vs D-d5-31, N=35 (2026-09-08)
+
+**WHY**: D-qNg64-4 was an honest N=1 (zero overlap with D-d5-31's set). With DB access, check the
+real overlap and compare properly.
+
+**⚠️ Same caveat as D-qNg64-6 applies to every number below**: `moe_quant_sweep_results` is
+currently simulated-quantizer data for essentially all of these 35 targets (only kv_b_proj/L9 has
+ever been real-kernel-cross-checked, and it diverged). **These are "what the simulated data
+predicts," not "what the real kernel would confirm."** Read the comparison as a real, honestly-
+computed data point toward the exit criterion, not as proof qNg64 already beats the baseline --
+D-qNg64-6 just showed that gap is not merely theoretical.
+
+**Mechanism**: `/Users/xox/vdsp_local_data/promote_hits88.txt` (D-d5-31's real bits=16 promotion
+set, 88 role/layer lines) intersected against every (role,layer) with ANY sweep data (51 distinct
+targets) -- **35 overlapping targets** (D-qNg64-4 checked 1 target and found 0 overlap; the full
+set has substantial overlap D-qNg64-4 simply didn't have DB access to find). For each, computed
+the aggregated suffix-closed knee (same logic as D-qNg64-6) and `eff_bpw(n)` from
+`tools/quant_search_n.py`.
+
+**Result**:
+```
+overlap: 35/35 have a computable safe n (none unsafe-in-ladder)
+qNg64 n:        min=2   max=11    median=5     mean=5.51
+qNg64 eff_bpw:  min=2.25 max=11.05 median=5.10  mean=5.62
+bits=16 eff_bpw (flat, same group=64 formula): 16.03
+targets where qNg64 beats bits=16 on bpw: 35/35
+```
+Full per-target n/eff_bpw list is in this session's own working notes (not reproduced here to keep
+this section scannable) -- reproducible from the query in this section's mechanism paragraph plus
+`suffix_closed_knee()`/`eff_bpw()` in `tools/quant_search_n.py`.
+
+**Honest reading**: if the underlying simulated data held up under real-kernel verification at the
+same rate it did for the ONE target actually checked (0/1, i.e. it didn't hold up), this 35-0
+sweep would be optimistic, not representative. It is NOT safe to report "qNg64 beats bits=16 on
+32/35 -- I mean 35/35 targets" as an exit-criterion pass. What this section DOES establish: (a) a
+real, substantial (N=35, not N=1) overlap exists between the two precision-decision efforts, so a
+proper comparison is feasible once the data problem is fixed, and (b) the *magnitude* of the gap
+suggested by simulated data (5.1 vs 16.0 effective bits, ~3x) is large enough that even a
+meaningfully real-kernel-corrected version of these numbers would likely still favor qNg64 for
+most targets -- but "most," not "all," and not with today's numbers as proof.
+
+**COST**: none (read-only).
+
+**EXIT**: the actual exit criterion (D-qNg64-3's own definition) still needs real-kernel data
+across this 35-target overlap (or a representative sample of it) before it's a real answer, not a
+simulated-data preview of one. Combined with D-qNg64-6's conclusion, that's the same follow-on
+work either way: get real-kernel rows into `moe_quant_sweep_results`.
+
+Both sections: not pushed (local commits only, per this repo's convention).
