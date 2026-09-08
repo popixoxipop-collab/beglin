@@ -210,9 +210,32 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
 - 이번 라운드에서 새 WT103 200개 프롬프트로 flip 헌팅은 안 함(범위 밖, 의도적 보류).
 - RESULTS.md "ROI-G Phase 2: bisection triggers..." 섹션.
 
-## 남은 것 (2026-09-07 기준, (a)+(b)+(c) 전부 완료 후)
-- ROI-G Phase 2 전체 계획 + live 배포 2건(24타겟 discovery, bisection 트리거 검증) +
-  WikiText-103 영구 코퍼스 재구축까지 전부 완료. classify()/bisection_search() 설계가
-  이론에서 실전까지 검증 완료.
-- 남은 선택지: (e) 새 WT103 200개로 flip 헌팅해서 더 많은 프로덕션 데이터 쌓기, (f) 여기서
-  종결. 사용자 확인 후 진행할 것.
+## (e) WT103 flip 헌팅 — 89타겟 스윕했으나 방법론 오염으로 전량 retract (2026-09-08)
+- p10 discovery에서 91 hit(거의 전 role family) 발견 → 재현성 체크 생략(이번이 처음, 매번
+  하던 걸 건너뜀)하고 바로 89타겟×15n(1335회) 스윕 진행(사용자 확인 후 전체 규모로).
+  도중 디스크풀 크래시(75/89 완료, override 파일 누적 ~30GB) → 정리+재개로 89개 완주.
+- **그런데 결과가 이상함**: 77/89가 어떤 n에서도 안 pass — discovery가 "이 텐서 승격만으로
+  correction 재현됨"이라 확인한 텐서들인데도. 원인 추적: **p10 프롬프트에 real flip이
+  2개**(pos=8 razor-thin margin=0.003420, pos=11 89-hit) 있었음. SIM override는 전체
+  forward pass에 적용되므로, pos=11용 텐서를 바꿔도 pos=8(더 앞선 위치)의 correction 결과가
+  같이 흔들리고(margin은 동일 텍스트인데 n=5는 corrected=3000, n=10/16은 corrected=5226,
+  n=2는 flip 자체가 안 일어남), 그 결과 pos=8이 실제 생성한 토큰이 달라지면서 pos=11이
+  보는 컨텍스트 자체가 n마다 달라짐 — "같은 위치"가 더 이상 같은 결정을 재는 게 아니게 됨.
+  기존 round3의 "override가 ground truth를 오염시킴" 트랩과 같은 계열이지만 원인이 다름
+  (이번은 override 심각도가 아니라 margin이 threshold에 극도로 가까운 것, 0.0034).
+- **검증**: 기존에 신뢰하던 p60 24타겟 배치(단일 flip 확인됨)는 동일 점검에서 corrected
+  값이 n 전체에서 완전히 안정적 — round4/이전 결론("14/24 위반")은 그대로 유효.
+- **조치**: 1335행 전부 Supabase에서 DELETE(정확한 tested_at 타임스탬프로 타겟팅, 총계
+  2175→840 정확히 복귀 확인). 실제 bob 비용(~6.3시간+디스크풀 처리)은 못 건짐 — 그대로
+  기록(이 프로젝트 관행: 부정적 결과도 숨기지 않고 기록).
+- **교훈**: (a) discovery가 "깨끗해 보여도" 재현성 체크를 절대 생략하지 말 것, (b) 스윕
+  규모 정하기 전에 `grep -c "REAL FLIP"`로 flip 개수부터 확인 — 2개 이상이면 표준 단일
+  타겟 스윕 방법론이 통째로 안 맞음(다른 설계 필요, 이번엔 시도 안 함).
+- RESULTS.md "ROI-G Phase 2: a real methodological trap..." 섹션.
+
+## 남은 것 (2026-09-08 기준, (a)~(e) 전부 완료/처리 후)
+- ROI-G Phase 2 전체 계획 + live 배포 검증(24타겟, bisection 트리거) + WT103 영구 코퍼스
+  재구축 + flip 헌팅 방법론 트랩 발견·정직한 retract까지 전부 완료. classify()/
+  bisection_search() 설계는 이론~실전 검증 끝. Supabase는 840행(신뢰 가능한 데이터만).
+- 남은 선택지: (f) 단일-flip 프롬프트만 골라 WT103 flip 헌팅 재시도(이번엔 재현성 체크
+  필수 선행), (g) 여기서 종결. 사용자 확인 후 진행할 것.

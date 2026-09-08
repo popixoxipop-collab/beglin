@@ -11036,3 +11036,70 @@ mixed-precision work opened by the original "does the GPU path support mixed pre
 question. Total this arc: 4 real bugs found and fixed (`t->base` ignored at 18 call sites,
 `MOE_NL`/`MOE_ATTN_KIND` unset, `MOE_N_EXPERTS` unset, stale cross-map entries on rebind), none
 of them hypothetical -- each reproduced live and confirmed fixed before moving to the next.
+
+## ROI-G Phase 2: a real methodological trap -- multi-flip-per-prompt cross-contamination, an
+## 89-target sweep retracted after the fact
+
+**What happened**: continuing the flip-hunt on the freshly-regenerated WikiText-103 corpus (the
+durable-relocation round above), prompt `p10` produced a REAL FLIP -- discovery found 91
+attribution hits across every role family. Skipped the mandatory reproduction check this round
+(every prior round ran one first; this one didn't, because the discovery pass itself already
+looked like a "clean" real event) and went straight to a full 89-target x 15-n sweep (1335 real
+engine runs, ~6.3h estimated, user-confirmed at full scale, survived a mid-run disk-full crash
+and a 14-target resume). The result looked implausible on inspection: 77/89 targets never
+passed at ANY n from 2 to 16, including several already known individually-sufficient at full
+promotion from the discovery step itself -- a `kv_b_proj` family with 0/13 ever passing, which
+doesn't square with "promoting this exact tensor to near-bf16 precision reproduces the
+correction" (discovery's own claim about it).
+
+**Root cause, traced**: `discover_p10.log` actually contains **two independent REAL FLIPs**
+in the same 10-token generation -- pos=8 (`orig=8687 corrected=5226`, margin_before=0.003420,
+razor-thin) and pos=11 (`orig=81972 corrected=254`, 89 hits). `QWEN_MOE_ATTRIB_SIM_PATH`
+substitutes a role/layer's weight source for the **entire forward pass**, not just an isolated
+replay at the position being attributed -- every prior round's prompts had exactly one real
+flip in the tested window, so this never mattered. Here, substituting any pos=11-attributed
+tensor (even ones structurally unrelated to pos=8, like `kv_b_proj`/L2) still perturbs the
+computation at pos=8 (which comes first), and pos=8's own correction outcome is unstable at
+this razor-thin margin: `kv_b_proj`/L2's own sweep logs show `margin_before=0.003420` identical
+text at n=2/5/10/16, but pos=8's `REAL FLIP` fires with **corrected=3000 at n=5** vs
+**corrected=5226 at n=10/16** vs **no flip at all at n=2** -- the same nominal near-tie
+resolving to different tokens depending on an entirely unrelated tensor's simulated precision.
+Since the actual generated token at pos=8 feeds forward autoregressively, pos=9/10/11's context
+differs across n too: pos=11's own logged margin is 0.209400 (token=473) at n=2/10/16 but
+0.419783 (token=254) at n=5 -- **the "same" position isn't measuring the same decision anymore
+once an upstream flip's outcome depends on what's being tested**. Even the 2 pos=8-attributed
+targets themselves (`kv_a_proj_with_mqa`/L10, `o_proj`/L10) show this: their own `corrected`
+value drifts between 3000 and 5226 across n, the same class of ground-truth instability round
+3 already documented for a different reason (override-corrupts-reference) -- here traced to
+margin razor-thinness (0.0034, an order of magnitude closer to the 0.1 threshold than every
+other margin tested this session) rather than override severity.
+
+**Verified against the counterexample it should have been caught by**: re-checked the earlier,
+already-trusted 24-target WT2 batch (`p60`, confirmed single-flip via `discover_p60.log`'s own
+`grep -c "REAL FLIP"` = 1) for the same drift pattern -- `corrected=4794` for `kv_a_proj_with_
+mqa`/L2 and `corrected=4794` for `kv_b_proj`/L8 hold identically across every n where a flip
+fires. That batch's "14/24 (58%) violate" conclusion stands; this is what a genuinely clean
+single-flip sweep looks like, and the contrast is what made the causal chain traceable.
+
+**Action taken**: deleted all 1335 rows from `moe_quant_sweep_results`
+(`tested_at='2026-09-08 02:08:16.868923+00'`, the batch's own unique insert timestamp) --
+independently verified via count (2175 -> 840, exact reversal). Real bob cost (~6.3h of engine
+time plus a disk-full incident and its cleanup) produced no usable data; recorded here in full
+rather than quietly dropped, per this project's own standing practice of reporting negative
+results as prominently as positive ones.
+
+**Rejected hypotheses, for the record**: (1) grep-needle bug in the push script -- ruled out,
+the needle correctly used each target's own discovered pos value; (2) wrong tensor-name mapping
+for `dense_*`/`shared_*` roles -- ruled out, verified against the real safetensors index before
+the sweep even ran, and the drift appears for `self_attn`-family targets too; (3) purely a
+disk-full data-corruption artifact -- ruled out as the primary cause (the disk-full crash hit a
+*different* subset of targets, index 76-89, while the drift shows up in a target processed
+early and cleanly, `kv_b_proj`/L2, well before the crash).
+
+**Lesson for the next flip hunt**: (a) always run the mandatory reproduction check before
+committing to a full sweep, no exception for a discovery pass that "looks clean" -- this round
+skipped it and paid for it; (b) check `grep -c "REAL FLIP"` on the discovery log *before*
+sizing the sweep, and treat >1 as disqualifying for the standard single-target sweep
+methodology (a multi-flip prompt would need a fundamentally different design -- e.g. testing
+only the last flip's own attributed combos, or restricting the manifest to end exactly at the
+first flip -- neither attempted here, out of scope for a retraction writeup).
