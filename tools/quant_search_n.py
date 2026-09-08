@@ -451,6 +451,151 @@ def run_live(args):
     return knee, tests_run
 
 
+# ---------------------------------------------------------------------------
+# D-qNg64-11 (second Opus review of L3b Phase C, 2026-09-08): derive an isolated
+# single-request manifest from a live attribution event's own (manifest, req), and verify
+# the derivation via a real baseline replay BEFORE trusting it for anything -- this is the
+# "biggest structural gap" the review found: a live attribution's req is only meaningful
+# relative to the FULL manifest it fired against (qwen_infer.c:6973's `sp = r % MCN`), and
+# getting this wrong has already caused two silent, non-erroring provenance corruptions in
+# this project (D-d5-27 and its documented repeat). This code makes the derivation explicit
+# and the Step-0 gate is what actually catches a wrong derivation -- the `test -f` checks
+# below are a cheap pre-filter, NOT the safety property.
+# ---------------------------------------------------------------------------
+import shlex
+
+
+def derive_isolated_manifest(ssh_host, manifest_path, req, derived_dir, run_id):
+    """Returns (derived_manifest_path_on_host, mf_n, selected_line) or raises RuntimeError with
+    a specific reason. Mirrors qwen_infer.c's own `sp = r % MCN` (:6973) exactly -- req indexes
+    manifest line (req % mf_n), NOT req itself, since manifest entries repeat cyclically across
+    requests. Does NOT trust that the derivation is correct -- that's the caller's job (run the
+    Step-0 gate below), this function only performs the mechanical derivation + a cheap
+    existence pre-filter."""
+    q_manifest = shlex.quote(manifest_path)
+    check = subprocess.run(["ssh", ssh_host, f"test -f {q_manifest}"])
+    if check.returncode != 0:
+        raise RuntimeError(f"manifest not found on {ssh_host}: {manifest_path}")
+
+    cat = subprocess.run(["ssh", ssh_host, f"cat {q_manifest}"], capture_output=True, text=True, timeout=30)
+    if cat.returncode != 0:
+        raise RuntimeError(f"could not read manifest on {ssh_host}: {manifest_path}: {cat.stderr}")
+
+    lines = [ln.strip() for ln in cat.stdout.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+    mf_n = len(lines)
+    if mf_n == 0:
+        raise RuntimeError(f"manifest has 0 usable (non-blank, non-#) lines: {manifest_path}")
+
+    idx = req % mf_n
+    selected = lines[idx]
+    parts = selected.split()
+    if len(parts) < 2:
+        raise RuntimeError(f"manifest line {idx} malformed (expected '<token_file> <max_new_tokens>'): {selected!r}")
+    token_file = parts[0]
+
+    # Recursive check (Opus review point 4.3): the manifest existing doesn't mean the prompt
+    # file it references still does -- load_ids() FATALs if it's gone, which would otherwise
+    # look like an eligible-but-actually-crashing sweep target.
+    q_token_file = shlex.quote(token_file)
+    tf_check = subprocess.run(["ssh", ssh_host, f"test -f {q_token_file}"])
+    if tf_check.returncode != 0:
+        raise RuntimeError(f"manifest line {idx} references a token file that no longer exists on {ssh_host}: {token_file}")
+
+    derived_path = f"{derived_dir}/{run_id}_iso.txt"
+    write_cmd = f"mkdir -p {shlex.quote(derived_dir)} && printf '%s\n' {shlex.quote(selected)} > {shlex.quote(derived_path)}"
+    w = subprocess.run(["ssh", ssh_host, write_cmd], capture_output=True, text=True, timeout=30)
+    if w.returncode != 0:
+        raise RuntimeError(f"failed to write derived manifest on {ssh_host}: {w.stderr}")
+
+    return derived_path, mf_n, selected
+
+
+def step0_baseline_gate(ssh_host, moe_base, bin_path, cwd, derived_manifest, combo_path,
+                         model, corpus, recorded_orig_argmax, recorded_corrected_argmax,
+                         recorded_pos, selflog_dir, run_id, safetensors_index=None,
+                         max_pos=19, timeout_s=180):
+    """Runs the UNMODIFIED hi mirror (no QWEN_MOE_ATTRIB_SIM_QN/SIM_PATH) against the derived
+    single-request manifest at req=0 (isolation means req is always 0 after derivation -- the
+    derived manifest has exactly one entry). Returns (ok: bool, detail: dict). ok=True ONLY if
+    the real run reproduces BOTH recorded_orig_argmax AND recorded_corrected_argmax exactly at
+    the recorded pos -- this is the actual defense against a wrong derivation silently producing
+    confident-but-wrong data (Opus review 3a/3b/6.1), not a per-n check.
+
+    Distinguishes no-signal (nothing at all mentions req=0 pos=<recorded_pos>, or a BASELINE WARN
+    line appears -- the run itself is not evidence of anything) from wrong-signal (the position
+    was reached but produced different orig/corrected values than recorded -- a real, informative
+    mismatch, e.g. this genuinely is the wrong manifest/event). Self-logs to a controller-owned
+    directory (never /dev/null, never the production log this same run's own worklist might read
+    from -- the caller must ensure selflog_dir is excluded from any report/worklist scan)."""
+    self_log_path = f"{selflog_dir}/{run_id}_step0.jsonl"
+    env = {
+        "QWEN_MOE_BASE": moe_base,
+        "QWEN_MOE_CBATCH": "1", "QWEN_MOE_CB_ONLINE": "1",
+        "QWEN_MOE_CB_PROMPT_MANIFEST": derived_manifest, "QWEN_MOE_CB_REQS": "1",
+        "QWEN_MOE_NEARTIE_CORRECT": "1", "QWEN_MOE_NEARTIE_LOG": "1",
+        "QWEN_MOE_NEARTIE_MODEL": model, "QWEN_MOE_NEARTIE_CORPUS": corpus,
+        "QWEN_MOE_NEARTIE_EVENTS_LOG": self_log_path,
+        "QWEN_MOE_ATTRIB": "1", "QWEN_MOE_NEARTIE_HI_COMBOS": combo_path,
+        "QWEN_MOE_ATTRIB_MAX_POS": str(max_pos),
+    }
+    if safetensors_index:
+        env["QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS"] = safetensors_index
+
+    env_str = " ".join(f"{k}={shlex.quote(v)}" for k, v in env.items())
+    # Sanitize inherited production-serving state (Opus review point 4, "unmentioned and
+    # important"): a sweep must never silently inherit bob's own live QWEN_MOE_PROMOTION_FILE_NQ/
+    # QWEN_MOE_PROMOTION_FILE from the shell environment -- that would measure the target on top
+    # of whatever else is already promoted, incomparable to the recorded attribution.
+    unset_str = "env -u QWEN_MOE_PROMOTION_FILE_NQ -u QWEN_MOE_PROMOTION_FILE -u QWEN_MOE_NEARTIE_HI_EXPERT_LAYERS"
+    # Kills the REMOTE process on expiry (Opus review point finding 5/8) -- `subprocess.run(...,
+    # timeout=T)` alone only kills the local ssh client, leaving an orphaned multi-GB engine
+    # process running on the remote host. Originally written as `timeout -k 30 {T}s <bin>`
+    # (GNU coreutils) -- discovered by ACTUALLY RUNNING this against bob (a Mac, BSD userland)
+    # that neither `timeout` nor `gtimeout` exist there and coreutils isn't installed; rather
+    # than install a new system package on a shared machine without asking, this uses a portable
+    # POSIX background-process-plus-watcher pattern instead (background the real command, a
+    # sibling `sleep T && kill -9` watcher races it, `wait` on the real command's PID, then kill
+    # the watcher so it doesn't linger).
+    bg_cmd = (
+        f"cd {shlex.quote(cwd)} && {unset_str} {env_str} {shlex.quote(bin_path)} & "
+        f"CMD_PID=$!; "
+        f"( sleep {timeout_s} && kill -9 $CMD_PID 2>/dev/null ) & WATCHER_PID=$!; "
+        f"wait $CMD_PID; CMD_EXIT=$?; kill $WATCHER_PID 2>/dev/null; exit $CMD_EXIT"
+    )
+    remote_cmd = bg_cmd
+    result = subprocess.run(["ssh", ssh_host, remote_cmd], capture_output=True, text=True, timeout=timeout_s + 60)
+    out = result.stdout + result.stderr
+
+    detail = {"stdout_tail": out[-2000:], "derived_manifest": derived_manifest, "self_log": self_log_path}
+
+    if "[moe promotion nq]" in out:
+        detail["reason"] = "sweep inherited a live promotion despite env sanitization -- environment leak, treat as no-signal"
+        return False, detail
+
+    warn_marker = f"pos={recorded_pos}"
+    if f"BASELINE WARN" in out and warn_marker in out:
+        detail["reason"] = "BASELINE WARN present at the recorded pos -- structurally invalid run, not evidence"
+        return False, detail
+
+    correct_marker = f"correct req=0 pos={recorded_pos}"
+    if correct_marker not in out:
+        detail["reason"] = f"no-signal: nothing in the run mentions '{correct_marker}' -- the position was never reached or correction never fired at all"
+        return False, detail
+
+    flip_marker = f"REAL FLIP orig={recorded_orig_argmax} corrected={recorded_corrected_argmax}"
+    if flip_marker in out:
+        detail["reason"] = "Step-0 PASS: derivation reproduces the exact recorded flip"
+        return True, detail
+
+    import re
+    m = re.search(rf"REAL FLIP orig=(\d+) corrected=(\d+)", out)
+    if m:
+        detail["reason"] = f"wrong-signal: real flip found but orig={m.group(1)} corrected={m.group(2)} != recorded orig={recorded_orig_argmax} corrected={recorded_corrected_argmax}"
+    else:
+        detail["reason"] = f"position reached, correction fired, but no REAL FLIP line at all (recorded event says there should be one) -- possible wrong derivation or non-deterministic divergence"
+    return False, detail
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--validate", metavar="TSV", help="validate against an already-completed sweep TSV (historical oracle, no new engine calls)")
