@@ -2530,6 +2530,26 @@ static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row
         int8_t code = (int8_t)base[byte_idx];
         return (float)code * scale;
     }
+    // D-qNg64-1: bit-plane arbitrary-n format, n in {2,3,5,6,7}. Gated on t->sym==1 (not bits
+    // alone) to stay completely clear of moe_lut_apply()'s pre-existing bits==3 LUT-decode-curve
+    // experiment just above, which only ever registers sym==0 tensors (run_moe_lut_gate()'s own
+    // local struct) -- see gguf_transcode.h's qNg64 comment for the exact packing spec this
+    // mirrors (bias-before-extract, LE bit order within each 8-byte plane).
+    if (t->sym && (bits == 2 || bits == 3 || bits == 5 || bits == 6 || bits == 7)) {
+        long qng_row_pbytes = t->ng * (long)bits * 8;
+        long eoffq = t->ebits ? (long)t->epacked_off[e] : e * t->out * qng_row_pbytes;
+        long group_off = t->packed_off + eoffq + row * qng_row_pbytes + group * (long)bits * 8;
+        int p = (int)(col % 64);
+        int byte_in_plane = p >> 3;
+        int bit_in_byte = p & 7;
+        int u = 0;
+        for (int j = 0; j < bits; j++) {
+            uint8_t pbyte = base[group_off + (long)j * 8 + byte_in_plane];
+            if ((pbyte >> bit_in_byte) & 1) u |= (1 << j);
+        }
+        int bias_code = 1 << (bits - 1);
+        return ((float)(u - bias_code)) * scale;
+    }
     long row_words = t->in / 8;
     long word_idx = col / 8;
     long byte_in_word = (col % 8) / 2;
@@ -2611,6 +2631,36 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
         }
         return acc;
     }
+    // D-qNg64-1: same gate/layout as moe_decode_af()'s qNg64 branch -- see that function's
+    // comment. Naive per-element loop only (Phase 3 scope is correctness, not speed; the SME2
+    // group-smart path already falls back to this scalar function for any non-int4 tensor, see
+    // moe_sme2_ensure_ready()'s own `actual_bits != 4` check, so no separate opt-in needed here).
+    if (t->sym && (bits == 2 || bits == 3 || bits == 5 || bits == 6 || bits == 7)) {
+        long qng_row_pbytes = ng * (long)bits * 8;
+        long eoffq = t->ebits ? (long)t->epacked_off[e] : e * t->out * qng_row_pbytes;
+        long row_byte0q = t->packed_off + eoffq + row * qng_row_pbytes;
+        int bias_code = 1 << (bits - 1);
+        double accq = 0.0;
+        for (long g = 0; g < ng; g++) {
+            long scale_idx = t->scale_off + (row_base * ng + g) * 4;
+            float scale;
+            memcpy(&scale, base + scale_idx, 4);
+            long group_off = row_byte0q + g * (long)bits * 8;
+            long col0 = g * 64;
+            for (int p = 0; p < 64; p++) {
+                int byte_in_plane = p >> 3;
+                int bit_in_byte = p & 7;
+                int u = 0;
+                for (int j = 0; j < bits; j++) {
+                    uint8_t pbyte = base[group_off + (long)j * 8 + byte_in_plane];
+                    if ((pbyte >> bit_in_byte) & 1) u |= (1 << j);
+                }
+                float w = (float)(u - bias_code) * scale;
+                accq += (double)w * x[col0 + p];
+            }
+        }
+        return accq;
+    }
     for (long g = 0; g < ng; g++) {
         long scale_idx = t->scale_off + (row_base * ng + g) * 4;
         float scale;
@@ -2654,6 +2704,11 @@ static double moe_matvec_af_row_vdsp(const uint8_t *blob, MoeAFTensor *t, long e
     if (t->bits == 8) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==8 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for int8 tensors)\n"); exit(1); }
     if (t->bits == 16) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==16 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for F16-as-AF tensors)\n"); exit(1); }
     if (t->bits == 32) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==32 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for F32-as-AF tensors)\n"); exit(1); }
+    // D-qNg64-1: gated on sym (like the decode/matvec branches) so a genuine sym==0 bits==3
+    // LUT-test tensor (run_moe_lut_gate(), unrelated to qNg64) is not FATALed here by mistake.
+    if (t->sym && (t->bits == 2 || t->bits == 3 || t->bits == 5 || t->bits == 6 || t->bits == 7)) {
+        fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==%d (qNg64) not implemented (QWEN_MOE_SCALAR_VDSP unsupported for bit-plane tensors)\n", t->bits); exit(1);
+    }
     if (t->ebits) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: per-expert mixed precision not implemented (QWEN_MOE_SCALAR_VDSP unsupported for mixed tensors)\n"); exit(1); }
     const uint8_t *base = t->base ? t->base : blob;   // 4.C bridge, see moe_decode_af()
     long row_words = t->in / 8;
@@ -5441,6 +5496,7 @@ static double moe_neartie_correct_threshold(void) {
 // own forward decl next to moe_forward_token()), C99+ has no implicit function declaration.
 static void moe_neartie_correct_load_attn_hi(const char *safetensors_path);
 static MoeAFTensor *st_register_moe_dense_af_q8g64_as(const char *name, const char *engine_name);  // D-gpu-6c forward decl
+static MoeAFTensor *st_register_moe_dense_af_qNg64_as(const char *name, int n, const char *engine_name);  // D-qNg64-1 forward decl, same reason as q8g64's above
 static SafetensorsMulti *g_st_moe;  // D-gpu-6d forward decl (defined qwen_infer.c ~13065)
 static MoeAFTensor *st_register_moe_experts_f16_as_af(const char *name_pattern, int layer, int E, const char *engine_name);  // D-gpu-7 forward decl
 
@@ -8155,7 +8211,11 @@ static int run_moe_gpu_mode(int argc, char **argv) {
     int gate2_fail = 0;
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
-        int bits_ok = (t->bits == 4 || t->bits == 8 || t->bits == 16 || t->bits == 32);
+        // D-qNg64-1: qNg64's n in {2,3,5,6,7} added -- GPU actually binds {2,3,5,6} (7 has
+        // no native MLX kernel, mlx_gpu_bind_af refuses it internally); this CPU-side gate
+        // stays permissive for n=7 too since a role could legitimately run CPU-only.
+        int bits_ok = (t->bits == 2 || t->bits == 3 || t->bits == 4 || t->bits == 5 ||
+                       t->bits == 6 || t->bits == 7 || t->bits == 8 || t->bits == 16 || t->bits == 32);
         if (!bits_ok || t->ebits != NULL) {
             fprintf(stderr, "[moe gpu] GATE2 FAIL: tensor %s has bits=%d ebits=%p (expected bits in {4,8,16,32}, ebits=NULL)\n",
                     t->name, t->bits, (void *)t->ebits);
@@ -8393,6 +8453,71 @@ static int run_moe_gpu_mode(int argc, char **argv) {
                 }
             } else {
                 fprintf(stderr, "[moe gpu] GATE6b SKIP: could not register real q8g64 test tensor\n");
+            }
+
+            // D-qNg64-1: GATE6c, same real-data pattern as GATE6b immediately above, for
+            // qNg64 at every n the GPU path should accept (2,3,5,6) plus n=7 to confirm
+            // the deliberate refusal is actually happening (not just assumed).
+            {
+                int qng_test_layer = 11;
+                int test_ns[5] = {2, 3, 5, 6, 7};
+                for (int ni = 0; ni < 5; ni++) {
+                    int n = test_ns[ni];
+                    char qn_name[160], qn_ename[160];
+                    snprintf(qn_name, sizeof qn_name, "model.layers.%d.mlp.shared_experts.up_proj.weight", qng_test_layer);
+                    snprintf(qn_ename, sizeof qn_ename, "model.layers.%d.mlp.shared_experts.up_proj__qn%d_test", qng_test_layer, n);
+                    SafetensorsMulti *saved_st_moe2 = g_st_moe;
+                    g_st_moe = g_moe_hi_st;
+                    MoeAFTensor *qnt = st_register_moe_dense_af_qNg64_as(qn_name, n, qn_ename);
+                    g_st_moe = saved_st_moe2;
+                    if (!qnt || qnt->ebits != NULL) {
+                        fprintf(stderr, "[moe gpu] GATE6c SKIP: could not register real qNg64(n=%d) test tensor\n", n);
+                        continue;
+                    }
+                    int ok = mlx_gpu_bind_af(qnt->base ? qnt->base : af_blob, af_bytes, qnt->name, qnt->E, qnt->out, qnt->in, qnt->ng,
+                                              qnt->packed_off, qnt->scale_off, qnt->bias_off, qnt->bits);
+                    if (n == 7) {
+                        fprintf(stderr, "[moe gpu] GATE6c n=7: bind %s (expected: refused, no native MLX kernel)\n",
+                                ok ? "SUCCEEDED -- UNEXPECTED, INVESTIGATE" : "refused as expected");
+                        continue;
+                    }
+                    if (!ok) {
+                        fprintf(stderr, "[moe gpu] GATE6c FAIL: bind failed for %s (bits=%d)\n", qnt->name, qnt->bits);
+                        continue;
+                    }
+                    // Probe 3 (row,group) points, not just (0,0) -- the fix this needed
+                    // (a row-stride bug) was uniform-looking at row 0 but wrong for every
+                    // later row, so row 0 alone would not have caught it; group 0 was
+                    // correct even before the fix, so a later group is also worth covering.
+                    long probe_rows[3] = {0, qnt->out / 2, qnt->out - 1};
+                    long probe_g0[3] = {0, (qnt->in / 2) / 64, (qnt->in - 8) / 64};
+                    double max_diff = 0.0;
+                    int n_probe_coords = 0;
+                    int probe_failed = 0;
+                    for (int pp = 0; pp < 3; pp++) {
+                        long prow = probe_rows[pp];
+                        long pcol0 = probe_g0[pp] * 64;
+                        int ncols = (qnt->in - pcol0) < 8 ? (int)(qnt->in - pcol0) : 8;
+                        float gpu_vals[8];
+                        if (!mlx_gpu_dequant_probe(qnt->name, 0, prow, pcol0, ncols, gpu_vals)) {
+                            probe_failed = 1;
+                            continue;
+                        }
+                        for (int c2 = 0; c2 < ncols; c2++) {
+                            float cpu_val = moe_decode_af(af_blob, qnt, 0, prow, pcol0 + c2);
+                            double d = fabs((double)gpu_vals[c2] - (double)cpu_val);
+                            if (d > max_diff) max_diff = d;
+                            n_probe_coords++;
+                        }
+                    }
+                    if (n_probe_coords > 0) {
+                        fprintf(stderr, "[moe gpu] GATE6c %s (bits=%d, real qNg64 repack): max_abs_diff=%.9g over %d coords across 3 (row,group) points (bar: ==0.0)\n",
+                                qnt->name, qnt->bits, max_diff, n_probe_coords);
+                    }
+                    if (probe_failed) {
+                        fprintf(stderr, "[moe gpu] GATE6c FAIL: dequant probe failed for at least one point on %s\n", qnt->name);
+                    }
+                }
             }
 
             // D-gpu-7: real-data test of the FFN hot path's mixed dense/quantized guard
@@ -13343,6 +13468,83 @@ static MoeAFTensor *st_register_moe_experts_q8g64_as(const char *name_pattern, i
     return w;
 }
 
+// D-qNg64-1: qNg64 sibling of st_register_moe_experts_q8g64_as() immediately above -- identical
+// structure (same shape/dtype checks, same per-expert dequant loop), only the packed stride
+// (ng*n*8 bytes/row, not `in` bytes/row) and the quantizer call differ. `w->bits = n` explicit,
+// following the q8g64 precedent (q4g64's registration instead relies on the struct default,
+// which this new function does not).
+static MoeAFTensor *st_register_moe_experts_qNg64_as(const char *name_pattern, int layer, int E, int n, const char *engine_name) {
+    if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors (safetensors)\n"); exit(1); }
+
+    char name0[160];
+    snprintf(name0, sizeof name0, name_pattern, layer, 0);
+    SafetensorsFile *shard0 = NULL;
+    const SafetensorsInfo *t0 = safetensors_multi_find_tensor(g_st_moe, name0, &shard0);
+    if (!t0) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name0); exit(1); }
+    long out = (long)t0->shape[0], in = (long)t0->shape[1];
+    if (out <= 0 || in <= 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s has non-positive dims (out=%ld in=%ld)\n", name0, out, in);
+        exit(1);
+    }
+    if (in % 64 != 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s in=%ld not a multiple of 64 (SME2_KAI_BL requirement)\n", name0, in);
+        exit(1);
+    }
+    if (!safetensors_dequant_supported(t0->dtype)) {
+        fprintf(stderr, "FATAL: safetensors moe tensor '%s' has unsupported dtype %s\n", name0, safetensors_type_name(t0->dtype));
+        exit(1);
+    }
+
+    long ng = in / 64;
+    size_t row_pbytes = (size_t)ng * (size_t)n * 8;   // bit-plane stride, not in or in/2
+    size_t packed_bytes = moe_gguf_mul_checked("packed_bytes",
+                             moe_gguf_mul_checked("packed_bytes", (size_t)E, (size_t)out), row_pbytes);
+    size_t scale_bytes = moe_gguf_mul_checked("scale_bytes",
+                            moe_gguf_mul_checked("scale_bytes",
+                              moe_gguf_mul_checked("scale_bytes", (size_t)E, (size_t)out), (size_t)ng),
+                            sizeof(float));
+    size_t total_bytes = moe_gguf_add_checked("packed+scale_bytes total", packed_bytes, scale_bytes);
+    uint8_t *base = malloc(total_bytes);
+    if (!base) { fprintf(stderr, "FATAL: safetensors moe transcode alloc failed for '%s' (%zu bytes)\n", engine_name, total_bytes); exit(1); }
+    uint8_t *packed_all = base;
+    float *scales_all = (float *)(base + packed_bytes);
+
+    size_t deq_bytes = moe_gguf_mul_checked("deq_bytes",
+                          moe_gguf_mul_checked("deq_bytes", (size_t)out, (size_t)in), sizeof(float));
+    float *deq = malloc(deq_bytes);
+    if (!deq) { fprintf(stderr, "FATAL: safetensors moe dequant scratch alloc failed for '%s'\n", engine_name); exit(1); }
+
+    for (long e = 0; e < E; e++) {
+        char name[160];
+        snprintf(name, sizeof name, name_pattern, layer, (int)e);
+        SafetensorsFile *shard = NULL;
+        const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
+        if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
+        if ((long)t->shape[0] != out || (long)t->shape[1] != in) {
+            fprintf(stderr, "FATAL: safetensors moe: %s shape [%llu,%llu] disagrees with expert 0's [%ld,%ld]\n",
+                    name, (unsigned long long)t->shape[0], (unsigned long long)t->shape[1], out, in);
+            exit(1);
+        }
+        if (!safetensors_dequant_supported(t->dtype)) {
+            fprintf(stderr, "FATAL: safetensors moe tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
+            exit(1);
+        }
+        safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), deq, (uint64_t)(out * in));
+        gguf_quantize_qNg64(deq, (int)out, (int)in, n,
+                             packed_all + (size_t)e * (size_t)out * row_pbytes,
+                             scales_all + (size_t)e * (size_t)out * (size_t)ng);
+    }
+    free(deq);
+
+    MoeAFTensor *w = &g_moe_af[g_moe_naf++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->E = E; w->out = out; w->in = in; w->ng = ng;
+    w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
+    w->scale_off = (long)packed_bytes; w->bias_off = -1;  // never dereferenced: sym=1
+    w->base = base; w->sym = 1; w->bits = n;
+    return w;
+}
+
 // D-d5-9: f16 sibling of st_register_moe_experts_q8g64_as() above -- same per-expert dequant
 // loop and shape checks, but each expert is stored as a raw _Float16 with no scale/group, which
 // is exactly the "raw-passthrough" container moe_decode_af()'s bits0==16 branch already reads
@@ -13531,7 +13733,7 @@ static MoeAFTensor *st_register_moe_experts_mixed_as(const char *name_pattern, i
     size_t off = 0;
     for (long e = 0; e < E; e++) {
         int b = ebits_in[e];
-        if (b != 4 && b != 8 && b != 16 && b != 32) { fprintf(stderr, "FATAL: st_register_moe_experts_mixed_as: expert %ld has invalid bits=%d (must be 4, 8, 16, or 32)\n", e, b); exit(1); }
+        if (b != 2 && b != 3 && b != 4 && b != 5 && b != 6 && b != 7 && b != 8 && b != 16 && b != 32) { fprintf(stderr, "FATAL: st_register_moe_experts_mixed_as: expert %ld has invalid bits=%d (must be 2,3,4,5,6,7,8,16, or 32)\n", e, b); exit(1); }
         // D-expert-promo-1: bits==32 is raw unquantized float (4 bytes/element, no packing) --
         // the prefix-sum epacked_off table already generalizes to a third byte-width the same
         // way it generalizes from one (4/8) to two. D-roadmap-2 follow-up: bits==16 is the same
@@ -13658,6 +13860,53 @@ static MoeAFTensor *st_register_moe_dense_af_q8g64_as(const char *name, const ch
     w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
     w->scale_off = (long)packed_bytes; w->bias_off = -1;
     w->base = base; w->sym = 1; w->bits = 8;
+    return w;
+}
+
+// D-qNg64-1: E=1 sibling of st_register_moe_experts_qNg64_as() immediately above -- same
+// relationship as the q8g64 dense/experts pair.
+static MoeAFTensor *st_register_moe_dense_af_qNg64_as(const char *name, int n, const char *engine_name) {
+    if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors (safetensors)\n"); exit(1); }
+    SafetensorsFile *shard = NULL;
+    const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st_moe, name, &shard);
+    if (!t) { fprintf(stderr, "FATAL: safetensors moe model missing tensor '%s'\n", name); exit(1); }
+    long out = (long)t->shape[0], in = t->n_dims >= 2 ? (long)t->shape[1] : 0;
+    if (out <= 0 || in <= 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s has non-positive dims (out=%ld in=%ld)\n", name, out, in);
+        exit(1);
+    }
+    if (in % 64 != 0) {
+        fprintf(stderr, "FATAL: safetensors moe: %s in=%ld not a multiple of 64 (SME2_KAI_BL requirement)\n", name, in);
+        exit(1);
+    }
+    if (!safetensors_dequant_supported(t->dtype)) {
+        fprintf(stderr, "FATAL: safetensors moe tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
+        exit(1);
+    }
+
+    long ng = in / 64;
+    size_t row_pbytes = (size_t)ng * (size_t)n * 8;
+    size_t packed_bytes = moe_gguf_mul_checked("packed_bytes", (size_t)out, row_pbytes);
+    size_t scale_bytes = moe_gguf_mul_checked("scale_bytes", moe_gguf_mul_checked("scale_bytes", (size_t)out, (size_t)ng), sizeof(float));
+    size_t total_bytes = moe_gguf_add_checked("packed+scale_bytes total", packed_bytes, scale_bytes);
+    uint8_t *base = malloc(total_bytes);
+    if (!base) { fprintf(stderr, "FATAL: safetensors moe transcode alloc failed for '%s' (%zu bytes)\n", engine_name, total_bytes); exit(1); }
+    uint8_t *packed_all = base;
+    float *scales_all = (float *)(base + packed_bytes);
+
+    size_t deq_bytes = moe_gguf_mul_checked("deq_bytes", moe_gguf_mul_checked("deq_bytes", (size_t)out, (size_t)in), sizeof(float));
+    float *deq = malloc(deq_bytes);
+    if (!deq) { fprintf(stderr, "FATAL: safetensors moe dequant scratch alloc failed for '%s'\n", engine_name); exit(1); }
+    safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), deq, (uint64_t)(out * in));
+    gguf_quantize_qNg64(deq, (int)out, (int)in, n, packed_all, scales_all);
+    free(deq);
+
+    MoeAFTensor *w = &g_moe_af[g_moe_naf++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->E = 1; w->out = out; w->in = in; w->ng = ng;
+    w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
+    w->scale_off = (long)packed_bytes; w->bias_off = -1;
+    w->base = base; w->sym = 1; w->bits = n;
     return w;
 }
 
@@ -13818,8 +14067,8 @@ static void moe_load_role_bits(const char *path) {
     g_role_bits = malloc(sizeof(MoeRoleBitsEntry) * (size_t)cap);
     char role[48]; int layer, bits;
     while (fscanf(f, "%47s %d %d", role, &layer, &bits) == 3) {
-        if (bits != 4 && bits != 8 && bits != 16 && bits != 32) {
-            fprintf(stderr, "FATAL: QWEN_MOE_ROLE_BITS: role '%s' layer %d has invalid bits=%d (must be 4, 8, 16, or 32)\n",
+        if (bits != 2 && bits != 3 && bits != 4 && bits != 5 && bits != 6 && bits != 7 && bits != 8 && bits != 16 && bits != 32) {
+            fprintf(stderr, "FATAL: QWEN_MOE_ROLE_BITS: role '%s' layer %d has invalid bits=%d (must be 2,3,4,5,6,7,8,16, or 32)\n",
                     role, layer, bits);
             exit(1);
         }
@@ -14208,8 +14457,8 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
                         pl, pe, MOE_NL, MOE_N_EXPERTS);
                 exit(1);
             }
-            if (pb != 4 && pb != 8 && pb != 16 && pb != 32) {
-                fprintf(stderr, "FATAL: QWEN_MOE_EXPERT_BITS: (layer=%d, expert=%d) bits=%d invalid (must be 4, 8, 16, or 32)\n", pl, pe, pb);
+            if (pb != 2 && pb != 3 && pb != 4 && pb != 5 && pb != 6 && pb != 7 && pb != 8 && pb != 16 && pb != 32) {
+                fprintf(stderr, "FATAL: QWEN_MOE_EXPERT_BITS: (layer=%d, expert=%d) bits=%d invalid (must be 2,3,4,5,6,7,8,16, or 32)\n", pl, pe, pb);
                 exit(1);
             }
             g_promo_ebits[pl][pe] = pb;

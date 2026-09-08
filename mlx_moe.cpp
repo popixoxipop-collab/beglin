@@ -85,7 +85,16 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
     // D-gpu-4/D-gpu-5: bits=4 (original V5a scope, F-13) plus bits=8 (quantized,
     // repacked below) and bits=16/32 (dense, bound below) -- everything else still
     // refused rather than silently mis-decoded, same principle as the original gate.
-    if (bits != 4 && bits != 8 && bits != 16 && bits != 32) return 0;
+    // D-qNg64-1: n in {2,3,5,6} added (direct bit-repack, see the qNg64 branch below).
+    // n=7 is DELIBERATELY excluded -- no native MLX kernel exists for it (confirmed via
+    // this build's own quantized.h static_assert, bits in {2,3,4,5,6,8} only) -- so it
+    // falls through this gate to the same `return 0` every other unsupported bits value
+    // already gets; the caller (which already fprintf's bits on a failed bind, e.g. the
+    // GATE6b/6c pattern below in qwen_infer.c) is what surfaces this as a labeled failure,
+    // not a special code path here -- consistent with how bits=16/32-unavailable and
+    // shape-mismatch failures are already reported by this function's callers, not by it.
+    if (bits != 2 && bits != 3 && bits != 4 && bits != 5 && bits != 6 &&
+        bits != 8 && bits != 16 && bits != 32) return 0;
     if (E <= 0 || out <= 0 || in <= 0) return 0;
 
     if (bits == 16 || bits == 32) {
@@ -143,6 +152,68 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
                            noop_deleter);
             biases = mx::array(bias_ptr, {(int)E, (int)out, (int)ng}, mx::float32,
                                 noop_deleter);
+        } else if (bits == 2 || bits == 3 || bits == 5 || bits == 6) {
+            // D-qNg64-1: direct bit-repack, NOT dequant-then-mx::quantize() (that strategy
+            // was the original plan and was found, empirically, to be wrong: mx::quantize()
+            // is min/max-affine with zero-point snapping, not symmetric absmax, so it is
+            // only exact when a group spans its FULL code range -- real error-feedback'd
+            // weights almost never do (measured 0/300 groups), so requantizing would have
+            // silently served a coarser precision than the one actually measured/decided
+            // for that tensor, up to 50% of the group's max weight at n=2. See RESULTS.md's
+            // D-qNg64-* section for the measurement.
+            //
+            // Instead: MLX's packed representation, for bits in {2,3,5,6}, is a flat,
+            // LSB-first, no-padding bitstream of `bits`-wide codes (byte b of a packed
+            // group holds bitstream bits 8b..8b+7) -- confirmed by reading MLX's own
+            // affine_dequantize Metal kernel source AND independently cross-checked
+            // (bob, MLX 0.32.1) against real mx::quantize() output on synthetic full-range
+            // groups: bit-exact match for n=2,3,4,5,6 (n=8 doesn't apply -- 256 codes can't
+            // fit a full-range 64-element group, handled by the separate branch below
+            // regardless). Repacking qNg64's own bit-plane groups (identical total bytes
+            // per group, 8*n, just a different internal layout: N 8-byte planes vs one
+            // flat bitstream) into that layout is therefore a pure, bit-exact
+            // re-encoding of the SAME codes qNg64 already chose -- not a second
+            // quantization decision. `scales` needs no repacking (already read directly
+            // above, same one-float-per-group convention as q4g64/q8g64); `biases` has no
+            // qNg64 CPU-side array to read (symmetric, like q4/q8) so it is synthesized
+            // as -2^(n-1)*scale per group, matching qNg64's own decode formula exactly.
+            long group_stride = (long)bits * 8;           // bytes for ONE 64-element group
+            long row_pbytes_src = ng * group_stride;       // qNg64's own row stride (ng groups)
+            long row_words = ng * (long)bits * 2;          // MLX uint32 row width (== row_pbytes_src/4)
+            size_t total_bytes = (size_t)E * (size_t)out * (size_t)row_words * 4;
+            uint8_t *repacked = new uint8_t[total_bytes];
+            std::memset(repacked, 0, total_bytes);
+            const uint8_t *src = blob + packed_off;
+            for (long e = 0; e < E; e++) {
+                for (long row = 0; row < out; row++) {
+                    const uint8_t *row_src = src + (size_t)(e * out + row) * (size_t)row_pbytes_src;
+                    uint8_t *row_dst = repacked + (size_t)(e * out + row) * (size_t)row_words * 4;
+                    for (long g = 0; g < ng; g++) {
+                        const uint8_t *grp_src = row_src + (size_t)g * (size_t)group_stride;
+                        uint8_t *grp_dst = row_dst + (size_t)g * (size_t)group_stride;  // same byte count both formats
+                        long bitpos = 0;
+                        for (int p = 0; p < 64; p++) {
+                            int byte_in_plane = p >> 3, bit_in_byte = p & 7;
+                            int u = 0;
+                            for (int j = 0; j < bits; j++) {
+                                uint8_t pbyte = grp_src[j * 8 + byte_in_plane];
+                                if ((pbyte >> bit_in_byte) & 1) u |= (1 << j);
+                            }
+                            for (int b2 = 0; b2 < bits; b2++) {
+                                if ((u >> b2) & 1) {
+                                    long bp = bitpos + b2;
+                                    grp_dst[bp / 8] |= (uint8_t)(1u << (bp % 8));
+                                }
+                            }
+                            bitpos += bits;
+                        }
+                    }
+                }
+            }
+            w = mx::array(repacked, {(int)E, (int)out, (int)row_words}, mx::uint32,
+                          [](void *p) { delete[] (uint8_t *)p; });
+            int bias_code = 1 << (bits - 1);
+            biases = mx::multiply(scales, mx::array(-(float)bias_code));
         } else {
             // D-gpu-4: bits==8. CPU's q8g64 (gguf_quantize_q8g64()) is SIGNED int8,
             // symmetric (no bias array -- bias_off is a -1 sentinel here, never

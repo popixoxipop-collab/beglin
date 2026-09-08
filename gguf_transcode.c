@@ -19,6 +19,7 @@
 #include "gguf_transcode.h"
 #include <math.h>
 #include <stddef.h>
+#include <stdio.h>
 
 void gguf_quantize_q4g64_error_feedback(const float *w, int out, int in,
                                          uint8_t *packed_out, float *scales_out) {
@@ -96,5 +97,66 @@ void gguf_quantize_q8g64(const float *w, int out, int in,
                 crow[g * GGUF_TRANSCODE_GROUP + p] = (int8_t)qf;
             }
         }
+    }
+}
+
+
+// D-qNg64-1: see gguf_transcode.h's own comment for the full format spec (bias-before-extract,
+// LE bit order, reciprocal+rintf rounding, n=4 relationship to q4g64 above). Structurally this
+// is q4g64's loop (per-row, per-group, sequential error-feedback over p=0..63) with the
+// nibble-pack replaced by a bit-plane pack and the fixed 7/-8 bounds replaced by n-derived ones.
+void gguf_quantize_qNg64(const float *w, int out, int in, int n,
+                          uint8_t *planes_out, float *scales_out) {
+    int ng = in / GGUF_TRANSCODE_GROUP;
+    int qmax = (1 << (n - 1)) - 1;
+    int qmin = -(1 << (n - 1));
+    int bias = 1 << (n - 1);
+    int mask = (1 << n) - 1;
+    size_t group_pbytes = (size_t)n * 8;
+    size_t row_pbytes = (size_t)ng * group_pbytes;
+    long saturated = 0;
+    for (int r = 0; r < out; r++) {
+        const float *row = w + (size_t)r * in;
+        uint8_t *prow = planes_out + (size_t)r * row_pbytes;
+        float *srow = scales_out + (size_t)r * ng;
+        for (int g = 0; g < ng; g++) {
+            const float *grp = row + (size_t)g * GGUF_TRANSCODE_GROUP;
+            uint8_t *pgrp = prow + (size_t)g * group_pbytes;
+            for (size_t i = 0; i < group_pbytes; i++) pgrp[i] = 0;  // only OR'd into below
+            float maxabs = 0.0f;
+            for (int p = 0; p < GGUF_TRANSCODE_GROUP; p++) {
+                float a = fabsf(grp[p]);
+                if (a > maxabs) maxabs = a;
+            }
+            float scale = maxabs / (float)qmax;
+            if (scale < 1e-12f) scale = 1.0f;
+            srow[g] = scale;
+            float inv = 1.0f / scale;
+            float err = 0.0f;
+            for (int p = 0; p < GGUF_TRANSCODE_GROUP; p++) {
+                float x = grp[p] + err;
+                float qf = rintf(x * inv);      // reciprocal + rintf -- see header comment
+                if (qf > (float)qmax) { qf = (float)qmax; saturated++; }
+                if (qf < (float)qmin) { qf = (float)qmin; saturated++; }
+                float deq = qf * scale;
+                err = x - deq;
+                int code = (int)qf;
+                int u = (code + bias) & mask;   // bias FIRST, then bit-extract below
+                int byte_in_plane = p >> 3;
+                int bit_in_byte = p & 7;
+                for (int j = 0; j < n; j++) {
+                    if ((u >> j) & 1) {
+                        pgrp[(size_t)j * 8 + byte_in_plane] |= (uint8_t)(1u << bit_in_byte);
+                    }
+                }
+            }
+        }
+    }
+    // Cheap saturation counter (D-qNg64-1's own design review flagged EF-driven saturation to
+    // the extreme code as a theoretical risk -- measured elsewhere at 0/51200 samples, a tail
+    // event, not blocked here, just surfaced if it ever actually happens on real data).
+    if (saturated > 0) {
+        fprintf(stderr, "[gguf_transcode] qNg64(n=%d): %ld/%zu codes saturated to an extreme value\n",
+                n, saturated, (size_t)out * (size_t)in);
     }
 }

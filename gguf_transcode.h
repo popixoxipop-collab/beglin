@@ -37,4 +37,39 @@ void gguf_quantize_q4g64_error_feedback(const float *w, int out, int in,
 void gguf_quantize_q8g64(const float *w, int out, int in,
                           int8_t *codes_out, float *scales_out);
 
+// qNg64 (D-qNg64-1): arbitrary-n bit-plane group-64 quantization, symmetric, WITH error
+// feedback -- a direct generalization of gguf_quantize_q4g64_error_feedback() above, NOT of
+// gguf_quantize_q8g64() (q8g64 clamps asymmetrically to [-127,127] and uses plain division
+// with no error feedback; qNg64(n=8) would clamp to [-128,127] with reciprocal-multiply and EF
+// -- the two are deliberately different at n=8, do not assume interchangeability). Intended for
+// n in [2,7] (n=4 and n=8 already have their own dedicated, faster formats above; this family
+// exists for the bit-widths that don't). Per-element MSE is measurably HIGHER with error
+// feedback than without (~2x, a direct consequence of differencing residual noise) -- the real
+// benefit error feedback gives is a ~60x reduction in per-GROUP summed error, which is what a
+// group-64 dot product actually accumulates. (The comment on q4g64 above claiming EF simply
+// "lowers quantization MSE" is imprecise for exactly this reason -- don't copy that phrasing
+// here.)
+//
+// Code range is [-2^(n-1), 2^(n-1)-1], scale = maxabs/(2^(n-1)-1) (same 1e-12 floor convention
+// as both formats above). Rounding is rintf() on a precomputed reciprocal (`x * (1/scale)`),
+// the SAME convention q4g64 uses -- NOT q8g64's direct division. Values are stored BIASED
+// (u = (code + 2^(n-1)) & (2^n-1), matching q4g64's own `(code+8)&0x0F`) then bit-plane packed:
+// for n=4, this is byte-identical in VALUE (not layout) to what gguf_quantize_q4g64_error_
+// feedback() computes -- same codes, same scales -- differing only in how those codes are
+// packed into bytes.
+//
+// Packing layout (pin this exactly -- a pack/unpack round-trip test cannot catch a
+// self-consistent but wrong bit-order, so any reader porting this to another language must
+// match it exactly, not just "something round-trippable"): a group of 64 elements occupies
+// exactly 8*n bytes = n "planes" of 8 bytes (64 bits) each, laid out consecutively (plane 0's
+// 8 bytes, then plane 1's, ... then plane n-1's) within the group; groups are laid out
+// consecutively within a row (row stride = (in/64)*n*8 bytes). Within plane j, byte b holds
+// bits for element indices 8b..8b+7 of that group, and element i's bit lives at bit (i & 7) of
+// that byte (little-endian within the byte -- element 0 is the LSB). Plane j holds bit j of
+// each element's BIASED code u (i.e. bit j of `u`, not of the raw two's-complement `code`).
+// `planes_out` must be out*(in/64)*n*8 bytes; `scales_out` must be out*(in/64) floats, same
+// shape as the two formats above.
+void gguf_quantize_qNg64(const float *w, int out, int in, int n,
+                          uint8_t *planes_out, float *scales_out);
+
 #endif // GGUF_TRANSCODE_H
