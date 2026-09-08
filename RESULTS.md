@@ -11600,5 +11600,28 @@ and independently verified: 870 total rows (was 840, +30 exact).
 **In parallel**, discovery continued past p105 looking for a second candidate: `p115`-`p145`
 came back empty, `p155` produced exactly one real flip (`pos=12`, `orig=317 corrected=438`)
 with 13 hits across every role family (`kv_a_proj_with_mqa` x4, `o_proj` x4, `kv_b_proj` x2,
-`dense_gate_proj`/`dense_up_proj`/`dense_down_proj` x1 each) -- its own mandatory reproduction
-check is running; sweep and push to follow once confirmed, same discipline.
+`dense_gate_proj`/`dense_up_proj`/`dense_down_proj` x1 each).
+
+**p155's reproduction check** confirmed cleanly: `margin_before=0.048599`, `corrected=438`,
+matching the original discovery exactly. Notably this is the *same* margin and corrected value
+already on record for `kv_b_proj`/L8's round-1/round-4 WikiText-103 event -- this new prompt
+(`p155`, from the freshly-regenerated corpus) landed on what is very likely the same underlying
+real-world near-tie as before, just discovered independently. Confirmed directly: `kv_b_proj`/
+L8's fresh sweep here reproduces the exact same `{2,4}` fail-set already on record. Pushed
+anyway (the table tolerates it, same as the `shared_down_proj`/L26 pos=9 duplicate this session
+already found and left in place) rather than special-casing one row out of an otherwise-uniform
+13-target batch -- flagged here for anyone querying this target's row count later.
+
+**Sweep** (195 real engine runs, n=2..16 x 13 targets): **8/13 (62%) violate** -- no role
+family immune (`kv_a_proj_with_mqa` 2/4, `kv_b_proj` 2/2, `o_proj` 3/4, `dense_up_proj` 1/1,
+`dense_gate_proj`/`dense_down_proj` 0/1 each). Pushed and independently verified: 1065 total
+rows (was 870, +195 exact).
+
+**Round closed.** Two single-flip events tested this round under the corrected discipline: p105
+(0/2 violate, both monotonic, razor-thin margin notwithstanding) and p155 (8/13 violate) --
+combined 8/15 (53%) for this round, consistent with every prior round's range (13-83%
+depending on the specific event) and with the standing conclusion (no single-factor predictor,
+exhaustive scan remains the correct default). The methodology itself held up this time: every
+step -- flip-count check before sizing a sweep, mandatory reproduction check before committing
+real bob time, disk cleanup per target -- worked as designed, in contrast to the retracted
+round immediately before it.

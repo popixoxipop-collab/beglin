@@ -233,9 +233,28 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
   타겟 스윕 방법론이 통째로 안 맞음(다른 설계 필요, 이번엔 시도 안 함).
 - RESULTS.md "ROI-G Phase 2: a real methodological trap..." 섹션.
 
-## 남은 것 (2026-09-08 기준, (a)~(e) 전부 완료/처리 후)
+## (f) 단일-flip 규율 적용해서 flip 헌팅 재시도 — 성공 (2026-09-08)
+- p10 retraction의 교훈 2가지를 실제로 적용: (1) 스윕 규모 정하기 전 `grep -c "REAL FLIP"`로
+  flip 개수 확인, 1개만 통과, (2) 스윕 전 재현성 체크 필수 선행(생략 안 함).
+- 19개 신규 WT103 프롬프트 discovery: 8개는 flip 0, 1개(p95)는 46분+ 진행 없이 멈춤(이상
+  케이스로 kill, 원인 미조사·향후 과제로 남김), p105에서 단일 flip(pos=13,
+  margin_before=0.099848 — 이번 세션 전체에서 가장 threshold에 가까운 razor-thin 마진)
+  2개 hit, p155에서 단일 flip(pos=12) 13개 hit.
+- **재현성 체크 둘 다 통과**(p105: margin/corrected 정확히 재현. p155: margin_before=0.048599,
+  corrected=438 — round1/round4의 kv_b_proj@L8과 완전히 동일한 값! 새로 재생성한 코퍼스가
+  같은 실제 이벤트를 다른 인덱스로 우연히 재발견한 것으로 보임, 실제로 kv_b_proj/L8 재스윕
+  결과가 기존 {2,4} fail 패턴과 정확히 일치 — 의도적으로 중복 push함, 테이블이 허용하고
+  기존에도 같은 종류 중복이 있었음).
+- **결과**: p105 2/2 clean(전부 monotonic), p155 8/13(62%) 위반. 합계 8/15(53%) —
+  기존 라운드들의 범위(13~83%)와 정합, "단일 요인 예측력 없음" 결론 재확인.
+- 30행+195행 push+독립검증(840→870→1065, 전부 정확히 일치). 이번엔 방법론 자체가 설계대로
+  작동함(flip개수체크→재현성체크→스윕→디스크정리 전부 지켜짐) — 직전 retract 라운드와 대조.
+- RESULTS.md "ROI-G Phase 2: redone flip hunt..." 섹션.
+
+## 남은 것 (2026-09-08 기준, (a)~(f) 전부 완료 후)
 - ROI-G Phase 2 전체 계획 + live 배포 검증(24타겟, bisection 트리거) + WT103 영구 코퍼스
-  재구축 + flip 헌팅 방법론 트랩 발견·정직한 retract까지 전부 완료. classify()/
-  bisection_search() 설계는 이론~실전 검증 끝. Supabase는 840행(신뢰 가능한 데이터만).
-- 남은 선택지: (f) 단일-flip 프롬프트만 골라 WT103 flip 헌팅 재시도(이번엔 재현성 체크
-  필수 선행), (g) 여기서 종결. 사용자 확인 후 진행할 것.
+  재구축 + flip 헌팅 방법론 트랩 발견·정직한 retract + 교훈 적용한 재시도 성공까지 전부
+  완료. classify()/bisection_search() 설계는 이론~실전 검증 끝. Supabase 1065행(신뢰 가능).
+- 남은 것: p95의 "46분+ 멈춤" 이상 현상 미조사(원인 불명, routed-expert 조합 공간이 특히
+  큰 경우일 가능성 — 다음에 유사 현상 재현되면 조사 대상). 그 외 특별히 열린 질문 없음 —
+  더 진행하려면 (h) 더 많은 single-flip 이벤트로 표본 확장, (i) 여기서 종결. 사용자 확인 후.
