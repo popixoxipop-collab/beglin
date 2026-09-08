@@ -11819,3 +11819,75 @@ remain both plausible; distinguishing them needs either a debug build with per-c
 or `dtrace`/similar instrumentation on the actual `moe_neartie_attribute()` combo loop. Killed
 the reproduction (PID 89120) after gathering this evidence rather than let it run to whatever
 its actual completion time is -- the diagnostic value was already captured either way.
+
+## D-qNg64-8 -- L3b Phase A: read-only live-detection worklist (2026-09-08)
+
+**WHY**: the L3b design doc (`.claude/history/2026-09-08_l3b-design.md`) proposed a full
+"online-learning loop" autopilot (live detection -> automatic real-kernel sweep ->
+`promotion_writeback.py` -> `QWEN_MOE_PROMOTION_FILE_NQ`). An Opus adversarial review of that
+design found the automation steps each individually unsafe today: a silent
+simulated-overwrites-real data collision in `fetch_prior_points_by_event()` (`sorted(set(...))`+
+`dict()` collapses a real-kernel FAIL and a simulated PASS at the same n into just the PASS,
+verified by execution -- exactly the `kv_b_proj`/L9 direction D-qNg64-6 already found), the "live"
+oracle only ever driving the simulated path never the real kernel despite its name, `req`
+numbering being ambiguous across manifest chunks (already caused two silent provenance
+corruptions in this project -- D-d5-27 and its repeat), and `promotion_writeback.py --out`
+truncating rather than merging the promotion file. **None of that is fixed here.** Per the
+review's own staged recommendation, this section builds ONLY "Phase A" -- a read-only report,
+no engine runs, no writes anywhere, so the still-open benefit-metric question (D-qNg64-4/7's
+"preview, not proof") gets real ranked data instead of the autopilot being built on an unsafe
+foundation.
+
+**Built**: `tools/promotion_controller.py --report <jsonl-paths>` -- parses `kind=="attribution"`
+lines directly (the review found the original event-adjacency assumption backwards:
+`moe_neartie_maybe_correct()` fires BEFORE `moe_neartie_maybe_log()` in both emit loops,
+qwen_infer.c:7053/7073, and the attribution line already carries req/pos/corrected_argmax
+directly, qwen_infer.c:6272-6277 -- no reconstruction needed at all). Groups by
+(model,corpus,role,layer), counts attributions, lists distinct (req,pos) events, cross-references
+`moe_quant_sweep_results` via the Management API (read-only SELECT, `count(*)` only) for whether
+sweep data already exists (reporting "provenance unknown" honestly -- no source column exists
+yet, that's Phase B), and tags each distinct event's manifest-resolution confidence against a
+small, deliberately conservative hardcoded list (only 3 entries: p60/pos=14 at full confidence
+from this session's own repeated direct reuse; p105/pos=13 and p155/pos=12 at "peer-verified,
+req not independently confirmed" from the peer session's `c08567d`/`dde405e` single-flip-discipline
+round -- everything else reports "unknown / needs manual verification", never a guess, per the
+review's own point that guessing here is exactly the corruption class that already bit this
+project twice).
+
+**Real data used**: this project has no single canonical `QWEN_MOE_NEARTIE_EVENTS_LOG` path in
+continuous use (checked directly) -- every real test round pointed at its own scratch file.
+Pulled every JSONL under `/private/tmp/{step6,step7,step9}/*.jsonl` and
+`/private/tmp/qng64_real_events.jsonl` off bob (2776 raw lines, 742 of them
+`kind=="attribution"`, spanning this session's own D-qNg64-1/2/3 test runs and the peer session's
+flip-hunt rounds).
+
+**Result** (real output, not illustrative):
+```
+role                     layer attrib_count  events  sweep_rows
+shared_down_proj            26           32       3  90 rows exist, provenance unknown
+dense_down_proj              0           30       2  45 rows exist, provenance unknown
+kv_a_proj_with_mqa           1           29       2  30 rows exist, provenance unknown
+q_proj                       1           28       1  30 rows exist, provenance unknown
+kv_a_proj_with_mqa           0           28       2  30 rows exist, provenance unknown
+...
+45 distinct (model,corpus,role,layer) triples, 742 total attribution rows
+```
+42/53 distinct event-references resolve to a VERIFIED or PEER-VERIFIED manifest tag (this
+dataset concentrates heavily around the 3 well-studied events, p60/p105/p155, which is exactly
+why the coverage looks this good here and should NOT be assumed to generalize to a broader,
+less-curated live-serving log). Full ranked worklist + JSON: this run's own artifact, not
+committed (regenerable via the command above against fresh log data).
+
+**COST**: read-only, cheap -- one Management API `count(*)` query per distinct triple (45 in this
+run), sub-second total. No engine runs.
+
+**EXIT**: this is Phase A only. Phase B (per the review: a `source` column on
+`moe_quant_sweep_results`, manifest identity recorded in the attribution log line -- a one-line
+`fprintf` addition, does touch qwen_infer.c but not the serving arithmetic) and Phase C (the
+actual autopilot, gated on B, with a `--max-sweeps` cap, per-triple backoff, the
+`corrected_argmax` reproduction gate, the real SIM_QN oracle not the simulated one, the real
+kernel's n∈{5,6,7} deployable ladder not the old n∈{2..16}, and merge-not-truncate write-back)
+are both explicitly NOT built -- deliberate, not an oversight, per the review's staging.
+
+Commit: (this section + `tools/promotion_controller.py`). Not pushed (local commits only, per
+this repo's convention).
