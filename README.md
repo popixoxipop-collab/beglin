@@ -102,6 +102,18 @@ number: [`RESULTS.md`](RESULTS.md).
 # it with an SME/SVE -march flag can SIGILL on real hardware.
 clang -O3 -w -c qwen_infer.c -o qwen_infer.o
 
+# GGUF/safetensors loader sources (also plain -- qwen_infer.c calls into
+# these for GGUF transcoding and safetensors checkpoint loading; the
+# built-in `postinstall` build compiles these too, see
+# scripts/postinstall-build.js):
+clang -O3 -w -c gguf_cache.c -o gguf_cache.o
+clang -O3 -w -c gguf_load.c -o gguf_load.o
+clang -O3 -w -c gguf_quants.c -o gguf_quants.o
+clang -O3 -w -c gguf_transcode.c -o gguf_transcode.o
+clang -O3 -w -c hf_config.c -o hf_config.o
+clang -O3 -w -c safetensors_load.c -o safetensors_load.o
+clang -O3 -w -c safetensors_quants.c -o safetensors_quants.o
+
 # SME2 kernel wrapper (also plain -- it dispatches through function
 # pointers, no SME/SVE code of its own):
 clang -O2 -march=armv9.2-a+sme2 -I. -c sme2_kai.c -o sme2_kai.o
@@ -119,7 +131,8 @@ clang -O2 -march=armv9.2-a+sme2 -I. -c \
   kleidiai/kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.c
 
 # Link
-clang -O3 qwen_infer.o sme2_kai.o kai_*.o \
+clang -O3 qwen_infer.o gguf_cache.o gguf_load.o gguf_quants.o gguf_transcode.o \
+  hf_config.o safetensors_load.o safetensors_quants.o sme2_kai.o kai_*.o \
   -o qwen_infer -framework Accelerate -lpthread
 
 # Verify no SVE/SME instruction leaked into the plain-compiled caller
@@ -215,6 +228,20 @@ selection isn't sufficient on its own, and a different expert count,
 sparsity pattern, or hidden size would need its own search from scratch,
 not this one's answer copy-pasted in.
 
+One shortcut that would make that search cheap turns out not to be safe:
+bisecting on bit-width (test n=8, pass -> try n=4; fail -> try n=16) only
+works if accuracy is monotonic in n, and it usually isn't. A real
+arbitrary-bit-width sweep (n=2..16, one tensor at a time, against real
+near-tie routing/attention decisions on DeepSeek-V2-Lite) found 13-83%
+of tested targets non-monotonic depending on the sample -- passing at
+n=3, failing at n=4, passing again at n=5+, with no single factor
+(tensor identity, corpus, specific event, or even the *quantization
+algorithm itself*, confirmed by comparing a CPU RTN simulation against
+real native hardware quantization on GPU) explaining which targets will
+misbehave. Exhaustive per-n testing is the only safe default found so
+far; see `RESULTS.md`'s ROI-G Phase 1/2 sections for the full search
+tool (`tools/quant_search_n.py`) and every real data point behind this.
+
 Running that search -- heuristic-guided, most likely by an agent trying
 candidate assignments and scoring each one, since the space is too large
 to hand-enumerate -- is future work, and deliberately not this repo's job.
@@ -259,6 +286,13 @@ Llama-3.1-8B, one MoE model), with a custom weight format, not GGUF. See
 
 ```
 qwen_infer.c              # the engine: single translation unit, plain-compiled
+gguf_load.h/.c            # GGUF container parser
+gguf_quants.h/.c          # GGUF quantization format dequant kernels
+gguf_transcode.h/.c        # GGUF -> engine's own K_Q4G64/K_Q8G64/qNg64 transcode
+gguf_cache.h/.c           # on-disk transcode cache (.beglin), lazy-repack
+hf_config.h/.c             # HuggingFace config.json / arch_config_moe.txt parsing
+safetensors_load.h/.c      # safetensors container parser + checkpoint loader
+safetensors_quants.h/.c    # safetensors-side quantization helpers
 sme2_kai.h/.c              # SME2 dispatch wrapper (int8-LHS + f16p-LHS paths, runtime HW gate)
 q4gemv.h                  # NEON int4/int8 dequant-GEMV + threaded batch GEMM
 q4gemv_g256.h             # alternate group-256 kernel variant
