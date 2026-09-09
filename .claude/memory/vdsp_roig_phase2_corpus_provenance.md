@@ -329,6 +329,28 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
   동일 — 버전업으로 해결 안 됨). WebSearch 레벨 스코핑만 완료, 설계/구현 미착수 — 별도
   대규모 후속 작업.
 
+## Push + 실측 속도 비교표 (2026-09-10, D-bench-1)
+- commit `214980e`(qNg64 CPU 확장)+`9fe36e0`(문서화) push 완료.
+- README/RESULTS.md에 llama.cpp/MLX 대비 실측 속도표 추가(commit `b5e5f6c`,
+  push 완료). bob(M4, 16GB) 유일 SME2 기기, 라이브 데스크톱 사용 중이라
+  가용메모리 6.6GB(엔진당 실측 ~9-11GB 필요) — 2026-09-02 스와핑 사고와
+  동일 전제조건이라 **사용자에게 먼저 물어봄**, "지금 강행" 선택받아
+  스와핑 실시간 모니터링(vm.swapusage 5초 폴링)하며 진행, 스와핑 없이 완료.
+  - GPU: llama.cpp+Metal 53.11 tok/s(신규 실측) vs 이 엔진 자체 MLX
+    백엔드 52.91 tok/s(2026-08-31 기존 실측, 재확인 안 함) — 거의 동률,
+    GPU 경로는 실제로 경쟁력 있음.
+  - **CPU/SME2 단일스트림은 ~1.34 tok/s로 llama.cpp CPU(22.69 tok/s)보다
+    훨씬 느림** — 스핀 안 하고 그대로 보고. 원인: `moe_sme2_ensure_ready()`가
+    (layer,expert,proj) 슬롯을 처음 건드릴 때만 SME2 리팩하는데, DeepSeek
+    MoE가 매 토큰 top-6/64를 다르게 라우팅해서 20토큰 짧은 런에선 대부분
+    슬롯이 "처음 건드림"이라 정상속도(steady-state)를 못 봄. **이건 새
+    발견이 아니라 프로젝트 자신의 2026-08-30 V5-pre 섹션이 이미
+    예측+발견했던 것과 정확히 같은 결론**(그게 GPU/MLX 백엔드 개발의
+    실제 동기였음) — 이번엔 그때 "미해결로 남김"이라 명시했던 정확한
+    단일스트림 숫자를 처음 얻은 것.
+  - 미측정(memory 위험으로 스킵, 명시적으로 기록): 순정 mlx_lm 숫자,
+    B=64 배치 처리량 재측정 — RESULTS.md D-bench-1의 EXIT에 다음 조건 기재.
+
 ## 남은 것 (2026-09-09 기준)
 - ROI-G Phase 2 전체 계획 완전 종결(위 섹션들). Supabase 1065행(CPU) + GPU 실측 6건.
 - qNg64 CPU n=8~15 확장 완료. **다음: GPU 커스텀 Metal 커널 설계(별도 큰 작업, 미착수)**,
