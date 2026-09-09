@@ -6454,6 +6454,14 @@ static int g_moe_promoted_nq[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
 // Forward decl: defined near the qNg64 registration functions it calls (st_register_moe_*_
 // qNg64_as()), which are declared later in this file than this startup call site needs.
 static void moe_promotion_nq_init(void);
+#ifdef QWEN_GPU_MLX
+// D-qNg64-gpu-1: GPU mirror of g_moe_promoted_nq above -- kept separate rather than reused
+// because the two gates are mutually-exclusive dispatch branches within one process (main()'s
+// GPU/CPU serving gates never coexist in one run), so there's no cross-talk risk either way, but
+// writing GPU state into a CPU-labeled global is needless confusion for zero benefit.
+static int g_moe_promoted_nq_gpu[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
+static void moe_promotion_nq_init_gpu(void);
+#endif
 
 static void moe_promotion_apply_one(MoeAttribRole role, int layer) {
     if (g_moe_promoted[role][layer]) return;
@@ -8491,8 +8499,12 @@ static int run_moe_gpu_mode(int argc, char **argv) {
             // second bridge to build.
             char q8_name[160], q8_ename[160];
             int q8_test_layer = 10;
-            snprintf(q8_name, sizeof q8_name, "model.layers.%d.mlp.shared_experts.gate_proj.weight", q8_test_layer);
-            snprintf(q8_ename, sizeof q8_ename, "model.layers.%d.mlp.shared_experts.gate_proj__q8_test", q8_test_layer);
+            // D-qNg64-gpu-1: was hardcoded to "shared_experts.gate_proj" -- DeepSeek-only
+            // (OLMoE/qwen3_moe have zero shared experts). The registrar tests generic E=1
+            // AF-tensor round-trip, indifferent to semantic role -- q_proj is valid on every
+            // architecture and exercises the identical code path.
+            snprintf(q8_name, sizeof q8_name, "model.layers.%d.self_attn.q_proj.weight", q8_test_layer);
+            snprintf(q8_ename, sizeof q8_ename, "model.layers.%d.self_attn.q_proj__q8_test", q8_test_layer);
             // D-gpu-6d: root cause of the earlier SIGSEGV -- st_register_moe_dense_af_q8g64_as()
             // reads the shared g_st_moe handle, but moe_neartie_correct_load_attn_hi() only
             // ever points g_st_moe at the real checkpoint (g_moe_hi_st) TEMPORARILY (save/
@@ -8538,8 +8550,12 @@ static int run_moe_gpu_mode(int argc, char **argv) {
                 for (int ni = 0; ni < 5; ni++) {
                     int n = test_ns[ni];
                     char qn_name[160], qn_ename[160];
-                    snprintf(qn_name, sizeof qn_name, "model.layers.%d.mlp.shared_experts.up_proj.weight", qng_test_layer);
-                    snprintf(qn_ename, sizeof qn_ename, "model.layers.%d.mlp.shared_experts.up_proj__qn%d_test", qng_test_layer, n);
+                    // D-qNg64-gpu-1: was hardcoded to "shared_experts.up_proj" -- same
+                    // DeepSeek-only portability issue as GATE6b just above; o_proj is a
+                    // different E=1 role than GATE6b's q_proj, avoiding any duplicate-line
+                    // registration overlap between the two tests.
+                    snprintf(qn_name, sizeof qn_name, "model.layers.%d.self_attn.o_proj.weight", qng_test_layer);
+                    snprintf(qn_ename, sizeof qn_ename, "model.layers.%d.self_attn.o_proj__qn%d_test", qng_test_layer, n);
                     SafetensorsMulti *saved_st_moe2 = g_st_moe;
                     g_st_moe = g_moe_hi_st;
                     MoeAFTensor *qnt = st_register_moe_dense_af_qNg64_as(qn_name, n, qn_ename);
@@ -8648,6 +8664,86 @@ static int run_moe_gpu_mode(int argc, char **argv) {
                     }
                 } else {
                     fprintf(stderr, "[moe gpu] GATE7 SKIP: could not register real bits=16 expert tensor\n");
+                }
+            }
+
+            // D-qNg64-gpu-1: GATE8, isolated correctness proof for moe_promotion_nq_init_gpu()
+            // before wiring it into a real serving gate -- same "prove it here first" pattern
+            // GATE6c/GATE7 above established. Self-contained: writes its own tiny 3-line test
+            // file (one E=1 role at n=5, one expert role at n=6, one line at n=7 to prove the
+            // skip-not-FATAL path actually fires), no external promotion file needed.
+            {
+                char tmpfile[256];
+                snprintf(tmpfile, sizeof tmpfile, "/tmp/qng64_gpu_gate8_test_%d.txt", (int)getpid());
+                FILE *tf = fopen(tmpfile, "w");
+                if (!tf) {
+                    fprintf(stderr, "[moe gpu] GATE8 SKIP: could not create test file\n");
+                } else if (!g_moe_lt[0].q_proj) {
+                    fclose(tf);
+                    fprintf(stderr, "[moe gpu] GATE8 SKIP: no q_proj@L0 on this architecture\n");
+                } else {
+                    // NOTE: uses q_proj (attention, valid on every architecture) rather than
+                    // dense_gate_proj (DeepSeek-V2-Lite-only, matching GATE6c/GATE7's own
+                    // targets) -- no DeepSeek bf16 safetensors checkpoint is present on this
+                    // build host; q_proj/o_proj exercise the identical E=1 code path.
+                    int gate8_test_layer = 12;
+                    fprintf(tf, "q_proj 0 5\n");
+                    fprintf(tf, "expert_gate_proj %d 6\n", gate8_test_layer);
+                    fprintf(tf, "o_proj 0 7\n");
+                    fclose(tf);
+
+                    char name_dg[160];
+                    snprintf(name_dg, sizeof name_dg, "%s", g_moe_lt[0].q_proj->name);
+
+                    setenv("QWEN_MOE_PROMOTION_FILE_NQ", tmpfile, 1);
+                    moe_promotion_nq_init_gpu();
+                    unsetenv("QWEN_MOE_PROMOTION_FILE_NQ");
+                    remove(tmpfile);
+
+                    // Check A: n=5 dense_gate_proj@L0 -- probe bit-exact vs an INDEPENDENTLY
+                    // built qNg64(5) reference decode (a fresh, separate registration call with
+                    // the same inputs, not trusting moe_promotion_nq_init_gpu()'s own internal
+                    // state -- the same discipline GATE6c's own probe already uses).
+                    if (g_moe_promoted_nq_gpu[MOE_ATTRIB_Q_PROJ][0] == 5) {
+                        SafetensorsMulti *saved_g8 = g_st_moe;
+                        g_st_moe = g_moe_hi_st;
+                        MoeAFTensor *ref_dg = st_register_moe_dense_af_qNg64_as(
+                            "model.layers.0.self_attn.q_proj.weight", 5, "gate8_verify_ref_dg");
+                        g_st_moe = saved_g8;
+                        if (ref_dg) {
+                            float gpu_vals[8]; double max_diff = 0.0; int n_coords = 0; int probe_failed = 0;
+                            long probe_rows[2] = {0, ref_dg->out - 1};
+                            for (int pp = 0; pp < 2; pp++) {
+                                if (!mlx_gpu_dequant_probe(name_dg, 0, probe_rows[pp], 0, 8, gpu_vals)) { probe_failed = 1; continue; }
+                                for (int c = 0; c < 8; c++) {
+                                    float cpu_val = moe_decode_af(af_blob, ref_dg, 0, probe_rows[pp], c);
+                                    double d = fabs((double)gpu_vals[c] - (double)cpu_val);
+                                    if (d > max_diff) max_diff = d;
+                                    n_coords++;
+                                }
+                            }
+                            fprintf(stderr, "[moe gpu] GATE8a (q_proj@L0, n=5): max_abs_diff=%.9g over %d coords (bar: ==0.0)%s\n",
+                                    max_diff, n_coords, probe_failed ? " [PROBE FAILED]" : "");
+                        } else {
+                            fprintf(stderr, "[moe gpu] GATE8a SKIP: could not build independent qNg64(5) reference\n");
+                        }
+                    } else {
+                        fprintf(stderr, "[moe gpu] GATE8a FAIL: q_proj@L0 not promoted to n=5 (got %d)\n",
+                                g_moe_promoted_nq_gpu[MOE_ATTRIB_Q_PROJ][0]);
+                    }
+
+                    // Check B: n=6 expert_gate_proj -- confirms the promotion landed under the
+                    // production name resolve_ffn_role() looks up (real end-to-end FFN test is
+                    // GATE7's own job above; this just confirms THIS function's tracking agrees).
+                    fprintf(stderr, "[moe gpu] GATE8b: expert_gate_proj@L%d promoted_n=%d (expect 6)\n",
+                            gate8_test_layer, g_moe_promoted_nq_gpu[MOE_ATTRIB_EXPERT_GATE][gate8_test_layer]);
+
+                    // Check C: n=7 must have been skipped, not FATAL -- we are still running,
+                    // which already proves the process didn't exit(1); confirm the tracking
+                    // array agrees it was never marked promoted.
+                    fprintf(stderr, "[moe gpu] GATE8c: o_proj@L0 n=7 promoted_n=%d (expect 0 -- "
+                            "skip-not-FATAL path, no native MLX kernel for n=7)\n",
+                            g_moe_promoted_nq_gpu[MOE_ATTRIB_O_PROJ][0]);
                 }
             }
         }
@@ -11795,6 +11891,8 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
         n_bound++;
     }
     fprintf(stderr, "[moe gpu gqa cb online] bound %d/%d tensors to MLX\n", n_bound, g_moe_naf);
+    moe_promotion_nq_init_gpu();   // D-qNg64-gpu-1: GPU mirror of moe_promotion_nq_init(),
+                                    // same env var, read once at startup
 
     const char *env_slots     = getenv("QWEN_MOE_CB_SLOTS");
     const char *env_reqs      = getenv("QWEN_MOE_CB_REQS");
@@ -12486,6 +12584,8 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
         n_bound++;
     }
     fprintf(stderr, "[moe gpu cb online] bound %d/%d tensors to MLX\n", n_bound, g_moe_naf);
+    moe_promotion_nq_init_gpu();   // D-qNg64-gpu-1: GPU mirror of moe_promotion_nq_init(),
+                                    // same env var, read once at startup
 
     const char *env_slots     = getenv("QWEN_MOE_CB_SLOTS");
     const char *env_reqs      = getenv("QWEN_MOE_CB_REQS");
@@ -14308,6 +14408,18 @@ static const MoeStExpertRole MOE_ST_EXPERT_ROLES[] = {   // always 3, every rout
 //   A promotion line naming either FATALs with a clear message, not a silent skip.
 //   GPU: out of scope this round (no live GPU promotion path exists today -- see the plan's L3a
 //   point 8) -- this function only ever touches g_moe_lt_active (CPU serving).
+// D-qNg64-gpu-1: factored out of this function's own inline n-range check so a third call site
+// (the GPU mirror below) can't silently drift from it -- this project already has one real bug
+// on record for exactly this class of mistake (D-qNg64-10: two independent copies of a range
+// check, one left too permissive).
+static void moe_promotion_nq_validate_n(const char *context, const char *role_buf, int layer, int n) {
+    if (!(n == 2 || n == 3 || n == 5 || n == 6 || n == 7)) {
+        fprintf(stderr, "FATAL: %s: role=%s layer=%d n=%d not in {2,3,5,6,7} -- the only "
+                        "bit-widths the qNg64 bit-plane decoder actually supports (n=4/8 use a "
+                        "DIFFERENT format+registrar, not this path)\n", context, role_buf, layer, n);
+        exit(1);
+    }
+}
 static void moe_promotion_nq_init(void) {
     const char *path = getenv("QWEN_MOE_PROMOTION_FILE_NQ");
     if (!path || !path[0]) return;
@@ -14361,13 +14473,7 @@ static void moe_promotion_nq_init(void) {
         // automation needed. EXIT: if n=4/8/16/32 promotion via this path is ever wanted, dispatch
         // to the EXISTING correct registrars (q4g64/q8g64/f16/f32) instead of widening this check
         // -- do not just widen the range again.
-        if (!(n == 2 || n == 3 || n == 5 || n == 6 || n == 7)) {
-            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s layer=%d n=%d not in "
-                            "{2,3,5,6,7} -- the only bit-widths the qNg64 bit-plane decoder actually "
-                            "supports (n=4/8 use a DIFFERENT format+registrar, not this path)\n",
-                    role_buf, layer, n);
-            exit(1);
-        }
+        moe_promotion_nq_validate_n("QWEN_MOE_PROMOTION_FILE_NQ", role_buf, layer, n);
 
         const char *st_pattern = NULL;
         int is_expert = (role == MOE_ATTRIB_EXPERT_GATE || role == MOE_ATTRIB_EXPERT_UP || role == MOE_ATTRIB_EXPERT_DOWN);
@@ -14446,6 +14552,167 @@ static void moe_promotion_nq_init(void) {
     g_st_moe = saved_st_moe;
     fprintf(stderr, "[moe promotion nq] '%s': %d lines, %d promotions applied\n", path, n_lines, n_applied);
 }
+
+#ifdef QWEN_GPU_MLX
+// D-qNg64-gpu-1: GPU mirror of moe_promotion_nq_init() above. Same env var
+// (QWEN_MOE_PROMOTION_FILE_NQ), same 3-column file format, same validated n range, same
+// "read once at startup, no hot-reload" semantic -- quirky-stirring-trinket.md's B2 tradeoff
+// (an admission-time rebuild would stall a live dispatch queue) applies at least as strongly
+// here, and this file has no per-admission GPU rebind mechanism to hook into anyway.
+//   Unlike the CPU version, promoted tensors are bound under the PRODUCTION tensor's own name
+//   (base_ptr->name), not a unique "_L%d__nqN" test suffix: CPU consumes promotion via a
+//   pointer swap (g_moe_lt_active[layer].<role> repointed at the new struct, any name works),
+//   but GPU's mlx_gpu_bind_af() keys into a name -> tensor hash map (g_tensors/g_dtensors) that
+//   resolve_ffn_role()/lazy_matvec_e0() look up BY NAME per call -- so the promoted tensor must
+//   bind under the same name production used, exactly the technique run_moe_gpu_mode()'s GATE7
+//   already uses for its own bits=16 promotion test.
+//   n=7 has no native MLX kernel on this build (confirmed via MLX's own quantized.h
+//   static_assert) -- mlx_gpu_bind_af() cleanly returns 0 for it; treated as an expected
+//   platform limit (log + skip), never a FATAL.
+//   PREREQUISITE: like the CPU driver, needs g_moe_hi_st (the open bf16 checkpoint handle qNg64
+//   dequantizes from) -- but unlike the CPU driver, NEITHER GPU online-serving gate has any
+//   other code path that populates it, so this function opens it itself (idempotently), reusing
+//   the exact already-tested moe_neartie_correct_load_attn_hi(), guarded by the same two env
+//   vars the CPU path uses. Inherited cost, not introduced here: that function also eagerly
+//   registers the full bits=16 hi-mirror set as a side effect (hundreds of MB, unused by
+//   qNg64) -- the CPU L3a design already accepts this coupling; a narrower "just open the
+//   handle" helper is a possible future improvement, not built here.
+static void moe_promotion_nq_init_gpu(void) {
+    const char *path = getenv("QWEN_MOE_PROMOTION_FILE_NQ");
+    if (!path || !path[0]) return;
+
+    if (!g_moe_hi_st) {
+        const char *nt_on = getenv("QWEN_MOE_NEARTIE_CORRECT");
+        const char *nt_st = getenv("QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS");
+        if (!nt_on || !nt_on[0] || atoi(nt_on) == 0 || !nt_st || !nt_st[0]) {
+            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ requires a real safetensors "
+                            "checkpoint (QWEN_MOE_NEARTIE_CORRECT=1 + "
+                            "QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS=<path>) -- neither GPU online "
+                            "gate opens one on its own\n");
+            exit(1);
+        }
+        moe_neartie_correct_load_attn_hi(nt_st);   // also populates g_moe_hi_st as a side effect
+        fprintf(stderr, "[moe promotion nq gpu] opened '%s' for qNg64 GPU promotion source\n", nt_st);
+    }
+
+    SafetensorsMulti *saved_st_moe = g_st_moe;
+    g_st_moe = g_moe_hi_st;
+    FILE *f = fopen(path, "r");
+    if (!f) { fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: cannot open '%s'\n", path); exit(1); }
+    char role_buf[64]; int layer, n;
+    int n_lines = 0, n_applied = 0, n_skipped_n7 = 0, n_bind_failed = 0;
+    while (fscanf(f, "%63s %d %d", role_buf, &layer, &n) == 3) {
+        n_lines++;
+        int role_i = moe_attrib_role_from_name(role_buf);
+        if (role_i < 0) { fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: unknown role '%s'\n", role_buf); exit(1); }
+        MoeAttribRole role = (MoeAttribRole)role_i;
+        if (layer < 0 || layer >= MOE_NL) {
+            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s layer=%d out of [0,%d)\n", role_buf, layer, MOE_NL);
+            exit(1);
+        }
+        if (role == MOE_ATTRIB_EMBED_TOKENS || role == MOE_ATTRIB_LM_HEAD) {
+            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s not supported this round "
+                            "(embed_tokens/lm_head use a separate global-pointer mechanism, out of scope)\n", role_buf);
+            exit(1);
+        }
+        if (!moe_attrib_role_valid_at(role, layer)) {
+            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s not valid at layer=%d\n", role_buf, layer);
+            exit(1);
+        }
+        moe_promotion_nq_validate_n("QWEN_MOE_PROMOTION_FILE_NQ", role_buf, layer, n);
+
+        const char *st_pattern = NULL;
+        int is_expert = (role == MOE_ATTRIB_EXPERT_GATE || role == MOE_ATTRIB_EXPERT_UP || role == MOE_ATTRIB_EXPERT_DOWN);
+        if (role == MOE_ATTRIB_EXPERT_GATE) st_pattern = MOE_ST_EXPERT_ROLES[0].st_pattern;
+        else if (role == MOE_ATTRIB_EXPERT_UP) st_pattern = MOE_ST_EXPERT_ROLES[1].st_pattern;
+        else if (role == MOE_ATTRIB_EXPERT_DOWN) st_pattern = MOE_ST_EXPERT_ROLES[2].st_pattern;
+        else {
+            const MoeStRole *tabs[3]; size_t cnts[3]; int nt = 0;
+            if (MOE_ATTN_KIND == MOE_ATTN_MLA) { tabs[nt] = MOE_ST_ATTN_ROLES_MLA; cnts[nt] = sizeof(MOE_ST_ATTN_ROLES_MLA)/sizeof(MOE_ST_ATTN_ROLES_MLA[0]); nt++; }
+            else                               { tabs[nt] = MOE_ST_ATTN_ROLES_GQA; cnts[nt] = sizeof(MOE_ST_ATTN_ROLES_GQA)/sizeof(MOE_ST_ATTN_ROLES_GQA[0]); nt++; }
+            tabs[nt] = MOE_ST_DENSE_ROLES;  cnts[nt] = sizeof(MOE_ST_DENSE_ROLES)/sizeof(MOE_ST_DENSE_ROLES[0]);  nt++;
+            tabs[nt] = MOE_ST_SHARED_ROLES; cnts[nt] = sizeof(MOE_ST_SHARED_ROLES)/sizeof(MOE_ST_SHARED_ROLES[0]); nt++;
+            for (int ti = 0; ti < nt && !st_pattern; ti++)
+                for (size_t ri = 0; ri < cnts[ti]; ri++)
+                    if (tabs[ti][ri].is_af && tabs[ti][ri].role && !strcmp(tabs[ti][ri].role, role_buf)) { st_pattern = tabs[ti][ri].st_pattern; break; }
+        }
+        if (!st_pattern) {
+            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s has no safetensors pattern "
+                            "(not applicable to this architecture)\n", role_buf);
+            exit(1);
+        }
+
+        MoeAFTensor *base_ptr = NULL;
+        switch (role) {   // same role->field mapping moe_promotion_apply_one()/moe_lt_sel_init()/
+                          // moe_promotion_nq_init() above each write inline -- follows that
+                          // established precedent (this codebase doesn't unify this pattern)
+            case MOE_ATTRIB_Q_PROJ:      base_ptr = g_moe_lt[layer].q_proj;      break;
+            case MOE_ATTRIB_KV_A_PROJ:   base_ptr = g_moe_lt[layer].kv_a_proj;   break;
+            case MOE_ATTRIB_KV_B_PROJ:   base_ptr = g_moe_lt[layer].kv_b_proj;   break;
+            case MOE_ATTRIB_O_PROJ:      base_ptr = g_moe_lt[layer].o_proj;      break;
+            case MOE_ATTRIB_K_PROJ:      base_ptr = g_moe_lt[layer].k_proj;      break;
+            case MOE_ATTRIB_V_PROJ:      base_ptr = g_moe_lt[layer].v_proj;      break;
+            case MOE_ATTRIB_DENSE_GATE:  base_ptr = g_moe_lt[layer].dense_gate;  break;
+            case MOE_ATTRIB_DENSE_UP:    base_ptr = g_moe_lt[layer].dense_up;    break;
+            case MOE_ATTRIB_DENSE_DOWN:  base_ptr = g_moe_lt[layer].dense_down;  break;
+            case MOE_ATTRIB_SHARED_GATE: base_ptr = g_moe_lt[layer].shared_gate; break;
+            case MOE_ATTRIB_SHARED_UP:   base_ptr = g_moe_lt[layer].shared_up;   break;
+            case MOE_ATTRIB_SHARED_DOWN: base_ptr = g_moe_lt[layer].shared_down; break;
+            case MOE_ATTRIB_EXPERT_GATE: base_ptr = g_moe_lt[layer].switch_gate; break;
+            case MOE_ATTRIB_EXPERT_UP:   base_ptr = g_moe_lt[layer].switch_up;   break;
+            case MOE_ATTRIB_EXPERT_DOWN: base_ptr = g_moe_lt[layer].switch_down; break;
+            default: continue;   // unreachable: embed/lm_head already FATAL'd above
+        }
+        if (!base_ptr) {
+            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s layer=%d has no production tensor\n", role_buf, layer);
+            exit(1);
+        }
+        int base_bits = base_ptr->bits;
+        if (n < base_bits) {
+            fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d REFUSED: n=%d < base_bits=%d\n", role_buf, layer, n, base_bits);
+            continue;
+        }
+
+        char st_name[192];
+        MoeAFTensor *qnt;
+        if (is_expert) {
+            qnt = st_register_moe_experts_qNg64_as(st_pattern, layer, MOE_N_EXPERTS, n, base_ptr->name);
+        } else {
+            snprintf(st_name, sizeof st_name, st_pattern, layer);
+            qnt = st_register_moe_dense_af_qNg64_as(st_name, n, base_ptr->name);
+        }
+        // qnt->base is always non-NULL for a freshly-registered tensor (both registrars malloc
+        // it unconditionally) -- the ": af_blob" fallback every other GPU bind call site in this
+        // file carries never actually applies here, so this function needs no af_blob parameter.
+        int ok = mlx_gpu_bind_af(qnt->base, 0, qnt->name, qnt->E, qnt->out, qnt->in, qnt->ng,
+                                  qnt->packed_off, qnt->scale_off, qnt->bias_off, qnt->bits);
+        if (!ok) {
+            if (n == 7) {
+                fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d SKIP: n=7 has no native "
+                                "MLX kernel (expected platform limit) -- stays bits=%d on GPU\n", role_buf, layer, base_bits);
+                n_skipped_n7++;
+            } else {
+                fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d SKIP: mlx_gpu_bind_af "
+                                "failed for qNg64(n=%d) (unexpected)\n", role_buf, layer, n);
+                n_bind_failed++;
+            }
+            continue;
+        }
+        if (g_moe_promoted_nq_gpu[role][layer] != 0 && g_moe_promoted_nq_gpu[role][layer] != n)
+            fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d: duplicate line, n=%d overrides earlier n=%d (last line wins)\n",
+                    role_buf, layer, n, g_moe_promoted_nq_gpu[role][layer]);
+        g_moe_promoted_nq_gpu[role][layer] = n;
+        fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d PROMOTED to qNg64(n=%d) on GPU "
+                        "-- permanent, no restart within this process (base_bits was %d)\n", role_buf, layer, n, base_bits);
+        n_applied++;
+    }
+    fclose(f);
+    g_st_moe = saved_st_moe;
+    fprintf(stderr, "[moe promotion nq gpu] '%s': %d lines, %d promoted, %d skipped (n=7 "
+                    "platform limit), %d bind failures, g_moe_naf now %d\n",
+            path, n_lines, n_applied, n_skipped_n7, n_bind_failed, g_moe_naf);
+}
+#endif
 
 // D-roadmap-3 correction path (extended D-roadmap-4, 2026-09-02): registers bits=16 tensors for
 // ALL layers, sourced from a genuine bf16/original safetensors checkpoint (QWEN_MOE_NEARTIE_
