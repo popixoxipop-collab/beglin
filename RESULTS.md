@@ -12678,3 +12678,77 @@ above.
 
 No commits pushed to remote. Local commit only, per this repo's standing convention throughout
 the D-d5/D-gpu/D-qNg64 series.
+
+## D-qNg64-gpu-2 -- first real DeepSeek GPU qNg64 test: mechanism confirmed, and a genuinely
+## new axis found -- the quantization ALGORITHM, not just the bit-width, affects monotonicity
+
+**WHY**: D-qNg64-gpu-1 (above) verified the GPU promotion pipeline on OLMoE only -- DeepSeek's
+own qNg64 GPU promotion was inferred structurally-identical, not measured, and (found this
+round) not even reachable: `moe_promotion_nq_init_gpu()` was wired into the two GQA-only
+online-serving gates, but DeepSeek-V2-Lite is MLA, and neither MLA gate had the call at all.
+ROI-G Phase 2's whole monotonicity investigation is DeepSeek-only and CPU-only (simulated
+n-bit via `quant_sim_n.py`'s RTN dequant/requant) -- this closes that gap with the first real
+GPU-native test on the actual model the CPU findings are about.
+
+**Code**: one line, `moe_promotion_nq_init_gpu()` added to `run_moe_gpu_generate_gate()`
+(`QWEN_MOE_GPU_GENERATE=1`, the V5k real MLA generation gate, already proven for real DeepSeek
+generation earlier this session's D-gpu-4/5 work) -- same call, same env var
+(`QWEN_MOE_PROMOTION_FILE_NQ`), same pattern D-qNg64-gpu-1 already established for the GQA
+gates. `#ifdef QWEN_GPU_MLX`-guarded, zero effect on CPU builds (confirmed:
+`clang -fsyntax-only -w qwen_infer.c`, no `-DQWEN_GPU_MLX`, zero new diagnostics vs before this
+change).
+
+**Test design**: reused `p155` (WikiText-103, `pos=12`, `orig=317 corrected=438`,
+`margin_before=0.048599`) -- an already fully-attributed, already-swept-on-CPU real event from
+this session's own redone flip-hunt round, no new discovery cost. `QWEN_MOE_PROMPT=<p155.i32>`
++ `QWEN_MOE_GEN_N=15` on the rebuilt `qwen_infer_gpu` (bob, isolated
+`/Users/bob/xox_qng64_gpu_verify` dir, reused from D-qNg64-gpu-1) reproduces the full generated
+sequence; the divergence position (token index 4 of the 15 generated, whatever CPU's internal
+`pos=12` label maps to -- the exact off-by-one wasn't chased down, matching by VALUE instead of
+by label number was sufficient and unambiguous) is where `orig` (317, uncorrected) vs
+`corrected` (438) shows up. Confirmed independently first: GPU baseline (no promotion) produces
+`317` there byte-identical to CPU's own uncorrected value; CPU promoted to n=16 (near-lossless)
+produces `438` there -- establishes the comparison is measuring the same thing on both engines
+before testing GPU's own promotion.
+
+**Result 1 -- a CPU-clean target, `kv_a_proj_with_mqa`/L0 (knee=4: fail@2,3, pass@5,6+)**:
+GPU native qNg64 promotion tested at n=2 and n=5 (`QWEN_MOE_PROMOTION_FILE_NQ='kv_a_proj_with_
+mqa 0 <n>'`, `QWEN_MOE_NEARTIE_CORRECT=1` + `_CORRECT_SAFETENSORS=<the same D50 bf16 index
+this whole session's CPU work used>`) -- **n=2 -> 317 (fail), n=5 -> 438 (pass), exact match to
+CPU at both points.**
+
+**Result 2 -- a CPU-violated target, `kv_a_proj_with_mqa`/L3 (CPU: pass@2, fail@3, pass@5,6)**:
+all 4 of GPU's native n-values fall inside this target's already-measured violation, the most
+informative case available. GPU: **n=2->317(fail), n=3->317(fail), n=5->438(pass),
+n=6->317(fail)** -- matches CPU only at n=3(fail) and n=5(pass); **disagrees at n=2 (CPU pass,
+GPU fail) and n=6 (CPU pass, GPU fail)**.
+
+**The real finding, stated plainly**: for a target far from any borderline decision (L0), the
+exact quantization implementation doesn't matter -- CPU's simulated RTN and GPU's native
+bit-plane qNg64 agree. For a target already known to sit on a genuine violation (L3), they
+diverge -- not just in HOW it violates, but at which specific n. This adds a fourth axis to
+this investigation's running "no single-factor predictor" finding (already established across
+target identity, event identity, and corpus): **the quantization algorithm itself (RTN
+simulation vs. native bit-plane repacking) is a real, measured factor for borderline cases,
+not just an implementation detail assumed to be interchangeable.** Both are legitimate n-bit
+representations of the same weight (same nominal bit-width, same group size), yet produce
+different rounding on the same tensor, and that rounding difference is enough to flip a
+razor-thin decision. This is a small sample (1 clean + 1 violated target, 6 total GPU
+engine-calls) -- stated as a real, directly-measured signal at that sample size, same
+data-first-numerics discipline as every other finding this session, not generalized beyond it.
+
+**Scope, stated plainly**: this is DeepSeek's `self_attn.kv_a_proj_with_mqa` role only
+(2 layers), one real event, GPU's 4 supported n-values (no n=4, no n=7-16 -- GPU coverage is
+strictly coarser than CPU's 15-value sweep). Not a full re-run of ROI-G Phase 2's CPU dataset
+on GPU -- that would be real, larger follow-on work (this session did not attempt it, per the
+"엔진간 비교" coordination -- their own qNg64 CPU real-kernel resweep is the more relevant next
+real-data effort, not a redundant GPU re-sweep of this investigation's entire CPU history).
+
+**Cross-session note**: run entirely with bob's other GPU/qNg64 work paused by mutual
+coordination (verified `ps aux`/`uptime` clean before and after; user explicitly authorized a
+cautious `BOB_LOAD_OK=1` bypass given bob's live-desktop memory pressure at the time, ~6GB
+free vs. a conservative ~11GB estimate -- actual peak usage was much lower, consistent with
+D-qNg64-gpu-1's own D1 finding that this workload's real footprint runs well under the
+conservative estimate). `qwen_infer.c`'s `moe_promotion_nq_init_gpu()` MLA call site staged
+and committed as an isolated patch, same technique as the earlier `D-p95-1` commit, to avoid
+touching any other concurrent session's in-progress working-tree state.

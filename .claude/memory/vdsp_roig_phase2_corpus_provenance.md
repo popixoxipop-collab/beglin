@@ -284,9 +284,26 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
 - RESULTS.md "ROI-G Phase 2: p95's hang, definitively resolved..." 섹션. `qwen_infer.c`
   변경사항 커밋 완료(instrumentation, 기존 동작 무변화).
 
-## 남은 것 (2026-09-09 기준, (a)~(f)+p95 완전해결 후)
-- ROI-G Phase 2 전체 계획 완전 종결. p95 미스터리 완전 해결(원인: 정상 실행+0 hit, 버그 아님).
-  Supabase 1065행(신뢰 가능).
+## GPU에서 실제 DeepSeek monotonicity 검증 (2026-09-09) — 메커니즘 확인 + 새 축 발견
+- 다른 세션(qNg64 GPU Phase 1, session_01WiJ5s4mjwhFyhTMNmyvgL8)이 GQA 게이트 2개에만
+  `moe_promotion_nq_init_gpu()`를 연결해뒀는데, DeepSeek는 MLA라 아예 테스트 불가능한 상태였음
+  발견 → `run_moe_gpu_generate_gate()`(V5k, 이미 이 세션 D-gpu-4/5에서 실제 DeepSeek 생성
+  검증된 게이트)에 같은 호출 한 줄 추가. `D-p95-1`과 같은 방식으로 isolated patch 커밋(다른
+  세션 working tree 안 건드림).
+- p155(이미 CPU에서 완전 특성화된 real event) 재사용, GPU에서 실제 네이티브 qNg64 승격
+  테스트: **kv_a_proj_with_mqa/L0(CPU clean, knee=4)는 GPU n=2/5에서 CPU와 완전 일치**(fail/
+  pass). **kv_a_proj_with_mqa/L3(CPU 위반: pass,fail,pass,pass @ n=2,3,5,6)는 GPU에서
+  fail,fail,pass,fail — n=2와 n=6에서 CPU와 불일치**.
+- **새로운 발견**: clean 타겟은 CPU 시뮬레이션(RTN)과 GPU 네이티브(bit-plane qNg64)가
+  일치하지만, 위반(borderline) 타겟은 **양자화 알고리즘 자체가 다르면 다른 n에서 위반**
+  — 텐서/이벤트/코퍼스에 이은 4번째 "단일 요인 예측 불가" 축. 표본 작음(1 clean + 1 violated,
+  총 6회 실측)이라 이 크기에서의 실측 신호로만 기록.
+- BOB_LOAD_OK=1 바이패스는 사용자가 직접 승인(bob 데스크톱 사용 중 메모리 압박 상황 설명 후).
+- RESULTS.md "D-qNg64-gpu-2" 섹션.
+
+## 남은 것 (2026-09-09 기준, GPU 검증 포함 전부 완료 후)
+- ROI-G Phase 2 전체 계획 완전 종결. p95 미스터리 완전 해결. GPU에서도 첫 실측 완료(clean
+  일치, violated 불일치 — 4번째 예측불가 축 확인). Supabase 1065행(CPU, 신뢰 가능) + GPU
+  실측 6건(RESULTS.md에만 기록, Supabase 미push).
 - 남은 것: "Phase 3"는 사용자가 언급했으나 이 메모리 파일/계획 문서 어디에도 정의 안 돼있음
-  — 사용자에게 범위 확인 필요. GPU 경로에서 같은 monotonicity 패턴 검증도 미착수(별도 세션이
-  GPU/qNg64 작업 진행 중이니 중복 작업 전 조율 필요 — 리소스 경쟁 재발 방지).
+  — 사용자에게 범위 확인 필요. GPU monotonicity 표본 확장(현재 2타겟뿐)도 원하면 가능.

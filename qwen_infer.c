@@ -9490,6 +9490,15 @@ static int run_moe_gpu_generate_gate(int argc, char **argv) {
         n_bound++;
     }
     fprintf(stderr, "[moe gpu generate] bound %d/%d tensors to MLX\n", n_bound, g_moe_naf);
+    // D-qNg64-gpu-2: MLA counterpart to D-qNg64-gpu-1's GQA-gate wiring -- same call, same
+    // env var (QWEN_MOE_PROMOTION_FILE_NQ), same "read once at startup" semantic. D-qNg64-gpu-1
+    // only wired the two GQA online-serving gates (run_moe_gpu_gqa_cbatch_online_gate,
+    // run_moe_gpu_cbatch_online_gate); DeepSeek-V2-Lite is MLA, so qNg64 GPU promotion could
+    // not be exercised on it at all until this call exists somewhere in an MLA-capable gate.
+    // This is the real end-to-end MLA generation gate (V5k, already proven for real DeepSeek
+    // generation this session's own D-gpu-4/5 work), so it's the natural place for a real
+    // DeepSeek qNg64-promoted request to actually run.
+    moe_promotion_nq_init_gpu();
 
     if (!mlx_gpu_mla_config(MOE_N_HEADS, MOE_Q_HEAD_DIM, MOE_QK_NOPE_HD, MOE_QK_ROPE_HD,
                             MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
