@@ -116,20 +116,39 @@ process's life. The first request through a freshly-started process pays
 that setup cost and measures ~1.34 tok/s; a second request whose routing
 overlaps already-warmed experts (measured directly, per-step timing
 instrumentation, not estimated) measures **~5.65 tok/s** — a real 4.2×
-difference between "cold" and "warm," not noise. Reporting only the cold
-number would overstate this engine's actual weakness by ~4x; reporting
-only the warm number the way a real server actually runs is the honest
-comparison. Warm CPU/SME2 is still ~4.0x slower than llama.cpp's CPU path
-and ~9.4x slower than either GPU path — a real, still-substantial gap,
-not closed by this correction, just measured honestly instead of
-overstated. This is this engine's own known limitation, not a new one —
-it's the exact gap that motivated building the MLX GPU backend in the
-first place, which is where the competitive GPU number above comes from.
-A real B=64 batched-throughput re-measurement (this engine's actual
-target serving scale) is still open (memory-constrained on the only
-SME2-capable test machine available this round). Full methodology, exact
-commands, and the honest cost/scope notes: [`RESULTS.md`](RESULTS.md)
-("D-bench-1", "D-bench-2").
+difference between "cold" and "warm," not noise. This is this engine's
+own known limitation, not a new one — it's the exact gap that motivated
+building the MLX GPU backend in the first place, which is where the
+competitive GPU number above comes from.
+
+**Does batching close the gap? Swept it — no.**
+
+| Batch size | This engine, CPU/SME2 (warm) | llama.cpp, CPU | ratio |
+|---|---|---|---|
+| 1 | 5.80 | 16.88 | 2.91x |
+| 2 | 7.17 | 20.74 | 2.89x |
+| 4 | 8.84 | 32.68 | 3.70x |
+| 8 | 10.20 | 36.68 | 3.60x |
+| 16 | 11.10 | 46.69 | 4.21x |
+
+Both engines' CPU throughput grows with batch size — a generic
+memory-bandwidth-amortization effect, not unique to either implementation
+— but the *ratio* between them holds roughly flat around 3-4x and if
+anything drifts slightly wider, not narrower, as batch size grows. No
+crossover point was found in this range; the honest conclusion is that
+this sweep found none, not that none exists at some larger, unmeasured
+batch size. (B=32 was attempted but came back inconclusive for a real,
+specific reason — the warm/cold measurement technique itself breaks down
+at that scale — see `RESULTS.md` "D-bench-3" for exactly why, rather than
+reporting a number that would have been an artifact.)
+
+Warm CPU/SME2 is still ~3-4x slower than llama.cpp's CPU path and ~9.4x
+slower than either GPU path — a real, substantial gap that batching does
+not close, at least not by B=16. A real B=64 re-measurement (this
+engine's actual target serving scale) remains open, memory-constrained on
+the only SME2-capable test machine available this round. Full
+methodology, exact commands, and the honest cost/scope notes:
+[`RESULTS.md`](RESULTS.md) ("D-bench-1", "D-bench-2", "D-bench-3").
 
 ## Build
 

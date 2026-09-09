@@ -12941,3 +12941,71 @@ than cold) is solid even at this scale.
 future speed claim on this decode path should be checked against it before being reported, exactly
 the mistake this round corrects. A production B=64 steady-state number (this engine's actual
 target serving scale) remains open, same memory constraint as D-bench-1's own EXIT note.
+
+## D-bench-3 -- batch-size sweep: is there a crossover point where CPU/SME2 catches llama.cpp CPU?
+
+**WHY**: user's direct follow-up to D-bench-2 -- if warming the SME2 cache fixes most of the gap
+at B=1, a real honest comparison should sweep B and show the curve, since a crossover point (where
+batching-amortized SME2 throughput overtakes llama.cpp's own CPU path) might exist and a single-B
+comparison can't show it either way.
+
+**Method**: vdsp/beglin -- same warm-state technique as D-bench-2, generalized to B slots: for each
+B in {1,2,4,8,16,32}, a manifest of 2B identical short prompts, `QWEN_MOE_CB_SLOTS=B
+QWEN_MOE_CB_REQS=2B`. Round 1 (the first B requests) fills all B slots and warms whatever experts
+that routing touches; round 2 (the next B requests, admitted only once round-1 slots free up) is
+measured, using `QWEN_MOE_CB_STEP_TIMING=1` to identify the clean, fully-`ndec=B` steady window and
+sum `B*(window steps) / (window wall time)`. llama.cpp -- `llama-batched-bench` (the correct tool
+for this, not `llama-bench`, which only measures single-sequence pp/tg) with matching `-npp 9 -ntg
+20 -npl 1,2,4,8,16,32`, same model/machine, `-ngl 0` (CPU). A parallel Metal GPU sweep was attempted
+(`-ngl 99`) but failed with `Insufficient Memory (kIOGPUCommandBufferCallbackErrorOutOfMemory)` at
+the very first data point even after cutting context to 1280 -- bob's shared unified-memory pool
+didn't have headroom for it this round after the CPU sweep's own cache pressure; not obtained,
+honestly reported as not obtained rather than estimated.
+
+**Results** (tok/s, generation phase):
+
+| B | vdsp/beglin, CPU/SME2 (warm) | llama.cpp, CPU (8 threads) | ratio (llama.cpp / vdsp) |
+|---|---|---|---|
+| 1 | 5.80 | 16.88 | 2.91x |
+| 2 | 7.17 | 20.74 | 2.89x |
+| 4 | 8.84 | 32.68 | 3.70x |
+| 8 | 10.20 | 36.68 | 3.60x |
+| 16 | 11.10 | 46.69 | 4.21x |
+| 32 | inconclusive (see below) | 44.93 | -- |
+
+**No crossover found in the tested range.** Both engines' CPU throughput grows with batch size (a
+generic memory-bandwidth-amortization effect that applies to any inference engine on shared
+hardware, not unique to either implementation), but the RATIO between them does not shrink toward
+1.0x as B grows -- it holds roughly flat around 3-4x and drifts slightly wider (2.91x at B=1 to
+4.21x at B=16), the opposite of what a "batching eventually favors the SME2 path" hypothesis would
+predict. This is a real, measured answer, not the flattering one -- the honest conclusion is that
+this sweep found no evidence of a crossover point up to B=16, not that one doesn't exist at some
+larger, unmeasured B.
+
+**B=32 (vdsp) is reported as inconclusive, not as a number, and here's exactly why**: the
+warm/cold-round methodology that gave a clean, unambiguous plateau at B<=16 breaks down at B=32
+because request ADMISSION itself is spread across ~18 steps at this scale (the scheduler admits a
+bounded prefill budget per step, a real, structural property -- confirmed directly in the log: round
+1's 32 requests don't finish filling all slots until step ~17, and round 2 begins overlapping round
+1's tail before round 1 is done). The result is that no step range in the log is unambiguously
+"100% round-2, fully warm" the way steps 21-39 clearly were at B=1. A naive read of the steps that
+LOOK like a plateau (22-37, `ndec` 29-30, tight `delta_ms` clustering) computes to ~7.96 tok/s --
+LOWER than B=16's 11.10 tok/s, which would be a real anomaly if trusted, but is much more likely an
+artifact of measuring a mixed cold/warm population rather than a genuine throughput regression at
+larger B. Reporting that number as "B=32 vdsp throughput" would be exactly the same mistake
+D-bench-2 exists to correct (cold-start cost bleeding into a steady-state claim) -- so it is
+reported as inconclusive instead of guessed at.
+
+**Safety**: swap stayed flat throughout the entire sweep (1520-1900M range against a 2048-3072M
+pool that macOS grew dynamically), even at B=32's peak RSS (~11.1GB) -- no thrashing at any sweep
+point, actively monitored the whole time (same discipline as D-bench-1/2).
+
+**COST**: no GPU-path sweep (memory, see above). B=32's real number is unmeasured, not just this
+vdsp figure -- a genuinely clean B=32+ steady-state read needs either a round 3 (so round 2's own
+admission has time to fully settle before being measured) or a much longer per-request generation
+window so the admission-overlap period is a smaller fraction of the measured span. Both are real,
+concrete, unattempted follow-ups, not vague future work.
+
+**EXIT**: re-run B=32 (and ideally the actual target B=64) with round 3+ or a longer generation
+window once a machine with more comfortable memory headroom is available, so the warm/cold split
+stays unambiguous at that scale too.
