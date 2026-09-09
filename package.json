@@ -1,6 +1,6 @@
 {
   "name": "beglin",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Hand-written C CPU LLM inference engine for Apple Silicon (NEON/SME2 int4/int8 GEMV, MoE batched serving). AGPL-3.0-or-later, commercial license available.",
   "main": "lib/index.js",
   "bin": {
