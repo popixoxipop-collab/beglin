@@ -13066,3 +13066,42 @@ axis specifically, the lower-risk of the two gaps the analysis identified.
 struct+dequant from the same pinned ggml commit, real-oracle-verify via `llama-quantize` +
 `gguf-py`'s `dequantize()`) -- IQ-series will need its own codebook-lookup verification step
 beyond what this round's approach covers, since those formats aren't simple affine scale+min.
+
+## D-metal-1 -- qNg64 GPU custom Metal kernel, Phase 1: standalone probe (2026-09-10)
+
+**WHY**: a prior design pass (this session, agent-researched) identified `mx.fast.metal_kernel()`
+as the real path to native-compressed qNg64 decode on GPU for n=7/9-15 (MLX's own native kernels
+are hard-walled to bits in {2,3,4,5,6,8} -- confirmed via that kernel's own `static_assert`, not
+assumed). That design's own recommended first step, deliberately the cheapest and highest-
+information check available: prove a real Metal kernel can even compile and correctly bit-unpack
+qNg64's plane-major layout, entirely standalone, before touching any C++ integration or the
+production `mlx_moe.cpp` GPU dispatch path.
+
+**Method**: real qNg64-encoded test data generated via the actual, already-verified C encoder
+(`gguf_quantize_qNg64()`, D-qNg64-18) at n=7 and n=13 (64 synthetic elements each, Gaussian with
+injected outliers to stress the clamp path -- not hand-crafted bit patterns). A standalone MSL
+kernel (via `mx.fast.metal_kernel`, `n` as a compile-time template parameter per the design's own
+recommendation) does the exact bit-plane unpack from that design doc's reference algorithm: per
+thread `p` (0-63), read bit `p&7` of byte `p>>3` from each of the `n` planes, assemble the biased
+code, subtract the bias, multiply by scale.
+
+**Result**: `max_abs_diff=0.0` -- **exact bit-for-bit match** against a real CPU-side decode of
+the identical bytes, at both n=7 and n=13 (confirms the template mechanism genuinely generalizes
+across bit-widths, not a lucky match at one n). The kernel compiled and ran on real Metal hardware
+on the first working attempt (one earlier iteration compared against the ORIGINAL pre-quantization
+floats instead of a real decode of the same encoded bytes -- that comparison showed a ~0.08 abs
+diff that looked like a possible bug but was actually just real n=7 quantization error, not a
+kernel defect; re-comparing against an actual CPU decode of the same bytes resolved this and is
+the correct methodology going forward for any further kernel work in this line).
+
+**COST**: this is a decode-only, single-group (64 elements), GEMV-adjacent probe -- it proves the
+bit-unpack algorithm and the MLX custom-kernel toolchain both work, not yet a real GEMV/GEMM
+integrated into the production dispatch path. No C++ integration attempted yet. No performance
+measurement yet (correctness-first, matching this project's own established discipline -- a
+fast-but-wrong kernel is worse than a slow, honestly-reported gap).
+
+**EXIT**: next real step is the actual GEMV kernel (SIMD-reduced dot product against an activation
+vector, per the design doc's Phase 2) and the `mlx_moe.cpp` C++ integration points (bind gate,
+`ffn_gather`, `lazy_matvec_e0`, etc.) identified by the earlier design pass -- meaningfully larger
+in scope (touches the real GPU serving path) and was intentionally paused here for a checkpoint
+before proceeding, rather than continuing straight through.
