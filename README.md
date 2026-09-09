@@ -412,10 +412,32 @@ just an offline reconstruction-error number.
 
 ## Scope, honestly
 
-This is **not** a general-purpose loader like llama.cpp yet — it's
-currently validated for a small set of specific models (Qwen2.5-1.5B,
-Llama-3.1-8B, one MoE model), with a custom weight format, not GGUF. See
-[`ROADMAP.md`](ROADMAP.md) for the plan to change that.
+**Real GGUF loading exists and works end-to-end** (`QWEN_GGUF=<path>`),
+token-exact-verified against upstream llama.cpp/MLX on real multi-GB
+checkpoints — but it is **not yet a general-purpose loader like
+llama.cpp**, in two specific, honest ways:
+
+- **Architecture coverage is an allowlist, not open discovery.**
+  `qwen2` and `llama` (dense) plus `qwen3moe` (MoE) are recognized;
+  anything else FATALs rather than guessing. This project's own two
+  flagship MoE architectures (DeepSeek-V2-Lite/MLA, OLMoE) are validated
+  through the separate safetensors loader (`QWEN_MOE_SAFETENSORS`), not
+  GGUF — "loads a beglin-supported checkpoint" is currently broader than
+  "loads an arbitrary GGUF file." Gemma, Phi-3, and the Mamba/Jamba/RWKV
+  family are deliberately out of scope so far (each needs real numeric
+  work this project hasn't done yet — softcapping, LongRoPE, or no
+  attention path at all).
+- **Quantization coverage is real but partial**: F32/F16/BF16, Q4_0/
+  Q5_0/Q8_0, and Q3_K/Q4_K/Q5_K/Q6_K dequantize correctly (Q3_K/Q5_K
+  added this round — see `RESULTS.md`'s `D-gen-9`). Q2_K and the
+  IQ-series (lattice/codebook quantization, not simple affine
+  scale+min) are not yet supported and FATAL on load.
+
+One more real gap, not a quantization or architecture one: there is no
+real tokenizer in this engine. `QWEN_GGUF`/`QWEN_MOE_SAFETENSORS` load
+pre-tokenized raw int32 files only — no BPE, no `tokenizer.ggml.*`
+metadata consumption. See [`ROADMAP.md`](ROADMAP.md) and
+`PLAN_general_purpose_loader.md` for what's planned next on each axis.
 
 ## Repository contents
 

@@ -13009,3 +13009,60 @@ concrete, unattempted follow-ups, not vague future work.
 **EXIT**: re-run B=32 (and ideally the actual target B=64) with round 3+ or a longer generation
 window once a machine with more comfortable memory headroom is available, so the warm/cold split
 stays unambiguous at that scale too.
+
+## D-gen-9 -- GGUF Q3_K/Q5_K dequant support (2026-09-10)
+
+**WHY**: a fresh gap-analysis pass against `PLAN_general_purpose_loader.md` and the real code
+(not the plan's own aspirational framing) found `gguf_quants.h`'s own live comment names this
+exact gap explicitly: "IQ*/Q2_K/Q3_K/Q5_K/Q2_0/etc. are parsed by `gguf_load.c`'s container
+reader but not yet dequantizable." Q3_K_M/Q5_K_M are extremely common community GGUF
+quantizations (alongside Q4_K_M, which is all this project's own benchmark work has used so
+far) -- any such file previously hit `gguf_dequant_row()`'s FATAL on load, closing off a real
+fraction of real-world GGUF files from `QWEN_GGUF=<path>` for no algorithmic reason (the
+GGUF container parser and metadata-driven architecture detection already handle arbitrary
+tensor types fine; only the dequant kernel itself was missing).
+
+**Mechanism**: `GgmlBlockQ3_K`/`GgmlBlockQ5_K` struct layouts and `dequant_row_q3_k()`/
+`dequant_row_q5_k()` ported from the SAME vendored ggml commit this file's header already cites
+for Q4_K/Q6_K (`d83f72d463287ab9c50b4bc18ee332104a963889`) -- confirmed identical by checking
+`git log -1` on bob's `~/llamacpp_kleidi_build` checkout before porting, not assumed from an
+earlier note. Read directly from `ggml-common.h`/`ggml-quants.c` source, not from memory --
+struct field order and the exact bit-unpack algorithm (Q3_K's 2-bit low + 1-bit-via-hmask high
+scheme with its 4-group kmask unpacking of packed 6-bit scales; Q5_K's 4-bit low + 1-bit-via-qh
+high scheme reusing `get_scale_min_k4()`, already present in this file for Q4_K) are a direct,
+unmodified port. Registered in both `gguf_dequant_supported()` and `gguf_dequant_row()`'s
+dispatch -- `GGML_TYPE_Q3_K`/`GGML_TYPE_Q5_K` enum values already existed in `gguf_load.h`
+(container parser already handled these types structurally; only decode was missing).
+
+**Verification** (real oracle test, not synthetic hand-computed expectations):
+1. Wrote a minimal synthetic F32 GGUF (`gguf.GGUFWriter`, 8 super-blocks of 256 elements,
+   Gaussian data with injected outliers to stress the clamp path) -- avoids needing a multi-GB
+   real model download just to exercise two dequant kernels.
+2. Quantized it to real `Q3_K_S`/`Q5_K_S` via `llama-quantize` (the actual upstream encoder --
+   `gguf-py` itself only implements K-quant *decode*, confirmed by a real `NotImplementedError`
+   when `gguf.quants.quantize()` was tried first) -- these are genuine upstream-encoder-produced
+   bytes, not hand-crafted test vectors.
+3. Decoded the identical raw bytes two ways: this project's new C code (via the public
+   `gguf_dequant_row()` dispatch) and `gguf-py`'s own `dequantize()` (the reference
+   implementation already trusted for every other type in this file).
+4. **Result: `max_abs_diff=0` across all 2048 test elements for both Q3_K and Q5_K** -- exact
+   bit-for-bit match, not just within tolerance, matching this project's own established bar for
+   this class of port (same as Q4_0/Q8_0/Q5_0/Q4_K/Q6_K's own oracle checks).
+5. Full-file regression sweep (`tools/gguf_dequant_checksums.c` vs
+   `tools/gguf_dequant_checksums_oracle.py`, both already-established tools, unmodified) run
+   against the real DeepSeek-V2-Lite Q4_K_M GGUF to confirm the purely-additive change (new
+   structs/functions inserted before existing ones, existing function bodies untouched) didn't
+   regress F32/Q4_K/Q6_K/Q8_0/Q5_0 -- see this session's own history for the completion status if
+   that run was still in flight when this section was written.
+
+**COST**: only Q3_K/Q5_K added this round -- Q2_K and the IQ-series (IQ1_*/IQ2_*/IQ3_*/IQ4_*)
+remain unsupported, same gap-analysis finding, deliberately out of scope this round (Q2_K uses a
+genuinely different sub-4-bit non-K-quant-family scheme; the IQ series uses codebook/lattice
+quantization, a much larger port). The architecture-allowlist axis of "general-purpose" (only
+`qwen2`/`llama`/`qwen3moe` recognized) is untouched -- this round closes the quantization-type
+axis specifically, the lower-risk of the two gaps the analysis identified.
+
+**EXIT**: Q2_K and IQ-series support, if needed, follow the same pattern (vendor the exact
+struct+dequant from the same pinned ggml commit, real-oracle-verify via `llama-quantize` +
+`gguf-py`'s `dequantize()`) -- IQ-series will need its own codebook-lookup verification step
+beyond what this round's approach covers, since those formats aren't simple affine scale+min.
