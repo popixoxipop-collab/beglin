@@ -12576,3 +12576,105 @@ retroactively proven, only judged consistent with everything else now known.
 `moe_neartie_attribute()`'s combo loop, default off, zero behavior change for every existing
 sweep script. Committed to the repo. `gguf_transcode.c`/`.h` sync on bob was a local file-copy
 fix on that machine, not a repo change -- nothing to commit for that half.
+
+
+## D-qNg64-gpu-1 -- GPU mirror of qNg64 promotion, real end-to-end verified on OLMoE (2026-09-09)
+
+**WHY**: the GPU-aware precision-control plan's Phase 1 was originally scoped around the older
+bits=16-only `QWEN_MOE_PROMOTION_FILE`/`moe_promotion_maybe_apply()` mechanism. Redesigned around
+qNg64 (`moe_promotion_nq_init()`, arbitrary n in {2,3,5,6,7}) per user request, after confirming
+(two Explore agents + one Plan agent, all re-verifying live code, not trusting prior-session
+summaries) that qNg64's own code already self-documents the gap: `moe_promotion_nq_init()`'s
+header comment states plainly "GPU: out of scope this round... no live GPU promotion path exists
+today." Neither real online-serving GPU gate (`run_moe_gpu_gqa_cbatch_online_gate`,
+`run_moe_gpu_cbatch_online_gate`) had any promotion logic at all -- confirmed by exhaustive grep,
+zero hits.
+
+**What shipped** (`qwen_infer.c`, all `#ifdef QWEN_GPU_MLX`-guarded, zero `mlx_moe.cpp` changes):
+
+1. `moe_promotion_nq_validate_n()` -- extracted from `moe_promotion_nq_init()`'s own inline
+   n-range check, so a third call site (below) can't independently drift from it the way this
+   project already got burned once (D-qNg64-10: two independent copies, one left too permissive).
+2. `moe_promotion_nq_init_gpu()` -- the GPU mirror. Same env var (`QWEN_MOE_PROMOTION_FILE_NQ`),
+   same 3-column file format, same validated n range, same "read once at startup, no hot-reload"
+   semantic as the CPU version (matches `quirky-stirring-trinket.md`'s B2 tradeoff: an
+   admission-time rebuild would stall a live dispatch queue). Unlike CPU (which consumes
+   promotion via a pointer swap, `g_moe_lt_active[layer].<role>` repointed, any tensor name
+   works), GPU's `mlx_gpu_bind_af()` keys into a name->tensor hash map that `resolve_ffn_role()`/
+   `lazy_matvec_e0()` look up BY NAME per call -- so the promoted tensor is bound under the
+   PRODUCTION tensor's own name (`base_ptr->name`), the same technique `run_moe_gpu_mode()`'s
+   pre-existing GATE7 already established for its own bits=16 promotion test. n=7 is a
+   permanent GPU gap (no native MLX quantized-matmul kernel for 7-bit on this build, confirmed
+   via MLX's own `quantized.h` static_assert) -- `mlx_gpu_bind_af()` cleanly refuses it;
+   treated as an expected platform limit (log + skip), never FATAL. Needs `g_moe_hi_st` (the
+   open bf16 checkpoint qNg64 dequantizes from) like the CPU path does, but since neither GPU
+   gate has any other code path that opens it, this function opens it itself (idempotently),
+   reusing the already-tested `moe_neartie_correct_load_attn_hi()`.
+3. Two one-line call sites, right after each gate's existing startup bind-loop log line.
+4. **Bug found+fixed in pre-existing (not qNg64) test code while verifying**: `run_moe_gpu_mode()`'s
+   GATE6b/GATE6c (D-gpu-6c/D-qNg64-1, real-data bits=8/qNg64 repack tests) hardcoded
+   `model.layers.N.mlp.shared_experts.*` as their test target -- DeepSeek-V2-Lite-only.
+   `st_register_moe_dense_af_q8g64_as()`/`_qNg64_as()` FATAL unconditionally on a genuinely
+   missing safetensors tensor (by design, matches this file's real-misconfiguration-is-fatal
+   philosophy across ~16 call sites) -- so running `QWEN_MOE_GPU=1` against any architecture
+   without shared experts (OLMoE, qwen3_moe) crashed instantly, before reaching any of this
+   round's new code. Fixed by swapping the hardcoded test target to `self_attn.q_proj`/`o_proj`
+   (universally present, and the registrar tests generic E=1 AF-tensor round-trip, indifferent
+   to which semantic role is used) -- zero behavior change on architectures that DO have shared
+   experts, since the specific role tested was never semantically load-bearing.
+
+**Real verification** (bob, isolated build dir `/Users/bob/xox_qng64_gpu_verify` -- kept separate
+from `/Users/bob/vdsp_m4_bench`'s own uncommitted in-progress state to avoid collision, per this
+session's own git-collision experience earlier), OLMoE (`vdsp_olmoe_full_weights` AF-blob +
+`olmoe_1b7b_hf` bf16 safetensors -- no DeepSeek checkpoint was available on this host, so this
+round validates the mechanism generically, not DeepSeek's specific dense/shared roles):
+
+- **Build recipe reconstructed from scratch** (undocumented anywhere in the repo/memory before
+  this round -- worth keeping for next time): `clang -O3 -w -c -DQWEN_GPU_MLX qwen_infer.c` (no
+  MLX include path needed -- `mlx_moe.h` is a plain-C `extern "C"` header) + `clang++ -std=c++17
+  -c mlx_moe.cpp -I<mlx>/include` + compile `gguf_{cache,load,quants,transcode}.c`,
+  `hf_config.c`, `safetensors_{load,quants}.c`, `sme2_kai.c` (`-I<repo> -I<repo>/kleidiai` for
+  the last one) + the 3 real KleidiAI SME2 kernel sources
+  (`kai_matmul_clamp_f32_{qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa,
+  f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa}.c` need `-march=armv9-a+sme2`;
+  `kai_lhs_pack_f16pmrx2_f32_neon.c`, `kai_lhs_quant_pack_qsi8d32p_f32_neon.c`,
+  `kai_rhs_pack_nxk_qsi4c32p{s1s0scalef16,s4s0sf16}_qsu4c32s16s0_neon.c` do not) + their
+  matching `_asm.S` files + `kai_common_sme_asm.S` -- link everything except `kai_thread_scaling.o`
+  (has its own `main`, a standalone benchmark, not a library file) against
+  `-L<mlx>/lib -lmlx -Wl,-rpath,<mlx>/lib -framework Accelerate`. On this specific machine, MLX
+  lives at `/Users/bob/mlx_venv/lib/python3.11/site-packages/mlx/{include,lib}`, KleidiAI at
+  `/Users/bob/vdsp_m4_bench/kleidiai` (read-only reference, not copied).
+- **Baseline** (`QWEN_MOE_GPU_GQA_CBATCH_ONLINE=1`, no promotion file): real 12-request online
+  admission run, wall_ms=915.86, tok/s=152.861, real generated tokens (not synthetic).
+- **Promoted, single role** (`q_proj 0 5` via `QWEN_MOE_PROMOTION_FILE_NQ`): log confirms
+  `role=q_proj layer=0 PROMOTED to qNg64(n=5) on GPU`. **All 12 requests' output tokens
+  byte-identical to the baseline**, wall_ms=910.46 (noise-level difference, consistent with
+  D-d5-25's already-established finding that this engine's wall-time is noisy at this scale) --
+  promotion applied cleanly with no regression to serving correctness.
+- **Promoted, multi-role + n=7 platform-limit check** (`q_proj 0 5` / `expert_gate_proj 3 6` /
+  `o_proj 0 7`): log shows all three expected outcomes -- `q_proj` and `expert_gate_proj`
+  PROMOTED (confirms both the E=1 dense registrar path AND the E=64 routed-expert registrar
+  path work), `o_proj` n=7 correctly SKIPPED ("no native MLX kernel... stays bits=4 on GPU"),
+  summary line "3 lines, 2 promoted, 1 skipped (n=7 platform limit), 0 bind failures". First 3
+  requests' tokens again identical to baseline.
+
+**Scope, stated plainly**: this verifies the promotion *pipeline* end-to-end (parses file, builds
+real qNg64-quantized tensors from the real bf16 source, binds under the production name, existing
+consumption code picks it up transparently, no crash, no regression) on OLMoE's attention and
+routed-expert roles. It does **not** re-run D-d5-32's own corrected accuracy methodology on GPU
+(a real token-accuracy comparison against a GPU bf16 reference at a promotion set chosen because
+it's known to matter, the way D-d5-31/32 did on CPU) -- that's real follow-on work, not done this
+round. It also does not test qNg64 on a dense/shared-role architecture (DeepSeek-V2-Lite) since no
+bf16 checkpoint for it was available on this build host this round -- the code path is identical
+for any E=1 role (confirmed by GATE6b/6c's own fixed test now passing on `q_proj`/`o_proj`), but
+this is inference from a structurally-identical case, not a directly-measured one.
+
+**Not done this round, unrelated to correctness**: Phase 2 (`lazy_matvec_e0()`'s missing
+`g_dtensors` dense fallback, needed only for a future bits=16/32 GPU promotion, e.g. mirroring
+D-d5-31/32's own bits=16 candidate set on GPU) -- confirmed independent of this round's work
+(qNg64 never produces bits=16/32 tensors, so `lazy_matvec_e0()`'s existing `g_tensors`-only
+lookup already handles everything qNg64 promotes), not touched, not a prerequisite for anything
+above.
+
+No commits pushed to remote. Local commit only, per this repo's standing convention throughout
+the D-d5/D-gpu/D-qNg64 series.
