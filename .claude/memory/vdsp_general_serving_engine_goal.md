@@ -2655,3 +2655,18 @@ b_hits88_raw.log`, `/tmp/b_truth_nosafety_FINAL.log`)에 "PROMOTED" 로그 0건�
 싶다"≠"CORRECT를 끈다" — 이 코드베이스에서 safety net만 억제하려면 반드시
 `THRESHOLD=0`을 쓰고 `CORRECT=1`은 유지할 것. 상세: RESULTS.md D-d5-32,
 커밋 1b0dcb6.
+
+
+**D-qNg64-gpu-1 (2026-09-09) -- GPU-side qNg64 promotion, 실동작 검증 완료(OLMoE)**:
+`moe_promotion_nq_init_gpu()` 신설(qwen_infer.c) -- CPU의 `moe_promotion_nq_init()`을
+GPU에서 그대로 미러링, production 텐서 이름으로 rebind해서 `mlx_moe.cpp` 변경 0줄로
+`resolve_ffn_role`/`lazy_matvec_e0`가 그대로 픽업. n=7은 MLX 네이티브 커널이 아예
+없어(영구 제약) skip. bob에서 실제 온라인서빙 게이트로 검증: q_proj n=5 승격 전후
+12개 요청 토큰 완전동일, q_proj+expert_gate_proj 동시승격+o_proj n=7 skip도 정상.
+★★ **bob GPU 빌드 레시피를 처음부터 재구성**(문서 어디에도 없었음) -- MLX는
+`~/mlx_venv/lib/python3.11/site-packages/mlx/{include,lib}`, KleidiAI는
+`~/vdsp_m4_bench/kleidiai`(읽기전용 참조), SME2 커널 2개 파일만 `-march=armv9-a+sme2`
+필요, `kai_thread_scaling.o`는 자체 main()이라 링크에서 제외. 전체 커맨드는
+RESULTS.md D-qNg64-gpu-1 참고. **또한 기존 GATE6b/6c가 DeepSeek 전용
+`shared_experts` 하드코딩이라 OLMoE 등에서 FATAL나던 버그 발견+수정**(q_proj/o_proj로
+교체, 범용성 확보). 상세: RESULTS.md D-qNg64-gpu-1, 커밋 95ffcbc/48e0073.
