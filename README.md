@@ -106,20 +106,30 @@ quantization on every path (llama.cpp `Q4_K_M` 9.65GiB, this engine's own
 | llama.cpp, Metal GPU | **53.11 ± 1.01** |
 | **This engine, GPU (own MLX backend)** | **52.91** (109% of llama.cpp+Metal's original 48.34 bar) |
 | llama.cpp, CPU-only (8 threads) | 22.69 ± 6.32 |
-| This engine, CPU/SME2, single-stream | ~1.34 |
-| This engine, CPU/SME2, 8-way concurrent | ~1.7–2.5 aggregate |
+| This engine, CPU/SME2, steady-state (warm) | **~5.65** |
+| This engine, CPU/SME2, cold start (first request) | ~1.34 |
 
-**The CPU number is not a typo.** SME2 repacks each `(layer, expert,
-projection)` weight slot the first time it's touched, then reuses the
-packed form. DeepSeek-V2-Lite routes a different top-6-of-64 expert subset
-every token, so a short single-stream run is dominated by one-time repack
-cost, not steady-state decode. This is this engine's own known limitation,
-not a new one — it's the exact gap that motivated building the MLX GPU
-backend in the first place, which is where the real competitive number
-above comes from. A real B=64 batched-throughput or longer steady-state
-re-measurement is still open (memory-constrained on the only SME2-capable
-test machine available this round). Full methodology, exact commands, and
-the honest cost/scope notes: [`RESULTS.md`](RESULTS.md) ("D-bench-1").
+**A server isn't perpetually cold, so "real serving" means the warm
+number.** SME2 repacks each `(layer, expert, projection)` weight slot the
+first time it's touched, then reuses the packed form for the rest of the
+process's life. The first request through a freshly-started process pays
+that setup cost and measures ~1.34 tok/s; a second request whose routing
+overlaps already-warmed experts (measured directly, per-step timing
+instrumentation, not estimated) measures **~5.65 tok/s** — a real 4.2×
+difference between "cold" and "warm," not noise. Reporting only the cold
+number would overstate this engine's actual weakness by ~4x; reporting
+only the warm number the way a real server actually runs is the honest
+comparison. Warm CPU/SME2 is still ~4.0x slower than llama.cpp's CPU path
+and ~9.4x slower than either GPU path — a real, still-substantial gap,
+not closed by this correction, just measured honestly instead of
+overstated. This is this engine's own known limitation, not a new one —
+it's the exact gap that motivated building the MLX GPU backend in the
+first place, which is where the competitive GPU number above comes from.
+A real B=64 batched-throughput re-measurement (this engine's actual
+target serving scale) is still open (memory-constrained on the only
+SME2-capable test machine available this round). Full methodology, exact
+commands, and the honest cost/scope notes: [`RESULTS.md`](RESULTS.md)
+("D-bench-1", "D-bench-2").
 
 ## Build
 

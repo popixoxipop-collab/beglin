@@ -5708,6 +5708,18 @@ static int moe_attrib_role_valid_at(MoeAttribRole role, int layer) {
 }
 static int g_moe_attrib_on = 0;   // QWEN_MOE_ATTRIB, default off
 static int g_moe_attrib_progress_on = 0;   // D-p95-1: QWEN_MOE_ATTRIB_PROGRESS, default off
+// D-bench-2: QWEN_MOE_CB_STEP_TIMING, default off -- per-decode-step wall-clock delta, so a
+// single run's own log can show the cold (first-touch SME2 repack) vs warm (steady-state)
+// transition directly instead of only ever reporting one aggregate wall_ms across the whole
+// run. WHY: D-bench-1's single-stream CPU/SME2 number (~1.34 tok/s) was measured over only 20
+// steps total, almost certainly cold-dominated (moe_sme2_ensure_ready() repacks a
+// (layer,expert,proj) slot only once, and DeepSeek-V2-Lite's top-6-of-64 routing changes every
+// token, so most touched slots in a short run are first-touch) -- but that was inferred from
+// the architecture, not measured. This makes it measurable. COST: one fprintf per decode step,
+// gated off by default, zero cost/behavior change when unset (same convention as D-p95-1).
+// EXIT: if this becomes a standing need rather than a one-off investigation, fold it into a
+// structured per-step log (JSON lines) instead of ad hoc stderr text.
+static int g_moe_cb_step_timing_on = 0;
 // D-d5-21: 0 = additive only (pre-D-d5-21 behavior), 1 = ablative only, 2 = both sweeps.
 // QWEN_MOE_ATTRIB_MODE = add | ablate | both.
 static int g_moe_attrib_mode = 0;   // zero cost unless a real flip triggers it anyway
@@ -6849,6 +6861,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     // when correction is also on -- attribution needs a confirmed real flip to attribute.
     const char *env_attrib = getenv("QWEN_MOE_ATTRIB");
     const char *env_attrib_progress = getenv("QWEN_MOE_ATTRIB_PROGRESS");   // D-p95-1
+    g_moe_cb_step_timing_on = getenv("QWEN_MOE_CB_STEP_TIMING") && atoi(getenv("QWEN_MOE_CB_STEP_TIMING")) != 0;   // D-bench-2
     if (getenv("QWEN_MOE_ATTRIB_COUNT_INEFFECTIVE")) g_moe_attrib_count_ineffective = 1;   // D-d5-22 EXIT
     const char *env_attrib_mode = getenv("QWEN_MOE_ATTRIB_MODE");   // D-d5-21
     const char *env_attrib_max_events = getenv("QWEN_MOE_ATTRIB_MAX_EVENTS");
@@ -7034,6 +7047,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     float *logits_step = g_rmcv_logits_step;
 
     double t_run0 = nowt();
+    double t_bench2_prev_step = t_run0;   // D-bench-2
     while (qhead < R || nact > 0) {
         while (qhead < R && rq_plen[qhead] < 0) qhead++;   // D9: skip requests dropped by the guard
 
@@ -7116,6 +7130,12 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
 
         moe_cbatch_step(af_blob, t_embed, t_lmhead, w_finalnorm, ids, slots, sposs, A, logits_step, want_logits);
         double temit = nowt();
+        if (g_moe_cb_step_timing_on) {   // D-bench-2
+            fprintf(stderr, "[moe cb step timing] step=%d A=%d ndec=%d delta_ms=%.2f\n",
+                    step, A, ndec, (temit - t_bench2_prev_step) * 1000.0);
+            fflush(stderr);
+        }
+        t_bench2_prev_step = temit;   // D-bench-2
 
         int step_budget = cbatch_budget;   // Phase MoE-4c: per-step scalar-token budget (QWEN_MOE_CBATCH_BUDGET)
 

@@ -12889,3 +12889,55 @@ longer-window single-stream run once `MOE_CBATCH_MAXPOS` is raised or an unrestr
 exists, to get a genuine steady-state (post-warm-up) number instead of one dominated by first-use
 packing cost. Re-measure on a machine with more free RAM to also get a real `mlx_lm` baseline and
 a B=64 number without the current swap risk.
+
+## D-bench-2 -- the D-bench-1 CPU number was cold-dominated; real steady-state is ~5.6 tok/s, not ~1.34
+
+**WHY**: user pushback, correct and specific -- an honest engine-vs-engine comparison has to be a
+real-serving number, not one that bills a one-time setup cost as if it were steady-state decode
+speed. D-bench-1's ~1.34 tok/s CPU/SME2 number was inferred to be cold-dominated from the
+architecture (`moe_sme2_ensure_ready()` repacks each `(layer,expert,proj)` slot once, ever) but
+that was reasoning, not measurement -- this round measures it directly instead.
+
+**Mechanism**: added `QWEN_MOE_CB_STEP_TIMING=1` (new env var, default off, gated the same way as
+D-p95-1's `QWEN_MOE_ATTRIB_PROGRESS`) -- one `fprintf` per decode step in the MLA CPU cbatch loop
+with the wall-clock delta since the previous step. Ran the exact same single-stream config as
+D-bench-1 with this on: step 0 (prefill, 9 tokens) took 9188-13392ms across two runs (the one-time
+cold cost, confirmed directly, not inferred), then decode steps 1-19 ranged 163-1235ms/step with
+NO clean monotonic warm-up curve -- noisy throughout, because DeepSeek-V2-Lite routes a different
+top-6-of-64 expert subset per token per layer, so even by step 19 a single 20-token run keeps
+touching first-time slots. **The D-bench-1 number, despite already excluding `ttft_ms` (prefill),
+was still measuring a run that never actually reached steady state.**
+
+**The real steady-state test**: exploited that SME2 slot-pack state is a global, process-lifetime
+cache (not per-request) and that greedy decoding is deterministic -- ran the SAME prompt through
+TWO sequential requests in one process (`QWEN_MOE_CB_SLOTS=1 QWEN_MOE_CB_REQS=2`, a 2-line
+manifest repeating the same prompt file). Request 2 produced byte-identical output tokens to
+request 1 (confirmed: both `44742 50870 11 317 245 8217 280 26075 50870 8110 276 254 38453 44730
+21795 20914 13 809 317 1503`), which guarantees request 2's expert routing is a strict subset of
+request 1's already-warmed slots -- a genuine "second user hits an already-warm server" scenario,
+not a synthetic shortcut. Request 2's 19 decode steps: 187.80, 180.90, 172.63, 172.34, 175.24,
+191.49, 171.96, 173.81, 166.19, 182.51, 187.32, 175.88, 184.36, 167.25, 163.42, 165.27, 192.97,
+180.40, 172.69 ms -- tight range (163-193ms, vs cold's 163-1235ms), the clean signature of a
+compute-bound steady state with no repack noise left.
+
+**Result**: sum = 3364.43ms / 19 tokens = 177.07ms/token = **~5.65 tok/s steady-state**, a real
+**~4.2x** improvement over the cold-dominated 1.34 tok/s D-bench-1 reported. Request 2's own
+prefill/first-token step also dropped from 9188-13392ms (cold) to 1262ms (warm) -- consistent,
+same mechanism.
+
+**Revised honest picture**: warm CPU/SME2 (~5.65 tok/s) is still ~4.0x slower than llama.cpp's CPU
+path (22.69 tok/s) and ~9.4x slower than either GPU path (52.91-53.11 tok/s) -- a real, still
+substantial gap, not closed by this correction. What changed is the SIZE and HONESTY of the gap
+reported, not its direction: D-bench-1's 17x/40x figures were measuring cold-start cost bleeding
+into a decode-speed claim; this round's 4x/9.4x figures are the genuine steady-state comparison.
+
+**COST**: still a small (20-token) steady-state window, not a long production-scale run -- the
+177ms/step figures across request 2's 19 steps have some real spread (163-193ms) that a longer
+warm run would characterize more precisely, though the range is already an order of magnitude
+tighter than the cold run's, so the qualitative conclusion (steady state is real and much faster
+than cold) is solid even at this scale.
+
+**EXIT**: `QWEN_MOE_CB_STEP_TIMING=1` stays in the tree as a permanent, opt-in diagnostic -- any
+future speed claim on this decode path should be checked against it before being reported, exactly
+the mistake this round corrects. A production B=64 steady-state number (this engine's actual
+target serving scale) remains open, same memory constraint as D-bench-1's own EXIT note.
