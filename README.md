@@ -1,11 +1,13 @@
 # beglin
 
-A from-scratch CPU LLM inference engine for Apple Silicon — no PyTorch, no
-MLX, no llama.cpp. Hand-written C using Apple's Accelerate/vDSP framework and
-NEON/SME2 intrinsics, running real pretrained models (Qwen2.5-1.5B-Instruct,
-Llama-3.1-8B, and MoE variants) end-to-end: RMSNorm, RoPE (incl. Llama-3
-NTK scaling), GQA attention, SwiGLU, KV cache, int4/int8 quantized GEMV,
-speculative decoding, and request-batched MoE serving.
+A from-scratch LLM inference engine for Apple Silicon — no PyTorch, no
+llama.cpp. Hand-written C using Apple's Accelerate/vDSP framework and
+NEON/SME2 intrinsics for the CPU path (zero external ML dependency there),
+plus an optional GPU backend built on MLX, running real pretrained models
+(Qwen2.5-1.5B-Instruct, Llama-3.1-8B, and MoE variants) end-to-end:
+RMSNorm, RoPE (incl. Llama-3 NTK scaling), GQA/MLA attention, SwiGLU, KV
+cache, arbitrary-bit-width quantized GEMV, speculative decoding, and
+ragged continuous-batched MoE serving.
 
 📜 **License**: [AGPL-3.0-or-later](LICENSE) (open source) or a
 [commercial license](COMMERCIAL-LICENSE.md) if you don't want AGPL's
@@ -38,48 +40,105 @@ binary itself takes).
 
 ## What's actually novel here
 
-**A per-role, per-expert mixed-precision MoE engine — genuinely per
-individual tensor, not per model, per layer, or even per tensor
-category.** For every MoE checkpoint this engine loads, each of
-`q_proj`/`k_proj`/`v_proj`/`o_proj` (or MLA's
+Two things, and most "hand-rolled CPU inference" projects have neither:
+**precision that adjusts per individual tensor, all the way down to
+arbitrary bit-widths**, and **a serving engine that adapts to its
+hardware and its load instead of running one fixed code path**.
+
+### Adjustable precision, down to a single tensor and an arbitrary bit-width
+
+Most quantized inference engines pick one precision for the whole model,
+or at best one per layer. This one goes further in two independent
+directions:
+
+**Per-tensor granularity.** For every MoE checkpoint this engine loads,
+each of `q_proj`/`k_proj`/`v_proj`/`o_proj` (or MLA's
 `q_proj`/`kv_a_proj_with_mqa`/`kv_b_proj`/`o_proj`), each of the one real
 dense layer's internal `gate_proj`/`up_proj`/`down_proj`, each of
 shared-experts' internal `gate_proj`/`up_proj`/`down_proj`, and each
 individual routed expert by `(layer, expert_id)`, all take their own
-int4/int8/F32 precision independently — see
+precision independently — see
 [Mixed-precision MoE configuration](#mixed-precision-moe-configuration).
 
-This isn't a knob built for its own sake. Running OLMoE's real numeric
-gate against a genuine MLX (bf16-forced-to-fp32) reference surfaced a
-reproducible failure mode: int8 quantization noise in the hidden state
-accumulates layer over layer until it flips a *borderline* top-k routing
-decision — a real example found this round: layer 13, a router-score gap
-of just 1.87e-05 between the correct expert and the one substituted in
-its place. Once flipped, an entirely different expert's output stands in
-for the intended one, and that perturbation amplifies through every later
-layer. Selectively promoting only the four attention projections to F32
-(`QWEN_MOE_ROLE_BITS`: `q_proj -1 32`, `k_proj -1 32`, `v_proj -1 32`,
-`o_proj -1 32` — nothing else touched) suppressed it directly: the one
-hard router mismatch this gate had disappeared entirely, and the
-worst-affected position's logit-level error dropped from 4.8e-2 to
-6.5e-3 — from a hard failure to comfortably inside tolerance. The
-divergence remaining at a few other positions traces to the same
-mechanism reached through routed-expert quantization noise instead of
-attention noise — same phenomenon, same fix shape, just a different set
-of tensors to target next. See `RESULTS.md` for the full investigation,
-including the real per-layer hidden-state dumps that localized exactly
-where the divergence originates, not just aggregate before/after numbers.
+**Arbitrary bit-width, not just int4/int8/F32.** Beyond the three fixed
+tiers, a real symmetric, error-feedback bit-plane format (`qNg64`) covers
+every bit-width from 2 to 15 as a genuine, independently-verified hardware
+encoding — not four tiers with gaps in between. n=8 here is its own
+distinct encoding, not a rename of the existing int8 format (different
+clamp, different rounding, verified numerically different on purpose).
+Confirmed with a real round-trip test across the full n=2..15 range
+(monotonically decreasing reconstruction error, no discontinuity at any
+bit-width boundary) and a real end-to-end promotion + generation run
+against production DeepSeek-V2-Lite weights. See `RESULTS.md`'s
+`D-qNg64-18` for the full verification.
 
-Most "hand-rolled CPU inference" projects also stop at dense-model int4
-GEMV with one fixed precision for the whole model. This engine
-additionally integrates ARM KleidiAI's **SME2** (Scalable Matrix
-Extension v2) hardware-accelerated kernel — a real, non-trivial
-integration because SME2 is only reachable inside a special "streaming
-mode" on Apple M4, and naively calling into it (or letting the compiler
-autovectorize into it) outside that mode is an illegal instruction, not a
-compile error. See [`RESULTS.md`](RESULTS.md) for the full measured story,
-including the two independent bugs that caused this and how each was
-root-caused via interactive `lldb`.
+**Why this granularity exists, not just because it's possible.** Running
+OLMoE's real numeric gate against a genuine MLX (bf16-forced-to-fp32)
+reference surfaced a reproducible failure mode: int8 quantization noise
+in the hidden state accumulates layer over layer until it flips a
+*borderline* top-k routing decision — a real example found this round:
+layer 13, a router-score gap of just 1.87e-05 between the correct expert
+and the one substituted in its place. Once flipped, an entirely different
+expert's output stands in for the intended one, and that perturbation
+amplifies through every later layer. Selectively promoting only the four
+attention projections to F32 (`QWEN_MOE_ROLE_BITS`: `q_proj -1 32`,
+`k_proj -1 32`, `v_proj -1 32`, `o_proj -1 32` — nothing else touched)
+suppressed it directly: the one hard router mismatch this gate had
+disappeared entirely, and the worst-affected position's logit-level error
+dropped from 4.8e-2 to 6.5e-3 — from a hard failure to comfortably inside
+tolerance. See `RESULTS.md` for the full investigation, including the
+real per-layer hidden-state dumps that localized exactly where the
+divergence originates, not just aggregate before/after numbers.
+
+One thing this granularity does *not* make safe to assume: that accuracy
+degrades smoothly as bit-width drops. A real sweep across the full n=2..16
+range, one tensor at a time, against real near-tie routing/attention
+decisions, found 13-83% of tested targets **non-monotonic** — passing at
+n=3, failing at n=4, passing again at n=5+, depending on the tensor,
+corpus, and even which hardware executed the quantization. Bisection-style
+search (test n=8, pass → try n=4) is not a safe shortcut here; exhaustive
+per-n testing is the only default this project has found safe so far. See
+[The open question this engine exists to make experimentable](#the-open-question-this-engine-exists-to-make-experimentable).
+
+### A serving engine that adapts, not one fixed code path
+
+**Adapts to the chip it's running on.** SME2 (Scalable Matrix Extension
+v2) is a real, non-trivial hardware integration — it's only reachable
+inside a special "streaming mode" on Apple M4+, and naively calling into
+it (or letting the compiler autovectorize into it) outside that mode is
+an illegal instruction, not a compile error. The engine checks
+`hw.optional.arm.FEAT_SME2` at runtime and dispatches to the accelerated
+KleidiAI kernel when present, falling back to plain NEON otherwise — same
+binary, same numerical output, no recompile needed to run on older
+Apple Silicon. See [`RESULTS.md`](RESULTS.md) for the full measured
+story, including the two independent bugs that caused illegal
+instructions and how each was root-caused via interactive `lldb`.
+
+**Adapts to available compute — CPU or GPU, same weights.** Beyond the
+CPU/SME2 path, this engine has its own GPU backend through MLX, reaching
+**52.91 tok/s** on real DeepSeek-V2-Lite generation — 109% of
+llama.cpp+Metal's own bar on the same hardware. See
+[vs llama.cpp / MLX](#vs-llamacpp--mlx-same-hardware-same-model) for the
+full, honest comparison — including where the CPU path is genuinely
+*not* yet competitive, reported plainly rather than only showing the
+favorable number.
+
+**Adapts to concurrent load.** The serving loop is ragged continuous
+batching, not a fixed-size batch loop: requests are admitted into free
+slots and evicted on completion every step, not queued until a batch
+fills — the same pattern production LLM servers (vLLM and similar) use,
+not the toy fixed-batch loop most from-scratch engines stop at.
+
+**Adapts precision live, without a restart.** A running server can pick
+up a new precision decision for a specific `(role, layer)` mid-session —
+polled once per request admission from a promotion file, applied as a
+single pointer swap, permanent for the process's lifetime with no
+restart required. The engine's job here is deliberately scoped to
+*applying* a promotion it's told about, not deciding when one is needed —
+that decision comes from this project's own attribution tooling (which
+tensors are actually causing near-tie routing flips, measured against a
+real reference), external and swappable, not baked into the serving hot
+path. See `RESULTS.md`'s `D-roadmap-4` Phase 6 for the full design.
 
 ## Measured results (real hardware, not projected)
 
@@ -256,6 +315,26 @@ when left unset. See `RESULTS.md`'s "Full per-role precision engine" and
 rationale, the two hybrid attempts that motivated per-individual rather
 than per-category granularity, and `PLAN_general_purpose_loader.md`'s
 `D-gen-6` for why this is a plain text format rather than JSON/YAML.
+
+For the arbitrary-bit-width case (n=2,3,5,6,7,8..15 -- see [Adjustable
+precision](#whats-actually-novel-here) above), the same "<role> <layer>"
+line format takes a third column instead of a fixed bits value:
+
+```sh
+cat > promotion_nq.txt <<'EOF'
+shared_gate_proj 5 10   # promote to qNg64(n=10)
+kv_b_proj 9 13          # promote to qNg64(n=13)
+EOF
+
+QWEN_MOE_PROMOTION_FILE_NQ=promotion_nq.txt ./qwen_infer
+```
+
+Polled once at startup from a real, already-open checkpoint (requires
+`QWEN_MOE_NEARTIE_CORRECT=1` + `QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS=<path>`
+to have opened one) -- see `RESULTS.md`'s `D-qNg64-3`/`D-qNg64-18` for the
+full mechanism and `D-roadmap-4` Phase 6 for the separate, live (no
+restart needed) `QWEN_MOE_PROMOTION_FILE` promotion path this one shares
+its polling convention with.
 
 ## The open question this engine exists to make experimentable
 
