@@ -4027,7 +4027,30 @@ static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, 
 // continuous batching -- unnecessary complexity for this phase's question.
 // ============================================================================
 
-#define MOE_BATCH_MAX 64
+// D-bench-4: raised 64 -> 256 to let D-bench-3's batch-size sweep reach the user-requested
+// range. WHY: the sweep's own natural ceiling was this validation constant, not any real
+// hardware/algorithm limit -- MOE_BATCH_MAX only gates (a) QWEN_MOE_CB_SLOTS's input-range
+// check and (b) a handful of small, cheap static int/float[MOE_BATCH_MAX] arrays (mcb_active
+// etc., 1-4KB each even at 256, no real cost). COST: g_moe_bK_flat/g_moe_bV_flat (Group B,
+// run_moe_batch_verify_mode's QWEN_MOE_BATCH path) grow with this constant directly and stay
+// small even at 256 (~335MB combined) -- left alone. g_moe_cK_flat/g_moe_cV_flat (the ragged
+// cbatch K/V cache this sweep's own QWEN_MOE_CB_SLOTS path uses) would NOT have stayed small --
+// at MOE_BATCH_MAX=256 they'd cost ~10GB combined, always allocated regardless of the actual
+// runtime B requested, which would have broken even a B=1 run on a 16GB machine. Fixed by
+// making those two specific buffers size off g_moe_cb_slots_cap (declared below) instead of
+// this compile-time constant -- see that variable's own comment for the full mechanism. EXIT:
+// if a real workload ever needs QWEN_MOE_BATCH above 256 too, g_moe_bK_flat/bV_flat would need
+// the same runtime-sizing treatment -- not needed yet, that mode's own B has stayed small in
+// every real use so far.
+#define MOE_BATCH_MAX 256
+// D-bench-4: runtime cap for g_moe_cK_flat/g_moe_cV_flat's slot dimension, in place of the
+// compile-time MOE_BATCH_MAX above -- see that constant's own comment for the full WHY/COST. Set
+// once, early in main(), from QWEN_MOE_CB_SLOTS BEFORE alloc_moe_buffers() runs (default stays
+// MOE_BATCH_MAX for every mode that never sets that env var, so this is byte-identical-when-
+// absent for every other call path). moe_cK_row()/moe_cV_row() below use this SAME variable as
+// their indexing stride -- it must never diverge between the malloc call and the row macros, or
+// this becomes a real out-of-bounds read/write, not just a wasted-memory issue.
+static int g_moe_cb_slots_cap = MOE_BATCH_MAX;
 // g_moe_bK_flat/g_moe_bV_flat declared with the rest of Group B above (qwen_infer.c ~L2946).
 static inline float *moe_bK_row(int l, int b) { return g_moe_bK_flat + ((long)l*MOE_BATCH_MAX + b)*(long)MOE_KROW; }
 static inline float *moe_bV_row(int l, int b) { return g_moe_bV_flat + ((long)l*MOE_BATCH_MAX + b)*(long)MOE_VROW; }
@@ -4052,8 +4075,8 @@ _Static_assert(MOE_CBATCH_MAXPOS <= MOE_MAXPOS,
     "Phase MoE-4c) index g_moe_K/V[l][pos] and a stack scores[MOE_MAXPOS] array at pos values "
     "up to MOE_CBATCH_MAXPOS-1 -- MOE_MAXPOS must stay at least that large.");
 // g_moe_cK_flat/g_moe_cV_flat declared with the rest of Group B above (qwen_infer.c ~L2946).
-static inline float *moe_cK_row(int l, int slot, int pos) { return g_moe_cK_flat + (((long)l*MOE_BATCH_MAX + slot)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_KROW; }
-static inline float *moe_cV_row(int l, int slot, int pos) { return g_moe_cV_flat + (((long)l*MOE_BATCH_MAX + slot)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_VROW; }
+static inline float *moe_cK_row(int l, int slot, int pos) { return g_moe_cK_flat + (((long)l*g_moe_cb_slots_cap + slot)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_KROW; }
+static inline float *moe_cV_row(int l, int slot, int pos) { return g_moe_cV_flat + (((long)l*g_moe_cb_slots_cap + slot)*MOE_CBATCH_MAXPOS + pos)*(long)MOE_VROW; }
 static inline float *moe_cK_at(int l, int slot, int pos, int hh) { return moe_cK_row(l,slot,pos) + (long)hh*MOE_Q_HEAD_DIM; }
 static inline float *moe_cV_at(int l, int slot, int pos, int hh) { return moe_cV_row(l,slot,pos) + (long)hh*MOE_V_HD; }
 
@@ -5088,7 +5111,13 @@ static void moe_cbatch_step(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor
 // mirrors MoE-4a's admission body exactly) or SME2-batched mixed into the same moe_cbatch_step()
 // call as decode columns (=1, the default -- D6: scalar prefill would stall every decode slot for
 // ~12s per admitted prompt, a functional regression for online serving, not just a slow one).
-#define MOE_CB4B_RMAX 64
+// D-bench-4: raised 64 -> 1024 alongside MOE_BATCH_MAX's own 64->256 raise -- this sweep's
+// warm-methodology needs R=2*B requests (round 1 warms the cache, round 2 is measured), so
+// B=256 needs R=512; 1024 leaves headroom. Unlike MOE_BATCH_MAX, every array this constant
+// sizes (see the static rq_*/mf_* arrays below) is per-REQUEST scalar metadata (int/double, or
+// int[MOE_CBATCH_MAXPOS]=32 ints), not a per-slot K/V cache block -- even at 1024 the total cost
+// is a few hundred KB, no g_moe_cb_slots_cap-style dynamic-sizing surgery needed here.
+#define MOE_CB4B_RMAX 1024
 
 // D9 capacity guards: three real unchecked writes exist below MOE_CBATCH_MAXPOS
 // (g_moe_cK/cV[l][slot][pos], and moe_mla_attention_ragged()'s own float scores[MOE_CBATCH_MAXPOS]
@@ -6981,6 +7010,12 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
 
     if (B < 1 || B > MOE_BATCH_MAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS=%d out of [1,%d]\n", B, MOE_BATCH_MAX); exit(1); }
     if (R < 1 || R > MOE_CB4B_RMAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_REQS=%d out of [1,%d]\n", R, MOE_CB4B_RMAX); exit(1); }
+    // D-bench-4: this B must match the early QWEN_MOE_CB_SLOTS read in main() that sized
+    // g_moe_cK_flat/g_moe_cV_flat -- moe_cK_row()/moe_cV_row() index using g_moe_cb_slots_cap,
+    // so any drift here is a real out-of-bounds read/write, not just a wasted-memory issue.
+    if (B > g_moe_cb_slots_cap) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS=%d exceeds g_moe_cb_slots_cap=%d "
+                        "-- alloc_moe_buffers() sized the K/V cache for a smaller B than this run requested "
+                        "(the early read in main() and this read must agree)\n", B, g_moe_cb_slots_cap); exit(1); }
 
     // V5l MLA CPU twin: QWEN_MOE_CB_PROMPT_MANIFEST, same design as the GQA CPU twin (and both
     // GPU gates). This function's own corpus (prompt_len/moe_cbatch_gen/prompt_ids above) is
@@ -7327,8 +7362,8 @@ static void alloc_moe_buffers(void) {
     g_moe_V_flat  = malloc((long)MOE_MAXLAYERS*MOE_MAXPOS*MOE_VROW*sizeof(float));
     g_moe_bK_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_KROW*sizeof(float));
     g_moe_bV_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_VROW*sizeof(float));
-    g_moe_cK_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_CBATCH_MAXPOS*MOE_KROW*sizeof(float));
-    g_moe_cV_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_CBATCH_MAXPOS*MOE_VROW*sizeof(float));
+    g_moe_cK_flat = malloc((long)MOE_MAXLAYERS*g_moe_cb_slots_cap*MOE_CBATCH_MAXPOS*MOE_KROW*sizeof(float));   // D-bench-4
+    g_moe_cV_flat = malloc((long)MOE_MAXLAYERS*g_moe_cb_slots_cap*MOE_CBATCH_MAXPOS*MOE_VROW*sizeof(float));   // D-bench-4
     g_moe_sK_flat = malloc((long)MOE_MAXLAYERS*MOE_CB4C_LANES*MOE_CBATCH_MAXPOS*MOE_KROW*sizeof(float));
     g_moe_sV_flat = malloc((long)MOE_MAXLAYERS*MOE_CB4C_LANES*MOE_CBATCH_MAXPOS*MOE_VROW*sizeof(float));
 
@@ -11757,6 +11792,10 @@ static int run_moe_gqa_cbatch_online_cpu_gate(int argc, char **argv) {
 
     if (B < 1 || B > MOE_BATCH_MAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS=%d out of [1,%d]\n", B, MOE_BATCH_MAX); exit(1); }
     if (R < 1 || R > MOE_CB4B_RMAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_REQS=%d out of [1,%d]\n", R, MOE_CB4B_RMAX); exit(1); }
+    // D-bench-4: same cross-check as the MLA twin above -- see that site's comment.
+    if (B > g_moe_cb_slots_cap) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS=%d exceeds g_moe_cb_slots_cap=%d "
+                        "-- alloc_moe_buffers() sized the K/V cache for a smaller B than this run requested "
+                        "(the early read in main() and this read must agree)\n", B, g_moe_cb_slots_cap); exit(1); }
 
     static int    rq_plen[MOE_CB4B_RMAX], rq_maxnew[MOE_CB4B_RMAX], rq_arrive[MOE_CB4B_RMAX];
     static int    rq_slot_of[MOE_CB4B_RMAX], rq_admit_step[MOE_CB4B_RMAX];
@@ -13099,6 +13138,18 @@ static int run_moe_verify_mode(int argc, char **argv) {
     MOE_SME2_CACHE_SLOTS = MOE_N_EXPERTS + 3;
     fprintf(stderr, "[moe cfg] NL=%d FIRST_DENSE=%d N_EXPERTS=%d TOP_K=%d MOE_IM=%d DENSE_IM=%d VOCAB=%d ATTN_KIND=%d\n",
             MOE_NL,MOE_FIRST_DENSE_LAYERS,MOE_N_EXPERTS,MOE_TOP_K,MOE_IM_DIM,MOE_DENSE_IM,MOE_VOCAB,MOE_ATTN_KIND);
+    // D-bench-4: must run before alloc_moe_buffers() below -- that's the only call site that
+    // reads g_moe_cb_slots_cap. QWEN_MOE_CB_SLOTS is re-read verbatim inside run_moe_cbatch_
+    // verify_mode() too (existing code, unchanged); this early read and that later one must
+    // agree, so run_moe_cbatch_verify_mode() asserts B == g_moe_cb_slots_cap right after its own
+    // parse rather than trusting the two reads stay in sync silently.
+    {
+        const char *env_cb_slots_early = getenv("QWEN_MOE_CB_SLOTS");
+        if (env_cb_slots_early && env_cb_slots_early[0]) {
+            int cap = atoi(env_cb_slots_early);
+            if (cap >= 1 && cap <= MOE_BATCH_MAX) g_moe_cb_slots_cap = cap;
+        }
+    }
     alloc_moe_buffers();   // Phase 4 sub-part 1, Step 2: must run before moe_init_yarn() below --
                             // it writes g_moe_yarn_freqs, which this call allocates.
     moe_init_yarn();
