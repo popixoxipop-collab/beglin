@@ -59,6 +59,20 @@ function main() {
   console.log("[beglin] compiling qwen_infer.c (plain -- no SME/SVE arch flag)");
   run("clang", ["-O3", "-w", "-c", path.join(ROOT, "qwen_infer.c"), "-o", obj("qwen_infer.c")]);
 
+  const plainFiles = [
+    "gguf_cache.c",
+    "gguf_load.c",
+    "gguf_quants.c",
+    "gguf_transcode.c",
+    "hf_config.c",
+    "safetensors_load.c",
+    "safetensors_quants.c",
+  ];
+  console.log("[beglin] compiling GGUF/safetensors loader sources");
+  for (const f of plainFiles) {
+    run("clang", ["-O3", "-w", "-c", path.join(ROOT, f), "-o", obj(f)]);
+  }
+
   console.log("[beglin] compiling sme2_kai.c (SME2 dispatch wrapper)");
   run("clang", [
     "-O2",
@@ -97,7 +111,9 @@ function main() {
   }
 
   console.log("[beglin] linking");
-  const objs = ["qwen_infer.c", "sme2_kai.c", ...kernelFiles].map((f) => obj(path.basename(f)));
+  const objs = ["qwen_infer.c", ...plainFiles, "sme2_kai.c", ...kernelFiles].map((f) =>
+    obj(path.basename(f))
+  );
   run("clang", ["-O3", ...objs, "-o", OUT_BINARY, "-framework", "Accelerate", "-lpthread"]);
 
   // Caller-plain convention check (see RESULTS.md): the plain-compiled caller
