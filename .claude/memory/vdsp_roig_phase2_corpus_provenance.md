@@ -301,9 +301,38 @@ corpus provenance를 스키마 레벨에서 강제하고, 두 번째 corpus(Wiki
 - BOB_LOAD_OK=1 바이패스는 사용자가 직접 승인(bob 데스크톱 사용 중 메모리 압박 상황 설명 후).
 - RESULTS.md "D-qNg64-gpu-2" 섹션.
 
-## 남은 것 (2026-09-09 기준, GPU 검증 포함 전부 완료 후)
-- ROI-G Phase 2 전체 계획 완전 종결. p95 미스터리 완전 해결. GPU에서도 첫 실측 완료(clean
-  일치, violated 불일치 — 4번째 예측불가 축 확인). Supabase 1065행(CPU, 신뢰 가능) + GPU
-  실측 6건(RESULTS.md에만 기록, Supabase 미push).
-- 남은 것: "Phase 3"는 사용자가 언급했으나 이 메모리 파일/계획 문서 어디에도 정의 안 돼있음
+## npm 패키지 `beglin` 재발행 + qNg64 CPU n=8~15 확장 (2026-09-09)
+- **npm 패키징 버그 발견+수정**: `gguf_*/safetensors_*/hf_config` 7개 파일이 `package.json`
+  `"files"`와 `postinstall-build.js` 컴파일/링크 양쪽에서 누락 — 이 의존성이 생긴 이후
+  모든 `npm install`이 빌드 실패했을 것. 수정 후 클린 리빌드+`npm pack --dry-run`으로
+  검증, `0.1.0→0.2.0`(파일+빌드 수정, 218커밋 누적분 반영)→`0.2.1`(README 동일 빌드
+  레시피 버그 수정) 순으로 재발행 완료. EOTP 마스킹은 `script -q` 우회 재사용
+  ([[reference_npm_eotp_url_masked_non_tty]] 패턴 재확인, 두 번째 시도서 첫 OTP세션
+  404 — 단순 재시도로 해결).
+- **qNg64 CPU n=2~7 → n=2..15 확장 (D-qNg64-18, commit `214980e`)**: 사용자 명시 요청
+  ("임의 비트폭... 9~15는 없어?" → "cpu/gpu 둘 다... n=8~15 네이티브 확장해야함", CPU 먼저).
+  조사 결과 인코더(`gguf_quantize_qNg64`)·레지스트라 둘 다 이미 n에 무관한 동적 크기
+  산술이라 기술적 제약이 아니라 순수 caller-side 게이트 5곳(`moe_decode_af`,
+  `moe_matvec_af_row`, `moe_matvec_af_row_vdsp`의 FATAL guard, 중앙화된
+  `moe_promotion_nq_validate_n`, 그리고 `QWEN_MOE_ATTRIB_SIM_QN`의 **비중앙화된 중복
+  카피** — D-qNg64-10이 이미 경고한 바로 그 drift 클래스)였음. `moe_qng64_n_supported()`
+  헬퍼 하나로 통합, n=2,3,5,6,7,8..15로 확장(n=4는 q4g64와 값 동일이라 제외, n=8은
+  q8g64와 **다른** 별개 인코딩 — gguf_transcode.h 경고 반영).
+  **3중 실측 검증**: ①합성가중치 라운드트립(n=2..15 rel_l2 단조감소, n=7/8 경계 불연속
+  없음) ②로컬 실 DeepSeek-V2-Lite 가중치로 진짜 end-to-end 승격+생성(n=10, n=15 둘 다
+  `shared_gate_proj L5`에서 클린 성공, 6토큰 생성 완료) ③n=16은 여전히 정확히 FATAL(상한
+  경계 안 깨짐 확인). RESULTS.md "D-qNg64-18" 섹션. **로컬 커밋만, push 안 함**(이 repo
+  관례).
+- **GPU는 이번 라운드 범위 밖** — 사용자 강한 제약 명시: "난 압축 커널 이점 절대 포기
+  못해"(dense-fallback 워크어라운드 완전 거부). n=7/9~15는 `mx.fast.metal_kernel()` 커스텀
+  Metal 커널이 유일한 수용 가능 경로(MLX 네이티브는 bits∈{2,3,4,5,6,8}뿐, 최신 0.32.2도
+  동일 — 버전업으로 해결 안 됨). WebSearch 레벨 스코핑만 완료, 설계/구현 미착수 — 별도
+  대규모 후속 작업.
+
+## 남은 것 (2026-09-09 기준)
+- ROI-G Phase 2 전체 계획 완전 종결(위 섹션들). Supabase 1065행(CPU) + GPU 실측 6건.
+- qNg64 CPU n=8~15 확장 완료. **다음: GPU 커스텀 Metal 커널 설계(별도 큰 작업, 미착수)**,
+  또는 사용자 우선순위 1번이었던 llama.cpp/MLX 대비 실측 속도 비교표(README용, 아직
+  미착수) — 사용자가 순서 재확인 필요.
+- "Phase 3"는 사용자가 언급했으나 이 메모리 파일/계획 문서 어디에도 정의 안 돼있음
   — 사용자에게 범위 확인 필요. GPU monotonicity 표본 확장(현재 2타겟뿐)도 원하면 가능.

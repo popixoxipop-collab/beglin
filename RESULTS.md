@@ -12752,3 +12752,73 @@ D-qNg64-gpu-1's own D1 finding that this workload's real footprint runs well und
 conservative estimate). `qwen_infer.c`'s `moe_promotion_nq_init_gpu()` MLA call site staged
 and committed as an isolated patch, same technique as the earlier `D-p95-1` commit, to avoid
 touching any other concurrent session's in-progress working-tree state.
+
+## D-qNg64-18 -- CPU qNg64 extended from n={2,3,5,6,7} to n=2..15 (commit `214980e`, 2026-09-09)
+
+**WHY**: user request, explicit -- "임의 비트폭(n=2~7, qNg64)까지, 9~15는 없어?" then, after being
+shown the CPU-vs-GPU asymmetry, "2, cpu/gpu 엔진 둘 다에 대해 ... n=8~15 네이티브 확장해야함", CPU
+sequenced first. Investigation found the restriction was a pure caller-side gate, not a real
+technical limit: `gguf_quantize_qNg64()` (the encoder) and both registrar functions
+(`st_register_moe_experts_qNg64_as()`, `st_register_moe_dense_af_qNg64_as()`) already size every
+buffer dynamically off `n` (`ng * n * 8` bytes), with no hardcoded loop bound anywhere -- confirmed
+by direct code read, not assumed. Exactly 5 call sites in `qwen_infer.c` hardcoded the literal
+`n==2||3||5||6||7` pattern: `moe_decode_af()` (:2539), `moe_matvec_af_row()` (:2640, the real GEMV
+hot path), `moe_matvec_af_row_vdsp()`'s FATAL guard (:2715, an opt-in scalar variant that
+deliberately does NOT implement qNg64 and must keep refusing the new range too, not fall through),
+`moe_promotion_nq_validate_n()` (the centralized validator D-qNg64-10 already extracted once), and
+a second, NON-centralized duplicate inside the `QWEN_MOE_ATTRIB_SIM_QN` env-var handling path --
+this last one is the exact class of drift D-qNg64-10's own comment already flagged as a real risk
+("two independent copies of a range check, one left too permissive"), left unfixed until now.
+
+**Mechanism**: added one shared `moe_qng64_n_supported(int n)` helper (forward-declared near
+`moe_decode_af()` since the real definition sits ~12000 lines later next to
+`moe_promotion_nq_validate_n()` in this single-TU file), `return n==2 || n==3 || (n>=5 && n<=15)`.
+All 5 call sites now call this helper instead of carrying their own copy of the literal. n=4 stays
+excluded (byte-identical in VALUE to the existing, faster q4g64 format -- see gguf_transcode.h);
+n=8 is INCLUDED despite q8g64 already existing at that bit width -- they are not interchangeable
+(q8g64: asymmetric clamp to [-127,127], plain division, no error feedback; qNg64(n=8): symmetric
+clamp to [-128,127], reciprocal-multiply, WITH error feedback -- gguf_transcode.h's own qNg64
+comment already warned about exactly this, now cross-referenced from the new FATAL message too).
+gguf_transcode.h's "Intended for n in [2,7]" scope comment updated to match.
+
+**Verification** (three independent checks, not just "it compiles"):
+1. Standalone encode/decode round-trip test (`/tmp/qng64_roundtrip_test.c`, synthetic weights with
+   deliberate outliers, real `gguf_quantize_qNg64()` + a faithful copy of the bit-plane unpack
+   logic): rel_l2 at n=2..15 is `1.29, 0.57, [n=4 skipped], 0.112, 0.059, 0.027, 0.0137, 0.0066,
+   0.0035, 0.0017, 0.0009, 0.00039, 0.00022, 0.00011` -- monotonically decreasing throughout, no
+   discontinuity at the n=7/8 boundary (the newly-opened range), consistent with a correctly
+   generalized bit-width format rather than a boundary bug.
+2. Real end-to-end promotion + generation against real DeepSeek-V2-Lite-Chat weights (local
+   `weights_moe` AF blob + real bf16 safetensors checkpoint, `QWEN_MOE_CBATCH=1
+   QWEN_MOE_CB_ONLINE=1 QWEN_MOE_NEARTIE_CORRECT=1 QWEN_MOE_PROMOTION_FILE_NQ=...`, target
+   `shared_gate_proj` layer 5): n=10 promoted cleanly (`1/5767168 codes saturated`, healthy),
+   6-token generation completed (`RESULT: MoE-4b online cbatch complete`), no crash. Repeated at
+   n=15 (the new upper bound) with the same clean result. This exercises both `moe_decode_af()`
+   and `moe_matvec_af_row()` for real, on real weights, through a real forward pass -- not a
+   synthetic microbenchmark.
+3. Negative test: n=16 (one past the new bound) still correctly `FATAL`s at
+   `moe_promotion_nq_validate_n()` with the updated `{2,3,5,6,7,8..15}` range message -- confirms
+   the widening didn't accidentally erase the upper boundary.
+
+**COST**: none measured beyond the existing per-bit bit-plane cost model (Phase 3 scope was
+already "correctness, not speed" for this whole family -- n=8..15 inherits the same naive scalar
+decode/matvec loop n=2..7 already had). Real per-n accuracy on OTHER real tensors/roles/events
+(beyond this round's one smoke-test target) is not yet measured -- the round-trip test's rel_l2
+numbers are on synthetic weights, useful for confirming the format itself round-trips correctly,
+not a substitute for real near-tie attribution data at n=8..15 on this project's actual event set.
+
+**EXIT**: NEON/SME2-accelerated qNg64 CPU kernels remain out of scope (same Phase 3/Phase 5 split
+as the original n=2..7 work). If a dedicated faster n=8 format is ever wanted to replace q8g64
+with qNg64(n=8) specifically, that's a separate registrar-selection decision, not a change to this
+gate.
+
+**GPU is explicitly NOT part of this round** -- user's own hard constraint, verbatim: "난 압축
+커널 이점 절대 포기 못해" (rejects any dense-fallback GPU workaround). GPU n=7 and n=9..15 need a
+genuine custom Metal kernel via `mx.fast.metal_kernel()` (MLX's own documented custom-kernel
+extension API, with real precedent -- VeloxQuant-MLX and TurboQuant-on-MLX both built custom
+quantization kernels this way without forking MLX itself); MLX's native kernels only ever cover
+bits in `{2,3,4,5,6,8}` (confirmed against MLX 0.32.2, the current release, not an old cached
+fact) so a library version bump cannot solve this. Scoped at a high level via WebSearch only this
+session -- design/implementation is separate, larger follow-up work, not started.
+
+Committed locally (`214980e`), not pushed, per this repo's established convention.
