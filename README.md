@@ -94,6 +94,33 @@ root-caused via interactive `lldb`.
 Full methodology, the int8-LHS vs f16p-LHS root-cause story, and every raw
 number: [`RESULTS.md`](RESULTS.md).
 
+## vs llama.cpp / MLX (same hardware, same model)
+
+Apple M4 (4P+6E cores, 16GB RAM), DeepSeek-V2-Lite (15.71B, MoE), ~4-bit
+quantization on every path (llama.cpp `Q4_K_M` 9.65GiB, this engine's own
+`q4g64` int4 AF-blob ~9.8GB). `tok/s` is generation-phase throughput
+(excludes prompt processing).
+
+| Path | tok/s |
+|---|---|
+| llama.cpp, Metal GPU | **53.11 ± 1.01** |
+| **This engine, GPU (own MLX backend)** | **52.91** (109% of llama.cpp+Metal's original 48.34 bar) |
+| llama.cpp, CPU-only (8 threads) | 22.69 ± 6.32 |
+| This engine, CPU/SME2, single-stream | ~1.34 |
+| This engine, CPU/SME2, 8-way concurrent | ~1.7–2.5 aggregate |
+
+**The CPU number is not a typo.** SME2 repacks each `(layer, expert,
+projection)` weight slot the first time it's touched, then reuses the
+packed form. DeepSeek-V2-Lite routes a different top-6-of-64 expert subset
+every token, so a short single-stream run is dominated by one-time repack
+cost, not steady-state decode. This is this engine's own known limitation,
+not a new one — it's the exact gap that motivated building the MLX GPU
+backend in the first place, which is where the real competitive number
+above comes from. A real B=64 batched-throughput or longer steady-state
+re-measurement is still open (memory-constrained on the only SME2-capable
+test machine available this round). Full methodology, exact commands, and
+the honest cost/scope notes: [`RESULTS.md`](RESULTS.md) ("D-bench-1").
+
 ## Build
 
 ```sh

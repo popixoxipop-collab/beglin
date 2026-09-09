@@ -12822,3 +12822,70 @@ fact) so a library version bump cannot solve this. Scoped at a high level via We
 session -- design/implementation is separate, larger follow-up work, not started.
 
 Committed locally (`214980e`), not pushed, per this repo's established convention.
+
+## D-bench-1 -- README speed-comparison table vs llama.cpp/MLX, real fresh measurements (2026-09-10)
+
+**WHY**: user request -- a real, sourced speed table for README, not projected/estimated numbers
+(Data-First Numerics rule). bob (Apple M4, 4P+6E cores, 16GB RAM) is the only reachable machine
+with SME2 hardware, and already has real DeepSeek-V2-Lite weights in both llama.cpp GGUF form
+(`Q4_K_M`, 9.65GiB) and this engine's own AF-blob form (q4g64 int4, ~9.8GB) -- same model, same
+hardware, comparable ~4-bit precision level on both sides, so a same-machine comparison is
+actually possible without a fresh multi-GB download.
+
+**Method**: `llama-bench -m DeepSeek-V2-Lite.Q4_K_M.gguf -p 9 -n 20 -r 3` at `-ngl 0` (CPU) and
+`-ngl 99` (Metal GPU), `-t 8` for the CPU run. vdsp/beglin: freshly rebuilt `qwen_infer_cpu_bench`
+from this exact repo HEAD (`214980e` + the D-bench-1 doc commit) via the same plain-compile,
+no-arch-flag recipe the npm package ships (`otool -tV` confirmed zero SVE/SME instructions in the
+caller-plain object, same convention as every other build this session), run against
+`QWEN_MOE_BASE=~/moe_base_deepseek` (the real AF blob) with a 9-token WikiText prompt
+(`d4_wikitext2_short_manifest/p0.i32`) and `maxnew=20` (`MOE_CBATCH_MAXPOS=32` caps prompt+gen at
+32, so 20 was the largest round number that fit). `QWEN_MOE_CB_ONLINE=1 QWEN_MOE_CB_SLOTS=1
+QWEN_MOE_CB_REQS=1` for a genuine single-stream (B=1) number -- no promotion overrides, plain
+default int4 serving path, matching what actually ships.
+
+**Safety note**: bob's live desktop session had only 6.6GB free against this workload's ~9-11GB
+real footprint -- the exact precondition of a documented 2026-09-02 incident (memory pressure ->
+swap thrashing -> SSH unresponsive -> tailscale offline for hours). Asked the user explicitly
+before proceeding; they chose to proceed now with active swap monitoring (`vm.swapusage` polled
+every 5s throughout, kill-on-sight threshold set). Swap stayed flat at 955.56M/2048M through every
+run in this round -- no thrashing occurred, but the risk was real and correctly gated on user
+confirmation rather than a unilateral bypass.
+
+**Results** (all `tg20` = generation-phase tok/s, excluding prompt processing):
+
+| Path | tok/s | Notes |
+|---|---|---|
+| llama.cpp, Metal GPU (`-ngl 99`, 4 threads) | **53.11 ± 1.01** | fresh, 2026-09-10; closely reproduces this project's own 2026-08-30 measurement of 48.34 tok/s on the same command/model/machine (`llama-batched ... -n 64`), confirming methodology is sound and comparable across sessions |
+| vdsp/beglin, GPU (own MLX backend, `mlx_moe.cpp`) | **52.91** (mean of 3 reps) | historical, 2026-08-31 (commit `2f52c50`), same machine -- 109.4% of the 2026-08-30 llama.cpp+Metal bar, not re-verified fresh this round (see COST) |
+| llama.cpp, CPU-only (`-ngl 0`, BLAS, 8 threads) | **22.69 ± 6.32** | fresh, 2026-09-10 |
+| vdsp/beglin, CPU/SME2, single-stream (B=1) | **~1.34** | fresh, 2026-09-10 -- `(20-1) tokens / ((wall_ms-ttft_ms)/1000)`; reproduced at both default `nthreads=64` (1.338) and `nthreads=8` (1.337), ruling out thread-oversubscription as the cause |
+| vdsp/beglin, CPU/SME2, 8-way concurrent (short prompts) | **~1.7-2.5 aggregate** | this round's fresh 8-slot offline run (~1.74, `speedup=0.840x` vs its own naive-equivalent baseline) is the same order of magnitude as the project's own 2026-08-30 measurement (2.47 tok/s aggregate) -- both short-prompt runs, not the B=64 scale this engine's batched design actually targets |
+
+**Why the CPU/SME2 number is what it is, not spin**: `moe_sme2_ensure_ready()` repacks a given
+`(layer, expert, projection)` weight slot into SME2's RHS format the FIRST time that exact slot is
+touched, then reuses the packed form on every later call. DeepSeek-V2-Lite routes top-6 of 64
+experts per token, per layer, and the routed subset changes token to token -- across only 20
+generated tokens (or 8 concurrent short prompts), most touched expert slots are being packed for
+the first time, not reused, so this measurement is dominated by one-time setup cost rather than
+steady-state decode throughput. This is not a new finding -- it is the SAME conclusion this
+project's own 2026-08-30 V5-pre section already reached ("the true single-sequence gap is larger
+still... left for a real controlled comparison later"), which directly motivated building the
+GPU/MLX backend (V5/V6) that produced the 52.91 tok/s number above. This round supplies the exact
+single-stream number that entry explicitly left as future work.
+
+**COST**: no fresh raw `mlx_lm` (vanilla MLX, not this engine's own backend) number -- the bf16
+DeepSeek-V2-Lite checkpoint needs on-the-fly quantization that loads full precision into RAM
+first, well past bob's 16GB with the live desktop session already using ~9.4GB; judged too risky
+to attempt given the swap-thrashing precedent above, not attempted. No B=64 batched-throughput
+re-measurement (this engine's own documented target scale, `>=250 tok/s aggregate`) -- same memory
+constraint, would need proportionally more concurrent-slot memory than the 8-way test above.
+`llama-bench`'s `-p 9 -n 20` is a short, noisy window (`± 6.32` on the CPU tg number) chosen to
+match vdsp's own `MOE_CBATCH_MAXPOS=32` ceiling for a fair prompt/gen-length match, not because
+it's the ideal measurement window for llama.cpp alone -- a longer window would likely tighten
+llama.cpp's own error bars without changing the qualitative conclusion.
+
+**EXIT**: re-measure vdsp's CPU/SME2 path with (a) a real B=64 batched run and/or (b) a
+longer-window single-stream run once `MOE_CBATCH_MAXPOS` is raised or an unrestricted decode mode
+exists, to get a genuine steady-state (post-warm-up) number instead of one dominated by first-use
+packing cost. Re-measure on a machine with more free RAM to also get a real `mlx_lm` baseline and
+a B=64 number without the current swap risk.
