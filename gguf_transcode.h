@@ -42,8 +42,10 @@ void gguf_quantize_q8g64(const float *w, int out, int in,
 // gguf_quantize_q8g64() (q8g64 clamps asymmetrically to [-127,127] and uses plain division
 // with no error feedback; qNg64(n=8) would clamp to [-128,127] with reciprocal-multiply and EF
 // -- the two are deliberately different at n=8, do not assume interchangeability). Intended for
-// n in [2,7] (n=4 and n=8 already have their own dedicated, faster formats above; this family
-// exists for the bit-widths that don't). Per-element MSE is measurably HIGHER with error
+// n in [2,3,5,6,7,8..15] (D-qNg64-18 in qwen_infer.c widened caller support from the original
+// [2,7]; n=4 already has its own dedicated, faster format above, q4g64, so is excluded here;
+// n=16+ is f16/f32 territory, a different tensor representation, not this family). Per-element
+// MSE is measurably HIGHER with error
 // feedback than without (~2x, a direct consequence of differencing residual noise) -- the real
 // benefit error feedback gives is a ~60x reduction in per-GROUP summed error, which is what a
 // group-64 dot product actually accumulates. (The comment on q4g64 above claiming EF simply

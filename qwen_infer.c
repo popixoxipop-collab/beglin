@@ -2486,6 +2486,12 @@ static inline float moe_lut_apply(int nib, int bits) {
     return (bits == 3) ? g_moe_lut3[nib] : g_moe_lut4[nib];
 }
 
+// D-qNg64-18: forward-declared here (real definition down near moe_promotion_nq_validate_n,
+// ~line 14449) so moe_decode_af/moe_matvec_af_row/moe_matvec_af_row_vdsp below -- all far above
+// that definition in this single-translation-unit file -- can share the one range check instead
+// of each carrying its own copy.
+static int moe_qng64_n_supported(int n);
+
 static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row, long col) {
     // 4.C bridge: a GGUF-sourced tensor carries its own buffer (t->base); every AF-blob-sourced
     // tensor (t->base==NULL) uses the shared blob exactly as before -- see MoeAFTensor's comment.
@@ -2530,12 +2536,13 @@ static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row
         int8_t code = (int8_t)base[byte_idx];
         return (float)code * scale;
     }
-    // D-qNg64-1: bit-plane arbitrary-n format, n in {2,3,5,6,7}. Gated on t->sym==1 (not bits
-    // alone) to stay completely clear of moe_lut_apply()'s pre-existing bits==3 LUT-decode-curve
-    // experiment just above, which only ever registers sym==0 tensors (run_moe_lut_gate()'s own
-    // local struct) -- see gguf_transcode.h's qNg64 comment for the exact packing spec this
-    // mirrors (bias-before-extract, LE bit order within each 8-byte plane).
-    if (t->sym && (bits == 2 || bits == 3 || bits == 5 || bits == 6 || bits == 7)) {
+    // D-qNg64-1/D-qNg64-18: bit-plane arbitrary-n format, n in {2,3,5,6,7,8..15} (see
+    // moe_qng64_n_supported()'s own WHY/COST/EXIT comment for the exact range rationale). Gated
+    // on t->sym==1 (not bits alone) to stay completely clear of moe_lut_apply()'s pre-existing
+    // bits==3 LUT-decode-curve experiment just above, which only ever registers sym==0 tensors
+    // (run_moe_lut_gate()'s own local struct) -- see gguf_transcode.h's qNg64 comment for the
+    // exact packing spec this mirrors (bias-before-extract, LE bit order within each 8-byte plane).
+    if (t->sym && moe_qng64_n_supported(bits)) {
         long qng_row_pbytes = t->ng * (long)bits * 8;
         long eoffq = t->ebits ? (long)t->epacked_off[e] : e * t->out * qng_row_pbytes;
         long group_off = t->packed_off + eoffq + row * qng_row_pbytes + group * (long)bits * 8;
@@ -2631,11 +2638,12 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
         }
         return acc;
     }
-    // D-qNg64-1: same gate/layout as moe_decode_af()'s qNg64 branch -- see that function's
-    // comment. Naive per-element loop only (Phase 3 scope is correctness, not speed; the SME2
-    // group-smart path already falls back to this scalar function for any non-int4 tensor, see
-    // moe_sme2_ensure_ready()'s own `actual_bits != 4` check, so no separate opt-in needed here).
-    if (t->sym && (bits == 2 || bits == 3 || bits == 5 || bits == 6 || bits == 7)) {
+    // D-qNg64-1/D-qNg64-18: same gate/layout as moe_decode_af()'s qNg64 branch -- see that
+    // function's comment. Naive per-element loop only (Phase 3 scope is correctness, not speed;
+    // the SME2 group-smart path already falls back to this scalar function for any non-int4
+    // tensor, see moe_sme2_ensure_ready()'s own `actual_bits != 4` check, so no separate opt-in
+    // needed here).
+    if (t->sym && moe_qng64_n_supported(bits)) {
         long qng_row_pbytes = ng * (long)bits * 8;
         long eoffq = t->ebits ? (long)t->epacked_off[e] : e * t->out * qng_row_pbytes;
         long row_byte0q = t->packed_off + eoffq + row * qng_row_pbytes;
@@ -2704,9 +2712,13 @@ static double moe_matvec_af_row_vdsp(const uint8_t *blob, MoeAFTensor *t, long e
     if (t->bits == 8) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==8 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for int8 tensors)\n"); exit(1); }
     if (t->bits == 16) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==16 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for F16-as-AF tensors)\n"); exit(1); }
     if (t->bits == 32) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==32 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for F32-as-AF tensors)\n"); exit(1); }
-    // D-qNg64-1: gated on sym (like the decode/matvec branches) so a genuine sym==0 bits==3
-    // LUT-test tensor (run_moe_lut_gate(), unrelated to qNg64) is not FATALed here by mistake.
-    if (t->sym && (t->bits == 2 || t->bits == 3 || t->bits == 5 || t->bits == 6 || t->bits == 7)) {
+    // D-qNg64-1/D-qNg64-18: gated on sym (like the decode/matvec branches) so a genuine sym==0
+    // bits==3 LUT-test tensor (run_moe_lut_gate(), unrelated to qNg64) is not FATALed here by
+    // mistake. This vdsp-scalar path stays a deliberate non-implementation for the whole qNg64
+    // family (n=2,3,5,6,7 before, n=8..15 now too) -- widening moe_qng64_n_supported() must
+    // widen this FATAL guard in lockstep, or n=8..15 would silently fall through past it into
+    // wrong-format decode below instead of refusing cleanly.
+    if (t->sym && moe_qng64_n_supported(t->bits)) {
         fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==%d (qNg64) not implemented (QWEN_MOE_SCALAR_VDSP unsupported for bit-plane tensors)\n", t->bits); exit(1);
     }
     if (t->ebits) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: per-expert mixed precision not implemented (QWEN_MOE_SCALAR_VDSP unsupported for mixed tensors)\n"); exit(1); }
@@ -14417,15 +14429,40 @@ static const MoeStExpertRole MOE_ST_EXPERT_ROLES[] = {   // always 3, every rout
 //   A promotion line naming either FATALs with a clear message, not a silent skip.
 //   GPU: out of scope this round (no live GPU promotion path exists today -- see the plan's L3a
 //   point 8) -- this function only ever touches g_moe_lt_active (CPU serving).
-// D-qNg64-gpu-1: factored out of this function's own inline n-range check so a third call site
-// (the GPU mirror below) can't silently drift from it -- this project already has one real bug
-// on record for exactly this class of mistake (D-qNg64-10: two independent copies of a range
-// check, one left too permissive).
+// D-qNg64-18: single source of truth for "is n a bit-plane qNg64 width", extracted so the five
+// call sites that each independently checked `n==2||3||5||6||7` (moe_decode_af, moe_matvec_af_
+// row, moe_matvec_af_row_vdsp's FATAL guard, moe_promotion_nq_validate_n, and the
+// QWEN_MOE_ATTRIB_SIM_QN inline check) can't drift from each other -- this is the third time
+// this project has hit exactly this class of bug (D-qNg64-10's own comment already names the
+// first two), so this round fixes the pattern, not just the immediate range.
+//   WHY 2..15 (not wider): n=1 has no signed code range worth encoding; n=4 is deliberately
+//   excluded (byte-identical in VALUE to the existing, faster q4g64 -- see gguf_transcode.h's
+//   qNg64 comment, "for n=4, this is byte-identical..."); n=16+ is f16/f32 territory, a
+//   different tensor representation entirely, not this family. n=8 IS included here even
+//   though q8g64 already exists -- they are NOT interchangeable (q8g64 clamps asymmetrically
+//   to [-127,127] with plain division and no error feedback; qNg64(n=8) clamps symmetrically to
+//   [-128,127] with reciprocal-multiply and error feedback -- gguf_transcode.h's own qNg64
+//   comment already warns about exactly this). Both real bit-plane decode paths
+//   (moe_decode_af/moe_matvec_af_row) and the encoder (gguf_quantize_qNg64) were confirmed by
+//   direct code read to be genuinely n-agnostic already (dynamic n*8-byte group stride, no
+//   fixed-size buffer, no hardcoded loop bound) -- this was a pure scope/gate restriction, not a
+//   technical limit, so widening it needed no arithmetic changes, only these gates.
+//   COST: none measured -- same per-bit bit-plane cost model as n=2..7 already had, just at a
+//   larger n. Real per-n accuracy (rel_l2, saturation rate) for n=9..15 is not yet measured on
+//   real weights -- that's real follow-on verification, not assumed safe by this widening alone.
+//   EXIT: if a dedicated faster n=8 format is ever wanted to replace q8g64 with qNg64(n=8)
+//   specifically, that's a separate registrar-selection decision, not a change to this gate.
+static int moe_qng64_n_supported(int n) {
+    return n == 2 || n == 3 || (n >= 5 && n <= 15);
+}
 static void moe_promotion_nq_validate_n(const char *context, const char *role_buf, int layer, int n) {
-    if (!(n == 2 || n == 3 || n == 5 || n == 6 || n == 7)) {
-        fprintf(stderr, "FATAL: %s: role=%s layer=%d n=%d not in {2,3,5,6,7} -- the only "
-                        "bit-widths the qNg64 bit-plane decoder actually supports (n=4/8 use a "
-                        "DIFFERENT format+registrar, not this path)\n", context, role_buf, layer, n);
+    if (!moe_qng64_n_supported(n)) {
+        fprintf(stderr, "FATAL: %s: role=%s layer=%d n=%d not in {2,3,5,6,7,8..15} -- the only "
+                        "bit-widths the qNg64 bit-plane decoder actually supports (n=4 uses a "
+                        "DIFFERENT format+registrar, q4g64, not this path; n=8 here is qNg64's "
+                        "OWN symmetric+error-feedback encoding, numerically different from the "
+                        "pre-existing q8g64 format despite the same bit width -- see "
+                        "gguf_transcode.h)\n", context, role_buf, layer, n);
         exit(1);
     }
 }
@@ -14773,11 +14810,13 @@ static MoeAFTensor *moe_register_hi_role(const char *role_name, int layer,
     if (sim_role && sim_role[0] && sim_layer && sim_layer[0] && sim_qn && sim_qn[0]
         && layer == atoi(sim_layer) && !strcmp(role_name, sim_role)) {
         int n = atoi(sim_qn);
-        // D-qNg64-10: same class of gap as moe_promotion_nq_init's n-range check, same fix --
-        // st_register_moe_dense_af_qNg64_as() is only decodable for n in {2,3,5,6,7}.
-        if (!(n == 2 || n == 3 || n == 5 || n == 6 || n == 7)) {
-            fprintf(stderr, "FATAL: QWEN_MOE_ATTRIB_SIM_QN=%d not in {2,3,5,6,7} -- the only "
-                            "bit-widths the qNg64 bit-plane decoder actually supports\n", n);
+        // D-qNg64-10/D-qNg64-18: same class of gap as moe_promotion_nq_validate_n's n-range
+        // check, same fix -- this is the exact second, non-centralized copy D-qNg64-10's own
+        // comment (see moe_promotion_nq_validate_n) already flagged as drift risk; now sharing
+        // moe_qng64_n_supported() closes that gap instead of leaving it open.
+        if (!moe_qng64_n_supported(n)) {
+            fprintf(stderr, "FATAL: QWEN_MOE_ATTRIB_SIM_QN=%d not in {2,3,5,6,7,8..15} -- the "
+                            "only bit-widths the qNg64 bit-plane decoder actually supports\n", n);
             exit(1);
         }
         MoeAFTensor *w = st_register_moe_dense_af_qNg64_as(st_name, n, ename);
