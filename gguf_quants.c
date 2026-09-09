@@ -54,12 +54,36 @@ typedef struct {
     uint8_t qs[QK5_0 / 2];  // nibbles / quants
 } GgmlBlockQ5_0;
 
+// D-gen-9: Q3_K/Q5_K decode ports below have no error-feedback/residual term, matching this
+// project's existing Q4_K/Q6_K ports right above/below -- this is intentional, not an omission
+// this project's own residual-correction policy would flag. That policy governs this project's
+// OWN quantization ENCODING choices (e.g. q4g64_error_feedback); these are pure DECODE ports of
+// a fixed, upstream, third-party format (ggml's own Q3_K/Q5_K super-block affine scale+min
+// scheme), which has no residual/iterative-correction concept in its own algorithm at all.
+// Correctness here means an EXACT bit-match to ggml's own decoder (oracle-verified against
+// gguf-py, same discipline as every other type in this file) -- adding a residual term would
+// not just be unnecessary, it would make the output WRONG relative to the format it decodes.
+typedef struct {
+    uint8_t hmask[QK_K / 8]; // quants, high bit
+    uint8_t qs[QK_K / 4];    // quants, low 2 bits
+    uint8_t scales[12];      // scales, quantized with 6 bits
+    ggml_half d;             // super-block scale (no separate min -- Q3_K is scale-only, unlike Q4_K/Q5_K)
+} GgmlBlockQ3_K;
+
 typedef struct {
     ggml_half d;                   // super-block scale for quantized scales
     ggml_half dmin;                // super-block scale for quantized mins
     uint8_t scales[K_SCALE_SIZE];  // scales and mins, quantized with 6 bits
     uint8_t qs[QK_K / 2];          // 4-bit quants
 } GgmlBlockQ4_K;
+
+typedef struct {
+    ggml_half d;                   // super-block scale for quantized scales
+    ggml_half dmin;                // super-block scale for quantized mins
+    uint8_t scales[K_SCALE_SIZE];  // scales and mins, quantized with 6 bits
+    uint8_t qh[QK_K / 8];          // quants, high bit (the field Q4_K doesn't have)
+    uint8_t qs[QK_K / 2];          // quants, low 4 bits
+} GgmlBlockQ5_K;
 
 typedef struct {
     uint8_t ql[QK_K / 2];      // quants, lower 4 bits
@@ -138,6 +162,77 @@ static void dequant_row_q5_0(const void *src, float *y, int64_t n) {
     }
 }
 
+// Ported from ggml-quants.c's dequantize_row_q3_K (see file header for provenance). No
+// residual/error-feedback term -- see GgmlBlockQ3_K's own D-gen-9 comment above for why that
+// policy doesn't apply to this decode-only port of a fixed upstream format.
+static void dequant_row_q3_k(const void *src, float *y, int64_t n) {
+    const GgmlBlockQ3_K *x = (const GgmlBlockQ3_K *)src;
+    const int nb = (int)(n / QK_K);
+
+    const uint32_t kmask1 = 0x03030303;
+    const uint32_t kmask2 = 0x0f0f0f0f;
+
+    uint32_t aux[4];
+    const int8_t *scales = (const int8_t *)aux;
+
+    for (int i = 0; i < nb; i++) {
+        const float d_all = fp16_to_fp32(x[i].d);
+        const uint8_t *q = x[i].qs;
+        const uint8_t *hm = x[i].hmask;
+        uint8_t m = 1;
+
+        memcpy(aux, x[i].scales, 12);
+        uint32_t tmp = aux[2];
+        aux[2] = ((aux[0] >> 4) & kmask2) | (((tmp >> 4) & kmask1) << 4);
+        aux[3] = ((aux[1] >> 4) & kmask2) | (((tmp >> 6) & kmask1) << 4);
+        aux[0] = (aux[0] & kmask2) | (((tmp >> 0) & kmask1) << 4);
+        aux[1] = (aux[1] & kmask2) | (((tmp >> 2) & kmask1) << 4);
+
+        int is = 0;
+        float dl;
+        for (int nn = 0; nn < QK_K; nn += 128) {
+            int shift = 0;
+            for (int j = 0; j < 4; ++j) {
+                dl = d_all * (scales[is++] - 32);
+                for (int l = 0; l < 16; ++l) *y++ = dl * ((int8_t)((q[l+0] >> shift) & 3) - ((hm[l+0] & m) ? 0 : 4));
+                dl = d_all * (scales[is++] - 32);
+                for (int l = 0; l < 16; ++l) *y++ = dl * ((int8_t)((q[l+16] >> shift) & 3) - ((hm[l+16] & m) ? 0 : 4));
+                shift += 2;
+                m <<= 1;
+            }
+            q += 32;
+        }
+    }
+}
+
+// Ported from ggml-quants.c's dequantize_row_q5_K (see file header for provenance). No
+// residual/error-feedback term -- same D-gen-9 reasoning as dequant_row_q3_k above.
+static void dequant_row_q5_k(const void *src, float *y, int64_t n) {
+    const GgmlBlockQ5_K *x = (const GgmlBlockQ5_K *)src;
+    const int64_t nb = n / QK_K;
+
+    for (int64_t i = 0; i < nb; i++) {
+        const uint8_t *ql = x[i].qs;
+        const uint8_t *qh = x[i].qh;
+        const float d   = fp16_to_fp32(x[i].d);
+        const float min = fp16_to_fp32(x[i].dmin);
+
+        int is = 0;
+        uint8_t sc, m;
+        uint8_t u1 = 1, u2 = 2;
+        for (int j = 0; j < QK_K; j += 64) {
+            get_scale_min_k4(is + 0, x[i].scales, &sc, &m);
+            const float d1 = d * sc; const float m1 = min * m;
+            get_scale_min_k4(is + 1, x[i].scales, &sc, &m);
+            const float d2 = d * sc; const float m2 = min * m;
+            for (int l = 0; l < 32; ++l) *y++ = d1 * ((ql[l] & 0xF) + (qh[l] & u1 ? 16 : 0)) - m1;
+            for (int l = 0; l < 32; ++l) *y++ = d2 * ((ql[l]  >> 4) + (qh[l] & u2 ? 16 : 0)) - m2;
+            ql += 32; is += 2;
+            u1 <<= 2; u2 <<= 2;
+        }
+    }
+}
+
 // Ported from ggml-quants.c's dequantize_row_q4_K (see file header for provenance).
 static void dequant_row_q4_k(const void *src, float *y, int64_t n) {
     const GgmlBlockQ4_K *x = (const GgmlBlockQ4_K *)src;
@@ -202,7 +297,7 @@ int gguf_dequant_supported(GgmlType type) {
     switch (type) {
         case GGML_TYPE_F32: case GGML_TYPE_F16: case GGML_TYPE_BF16:
         case GGML_TYPE_Q4_0: case GGML_TYPE_Q8_0: case GGML_TYPE_Q5_0:
-        case GGML_TYPE_Q4_K: case GGML_TYPE_Q6_K:
+        case GGML_TYPE_Q3_K: case GGML_TYPE_Q4_K: case GGML_TYPE_Q5_K: case GGML_TYPE_Q6_K:
             return 1;
         default:
             return 0;
@@ -217,7 +312,9 @@ void gguf_dequant_row(GgmlType type, const void *src, float *dst, int64_t n_elem
         case GGML_TYPE_Q4_0: dequant_row_q4_0(src, dst, n_elements); return;
         case GGML_TYPE_Q8_0: dequant_row_q8_0(src, dst, n_elements); return;
         case GGML_TYPE_Q5_0: dequant_row_q5_0(src, dst, n_elements); return;
+        case GGML_TYPE_Q3_K: dequant_row_q3_k(src, dst, n_elements); return;
         case GGML_TYPE_Q4_K: dequant_row_q4_k(src, dst, n_elements); return;
+        case GGML_TYPE_Q5_K: dequant_row_q5_k(src, dst, n_elements); return;
         case GGML_TYPE_Q6_K: dequant_row_q6_k(src, dst, n_elements); return;
         default:
             fprintf(stderr, "FATAL: gguf_dequant_row: unsupported ggml type id %d (see gguf_dequant_supported())\n", (int)type);
