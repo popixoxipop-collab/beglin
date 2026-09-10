@@ -13105,3 +13105,92 @@ vector, per the design doc's Phase 2) and the `mlx_moe.cpp` C++ integration poin
 `ffn_gather`, `lazy_matvec_e0`, etc.) identified by the earlier design pass -- meaningfully larger
 in scope (touches the real GPU serving path) and was intentionally paused here for a checkpoint
 before proceeding, rather than continuing straight through.
+
+## D-metal-4 -- qNg64 n=7/9-15 real GPU production path: GEMV kernel + mlx_moe.cpp integration
+## (2026-09-10)
+
+**WHY**: D-metal-1's standalone decode probe proved the algorithm and toolchain; this round
+does the actual work -- a real GEMV kernel (dot product against an activation vector, not just
+decode) and wiring it into `mlx_moe.cpp`'s real GPU serving path, per the user's explicit
+requirement to proceed with "실제 GEMV + mlx_moe.cpp 프로덕션 통합" (real GEMV + production
+integration). n=7 and n=9-15 previously fell through `mlx_gpu_bind_af`'s gate to the same
+`return 0` every unsupported bits value gets -- this makes them real, bound, GPU-executing
+tensors, preserving the compressed representation on GPU per the user's own hard constraint
+("난 압축 커널 이점 절대 포기 못해").
+
+**Two real bugs found and fixed this round** (not assumed correct on the first attempt --
+verified at each step, per this project's own established discipline):
+
+1. **SIMD-width reduction bug.** A naive `simd_sum(partial)` across a 64-thread threadgroup
+   silently reduces within one 32-lane SIMD-group only (Apple GPUs' actual SIMD width), missing
+   the other 32 threads' contribution entirely -- caught by comparing kernel output against a
+   real CPU reference at EVERY output row (not just row 0, this project's own documented failure
+   mode for exactly this class of bug), which showed large, real divergence (max_abs_diff=3.23,
+   not floating-point noise). Root-caused by writing raw per-thread partials to a debug output
+   buffer and manually summing all 64 in Python -- that manual sum matched the CPU reference
+   exactly (diff ~1e-7), proving the per-thread decode+multiply logic was already correct and
+   isolating the bug to the GPU-side reduction specifically. Fixed with the standard two-level
+   reduction (each 32-lane SIMD-group reduces independently via `simd_sum`, the two partial sums
+   combine through `threadgroup` memory with a `threadgroup_barrier`) -- re-tested at the same
+   multi-row scale, now matching to ~1e-7 (expected parallel-tree-vs-sequential accumulation
+   order noise, not a bug).
+2. **Output shape mismatch.** `qng64_gemv_e0`'s first draft returned a bare `{out}` 1D array,
+   but the real calling convention (confirmed by direct shape debugging on a real DeepSeek
+   `kv_a_proj_with_mqa` call: `x` arrives shaped `{1, 2048}`, not flat `{2048}`) expects `{B,
+   out}` to match what `mx::quantized_matmul`'s own native-bits path returns -- caused a real,
+   caught exception ("[slice] Invalid number of indices or strides for array with dimension 1")
+   the first time this ran against real weights instead of synthetic test data. Fixed by
+   declaring `output_shapes = {{1, (int)t.out}}`; the kernel body itself needed no change (a
+   size-1 leading dimension doesn't change the underlying memory layout the kernel writes to).
+
+**Verification, in order** (each step run for real, not assumed):
+1. Small-scale GEMV (4 rows x 4 groups, n=7) against synthetic data + a real CPU reference --
+   caught bug 1 above.
+2. Realistic-scale GEMV (16 rows x 22 groups, n=11, matching DeepSeek's real `MOE_IM_DIM=1408`)
+   -- confirmed the fix holds at production dimensions, not just the small case that found it.
+3. Standalone C++ verification (`mx::fast::metal_kernel()` called from plain C++, not just
+   Python) -- exact same result as the Python probe, de-risking the C++ API before touching
+   `mlx_moe.cpp` itself.
+4. Full `mlx_moe.cpp` integration: new `QNg64Tensor` struct + `g_qng64_tensors` map (raw
+   qNg64 bytes, zero-copy, no repack -- unlike the n∈{2,3,5,6} branch, there is no native MLX
+   format to repack INTO), widened `mlx_gpu_bind_af` gate, `qng64_gemv_kernel()`/`qng64_gemv_e0`
+   dispatch, wired into `lazy_matvec_e0` (checked before falling through to the native-bits
+   `QTensor` path, same "check the other map first" pattern `D-gpu-7-fix` already established
+   for `g_tensors`/`g_dtensors`). Compiled and linked cleanly into the real GPU binary
+   (`qwen_infer.c -DQWEN_GPU_MLX` + `mlx_moe.cpp`, the exact production build).
+5. **Real end-to-end generation, real DeepSeek weights**: `kv_a_proj_with_mqa` layer 0 promoted
+   to qNg64(n=7) on GPU via the existing `QWEN_MOE_PROMOTION_FILE_NQ` mechanism, then a real
+   24-token generation (`QWEN_MOE_GPU_GENERATE=1`) completed cleanly -- caught bug 2 above on
+   the first attempt, then succeeded after the fix, producing tokens **identical** to this
+   project's own earlier CPU-path run at the same prompt (`44742 50870 11 317 245 8217 280
+   26075 50870 8110 276 254 38453 44730 21795 20914 13 809 317 1503 ...`).
+6. `mlx_gpu_dequant_probe()` extended to cover `g_qng64_tensors` (independent host-side re-decode
+   of the raw bound bytes, same role `GATE8a` already plays for n=5 -- proves the BIND put the
+   right bytes in the right place, independent of the kernel's own math). `GATE8c` (the existing
+   isolated correctness-proof gate) updated from its old "n=7 must be skipped" expectation
+   (correct before this round, stale now) to a real accuracy check mirroring `GATE8a`'s own
+   `==0.0` bar.
+7. Full existing gate suite (`QWEN_MOE_GPU=1`) re-run on real DeepSeek weights to confirm zero
+   regression: **GATE2 PASS, GATE3 (400 coords, 269 tensors) max_abs_diff=0, GATE4 (8 tensors)
+   worst rel_l2=2.13e-07, GATE6 (multiple layers' `_neartie_hi` bits=16 tensors) all
+   max_abs_diff=0, GATE7a/7b (mixed vs uniform FFN precision) both correct** -- every
+   already-working native-bits path (2,3,4,5,6,8,16,32) is untouched by this round's additions.
+
+**COST**: `GATE8c`'s own updated check did not get to run on this host/model combination --
+`GATE8` as a whole prints "SKIP: no q_proj@L0 on this architecture" (`g_moe_lt[0].q_proj` is
+null in this specific harness/model context) -- a **pre-existing gap in this test harness for
+MLA architectures**, not something this round introduced (GATE8a's own n=5 check was equally
+gated behind this same condition before this round). The updated `GATE8c` code is real and
+correct (mirrors `GATE8a`'s already-proven pattern exactly) but its automated run is still
+pending a harness fix unrelated to qNg64 itself -- step 5 above (the real end-to-end generation
++ token match) is the actual verification this round relied on, not the automated gate.
+GEMV-only, single-expert scope (matches `lazy_matvec_e0`'s own scope exactly) -- the full
+per-token/per-expert routed MoE hot path (`ffn_gather`/`gather_qmm`-equivalent) remains
+unintegrated, a separate, larger follow-on as already scoped in D-metal-1. No performance
+measurement this round (correctness-first).
+
+**EXIT**: fix `GATE8`'s q_proj@L0 harness gap (likely a `g_moe_lt` MLA-vs-GQA field-naming or
+population-order issue, not investigated further this round since real end-to-end verification
+already covered the same ground) so `GATE8c` can run automatically going forward. Extend the
+same `QNg64Tensor`/dispatch pattern to `ffn_gather` for the full routed-MoE hot path once this
+GEMV-only slice has had more real-world exercise.

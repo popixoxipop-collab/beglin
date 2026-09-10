@@ -51,8 +51,38 @@ struct DTensor {
     int bits;  // 16 or 32
 };
 
+// D-metal-4: qNg64 n in {7,9,10,...,15} -- no native MLX kernel exists for these bit-widths
+// (confirmed via quantized.h's own static_assert, bits in {2,3,4,5,6,8} only), so unlike the
+// n in {2,3,5,6} branch above (which repacks into MLX's native bitstream and rides its own
+// quantized_matmul/gather_qmm), these bind RAW qNg64 bit-plane bytes directly, zero-copy --
+// no repack possible or needed, since the custom Metal kernel (built once, lazily, see
+// qng64_gemv_kernel() below) decodes this exact plane-major layout itself. This is the user's
+// own hard requirement, verbatim: "난 압축 커널 이점 절대 포기 못해" -- a dense-fallback
+// (dequantize once, then plain dense matmul) was explicitly proposed and explicitly rejected
+// earlier in this project's history; this keeps the real compressed representation on GPU,
+// not just on CPU.
+//   WHY custom kernel over waiting for MLX to add native support: MLX's own bit-width set is
+//   a library-level design choice (confirmed unchanged across MLX 0.32.x), not something this
+//   project controls or can request on a useful timeline.
+//   COST: one new bound-tensor map + duplicated (not shared) dispatch logic vs the native-path
+//   tensors -- more surface area than if MLX supported these bit-widths itself. GEMV-only
+//   scope this round (single expert, x is a single vector) -- the full per-token/per-expert
+//   routed MoE hot path (this file's own ffn_gather/gather_qmm-equivalent) is explicitly NOT
+//   covered yet, a separate, larger follow-on.
+//   EXIT: if MLX ever adds native n=7/9-15 support, this whole map + custom-kernel path can be
+//   deleted in favor of the same repack-and-ride-native-kernels strategy the n in {2,3,5,6}
+//   branch already uses -- nothing downstream of mlx_gpu_bind_af's gate needs to know which
+//   strategy produced a bound tensor.
+struct QNg64Tensor {
+    mx::array planes;  // {E, out, ng*n*8} uint8, RAW qNg64 bit-plane bytes, zero-copy
+    mx::array scales;  // {E, out, ng} float32
+    long E, out, in, ng;
+    int n;  // bit-width, 7 or 9..15 (2,3,4,5,6,8 use the native-kernel paths above instead)
+};
+
 static std::unordered_map<std::string, QTensor> g_tensors;
 static std::unordered_map<std::string, DTensor> g_dtensors;  // bits=16/32, dense (D-gpu-5)
+static std::unordered_map<std::string, QNg64Tensor> g_qng64_tensors;  // n=7,9-15 (D-metal-4)
 static int g_bound_count = 0;
 
 static void noop_deleter(void *) {
@@ -93,7 +123,12 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
     // GATE6b/6c pattern below in qwen_infer.c) is what surfaces this as a labeled failure,
     // not a special code path here -- consistent with how bits=16/32-unavailable and
     // shape-mismatch failures are already reported by this function's callers, not by it.
+    // D-metal-4: n=7 and n=9..15 now bind too (previously fell through to `return 0` like
+    // every other unsupported bits value -- see the QNg64Tensor struct's own WHY/COST/EXIT
+    // comment above for why these need a genuinely different bind path, not just a wider
+    // literal list here).
     if (bits != 2 && bits != 3 && bits != 4 && bits != 5 && bits != 6 &&
+        bits != 7 && !(bits >= 9 && bits <= 15) &&
         bits != 8 && bits != 16 && bits != 32) return 0;
     if (E <= 0 || out <= 0 || in <= 0) return 0;
 
@@ -115,6 +150,35 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
             // must exist in exactly one of g_tensors/g_dtensors at a time.
             g_tensors.erase(std::string(name));
             g_dtensors.insert_or_assign(std::string(name), DTensor{w, E, out, in, bits});
+            g_bound_count++;
+            return 1;
+        } catch (...) {
+            return 0;
+        }
+    }
+
+    // D-metal-4: n=7 or n=9..15 -- bind RAW qNg64 bit-plane bytes directly, zero-copy, into
+    // the separate g_qng64_tensors map (see that struct's own comment for the full WHY this
+    // can't share the n in {2,3,5,6} repack-into-native-format branch below). Must come before
+    // the `if (ng <= 0 ...)` check below since that check and everything after it is specific
+    // to the QTensor/native-kernel binding path.
+    if (bits == 7 || (bits >= 9 && bits <= 15)) {
+        if (ng <= 0 || (in % 64) != 0) return 0;
+        try {
+            void *planes_ptr = (void *)(blob + packed_off);
+            void *scale_ptr = (void *)(blob + scale_off);
+            long plane_bytes_per_row = ng * (long)bits * 8;
+            mx::array planes(planes_ptr, {(int)E, (int)out, (int)plane_bytes_per_row},
+                              mx::uint8, noop_deleter);
+            mx::array scales(scale_ptr, {(int)E, (int)out, (int)ng}, mx::float32,
+                              noop_deleter);
+            // Same D-gpu-7-fix reasoning as the bits==16/32 and bits==8 branches -- a name
+            // previously bound through any other path must not leave a stale entry in a
+            // DIFFERENT map, or a caller resolving by name silently reads the wrong one.
+            g_tensors.erase(std::string(name));
+            g_dtensors.erase(std::string(name));
+            g_qng64_tensors.insert_or_assign(
+                std::string(name), QNg64Tensor{planes, scales, E, out, in, ng, bits});
             g_bound_count++;
             return 1;
         } catch (...) {
@@ -268,8 +332,50 @@ int mlx_gpu_zerocopy_count(int *zero_copy, int *copied, size_t *bytes_copied) {
     return g_bound_count;
 }
 
+// D-metal-4: same "verify against an independent, real read of the actual bound tensor" role
+// GATE8a's own call site already uses for n=5 -- reads the raw plane bytes back to host and
+// decodes with the exact same bit-plane algorithm this file's qng64_gemv_kernel() uses on GPU
+// (and moe_decode_af() uses on CPU), so a mismatch here would mean the BIND itself put the
+// wrong bytes in the wrong place, independent of whether the GPU kernel's own math is right.
+static int qng64_dequant_probe(const char *name, long e, long row, long col0, int ncols,
+                                float *out_vals) {
+    auto it = g_qng64_tensors.find(name);
+    if (it == g_qng64_tensors.end()) return 0;
+    QNg64Tensor &t = it->second;
+    if (e < 0 || e >= t.E || row < 0 || row >= t.out) return 0;
+    if (ncols <= 0 || col0 < 0 || col0 + ncols > t.in) return 0;
+    try {
+        long plane_bytes_per_row = t.ng * (long)t.n * 8;
+        mx::array planes_row = mx::take(mx::take(t.planes, (int)e, 0), (int)row, 0);  // {plane_bytes_per_row}
+        mx::array scales_row = mx::take(mx::take(t.scales, (int)e, 0), (int)row, 0);  // {ng}
+        mx::eval(planes_row); mx::eval(scales_row);
+        const uint8_t *planes_ptr = planes_row.data<uint8_t>();
+        const float *scales_ptr = scales_row.data<float>();
+        int bias_code = 1 << (t.n - 1);
+        for (int c = 0; c < ncols; c++) {
+            long col = col0 + c;
+            long g = col / 64;
+            int p = (int)(col % 64);
+            int byte_in_plane = p >> 3, bit_in_byte = p & 7;
+            int u = 0;
+            for (int j = 0; j < t.n; j++) {
+                uint8_t byte = planes_ptr[g * t.n * 8 + (long)j * 8 + byte_in_plane];
+                int bit = (byte >> bit_in_byte) & 1;
+                u |= (bit << j);
+            }
+            int code = u - bias_code;
+            out_vals[c] = (float)code * scales_ptr[g];
+        }
+        (void)plane_bytes_per_row;
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
 int mlx_gpu_dequant_probe(const char *name, long e, long row, long col0, int ncols,
                            float *out_vals) {
+    if (g_qng64_tensors.count(name)) return qng64_dequant_probe(name, e, row, col0, ncols, out_vals);
     auto dit = g_dtensors.find(name);
     if (dit != g_dtensors.end()) {
         // D-gpu-5: bits=16/32, already dense -- "dequantize" is just reading the value.
@@ -1265,6 +1371,93 @@ static mx::array lazy_silu(const mx::array &x) { return mx::multiply(x, mx::sigm
 // batch dim (B or B*TOPK); this single weight matrix (expert 0, shared/dense role)
 // naturally batches via quantized_matmul's own broadcasting -- no expand_dims needed
 // here, only for gather_qmm's per-expert-selection calls below.
+// D-metal-4: the qNg64 (n=7,9-15) custom-kernel GEMV, single-expert (E index 0), matching
+// this file's own D-metal-1/D-metal-2/D-metal-3 progression (standalone decode probe -> real
+// GEMV verified against a CPU reference at every row, not just row 0 -> C++ API parity with
+// the Python probe, all real, all measured -- see RESULTS.md). Built once, lazily, and cached
+// (mx::fast::metal_kernel compiles a real Metal pipeline per distinct template `n`, so the
+// SAME CustomKernelFunction object is reused across every n this process ever binds, each n
+// getting its own lazily-JIT'd specialization -- matches MLX's own bits-template convention).
+static std::optional<mx::fast::CustomKernelFunction> g_qng64_gemv_kernel;
+
+static mx::fast::CustomKernelFunction &qng64_gemv_kernel() {
+    if (!g_qng64_gemv_kernel) {
+        // D-metal-2's own real bug, fixed here: simd_sum() reduces within one 32-lane
+        // SIMD-group only, not the full 64-lane threadgroup this kernel launches -- confirmed
+        // by writing raw per-thread partials to a debug output and summing them in Python,
+        // which matched the CPU reference exactly while the naive single simd_sum() call did
+        // not (off by O(1), not floating-point noise). Fixed with the standard two-level
+        // reduction below (each of the two 32-lane simdgroups reduces on its own, the two
+        // partial sums combine through threadgroup memory) -- do not simplify this back to a
+        // single simd_sum() call, that reintroduces the exact bug D-metal-2 found.
+        std::string source = R"(
+            uint p = thread_position_in_grid.x;
+            uint row = thread_position_in_grid.y;
+            if (p >= 64) return;
+            int bias_code = 1 << (n - 1);
+            float partial = 0.0f;
+            for (uint g = 0; g < ng; g++) {
+                uint plane_base = row * (ng * (uint)n * 8) + g * (uint)n * 8;
+                uint byte_in_plane = p >> 3;
+                uint bit_in_byte = p & 7;
+                int u = 0;
+                for (int j = 0; j < n; j++) {
+                    uint8_t byte = planes[plane_base + (uint)j * 8 + byte_in_plane];
+                    int bit = (byte >> bit_in_byte) & 1;
+                    u |= (bit << j);
+                }
+                int code = u - bias_code;
+                float scale = scales[row * ng + g];
+                float decoded = (float)code * scale;
+                partial += decoded * x[g * 64 + p];
+            }
+            threadgroup float shared_sums[2];
+            uint simd_lane = p % 32;
+            uint simd_group = p / 32;
+            float simd_partial = simd_sum(partial);
+            if (simd_lane == 0) shared_sums[simd_group] = simd_partial;
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            if (p == 0) {
+                out[row] = shared_sums[0] + shared_sums[1];
+            }
+        )";
+        g_qng64_gemv_kernel = mx::fast::metal_kernel(
+            "qng64_gemv", {"planes", "scales", "x"}, {"out"}, source);
+    }
+    return *g_qng64_gemv_kernel;
+}
+
+// GEMV-only, single expert (E index 0) -- matches lazy_matvec_e0's own scope exactly (the
+// attention-role call sites below, q/kv_a/kv_b/o_proj, never route across experts). The full
+// per-token/per-expert routed MoE path is explicitly NOT covered -- see QNg64Tensor's own
+// COST/EXIT comment.
+// D-metal-4: x arrives shaped {B, in} (B=1 for this call path -- lazy_matvec_e0's own single-
+// expert scope -- confirmed by direct shape debugging: real shape [1, 2048] observed for a
+// real DeepSeek kv_a_proj_with_mqa call, not the flat {in} this function's first draft assumed).
+// The kernel's own memory-layout read (`x[g*64+p]`) is byte-identical either way (a size-1
+// leading dim doesn't change the underlying buffer), but the OUTPUT shape must match what
+// mx::quantized_matmul's own bits=4/8 path returns ({B, out}) for downstream code (whatever
+// consumes lazy_matvec_e0's return value next) to reshape/concatenate correctly -- returning a
+// bare {out} 1D array here was the actual bug ("[slice] Invalid number of indices or strides
+// for array with dimension 1", a real caught exception, not guessed at) since the CALLER
+// expected {B, out} and got {out} instead.
+static mx::array qng64_gemv_e0(const char *name, const mx::array &x) {
+    QNg64Tensor &t = g_qng64_tensors.at(name);
+    mx::array planes_e = mx::take(t.planes, 0, 0);
+    mx::array scales_e = mx::take(t.scales, 0, 0);
+    auto &kernel = qng64_gemv_kernel();
+    std::vector<mx::array> inputs = {planes_e, scales_e, x};
+    std::vector<mx::Shape> output_shapes = {{1, (int)t.out}};
+    std::vector<mx::Dtype> output_dtypes = {mx::float32};
+    std::vector<std::pair<std::string, mx::fast::TemplateArg>> template_args = {
+        {"n", t.n}, {"ng", (int)t.ng}
+    };
+    auto outputs = kernel(inputs, output_shapes, output_dtypes,
+                           {64, (int)t.out, 1}, {64, 1, 1},
+                           template_args, std::nullopt, false, {});
+    return outputs[0];
+}
+
 static mx::array lazy_matvec_e0(const char *name, const mx::array &x) {
     // D-gpu-4: bits threaded from the tensor's own record. NOTE (D-gpu-5 scope): this
     // function does not yet check g_dtensors -- a shared/dense role promoted to
@@ -1272,6 +1465,11 @@ static mx::array lazy_matvec_e0(const char *name, const mx::array &x) {
     // g_dtensors). Binding (mlx_gpu_bind_af) and the standalone probes already handle
     // bits=16/32; wiring this lazy-graph path's dense fallback is deferred, not silently
     // dropped -- flagging explicitly rather than leaving it to be discovered as a crash.
+    // D-metal-4: qNg64 (n=7,9-15) checked first, same "check the other maps too" principle
+    // D-gpu-7-fix already established for g_tensors/g_dtensors -- a name bound into
+    // g_qng64_tensors would otherwise throw on g_tensors.at() below instead of dispatching
+    // through the custom kernel.
+    if (g_qng64_tensors.count(name)) return qng64_gemv_e0(name, x);
     QTensor &t = g_tensors.at(name);
     mx::array w_e = mx::take(t.w, 0, 0);
     mx::array s_e = mx::take(t.scales, 0, 0);
@@ -1525,6 +1723,17 @@ int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
         g_fused_x = new mx::array(x_out);   // still LAZY -- NOT evaluated until finalize()
         g_fused_layers_done = l + 1;
         return 1;
+    } catch (const std::exception &e) {
+        // D-metal-4: this catch previously swallowed the real message (bare `catch (...)`) --
+        // widened deliberately after that silence cost real debugging time diagnosing a shape
+        // mismatch (qng64_gemv_e0's own output shape bug, now fixed) with no information beyond
+        // "failed at pos/layer". Kept permanently, not reverted -- the cost (one extra catch
+        // clause) is negligible and every future failure on this path gets a real MLX-side
+        // message instead of only the caller's own generic "failed at pos %d layer %d" line.
+        fprintf(stderr, "[moe gpu fused] mlx_gpu_layer_step_lazy exception: %s\n", e.what());
+        delete g_fused_x; g_fused_x = nullptr;
+        g_fused_pos = -1; g_fused_layers_done = 0;
+        return 0;
     } catch (...) {
         delete g_fused_x; g_fused_x = nullptr;
         g_fused_pos = -1; g_fused_layers_done = 0;

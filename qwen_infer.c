@@ -8805,12 +8805,38 @@ static int run_moe_gpu_mode(int argc, char **argv) {
                     fprintf(stderr, "[moe gpu] GATE8b: expert_gate_proj@L%d promoted_n=%d (expect 6)\n",
                             gate8_test_layer, g_moe_promoted_nq_gpu[MOE_ATTRIB_EXPERT_GATE][gate8_test_layer]);
 
-                    // Check C: n=7 must have been skipped, not FATAL -- we are still running,
-                    // which already proves the process didn't exit(1); confirm the tracking
-                    // array agrees it was never marked promoted.
-                    fprintf(stderr, "[moe gpu] GATE8c: o_proj@L0 n=7 promoted_n=%d (expect 0 -- "
-                            "skip-not-FATAL path, no native MLX kernel for n=7)\n",
-                            g_moe_promoted_nq_gpu[MOE_ATTRIB_O_PROJ][0]);
+                    // Check C, D-metal-4: n=7 now has a real custom-Metal-kernel GPU path
+                    // (mx.fast.metal_kernel, see mlx_moe.cpp's QNg64Tensor/qng64_gemv_kernel) --
+                    // this check's own expectation flips from "must be skipped" to "must be
+                    // promoted AND bit-exact against an independent CPU decode of the same
+                    // bytes," the same bar GATE8a already holds n=5 to (==0.0, not just close).
+                    if (g_moe_promoted_nq_gpu[MOE_ATTRIB_O_PROJ][0] == 7) {
+                        SafetensorsMulti *saved_g8c = g_st_moe;
+                        g_st_moe = g_moe_hi_st;
+                        MoeAFTensor *ref_o = st_register_moe_dense_af_qNg64_as(
+                            "model.layers.0.self_attn.o_proj.weight", 7, "gate8c_verify_ref_o");
+                        g_st_moe = saved_g8c;
+                        if (ref_o) {
+                            float gpu_vals[8]; double max_diff = 0.0; int n_coords = 0; int probe_failed = 0;
+                            long probe_rows[2] = {0, ref_o->out - 1};
+                            for (int pp = 0; pp < 2; pp++) {
+                                if (!mlx_gpu_dequant_probe("model.layers.0.self_attn.o_proj", 0, probe_rows[pp], 0, 8, gpu_vals)) { probe_failed = 1; continue; }
+                                for (int c = 0; c < 8; c++) {
+                                    float cpu_val = moe_decode_af(af_blob, ref_o, 0, probe_rows[pp], c);
+                                    double d = fabs((double)gpu_vals[c] - (double)cpu_val);
+                                    if (d > max_diff) max_diff = d;
+                                    n_coords++;
+                                }
+                            }
+                            fprintf(stderr, "[moe gpu] GATE8c (o_proj@L0, n=7, D-metal-4): max_abs_diff=%.9g over %d coords (bar: ==0.0)%s\n",
+                                    max_diff, n_coords, probe_failed ? " [PROBE FAILED]" : "");
+                        } else {
+                            fprintf(stderr, "[moe gpu] GATE8c SKIP: could not build independent qNg64(7) reference\n");
+                        }
+                    } else {
+                        fprintf(stderr, "[moe gpu] GATE8c FAIL: o_proj@L0 not promoted to n=7 (got %d)\n",
+                                g_moe_promoted_nq_gpu[MOE_ATTRIB_O_PROJ][0]);
+                    }
                 }
             }
         }
