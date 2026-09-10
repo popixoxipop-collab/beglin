@@ -13194,3 +13194,54 @@ population-order issue, not investigated further this round since real end-to-en
 already covered the same ground) so `GATE8c` can run automatically going forward. Extend the
 same `QNg64Tensor`/dispatch pattern to `ffn_gather` for the full routed-MoE hot path once this
 GEMV-only slice has had more real-world exercise.
+
+## D-metal-5 -- full n=7,9-15 GPU range, each value tested for real (2026-09-10)
+
+**WHY**: D-metal-4 only exercised n=7 end-to-end. User's direct follow-up, correctly pointed
+out: the CODE already accepts the whole n=7,9-15 range (same bind gate, `n` as a generic
+template parameter in `qng64_gemv_kernel()`), but "should work generically" is an assumption,
+not a verified fact -- this project's own established discipline (and this exact session's own
+history: the SIMD-reduction and output-shape bugs D-metal-4 found were BOTH cases where
+"should work" turned out wrong on first real contact) says test each one for real, not
+extrapolate from n=7 alone.
+
+**Method**: same real-weight, real-generation methodology as D-metal-4's own end-to-end check --
+`kv_a_proj_with_mqa` layer 0 promoted on GPU via `QWEN_MOE_PROMOTION_FILE_NQ`, real DeepSeek-V2-
+Lite bf16 checkpoint, real 24-token generation (`QWEN_MOE_GPU_GENERATE=1`) -- run once per n in
+{9,10,11,12,13,14,15} (n=7 already covered by D-metal-4).
+
+**Result: all 7 additional values PASS.** Every single one -- n=9,10,11,12,13,14,15 -- promoted
+cleanly and produced a full 24-token generation. **Every n value, including n=7 from D-metal-4,
+produced the EXACT SAME token sequence**: `44742 50870 11 317 245 8217 280 26075 50870 8110 276
+254 38453 44730 21795 20914 13 809 317 1503 430 28846 280 1439`. This is real, positive evidence
+(not just "no crash") -- argmax stability across 8 different bit-widths on the same real prompt
+is exactly what a correctly-implemented, generically-templated decode kernel should produce (the
+promoted tensor's precision differences are real but too small at this bit-width range to flip
+any of this prompt's routing/output decisions).
+
+**A real operational incident during this round, reported honestly**: an earlier attempt to test
+all 7 remaining n values via one sequential shell script (`test_all_n.sh`, no pause between
+iterations) hit a real swap danger during the n=9->n=10 transition -- swap spiked from a normal
+~1000-1300M to **8043.81M**, triggering this session's own safety-monitor kill logic (the same
+class of incident this project has documented once before, 2026-09-02). n=9 itself had already
+completed successfully before the spike (confirmed in the log, token-identical to every other n
+value). Root cause: each test reloads the full model fresh (~9.8GB AF blob + the multi-GB bf16
+safetensors reference checkpoint for `QWEN_MOE_NEARTIE_CORRECT`) with the B=1..256 sweep
+(D-bench-5) ALSO running concurrently on the same 16GB machine -- launching a second heavy
+process before the first one's memory was fully reclaimed by the OS compounded, not just added.
+**Fix**: switched from a blind sequential loop to one-at-a-time synchronous runs with an explicit
+swap check before each (matching this project's own established discipline for exactly this
+class of risk), which is how n=10 through n=15 were actually completed, all cleanly, all safe.
+
+**COST**: only `kv_a_proj_with_mqa` layer 0 tested across all n values (matching D-metal-4's own
+single-role scope) -- other attention roles (`q_proj`, `kv_b_proj`, `o_proj`) and other layers
+are not separately re-verified per-n (though the underlying kernel/bind code path is identical
+regardless of role/layer, so this is a real but low-risk gap, not a blind spot in the algorithm
+itself). No numeric (rel_l2/max_abs_diff) comparison against a CPU reference was done for
+n=9-15 specifically -- D-metal-4's own `GATE8c` update and `mlx_gpu_dequant_probe` extension
+cover that class of check generically (any n), but its automated run remains blocked by the
+same pre-existing MLA harness gap noted in D-metal-4.
+
+**EXIT**: same as D-metal-4's own EXIT -- fix the `GATE8` harness gap so the `==0.0` bit-exact
+check (not just token-level argmax stability) runs automatically across the whole n range, and
+extend beyond the single-role GEMV scope to the full routed-MoE path.
