@@ -13284,3 +13284,72 @@ needed reference point (e.g. to bound how close the CPU path could theoretically
 decide whether pursuing GPU batching is worth it at all), measure MLX's *native* kernel
 throughput directly (not this project's custom kernel) -- that number is the actual ceiling
 being referred to here, and does not require touching `qng64_gemv_e0()` at all.
+
+## D-metal-7-gate8 -- GATE8 harness gap: real root cause found + fixed (2026-09-10)
+
+**Context**: D-metal-4/5's own EXIT named this as follow-on work: `GATE8` (qwen_infer.c,
+inside `run_moe_gpu_mode()`) had been printing `SKIP: no q_proj@L0 on this architecture` since
+before this session, with a comment blaming missing local checkpoint access. Investigated for
+real rather than assumed.
+
+**Investigation (reproduce -> hypothesize -> verify, not guessed)**: ran the harness on bob
+with the real checkpoint (`QWEN_MOE_GPU=1 QWEN_MOE_BASE=/Users/bob/moe_base_deepseek
+QWEN_MOE_NEARTIE_CORRECT=1 QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS=/Volumes/D50/deepseek_v2lite_
+bf16_safetensors/model.safetensors.index.json`) -- GATE8 still SKIPped. The original comment's
+premise was wrong: `model.layers.0.self_attn.q_proj` genuinely exists in the real AF blob
+(confirmed directly via `layout_af.txt`: `model.layers.0.self_attn.q_proj 1 3072 2048 32 ...`,
+Q_LORA_RANK=0 per `arch_config_moe.txt` so DeepSeek-V2-Lite's q_proj is not low-rank-decomposed).
+GATE6's own hi-mirror registration even proved this tensor loadable and bit-exact
+(`model.layers.0.self_attn.q_proj__neartie_hi (bits=16): max_abs_diff=0.000000e+00`).
+
+**Real root cause**: `run_moe_gpu_mode()` never calls `moe_resolve_layer_tensors()` or either
+per-architecture resolver (`moe_resolve_attn_tensors_mla()`/`_gqa()`) anywhere in its body --
+the plain `g_moe_lt[]` array (distinct from `g_moe_lt_hi`/`_active`/`_nq`/`_sel`/`_mixed`, and
+distinct from the `__neartie_hi`-suffixed entries GATE6 populates through a completely
+different lookup path) stays all-NULL for this whole mode's lifetime, checkpoint availability
+was never the actual factor. Iterating on the fix surfaced a second instance of the exact same
+bug: fixing only `q_proj` let GATE8's own 3-line promotion test reach its second line
+(`expert_gate_proj 12 6`) and FATAL identically (`g_moe_lt[12].switch_gate` equally
+unpopulated).
+
+**Fix** (`qwen_infer.c`, inside GATE8's block): three direct, miss-tolerant
+`moe_find_af_opt()` lookups (`g_moe_lt[0].q_proj`, `g_moe_lt[0].o_proj`,
+`g_moe_lt[12].switch_gate`) -- matching exactly the three roles GATE8's own pre-existing test
+file exercises, no more. Deliberately NOT the full `moe_resolve_attn_tensors_mla()` resolver:
+that also calls `moe_check_af_shape()` against `MOE_QDIM`/`MOE_KVA_OUT`/`MOE_KV_LORA_RANK`/
+`MOE_ATTN_OUT` -- derived config this mode never computes (only `MOE_NL`/`MOE_ATTN_KIND`/
+`MOE_N_EXPERTS` are set, and only inside the `hi_st_path` branch) -- calling the full resolver
+would FATAL-exit on a real, valid tensor purely because the *expected* dims were never
+computed. A direct optional lookup sidesteps that precondition entirely and matches what GATE8
+actually needs (a bound tensor pointer, not the full resolved struct).
+
+**Build note**: bob's `qwen_gpu_metal_final` links against `libmlx.dylib` via
+`@rpath` resolved to `/Users/bob/mlx_venv/lib/python3.11/site-packages/mlx/lib` (a venv-local
+MLX build) -- NOT the system Homebrew Python's `mlx` package
+(`/opt/homebrew/lib/python3.11/site-packages/mlx`), which is a different, ABI-incompatible
+`libmlx.dylib` (mismatched `StreamOrDevice` variant arity) despite reporting the same pip
+version number 0.32.0. Rebuilding against the wrong one fails at link time with dozens of
+undefined `mlx::core::*` symbols -- confirmed the real rpath via `otool -l` on the
+already-working binary rather than guessing from the first `find` hit.
+
+**Result** (bob, real run, `gate8_harness_run3.log`):
+```
+GATE8a (q_proj@L0, n=5): max_abs_diff=0 over 16 coords (bar: ==0.0)
+GATE8b: expert_gate_proj@L12 promoted_n=6 (expect 6)
+GATE8c (o_proj@L0, n=7, D-metal-4): max_abs_diff=0 over 16 coords (bar: ==0.0)
+```
+All three now execute and pass (previously: SKIP, no test run at all). GATE1-7 output
+byte-identical to the pre-fix run (GATE2 269/269, GATE3 max_abs_diff=0, GATE4 worst_rel_l2=
+2.13e-07, GATE6 108/108 rebound 0 mismatched, GATE6b/GATE6c/GATE7a/GATE7b unchanged) -- no
+regression. `GATE9` searched for and not found anywhere in the file -- confirmed not a gap,
+simply doesn't exist.
+
+Noted, explicitly NOT investigated (out of scope for this fix, already flagged by the gate's
+own pre-existing message): `GATE6c n=7: bind SUCCEEDED -- UNEXPECTED, INVESTIGATE (expected:
+refused, no native MLX kernel)` -- a real anomaly, predates this fix, unrelated to GATE8.
+
+**EXIT**: if a future gate needs the FULL resolved `MoeLayerTensors` struct (not just isolated
+field pointers), compute the same derived `MOE_QDIM`/`MOE_KVA_OUT`/`MOE_KVB_OUT`/`MOE_ATTN_OUT`
+formulas `run_moe_gqa_selftest_mode()` already shows for its GQA case, then call
+`moe_resolve_attn_tensors_mla()` for real instead of extending this field-by-field pattern
+further.

@@ -8739,10 +8739,56 @@ static int run_moe_gpu_mode(int argc, char **argv) {
             // GATE6c/GATE7 above established. Self-contained: writes its own tiny 3-line test
             // file (one E=1 role at n=5, one expert role at n=6, one line at n=7 to prove the
             // skip-not-FATAL path actually fires), no external promotion file needed.
+            // D-metal-7-gate8: the ORIGINAL comment here ("no DeepSeek bf16 safetensors
+            // checkpoint is present on this build host") was wrong -- verified live on bob with
+            // the real checkpoint mounted (QWEN_MOE_GPU=1 + QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS
+            // pointed at /Volumes/D50/deepseek_v2lite_bf16_safetensors), GATE8 still SKIPped.
+            //   WHY it actually skips: run_moe_gpu_mode() never calls moe_resolve_layer_tensors()
+            //   (or either per-architecture resolver) anywhere in its body -- g_moe_lt stays
+            //   all-zero/NULL for this whole mode's lifetime regardless of what checkpoint is
+            //   loaded. GATE6's own hi-mirror registration (QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS)
+            //   populates a completely different name-suffixed set ("*__neartie_hi", looked up
+            //   through g_moe_af[]/moe_find_af_opt()), never g_moe_lt itself.
+            //   COST of the fix below (a direct moe_find_af_opt() lookup, not the full
+            //   moe_resolve_attn_tensors_mla() resolver): moe_resolve_attn_tensors_mla() also
+            //   calls moe_check_af_shape() against MOE_QDIM/MOE_KVA_OUT/MOE_KV_LORA_RANK/
+            //   MOE_ATTN_OUT -- derived config run_moe_gpu_mode() never computes (only
+            //   MOE_NL/MOE_ATTN_KIND/MOE_N_EXPERTS get set, and only inside the hi_st_path
+            //   branch) -- calling the full resolver here would FATAL-exit on a real, valid
+            //   tensor because the *expected* dims were never computed, not because anything is
+            //   actually wrong. A direct optional lookup sidesteps that precondition entirely.
+            //   EXIT: if this gate ever needs the full per-layer resolved struct (not just a
+            //   q_proj pointer), compute the same derived MOE_QDIM/MOE_KVA_OUT/MOE_KVB_OUT/
+            //   MOE_ATTN_OUT formulas run_moe_gqa_selftest_mode() already shows for the GQA
+            //   case, then call moe_resolve_attn_tensors_mla() for real instead of this
+            //   single-field lookup.
             {
                 char tmpfile[256];
                 snprintf(tmpfile, sizeof tmpfile, "/tmp/qng64_gpu_gate8_test_%d.txt", (int)getpid());
                 FILE *tf = fopen(tmpfile, "w");
+                // D-metal-7-gate8: same fix, extended to the other two fields THIS gate's own
+                // 3-line test file actually needs (q_proj@L0, o_proj@L0, switch_gate@L12) --
+                // found live, one FATAL at a time: fixing q_proj alone let promotion reach the
+                // second test line ("expert_gate_proj 12 6"), which then FATAL'd identically
+                // ("has no production tensor") because g_moe_lt[12].switch_gate is exactly as
+                // unpopulated as q_proj was, same root cause (run_moe_gpu_mode() never calls any
+                // per-layer resolver). o_proj@L0 is pre-populated here too, proactively, for the
+                // same reason the third test line ("o_proj 0 7") would need it -- not discovered
+                // via a third FATAL, but the identical pattern, so fixed together rather than
+                // making the user wait through a third rebuild-and-rerun cycle for an identical
+                // one-line cause. All three use moe_find_af_opt() (miss-tolerant), not the full
+                // moe_resolve_attn_tensors_mla()/moe_resolve_layer_tensors() resolvers, for the
+                // same reason noted above: those also require derived shape-check config
+                // (MOE_QDIM etc.) this mode never computes.
+                if (!g_moe_lt[0].q_proj) {
+                    g_moe_lt[0].q_proj = moe_find_af_opt("model.layers.0.self_attn.q_proj");
+                }
+                if (!g_moe_lt[0].o_proj) {
+                    g_moe_lt[0].o_proj = moe_find_af_opt("model.layers.0.self_attn.o_proj");
+                }
+                if (!g_moe_lt[12].switch_gate) {   // 12 matches this block's own gate8_test_layer below
+                    g_moe_lt[12].switch_gate = moe_find_af_opt("model.layers.12.mlp.switch_mlp.gate_proj");
+                }
                 if (!tf) {
                     fprintf(stderr, "[moe gpu] GATE8 SKIP: could not create test file\n");
                 } else if (!g_moe_lt[0].q_proj) {
@@ -8751,8 +8797,8 @@ static int run_moe_gpu_mode(int argc, char **argv) {
                 } else {
                     // NOTE: uses q_proj (attention, valid on every architecture) rather than
                     // dense_gate_proj (DeepSeek-V2-Lite-only, matching GATE6c/GATE7's own
-                    // targets) -- no DeepSeek bf16 safetensors checkpoint is present on this
-                    // build host; q_proj/o_proj exercise the identical E=1 code path.
+                    // targets) -- q_proj/o_proj exercise the identical E=1 code path, and this
+                    // gate only needs a bound tensor pointer, not the full resolved struct.
                     int gate8_test_layer = 12;
                     fprintf(tf, "q_proj 0 5\n");
                     fprintf(tf, "expert_gate_proj %d 6\n", gate8_test_layer);
