@@ -76,14 +76,29 @@ This range is CPU-only by default because MLX's own native GPU kernels
 only cover bits in {2,3,4,5,6,8} — but the full n=7,9-15 range now has
 a real GPU path too, through a custom Metal kernel
 (`mx.fast.metal_kernel`) that decodes the same compressed bit-plane
-bytes directly on GPU, not a dequantize-to-dense fallback. Verified
-with a real end-to-end GPU generation on production DeepSeek-V2-Lite
-weights **at every one of n=7,9,10,11,12,13,14,15**, each producing
-output identical to the CPU path at the same prompt —
-correctness-verified, not yet performance-measured, and covering the
-single-expert attention path only (the full per-token/per-expert
-routed MoE path is a separate, larger follow-on). See `RESULTS.md`'s
-`D-metal-4` and `D-metal-5`.
+bytes directly on GPU, not a dequantize-to-dense fallback. Two call
+shapes, both real, both on the same compressed representation:
+
+- **Single-expert (attention roles).** Verified with a real end-to-end
+  GPU generation on production DeepSeek-V2-Lite weights **at every one
+  of n=7,9,10,11,12,13,14,15**, each producing output identical to the
+  CPU path at the same prompt. See `RESULTS.md`'s `D-metal-4` and
+  `D-metal-5`.
+- **Routed MoE FFN (per-token top-K expert gather).** A second custom
+  kernel extends the same decode logic to a real `E`-expert gather —
+  `gate_proj`/`up_proj`/`down_proj`, real E=64, dispatched through the
+  same `gather_qmm`-equivalent hot path the native bit-widths already
+  use. Verified with synthetic multi-expert data at the kernel level
+  (every (pair, expert) coordinate independently re-decoded, not just
+  pair 0), then against real DeepSeek-V2-Lite weights: an exact-match
+  decode spot-check across experts spanning the full E=64 range, and
+  real end-to-end generation **at n=7,9,10,11,12,13** (token-identical
+  across all six). n=14 and n=15 hit real, repeated memory contention
+  from a concurrently-running benchmark on the same 16GB test machine
+  — not a correctness failure, not yet retried under isolated
+  conditions. See `RESULTS.md`'s `D-metal-7-1` through `D-metal-7-3`.
+
+Both paths are correctness-verified, not yet performance-measured.
 
 **Why this granularity exists, not just because it's possible.** Running
 OLMoE's real numeric gate against a genuine MLX (bf16-forced-to-fp32)
