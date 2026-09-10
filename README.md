@@ -72,6 +72,17 @@ bit-width boundary) and a real end-to-end promotion + generation run
 against production DeepSeek-V2-Lite weights. See `RESULTS.md`'s
 `D-qNg64-18` for the full verification.
 
+This range is CPU-only by default because MLX's own native GPU kernels
+only cover bits in {2,3,4,5,6,8} — but n=7 now has a real GPU path too,
+through a custom Metal kernel (`mx.fast.metal_kernel`) that decodes the
+same compressed bit-plane bytes directly on GPU, not a
+dequantize-to-dense fallback. Verified with a real end-to-end GPU
+generation on production DeepSeek-V2-Lite weights, producing output
+identical to the CPU path at the same prompt — correctness-verified,
+not yet performance-measured, and covering the single-expert attention
+path only (the full per-token/per-expert routed MoE path is a separate,
+larger follow-on). See `RESULTS.md`'s `D-metal-4`.
+
 **Why this granularity exists, not just because it's possible.** Running
 OLMoE's real numeric gate against a genuine MLX (bf16-forced-to-fp32)
 reference surfaced a reproducible failure mode: int8 quantization noise
