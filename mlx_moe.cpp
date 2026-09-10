@@ -1292,17 +1292,42 @@ static void ensure_fused_kv_init() {
 // dense (DTensor) binding -- the routed-FFN hot-path blocks below need to pick
 // gather_qmm vs gather_mm per (gate,up,down) triple, and this is the single lookup
 // point both branches share instead of duplicating g_tensors/g_dtensors probing.
+// D-metal-7: third kind added, qNg64 (n=7,9-15) routed FFN weights (g_qng64_tensors).
+//   WHY g_qng64_tensors checked FIRST, same priority order lazy_matvec_e0() already
+//   uses: a name only ever lives in one of the three maps at a time (mlx_gpu_bind_af's
+//   own erase-on-rebind discipline), so order doesn't affect correctness here -- kept
+//   consistent purely so a reader doesn't have to wonder why the two lookup orders differ.
+//   COST: FfnRoleRef grows a fourth pointer instead of becoming a tagged-union/enum type
+//   -- matches this struct's own existing style (bool + two raw pointers) rather than
+//   introducing a new abstraction for one more case.
+//   EXIT: if a fourth kind is ever needed, this is the natural point to switch to an
+//   actual enum + single pointer (void* cast per kind) instead of growing pointer count
+//   further.
 struct FfnRoleRef {
     bool is_dense;
     QTensor *q;
     DTensor *d;
+    QNg64Tensor *ng64;
 };
 static FfnRoleRef resolve_ffn_role(const char *name) {
+    auto nit = g_qng64_tensors.find(name);
+    if (nit != g_qng64_tensors.end()) return FfnRoleRef{false, nullptr, nullptr, &nit->second};
     auto qit = g_tensors.find(name);
-    if (qit != g_tensors.end()) return FfnRoleRef{false, &qit->second, nullptr};
+    if (qit != g_tensors.end()) return FfnRoleRef{false, &qit->second, nullptr, nullptr};
     auto dit = g_dtensors.find(name);
-    if (dit != g_dtensors.end()) return FfnRoleRef{true, nullptr, &dit->second};
+    if (dit != g_dtensors.end()) return FfnRoleRef{true, nullptr, &dit->second, nullptr};
     throw std::out_of_range(std::string("resolve_ffn_role: tensor not bound: ") + name);
+}
+// D-metal-7: kind as a small int (0=native-quant, 1=dense, 2=qng64) rather than pairwise
+// bool comparisons -- ffn_role_require_uniform() below now has three kinds to compare, and
+// three pairwise `a.is_dense != b.is_dense`-style checks would silently miss a native-quant/
+// qng64 mismatch (both have is_dense==false) unless every check-site remembered to add a
+// second field comparison. One int per role, compared for equality, can't miss a kind by
+// construction.
+static int ffn_role_kind(const FfnRoleRef &t) {
+    if (t.ng64) return 2;
+    if (t.is_dense) return 1;
+    return 0;
 }
 // D-gpu-5-hotpath: gate/up/down promoted to DIFFERENT tiers (e.g. gate at bits=16,
 // up/down still int4) is a real config QWEN_MOE_ROLE_BITS can express per-role, but
@@ -1315,9 +1340,9 @@ static FfnRoleRef resolve_ffn_role(const char *name) {
 // in practice, not a gap anyone is currently blocked on.
 static void ffn_role_require_uniform(const FfnRoleRef &g, const FfnRoleRef &u, const FfnRoleRef &d,
                                       const char *layer_desc) {
-    if (g.is_dense != u.is_dense || g.is_dense != d.is_dense) {
+    if (ffn_role_kind(g) != ffn_role_kind(u) || ffn_role_kind(g) != ffn_role_kind(d)) {
         throw std::runtime_error(
-            std::string("mixed dense/quantized gate/up/down not supported at ") + layer_desc);
+            std::string("mixed dense/quantized/qng64 gate/up/down not supported at ") + layer_desc);
     }
 }
 
@@ -1350,9 +1375,19 @@ int mlx_gpu_test_ffn_uniform(const char *gate_name, const char *up_name, const c
 // gather_mm has no transpose flag (unlike gather_qmm) -- pre-transposing the last two
 // axes per-expert reproduces the same x @ w^T semantics gather_qmm's transpose=true
 // gives, matching mlx_gpu_matvec_probe's own dense branch (mx::transpose(w_e)).
+// D-metal-7: forward declaration -- qng64_ffn_gather() is defined further down, grouped
+// with the rest of the qNg64 custom-kernel code (qng64_gemv_kernel/qng64_gemv_e0) for
+// readability, but ffn_gather() (this function) needs to call it and is defined first.
+static mx::array qng64_ffn_gather(const FfnRoleRef &t, const mx::array &x,
+                                   const std::optional<mx::array> &lhs_indices,
+                                   const mx::array &rhs_indices, bool transpose, bool sorted);
+
 static mx::array ffn_gather(const FfnRoleRef &t, const mx::array &x,
                              const std::optional<mx::array> &lhs_indices,
                              const mx::array &rhs_indices, bool transpose, bool sorted) {
+    // D-metal-7: qng64 (n=7,9-15) routed FFN weights checked first, same priority order
+    // resolve_ffn_role() already established.
+    if (t.ng64) return qng64_ffn_gather(t, x, lhs_indices, rhs_indices, transpose, sorted);
     if (t.is_dense) {
         mx::array w = transpose ? mx::transpose(t.d->w, std::vector<int>{0, 2, 1}) : t.d->w;
         return mx::gather_mm(x, w, lhs_indices, rhs_indices, sorted);
@@ -1456,6 +1491,158 @@ static mx::array qng64_gemv_e0(const char *name, const mx::array &x) {
                            {64, (int)t.out, 1}, {64, 1, 1},
                            template_args, std::nullopt, false, {});
     return outputs[0];
+}
+
+// D-metal-7: routed-FFN counterpart to qng64_gemv_e0() above -- same decode logic, extended
+// to a 3D grid (z = explicit (row,expert) pair index) so ffn_gather()'s new branch can serve
+// real top-K-routed MoE FFN calls, not just the single-expert attention-role scope
+// qng64_gemv_e0() covers. See this session's D-metal-7-design plan entry for why this
+// canonicalizes to one explicit-pairs calling convention (x:{N,in}, expert_idx:{N} -> {N,out})
+// instead of replicating gather_qmm's implicit broadcast-pairing semantics in hand-written MSL.
+static std::optional<mx::fast::CustomKernelFunction> g_qng64_gather_gemv_kernel;
+
+static mx::fast::CustomKernelFunction &qng64_gather_gemv_kernel() {
+    if (!g_qng64_gather_gemv_kernel) {
+        // Same two-level SIMD reduction as qng64_gemv_kernel() (D-metal-2's fix) -- untouched,
+        // only the per-pair expert/x indexing is new. x is read at `z*(ng*64)+g*64+p` (in_dim
+        // == ng*64 always, group-64 design, so no separate in_dim param is needed); planes/
+        // scales gain an `e * out_dim * ...` offset, e = expert_idx[z], out_dim a new template
+        // arg (varies per role/layer, so a distinct pipeline is JIT'd per (n,ng,out_dim) triple
+        // -- same lazy-JIT-per-template-combo convention qng64_gemv_kernel() already uses).
+        std::string source = R"(
+            uint p = thread_position_in_grid.x;
+            uint row = thread_position_in_grid.y;
+            uint z = thread_position_in_grid.z;
+            if (p >= 64) return;
+            int e = expert_idx[z];
+            int bias_code = 1 << (n - 1);
+            float partial = 0.0f;
+            for (uint g = 0; g < ng; g++) {
+                uint plane_base = (uint)e * ((uint)out_dim * ng * (uint)n * 8)
+                                 + row * (ng * (uint)n * 8) + g * (uint)n * 8;
+                uint byte_in_plane = p >> 3;
+                uint bit_in_byte = p & 7;
+                int u = 0;
+                for (int j = 0; j < n; j++) {
+                    uint8_t byte = planes[plane_base + (uint)j * 8 + byte_in_plane];
+                    int bit = (byte >> bit_in_byte) & 1;
+                    u |= (bit << j);
+                }
+                int code = u - bias_code;
+                uint scale_base = (uint)e * ((uint)out_dim * ng) + row * ng + g;
+                float scale = scales[scale_base];
+                float decoded = (float)code * scale;
+                partial += decoded * x[z * (ng * 64u) + g * 64 + p];
+            }
+            threadgroup float shared_sums[2];
+            uint simd_lane = p % 32;
+            uint simd_group = p / 32;
+            float simd_partial = simd_sum(partial);
+            if (simd_lane == 0) shared_sums[simd_group] = simd_partial;
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            if (p == 0) {
+                out[z * (uint)out_dim + row] = shared_sums[0] + shared_sums[1];
+            }
+        )";
+        g_qng64_gather_gemv_kernel = mx::fast::metal_kernel(
+            "qng64_gather_gemv", {"planes", "scales", "x", "expert_idx"}, {"out"}, source);
+    }
+    return *g_qng64_gather_gemv_kernel;
+}
+
+// D-metal-7: canonicalizes both real calling shapes ffn_gather()'s 4 hot-path call sites
+// actually use (confirmed by reading every one of them, mlx_moe.cpp's own routed-FFN blocks)
+// into the kernel's one explicit-pairs convention, dispatches, then reshapes back to exactly
+// what gather_qmm would have returned for that same call -- so nothing downstream of
+// ffn_gather() needs to know which path ran.
+//   Shape 1 (sorted path, and unsorted-down): x already {N,1,in}, rhs_indices already {N} --
+//   reshape x to {N,in} (squeeze the size-1 middle dim), pass rhs_indices straight through.
+//   Shape 2 (unsorted gate/up): x is {B,1,1,in} (one row shared across its own TOPK experts),
+//   rhs_indices {B,TOPK} -- broadcast x to {B,TOPK,1,in} then reshape both to the same
+//   {N,in}/{N} form (N=B*TOPK) before the same kernel call.
+// lhs_indices is asserted unused and transpose asserted true (every real call site passes
+// nullopt/true -- checked by reading them, not assumed) since neither has a real caller to
+// verify against. sorted is intentionally ignored: this kernel processes each pair
+// independently regardless of grouping (D-metal-7-design -- correctness-only this round,
+// matching D-metal-6's own GPU-throughput-out-of-scope precedent; a sort-aware variant is a
+// possible future perf follow-on, not a correctness gap).
+static mx::array qng64_ffn_gather(const FfnRoleRef &t, const mx::array &x,
+                                   const std::optional<mx::array> &lhs_indices,
+                                   const mx::array &rhs_indices, bool transpose, bool sorted) {
+    (void)sorted;
+    if (lhs_indices.has_value()) {
+        throw std::runtime_error("qng64_ffn_gather: lhs_indices not supported (no real call site needs it)");
+    }
+    if (!transpose) {
+        throw std::runtime_error("qng64_ffn_gather: transpose=false not supported (no real call site needs it)");
+    }
+    QNg64Tensor &qt = *t.ng64;
+    mx::array x_flat = x;
+    mx::array idx_flat = rhs_indices;
+    mx::Shape out_batch_shape;   // leading dims of what gather_qmm would have returned
+    if (rhs_indices.ndim() == 1) {
+        int N = rhs_indices.shape(0);
+        x_flat = mx::reshape(x, {N, (int)qt.in});
+        idx_flat = rhs_indices;
+        out_batch_shape = {N, 1};
+    } else {
+        int B = rhs_indices.shape(0), TOPK = rhs_indices.shape(1);
+        mx::array x_b = mx::broadcast_to(x, mx::Shape{B, TOPK, 1, (int)qt.in});
+        x_flat = mx::reshape(x_b, {B * TOPK, (int)qt.in});
+        idx_flat = mx::reshape(rhs_indices, {B * TOPK});
+        out_batch_shape = {B, TOPK, 1};
+    }
+    idx_flat = mx::astype(idx_flat, mx::int32);
+    int N = x_flat.shape(0);
+
+    auto &kernel = qng64_gather_gemv_kernel();
+    std::vector<mx::array> inputs = {qt.planes, qt.scales, x_flat, idx_flat};
+    std::vector<mx::Shape> output_shapes = {{N, (int)qt.out}};
+    std::vector<mx::Dtype> output_dtypes = {mx::float32};
+    std::vector<std::pair<std::string, mx::fast::TemplateArg>> template_args = {
+        {"n", qt.n}, {"ng", (int)qt.ng}, {"out_dim", (int)qt.out}
+    };
+    auto outputs = kernel(inputs, output_shapes, output_dtypes,
+                           {64, (int)qt.out, N}, {64, 1, 1},
+                           template_args, std::nullopt, false, {});
+    out_batch_shape.push_back((int)qt.out);
+    return mx::reshape(outputs[0], mx::Shape(out_batch_shape));
+}
+
+// D-metal-7 GATE9: standalone probe for qng64_gather_gemv_kernel(), taking raw host buffers
+// directly rather than going through mlx_gpu_bind_af()/g_qng64_tensors -- same "prove the
+// kernel in isolation first" precedent as D-metal-1/2/3's own standalone probes, now for the
+// multi-expert gather case. Wraps host memory zero-copy (noop_deleter, same convention every
+// other probe in this file already uses) and calls the SAME kernel qng64_ffn_gather() calls in
+// production, but bypasses the canonicalization/reshape logic entirely -- this probe's caller
+// is expected to already pass data in the kernel's own {N,in}/{N} explicit-pairs form.
+int mlx_gpu_qng64_gather_probe(const uint8_t *planes, long E, long out, long in, long ng, int n,
+                                const float *scales, const float *x, int N,
+                                const int32_t *expert_idx, float *out_buf) {
+    if (!mlx_gpu_available()) return 0;
+    if (E <= 0 || out <= 0 || in <= 0 || ng <= 0 || n <= 0 || N <= 0) return 0;
+    try {
+        mx::array planes_arr((void *)planes, {(int)E, (int)out, (int)(ng * n * 8)}, mx::uint8, noop_deleter);
+        mx::array scales_arr((void *)scales, {(int)E, (int)out, (int)ng}, mx::float32, noop_deleter);
+        mx::array x_arr((void *)x, {N, (int)in}, mx::float32, noop_deleter);
+        mx::array idx_arr((void *)expert_idx, {N}, mx::int32, noop_deleter);
+
+        auto &kernel = qng64_gather_gemv_kernel();
+        std::vector<mx::array> inputs = {planes_arr, scales_arr, x_arr, idx_arr};
+        std::vector<mx::Shape> output_shapes = {{N, (int)out}};
+        std::vector<mx::Dtype> output_dtypes = {mx::float32};
+        std::vector<std::pair<std::string, mx::fast::TemplateArg>> template_args = {
+            {"n", n}, {"ng", (int)ng}, {"out_dim", (int)out}
+        };
+        auto outputs = kernel(inputs, output_shapes, output_dtypes,
+                               {64, (int)out, N}, {64, 1, 1},
+                               template_args, std::nullopt, false, {});
+        mx::eval(outputs[0]);
+        std::memcpy(out_buf, outputs[0].data<float>(), sizeof(float) * (size_t)N * (size_t)out);
+        return 1;
+    } catch (...) {
+        return 0;
+    }
 }
 
 static mx::array lazy_matvec_e0(const char *name, const mx::array &x) {

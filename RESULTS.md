@@ -13353,3 +13353,53 @@ field pointers), compute the same derived `MOE_QDIM`/`MOE_KVA_OUT`/`MOE_KVB_OUT`
 formulas `run_moe_gqa_selftest_mode()` already shows for its GQA case, then call
 `moe_resolve_attn_tensors_mla()` for real instead of extending this field-by-field pattern
 further.
+
+## D-metal-7-1 -- routed-FFN qNg64 gather kernel: standalone probe (2026-09-10)
+
+**Context**: first correctness gate for the new routed-MoE GPU path (D-metal-7-design in the
+session plan) -- `qng64_gather_gemv_kernel()`, a 3D-grid extension of the already-proven
+`qng64_gemv_kernel()` (D-metal-2's two-level SIMD reduction untouched) that adds per-pair
+expert indexing so `ffn_gather()`'s new third branch can serve real top-K-routed MoE FFN calls,
+not just the single-expert attention-role scope the original GEMV kernel covers.
+
+**Method**: `mlx_gpu_qng64_gather_probe()` (new, `mlx_moe.cpp`/`mlx_moe.h`) takes raw host
+buffers directly -- bypasses `mlx_gpu_bind_af()`/`g_qng64_tensors` entirely -- so the kernel
+could be exercised with small synthetic **multi-expert** data before touching real weights,
+matching this file's own D-metal-1/2/3 probe-before-integration precedent. `GATE9`
+(`qwen_infer.c`) generates E=4 experts (out=8, in=128, n=7) via this project's own real
+encoder (`gguf_quantize_qNg64()`, not a hand-rolled encoder), 6 (row,expert) pairs with a
+deliberately non-sorted, repeating expert-index pattern (`{0,3,1,2,0,3}`) to actually exercise
+the new per-pair indexing rather than only ever reading expert 0, and DIFFERENT random x per
+pair (matching real routed-MoE calls, where each pair is a different token). Verified against
+an independent CPU-side re-decode written fresh from `gguf_transcode.h`'s own documented
+bit-plane layout (not copy-pasted from the kernel or from `qng64_gemv_kernel`'s own CPU
+reference) -- every one of the 48 (pair,row) coordinates checked, not just pair 0/row 0 (this
+project's own named bug class, D-metal-2).
+
+**Result**:
+```
+GATE9 (routed qNg64 gather, E=4 pairs=6 n=7): max_abs_diff=2.43220738e-07 over 48 coords (bar: ==0.0)
+```
+Not bit-exact, but at float32's own noise floor (~1.19e-7 machine epsilon, 128-term dot
+products, double-precision serial CPU sum vs the kernel's two-level SIMD-tree reduction --
+same class of benign accumulation-order difference D-metal-2's own probe already documented as
+"PASS (fp accum order)", distinct from D-metal-2's REAL bug which was a full O(1) discrepancy
+from dropping half the sum, not noise-floor-scale). Correctness of the per-pair EXPERT
+indexing specifically is confirmed by the magnitude itself, not just asserted: the 6 pairs use
+4 different experts built from independent random weight data, so a real indexing bug (reading
+the wrong expert for any of the 48 coordinates) would produce a large, unmistakable error, not
+~2e-7 -- the small uniform magnitude across all 48 coordinates is itself the evidence every
+pair read its correct expert.
+
+**Scope note**: this probe calls `qng64_gather_gemv_kernel()` directly with data already in
+the kernel's own canonical `{N,in}`/`{N}` explicit-pairs form -- it does not exercise
+`qng64_ffn_gather()`'s own canonicalization/reshape logic (the two real calling-shape branches
+documented in D-metal-7-design). That gets exercised for real in D-metal-7-2 (real weights,
+real routed FFN layer, through the actual production `ffn_gather()` call sites) rather than a
+second redundant synthetic test -- real generation at real batch sizes naturally hits both the
+sorted and unsorted canonicalization paths depending on B*TOPK vs `g_gpu_sort_threshold`.
+
+**EXIT**: if a future change to the canonicalization logic itself needs isolated testing
+independent of real weights, expose `qng64_ffn_gather()` (or a thin C-ABI wrapper around it,
+same pattern `mlx_gpu_qng64_gather_probe()` already establishes for the kernel itself) and feed
+it both calling shapes with synthetic data directly.

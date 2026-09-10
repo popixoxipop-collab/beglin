@@ -48,6 +48,18 @@ int mlx_gpu_zerocopy_count(int *zero_copy, int *copied, size_t *bytes_copied);
 int mlx_gpu_dequant_probe(const char *name, long e, long row, long col0,
                            int ncols, float *out);
 
+// D-metal-7 GATE9: standalone probe for the new routed-FFN qNg64 gather kernel
+// (qng64_gather_gemv_kernel/qng64_ffn_gather in mlx_moe.cpp) -- takes raw host buffers
+// directly (not bound through mlx_gpu_bind_af/g_qng64_tensors) so it can be exercised with
+// small synthetic multi-expert (E>1) data before ever touching real weights, matching this
+// file's own D-metal-1/2/3 probe-before-integration precedent. planes is {E,out,ng*n*8}
+// uint8 (qNg64 raw bit-plane bytes, same layout QNg64Tensor.planes uses), scales is
+// {E,out,ng} float32, x is {N,in} float32, expert_idx is {N} int32, out_buf is {N,out}
+// float32 (caller-allocated). Returns 1 on success, 0 on any MLX exception.
+int mlx_gpu_qng64_gather_probe(const uint8_t *planes, long E, long out, long in, long ng, int n,
+                                const float *scales, const float *x, int N,
+                                const int32_t *expert_idx, float *out_buf);
+
 // Gate 4: y = quantized_matmul(x, w_e) for tensor `name`'s expert `e`,
 // against a caller-supplied dense fp32 x[in], written to y[out]. For direct
 // comparison against moe_matvec_af() on the same expert/input. Returns 1 on

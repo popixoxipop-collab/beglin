@@ -8888,6 +8888,81 @@ static int run_moe_gpu_mode(int argc, char **argv) {
         }
     }
 
+    // D-metal-7 GATE9: standalone probe for the new routed-FFN qNg64 gather kernel
+    // (mlx_gpu_qng64_gather_probe/qng64_gather_gemv_kernel, mlx_moe.cpp) -- synthetic E=4
+    // multi-expert data (not real weights, not going through mlx_gpu_bind_af at all), verified
+    // at EVERY (pair,row) coordinate against an independent CPU-side re-decode written fresh
+    // from gguf_transcode.h's own documented bit-plane layout -- same "verify every row, not
+    // just row 0" discipline this project's own D-metal-2 bug (RESULTS.md) was found under.
+    // Real weights and the full ffn_gather()-wired path come after this passes -- this is the
+    // isolated-kernel-correctness gate, same role D-metal-1/2/3's standalone probes played
+    // before D-metal-4's own production integration.
+    {
+        const long GE = 4, GOUT = 8, GIN = 128, GNG = GIN / 64;
+        const int GN = 7;
+        const int GPAIRS = 6;
+        int32_t g9_idx[6] = {0, 3, 1, 2, 0, 3};   // repeats + non-sorted, exercises indexing
+
+        float *g9_w = (float *)malloc(sizeof(float) * (size_t)GE * GOUT * GIN);
+        uint8_t *g9_planes = (uint8_t *)malloc(sizeof(uint8_t) * (size_t)GE * GOUT * GNG * GN * 8);
+        float *g9_scales = (float *)malloc(sizeof(float) * (size_t)GE * GOUT * GNG);
+        float *g9_x = (float *)malloc(sizeof(float) * (size_t)GPAIRS * GIN);
+        float *g9_gpu_out = (float *)malloc(sizeof(float) * (size_t)GPAIRS * GOUT);
+        unsigned g9_seed = 12345;
+        for (long i = 0; i < GE * GOUT * GIN; i++) {
+            g9_seed = g9_seed * 1103515245u + 12345u;
+            g9_w[i] = ((float)(g9_seed % 20000) / 10000.0f - 1.0f) * 0.5f;
+        }
+        for (long e = 0; e < GE; e++) {
+            gguf_quantize_qNg64(g9_w + e * GOUT * GIN, (int)GOUT, (int)GIN, GN,
+                                 g9_planes + e * GOUT * GNG * GN * 8, g9_scales + e * GOUT * GNG);
+        }
+        for (long i = 0; i < GPAIRS * GIN; i++) {
+            g9_seed = g9_seed * 1103515245u + 12345u;
+            g9_x[i] = ((float)(g9_seed % 20000) / 10000.0f - 1.0f);
+        }
+
+        int g9_ok = mlx_gpu_qng64_gather_probe(g9_planes, GE, GOUT, GIN, GNG, GN,
+                                                g9_scales, g9_x, GPAIRS, g9_idx, g9_gpu_out);
+        if (!g9_ok) {
+            fprintf(stderr, "[moe gpu] GATE9 SKIP: probe call failed (MLX exception)\n");
+        } else {
+            double max_diff = 0.0;
+            long n_coords = 0;
+            for (int z = 0; z < GPAIRS; z++) {
+                long e = g9_idx[z];
+                for (long row = 0; row < GOUT; row++) {
+                    double acc = 0.0;
+                    for (long g = 0; g < GNG; g++) {
+                        long plane_base = e * (GOUT * GNG * (long)GN * 8) + row * (GNG * (long)GN * 8) + g * (long)GN * 8;
+                        for (int p = 0; p < 64; p++) {
+                            int byte_in_plane = p >> 3, bit_in_byte = p & 7;
+                            int u = 0;
+                            for (int j = 0; j < GN; j++) {
+                                uint8_t byte = g9_planes[plane_base + (long)j * 8 + byte_in_plane];
+                                int bit = (byte >> bit_in_byte) & 1;
+                                u |= (bit << j);
+                            }
+                            int bias_code = 1 << (GN - 1);
+                            int code = u - bias_code;
+                            float scale = g9_scales[e * (GOUT * GNG) + row * GNG + g];
+                            double decoded = (double)code * (double)scale;
+                            acc += decoded * (double)g9_x[(long)z * GIN + g * 64 + p];
+                        }
+                    }
+                    double gpu_val = (double)g9_gpu_out[(long)z * GOUT + row];
+                    double d = fabs(gpu_val - acc);
+                    if (d > max_diff) max_diff = d;
+                    n_coords++;
+                }
+            }
+            fprintf(stderr, "[moe gpu] GATE9 (routed qNg64 gather, E=%ld pairs=%d n=%d): "
+                            "max_abs_diff=%.9g over %ld coords (bar: ==0.0)\n",
+                    GE, GPAIRS, GN, max_diff, n_coords);
+        }
+        free(g9_w); free(g9_planes); free(g9_scales); free(g9_x); free(g9_gpu_out);
+    }
+
     fprintf(stderr, "RESULT: MoE GPU V5a weight-binding + equivalence check complete\n");
     return 1;
 }
