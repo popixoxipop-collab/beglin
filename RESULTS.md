@@ -13245,3 +13245,42 @@ same pre-existing MLA harness gap noted in D-metal-4.
 **EXIT**: same as D-metal-4's own EXIT -- fix the `GATE8` harness gap so the `==0.0` bit-exact
 check (not just token-level argmax stability) runs automatically across the whole n range, and
 extend beyond the single-role GEMV scope to the full routed-MoE path.
+
+## D-metal-6 -- GPU batch-throughput sweep: scoped out, decision recorded (2026-09-10)
+
+**Context**: while D-bench-5 (CPU B=1-256 throughput sweep) ran on bob, the question came up
+of whether a GPU-side equivalent batch-throughput sweep is needed too. Two things were checked
+before this decision was made, not assumed: (1) D-bench-5's own driver
+(`sweep_1_256.py`) confirmed local-CSV-only, no Supabase push, `qwen_infer_cpu_bench` is
+CPU-only -- there is no existing GPU counterpart sweep anywhere on bob; (2) the new qNg64 Metal
+GEMV kernel from D-metal-4/5 (`qng64_gemv_e0()`) was built and verified only for a single
+activation vector per call (`{1, in} -> {1, out}`) -- its grid/threadgroup dispatch
+(`{64, OUT, 1}`) has never been exercised at B>1, so "does batched dispatch even work" is itself
+unanswered, let alone its throughput.
+
+**Decision**: do not build/run a GPU-side B=1..256 (or B=64) throughput sweep. GPU batch
+throughput stays an explicitly unmeasured item (do not write a paper claim implying it was
+measured or that it scales like the CPU number).
+
+**WHY**: user's own stated reasoning -- structurally, this project's custom qNg64 GPU kernel
+runs on top of MLX's own `mx.fast.metal_kernel()` substrate, the same substrate MLX's native
+kernels use. A hand-written kernel on that substrate has no path to *beat* MLX's own
+best-case throughput ceiling -- at most it matches it. Spending bob time measuring "how does
+our GEMV kernel's batch throughput scale" would at best reproduce a number already bounded by
+MLX's own known performance envelope, not reveal something new the way the CPU sweep does
+(CPU sweep answers a real open question: whether/where SME2-accelerated CPU batching catches
+up to llama.cpp; GPU-vs-MLX-ceiling is not an open question in the same sense).
+
+**COST**: no real GPU batch-throughput number exists for this project's GPU path. If a future
+claim needs "GPU throughput at B=N", it has to be measured from scratch then -- this decision
+does not produce a stand-in estimate. Also leaves genuinely untested whether the current
+kernel's `output_shapes`/grid even function correctly at B>1 (separate from the throughput
+question) -- a correctness gap, not just a missing measurement, should batched GPU dispatch
+ever become needed for the full routed-MoE integration (already an open item, see D-metal-5's
+own EXIT).
+
+**EXIT**: if MLX's own native batched-matmul ceiling for this exact shape/dtype ever becomes a
+needed reference point (e.g. to bound how close the CPU path could theoretically get, or to
+decide whether pursuing GPU batching is worth it at all), measure MLX's *native* kernel
+throughput directly (not this project's custom kernel) -- that number is the actual ceiling
+being referred to here, and does not require touching `qng64_gemv_e0()` at all.
