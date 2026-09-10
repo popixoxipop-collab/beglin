@@ -5547,6 +5547,7 @@ static double moe_neartie_correct_threshold(void) {
 static void moe_neartie_correct_load_attn_hi(const char *safetensors_path);
 static MoeAFTensor *st_register_moe_dense_af_q8g64_as(const char *name, const char *engine_name);  // D-gpu-6c forward decl
 static MoeAFTensor *st_register_moe_dense_af_qNg64_as(const char *name, int n, const char *engine_name);  // D-qNg64-1 forward decl, same reason as q8g64's above
+static MoeAFTensor *st_register_moe_experts_qNg64_as(const char *name_pattern, int layer, int E, int n, const char *engine_name);  // D-metal-7 GATE9b forward decl, same reason
 static SafetensorsMulti *g_st_moe;  // D-gpu-6d forward decl (defined qwen_infer.c ~13065)
 static MoeAFTensor *st_register_moe_experts_f16_as_af(const char *name_pattern, int layer, int E, const char *engine_name);  // D-gpu-7 forward decl
 
@@ -9713,6 +9714,51 @@ static int run_moe_gpu_generate_gate(int argc, char **argv) {
     // generation this session's own D-gpu-4/5 work), so it's the natural place for a real
     // DeepSeek qNg64-promoted request to actually run.
     moe_promotion_nq_init_gpu();
+
+    // D-metal-7 GATE9b: real-weight decode-accuracy check for the routed-FFN qNg64 path --
+    // unlike GATE8/9 above (isolated inside run_moe_gpu_mode(), QWEN_MOE_GPU=1, which never
+    // sees an externally-set QWEN_MOE_PROMOTION_FILE_NQ -- GATE8's own setenv/unsetenv around
+    // its own temp file clobbers it), THIS gate (QWEN_MOE_GPU_GENERATE=1) reads the real env
+    // var directly via the moe_promotion_nq_init_gpu() call just above, so a real routed
+    // promotion actually lands here. Spot-checks several experts (not just expert 0) of
+    // model.layers.1.mlp.switch_mlp.gate_proj against an INDEPENDENTLY built qNg64(7)
+    // reference decode -- same discipline GATE8a already established. No-op unless that exact
+    // tensor was actually promoted to n=7 this run.
+    if (g_moe_promoted_nq_gpu[MOE_ATTRIB_EXPERT_GATE][1] == 7) {
+        SafetensorsMulti *saved_g9b = g_st_moe;
+        g_st_moe = g_moe_hi_st;
+        // Pattern literal matches MOE_ST_EXPERT_ROLES[0].st_pattern exactly (that array isn't
+        // forward-declared this early in the file; duplicating the one string here is simpler
+        // than adding a second forward declaration for a static const array).
+        MoeAFTensor *ref_eg = st_register_moe_experts_qNg64_as(
+            "model.layers.%d.mlp.experts.%d.gate_proj.weight", 1, MOE_N_EXPERTS, 7, "gate9b_verify_ref_eg");
+        g_st_moe = saved_g9b;
+        if (ref_eg) {
+            double max_diff = 0.0; int n_coords = 0; int probe_failed = 0;
+            long probe_experts[3] = {0, MOE_N_EXPERTS / 2, MOE_N_EXPERTS - 1};
+            for (int ei = 0; ei < 3; ei++) {
+                long e = probe_experts[ei];
+                long probe_rows[2] = {0, ref_eg->out - 1};
+                for (int ri = 0; ri < 2; ri++) {
+                    float gpu_vals[8];
+                    if (!mlx_gpu_dequant_probe("model.layers.1.mlp.switch_mlp.gate_proj", e, probe_rows[ri], 0, 8, gpu_vals)) {
+                        probe_failed = 1; continue;
+                    }
+                    for (int c = 0; c < 8; c++) {
+                        float cpu_val = moe_decode_af(af_blob, ref_eg, e, probe_rows[ri], c);
+                        double d = fabs((double)gpu_vals[c] - (double)cpu_val);
+                        if (d > max_diff) max_diff = d;
+                        n_coords++;
+                    }
+                }
+            }
+            fprintf(stderr, "[moe gpu generate] GATE9b (routed expert_gate_proj@L1, n=7, E=%d, experts {0,%d,%d}): "
+                            "max_abs_diff=%.9g over %d coords (bar: ==0.0)%s\n",
+                    MOE_N_EXPERTS, MOE_N_EXPERTS/2, MOE_N_EXPERTS-1, max_diff, n_coords, probe_failed ? " [PROBE FAILED]" : "");
+        } else {
+            fprintf(stderr, "[moe gpu generate] GATE9b SKIP: could not build independent qNg64(7) expert reference\n");
+        }
+    }
 
     if (!mlx_gpu_mla_config(MOE_N_HEADS, MOE_Q_HEAD_DIM, MOE_QK_NOPE_HD, MOE_QK_ROPE_HD,
                             MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,

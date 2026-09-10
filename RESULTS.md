@@ -13403,3 +13403,65 @@ sorted and unsorted canonicalization paths depending on B*TOPK vs `g_gpu_sort_th
 independent of real weights, expose `qng64_ffn_gather()` (or a thin C-ABI wrapper around it,
 same pattern `mlx_gpu_qng64_gather_probe()` already establishes for the kernel itself) and feed
 it both calling shapes with synthetic data directly.
+
+## D-metal-7-2 -- routed-FFN qNg64 real weights: E=64 promotion, exact-match decode, real generation (2026-09-10)
+
+**Context**: real-weight verification for the new routed-MoE GPU path, following D-metal-7-1's
+synthetic-kernel proof. Real config read directly from bob's `arch_config_moe.txt` (not
+assumed): `N_EXPERTS=64 N_SHARED=2 TOP_K=6 FIRST_DENSE_LAYERS=1` -- layer 1 chosen as the target
+(first real MoE-routed layer; layer 0 is dense-only).
+
+**Setup**: promotion file `expert_gate_proj 1 7`, `expert_up_proj 1 7`, `expert_down_proj 1 7`
+-- all three routed-FFN roles at layer 1, real E=64 experts, n=7. Run via
+`QWEN_MOE_GPU_GENERATE=1` (the real end-to-end MLA generation gate, same one D-metal-4/5 used
+for the single-expert attention-role tests) against the real DeepSeek-V2-Lite AF blob +
+`/Volumes/D50/deepseek_v2lite_bf16_safetensors` reference checkpoint.
+
+**Run 1 -- real generation** (`routed_gen_l1_n7.log`):
+```
+role=expert_gate_proj layer=1 PROMOTED to qNg64(n=7) on GPU (base_bits was 4)
+role=expert_up_proj layer=1 PROMOTED to qNg64(n=7) on GPU (base_bits was 4)
+role=expert_down_proj layer=1 PROMOTED to qNg64(n=7) on GPU (base_bits was 4)
+generate: 35872 67859 410 756 1292 72 11 317 245 26075 28075 585 261 280 254 2617 26955 71 1718 9827 13 809 317 8110
+RESULT: MoE GPU V5k MLA generate gate complete, prompt_len=9 generated=24
+```
+Exit 0, no exception, all three real E=64-expert tensors promoted and consumed by the new
+`ffn_gather()` third branch through the actual production call sites (not a probe). Token
+sequence differs from D-metal-4/5's own reference (expected -- a completely different set of
+promoted tensors, routed FFN weights at layer 1 vs a single attention role at layer 0, and
+n=7 here is a real precision INCREASE over the base bits=4, not a comparable baseline) --
+"ran to completion producing plausible, non-garbage tokens" is this run's own evidence, the
+numeric accuracy claim is Run 2's job.
+
+**Run 2 -- decode accuracy** (`routed_gen_l1_n7_gate9b.log`, new `GATE9b`): same promotion,
+same gate, with an added real-weight spot-check -- after promotion, `mlx_gpu_dequant_probe()`
+on the now-bound `model.layers.1.mlp.switch_mlp.gate_proj` at 3 experts spanning the full E=64
+range (0, 32, 63) x 2 rows x 8 columns, compared against an INDEPENDENTLY built qNg64(7)
+reference (`st_register_moe_experts_qNg64_as()`, a fresh registration call, not trusting
+`moe_promotion_nq_init_gpu()`'s own internal state -- same discipline GATE8a established):
+```
+GATE9b (routed expert_gate_proj@L1, n=7, E=64, experts {0,32,63}): max_abs_diff=0 over 48 coords (bar: ==0.0)
+```
+Exact bit-identical match across 3 widely-spaced real experts -- the strongest evidence tier
+this project uses.
+
+**Real incident, this session's second**: Run 2's own added registration work (a second
+independent E=64 tensor materialization on top of everything real generation already loads)
+pushed swap to **9457.62M** -- higher than D-metal-5's own documented 8043.81M incident --
+while the D-bench-5 CPU sweep was ALSO still running concurrently on the same 16GB machine.
+Caught via a direct `ps aux`/`sysctl -n vm.swapusage` check (not blind waiting past the normal
+completion time), killed immediately (`kill -9`), confirmed safe recovery (6874.62M then
+1943.44M within seconds) and that D-bench-5's own process was untouched. GATE9b's own result
+line had ALREADY been written to the log before the kill -- the accuracy check completed; only
+the generation step after it was cut short. Given Run 1 (without GATE9b) already proved
+generation completes cleanly, and Run 2 (with GATE9b) already proved exact-match accuracy, both
+pieces of real evidence exist -- not combined in a single process this round, a real, explicit
+scope note rather than a silently accepted gap.
+
+**COST**: `GATE9b` is real, useful, permanent test code (kept, not reverted) but doing an
+extra full E=64 independent registration is real memory pressure on a shared 16GB host -- worth
+knowing before running it alongside other heavy concurrent work.
+
+**EXIT**: if the combined (GATE9b + full generation, one process) result is ever specifically
+needed, re-run once D-bench-5 has finished (removing the concurrent-pressure factor) rather
+than re-attempting it under the same contention that caused this incident.
