@@ -13465,3 +13465,49 @@ knowing before running it alongside other heavy concurrent work.
 **EXIT**: if the combined (GATE9b + full generation, one process) result is ever specifically
 needed, re-run once D-bench-5 has finished (removing the concurrent-pressure factor) rather
 than re-attempting it under the same contention that caused this incident.
+
+## D-metal-7-3 -- routed-FFN qNg64 real generation across n=9-13; n=14/15 blocked by real resource contention (2026-09-10)
+
+**Method**: same real routed-FFN test as D-metal-7-2 (layer 1, all 3 roles: expert_gate_proj/
+expert_up_proj/expert_down_proj, real E=64), repeated individually for n=9,10,11,12,13 --
+one-at-a-time synchronous runs with an explicit `sysctl -n vm.swapusage` check before and after
+each (this session's own established discipline after D-metal-5's incident).
+
+**Result**: all 5 values PROMOTED all 3 roles cleanly and completed real 24-token generation,
+every one producing the byte-identical token sequence:
+```
+35872 67859 410 756 1292 72 11 317 245 26075 28075 585 261 280 254 2617 26955 71 1718 9827 13 809 317 8110
+```
+(also identical to n=7's own D-metal-7-2 result -- consistent with this project's own D-metal-5
+precedent, where different n values above the base precision commonly land on the same
+argmax-level token sequence).
+
+**n=14: real, repeated resource contention -- stopped, not forced through**
+
+Two independent attempts, both hit real swap danger and were killed before generation
+completed:
+- Attempt 1: swap reached 9812.62M (worse than either of this session's two prior documented
+  incidents), killed via `kill -9`, confirmed safe recovery.
+- Attempt 2 (retry, after full settle + an active Monitor-based safety watch with an 8000M
+  auto-kill threshold): swap reached 9022.44M, auto-killed by the watch, confirmed safe
+  recovery again.
+
+**Root cause, evidenced not guessed**: checked the concurrently-running D-bench-5 sweep's own
+RSS at the time of both failures -- **7.25GB**, up from ~1GB when this session's earlier work
+(D-metal-4/5) ran alongside it. D-bench-5 is still only at B=87/256 and its own per-B memory
+footprint grows with B (continuous-batch slot count scales with B). This is not an n=14-specific
+defect -- it is the concurrent sweep's own memory footprint compounding with time, hitting later
+tests in this session harder than earlier ones (n=9-13 ran when the sweep's footprint was
+smaller). n=15 was not attempted at all, for the same reason -- retrying into a worse and worse
+concurrent-memory situation is not a fix.
+
+**Decision: stop here, report honestly, do not force n=14/15 through under current contention**
+-- matches this project's own established discipline (2 consecutive real verification failures
+-> hand off / stop rather than keep working around it, rather than silently declaring partial
+coverage as complete).
+
+**EXIT**: retry n=14/15 once D-bench-5 has actually finished (removing the concurrent-memory
+factor entirely) rather than under the same growing contention that caused both failures.
+Given n=9-13's own 100% consistency (5/5 identical results, matching n=7), there is no reason
+to expect n=14/15 would behave differently on correctness grounds -- this is purely a resource-
+scheduling gap, not an open correctness question.
