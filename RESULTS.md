@@ -13709,3 +13709,43 @@ Phase A's own stated scope ("no forward pass yet").
 
 **EXIT**: when Phase B's real forward pass needs the full model resident, decide eager-vs-lazy
 with a real measured memory budget in hand (this ~35.6GiB figure), not assumed safe.
+
+## D-gptoss-3 -- Phase A complete: safe, scoped real-data load verification (2026-09-12)
+
+**Method**: given the real ~35.6GiB full-model memory finding (D-gptoss-2-note), built a new,
+narrow gate (`run_gptoss_load_probe_mode()`, `QWEN_GPTOSS_LOAD_PROBE=<path>`) that registers
+exactly 2 real tensors from the real 12.1GB `gpt-oss-20b-MXFP4.gguf` -- one Q8_0 attention
+weight, one MXFP4 expert weight -- instead of the full 24-layer eager-load pipeline. Proves the
+registration path on real data without the full model's footprint.
+
+**Real bug found and fixed along the way**: first run FATAL'd with "unrecognized ggml type id
+39" -- not a code bug, a sync bug: `gguf_load.c`/`gguf_load.h`/`gguf_quants.c` (the MXFP4 enum/
+table/dequant work from D-gptoss-1) had never actually been copied to bob, only `qwen_infer.c`
+had been re-synced repeatedly. Fixed by syncing the missing files; recompiled clean.
+
+**Result** (bob, real file, swap unchanged 555.56MB before and after -- confirms the scoped
+test stayed small as designed):
+```
+blk.0.attn_q.weight (Q8_0): E=1 out=4096 in=2880 bits=16
+attn_q first 8 values: 0.000000 0.005058 0.005421 0.022766 -0.013016 0.002529 0.006145 -0.007950
+blk.0.ffn_gate_exps.weight (MXFP4): E=32 out=2880 in=2880 bits=16
+ffn_gate_exps expert0 row0 first 8: 0.000000 0.000000 0.000000 -0.062500 0.000000 0.000000 -0.015625 -0.031250
+ffn_gate_exps expert31 row2879 first 8: 0.000000 0.015625 0.000000 -0.015625 0.000000 0.000000 0.000000 -0.015625
+```
+Shapes match the real header exactly (E/out/in). The expert0/row0 values are byte-identical to
+D-gptoss-1's own standalone oracle check (same tensor, same first block -- a real consistency
+cross-check between the two independent test paths). The expert31/row2879 values (the far
+boundary of the full E=32/out=2880 range, not just element 0) were independently re-verified
+against `gguf-py`'s own `MXFP4.dequantize_blocks()` on a freshly range-fetched real slice:
+```
+gguf-py reference: [0., 0.015625, 0., -0.015625, 0., 0., 0., -0.015625]
+this engine:        0.000000 0.015625 0.000000 -0.015625 0.000000 0.000000 0.000000 -0.015625
+```
+Exact match -- confirms `gguf_register_moe_f16_as()`'s per-expert stride/offset arithmetic is
+correct across the full expert range, not just expert 0 (this project's own named D-metal-2 bug
+class: "would look right at row 0 and wrong everywhere else").
+
+**Phase A is complete**: architecture recognized, real role table resolves real tensors without
+FATAL, MXFP4 and Q8_0 both dequant correctly on real production data, verified at both the near
+and far boundary of the expert-stacked tensor. Full-model eager loading strategy (memory budget
+vs lazy materialization) remains open, explicit Phase B/C design work per D-gptoss-2-note.

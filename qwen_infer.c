@@ -8231,6 +8231,54 @@ static const GptossGgufRole GPTOSS_GGUF_LAYER_ROLES[] = {
     { "blk.%d.ffn_down_exps.weight",    "model.layers.%d.mlp.switch_mlp.down_proj" },
 };
 
+// D-gptoss-3-probe: safe, scoped real-data verification for gguf_register_moe_f16_as() --
+// deliberately does NOT call the full config-read + alloc_moe_buffers() + all-24-layers
+// registration loop run_gguf_moe_verify_mode() does: a real memory-footprint calculation
+// (RESULTS.md's D-gptoss-2-note) found that eagerly dense-F16-loading all 24 real layers of
+// GPT-OSS-20B needs ~35.6GiB, more than bob's 16GB RAM -- running that blindly risks repeating
+// this session's own documented swap-danger incidents. This probe registers exactly 2 real
+// tensors (one Q8_0 attention weight, one MXFP4 expert weight, both real production tensors
+// from layer 0) and dumps a handful of dequanted values to stdout for independent verification
+// against gguf-py's own dequantize -- proves the registration path is correct on real data
+// without the full model's memory footprint.
+static int run_gptoss_load_probe_mode(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *path = getenv("QWEN_GPTOSS_LOAD_PROBE");
+    if (!path || !path[0]) return 0;
+
+    fprintf(stderr, "[gptoss probe] QWEN_GPTOSS_LOAD_PROBE=%s -- scoped real-tensor load probe\n", path);
+    g_gguf_moe = gguf_open(path);
+    if (!g_gguf_moe) { perror("gguf_open"); fprintf(stderr, "FATAL: could not open gguf file %s\n", path); exit(1); }
+    g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));
+
+    MoeAFTensor *tq = gguf_register_moe_f16_as("blk.0.attn_q.weight", "probe.attn_q");
+    fprintf(stderr, "[gptoss probe] blk.0.attn_q.weight (Q8_0): E=%ld out=%ld in=%ld bits=%d\n",
+            tq->E, tq->out, tq->in, tq->bits);
+    _Float16 *hq = (_Float16 *)tq->base;
+    fprintf(stderr, "[gptoss probe] attn_q first 8 values:");
+    for (int i = 0; i < 8; i++) fprintf(stderr, " %.6f", (double)(float)hq[i]);
+    fprintf(stderr, "\n");
+
+    MoeAFTensor *te = gguf_register_moe_f16_as("blk.0.ffn_gate_exps.weight", "probe.ffn_gate_exps");
+    fprintf(stderr, "[gptoss probe] blk.0.ffn_gate_exps.weight (MXFP4): E=%ld out=%ld in=%ld bits=%d\n",
+            te->E, te->out, te->in, te->bits);
+    _Float16 *he = (_Float16 *)te->base;
+    fprintf(stderr, "[gptoss probe] ffn_gate_exps expert0 row0 first 8 values:");
+    for (int i = 0; i < 8; i++) fprintf(stderr, " %.6f", (double)(float)he[i]);
+    fprintf(stderr, "\n");
+    // expert 31 (last), row (out-1) (last), to prove the per-expert stride/offset arithmetic is
+    // correct across the FULL E and out range, not just element 0 -- same "every row, not just
+    // row 0" discipline this project's own D-metal-2 bug (RESULTS.md) was found under.
+    size_t per_expert = (size_t)te->out * (size_t)te->in;
+    size_t last_row_off = (size_t)31 * per_expert + (size_t)(te->out - 1) * (size_t)te->in;
+    fprintf(stderr, "[gptoss probe] ffn_gate_exps expert31 row%ld first 8 values:", te->out - 1);
+    for (int i = 0; i < 8; i++) fprintf(stderr, " %.6f", (double)(float)he[last_row_off + i]);
+    fprintf(stderr, "\n");
+
+    fprintf(stderr, "RESULT: gptoss load probe complete, %d af tensors registered\n", g_moe_naf);
+    return 1;
+}
+
 static int run_gguf_moe_verify_mode(int argc, char **argv) {
     (void)argc; (void)argv;
     const char *path = getenv("QWEN_MOE_GGUF");
@@ -16464,6 +16512,7 @@ int main(int argc, char **argv) {
     // when it's not an MLA model, so trying both in sequence is safe and order-independent.
     if (run_moe_gpu_generate_default_mode(argc, argv)) return 0;
 #endif
+    if (run_gptoss_load_probe_mode(argc, argv)) return 0;
     if (run_gguf_moe_verify_mode(argc, argv)) return 0;
     if (run_moe_safetensors_verify_mode(argc, argv)) return 0;
     if (run_moe_verify_mode(argc, argv)) return 0;
