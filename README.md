@@ -92,11 +92,13 @@ shapes, both real, both on the same compressed representation:
   (every (pair, expert) coordinate independently re-decoded, not just
   pair 0), then against real DeepSeek-V2-Lite weights: an exact-match
   decode spot-check across experts spanning the full E=64 range, and
-  real end-to-end generation **at n=7,9,10,11,12,13** (token-identical
-  across all six). n=14 and n=15 hit real, repeated memory contention
-  from a concurrently-running benchmark on the same 16GB test machine
-  — not a correctness failure, not yet retried under isolated
-  conditions. See `RESULTS.md`'s `D-metal-7-1` through `D-metal-7-3`.
+  real end-to-end generation **at every one of n=7,9,10,11,12,13,14,15**
+  (token-identical across all eight — matching the single-expert path's
+  own full range). n=14/15 hit real, repeated memory contention from a
+  concurrently-running benchmark on the same 16GB test machine on the
+  first attempt; passed cleanly once that contention was gone,
+  confirming it was a resource-scheduling gap, not a correctness one.
+  See `RESULTS.md`'s `D-metal-7-1` through `D-metal-7-4`.
 
 Both paths are correctness-verified, not yet performance-measured.
 
