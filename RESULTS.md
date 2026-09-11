@@ -13563,3 +13563,29 @@ assumed flat.
 **EXIT**: if the B=129-256 range is needed later, re-run `sweep_1_256.py 129 256` fresh
 (append-safe -- the script opens its CSV in append mode) once bob's concurrent-load situation
 is confirmed clear, not assumed safe from this session's own experience.
+
+## D-metal-7-4 -- routed-FFN qNg64 n=14/15: retried post-reboot, both pass (2026-09-11)
+
+**Context**: D-metal-7-3 left n=14/15 unverified after two real swap-danger attempts, root
+cause diagnosed as the concurrently-running D-bench-5 sweep's own growing memory footprint,
+not an n=14/15-specific defect. D-bench-5 then ended for real (bob rebooted, see D-bench-5's
+own writeup) -- removing the concurrent-load factor entirely. Retried immediately once bob was
+confirmed idle (`ps aux` empty of heavy processes, swap `0.00M/0.00M/0.00M` fresh post-reboot).
+
+**Result**: both n=14 and n=15 promoted all three real E=64 routed-FFN roles at layer 1 and
+completed real 24-token generation cleanly, on the first attempt each, with swap staying well
+inside safe bounds throughout (927.56MB after n=14, 2001.81MB after n=15 -- vs the 9022-9812MB
+danger spikes both attempts hit under D-bench-5 contention). Both produced the same token
+sequence as every other n value tested in this family:
+```
+35872 67859 410 756 1292 72 11 317 245 26075 28075 585 261 280 254 2617 26955 71 1718 9827 13 809 317 8110
+```
+
+**Confirms the D-metal-7-3 diagnosis directly**: same binary, same promotion files, same real
+weights, same code -- the only variable that changed between the failing and passing attempts
+was the concurrent load. This was a resource-scheduling gap, not a correctness question, exactly
+as predicted.
+
+**Routed-FFN qNg64 GPU path is now verified at all eight of n=7,9,10,11,12,13,14,15** -- the
+same full range already verified for the single-expert attention path (D-metal-4/D-metal-5).
+D-metal-7 is complete.
