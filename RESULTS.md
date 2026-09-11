@@ -13589,3 +13589,50 @@ as predicted.
 **Routed-FFN qNg64 GPU path is now verified at all eight of n=7,9,10,11,12,13,14,15** -- the
 same full range already verified for the single-expert attention path (D-metal-4/D-metal-5).
 D-metal-7 is complete.
+
+## D-gptoss-1 -- MXFP4 dequant support (GPT-OSS), real-checkpoint oracle exact match (2026-09-11)
+
+**Context**: first step of GPT-OSS-120b/20b GGUF support (session plan, Phase A). GPT-OSS's
+expert FFN tensors (`ffn_gate_exps`/`ffn_up_exps`/`ffn_down_exps`) ship in **MXFP4** (OCP
+microscaling FP4, `GGML_TYPE_MXFP4=39` per real `ggml.h`), a format this project had no support
+for at all -- structurally unlike every existing quant here (K-quants' affine scale+min, this
+project's own qNg64's symmetric bit-plane int codes): MXFP4 packs 32 values per 17-byte block
+(1 byte E8M0 shared exponent + 16 bytes of E2M1 nibbles, 2 values/byte).
+
+**Real header, not assumed**: hand-parsed the actual `ggml-org/gpt-oss-20b-GGUF/gpt-oss-20b-
+MXFP4.gguf` file (HTTP range-fetched, no full 12.1GB download needed for this step) to confirm,
+against real bytes rather than llama.cpp source alone: `general.architecture=gpt-oss`,
+`block_count=24` (not 36 -- that figure is the 120B variant's), `expert_count=32`,
+`expert_used_count=4`, `attention.sliding_window=128` (single scalar, no separate pattern key
+in the file -- the odd/even alternation must be hardcoded in code, not read from metadata), and
+the exact per-tensor type breakdown: **only the 3 expert FFN weight tensors per layer are
+MXFP4** -- everything else (attn q/k/v/output, token_embd, output/lm_head) is **Q8_0**, a format
+this project already dequants. This corrects the session plan's own more pessimistic
+assumption. Also found: nearly every tensor (attention AND FFN, plus the router) carries a
+`.bias` tensor -- a real, previously underestimated requirement for Phase B/C (existing
+matvec/gather call sites don't handle bias at all today).
+
+**Implementation**: `dequant_row_mxfp4()` (`gguf_quants.c`), ported from ggml's own
+`dequantize_row_mxfp4` (`ggml-quants.c`) -- confirmed via direct GitHub source fetch, not
+memory: `kvalues_fp4[16] = {0,1,2,3,4,6,8,12,0,-1,-2,-3,-4,-6,-8,-12}` (e2m1 values, DOUBLED),
+scale via `e8m0_to_fp32_half()` (exact bit-construction port, not a `powf()` approximation --
+guarantees bit-identical results at denormal-adjacent exponent byte values, not just
+mathematically-equivalent ones). `GGML_TYPE_MXFP4=39` added to `gguf_load.h`'s `GgmlType`
+enum + its block/typesize row (32, 17) in `gguf_load.c`'s `GGML_TYPE_TABLE`. Wired into both
+`gguf_dequant_supported()`/`gguf_dequant_row()` switches (`gguf_quants.c`).
+
+**Verification**: downloaded a real 17000-byte slice (1000 real MXFP4 blocks, 32000 values)
+directly from `blk.0.ffn_gate_exps.weight`'s real data offset in the actual checkpoint (not
+synthetic test data). Decoded independently two ways -- this project's new C function via
+`gguf_dequant_row()`, and `gguf-py`'s own `MXFP4.dequantize_blocks()` (same upstream project,
+different language runtime, same class of independent-reference discipline as every prior
+quant addition this session):
+```
+n_vals=32000 max_abs_diff=0 n_mismatch=0
+RESULT: EXACT MATCH
+```
+Bit-exact across every one of 32,000 real values from a real production checkpoint.
+
+**EXIT**: if ggml ever revises the MXFP4/E2M1 lookup table or E8M0 bias convention (OCP spec
+version bump), re-verify against a fresh `ggml-quants.c` fetch and a fresh real-checkpoint
+slice, not from memory of this entry.

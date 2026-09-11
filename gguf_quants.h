@@ -16,14 +16,15 @@
 
 // Dequantizes n_elements of `type` starting at `src` into `dst` (already-allocated, n_elements
 // floats). FATAL if `type` isn't one of the types this file supports (F32, F16, BF16, Q4_0,
-// Q8_0, Q4_K, Q6_K) -- an unsupported type is a caller bug (should have checked
+// Q5_0, Q8_0, Q3_K, Q4_K, Q5_K, Q6_K, MXFP4 -- MXFP4 added D-gptoss-1, real OpenAI GPT-OSS
+// checkpoints) -- an unsupported type is a caller bug (should have checked
 // gguf_dequant_supported() first), not something to silently skip or approximate.
 void gguf_dequant_row(GgmlType type, const void *src, float *dst, int64_t n_elements);
 
 // Whether gguf_dequant_row() supports this type. Callers should check this before attempting a
 // dequant of a tensor type they haven't verified is covered yet (see
-// PLAN_general_purpose_loader.md Phase 1 -- IQ*/Q2_K/Q3_K/Q5_K/Q2_0/etc. are parsed by
-// gguf_load.c's container reader but not yet dequantizable).
+// PLAN_general_purpose_loader.md Phase 1 -- IQ*/Q2_K/Q2_0/etc. are parsed by gguf_load.c's
+// container reader but not yet dequantizable).
 int gguf_dequant_supported(GgmlType type);
 
 #endif // GGUF_QUANTS_H

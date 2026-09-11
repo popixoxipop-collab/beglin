@@ -281,6 +281,45 @@ static void dequant_row_q6_k(const void *src, float *y, int64_t n) {
     }
 }
 
+// D-gptoss-1: ported from ggml's dequantize_row_mxfp4 (ggml-quants.c) -- OCP microscaling
+// FP4. Block = 32 values, 17 bytes (1 byte E8M0 shared exponent + 16 bytes packed E2M1
+// nibbles). No residual/error-feedback applies -- same D-gen-9 exemption as Q3_K/Q5_K above,
+// this is a fixed upstream (OCP/OpenAI) encoding this engine only decodes.
+//   kvalues_mxfp4 holds e2m1 values DOUBLED (ggml's own convention) -- the scale computation
+//   below (e8m0_to_fp32_half) already halves the exponent term to compensate, so
+//   kvalues_mxfp4[nibble] * scale gives the real dequantized value directly, matching ggml
+//   bit-for-bit rather than approximated via powf() (which risks not matching ggml's exact
+//   denormal-adjacent bit pattern at extreme exponent byte values).
+static const int8_t kvalues_mxfp4[16] = {
+    0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12
+};
+static float e8m0_to_fp32_half(uint8_t x) {
+    uint32_t bits;
+    if (x < 2) {
+        bits = 0x00200000u << x;
+    } else {
+        bits = (uint32_t)(x - 1) << 23;
+    }
+    float f;
+    memcpy(&f, &bits, sizeof(f));
+    return f;
+}
+static void dequant_row_mxfp4(const void *src, float *y, int64_t n) {
+    const uint8_t *blk = (const uint8_t *)src;
+    const int64_t nb = n / 32;
+    for (int64_t i = 0; i < nb; i++) {
+        const uint8_t *b = blk + i * 17;
+        const float d = e8m0_to_fp32_half(b[0]);
+        const uint8_t *qs = b + 1;
+        for (int j = 0; j < 16; j++) {
+            int8_t x0 = kvalues_mxfp4[qs[j] & 0x0F];
+            int8_t x1 = kvalues_mxfp4[qs[j] >> 4];
+            y[i * 32 + j]      = (float)x0 * d;
+            y[i * 32 + j + 16] = (float)x1 * d;
+        }
+    }
+}
+
 static void dequant_row_f16(const void *src, float *y, int64_t n) {
     const uint16_t *x = (const uint16_t *)src;
     for (int64_t i = 0; i < n; i++) y[i] = fp16_to_fp32(x[i]);
@@ -298,6 +337,7 @@ int gguf_dequant_supported(GgmlType type) {
         case GGML_TYPE_F32: case GGML_TYPE_F16: case GGML_TYPE_BF16:
         case GGML_TYPE_Q4_0: case GGML_TYPE_Q8_0: case GGML_TYPE_Q5_0:
         case GGML_TYPE_Q3_K: case GGML_TYPE_Q4_K: case GGML_TYPE_Q5_K: case GGML_TYPE_Q6_K:
+        case GGML_TYPE_MXFP4:
             return 1;
         default:
             return 0;
@@ -316,6 +356,7 @@ void gguf_dequant_row(GgmlType type, const void *src, float *dst, int64_t n_elem
         case GGML_TYPE_Q4_K: dequant_row_q4_k(src, dst, n_elements); return;
         case GGML_TYPE_Q5_K: dequant_row_q5_k(src, dst, n_elements); return;
         case GGML_TYPE_Q6_K: dequant_row_q6_k(src, dst, n_elements); return;
+        case GGML_TYPE_MXFP4: dequant_row_mxfp4(src, dst, n_elements); return;
         default:
             fprintf(stderr, "FATAL: gguf_dequant_row: unsupported ggml type id %d (see gguf_dequant_supported())\n", (int)type);
             exit(1);

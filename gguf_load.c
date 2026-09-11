@@ -35,6 +35,7 @@ static const GgmlTypeInfo GGML_TYPE_TABLE[] = {
     {GGML_TYPE_Q6_K, 256, 210},
     {GGML_TYPE_Q8_K, 256, 292},
     {GGML_TYPE_BF16, 1,   2},
+    {GGML_TYPE_MXFP4, 32, 17},  // D-gptoss-1: real value confirmed from the actual GGUF header
 };
 #define N_GGML_TYPES (int)(sizeof(GGML_TYPE_TABLE)/sizeof(GGML_TYPE_TABLE[0]))
 

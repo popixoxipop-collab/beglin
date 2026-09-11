@@ -67,6 +67,14 @@ typedef enum {
     GGML_TYPE_Q6_K = 14,
     GGML_TYPE_Q8_K = 15,
     GGML_TYPE_BF16 = 30,
+    // D-gptoss-1: MXFP4, real value/layout confirmed by hand-parsing the actual
+    // ggml-org/gpt-oss-20b-GGUF header (gpt-oss-20b-MXFP4.gguf) rather than assumed from
+    // llama.cpp source alone -- OCP microscaling FP4: 32 values/block, 17 bytes/block (1 byte
+    // shared E8M0 exponent + 16 bytes of packed E2M1 nibbles, 2 values/byte). No residual/
+    // error-feedback applies here, same D-gen-9 exemption already used for Q3_K/Q5_K: this is
+    // a fixed upstream (OCP/OpenAI) encoding this engine only decodes, not a quantizer this
+    // project designs -- there is no requantization step to add error-feedback to.
+    GGML_TYPE_MXFP4 = 39,
 } GgmlType;
 
 typedef struct {
