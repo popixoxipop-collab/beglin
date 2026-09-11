@@ -13511,3 +13511,55 @@ factor entirely) rather than under the same growing contention that caused both 
 Given n=9-13's own 100% consistency (5/5 identical results, matching n=7), there is no reason
 to expect n=14/15 would behave differently on correctness grounds -- this is purely a resource-
 scheduling gap, not an open correctness question.
+
+## D-bench-5 -- CPU B=1..256 warm-state throughput sweep: real data through B=128, then bob rebooted (2026-09-10/11)
+
+**Context**: automated per-B warm-throughput sweep (`sweep_1_256.py`, bob), driven server-side
+to avoid per-B SSH round-trip overhead. Real prompt (`d4_wikitext2_short_manifest/p0.i32`),
+R=6*B rounds per point, MIN_PLATEAU=3 consecutive `ndec==B` steps required to trust a point as
+"warm" (else written INCONCLUSIVE, not guessed at -- same discipline D-bench-3 already
+established for its own B=32 finding). Ran concurrently with this session's own GPU qNg64
+routed-MoE work (D-metal-7) for most of its life -- see that section's own documented swap
+incidents, which involved THIS sweep's growing memory footprint as a contributing factor.
+
+**Real result, B=1..128** (128/256 rows, `sweep_1_256_results.csv`):
+- **B=1..30: all OK** (real, plateau-confirmed warm throughput). tok/s range 3.39-11.66
+  across this range (real point-to-point jitter, not a monotonic curve -- e.g. B=3=3.386,
+  B=27=11.656 next to each other in rank, consistent with D-bench-3's own prior finding that
+  small-B admission overhead dominates and doesn't scale cleanly).
+- **B=31 onward: INCONCLUSIVE, without exception, through B=128** (98/98 rows) -- every point's
+  longest trailing `ndec==B` run stayed below MIN_PLATEAU=3, so nothing past B=30 is a trusted
+  measurement. Exactly one status transition in the whole run (OK at B=30 -> INCONCLUSIVE at
+  B=31) -- reproduces D-bench-3's own B=32 finding at real, individually-swept scale rather
+  than a single spot-check.
+- **Swap stayed safe throughout this data** -- max recorded 1773.5MB at B=86, well under the
+  sweep's own 2700MB self-stop threshold; the last 5 rows before the run ended (B=124-128) show
+  swap actually falling (613->581MB), so the sweep itself was not under memory pressure when it
+  stopped.
+
+**How it actually ended -- not a clean finish, not the sweep's own swap-stop logic**: bob
+rebooted for real. Confirmed directly (`last reboot`, `uptime`), not inferred: reboot at
+**2026-09-11 12:32 KST**, `uptime` showing exactly `1:32` at the time of discovery (14:05),
+`sysctl -n vm.swapusage` returning all-zero (fresh post-reboot swap state). The sweep's driver
+process (`sweep_1_256.py`) is gone from `ps aux` -- killed by the reboot, never auto-restarted.
+Last written row: B=128, INCONCLUSIVE, file mtime 12:04 -- 28 minutes before the reboot.
+**No FATAL, no crash log, no self-stop message in the sweep's own log** -- the process was
+simply terminated by the OS restart mid-run. Root cause of the reboot itself not confirmed
+(this session's own concurrent D-metal-7 GPU work had already produced two real, separately-
+killed swap-danger spikes on this same host in the hours before; a prior, unrelated bob reboot
+incident under similar concurrent-load conditions is already on record, 2026-09-02 --
+plausible contributing factor, not proven root cause).
+
+**Decision (user, explicit)**: finalize with the real B=1-128 data as-is. Do not resume the
+sweep for B=129-256.
+
+**What this data supports and doesn't**: supports D-bench-3's own B=32-ish "continuous-batch
+admission needs several rounds to reach a trustworthy warm plateau, and that gets harder to
+reach as B grows" finding, now backed by a full per-B sweep through B=128 rather than one spot
+value. Does NOT establish where (or whether) throughput would climb again at higher B, or
+whether B=129-256 would behave differently -- that range was never measured, not silently
+assumed flat.
+
+**EXIT**: if the B=129-256 range is needed later, re-run `sweep_1_256.py 129 256` fresh
+(append-safe -- the script opens its CSV in append mode) once bob's concurrent-load situation
+is confirmed clear, not assumed safe from this session's own experience.
