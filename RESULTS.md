@@ -13636,3 +13636,53 @@ Bit-exact across every one of 32,000 real values from a real production checkpoi
 **EXIT**: if ggml ever revises the MXFP4/E2M1 lookup table or E8M0 bias convention (OCP spec
 version bump), re-verify against a fresh `ggml-quants.c` fetch and a fresh real-checkpoint
 slice, not from memory of this entry.
+
+## D-gptoss-2 -- GPT-OSS architecture recognition + precision-preserving loader (2026-09-11/12)
+
+**Context**: Phase A continues -- teaching the GGUF-MoE loader to recognize `gpt-oss` and load
+its real tensors. While writing the role table, found that this project's existing
+`gguf_register_moe_q4g64_as()` (every `is_af=1` role in the qwen3moe table goes through it)
+unconditionally dequantizes then **re-quantizes into this project's own int4 q4g64** regardless
+of source precision. Reusing it unchanged for GPT-OSS would double-quantize the already-lossy
+MXFP4 expert weights and needlessly downcast the Q8_0 attention/embedding tensors -- an
+unmeasured precision loss this project's own Data-First Numerics rule doesn't allow. User
+decision (explicit): build the precision-preserving path instead of accepting that loss.
+
+**Fix**: new `gguf_register_moe_f16_as()` -- dequantizes into a **dense F16 buffer**, no
+re-quantization at all. Not new decode logic: mirrors the safetensors-side
+`st_register_moe_f16_as_af()`/`st_register_moe_experts_f16_as_af()` pair's already-proven
+`bits=16` dense convention (`moe_decode_af()`/`moe_matvec_af_row()` already handle `bits=16`
+tensors correctly -- production code from the D-roadmap-2 correction path). Folded into one
+function (the safetensors side needed two) because a GGUF expert-stacked tensor is already one
+real 3-D tensor (`ne[2]=E`), same E-detection `gguf_register_moe_q4g64_as()` already uses.
+
+**Real role table, not assumed**: `GPTOSS_GGUF_LAYER_ROLES[]` built from the real header parse
+(D-gptoss-1's own finding) -- close to qwen3moe's own table (attn_q/k/v/output, attn_norm,
+ffn_gate_inp, all 3 expert FFN roles share the exact same GGUF names) with two real differences:
+no `attn_q_norm`/`attn_k_norm` (GPT-OSS has no per-head QK-norm) and the post-attention norm
+tensor is named `post_attention_norm`, not `ffn_norm`. Bias tensors (present on nearly every
+real GPT-OSS tensor) and `attn_sinks` are deliberately NOT registered this round -- they need a
+real bias-add/sink design in the forward pass (Phase B), not a role-table entry loading them
+with nowhere to be consumed yet.
+
+**Architecture allowlist + config**: `"gpt-oss"` added to `SUPPORTED_ARCH_MOE_GGUF[]`, hardcoded
+error string fixed in the same edit (was silently lying about supported archs). New
+`MOE_ATTN_GPTOSS=2` (config storage only -- the attention dispatch that reads it is Phase B) and
+`MOE_SLIDING_WINDOW` global. New arch-config branch reads GPT-OSS's real keys
+(`attention.sliding_window=128`, `rope.scaling.factor/original_context_length/yarn_beta_fast/
+yarn_beta_slow`) into this project's EXISTING `MOE_YARN_*` globals -- DeepSeek's own already-
+verified YaRN math applies unchanged, real semantic match confirmed (`rope.scaling.factor` <->
+`MOE_YARN_FACTOR`, etc., same values `arch_config_moe.txt`'s own `YARN_*` keys already feed for
+DeepSeek). `MOE_NORM_TOPK_PROB=0` for GPT-OSS -- this session's own D-metal-7 finding (softmax-
+over-all-experts then select-top-K with no renorm is exactly GPT-OSS's real router) confirmed
+directly applicable, no new routing code needed.
+
+**Status**: compiles clean (`clang -fsyntax-only` + full `-c` object compile, both zero errors,
+only the same pre-existing `cblas_sgemv` deprecation warnings). Real-file load verification
+(downloading the full 12.1GB `gpt-oss-20b-MXFP4.gguf` to bob) in progress -- result lands in a
+follow-up entry, not claimed done here without it.
+
+**EXIT**: if q4g64 requantization of GPT-OSS's tensors is later measured (not assumed) to have
+negligible real accuracy impact, `gguf_register_moe_q4g64_as()` could replace
+`gguf_register_moe_f16_as()` for the FFN expert tensors specifically -- that measurement has to
+happen first.

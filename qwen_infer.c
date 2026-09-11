@@ -2856,7 +2856,13 @@ static double g_moe_rope_mscale, g_moe_attn_scale;
 // moe_cfg_validate(), never written anywhere else.
 #define MOE_ATTN_MLA 0
 #define MOE_ATTN_GQA 1
+// D-gptoss-3: GPT-OSS's own attention kind -- GQA (64:8 heads) PLUS per-layer sliding-window
+// alternation and per-head attention sinks, neither of which MLA or GQA's own existing
+// functions implement. Config storage only this round (Phase A) -- the moe_attention()
+// dispatch + new moe_gptoss_attention*() functions that actually READ these fields are Phase B.
+#define MOE_ATTN_GPTOSS 2
 static int MOE_ATTN_KIND;
+static int MOE_SLIDING_WINDOW;   // D-gptoss-3: bandwidth in tokens (128 for real GPT-OSS-20B), 0 = none
 // Phase 4 sub-part 2, Step 2.5: config the second model (GQA) needs that MLA never had to
 // express. All defaulted (via moe_cfg_get_opt()) so every existing arch_config_moe.txt --
 // DeepSeek-V2-Lite's real one included -- keeps its exact prior behavior with zero changes:
@@ -7956,7 +7962,7 @@ static int run_moe_gqa_olmoe_selftest_mode(int argc, char **argv) {
 // falls through, byte-identical to every existing code path.
 // ============================================================================
 
-static const char *SUPPORTED_ARCH_MOE_GGUF[] = { "qwen3moe" };
+static const char *SUPPORTED_ARCH_MOE_GGUF[] = { "qwen3moe", "gpt-oss" };  // D-gptoss-2
 
 // GGUF tensor dims (E/out/in, ng derived from in) come directly from the file's own metadata --
 // this project's established discipline for any file-derived count/offset (see gguf_cache.c's
@@ -8133,6 +8139,98 @@ static MoeF32Tensor *gguf_register_moe_f32_as(const char *gguf_name, const char 
     return w;
 }
 
+// D-gptoss-2: dense F32->F16 registration for GPT-OSS's GGUF tensors -- deliberately NOT
+// gguf_register_moe_q4g64_as(), which force-requantizes into this project's own int4 q4g64
+// regardless of source precision. GPT-OSS ships attn/embed at Q8_0 and experts at MXFP4;
+// routing either through q4g64 would either double-quantize the already-lossy MXFP4 experts or
+// needlessly downcast the more-precision-sensitive Q8_0 tensors -- an unmeasured precision loss
+// this project's own Data-First Numerics rule doesn't allow (user decision, 2026-09-12: build
+// the precision-preserving path rather than accept that loss).
+//   WHY dense bits=16, not a new storage format: mirrors the safetensors-side
+//   st_register_moe_f16_as_af()/st_register_moe_experts_f16_as_af() pair's bits=16 convention
+//   exactly -- moe_decode_af()/moe_matvec_af_row() already handle bits=16 tensors correctly,
+//   proven code from the D-roadmap-2 correction path, not new decode logic. Folded into ONE
+//   function (unlike the safetensors pair, which needed two) because a GGUF expert-stacked
+//   tensor is already one real 3-D tensor (ne[2]=E) -- same E-detection gguf_register_moe_
+//   q4g64_as() already uses.
+//   COST: 2-4x the memory of q4g64 for these tensors (f16 vs packed int4/int8) -- accepted for
+//   precision fidelity; GPT-OSS-20B's real shipped size (12.1GB, mostly MXFP4) means the dense
+//   f16 in-memory footprint is real but was not the blocker this decision weighed (disk/network
+//   size vs RAM footprint are separate concerns).
+//   EXIT: if q4g64 requantization is later measured (not assumed) to have negligible real
+//   accuracy impact on GPT-OSS, gguf_register_moe_q4g64_as() could replace this for the FFN
+//   expert tensors specifically -- that measurement has to happen first.
+static MoeAFTensor *gguf_register_moe_f16_as(const char *gguf_name, const char *engine_name) {
+    const GgufTensorInfo *t = gguf_find_tensor(g_gguf_moe, gguf_name);
+    if (!t) { fprintf(stderr, "FATAL: gguf moe model missing tensor '%s'\n", gguf_name); exit(1); }
+    long E = (t->n_dims >= 3) ? (long)t->ne[2] : 1;
+    long out = (long)t->ne[1];
+    long in = (t->n_dims >= 2) ? (long)t->ne[0] : 1;
+    if (E <= 0 || out <= 0 || in <= 0) {
+        fprintf(stderr, "FATAL: gguf moe: %s has non-positive dims (E=%ld out=%ld in=%ld)\n", gguf_name, E, out, in);
+        exit(1);
+    }
+    if (!gguf_dequant_supported(t->type)) {
+        fprintf(stderr, "FATAL: gguf moe tensor '%s' has unsupported quant type id %d\n", gguf_name, (int)t->type);
+        exit(1);
+    }
+    if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors (gguf)\n"); exit(1); }
+
+    size_t per_expert = moe_gguf_mul_checked("f16-as-af per_expert", (size_t)out, (size_t)in);
+    size_t total_elems = moe_gguf_mul_checked("f16-as-af total_elems", (size_t)E, per_expert);
+    size_t need_bytes = moe_gguf_mul_checked("f16-as-af need_bytes", total_elems, sizeof(_Float16));
+
+    uint8_t *base = malloc(need_bytes);
+    if (!base) { fprintf(stderr, "FATAL: gguf moe f16-as-af alloc failed for '%s' (%zu bytes)\n", gguf_name, need_bytes); exit(1); }
+    float *deq = malloc(per_expert * sizeof(float));
+    if (!deq) { fprintf(stderr, "FATAL: gguf moe f16-as-af scratch alloc failed for '%s'\n", gguf_name); exit(1); }
+
+    const uint8_t *raw = (const uint8_t *)gguf_tensor_data(g_gguf_moe, t);
+    size_t expert_stride_bytes = (size_t)t->n_bytes / (size_t)E;
+    for (long e = 0; e < E; e++) {
+        gguf_dequant_row(t->type, raw + (size_t)e * expert_stride_bytes, deq, (int64_t)per_expert);
+        _Float16 *h = (_Float16 *)base + (size_t)e * per_expert;
+        for (size_t i = 0; i < per_expert; i++) h[i] = (_Float16)deq[i];
+    }
+    free(deq);
+
+    MoeAFTensor *w = &g_moe_af[g_moe_naf++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->E = E; w->out = out; w->in = in; w->ng = 0;
+    w->packed_off = 0; w->packed_bytes = (long)need_bytes;
+    w->scale_off = -1; w->bias_off = -1;
+    w->base = base; w->sym = 0; w->bits = 16;
+    return w;
+}
+
+// D-gptoss-2: GPT-OSS's own GGUF role table -- real tensor names confirmed by hand-parsing the
+// actual ggml-org/gpt-oss-20b-GGUF header (not assumed from llama.cpp source alone). Notably
+// close to qwen3moe's own table (attn_q/k/v/output, attn_norm, ffn_gate_inp, ffn_*_exps all
+// match) with two real differences: no attn_q_norm/attn_k_norm (GPT-OSS has no per-head
+// QK-norm), and the post-attention norm tensor is named "post_attention_norm" not "ffn_norm".
+// Bias tensors (present on nearly every real GPT-OSS tensor -- attn q/k/v/output, ffn_gate_inp,
+// all 3 expert FFN roles) are deliberately NOT in this table yet: they need a real bias-add
+// design in the forward pass (Phase B), not a role-table entry that loads them with nowhere to
+// be consumed. attn_sinks (real per-head tensor, shape [head_count]) is also Phase B's job (the
+// attention mechanism that uses it doesn't exist yet) -- listed here only in this comment as a
+// reminder, not registered this round.
+typedef struct {
+    const char *gguf_pattern;
+    const char *engine_pattern;
+} GptossGgufRole;
+static const GptossGgufRole GPTOSS_GGUF_LAYER_ROLES[] = {
+    { "blk.%d.attn_q.weight",           "model.layers.%d.self_attn.q_proj" },
+    { "blk.%d.attn_k.weight",           "model.layers.%d.self_attn.k_proj" },
+    { "blk.%d.attn_v.weight",           "model.layers.%d.self_attn.v_proj" },
+    { "blk.%d.attn_output.weight",      "model.layers.%d.self_attn.o_proj" },
+    { "blk.%d.attn_norm.weight",        "model.layers.%d.input_layernorm.weight" },
+    { "blk.%d.post_attention_norm.weight", "model.layers.%d.post_attention_layernorm.weight" },
+    { "blk.%d.ffn_gate_inp.weight",     "model.layers.%d.mlp.gate.weight" },
+    { "blk.%d.ffn_gate_exps.weight",    "model.layers.%d.mlp.switch_mlp.gate_proj" },
+    { "blk.%d.ffn_up_exps.weight",      "model.layers.%d.mlp.switch_mlp.up_proj" },
+    { "blk.%d.ffn_down_exps.weight",    "model.layers.%d.mlp.switch_mlp.down_proj" },
+};
+
 static int run_gguf_moe_verify_mode(int argc, char **argv) {
     (void)argc; (void)argv;
     const char *path = getenv("QWEN_MOE_GGUF");
@@ -8152,7 +8250,7 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
             !memcmp(arch_ptr, SUPPORTED_ARCH_MOE_GGUF[i], arch_len)) { arch_ok = 1; break; }
     }
     if (!arch_ok) {
-        fprintf(stderr, "FATAL: gguf moe architecture '%.*s' not validated by this engine; supported: qwen3moe\n",
+        fprintf(stderr, "FATAL: gguf moe architecture '%.*s' not validated by this engine; supported: qwen3moe, gpt-oss\n",
                 (int)arch_len, arch_ptr);
         exit(1);
     }
@@ -8186,23 +8284,54 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     if (!embed_t) { fprintf(stderr, "FATAL: gguf moe missing token_embd.weight\n"); exit(1); }
     MOE_VOCAB = (int)embed_t->ne[1];
 
-    // Architecture-level facts about qwen3moe (verified this session against real config.json /
-    // mlx_lm source, sub-part 3's own F-3/C-6 findings -- not read from any KV key, because none
-    // exists for these): NEOX RoPE, top-k renormalization always on, no shared experts, every
-    // layer is MoE (no forced-dense layers).
-    MOE_ATTN_KIND = MOE_ATTN_GQA;
-    MOE_ROPE_STYLE = MOE_ROPE_NEOX;
-    MOE_NORM_TOPK_PROB = 1;
-    MOE_N_SHARED = 0;
-    MOE_FIRST_DENSE_LAYERS = 0;
-    MOE_Q_HEAD_DIM = MOE_HEAD_DIM;
-    // MLA-only fields this GQA path never reads (moe_cfg_validate()/alloc_moe_buffers() require
-    // them positive regardless of ATTN_KIND) -- same dummy-but-valid placeholders the sub-part-2
-    // self-test and sub-part-3 exporter already proved run clean, see moe_cfg_validate()'s own
-    // comment and PLAN_general_purpose_loader.md's B-8 decision.
-    MOE_KV_LORA_RANK = 2; MOE_QK_ROPE_HD = 2; MOE_QK_NOPE_HD = 2; MOE_V_HD = 2;
-    MOE_YARN_FACTOR = 1.0; MOE_YARN_BETA_FAST = 1.0; MOE_YARN_BETA_SLOW = 1.0;
-    MOE_YARN_MSCALE = 1.0; MOE_YARN_MSCALE_ALL_DIM = 1.0; MOE_YARN_ORIG_MAX_POS = 4096.0;
+    // D-gptoss-3: GPT-OSS branches here -- real per-layer sliding-window + attention-sink
+    // architecture, YaRN rope scaling with real values (not the neutral dummy=1.0 qwen3moe
+    // uses), no shared experts, every layer routed (no forced-dense layers, same as qwen3moe).
+    // Config storage only -- moe_attention()'s own MOE_ATTN_GPTOSS dispatch is Phase B.
+    if (!strcmp(arch, "gpt-oss")) {
+        MOE_ATTN_KIND = MOE_ATTN_GPTOSS;
+        MOE_ROPE_STYLE = MOE_ROPE_NEOX;
+        MOE_NORM_TOPK_PROB = 0;   // D-metal-7's own finding this session: softmax-over-all then
+                                   // select-top-K with no renorm is exactly GPT-OSS's real router
+        MOE_N_SHARED = 0;
+        MOE_FIRST_DENSE_LAYERS = 0;
+        MOE_Q_HEAD_DIM = MOE_HEAD_DIM;
+        MOE_KV_LORA_RANK = 2; MOE_QK_ROPE_HD = 2; MOE_QK_NOPE_HD = 2; MOE_V_HD = 2;   // MLA-only dummies, same as qwen3moe
+
+        snprintf(key,sizeof key,"%s.attention.sliding_window",arch);
+        if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_SLIDING_WINDOW=(int)u;
+        snprintf(key,sizeof key,"%s.rope.scaling.factor",arch);
+        if (!gguf_kv_f64(g_gguf_moe,key,&d)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_YARN_FACTOR=d;
+        snprintf(key,sizeof key,"%s.rope.scaling.original_context_length",arch);
+        if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_YARN_ORIG_MAX_POS=(double)u;
+        snprintf(key,sizeof key,"%s.rope.scaling.yarn_beta_fast",arch);
+        if (!gguf_kv_f64(g_gguf_moe,key,&d)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_YARN_BETA_FAST=d;
+        snprintf(key,sizeof key,"%s.rope.scaling.yarn_beta_slow",arch);
+        if (!gguf_kv_f64(g_gguf_moe,key,&d)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_YARN_BETA_SLOW=d;
+        // No GGUF key for mscale/mscale_all_dim (DeepSeek-specific terms) -- neutral defaults,
+        // same as qwen3moe's own dummy=1.0. Whether GPT-OSS's real YaRN formula needs a
+        // non-neutral value here is an open Phase B verification item (plan's own note), not
+        // assumed safe by this default alone.
+        MOE_YARN_MSCALE = 1.0; MOE_YARN_MSCALE_ALL_DIM = 1.0;
+    } else {
+        // Architecture-level facts about qwen3moe (verified this session against real config.json /
+        // mlx_lm source, sub-part 3's own F-3/C-6 findings -- not read from any KV key, because none
+        // exists for these): NEOX RoPE, top-k renormalization always on, no shared experts, every
+        // layer is MoE (no forced-dense layers).
+        MOE_ATTN_KIND = MOE_ATTN_GQA;
+        MOE_ROPE_STYLE = MOE_ROPE_NEOX;
+        MOE_NORM_TOPK_PROB = 1;
+        MOE_N_SHARED = 0;
+        MOE_FIRST_DENSE_LAYERS = 0;
+        MOE_Q_HEAD_DIM = MOE_HEAD_DIM;
+        // MLA-only fields this GQA path never reads (moe_cfg_validate()/alloc_moe_buffers() require
+        // them positive regardless of ATTN_KIND) -- same dummy-but-valid placeholders the sub-part-2
+        // self-test and sub-part-3 exporter already proved run clean, see moe_cfg_validate()'s own
+        // comment and PLAN_general_purpose_loader.md's B-8 decision.
+        MOE_KV_LORA_RANK = 2; MOE_QK_ROPE_HD = 2; MOE_QK_NOPE_HD = 2; MOE_V_HD = 2;
+        MOE_YARN_FACTOR = 1.0; MOE_YARN_BETA_FAST = 1.0; MOE_YARN_BETA_SLOW = 1.0;
+        MOE_YARN_MSCALE = 1.0; MOE_YARN_MSCALE_ALL_DIM = 1.0; MOE_YARN_ORIG_MAX_POS = 4096.0;
+    }
     moe_cfg_validate();
 
     // Derived dims -- verbatim mirror of run_moe_verify_mode()'s own block (same formulas, same
@@ -8236,25 +8365,43 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
     g_moe_f32 = malloc(sizeof(MoeF32Tensor) * 512);
 
+    int is_gptoss = !strcmp(arch, "gpt-oss");
     for (int l = 0; l < MOE_NL; l++) {
-        for (size_t r = 0; r < sizeof(MOE_GGUF_LAYER_ROLES)/sizeof(MOE_GGUF_LAYER_ROLES[0]); r++) {
-            const MoeGgufRole *role = &MOE_GGUF_LAYER_ROLES[r];
-            char gsrc[96], ename[96];
-            snprintf(gsrc, sizeof gsrc, role->gguf_pattern, l);
-            snprintf(ename, sizeof ename, role->engine_pattern, l);
-            if (role->is_af) gguf_register_moe_q4g64_as(gsrc, ename);
-            else             gguf_register_moe_f32_as(gsrc, ename);
+        if (is_gptoss) {
+            // D-gptoss-2: dense f16 registration throughout -- see gguf_register_moe_f16_as()'s
+            // own WHY comment. Bias/attn_sinks tensors intentionally not registered yet (Phase B).
+            for (size_t r = 0; r < sizeof(GPTOSS_GGUF_LAYER_ROLES)/sizeof(GPTOSS_GGUF_LAYER_ROLES[0]); r++) {
+                const GptossGgufRole *role = &GPTOSS_GGUF_LAYER_ROLES[r];
+                char gsrc[96], ename[96];
+                snprintf(gsrc, sizeof gsrc, role->gguf_pattern, l);
+                snprintf(ename, sizeof ename, role->engine_pattern, l);
+                gguf_register_moe_f16_as(gsrc, ename);
+            }
+        } else {
+            for (size_t r = 0; r < sizeof(MOE_GGUF_LAYER_ROLES)/sizeof(MOE_GGUF_LAYER_ROLES[0]); r++) {
+                const MoeGgufRole *role = &MOE_GGUF_LAYER_ROLES[r];
+                char gsrc[96], ename[96];
+                snprintf(gsrc, sizeof gsrc, role->gguf_pattern, l);
+                snprintf(ename, sizeof ename, role->engine_pattern, l);
+                if (role->is_af) gguf_register_moe_q4g64_as(gsrc, ename);
+                else             gguf_register_moe_f32_as(gsrc, ename);
+            }
         }
         if ((l+1) % 8 == 0 || l+1 == MOE_NL)
             fprintf(stderr, "[gguf moe load] layer %d/%d transcoded\n", l+1, MOE_NL);
     }
-    gguf_register_moe_q4g64_as("token_embd.weight", "model.embed_tokens");
+    if (is_gptoss) {
+        gguf_register_moe_f16_as("token_embd.weight", "model.embed_tokens");
+    } else {
+        gguf_register_moe_q4g64_as("token_embd.weight", "model.embed_tokens");
+    }
     gguf_register_moe_f32_as("output_norm.weight", "model.norm.weight");
     // output.weight present -> untied lm_head; absent -> tied embeddings (moe_find_af() would
     // then need "lm_head" to resolve to the embed tensor -- not yet handled, FATAL is correct
-    // until a real tied-embedding qwen3moe checkpoint is actually seen).
+    // until a real tied-embedding checkpoint is actually seen).
     if (gguf_find_tensor(g_gguf_moe, "output.weight")) {
-        gguf_register_moe_q4g64_as("output.weight", "lm_head");
+        if (is_gptoss) gguf_register_moe_f16_as("output.weight", "lm_head");
+        else            gguf_register_moe_q4g64_as("output.weight", "lm_head");
     } else {
         fprintf(stderr, "FATAL: gguf moe: tied embeddings (no output.weight) not yet supported\n");
         exit(1);
