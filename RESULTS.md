@@ -13686,3 +13686,26 @@ follow-up entry, not claimed done here without it.
 negligible real accuracy impact, `gguf_register_moe_q4g64_as()` could replace
 `gguf_register_moe_f16_as()` for the FFN expert tensors specifically -- that measurement has to
 happen first.
+
+## D-gptoss-2-note -- real memory constraint found before running the full-model test (2026-09-12)
+
+**Found before running anything on bob, not after a crash**: computed the real memory need of
+`gguf_register_moe_f16_as()`'s eager, dense-F16 loading applied to all 24 real layers of
+GPT-OSS-20B: `2880*2880*32` elements per FFN-expert role x 3 roles x 24 layers x 2 bytes (F16)
+= **~35.6GiB**. MXFP4 is ~4 bits/value on disk (12.1GB file); F16 is 16 bits/value -- a real 4x
+expansion, on top of which the existing eager-load-every-layer-before-generation design (shared
+by the qwen3moe q4g64 path too, where it was fine because q4g64 is ~4x more compact) was never
+built with this size in mind. bob has 16GB RAM -- running the full `run_gguf_moe_verify_mode()`
+pipeline as-is against the real 24-layer file would almost certainly repeat this session's own
+already-documented swap-danger/reboot incidents (D-metal-7-3/7-4, D-bench-5).
+
+**Not run.** Deferred: full-model loading strategy (eager dense-F16 vs this codebase's own
+existing lazy-materialization mechanism, `g_moe_hi_lazy`/`moe_af_materialize()`/
+`moe_af_release()`, already used for the correction/hi-mirror path for exactly this class of
+memory problem) is real, unstarted Phase B/C design work, not assumed solved by reusing the
+dense-F16 registrar as eagerly as it's currently written. Phase A's own real-data verification
+instead targets a small, safe slice (a single layer's tensors, not all 24) -- consistent with
+Phase A's own stated scope ("no forward pass yet").
+
+**EXIT**: when Phase B's real forward pass needs the full model resident, decide eager-vs-lazy
+with a real measured memory budget in hand (this ~35.6GiB figure), not assumed safe.
