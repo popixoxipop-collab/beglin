@@ -14292,3 +14292,70 @@ re-confirmed byte-identical to the pre-Phase-E baseline (no regression).
 shape this engine offers -- single-sequence generation, ragged continuous-batching, and
 prefill-batched (both gather and naive dispatch) -- not just the one path exercised by every
 verification so far this session.
+
+## D-gptoss-15 -- real single-sequence CPU performance measurement (2026-09-13)
+
+**Context**: correctness was established (`D-gptoss-13`/`D-gptoss-14`); this is the first real
+performance measurement of the GPT-OSS path, following this project's own "correctness first,
+then measure" sequencing. Every prior latency-adjacent number this session (the generation
+scripts used for `D-gptoss-12`/`D-gptoss-13`) came from re-invoking the whole binary once per
+generated token from Python -- that pays real full-model registration cost (hundreds of ms)
+on every single step, which would badly misrepresent real per-token decode cost. Fixed by
+adding a real in-process generation loop (`QWEN_MOE_GGUF_GEN_N`, inside
+`run_gguf_moe_verify_mode()`) that continues past the given prompt from the model's own
+predicted token, reusing the already-populated single-sequence KV cache, timing ONLY the
+decode loop itself with `clock_gettime()`.
+
+**Thread-count re-sweep, not assumed**: the existing `QWEN_MOE_SCALAR_THREADS` default
+(nthreads=64) was measured for a *different* workload (DeepSeek-V2-Lite's B=4/R=12 cbatch
+config, documented at that decision's own site as "this specific workload's optimum, not a
+universal constant, re-sweep if the workload changes"). GPT-OSS has a genuinely different
+compute profile (hidden=2880, and critically the new native zero-copy MXFP4 decode path
+recomputes every routed expert's weights from raw bytes every call, no eager cache) -- re-swept
+rather than assumed the old number transfers:
+
+| Threads | ms/token | tok/s |
+|---|---|---|
+| 1  | 2404.6 | 0.416 |
+| 4  | 789.0  | 1.267 |
+| 8  | 596.5  | 1.676 |
+| 10 (= bob's real core count, 4P+6E) | 499.1 | 2.003 |
+| 16 | 484.5 | 2.064 |
+| 24 | 465.9 | 2.146 |
+| 32 | 487.7 | 2.051 |
+| 48 | 427.9 | 2.337 |
+| 64 (= `MOE_SPOOL_MAX_THREADS`, the compiled ceiling) | 408.7 | 2.447 |
+
+Every thread count produced the **exact same generated token** at each position (bit-identical,
+same discipline as the original DeepSeek sweep) -- differences are pure throughput, not
+correctness. Returns diminish clearly past T=24 (T=24->32 even regressed slightly, noise) but
+never go net-negative all the way to the compiled ceiling of 64 -- the existing default remains
+the empirically-best available setting for GPT-OSS too, now a measured fact rather than an
+assumption carried over from a different model.
+
+**Real final numbers** (bob, `QWEN_MOE_SCALAR_THREADS=64`, real checkpoint, 11-token prompt +
+30 real generated tokens, `/usr/bin/time -l`):
+```
+30 tokens in 12389.58ms -> 2.421 tok/s, 412.986ms/tok
+23.24s real, 132.50s user (~5.7x parallel speedup on bob's 10 logical cores -- sub-linear,
+  expected given 64 threads oversubscribes a 10-core machine, consistent with the original
+  DeepSeek sweep's own "plausibly latency/memory-access bound rather than compute-bound" note)
+maximum resident set size: 6852214784 bytes (~6.85GiB)
+0 swaps
+```
+Consistent with `D-gptoss-10`'s own earlier ~7.6GiB peak-RSS figure (small difference from
+measurement methodology, same ballpark) -- confirms the native MXFP4 memory fix (`D-gptoss-9`)
+holds during real sustained generation, not just registration.
+
+**Honest scope of this measurement -- what it does NOT cover**: single-sequence, CPU-only,
+scalar (non-SIMD-optimized `moe_matvec_af_row_vdsp` path not used); no request batching (Phase
+E's cbatch path exists and is verified correct, D-gptoss-14, but its own throughput is
+unmeasured); the native MXFP4 decode's real cost driver (no caching across tokens, since a
+different top-4-of-32 expert subset is likely selected each token -- the same tradeoff qNg64
+already accepts) is reflected in this number but not separately isolated from other costs
+(attention, norms, router); GPU/MLX (Phase C) throughput remains entirely unmeasured, since
+Phase C itself hasn't started. Sliding-window's real effect on longer-context decode cost
+(the "full" attention layers' cost genuinely grows with position; SWA layers cap at a bounded
+128-token window from `D-gptoss-11`) is not isolated here either -- this measurement's context
+length (11+30=41 positions) stays well under the point where that divergence would show up
+clearly.

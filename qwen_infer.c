@@ -9379,6 +9379,41 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
         fprintf(stderr, "RESULT: gptoss cbatch check complete, ragged_mismatch=%d batch_gather_mismatch=%d batch_naive_mismatch=%d\n",
                 ragged_mismatch, batch_mismatch_gather, batch_mismatch_naive);
     }
+
+    // D-gptoss-15: real in-process generation timing, decode-loop-only. Every prior "tok/s"-
+    // adjacent number this session came from re-invoking the whole binary once per generated
+    // token (a Python harness driving QWEN_MOE_PROMPT_IDS) -- that pays real full-model
+    // registration cost (hundreds of ms) on EVERY step, which would swamp and badly misrepresent
+    // real per-token decode cost. This continues generation, in-process, from the last prompt
+    // position's own predicted token, reusing the already-populated single-sequence KV cache
+    // (g_moe_K/V_flat, written by every moe_forward_token() call so far in this same process) --
+    // clock_gettime() wraps ONLY the decode loop itself, not model load/registration.
+    const char *gen_n_env = getenv("QWEN_MOE_GGUF_GEN_N");
+    if (gen_n_env && gen_n_env[0]) {
+        int gen_n = atoi(gen_n_env);
+        int next_tok = seq_argmax[N - 1];
+        struct timespec gt0, gt1;
+        clock_gettime(CLOCK_MONOTONIC, &gt0);
+        int actual_gen = 0;
+        for (int i = 0; i < gen_n; i++) {
+            int pos = N + i;
+            if (pos >= MOE_MAXPOS) {
+                fprintf(stderr, "[gguf moe gen] stopping early at gen step %d: pos=%d >= MOE_MAXPOS=%d\n", i, pos, MOE_MAXPOS);
+                break;
+            }
+            moe_forward_token(NULL, t_embed, t_lmhead, w_finalnorm, next_tok, pos, logits, NULL, NULL, NULL);
+            int argmax = 0; float best = logits[0];
+            for (int v = 1; v < MOE_VOCAB; v++) if (logits[v] > best) { best = logits[v]; argmax = v; }
+            next_tok = argmax;
+            actual_gen++;
+        }
+        clock_gettime(CLOCK_MONOTONIC, &gt1);
+        double gen_ms = (gt1.tv_sec - gt0.tv_sec) * 1e3 + (gt1.tv_nsec - gt0.tv_nsec) / 1e6;
+        fprintf(stderr, "RESULT: gptoss gen timing: %d tokens in %.2fms (%.3f tok/s, %.3fms/tok)\n",
+                actual_gen, gen_ms, actual_gen > 0 ? (actual_gen * 1000.0) / gen_ms : 0.0,
+                actual_gen > 0 ? gen_ms / actual_gen : 0.0);
+    }
+
     free(seq_argmax);
     return 1;
 }
