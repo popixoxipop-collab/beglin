@@ -13971,3 +13971,72 @@ real `token_embd` loading and a real tokenizer/prompt path) -- the natural next 
 part of this specific fix. Performance of the new decode-per-token cost (no caching across
 tokens, since a different top-4-of-32 expert subset is likely selected each token) is also
 unmeasured -- correctness and the memory fix first, per this whole phase's own sequencing.
+
+## D-gptoss-10 -- first real full 24-layer GPT-OSS-20B end-to-end forward pass (2026-09-12)
+
+**Context**: every prior GPT-OSS verification this session (D-gptoss-1 through D-gptoss-9) was a
+deliberately scoped, small probe -- 2 tensors, 2 layers, or a memory-only registration pass --
+never the full real pipeline (`run_gguf_moe_verify_mode()`, `QWEN_MOE_GGUF=<path>`) running all
+24 layers together with real routing, embedding lookup, and greedy next-token generation. With
+D-gptoss-9's memory fix in place, this became safe to actually attempt for the first time.
+
+**Two real integration bugs found and fixed, both only surfacing because the full pipeline was
+finally run together** (neither was reachable from any of the earlier scoped probes):
+
+1. `moe_cfg_validate()`'s `ATTN_KIND` check still only accepted `{MLA, GQA}` -- `MOE_ATTN_GPTOSS`
+   (added in Phase B) was never added to this check, so the very first real run FATAL'd
+   immediately on `ATTN_KIND=2 not in {0=mla, 1=gqa}`. One-line fix.
+2. `GPTOSS_GGUF_LAYER_ROLES[]`'s registration loop routed EVERY role (including
+   `attn_norm.weight`/`post_attention_norm.weight`/`ffn_gate_inp.weight`) through the AF-tensor
+   registrars (dense-F16 or, after D-gptoss-9, native MXFP4) -- but `moe_resolve_layer_tensors()`
+   (the SAME generic per-layer resolver every architecture shares) expects norms and the router
+   gate weight to live in the separate F32 tensor registry (`moe_find_f32()`). The real run
+   FATAL'd on `moe f32 tensor not found: model.layers.0.input_layernorm.weight` the instant it
+   reached the first layer's resolution. Fixed by adding an `is_f32` flag to `GptossGgufRole`
+   (marking those 3 roles, plus `ffn_gate_inp.bias`) and dispatching to
+   `gguf_register_moe_f32_as()` for them specifically.
+
+**Real correctness gap also found and fixed while investigating #2**: GPT-OSS's real router
+(`ffn_gate_inp`) is a Linear layer with a BIAS (confirmed present in the real header), but the
+router computation in `moe_forward_token()` (`moe_matvec_f32(w_gate, h2, router_scores, ...)`)
+never applied any bias for any architecture -- no `MoeLayerTensors` field even existed for it.
+Added `gate_bias` (NULL for every other architecture, resolved only for GPT-OSS), applied as a
+plain per-expert add to `router_scores` right after the matvec, before softmax.
+
+**Real result** (bob, real 12.1GB checkpoint, 5-position synthetic prompt `1,2,3,4,5` --
+no real tokenizer yet, so token IDs are arbitrary in-bounds placeholders, not semantically
+meaningful text; this run's claim is "the numeric pipeline runs correctly end-to-end," not
+"produces a coherent completion"):
+```
+[gguf moe cfg] arch=gpt-oss NL=24 N_EXPERTS=32 TOP_K=4 MOE_IM=2880 DENSE_IM=2880 VOCAB=201088 N_KV_HEADS=8 HEAD_DIM=64
+[gguf moe load] registered 362 af tensors, 97 f32 tensors
+[gguf moe check] all 24 layers' tensors resolved
+[gguf moe verify] pos 0 token 1 -> argmax next-token 326 (logit 8.5143)
+[gguf moe verify] pos 1 token 2 -> argmax next-token 220 (logit 12.8367)
+[gguf moe verify] pos 2 token 3 -> argmax next-token 350 (logit 11.7451)
+[gguf moe verify] pos 3 token 4 -> argmax next-token 3 (logit 12.2808)
+[gguf moe verify] pos 4 token 5 -> argmax next-token 1 (logit 15.0460)
+RESULT: GGUF-MoE production-binary forward complete for 5 positions
+```
+All 5 positions produced finite, distinct logits and distinct argmax tokens (no NaN/Inf, no
+degenerate repetition). Swap unchanged (435.56MB/2048MB before and after, `0 swaps` per
+`/usr/bin/time -l`). Peak RSS ~7.6GB (`maximum resident set size` 8151531520 bytes) -- expected
+and safe: dominated by the eager dense-F16 tensors this phase deliberately left unchanged
+(`token_embd`+`lm_head` ~2.3GB combined, all 24 layers' attention weights+biases ~1.27GB) plus
+mmap page-touch from the forward pass itself, NOT the ~35.6GiB the FFN experts alone would have
+needed before D-gptoss-9 -- confirms the memory fix holds at real full-pipeline scale, not just
+in isolation. Repeated the identical run twice -- byte-identical stderr output, confirming
+determinism (no uninitialized-memory dependence).
+
+**What this does NOT prove**: semantic correctness (no real tokenizer, no real prompt, no
+comparison against llama.cpp's own real output -- still explicitly deferred). Sliding-window
+truncation specifically is untested by this run (`MOE_MAXPOS=32` caps context far below GPT-OSS's
+real 128-token window, so the SWA-vs-full branch never actually truncates at these 5 positions --
+same limitation D-gptoss-8 already noted). Performance is unmeasured (correctness first).
+
+**Significance**: this is the first time the complete GPT-OSS-20B pipeline -- GGUF loading,
+zero-copy MXFP4 experts, attention with sliding-window/sink support, YaRN-scaled RoPE, the
+clamped activation, and now a correctly-biased router -- has run together, on the real 12.1GB
+checkpoint, without a single FATAL. Every remaining gap (real tokenizer, llama.cpp cross-check,
+longer-context sliding-window exercise, GPU path) is now a well-scoped follow-up on top of a
+working base, not a blocker to reaching one.

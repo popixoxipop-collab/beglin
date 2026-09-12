@@ -3479,6 +3479,10 @@ typedef struct {
     MoeF32Tensor *q_norm, *k_norm;
     MoeAFTensor *dense_gate, *dense_up, *dense_down;
     MoeF32Tensor *gate_w;
+    // D-gptoss-10: GPT-OSS's real router carries a bias (ffn_gate_inp.bias, confirmed present
+    // in the real header) -- no other architecture's router does, so this stays NULL for them
+    // (MoeLayerTensors' own zero-init), resolved only when MOE_ATTN_KIND==MOE_ATTN_GPTOSS.
+    MoeF32Tensor *gate_bias;
     MoeAFTensor *shared_gate, *shared_up, *shared_down;
     MoeAFTensor *switch_gate, *switch_up, *switch_down;
     // D-gptoss-5: GPT-OSS attention/FFN biases + attention sinks -- NULL for every other
@@ -3756,6 +3760,13 @@ static void moe_resolve_layer_tensors(void) {
             moe_check_af_shape(t->dense_down, "dense_down", l, MOE_HIDDEN,   MOE_DENSE_IM);
         } else {
             snprintf(nm,sizeof nm,"model.layers.%d.mlp.gate.weight",l); t->gate_w = moe_find_f32(nm);
+            // D-gptoss-10: GPT-OSS-only real router bias (ffn_gate_inp.bias) -- gated on
+            // MOE_ATTN_KIND so t->gate_bias stays NULL for every other architecture (zero-init,
+            // never touched). FATAL-on-miss moe_find_f32() (not _opt) is correct within this
+            // branch -- the real header confirms this tensor is present on every GPT-OSS layer.
+            if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) {
+                snprintf(nm,sizeof nm,"model.layers.%d.mlp.gate.weight.bias",l); t->gate_bias = moe_find_f32(nm);
+            }
             // Phase 4 sub-part 3, Step 3.3: Qwen3-30B-A3B has N_SHARED=0 (no shared experts) --
             // moe_find_af() exit(1)s on a miss, so this whole resolve+shape-check pair must be
             // skipped, not just left to fail loudly. DeepSeek's N_SHARED=2 exercises this guard
@@ -4012,6 +4023,13 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
             float *w_gate = (float *)(g_moe_f32_blob + t->gate_w->off);
             float *router_scores = g_mft_router_scores;
             moe_matvec_f32(w_gate, h2, router_scores, MOE_N_EXPERTS, MOE_HIDDEN);
+            // D-gptoss-10: GPT-OSS's real router is Linear (weight + bias), not just a bare
+            // matmul -- t->gate_bias is NULL for every other architecture (real header
+            // confirms none of them carry this tensor), so this is a no-op everywhere else.
+            if (t->gate_bias) {
+                float *b_gate = (float *)(g_moe_f32_blob + t->gate_bias->off);
+                for (int ei = 0; ei < MOE_N_EXPERTS; ei++) router_scores[ei] += b_gate[ei];
+            }
             moe_softmax_full(router_scores, MOE_N_EXPERTS);
             int *top_idx = g_mft_top_idx;
             moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
@@ -7576,9 +7594,12 @@ static void moe_cfg_validate(void) {
                 2 * MOE_TOP_K + 2, MOE_BATCH_MAX_ITEMS);
         exit(1);
     }
-    if (MOE_ATTN_KIND != MOE_ATTN_MLA && MOE_ATTN_KIND != MOE_ATTN_GQA) {
-        fprintf(stderr, "FATAL: moe_cfg_validate: ATTN_KIND=%d not in {%d=mla, %d=gqa}\n",
-                MOE_ATTN_KIND, MOE_ATTN_MLA, MOE_ATTN_GQA);
+    // D-gptoss-10: MOE_ATTN_GPTOSS added in Phase B but this check was never updated -- first
+    // real full-model run (this entry point had never been exercised end-to-end for GPT-OSS
+    // before) FATAL'd here immediately, a real integration gap only a full run surfaces.
+    if (MOE_ATTN_KIND != MOE_ATTN_MLA && MOE_ATTN_KIND != MOE_ATTN_GQA && MOE_ATTN_KIND != MOE_ATTN_GPTOSS) {
+        fprintf(stderr, "FATAL: moe_cfg_validate: ATTN_KIND=%d not in {%d=mla, %d=gqa, %d=gptoss}\n",
+                MOE_ATTN_KIND, MOE_ATTN_MLA, MOE_ATTN_GQA, MOE_ATTN_GPTOSS);
         exit(1);
     }
     // Phase 4 sub-part 2, Step 2.5: moved in from its old bare-if site at the ATTN_KIND read
@@ -8568,27 +8589,35 @@ typedef struct {
     const char *gguf_pattern;
     const char *engine_pattern;
     int is_expert_bias;   // D-gptoss-6: [out,E] layout, not the normal 2-D [in,out]/3-D [in,out,E]
+    // D-gptoss-10: real bug found via the first full end-to-end run -- moe_resolve_layer_tensors()
+    // (the SAME generic code every architecture shares) expects input_layernorm/
+    // post_attention_layernorm/mlp.gate.weight to live in the F32 tensor registry
+    // (moe_find_f32()), not the AF registry every OTHER role here goes through. Before this
+    // flag, all 3 were silently registered as AF tensors, and moe_find_f32() FATAL'd on the
+    // very first layer the instant a real full-model run actually exercised
+    // moe_resolve_layer_tensors() (Phase A/B's own scoped probes never called it).
+    int is_f32;
 } GptossGgufRole;
 static const GptossGgufRole GPTOSS_GGUF_LAYER_ROLES[] = {
-    { "blk.%d.attn_q.weight",           "model.layers.%d.self_attn.q_proj",                0 },
-    { "blk.%d.attn_q.bias",             "model.layers.%d.self_attn.q_proj.bias",           0 },
-    { "blk.%d.attn_k.weight",           "model.layers.%d.self_attn.k_proj",                0 },
-    { "blk.%d.attn_k.bias",             "model.layers.%d.self_attn.k_proj.bias",           0 },
-    { "blk.%d.attn_v.weight",           "model.layers.%d.self_attn.v_proj",                0 },
-    { "blk.%d.attn_v.bias",             "model.layers.%d.self_attn.v_proj.bias",           0 },
-    { "blk.%d.attn_output.weight",      "model.layers.%d.self_attn.o_proj",                0 },
-    { "blk.%d.attn_output.bias",        "model.layers.%d.self_attn.o_proj.bias",           0 },
-    { "blk.%d.attn_sinks.weight",       "model.layers.%d.self_attn.sinks",                 0 },
-    { "blk.%d.attn_norm.weight",        "model.layers.%d.input_layernorm.weight",          0 },
-    { "blk.%d.post_attention_norm.weight", "model.layers.%d.post_attention_layernorm.weight", 0 },
-    { "blk.%d.ffn_gate_inp.weight",     "model.layers.%d.mlp.gate.weight",                 0 },
-    { "blk.%d.ffn_gate_inp.bias",       "model.layers.%d.mlp.gate.weight.bias",            0 },
-    { "blk.%d.ffn_gate_exps.weight",    "model.layers.%d.mlp.switch_mlp.gate_proj",        0 },
-    { "blk.%d.ffn_gate_exps.bias",      "model.layers.%d.mlp.switch_mlp.gate_proj.bias",   1 },
-    { "blk.%d.ffn_up_exps.weight",      "model.layers.%d.mlp.switch_mlp.up_proj",          0 },
-    { "blk.%d.ffn_up_exps.bias",        "model.layers.%d.mlp.switch_mlp.up_proj.bias",     1 },
-    { "blk.%d.ffn_down_exps.weight",    "model.layers.%d.mlp.switch_mlp.down_proj",        0 },
-    { "blk.%d.ffn_down_exps.bias",      "model.layers.%d.mlp.switch_mlp.down_proj.bias",   1 },
+    { "blk.%d.attn_q.weight",           "model.layers.%d.self_attn.q_proj",                0, 0 },
+    { "blk.%d.attn_q.bias",             "model.layers.%d.self_attn.q_proj.bias",           0, 0 },
+    { "blk.%d.attn_k.weight",           "model.layers.%d.self_attn.k_proj",                0, 0 },
+    { "blk.%d.attn_k.bias",             "model.layers.%d.self_attn.k_proj.bias",           0, 0 },
+    { "blk.%d.attn_v.weight",           "model.layers.%d.self_attn.v_proj",                0, 0 },
+    { "blk.%d.attn_v.bias",             "model.layers.%d.self_attn.v_proj.bias",           0, 0 },
+    { "blk.%d.attn_output.weight",      "model.layers.%d.self_attn.o_proj",                0, 0 },
+    { "blk.%d.attn_output.bias",        "model.layers.%d.self_attn.o_proj.bias",           0, 0 },
+    { "blk.%d.attn_sinks.weight",       "model.layers.%d.self_attn.sinks",                 0, 0 },
+    { "blk.%d.attn_norm.weight",        "model.layers.%d.input_layernorm.weight",          0, 1 },
+    { "blk.%d.post_attention_norm.weight", "model.layers.%d.post_attention_layernorm.weight", 0, 1 },
+    { "blk.%d.ffn_gate_inp.weight",     "model.layers.%d.mlp.gate.weight",                 0, 1 },
+    { "blk.%d.ffn_gate_inp.bias",       "model.layers.%d.mlp.gate.weight.bias",            0, 1 },
+    { "blk.%d.ffn_gate_exps.weight",    "model.layers.%d.mlp.switch_mlp.gate_proj",        0, 0 },
+    { "blk.%d.ffn_gate_exps.bias",      "model.layers.%d.mlp.switch_mlp.gate_proj.bias",   1, 0 },
+    { "blk.%d.ffn_up_exps.weight",      "model.layers.%d.mlp.switch_mlp.up_proj",          0, 0 },
+    { "blk.%d.ffn_up_exps.bias",        "model.layers.%d.mlp.switch_mlp.up_proj.bias",     1, 0 },
+    { "blk.%d.ffn_down_exps.weight",    "model.layers.%d.mlp.switch_mlp.down_proj",        0, 0 },
+    { "blk.%d.ffn_down_exps.bias",      "model.layers.%d.mlp.switch_mlp.down_proj.bias",   1, 0 },
 };
 
 // D-gptoss-3-probe: safe, scoped real-data verification for gguf_register_moe_f16_as() --
@@ -9004,8 +9033,9 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
                 // attn_sinks has no per-layer variant absence in real GPT-OSS (confirmed:
                 // present on every layer, layers 0-23, in the real header) -- FATAL-on-missing
                 // (gguf_register_moe_f16_as()'s own behavior) is correct here, not tolerant.
-                if (is_ffn_expert_weight) gguf_register_moe_mxfp4_native_as(gsrc, ename);
-                else                      gguf_register_moe_f16_as_ex(gsrc, ename, role->is_expert_bias);
+                if (role->is_f32)             gguf_register_moe_f32_as(gsrc, ename);
+                else if (is_ffn_expert_weight) gguf_register_moe_mxfp4_native_as(gsrc, ename);
+                else                           gguf_register_moe_f16_as_ex(gsrc, ename, role->is_expert_bias);
             }
         } else {
             for (size_t r = 0; r < sizeof(MOE_GGUF_LAYER_ROLES)/sizeof(MOE_GGUF_LAYER_ROLES[0]); r++) {
