@@ -14231,3 +14231,64 @@ moving to a different plausible pattern is normal, not a bug). This closes D-gpt
 question definitively: the numeric pipeline was NOT "internally consistent but possibly just
 how the model behaves" -- it had two real, fixable bugs, and fixing them produces genuinely
 correct, real-world text.
+
+## D-gptoss-14 -- Phase E: cbatch/ragged/batched paths extended and verified (2026-09-12)
+
+**Context**: every GPT-OSS phase since Phase B named the continuous-batching ("cbatch") and
+prefill-batched code paths as an explicit out-of-scope gap -- they fell through to GQA's own
+attention/FFN math (wrong for GPT-OSS: no biases, no sliding window, no sinks, plain non-YaRN
+rope) if ever invoked for a gpt-oss model. This phase closes that gap.
+
+**New code**: `moe_gptoss_attention_ragged()` and `moe_gptoss_attention_batched()` (mirroring
+the already-verified single-sequence `moe_gptoss_attention()`, against the *structural* template
+of `moe_gqa_attention_ragged`/`_batched`), wired into the `moe_attention_ragged()`/
+`moe_attention_batched()` dispatchers alongside the existing MLA/GQA branches. Two real details
+confirmed via direct code reading before writing anything (not assumed):
+- The ragged scores buffer must be `MOE_CBATCH_MAXPOS + 1` (the +1 for the sink column) --
+  `moe_gqa_attention_ragged`'s own buffer is un-suffixed, an easy off-by-one to inherit by
+  copying verbatim.
+- The batched function CANNOT copy `moe_gqa_attention_batched`'s "skip RoPE entirely at pos=0"
+  shortcut. Confirmed via direct read of `moe_mla_attention_batched()` (MLA's own batched
+  function) that it applies its real YaRN mscale *unconditionally*, only skipping the actual
+  rotation -- for GPT-OSS, `moe_rope_neox_yarn_apply()` fuses the attention_factor into the
+  *same* multiply as the rotation (no separable pre-multiply), so skipping the call outright
+  would have silently dropped the ~1.35x scale. Fixed by calling it unconditionally with
+  `pos=0` (the rotation itself is a no-op there, the scale is not) -- and by genuinely computing
+  the 2-column sink softmax rather than shortcutting to the trivial single-key case GQA/MLA use.
+
+**Routed-FFN fixes**: exactly 3 real call sites (confirmed complete via a full-file grep of
+every `moe_swiglu_inplace()` call, 13 total, with the dense/shared-expert branches confirmed
+unreachable for GPT-OSS) got the same router-bias guard + `moe_gptoss_glu_inplace()` clamped-
+activation swap already applied to `moe_forward_token()`: `moe_cbatch_step_scalar_one()`,
+`moe_ffn_batched()`, `moe_ffn_naive_batched()`. `moe_cbatch_step()` (the real production cbatch
+step) delegates its routed FFN entirely to `moe_ffn_batched()` and only calls
+`moe_attention_ragged()` directly, so fixing those two plus the dispatcher wiring covers it with
+no separate change.
+
+**Verification -- reused the existing single-sequence path as ground truth, not a new oracle**:
+since the underlying formulas were already verified correct against `llama.cpp` (`D-gptoss-13`),
+the real risk in this phase was transcription error (a stride mismatch, a missed bias, a wrong
+buffer size), not a wrong formula -- exactly what cross-checking against `moe_forward_token()`'s
+own already-verified output catches. Added a real, gated (`QWEN_MOE_GPTOSS_CBATCH_CHECK=1`)
+cross-check inside `run_gguf_moe_verify_mode()` itself (reusing its already-loaded tensors, no
+duplicate loading code): for the real 11-token numeric prompt used throughout this session's
+GPT-OSS work, compared
+
+- **Ragged** (`moe_gptoss_attention_ragged` + `moe_ffn_batched`, via
+  `moe_cbatch_step_scalar_one()`) against the single-sequence argmax at all 11 positions.
+- **Batched-naive** (`moe_gptoss_attention_batched` + `moe_ffn_naive_batched`, via
+  `moe_forward_batch(..., use_gather=0)`) against 11 independent fresh single-token
+  `moe_forward_token()` calls.
+- **Batched-gather** (`moe_gptoss_attention_batched` + `moe_ffn_batched`, via
+  `moe_forward_batch(..., use_gather=1)`) against the same 11 independent calls.
+
+**Real result** (bob, real checkpoint): `ragged_mismatch=0 batch_gather_mismatch=0
+batch_naive_mismatch=0` -- all 33 individual comparisons (11 positions x 3 code-path
+combinations) agree exactly with the already-`llama.cpp`-verified single-sequence path. Swap
+unchanged (1094MB->1078MB, actually decreased) across the whole run. Single-sequence path itself
+re-confirmed byte-identical to the pre-Phase-E baseline (no regression).
+
+**Significance**: GPT-OSS-20B now has working, verified support across every real serving
+shape this engine offers -- single-sequence generation, ragged continuous-batching, and
+prefill-batched (both gather and naive dispatch) -- not just the one path exercised by every
+verification so far this session.

@@ -4195,6 +4195,11 @@ static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, 
             float *w_gate = (float *)(g_moe_f32_blob + t->gate_w->off);
             float *router_scores = g_mcs_router_scores;
             moe_matvec_f32(w_gate, h2, router_scores, MOE_N_EXPERTS, MOE_HIDDEN);
+            // D-gptoss-14: Phase E, real router bias -- mirrors moe_forward_token()'s own guard.
+            if (t->gate_bias) {
+                float *b_gate = (float *)(g_moe_f32_blob + t->gate_bias->off);
+                for (int ei = 0; ei < MOE_N_EXPERTS; ei++) router_scores[ei] += b_gate[ei];
+            }
             moe_softmax_full(router_scores, MOE_N_EXPERTS);
             int *top_idx = g_mcs_top_idx;
             moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
@@ -4225,14 +4230,28 @@ static void moe_cbatch_step_scalar_one(const uint8_t *af, MoeAFTensor *t_embed, 
                 MoeBatchItem items[MOE_BATCH_MAX_ITEMS]; int ni = 0;
                 for (int k = 0; k < MOE_TOP_K; k++) {
                     long e = top_idx[k];
-                    moe_swiglu_inplace(gate_v + (size_t)k*MOE_IM_DIM, up_v + (size_t)k*MOE_IM_DIM, MOE_IM_DIM);
-                    items[ni++] = (MoeBatchItem){af, t->switch_down, e, gate_v + (size_t)k*MOE_IM_DIM, down_v + (size_t)k*MOE_HIDDEN, 0, 0};
+                    float *gk = gate_v + (size_t)k*MOE_IM_DIM, *uk = up_v + (size_t)k*MOE_IM_DIM;
+                    // D-gptoss-14: same real bias+activation dispatch as moe_forward_token()'s
+                    // own routed loop -- see that function's D-gptoss-6 comment.
+                    if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) {
+                        moe_add_bias_f16_expert(gk, t->switch_gate_bias, e, MOE_IM_DIM);
+                        moe_add_bias_f16_expert(uk, t->switch_up_bias, e, MOE_IM_DIM);
+                        moe_gptoss_glu_inplace(gk, uk, MOE_IM_DIM);
+                    } else {
+                        moe_swiglu_inplace(gk, uk, MOE_IM_DIM);
+                    }
+                    items[ni++] = (MoeBatchItem){af, t->switch_down, e, gk, down_v + (size_t)k*MOE_HIDDEN, 0, 0};
                 }
                 if (MOE_N_SHARED > 0) {
                     moe_swiglu_inplace(sgate_v, sup_v, MOE_IM_DIM * MOE_N_SHARED);
                     items[ni++] = (MoeBatchItem){af, t->shared_down, 0, sgate_v, sdown_v, 0, 0};
                 }
                 moe_matvec_af_batch_mt(items, ni);
+                if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) {
+                    for (int k = 0; k < MOE_TOP_K; k++) {
+                        moe_add_bias_f16_expert(down_v + (size_t)k*MOE_HIDDEN, t->switch_down_bias, top_idx[k], MOE_HIDDEN);
+                    }
+                }
             }
             for (int k = 0; k < MOE_TOP_K; k++) {
                 float wgt = router_scores[top_idx[k]];
@@ -4614,6 +4633,66 @@ static void moe_gptoss_attention(const uint8_t *af, MoeLayerTensors *t, int l, i
     for (int c = 0; c < MOE_HIDDEN; c++) x_residual[c] += o_out[c];
 }
 
+// D-gptoss-14: Phase E, cbatch/ragged extension -- verbatim mirror of moe_gptoss_attention()
+// above (same q/k/v/o biases, moe_rope_neox_yarn_apply(), per-layer SWA j0 truncation, sink-
+// augmented softmax), just against the ragged per-slot KV cache (moe_cK_row/moe_cV_row,
+// g_mgqar_* scratch -- same buffers moe_gqa_attention_ragged() already uses, mutually
+// exclusive by MOE_ATTN_KIND) instead of the single-sequence g_moe_K/V_flat. Real detail: the
+// scores buffer is sized MOE_CBATCH_MAXPOS+1 (the +1 for the sink column), NOT the un-suffixed
+// MOE_CBATCH_MAXPOS moe_gqa_attention_ragged() itself uses -- copying that buffer size verbatim
+// would silently underallocate by exactly the sink slot.
+static void moe_gptoss_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int slot, int l, int pos,
+                                         const float *h, float *x_residual) {
+    float *q = g_mgqar_q, *k = g_mgqar_k, *v = g_mgqar_v;
+    float *attn_out = g_mgqar_attn_out, *o_out = g_mgqar_o_out;
+    moe_matvec_af_mt(af, t->q_proj, 0, h, q); moe_add_bias_f16(q, t->q_bias, MOE_N_HEADS*MOE_HEAD_DIM);
+    moe_matvec_af_mt(af, t->k_proj, 0, h, k); moe_add_bias_f16(k, t->k_bias, MOE_N_KV_HEADS*MOE_HEAD_DIM);
+    moe_matvec_af_mt(af, t->v_proj, 0, h, v); moe_add_bias_f16(v, t->v_bias, MOE_N_KV_HEADS*MOE_HEAD_DIM);
+
+    for (int hh = 0; hh < MOE_N_HEADS; hh++) moe_rope_neox_yarn_apply(q + hh*MOE_HEAD_DIM, MOE_HEAD_DIM, pos);
+    for (int kh = 0; kh < MOE_N_KV_HEADS; kh++) moe_rope_neox_yarn_apply(k + kh*MOE_HEAD_DIM, MOE_HEAD_DIM, pos);
+
+    memcpy(moe_cK_row(l,slot,pos), k, (size_t)MOE_KROW*sizeof(float));
+    memcpy(moe_cV_row(l,slot,pos), v, (size_t)MOE_VROW*sizeof(float));
+
+    int group = MOE_N_HEADS / MOE_N_KV_HEADS;
+    double scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
+    int is_swa_layer = (l % 2) == 0;   // set_swa_pattern(2), dense_first=false -- even=SWA
+    int j0 = (is_swa_layer && MOE_SLIDING_WINDOW > 0 && pos - MOE_SLIDING_WINDOW + 1 > 0)
+             ? (pos - MOE_SLIDING_WINDOW + 1) : 0;
+    const _Float16 *sinks = (const _Float16 *)t->attn_sinks->base;
+    for (int hh = 0; hh < MOE_N_HEADS; hh++) {
+        int kvh = hh / group;
+        float *qh = q + hh*MOE_HEAD_DIM;
+        float scores[MOE_CBATCH_MAXPOS + 1];   // +1 for the sink "column"
+        int n_real = pos - j0 + 1;
+        for (int j = j0; j <= pos; j++) {
+            float *kj = moe_cK_row(l,slot,j) + (long)kvh*MOE_HEAD_DIM;
+            double dot = 0.0;
+            for (int d = 0; d < MOE_HEAD_DIM; d++) dot += (double)qh[d]*kj[d];
+            scores[j - j0] = (float)(dot * scale);
+        }
+        scores[n_real] = (float)sinks[hh];
+        int n_ext = n_real + 1;
+        float mx_s = scores[0]; for (int i=1;i<n_ext;i++) if (scores[i]>mx_s) mx_s=scores[i];
+        double sum = 0.0;
+        for (int i=0;i<n_ext;i++) { scores[i] = expf(scores[i]-mx_s); sum += scores[i]; }
+        for (int i=0;i<n_ext;i++) scores[i] = (float)(scores[i]/sum);
+        float *oh = attn_out + hh*MOE_HEAD_DIM;
+        for (int d = 0; d < MOE_HEAD_DIM; d++) {
+            double acc = 0.0;
+            for (int j = j0; j <= pos; j++) {
+                float *vj = moe_cV_row(l,slot,j) + (long)kvh*MOE_HEAD_DIM;
+                acc += (double)scores[j - j0]*vj[d];
+            }
+            oh[d] = (float)acc;
+        }
+    }
+    moe_matvec_af_mt(af, t->o_proj, 0, attn_out, o_out);
+    moe_add_bias_f16(o_out, t->o_bias, MOE_HIDDEN);
+    for (int c = 0; c < MOE_HIDDEN; c++) x_residual[c] += o_out[c];
+}
+
 static void moe_gqa_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int slot, int l, int pos,
                                       const float *h, float *x_residual) {
     float *q = g_mgqar_q, *k = g_mgqar_k, *v = g_mgqar_v;
@@ -4701,6 +4780,55 @@ static void moe_gqa_attention_batched(const uint8_t *af, MoeLayerTensors *t, int
     moe_matvec_af(af, t->o_proj, 0, attn_out, o_out);
     for (int c = 0; c < MOE_HIDDEN; c++) x_residual[c] += o_out[c];
 }
+
+// D-gptoss-14: Phase E, cbatch/ragged extension -- batched (prefill, always pos=0) GPT-OSS
+// attention. Reuses g_mgqab_* scratch, moe_bK_row/moe_bV_row (mutually exclusive by
+// MOE_ATTN_KIND, same precedent every other GPT-OSS attention variant already set).
+static void moe_gptoss_attention_batched(const uint8_t *af, MoeLayerTensors *t, int l, int b,
+                                          const float *h, float *x_residual) {
+    float *q = g_mgqab_q, *k = g_mgqab_k, *v = g_mgqab_v;
+    float *attn_out = g_mgqab_attn_out, *o_out = g_mgqab_o_out;
+    moe_matvec_af(af, t->q_proj, 0, h, q); moe_add_bias_f16(q, t->q_bias, MOE_N_HEADS*MOE_HEAD_DIM);
+    moe_matvec_af(af, t->k_proj, 0, h, k); moe_add_bias_f16(k, t->k_bias, MOE_N_KV_HEADS*MOE_HEAD_DIM);
+    moe_matvec_af(af, t->v_proj, 0, h, v); moe_add_bias_f16(v, t->v_bias, MOE_N_KV_HEADS*MOE_HEAD_DIM);
+
+    // Unlike moe_gqa_attention_batched()'s own "rope skipped at pos=0" shortcut, this call is
+    // NOT skippable -- moe_rope_neox_yarn_apply() fuses the real YaRN attention_factor (~1.35
+    // for factor=32) into the SAME multiply as the rotation itself, so skipping the call would
+    // silently drop that scale even though the rotation angle at pos=0 is a no-op.
+    for (int hh = 0; hh < MOE_N_HEADS; hh++) moe_rope_neox_yarn_apply(q + hh*MOE_HEAD_DIM, MOE_HEAD_DIM, 0);
+    for (int kh = 0; kh < MOE_N_KV_HEADS; kh++) moe_rope_neox_yarn_apply(k + kh*MOE_HEAD_DIM, MOE_HEAD_DIM, 0);
+
+    memcpy(moe_bK_row(l,b), k, (size_t)MOE_KROW*sizeof(float));
+    memcpy(moe_bV_row(l,b), v, (size_t)MOE_VROW*sizeof(float));
+
+    int group = MOE_N_HEADS / MOE_N_KV_HEADS;
+    double scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
+    const _Float16 *sinks = (const _Float16 *)t->attn_sinks->base;
+    for (int hh = 0; hh < MOE_N_HEADS; hh++) {
+        int kvh = hh / group;
+        float *qh = q + hh*MOE_HEAD_DIM;
+        float *kj = moe_bK_row(l,b) + (long)kvh*MOE_HEAD_DIM;
+        double dot = 0.0;
+        for (int d = 0; d < MOE_HEAD_DIM; d++) dot += (double)qh[d]*kj[d];
+        float score_real = (float)(dot * scale);
+        // Unlike GQA/MLA's batched pos=0 attention (a single key, softmax trivially 1.0,
+        // safely shortcut to a plain copy of V), GPT-OSS's sink is a genuine second logit even
+        // at pos=0 -- this 2-value softmax must actually be computed, not shortcut away.
+        float sink_logit = (float)sinks[hh];
+        float mx_s = score_real > sink_logit ? score_real : sink_logit;
+        double e_real = exp((double)(score_real - mx_s));
+        double e_sink = exp((double)(sink_logit - mx_s));
+        float p_real = (float)(e_real / (e_real + e_sink));
+        float *vh = moe_bV_row(l,b) + (long)kvh*MOE_HEAD_DIM;
+        float *oh = attn_out + hh*MOE_HEAD_DIM;
+        for (int d = 0; d < MOE_HEAD_DIM; d++) oh[d] = p_real * vh[d];
+    }
+    moe_matvec_af(af, t->o_proj, 0, attn_out, o_out);
+    moe_add_bias_f16(o_out, t->o_bias, MOE_HIDDEN);
+    for (int c = 0; c < MOE_HIDDEN; c++) x_residual[c] += o_out[c];
+}
+
 static inline void moe_attention(const uint8_t *af, MoeLayerTensors *t, int l, int pos,
                                   const float *h, float *x_residual) {
     if (MOE_ATTN_KIND == MOE_ATTN_MLA) moe_mla_attention(af, t, l, pos, h, x_residual);
@@ -4710,11 +4838,13 @@ static inline void moe_attention(const uint8_t *af, MoeLayerTensors *t, int l, i
 static inline void moe_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int slot, int l, int pos,
                                          const float *h, float *x_residual) {
     if (MOE_ATTN_KIND == MOE_ATTN_MLA) moe_mla_attention_ragged(af, t, slot, l, pos, h, x_residual);
+    else if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) moe_gptoss_attention_ragged(af, t, slot, l, pos, h, x_residual);
     else moe_gqa_attention_ragged(af, t, slot, l, pos, h, x_residual);
 }
 static inline void moe_attention_batched(const uint8_t *af, MoeLayerTensors *t, int l, int b,
                                          const float *h, float *x_residual) {
     if (MOE_ATTN_KIND == MOE_ATTN_MLA) moe_mla_attention_batched(af, t, l, b, h, x_residual);
+    else if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) moe_gptoss_attention_batched(af, t, l, b, h, x_residual);
     else moe_gqa_attention_batched(af, t, l, b, h, x_residual);
 }
 
@@ -5010,6 +5140,11 @@ static void moe_ffn_batched(const uint8_t *af, MoeLayerTensors *t, int l, int B,
     for (int b = 0; b < B; b++) {
         float *router_scores = g_mfb_router_scores;
         moe_matvec_f32(w_gate, h2_batch + (size_t)b*MOE_HIDDEN, router_scores, MOE_N_EXPERTS, MOE_HIDDEN);
+        // D-gptoss-14: Phase E, real router bias -- mirrors moe_forward_token()'s own guard.
+        if (t->gate_bias) {
+            float *b_gate = (float *)(g_moe_f32_blob + t->gate_bias->off);
+            for (int ei = 0; ei < MOE_N_EXPERTS; ei++) router_scores[ei] += b_gate[ei];
+        }
         moe_softmax_full(router_scores, MOE_N_EXPERTS);
         int *top_idx = g_mfb_top_idx;
         moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
@@ -5051,8 +5186,24 @@ static void moe_ffn_batched(const uint8_t *af, MoeLayerTensors *t, int l, int B,
         for (int m = 0; m < M; m++) memcpy(x_group + (size_t)m*MOE_HIDDEN, h2_batch + (size_t)bk->member_tok[m]*MOE_HIDDEN, MOE_HIDDEN*sizeof(float));
         moe_matvec_af_group_smart(af, t->switch_gate, e, e, l, 0, x_group, M, gate_group);
         moe_matvec_af_group_smart(af, t->switch_up,   e, e, l, 1, x_group, M, up_group);
-        for (int m = 0; m < M; m++) moe_swiglu_inplace(gate_group + (size_t)m*MOE_IM_DIM, up_group + (size_t)m*MOE_IM_DIM, MOE_IM_DIM);
+        // D-gptoss-14: same real bias+activation dispatch as moe_forward_token()'s own routed
+        // loop -- see that function's D-gptoss-6 comment. Every member in this bucket shares
+        // the SAME expert `e` (that's what makes it a bucket), so the bias/activation applies
+        // identically per member m.
+        for (int m = 0; m < M; m++) {
+            float *gm = gate_group + (size_t)m*MOE_IM_DIM, *um = up_group + (size_t)m*MOE_IM_DIM;
+            if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) {
+                moe_add_bias_f16_expert(gm, t->switch_gate_bias, e, MOE_IM_DIM);
+                moe_add_bias_f16_expert(um, t->switch_up_bias, e, MOE_IM_DIM);
+                moe_gptoss_glu_inplace(gm, um, MOE_IM_DIM);
+            } else {
+                moe_swiglu_inplace(gm, um, MOE_IM_DIM);
+            }
+        }
         moe_matvec_af_group_smart(af, t->switch_down, e, e, l, 2, gate_group, M, down_group);
+        if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) {
+            for (int m = 0; m < M; m++) moe_add_bias_f16_expert(down_group + (size_t)m*MOE_HIDDEN, t->switch_down_bias, e, MOE_HIDDEN);
+        }
         for (int m = 0; m < M; m++) {
             int b = bk->member_tok[m];
             float wgt = bk->member_score[m];
@@ -5089,6 +5240,11 @@ static void moe_ffn_naive_batched(const uint8_t *af, MoeLayerTensors *t, int B,
         for (int c = 0; c < MOE_HIDDEN; c++) mlp_out_batch[(size_t)b*MOE_HIDDEN+c] = 0.0f;
         float *router_scores = g_mfnb_router_scores;
         moe_matvec_f32(w_gate, h2_batch + (size_t)b*MOE_HIDDEN, router_scores, MOE_N_EXPERTS, MOE_HIDDEN);
+        // D-gptoss-14: Phase E, real router bias -- mirrors moe_forward_token()'s own guard.
+        if (t->gate_bias) {
+            float *b_gate = (float *)(g_moe_f32_blob + t->gate_bias->off);
+            for (int ei = 0; ei < MOE_N_EXPERTS; ei++) router_scores[ei] += b_gate[ei];
+        }
         moe_softmax_full(router_scores, MOE_N_EXPERTS);
         int *top_idx = g_mfnb_top_idx;
         moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
@@ -5099,8 +5255,17 @@ static void moe_ffn_naive_batched(const uint8_t *af, MoeLayerTensors *t, int B,
             float *gate_v = g_mfnb_gate_v, *up_v = g_mfnb_up_v, *down_v = g_mfnb_down_v;
             moe_matvec_af(af, t->switch_gate, e, h2_batch + (size_t)b*MOE_HIDDEN, gate_v);
             moe_matvec_af(af, t->switch_up, e, h2_batch + (size_t)b*MOE_HIDDEN, up_v);
-            moe_swiglu_inplace(gate_v, up_v, MOE_IM_DIM);
+            // D-gptoss-14: same real bias+activation dispatch as moe_forward_token()'s own
+            // routed loop -- see that function's D-gptoss-6 comment.
+            if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) {
+                moe_add_bias_f16_expert(gate_v, t->switch_gate_bias, e, MOE_IM_DIM);
+                moe_add_bias_f16_expert(up_v, t->switch_up_bias, e, MOE_IM_DIM);
+                moe_gptoss_glu_inplace(gate_v, up_v, MOE_IM_DIM);
+            } else {
+                moe_swiglu_inplace(gate_v, up_v, MOE_IM_DIM);
+            }
             moe_matvec_af(af, t->switch_down, e, gate_v, down_v);
+            if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) moe_add_bias_f16_expert(down_v, t->switch_down_bias, e, MOE_HIDDEN);
             for (int c = 0; c < MOE_HIDDEN; c++) mlp_out_batch[(size_t)b*MOE_HIDDEN+c] += wgt * down_v[c];
         }
         if (MOE_N_SHARED > 0) {
@@ -9157,16 +9322,64 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     // would otherwise dereference `af` directly are unconditionally skipped -- see MoeAFTensor's
     // own base/sym comment, Step 4.2).
     float *logits = malloc((size_t)MOE_VOCAB * sizeof(float));
+    int *seq_argmax = malloc((size_t)N * sizeof(int));
     for (int pos = 0; pos < N; pos++) {
         moe_forward_token(NULL, t_embed, t_lmhead, w_finalnorm, prompt_ids[pos], pos, logits, routing_out, NULL, NULL);
         fwrite(logits, sizeof(float), MOE_VOCAB, logits_out);
         int argmax = 0; float best = logits[0];
         for (int v = 1; v < MOE_VOCAB; v++) if (logits[v] > best) { best = logits[v]; argmax = v; }
+        seq_argmax[pos] = argmax;
         fprintf(stderr, "[gguf moe verify] pos %d token %d -> argmax next-token %d (logit %.4f)\n",
                 pos, prompt_ids[pos], argmax, best);
     }
     fclose(logits_out); fclose(routing_out);
     fprintf(stderr, "RESULT: GGUF-MoE production-binary forward complete for %d positions\n", N);
+
+    // D-gptoss-14: Phase E verification -- cross-check the newly-wired ragged/batched code
+    // paths against moe_forward_token()'s own already-llama.cpp-verified output for the exact
+    // same real tokens, reusing this function's own already-loaded tensors. Gated so it's a
+    // no-op for every other run (existing behavior byte-identical).
+    if (getenv("QWEN_MOE_GPTOSS_CBATCH_CHECK")) {
+        fprintf(stderr, "[gptoss cbatch check] QWEN_MOE_GPTOSS_CBATCH_CHECK=1 -- cross-checking ragged+batched paths\n");
+        float *logits2 = malloc((size_t)MOE_VOCAB * sizeof(float));
+        int ragged_mismatch = 0;
+        for (int pos = 0; pos < N; pos++) {
+            moe_cbatch_step_scalar_one(NULL, t_embed, t_lmhead, w_finalnorm, prompt_ids[pos], 0, pos, logits2);
+            int argmax2 = 0; float best2 = logits2[0];
+            for (int v = 1; v < MOE_VOCAB; v++) if (logits2[v] > best2) { best2 = logits2[v]; argmax2 = v; }
+            int agree = (argmax2 == seq_argmax[pos]);
+            if (!agree) ragged_mismatch = 1;
+            fprintf(stderr, "[gptoss cbatch check] ragged pos %d: seq_argmax=%d ragged_argmax=%d %s\n",
+                    pos, seq_argmax[pos], argmax2, agree ? "agree" : "DISAGREE");
+        }
+        fprintf(stderr, "[gptoss cbatch check] ragged (moe_attention_ragged + moe_ffn_batched via moe_cbatch_step_scalar_one): %s\n",
+                ragged_mismatch ? "MISMATCH FOUND" : "all positions agree");
+
+        float *logits_batch = malloc((size_t)N * MOE_VOCAB * sizeof(float));
+        int batch_mismatch_gather = 0, batch_mismatch_naive = 0;
+        for (int gather = 0; gather <= 1; gather++) {
+            moe_forward_batch(NULL, t_embed, t_lmhead, w_finalnorm, prompt_ids, N, logits_batch, gather);
+            for (int b = 0; b < N; b++) {
+                moe_forward_token(NULL, t_embed, t_lmhead, w_finalnorm, prompt_ids[b], 0, logits2, NULL, NULL, NULL);
+                float *lb = logits_batch + (size_t)b*MOE_VOCAB;
+                int am_b = 0; float best_b = lb[0];
+                for (int v = 1; v < MOE_VOCAB; v++) if (lb[v] > best_b) { best_b = lb[v]; am_b = v; }
+                int am_s = 0; float best_s = logits2[0];
+                for (int v = 1; v < MOE_VOCAB; v++) if (logits2[v] > best_s) { best_s = logits2[v]; am_s = v; }
+                int agree = (am_b == am_s);
+                if (!agree) { if (gather) batch_mismatch_gather = 1; else batch_mismatch_naive = 1; }
+                fprintf(stderr, "[gptoss cbatch check] batched(%s) b=%d token=%d: single_argmax=%d batch_argmax=%d %s\n",
+                        gather ? "gather" : "naive", b, prompt_ids[b], am_s, am_b, agree ? "agree" : "DISAGREE");
+            }
+            fprintf(stderr, "[gptoss cbatch check] batched-%s (moe_attention_batched + %s): %s\n",
+                    gather ? "gather" : "naive", gather ? "moe_ffn_batched" : "moe_ffn_naive_batched",
+                    (gather ? batch_mismatch_gather : batch_mismatch_naive) ? "MISMATCH FOUND" : "all positions agree");
+        }
+        free(logits2); free(logits_batch);
+        fprintf(stderr, "RESULT: gptoss cbatch check complete, ragged_mismatch=%d batch_gather_mismatch=%d batch_naive_mismatch=%d\n",
+                ragged_mismatch, batch_mismatch_gather, batch_mismatch_naive);
+    }
+    free(seq_argmax);
     return 1;
 }
 
