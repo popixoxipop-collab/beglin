@@ -2914,6 +2914,23 @@ static double *g_moe_yarn_freqs = NULL;
 // heap, MOE_HEAD_DIM/2 doubles -- alloc_moe_buffers(), written by moe_init_rope_gqa() (called
 // from run_moe_verify_mode() only when MOE_ATTN_KIND==GQA), read by moe_rope_neox_apply().
 static double *g_moe_rope_inv = NULL;
+// D-gptoss-7: GPT-OSS is the first NEOX-style (split-half) architecture that ALSO uses YaRN
+// long-context scaling -- moe_init_rope_gqa()'s table above is plain (no ramp), and
+// moe_init_yarn()'s ramped table above is sized for MLA's own MOE_QK_ROPE_HD (a real 2-wide
+// dummy for GPT-OSS, since GPT-OSS rotates the WHOLE head_dim, not a partial rope/nope split
+// the way DeepSeek does) and its own g_moe_rope_mscale/g_moe_attn_scale bake in DeepSeek's
+// two-parameter (mscale, mscale_all_dim) decoupled-scale convention. Verified against HF
+// transformers' real modeling_rope_utils.py (_compute_yarn_parameters, get_mscale) via direct
+// source fetch: when a rope_scaling config has no "mscale"/"mscale_all_dim" keys (GPT-OSS's
+// real GGUF has neither -- those are DeepSeek-only terms), attention_factor is the single,
+// undivided `get_mscale(factor)` = `0.1*log(factor)+1.0` (this file's own moe_yarn_get_mscale
+// with mscale=1.0) -- NOT g_moe_rope_mscale's ratio (which self-cancels to 1.0 when both
+// dummies default to the same 1.0, silently dropping the real ~1.35x scale for factor=32).
+// Own table + own attention-factor scalar, heap MOE_HEAD_DIM/2 doubles -- alloc_moe_buffers(),
+// written by moe_init_yarn_neox() (called only when MOE_ATTN_KIND==MOE_ATTN_GPTOSS), read by
+// moe_rope_neox_yarn_apply().
+static double *g_moe_yarn_freqs_neox = NULL;
+static double g_moe_yarn_attn_factor_neox = 1.0;
 // Phase 4 sub-part 1 (de-hardcode the MoE path): derived dimensions, same pattern as
 // MOE_Q_HEAD_DIM above -- computed once in run_moe_verify_mode() right after the raw
 // MOE_* config loads, used both by moe_cfg_validate()'s shape cross-checks and by
@@ -2983,6 +3000,29 @@ static void moe_init_yarn(void) {
     double mscale2 = moe_yarn_get_mscale(MOE_YARN_FACTOR, MOE_YARN_MSCALE_ALL_DIM);
     g_moe_attn_scale = pow((double)MOE_Q_HEAD_DIM, -0.5) * mscale2 * mscale2;
 }
+// D-gptoss-7: GPT-OSS's own YaRN init -- same correction-range ramp as moe_init_yarn() above,
+// but over the FULL MOE_HEAD_DIM (GPT-OSS rotates the whole head, no DeepSeek-style partial
+// rope/nope split) and with the real, single-parameter attention_factor HF transformers'
+// _compute_yarn_parameters falls back to when a rope_scaling config carries no "mscale"/
+// "mscale_all_dim" keys (GPT-OSS's real GGUF has neither) -- `get_mscale(factor)`, i.e. this
+// file's own moe_yarn_get_mscale(FACTOR, 1.0), NOT moe_init_yarn()'s g_moe_rope_mscale ratio
+// (verified via direct WebFetch of the real HF source, not assumed).
+static void moe_init_yarn_neox(void) {
+    int dim = MOE_HEAD_DIM;
+    int half = dim / 2;
+    double low, high;
+    moe_yarn_find_correction_range(MOE_YARN_BETA_FAST, MOE_YARN_BETA_SLOW, dim, MOE_ROPE_THETA, MOE_YARN_ORIG_MAX_POS, &low, &high);
+    if (low == high) high += 0.001;
+    for (int i = 0; i < half; i++) {
+        double freq_extra = pow(MOE_ROPE_THETA, (2.0 * i) / dim);
+        double freq_inter = MOE_YARN_FACTOR * pow(MOE_ROPE_THETA, (2.0 * i) / dim);
+        double ramp = (i - low) / (high - low);
+        if (ramp < 0) ramp = 0; if (ramp > 1) ramp = 1;
+        double freq_mask = 1.0 - ramp;
+        g_moe_yarn_freqs_neox[i] = (freq_inter * freq_extra) / (freq_inter * freq_mask + freq_extra * (1.0 - freq_mask));
+    }
+    g_moe_yarn_attn_factor_neox = moe_yarn_get_mscale(MOE_YARN_FACTOR, 1.0);
+}
 static void moe_rope_traditional_apply(float *v, int dim, int pos) {
     int half = dim / 2;
     for (int i = 0; i < half; i++) {
@@ -3019,6 +3059,22 @@ static void moe_rope_neox_apply(float *v, int dim, int pos) {
         double a = v[i], b = v[i+half];
         v[i]      = (float)(a*c - b*s);
         v[i+half] = (float)(a*s + b*c);
+    }
+}
+// D-gptoss-7: GPT-OSS's own NEOX rope apply -- same split-half rotation as
+// moe_rope_neox_apply() above, but reads the YaRN-ramped table (moe_init_yarn_neox()) and
+// multiplies the rotated result by the real single-parameter attention_factor, matching HF's
+// real "cos/sin pre-scaled by attention_scaling" convention (mathematically equivalent to
+// scaling the rotated output, same post-rotation-multiply pattern this file's own MLA path
+// already uses for g_moe_rope_mscale -- q_pe[i] *= mscale after moe_rope_traditional_apply()).
+static void moe_rope_neox_yarn_apply(float *v, int dim, int pos) {
+    int half = dim / 2;
+    for (int i = 0; i < half; i++) {
+        double ang = (double)pos * g_moe_yarn_freqs_neox[i];
+        double c = cos(ang), s = sin(ang);
+        double a = v[i], b = v[i+half];
+        v[i]      = (float)((a*c - b*s) * g_moe_yarn_attn_factor_neox);
+        v[i+half] = (float)((a*s + b*c) * g_moe_yarn_attn_factor_neox);
     }
 }
 
@@ -3306,6 +3362,36 @@ static void moe_swiglu_inplace(float *gate, const float *up, int n) {
         gate[i] = silu * up[i];
     }
 }
+// D-gptoss-5: GPT-OSS's own clamped gated activation -- verbatim from HF transformers'
+// GptOssExperts._apply_gate() (modeling_gpt_oss.py, confirmed via direct source fetch, not
+// guessed): gate is clamped to an upper bound only (no lower clamp), up is clamped both ways,
+// the sigmoid gate uses an extra alpha scale inside it (not a plain SiLU), and the up branch
+// has a "+1" bias baked into the formula itself (not a separate learned bias). Constants
+// (alpha=1.702, limit=7.0) are real HF-confirmed values, not tuned/guessed by this project.
+//   gate = min(gate_raw, limit)
+//   up   = clamp(up_raw, -limit, limit)
+//   glu  = gate * sigmoid(gate * alpha)
+//   out  = (up + 1) * glu
+// HF's own module reads gate/up as interleaved even/odd slices of one fused tensor
+// (gate_up[...,::2] / gate_up[...,1::2]) -- irrelevant here: this engine's GGUF role table
+// (GPTOSS_GGUF_LAYER_ROLES) already binds ffn_gate_exps/ffn_up_exps as separate tensors
+// (llama.cpp's own GGUF conversion de-interleaves them at export time), so this function just
+// takes two already-separate arrays, matching every other activation function in this file.
+#define MOE_GPTOSS_ACT_ALPHA 1.702f
+#define MOE_GPTOSS_ACT_LIMIT 7.0f
+static void moe_gptoss_glu_inplace(float *gate, const float *up_in, int n) {
+    for (int i = 0; i < n; i++) {
+        float g = gate[i];
+        if (g > MOE_GPTOSS_ACT_LIMIT) g = MOE_GPTOSS_ACT_LIMIT;
+        float u = up_in[i];
+        if (u > MOE_GPTOSS_ACT_LIMIT) u = MOE_GPTOSS_ACT_LIMIT;
+        if (u < -MOE_GPTOSS_ACT_LIMIT) u = -MOE_GPTOSS_ACT_LIMIT;
+        // glu = gate * sigmoid(gate*alpha) = gate / (1 + exp(-gate*alpha)) -- NOT an extra
+        // *g on top (that would be gate^2 * sigmoid(...), a real bug caught before testing).
+        float glu = g / (1.0f + expf(-g * MOE_GPTOSS_ACT_ALPHA));
+        gate[i] = (u + 1.0f) * glu;
+    }
+}
 // Order-invariant repeated-max top-k -- correct regardless of MLX's own argpartition
 // tie-break order, since the weighted MoE sum doesn't care about selection order.
 static void moe_top_k_select(const float *scores, int n, int k, int *out_idx) {
@@ -3344,6 +3430,14 @@ typedef struct {
     MoeF32Tensor *gate_w;
     MoeAFTensor *shared_gate, *shared_up, *shared_down;
     MoeAFTensor *switch_gate, *switch_up, *switch_down;
+    // D-gptoss-5: GPT-OSS attention/FFN biases + attention sinks -- NULL for every other
+    // architecture (none of MLA/GQA/qwen3moe's own real checkpoints carry these tensors, so
+    // every existing resolver leaves these fields unset/NULL via this struct's own calloc-style
+    // zero-init, byte-identical to before this existed). Non-NULL only via
+    // moe_resolve_attn_tensors_gptoss() (attention biases + sinks) and the GPT-OSS FFN
+    // dispatch's own switch_*_bias lookups.
+    MoeAFTensor *q_bias, *k_bias, *v_bias, *o_bias, *attn_sinks;
+    MoeAFTensor *switch_gate_bias, *switch_up_bias, *switch_down_bias;
 } MoeLayerTensors;
 // Phase 4 sub-part 3, Step 3.1: bumped 32->64 for Qwen3-30B-A3B's NL=48. All 8 K/V
 // flat arrays below this macro are malloc-only, never calloc/memset (Rule 6) -- pages
@@ -3410,6 +3504,12 @@ static long g_moe_lazy_live_bytes = 0; // currently materialized, for the report
 static void moe_lazy_hi_materialize_all(void);
 static void moe_lazy_hi_release_all(void);
 
+// D-gptoss-6: defined near the rest of the GQA attention bias helpers far below (they share
+// that section's MoeAFTensor-bias convention); used by moe_forward_token()'s routed-MoE FFN
+// loop long before that point.
+static void moe_add_bias_f16(float *y, const MoeAFTensor *bias, int n);
+static void moe_add_bias_f16_expert(float *y, const MoeAFTensor *bias, long e, int n);
+
 // Phase 4 sub-part 1, Step 1: shape cross-checks. Every (out,in) pair here was confirmed by
 // reading the real call sites, not assumed -- moe_mla_attention() (q_proj/kv_a_proj/kv_b_proj/
 // o_proj) and moe_forward_token()'s dense/switch/shared branches (dense_*/switch_*/shared_*,
@@ -3468,6 +3568,29 @@ static void moe_resolve_attn_tensors_gqa(int l, MoeLayerTensors *t) {
 // attn_hi() registers instead of the production AF-blob-file entries. GQA-only this round
 // (MLA's own hi-mirror is a deferred, structurally-similar follow-up, not implemented
 // speculatively -- MOE_ST_ATTN_ROLES_MLA already exists and is unused by this pass).
+// D-gptoss-5: GPT-OSS's own attention tensor resolver -- same q_proj/k_proj/v_proj/o_proj
+// shapes as GQA (real GGUF names already confirmed identical: attn_q/k/v/output), plus the two
+// things neither MLA nor GQA have: real per-projection biases (registered under the
+// ".bias"-suffixed engine names GPTOSS_GGUF_LAYER_ROLES already binds) and attn_sinks (one
+// scalar per query head, real shape [head_count] confirmed by the actual header). No q_norm/
+// k_norm lookup -- GPT-OSS has no per-head QK-norm (confirmed: not in the real tensor list).
+static void moe_resolve_attn_tensors_gptoss(int l, MoeLayerTensors *t) {
+    char nm[256];
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.q_proj",l);      t->q_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.q_proj.bias",l); t->q_bias = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.k_proj",l);      t->k_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.k_proj.bias",l); t->k_bias = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.v_proj",l);      t->v_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.v_proj.bias",l); t->v_bias = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.o_proj",l);      t->o_proj = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.o_proj.bias",l); t->o_bias = moe_find_af(nm);
+    snprintf(nm,sizeof nm,"model.layers.%d.self_attn.sinks",l);       t->attn_sinks = moe_find_af(nm);
+    moe_check_af_shape(t->q_proj, "q_proj", l, (long)MOE_N_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
+    moe_check_af_shape(t->k_proj, "k_proj", l, (long)MOE_N_KV_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
+    moe_check_af_shape(t->v_proj, "v_proj", l, (long)MOE_N_KV_HEADS*MOE_HEAD_DIM, MOE_HIDDEN);
+    moe_check_af_shape(t->o_proj, "o_proj", l, MOE_HIDDEN, (long)MOE_N_HEADS*MOE_HEAD_DIM);
+}
+
 static void moe_resolve_attn_tensors_gqa_hi(int l, MoeLayerTensors *t) {
     char nm[256];
     // D-d5-13: moe_find_af_opt, not moe_find_af. With a selective combo list only the listed
@@ -3569,6 +3692,7 @@ static void moe_resolve_layer_tensors(void) {
     for (int l = 0; l < MOE_NL; l++) {
         MoeLayerTensors *t = &g_moe_lt[l];
         if (MOE_ATTN_KIND == MOE_ATTN_MLA) moe_resolve_attn_tensors_mla(l, t);
+        else if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) moe_resolve_attn_tensors_gptoss(l, t);
         else moe_resolve_attn_tensors_gqa(l, t);
         snprintf(nm,sizeof nm,"model.layers.%d.input_layernorm.weight",l);      t->input_ln = moe_find_f32(nm);
         snprintf(nm,sizeof nm,"model.layers.%d.post_attention_layernorm.weight",l); t->post_attn_ln = moe_find_f32(nm);
@@ -3600,6 +3724,14 @@ static void moe_resolve_layer_tensors(void) {
             moe_check_af_shape(t->switch_gate, "switch_gate", l, MOE_IM_DIM, MOE_HIDDEN);
             moe_check_af_shape(t->switch_up,   "switch_up",   l, MOE_IM_DIM, MOE_HIDDEN);
             moe_check_af_shape(t->switch_down, "switch_down", l, MOE_HIDDEN, MOE_IM_DIM);
+            // D-gptoss-5: real per-expert-per-output-dim FFN biases -- only GPT-OSS's real
+            // checkpoints carry these (registered by GPTOSS_GGUF_LAYER_ROLES), every other
+            // architecture's switch_*_bias fields stay NULL (this struct's own zero-init).
+            if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) {
+                snprintf(nm,sizeof nm,"model.layers.%d.mlp.switch_mlp.gate_proj.bias",l); t->switch_gate_bias = moe_find_af(nm);
+                snprintf(nm,sizeof nm,"model.layers.%d.mlp.switch_mlp.up_proj.bias",l);   t->switch_up_bias   = moe_find_af(nm);
+                snprintf(nm,sizeof nm,"model.layers.%d.mlp.switch_mlp.down_proj.bias",l); t->switch_down_bias = moe_find_af(nm);
+            }
         }
     }
 }
@@ -3862,14 +3994,31 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
                 MoeBatchItem items[MOE_BATCH_MAX_ITEMS]; int ni = 0;
                 for (int k = 0; k < MOE_TOP_K; k++) {
                     long e = top_idx[k];
-                    moe_swiglu_inplace(gate_v + (size_t)k*MOE_IM_DIM, up_v + (size_t)k*MOE_IM_DIM, MOE_IM_DIM);
-                    items[ni++] = (MoeBatchItem){af, t->switch_down, e, gate_v + (size_t)k*MOE_IM_DIM, down_v + (size_t)k*MOE_HIDDEN, 0, 0};
+                    float *gk = gate_v + (size_t)k*MOE_IM_DIM, *uk = up_v + (size_t)k*MOE_IM_DIM;
+                    // D-gptoss-6: real per-expert gate/up biases + the real clamped
+                    // activation (moe_gptoss_glu_inplace(), D-gptoss-5) instead of plain
+                    // SwiGLU -- every other architecture's switch_gate_bias/switch_up_bias
+                    // stay NULL (MoeLayerTensors' own zero-init), so this branch is a
+                    // genuine no-op for them.
+                    if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) {
+                        moe_add_bias_f16_expert(gk, t->switch_gate_bias, e, MOE_IM_DIM);
+                        moe_add_bias_f16_expert(uk, t->switch_up_bias, e, MOE_IM_DIM);
+                        moe_gptoss_glu_inplace(gk, uk, MOE_IM_DIM);
+                    } else {
+                        moe_swiglu_inplace(gk, uk, MOE_IM_DIM);
+                    }
+                    items[ni++] = (MoeBatchItem){af, t->switch_down, e, gk, down_v + (size_t)k*MOE_HIDDEN, 0, 0};
                 }
                 if (MOE_N_SHARED > 0) {
                     moe_swiglu_inplace(sgate_v, sup_v, MOE_IM_DIM * MOE_N_SHARED);
                     items[ni++] = (MoeBatchItem){af, t->shared_down, 0, sgate_v, sdown_v, 0, 0};
                 }
                 moe_matvec_af_batch_mt(items, ni);
+                if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) {
+                    for (int k = 0; k < MOE_TOP_K; k++) {
+                        moe_add_bias_f16_expert(down_v + (size_t)k*MOE_HIDDEN, t->switch_down_bias, top_idx[k], MOE_HIDDEN);
+                    }
+                }
             }
             for (int k = 0; k < MOE_TOP_K; k++) {
                 float wgt = router_scores[top_idx[k]];
@@ -4278,6 +4427,94 @@ static void moe_gqa_attention(const uint8_t *af, MoeLayerTensors *t, int l, int 
 // Verbatim structural mirror of moe_gqa_attention() -- only difference is reading/writing
 // g_moe_cK/cV[layer][slot][pos] (via moe_cK_row/moe_cV_row) instead of the single-sequence
 // g_moe_K/V[layer][pos], same relationship moe_mla_attention_ragged() has to moe_mla_attention().
+// D-gptoss-5: adds a real dense-F16 bias tensor (registered by gguf_register_moe_f16_as(),
+// bits==16) element-wise into y[0..n). Direct base-pointer cast, not moe_decode_af()'s generic
+// per-element dispatch -- this project's own bits==16 storage IS a flat _Float16 array (see
+// that registrar's own comment), so a direct cast is the same value, just without paying a
+// switch-dispatch per element for something this simple.
+static void moe_add_bias_f16(float *y, const MoeAFTensor *bias, int n) {
+    const _Float16 *b = (const _Float16 *)bias->base;
+    for (int i = 0; i < n; i++) y[i] += (float)b[i];
+}
+// D-gptoss-6: same idea, but for a real per-expert FFN bias (real GGUF shape [out,E], out
+// fastest-varying on disk -- see gguf_register_moe_f16_as_ex()'s own comment). `e` selects
+// which expert's out-length bias slice to add. Storage layout here is E-major (expert e's
+// contiguous `out` values start at e*out), matching gguf_register_moe_f16_as_ex()'s own
+// per-expert dequant loop (`base + e*per_expert`, per_expert==out here) exactly -- NOT the
+// out-major layout the raw GGUF bytes have before dequant, which only matters for the
+// expert_stride_bytes math inside that registrar, not for reading this already-repacked buffer.
+static void moe_add_bias_f16_expert(float *y, const MoeAFTensor *bias, long e, int n) {
+    const _Float16 *b = (const _Float16 *)bias->base + e * n;
+    for (int i = 0; i < n; i++) y[i] += (float)b[i];
+}
+
+// D-gptoss-5: GPT-OSS's own attention -- structurally a GQA variant (same head/kv-head/RoPE
+// setup as moe_gqa_attention()) with three real additions confirmed from actual HF transformers
+// + llama.cpp source (not guessed): (1) real per-projection biases, (2) per-layer sliding-window
+// vs full attention (even layers l%2==0 are sliding/window=128, odd are full -- llama.cpp's own
+// openai-moe.cpp calls hparams.set_swa_pattern(2) with dense_first's default of false, which
+// resolves to exactly this parity, confirmed by reading set_swa_pattern()'s own condition, not
+// assumed), (3) attention sinks -- a real per-head learned logit concatenated as an extra
+// softmax "column" then dropped after normalizing (HF's own eager_attention_forward: concat
+// sinks -> subtract max -> softmax -> drop the sink's own probability), implemented here as an
+// extra loop iteration into the same scores[] buffer rather than a separate code path.
+static void moe_gptoss_attention(const uint8_t *af, MoeLayerTensors *t, int l, int pos,
+                                  const float *h, float *x_residual) {
+    float *q = g_mgqa_q, *k = g_mgqa_k, *v = g_mgqa_v;
+    float *attn_out = g_mgqa_attn_out, *o_out = g_mgqa_o_out;
+    moe_matvec_af_mt(af, t->q_proj, 0, h, q); moe_add_bias_f16(q, t->q_bias, MOE_N_HEADS*MOE_HEAD_DIM);
+    moe_matvec_af_mt(af, t->k_proj, 0, h, k); moe_add_bias_f16(k, t->k_bias, MOE_N_KV_HEADS*MOE_HEAD_DIM);
+    moe_matvec_af_mt(af, t->v_proj, 0, h, v); moe_add_bias_f16(v, t->v_bias, MOE_N_KV_HEADS*MOE_HEAD_DIM);
+
+    // D-gptoss-7: YaRN-scaled NEOX rope, not plain moe_rope_neox_apply() -- GPT-OSS's real
+    // rope.scaling.type=yarn (factor=32.0 etc, real GGUF keys) must be applied here; see
+    // moe_rope_neox_yarn_apply()'s own comment for why the plain GQA table would be wrong.
+    for (int hh = 0; hh < MOE_N_HEADS; hh++) moe_rope_neox_yarn_apply(q + hh*MOE_HEAD_DIM, MOE_HEAD_DIM, pos);
+    for (int kh = 0; kh < MOE_N_KV_HEADS; kh++) moe_rope_neox_yarn_apply(k + kh*MOE_HEAD_DIM, MOE_HEAD_DIM, pos);
+
+    memcpy(moe_K_row(l,pos), k, (size_t)MOE_KROW*sizeof(float));
+    memcpy(moe_V_row(l,pos), v, (size_t)MOE_VROW*sizeof(float));
+
+    int group = MOE_N_HEADS / MOE_N_KV_HEADS;
+    double scale = 1.0 / sqrt((double)MOE_HEAD_DIM);
+    int is_swa_layer = (l % 2) == 0;   // set_swa_pattern(2), dense_first=false -- even=SWA
+    int j0 = (is_swa_layer && MOE_SLIDING_WINDOW > 0 && pos - MOE_SLIDING_WINDOW + 1 > 0)
+             ? (pos - MOE_SLIDING_WINDOW + 1) : 0;
+    const _Float16 *sinks = (const _Float16 *)t->attn_sinks->base;
+    for (int hh = 0; hh < MOE_N_HEADS; hh++) {
+        int kvh = hh / group;
+        float *qh = q + hh*MOE_HEAD_DIM;
+        float scores[MOE_MAXPOS + 1];   // +1 for the sink "column"
+        int n_real = pos - j0 + 1;
+        for (int j = j0; j <= pos; j++) {
+            float *kj = moe_K_row(l,j) + (long)kvh*MOE_HEAD_DIM;
+            double dot = 0.0;
+            for (int d = 0; d < MOE_HEAD_DIM; d++) dot += (double)qh[d]*kj[d];
+            scores[j - j0] = (float)(dot * scale);
+        }
+        scores[n_real] = (float)sinks[hh];   // sink logit, no scale (matches HF: raw sinks value)
+        int n_ext = n_real + 1;
+        float mx_s = scores[0]; for (int i=1;i<n_ext;i++) if (scores[i]>mx_s) mx_s=scores[i];
+        double sum = 0.0;
+        for (int i=0;i<n_ext;i++) { scores[i] = expf(scores[i]-mx_s); sum += scores[i]; }
+        for (int i=0;i<n_ext;i++) scores[i] = (float)(scores[i]/sum);
+        // scores[n_real] (the sink's own probability) is computed but never read below --
+        // matches HF's own "probs[..., :-1]", the sink only ever affects the denominator.
+        float *oh = attn_out + hh*MOE_HEAD_DIM;
+        for (int d = 0; d < MOE_HEAD_DIM; d++) {
+            double acc = 0.0;
+            for (int j = j0; j <= pos; j++) {
+                float *vj = moe_V_row(l,j) + (long)kvh*MOE_HEAD_DIM;
+                acc += (double)scores[j - j0]*vj[d];
+            }
+            oh[d] = (float)acc;
+        }
+    }
+    moe_matvec_af_mt(af, t->o_proj, 0, attn_out, o_out);
+    moe_add_bias_f16(o_out, t->o_bias, MOE_HIDDEN);
+    for (int c = 0; c < MOE_HIDDEN; c++) x_residual[c] += o_out[c];
+}
+
 static void moe_gqa_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int slot, int l, int pos,
                                       const float *h, float *x_residual) {
     float *q = g_mgqar_q, *k = g_mgqar_k, *v = g_mgqar_v;
@@ -4368,6 +4605,7 @@ static void moe_gqa_attention_batched(const uint8_t *af, MoeLayerTensors *t, int
 static inline void moe_attention(const uint8_t *af, MoeLayerTensors *t, int l, int pos,
                                   const float *h, float *x_residual) {
     if (MOE_ATTN_KIND == MOE_ATTN_MLA) moe_mla_attention(af, t, l, pos, h, x_residual);
+    else if (MOE_ATTN_KIND == MOE_ATTN_GPTOSS) moe_gptoss_attention(af, t, l, pos, h, x_residual);
     else moe_gqa_attention(af, t, l, pos, h, x_residual);
 }
 static inline void moe_attention_ragged(const uint8_t *af, MoeLayerTensors *t, int slot, int l, int pos,
@@ -7327,6 +7565,9 @@ static void alloc_moe_buffers(void) {
     // reason -- moe_top_k_select() memsets it at the top of every call.
     int rope_half = MOE_QK_ROPE_HD / 2;
     g_moe_yarn_freqs = malloc((size_t)rope_half * sizeof(double));
+    // D-gptoss-7: harmless to allocate even for non-GPT-OSS architectures (never read in that
+    // case), same reasoning as g_moe_rope_inv's own comment above.
+    g_moe_yarn_freqs_neox = malloc((size_t)(MOE_HEAD_DIM/2) * sizeof(double));
     g_moe_topk_used  = malloc((size_t)MOE_N_EXPERTS * sizeof(int));
     // Step 2.6: plain-RoPE table for GQA models, malloc not calloc -- moe_init_rope_gqa()
     // (called right after, only when MOE_ATTN_KIND==GQA) writes every element before
@@ -8160,12 +8401,25 @@ static MoeF32Tensor *gguf_register_moe_f32_as(const char *gguf_name, const char 
 //   EXIT: if q4g64 requantization is later measured (not assumed) to have negligible real
 //   accuracy impact on GPT-OSS, gguf_register_moe_q4g64_as() could replace this for the FFN
 //   expert tensors specifically -- that measurement has to happen first.
-static MoeAFTensor *gguf_register_moe_f16_as(const char *gguf_name, const char *engine_name) {
+// D-gptoss-6: `is_expert_bias` handles the one real layout exception found this round --
+// per-expert FFN biases are real 2-D tensors shaped [out, E] (confirmed: "blk.0.ffn_gate_exps.
+// bias shape=[2880,32]", out FASTEST-varying, E slowest -- the OPPOSITE axis order from a
+// normal 2-D weight's [in, out]). A single 2-D branch can't tell these apart from shape alone,
+// so callers that know which role they're registering say so explicitly.
+static MoeAFTensor *gguf_register_moe_f16_as_ex(const char *gguf_name, const char *engine_name, int is_expert_bias) {
     const GgufTensorInfo *t = gguf_find_tensor(g_gguf_moe, gguf_name);
     if (!t) { fprintf(stderr, "FATAL: gguf moe model missing tensor '%s'\n", gguf_name); exit(1); }
-    long E = (t->n_dims >= 3) ? (long)t->ne[2] : 1;
-    long out = (long)t->ne[1];
-    long in = (t->n_dims >= 2) ? (long)t->ne[0] : 1;
+    // D-gptoss-4: 1-D case (bias vectors, attn_sinks) added -- the original 2/3-D-only version
+    // read ne[1] unconditionally, which is uninitialized for a real 1-D tensor (bias shapes are
+    // genuinely n_dims==1 in this project's own GgufTensorInfo, confirmed by the real header:
+    // "blk.0.attn_q.bias shape=[4096]"). Stored as out=ne[0], in=1, E=1 -- a plain vector, no
+    // matvec "in" dimension at all, consumed as an additive per-output-element bias, not a
+    // weight matrix.
+    long E, out, in;
+    if (is_expert_bias) { E = (long)t->ne[1]; out = (long)t->ne[0]; in = 1; }
+    else if (t->n_dims >= 3) { E = (long)t->ne[2]; out = (long)t->ne[1]; in = (long)t->ne[0]; }
+    else if (t->n_dims == 2) { E = 1; out = (long)t->ne[1]; in = (long)t->ne[0]; }
+    else { E = 1; out = (long)t->ne[0]; in = 1; }
     if (E <= 0 || out <= 0 || in <= 0) {
         fprintf(stderr, "FATAL: gguf moe: %s has non-positive dims (E=%ld out=%ld in=%ld)\n", gguf_name, E, out, in);
         exit(1);
@@ -8202,33 +8456,43 @@ static MoeAFTensor *gguf_register_moe_f16_as(const char *gguf_name, const char *
     w->base = base; w->sym = 0; w->bits = 16;
     return w;
 }
+static MoeAFTensor *gguf_register_moe_f16_as(const char *gguf_name, const char *engine_name) {
+    return gguf_register_moe_f16_as_ex(gguf_name, engine_name, 0);
+}
 
 // D-gptoss-2: GPT-OSS's own GGUF role table -- real tensor names confirmed by hand-parsing the
 // actual ggml-org/gpt-oss-20b-GGUF header (not assumed from llama.cpp source alone). Notably
 // close to qwen3moe's own table (attn_q/k/v/output, attn_norm, ffn_gate_inp, ffn_*_exps all
 // match) with two real differences: no attn_q_norm/attn_k_norm (GPT-OSS has no per-head
 // QK-norm), and the post-attention norm tensor is named "post_attention_norm" not "ffn_norm".
-// Bias tensors (present on nearly every real GPT-OSS tensor -- attn q/k/v/output, ffn_gate_inp,
-// all 3 expert FFN roles) are deliberately NOT in this table yet: they need a real bias-add
-// design in the forward pass (Phase B), not a role-table entry that loads them with nowhere to
-// be consumed. attn_sinks (real per-head tensor, shape [head_count]) is also Phase B's job (the
-// attention mechanism that uses it doesn't exist yet) -- listed here only in this comment as a
-// reminder, not registered this round.
+// D-gptoss-4 (Phase B): bias tensors and attn_sinks now registered too (all real, confirmed
+// present on every layer by the real header parse) -- the forward-pass code that consumes
+// them (moe_gptoss_attention(), the new clamped activation) is what this phase adds.
 typedef struct {
     const char *gguf_pattern;
     const char *engine_pattern;
+    int is_expert_bias;   // D-gptoss-6: [out,E] layout, not the normal 2-D [in,out]/3-D [in,out,E]
 } GptossGgufRole;
 static const GptossGgufRole GPTOSS_GGUF_LAYER_ROLES[] = {
-    { "blk.%d.attn_q.weight",           "model.layers.%d.self_attn.q_proj" },
-    { "blk.%d.attn_k.weight",           "model.layers.%d.self_attn.k_proj" },
-    { "blk.%d.attn_v.weight",           "model.layers.%d.self_attn.v_proj" },
-    { "blk.%d.attn_output.weight",      "model.layers.%d.self_attn.o_proj" },
-    { "blk.%d.attn_norm.weight",        "model.layers.%d.input_layernorm.weight" },
-    { "blk.%d.post_attention_norm.weight", "model.layers.%d.post_attention_layernorm.weight" },
-    { "blk.%d.ffn_gate_inp.weight",     "model.layers.%d.mlp.gate.weight" },
-    { "blk.%d.ffn_gate_exps.weight",    "model.layers.%d.mlp.switch_mlp.gate_proj" },
-    { "blk.%d.ffn_up_exps.weight",      "model.layers.%d.mlp.switch_mlp.up_proj" },
-    { "blk.%d.ffn_down_exps.weight",    "model.layers.%d.mlp.switch_mlp.down_proj" },
+    { "blk.%d.attn_q.weight",           "model.layers.%d.self_attn.q_proj",                0 },
+    { "blk.%d.attn_q.bias",             "model.layers.%d.self_attn.q_proj.bias",           0 },
+    { "blk.%d.attn_k.weight",           "model.layers.%d.self_attn.k_proj",                0 },
+    { "blk.%d.attn_k.bias",             "model.layers.%d.self_attn.k_proj.bias",           0 },
+    { "blk.%d.attn_v.weight",           "model.layers.%d.self_attn.v_proj",                0 },
+    { "blk.%d.attn_v.bias",             "model.layers.%d.self_attn.v_proj.bias",           0 },
+    { "blk.%d.attn_output.weight",      "model.layers.%d.self_attn.o_proj",                0 },
+    { "blk.%d.attn_output.bias",        "model.layers.%d.self_attn.o_proj.bias",           0 },
+    { "blk.%d.attn_sinks.weight",       "model.layers.%d.self_attn.sinks",                 0 },
+    { "blk.%d.attn_norm.weight",        "model.layers.%d.input_layernorm.weight",          0 },
+    { "blk.%d.post_attention_norm.weight", "model.layers.%d.post_attention_layernorm.weight", 0 },
+    { "blk.%d.ffn_gate_inp.weight",     "model.layers.%d.mlp.gate.weight",                 0 },
+    { "blk.%d.ffn_gate_inp.bias",       "model.layers.%d.mlp.gate.weight.bias",            0 },
+    { "blk.%d.ffn_gate_exps.weight",    "model.layers.%d.mlp.switch_mlp.gate_proj",        0 },
+    { "blk.%d.ffn_gate_exps.bias",      "model.layers.%d.mlp.switch_mlp.gate_proj.bias",   1 },
+    { "blk.%d.ffn_up_exps.weight",      "model.layers.%d.mlp.switch_mlp.up_proj",          0 },
+    { "blk.%d.ffn_up_exps.bias",        "model.layers.%d.mlp.switch_mlp.up_proj.bias",     1 },
+    { "blk.%d.ffn_down_exps.weight",    "model.layers.%d.mlp.switch_mlp.down_proj",        0 },
+    { "blk.%d.ffn_down_exps.bias",      "model.layers.%d.mlp.switch_mlp.down_proj.bias",   1 },
 };
 
 // D-gptoss-3-probe: safe, scoped real-data verification for gguf_register_moe_f16_as() --
@@ -8276,6 +8540,109 @@ static int run_gptoss_load_probe_mode(int argc, char **argv) {
     fprintf(stderr, "\n");
 
     fprintf(stderr, "RESULT: gptoss load probe complete, %d af tensors registered\n", g_moe_naf);
+    return 1;
+}
+
+// D-gptoss-8: safe, scoped real-data verification for moe_gptoss_attention() (D-gptoss-6) and
+// the YaRN-NEOX rope fix (D-gptoss-7) -- registers only the attention tensors (q/k/v/o
+// weight+bias, attn_sinks) for 2 real layers (layer 0: even, SWA per set_swa_pattern(2)
+// parity; layer 1: odd, full attention) instead of the full 24-layer eager-load pipeline
+// (D-gptoss-2-note's ~35.6GiB FFN-expert finding is untouched by this probe, which never
+// registers any ffn_*_exps tensor). Deliberately does NOT call alloc_moe_buffers() (that
+// would also allocate the cbatch K/V cache families -- real math for this model's KROW/VROW:
+// MOE_MAXLAYERS(64)*g_moe_cb_slots_cap(256)*MOE_CBATCH_MAXPOS(32)*512*4 bytes ~= 1.07GiB PER
+// array, x2 for K+V ~= 2.1GiB -- never read by moe_gptoss_attention(), so this probe allocates
+// only the K/V-cache + GQA-scratch + yarn-neox-table buffers that function actually touches.
+// This checks the real math runs correctly on real weights without crashing/NaN-ing -- it is
+// NOT a token-exact cross-check against llama.cpp's own real output (that needs a full-model
+// load + an independent llama.cpp reference, both explicitly deferred, see RESULTS.md).
+static int run_gptoss_attn_probe_mode(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *path = getenv("QWEN_GPTOSS_ATTN_PROBE");
+    if (!path || !path[0]) return 0;
+
+    fprintf(stderr, "[gptoss attn probe] QWEN_GPTOSS_ATTN_PROBE=%s\n", path);
+    g_gguf_moe = gguf_open(path);
+    if (!g_gguf_moe) { perror("gguf_open"); fprintf(stderr, "FATAL: could not open gguf file %s\n", path); exit(1); }
+
+    const char *arch_ptr; uint64_t arch_len;
+    if (!gguf_kv_str(g_gguf_moe, "general.architecture", &arch_ptr, &arch_len)) {
+        fprintf(stderr, "FATAL: missing general.architecture\n"); exit(1);
+    }
+    char arch[64]; snprintf(arch, sizeof arch, "%.*s", (int)arch_len, arch_ptr);
+    if (strcmp(arch, "gpt-oss")) { fprintf(stderr, "FATAL: expected gpt-oss, got %s\n", arch); exit(1); }
+
+    char key[128]; uint64_t u; double d;
+    snprintf(key,sizeof key,"%s.embedding_length",arch);          if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: missing %s\n",key); exit(1); } MOE_HIDDEN=(int)u;
+    snprintf(key,sizeof key,"%s.attention.head_count",arch);      if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: missing %s\n",key); exit(1); } MOE_N_HEADS=(int)u;
+    snprintf(key,sizeof key,"%s.attention.head_count_kv",arch);   if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: missing %s\n",key); exit(1); } MOE_N_KV_HEADS=(int)u;
+    snprintf(key,sizeof key,"%s.attention.key_length",arch);      if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: missing %s\n",key); exit(1); } MOE_HEAD_DIM=(int)u;
+    snprintf(key,sizeof key,"%s.rope.freq_base",arch);            if (!gguf_kv_f64(g_gguf_moe,key,&d)) { fprintf(stderr,"FATAL: missing %s\n",key); exit(1); } MOE_ROPE_THETA=d;
+    snprintf(key,sizeof key,"%s.attention.sliding_window",arch);  if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: missing %s\n",key); exit(1); } MOE_SLIDING_WINDOW=(int)u;
+    snprintf(key,sizeof key,"%s.rope.scaling.factor",arch);                  if (!gguf_kv_f64(g_gguf_moe,key,&d)) { fprintf(stderr,"FATAL: missing %s\n",key); exit(1); } MOE_YARN_FACTOR=d;
+    snprintf(key,sizeof key,"%s.rope.scaling.original_context_length",arch); if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: missing %s\n",key); exit(1); } MOE_YARN_ORIG_MAX_POS=(double)u;
+    snprintf(key,sizeof key,"%s.rope.scaling.yarn_beta_fast",arch);          if (!gguf_kv_f64(g_gguf_moe,key,&d)) { fprintf(stderr,"FATAL: missing %s\n",key); exit(1); } MOE_YARN_BETA_FAST=d;
+    snprintf(key,sizeof key,"%s.rope.scaling.yarn_beta_slow",arch);          if (!gguf_kv_f64(g_gguf_moe,key,&d)) { fprintf(stderr,"FATAL: missing %s\n",key); exit(1); } MOE_YARN_BETA_SLOW=d;
+    MOE_YARN_MSCALE = 1.0; MOE_YARN_MSCALE_ALL_DIM = 1.0;
+    MOE_ATTN_KIND = MOE_ATTN_GPTOSS;
+    MOE_KROW = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+    MOE_VROW = MOE_KROW;
+
+    fprintf(stderr, "[gptoss attn probe] HIDDEN=%d N_HEADS=%d N_KV_HEADS=%d HEAD_DIM=%d SLIDING_WINDOW=%d YARN_FACTOR=%.4f\n",
+            MOE_HIDDEN, MOE_N_HEADS, MOE_N_KV_HEADS, MOE_HEAD_DIM, MOE_SLIDING_WINDOW, MOE_YARN_FACTOR);
+
+    g_moe_yarn_freqs_neox = malloc((size_t)(MOE_HEAD_DIM/2) * sizeof(double));
+    moe_init_yarn_neox();
+    fprintf(stderr, "[gptoss attn probe] yarn_attn_factor=%.10f\n", g_moe_yarn_attn_factor_neox);
+
+    g_moe_K_flat = malloc((long)MOE_MAXLAYERS*MOE_MAXPOS*MOE_KROW*sizeof(float));
+    g_moe_V_flat = malloc((long)MOE_MAXLAYERS*MOE_MAXPOS*MOE_VROW*sizeof(float));
+    int gqa_q_sz = MOE_N_HEADS*MOE_HEAD_DIM, gqa_kv_sz = MOE_N_KV_HEADS*MOE_HEAD_DIM;
+    g_mgqa_q = malloc((size_t)gqa_q_sz*sizeof(float)); g_mgqa_k = malloc((size_t)gqa_kv_sz*sizeof(float));
+    g_mgqa_v = malloc((size_t)gqa_kv_sz*sizeof(float)); g_mgqa_attn_out = malloc((size_t)gqa_q_sz*sizeof(float));
+    g_mgqa_o_out = malloc((size_t)MOE_HIDDEN*sizeof(float));
+
+    g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));
+
+    for (int l = 0; l <= 1; l++) {
+        for (size_t r = 0; r < sizeof(GPTOSS_GGUF_LAYER_ROLES)/sizeof(GPTOSS_GGUF_LAYER_ROLES[0]); r++) {
+            const GptossGgufRole *role = &GPTOSS_GGUF_LAYER_ROLES[r];
+            int is_attn = strstr(role->gguf_pattern,"attn_q") || strstr(role->gguf_pattern,"attn_k")
+                       || strstr(role->gguf_pattern,"attn_v") || strstr(role->gguf_pattern,"attn_output")
+                       || strstr(role->gguf_pattern,"attn_sinks");
+            if (!is_attn) continue;
+            char gname[256], ename[256];
+            snprintf(gname,sizeof gname, role->gguf_pattern, l);
+            snprintf(ename,sizeof ename, role->engine_pattern, l);
+            gguf_register_moe_f16_as_ex(gname, ename, role->is_expert_bias);
+        }
+    }
+    MoeLayerTensors t0, t1;
+    memset(&t0, 0, sizeof t0); memset(&t1, 0, sizeof t1);
+    moe_resolve_attn_tensors_gptoss(0, &t0);
+    moe_resolve_attn_tensors_gptoss(1, &t1);
+    fprintf(stderr, "[gptoss attn probe] registered %d af tensors for layers 0,1\n", g_moe_naf);
+
+    // Synthetic hidden state -- deterministic, not real embeddings (token_embd.weight is real
+    // but large [~577MB Q8_0], deliberately not loaded by this scoped probe). Exercises the
+    // real math on real weights; not a claim of real end-to-end model output.
+    float h[4096];
+    for (int i = 0; i < MOE_HIDDEN; i++) h[i] = 0.01f * (float)sin(0.37*i);
+    float xr0[4096], xr1[4096];
+
+    int any_nonfinite = 0;
+    for (int pos = 0; pos <= 2; pos++) {
+        memset(xr0, 0, (size_t)MOE_HIDDEN*sizeof(float));
+        memset(xr1, 0, (size_t)MOE_HIDDEN*sizeof(float));
+        moe_gptoss_attention(NULL, &t0, 0, pos, h, xr0);
+        moe_gptoss_attention(NULL, &t1, 1, pos, h, xr1);
+        fprintf(stderr, "[gptoss attn probe] pos=%d layer0(SWA)  xr[0..3]= %.6f %.6f %.6f %.6f\n",
+                pos, xr0[0], xr0[1], xr0[2], xr0[3]);
+        fprintf(stderr, "[gptoss attn probe] pos=%d layer1(full) xr[0..3]= %.6f %.6f %.6f %.6f\n",
+                pos, xr1[0], xr1[1], xr1[2], xr1[3]);
+        for (int c = 0; c < MOE_HIDDEN; c++) if (!isfinite(xr0[c]) || !isfinite(xr1[c])) any_nonfinite = 1;
+    }
+    fprintf(stderr, "RESULT: gptoss attn probe complete, any_nonfinite=%d\n", any_nonfinite);
     return 1;
 }
 
@@ -8408,6 +8775,11 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     alloc_moe_buffers();
     moe_init_yarn();
     moe_init_rope_gqa();
+    // D-gptoss-7: real bug found+fixed while verifying moe_gptoss_attention() -- GPT-OSS needs
+    // its own YaRN-ramped NEOX table (see moe_init_yarn_neox()'s own comment for why neither
+    // moe_init_yarn() above (MLA-sized, DeepSeek's decoupled mscale) nor moe_init_rope_gqa()
+    // (plain, no YaRN ramp at all) are correct for it).
+    if (!strcmp(arch, "gpt-oss")) moe_init_yarn_neox();
     fprintf(stderr, "[gguf moe yarn] rope_mscale=%.10f attn_scale=%.10f\n", g_moe_rope_mscale, g_moe_attn_scale);
 
     g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
@@ -8416,14 +8788,17 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     int is_gptoss = !strcmp(arch, "gpt-oss");
     for (int l = 0; l < MOE_NL; l++) {
         if (is_gptoss) {
-            // D-gptoss-2: dense f16 registration throughout -- see gguf_register_moe_f16_as()'s
-            // own WHY comment. Bias/attn_sinks tensors intentionally not registered yet (Phase B).
+            // D-gptoss-2/4: dense f16 registration throughout -- see gguf_register_moe_f16_as()'s
+            // own WHY comment. Bias/attn_sinks tensors now included (Phase B).
             for (size_t r = 0; r < sizeof(GPTOSS_GGUF_LAYER_ROLES)/sizeof(GPTOSS_GGUF_LAYER_ROLES[0]); r++) {
                 const GptossGgufRole *role = &GPTOSS_GGUF_LAYER_ROLES[r];
-                char gsrc[96], ename[96];
+                char gsrc[112], ename[112];
                 snprintf(gsrc, sizeof gsrc, role->gguf_pattern, l);
                 snprintf(ename, sizeof ename, role->engine_pattern, l);
-                gguf_register_moe_f16_as(gsrc, ename);
+                // attn_sinks has no per-layer variant absence in real GPT-OSS (confirmed:
+                // present on every layer, layers 0-23, in the real header) -- FATAL-on-missing
+                // (gguf_register_moe_f16_as()'s own behavior) is correct here, not tolerant.
+                gguf_register_moe_f16_as_ex(gsrc, ename, role->is_expert_bias);
             }
         } else {
             for (size_t r = 0; r < sizeof(MOE_GGUF_LAYER_ROLES)/sizeof(MOE_GGUF_LAYER_ROLES[0]); r++) {
@@ -16513,6 +16888,7 @@ int main(int argc, char **argv) {
     if (run_moe_gpu_generate_default_mode(argc, argv)) return 0;
 #endif
     if (run_gptoss_load_probe_mode(argc, argv)) return 0;
+    if (run_gptoss_attn_probe_mode(argc, argv)) return 0;
     if (run_gguf_moe_verify_mode(argc, argv)) return 0;
     if (run_moe_safetensors_verify_mode(argc, argv)) return 0;
     if (run_moe_verify_mode(argc, argv)) return 0;

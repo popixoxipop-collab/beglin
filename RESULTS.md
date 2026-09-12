@@ -13749,3 +13749,157 @@ class: "would look right at row 0 and wrong everywhere else").
 FATAL, MXFP4 and Q8_0 both dequant correctly on real production data, verified at both the near
 and far boundary of the expert-stacked tensor. Full-model eager loading strategy (memory budget
 vs lazy materialization) remains open, explicit Phase B/C design work per D-gptoss-2-note.
+
+## D-gptoss-4 -- Phase B: role table + registrar extended for bias tensors and attn_sinks (2026-09-12)
+
+**What changed**: `gguf_register_moe_f16_as()` (D-gptoss-2's dense-precision registrar) only
+handled 2D `[in,out]` weight matrices and 3D `[in,out,E]` expert-stacked weights -- GPT-OSS's
+real checkpoint also carries 1D bias/sink vectors (`attn_q.bias`, `attn_sinks.weight`, etc,
+`n_dims==1`) and a genuinely different 2D layout for per-expert FFN biases (`[out,E]`, not the
+normal `[in,out]`). Both were found via design review before being exercised on real data:
+
+- **1D bug**: the original registrar read `t->ne[1]` unconditionally for "out", undefined for a
+  real 1-dimensional GGUF tensor. Fixed with explicit `n_dims` branching (1D: `out=ne[0],in=1,
+  E=1`; 2D: `out=ne[1],in=ne[0],E=1`; 3D: `E=ne[2],out=ne[1],in=ne[0]`).
+- **Expert-bias axis-order bug**: the generic 2D branch would have silently misread the real
+  `[out,E]` FFN-bias shape as a normal `[in,out]` matrix. Fixed with a new `is_expert_bias` flag
+  threaded through `gguf_register_moe_f16_as_ex()` and the `GptossGgufRole` table
+  (`{gguf_pattern, engine_pattern, is_expert_bias}`), special-casing this one real exception.
+
+`GPTOSS_GGUF_LAYER_ROLES[]` grew from the original 8 weight-only entries to 19: every attn
+q/k/v/output weight+bias, `attn_sinks`, both norms, `ffn_gate_inp` weight+bias, and all 3 expert
+FFN roles' weight+bias (the 3 expert-bias entries carry `is_expert_bias=1`).
+
+**Verification**: real GGUF header re-parsed (via the venv's `gguf` package) to confirm every
+new role's real tensor name and `n_dims` before writing the table -- not assumed from the
+architecture string alone. `run_gptoss_load_probe_mode()`'s own 2-tensor test (D-gptoss-3)
+re-run clean after this change (byte-identical output), confirming the 3D expert-weight path is
+unaffected by the new 1D/bias branches.
+
+## D-gptoss-5 -- Phase B: real GPT-OSS clamped/alpha-scaled gated activation (2026-09-12)
+
+**Real formula**, transcribed verbatim from HF `transformers/models/gpt_oss/modeling_gpt_oss.py`
+(`GptOssExperts._apply_gate` in the reference this session's research pass fetched): `gate =
+min(gate_raw, limit)` (upper-clamp only), `up = clamp(up_raw, -limit, limit)` (both-sided),
+`glu = gate * sigmoid(gate * alpha)`, `out = (up + 1) * glu`. Real constants: `alpha = 1.702`,
+`limit = 7.0`. New function `moe_gptoss_glu_inplace(float *gate, const float *up_in, int n)`,
+sibling to the existing `moe_swiglu_inplace()` (untouched).
+
+**Bug found+fixed before any test run**: the first draft computed `glu = g/(1+expf(-g*alpha)) *
+g` -- an accidental extra `*g`, giving `g^2*sigmoid(g*alpha)` instead of the correct
+`g*sigmoid(g*alpha)`. Caught by manually re-deriving the formula against the HF source line by
+line before testing; fixed to drop the extra multiply.
+
+**Verification**: independent standalone Python reference (`sigmoid`/`clip` reimplemented from
+scratch, not calling into any HF code) cross-checked against a small standalone C oracle harness
+(`test_gptoss_act.c`) built and run locally -- matched to ~7 significant figures (float32
+precision noise only) across a spread of representative gate/up values including both clamp
+boundaries (gate > limit, up outside [-limit,limit]) and the unclamped middle range.
+
+## D-gptoss-6 -- Phase B: FFN bias wiring into the real routed-expert forward pass (2026-09-12)
+
+**What changed**: the new activation (D-gptoss-5) and per-expert FFN biases (D-gptoss-4's
+registrar) existed but were not yet called from `moe_forward_token()`'s real routed-MoE loop.
+Wired: `switch_gate_bias`/`switch_up_bias` added (via new `moe_add_bias_f16_expert()`) before
+`moe_gptoss_glu_inplace()`, `switch_down_bias` added after the down-projection matvec, all
+gated on `MOE_ATTN_KIND==MOE_ATTN_GPTOSS` so every other architecture's byte-identical
+`moe_swiglu_inplace()` path is untouched (their `switch_*_bias` fields stay NULL via
+`MoeLayerTensors`'s own zero-init). Deliberately scoped to `moe_forward_token()` only, NOT its
+`moe_cbatch_step_scalar_one()` twin (the continuous-batching FFN loop) -- an explicit, named,
+out-of-scope gap for this phase, matching the plan's own "single sequence first" precedent; that
+function would currently mis-dispatch to plain SwiGLU with no bias if ever invoked for GPT-OSS.
+
+**Bug found+fixed before any test run**: the first draft of `moe_add_bias_f16_expert()` indexed
+as `b[(long)i*E+e]` (assuming out-major/E-minor storage), but the actual layout
+`gguf_register_moe_f16_as_ex()`'s own per-expert dequant loop produces is E-major/out-minor
+(`base + e*per_expert`). Caught by re-tracing the registration function's own storage code
+before testing; fixed to `bias->base + e*n` pointer offset, then plain `b[i]` indexing.
+
+**Compile discipline note**: `moe_add_bias_f16`/`moe_add_bias_f16_expert` are defined later in
+the file (near the GQA attention bias helpers) than their first use inside
+`moe_forward_token()` -- needed explicit forward declarations (added next to the existing
+`moe_lazy_hi_materialize_all`/`_release_all` forward-decl block) to compile under C's
+single-pass declaration rule.
+
+## D-gptoss-7 -- Phase B: real bug found+fixed -- GPT-OSS's RoPE table was never correctly filled (2026-09-12)
+
+**How found**: while writing `moe_gptoss_attention()`'s RoPE calls (before running anything),
+traced `moe_rope_neox_apply()` (the split-half NEOX rotation GPT-OSS's real config selects) back
+to its source table `g_moe_rope_inv`. That table is filled by `moe_init_rope_gqa()` -- a PLAIN
+(non-YaRN) `1/theta^(2i/dim)` formula, correct for Mixtral/Qwen3-MoE (neither uses long-context
+YaRN scaling) but wrong for GPT-OSS, whose real GGUF config carries `rope.scaling.type=yarn`
+(factor=32.0, beta_fast=32.0, beta_slow=1.0, original_context_length=4096). The codebase's
+*other* YaRN table, `moe_init_yarn()`/`g_moe_yarn_freqs`, is sized for MLA's own
+`MOE_QK_ROPE_HD` (a 2-wide dummy placeholder for GPT-OSS, which has no DeepSeek-style partial
+rope/nope split) and bakes in DeepSeek's own decoupled two-parameter `(mscale, mscale_all_dim)`
+attention-scale convention -- also wrong for GPT-OSS. Neither existing table is correct; this
+would have silently produced wrong attention output for any `pos > 0` had it shipped unfixed.
+
+**Real formula, verified via direct WebFetch of HF transformers' `modeling_rope_utils.py`**
+(`_compute_yarn_parameters`/`get_mscale`), not assumed: when a `rope_scaling` config has no
+`mscale`/`mscale_all_dim` keys (GPT-OSS's real GGUF has neither -- those are DeepSeek-only
+terms), `attention_factor` falls back to the single, undivided `get_mscale(factor)` =
+`0.1*log(factor)+1.0` -- this file's own `moe_yarn_get_mscale(FACTOR, 1.0)` -- applied once to
+the rotated q/k (mathematically equivalent to HF's "pre-scale cos/sin, then rotate"). This is
+NOT `g_moe_rope_mscale`'s existing ratio (`mscale(F,MSCALE)/mscale(F,MSCALE_ALL_DIM)`), which
+self-cancels to exactly 1.0 when both DeepSeek-only parameters default to the same neutral 1.0 --
+silently dropping the real ~1.35x scale (factor=32) GPT-OSS actually needs.
+
+**Fix**: new `g_moe_yarn_freqs_neox`/`g_moe_yarn_attn_factor_neox` globals, `moe_init_yarn_neox()`
+(same correction-range ramp as `moe_init_yarn()`, but over the FULL `MOE_HEAD_DIM` and the
+single-parameter `attention_factor`), `moe_rope_neox_yarn_apply()` (split-half rotation +
+attention_factor multiply). `moe_gptoss_attention()` now calls this instead of plain
+`moe_rope_neox_apply()`. Wired: `alloc_moe_buffers()` allocates the new table (harmless no-op
+size for every other architecture); `run_gguf_moe_verify_mode()` calls `moe_init_yarn_neox()`
+right after the existing `moe_init_rope_gqa()` call, gated on `arch=="gpt-oss"`.
+
+**Verification**: `g_moe_yarn_attn_factor_neox` computed by the real running probe (D-gptoss-8)
+= `1.3465735903`, matching the hand-computed `0.1*ln(32)+1.0 = 1.34657359...` exactly.
+
+## D-gptoss-8 -- Phase B complete: safe, scoped real-data attention verification (2026-09-12)
+
+**Method**: given D-gptoss-2-note's ~35.6GiB full-model FFN-expert memory finding still applies,
+built `run_gptoss_attn_probe_mode()` (`QWEN_GPTOSS_ATTN_PROBE=<path>`) -- registers only the
+attention tensors (q/k/v/o weight+bias, `attn_sinks`) for 2 real layers (layer 0: even, SWA per
+`set_swa_pattern(2)`/`dense_first=false` parity; layer 1: odd, full attention) and allocates only
+the buffers `moe_gptoss_attention()` itself reads (K/V cache sized to this model's real
+KROW/VROW, GQA scratch, the new yarn-neox table) -- deliberately NOT the full
+`alloc_moe_buffers()` (would also allocate the cbatch K/V families, real math for this model:
+`64*256*32*512*4 bytes ~= 1.07GiB` per array, `~2.1GiB` for K+V combined, never read by this
+attention-only path).
+
+**Real result** (bob, real file, swap unchanged 475.56MB/2048MB before and after -- confirms the
+scoped probe stayed small as designed):
+```
+HIDDEN=2880 N_HEADS=64 N_KV_HEADS=8 HEAD_DIM=64 SLIDING_WINDOW=128 YARN_FACTOR=32.0000
+yarn_attn_factor=1.3465735903
+registered 18 af tensors for layers 0,1
+pos=0 layer0(SWA)  xr[0..3]= 0.029878 0.004474 0.009494 -0.045369
+pos=0 layer1(full) xr[0..3]= -0.005101 0.011881 -0.004597 -0.017987
+pos=1 layer0(SWA)  xr[0..3]= 0.035390 -0.000750 0.003694 -0.047260
+pos=1 layer1(full) xr[0..3]= -0.006066 0.017019 0.001278 -0.013346
+pos=2 layer0(SWA)  xr[0..3]= 0.039949 -0.005572 0.000295 -0.045535
+pos=2 layer1(full) xr[0..3]= -0.007184 0.018432 0.004741 -0.010901
+RESULT: gptoss attn probe complete, any_nonfinite=0
+```
+18 tensors = 9 roles x 2 layers, exactly as expected. `yarn_attn_factor` matches D-gptoss-7's
+hand-computed value exactly. All outputs finite across 3 positions (KV cache growing each step);
+values differ sensibly by position (RoPE/causality) and by layer (real distinct weights, real
+SWA-vs-full attention). Phase A's own 2-tensor load probe (D-gptoss-3) re-run against the same
+rebuilt binary as a regression check -- byte-identical output, confirming this phase's FFN-bias
+wiring (D-gptoss-6) and RoPE fix (D-gptoss-7) didn't disturb the already-verified load path.
+
+**What this does NOT prove**: token-exact correctness against a real reference. No independent
+oracle (llama.cpp's own real GPT-OSS-20B output) was run this phase -- that needs a full-model
+load (blocked on the still-unresolved eager-vs-lazy loading strategy for the ~35.6GiB FFN
+experts) and a separately-built llama.cpp reference binary, both explicitly deferred. This
+phase's real claim is narrower: the new code runs on real production weights without crashing,
+without NaN/Inf, with a RoPE scale factor that hand-verifies exactly against HF's own real
+formula, and without disturbing the already-verified Phase A load path.
+
+**Explicitly out of scope, named gaps carried forward**: `moe_attention_ragged`/
+`moe_attention_batched`/`moe_cbatch_step_scalar_one`'s own FFN loop never updated for GPT-OSS
+(would mis-dispatch to GQA attention / plain SwiGLU if ever invoked for this architecture via
+those paths -- not reachable via the single-token path this phase targeted). Full-model
+eager-vs-lazy loading strategy (Phase B/C boundary work). GPU/MLX attention + MXFP4 GPU path
+(Phase C). Token-exact llama.cpp cross-check (needs the above two resolved first).
