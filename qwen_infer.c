@@ -17,6 +17,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
+#include <sys/resource.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <time.h>
@@ -2409,6 +2410,13 @@ typedef struct {
     char lz_name[160];
     int lz_layer, lz_E;
 } MoeAFTensor;
+// D-gptoss-9: a 4th bits convention (alongside 4/8/16/32 above) -- native GGUF MXFP4,
+// zero-copy decode straight from the mmap'd GGUF bytes (t->base points at gguf_tensor_data(),
+// no eager dequant/malloc). Chosen well clear of qNg64's own bit-width range (2-15) and every
+// other existing bits value so it can never collide. Real: GPT-OSS's own FFN expert weights
+// (see gguf_register_moe_mxfp4_native_as(), moe_decode_af()'s and moe_matvec_af_row()'s own
+// MOE_BITS_GGUF_MXFP4 branches).
+#define MOE_BITS_GGUF_MXFP4 40
 
 static uint8_t *moe_mmap_file(const char *path, long *out_bytes) {
     int fd = open(path, O_RDONLY);
@@ -2517,6 +2525,23 @@ static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row
         long byte_idx = t->packed_off + eoff16 + (row * t->in + col) * (long)sizeof(_Float16);
         _Float16 v; memcpy(&v, base + byte_idx, sizeof(_Float16)); return (float)v;
     }
+    // D-gptoss-9: native GGUF MXFP4, zero-copy -- like bits==16/32 above, this has its own
+    // inline per-block E8M0 scale (no shared t->scale_off/group array), so it must also
+    // short-circuit before the shared `group`/`scale_idx` read below. 32-value blocks, 17
+    // bytes/block (1 scale byte + 16 packed-nibble bytes) -- mirrors dequant_row_mxfp4()
+    // (gguf_quants.c) exactly, just reading one element instead of a whole row at once.
+    if (bits0 == MOE_BITS_GGUF_MXFP4) {
+        long row_pbytes = (t->in / 32) * 17;
+        long eoffmx = e * t->out * row_pbytes;
+        long blk_idx = col / 32;
+        const uint8_t *blk = base + t->packed_off + eoffmx + row * row_pbytes + blk_idx * 17;
+        float scale = gguf_e8m0_to_fp32_half(blk[0]);
+        int p = (int)(col % 32);
+        int byte_in_blk = (p < 16) ? p : (p - 16);
+        uint8_t qs_byte = blk[1 + byte_in_blk];
+        int nib = (p < 16) ? (qs_byte & 0x0F) : (qs_byte >> 4);
+        return (float)gguf_mxfp4_nibble(nib) * scale;
+    }
     long group = col / 64;
     long scale_idx = t->scale_off + ((e * t->out + row) * t->ng + group) * 4;
     float scale;
@@ -2619,6 +2644,32 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
             acc16 += (double)(float)w * x[col];
         }
         return acc16;
+    }
+    // D-gptoss-9: native GGUF MXFP4 hot path -- the real per-token matvec cost this whole
+    // registration change exists for. Block-scale hoisted once per 32-element block (mirrors
+    // the qNg64 branch below hoisting its own per-64-column group scale), NOT re-read per
+    // element -- same "no simple warm cache across tokens" tradeoff qNg64 already accepts
+    // (see this function's own qNg64 comment), but at least no redundant scale reads within
+    // one row. GPT-OSS's own experts have no mixed-precision (`ebits`), so no per-expert
+    // prefix-sum table needed -- a plain uniform `e * out * row_pbytes` stride.
+    if (bits == MOE_BITS_GGUF_MXFP4) {
+        long row_pbytes = (t->in / 32) * 17;
+        long eoffmx = e * t->out * row_pbytes;
+        long row_byte0mx = t->packed_off + eoffmx + row * row_pbytes;
+        long nblocks = t->in / 32;
+        double accmx = 0.0;
+        for (long b = 0; b < nblocks; b++) {
+            const uint8_t *blk = base + row_byte0mx + b * 17;
+            float scale = gguf_e8m0_to_fp32_half(blk[0]);
+            long col0 = b * 32;
+            for (int j = 0; j < 16; j++) {
+                uint8_t qs_byte = blk[1 + j];
+                float w0 = (float)gguf_mxfp4_nibble(qs_byte & 0x0F) * scale;
+                float w1 = (float)gguf_mxfp4_nibble(qs_byte >> 4) * scale;
+                accmx += (double)w0 * x[col0 + j] + (double)w1 * x[col0 + j + 16];
+            }
+        }
+        return accmx;
     }
     long eoff = t->ebits ? (long)t->epacked_off[e]
                          : (bits == 8 ? e * t->out * t->in : e * t->out * row_words * 4);
@@ -8460,6 +8511,51 @@ static MoeAFTensor *gguf_register_moe_f16_as(const char *gguf_name, const char *
     return gguf_register_moe_f16_as_ex(gguf_name, engine_name, 0);
 }
 
+// D-gptoss-9: real fix for D-gptoss-2-note's ~35.6GiB eager-dense-F16 finding -- GPT-OSS's 3
+// big FFN expert-weight roles (ffn_gate_exps/ffn_up_exps/ffn_down_exps) no longer go through
+// gguf_register_moe_f16_as_ex()'s eager dequant-into-malloc'd-blob loop. Instead this mirrors
+// the ALREADY-ESTABLISHED zero-copy decode-during-matvec pattern q4g64/q8g64/qNg64 already use
+// (moe_decode_af()/moe_matvec_af_row(), see those functions' own MOE_BITS_GGUF_MXFP4 branches)
+// -- t->base points directly at the GGUF file's own mmap'd raw MXFP4 bytes (gguf_tensor_data(),
+// zero copy, no malloc, no dequant loop here at all), decode happens per-element/per-row at
+// matvec time. The GGUF mmap stays resident for the whole process lifetime (gguf_open() is
+// never gguf_close()'d), so this trades "eager anonymous memory" for "page-cache-backed,
+// OS-reclaimable" -- exactly the fix D-gptoss-2-note's memory finding needed, and more
+// consistent with this project's own "never dense-fallback a compressed format" discipline
+// than the eager-F16 approach it replaces for these 3 roles specifically. Attention tensors
+// and FFN expert biases are untouched (still gguf_register_moe_f16_as_ex(), already small).
+static MoeAFTensor *gguf_register_moe_mxfp4_native_as(const char *gguf_name, const char *engine_name) {
+    const GgufTensorInfo *t = gguf_find_tensor(g_gguf_moe, gguf_name);
+    if (!t) { fprintf(stderr, "FATAL: gguf moe model missing tensor '%s'\n", gguf_name); exit(1); }
+    if (t->type != GGML_TYPE_MXFP4) {
+        fprintf(stderr, "FATAL: gguf moe tensor '%s' expected MXFP4 (native path), got type id %d\n", gguf_name, (int)t->type);
+        exit(1);
+    }
+    if (t->n_dims != 3) {
+        fprintf(stderr, "FATAL: gguf moe tensor '%s' expected 3-D expert-stacked (native MXFP4 path), got n_dims=%d\n", gguf_name, t->n_dims);
+        exit(1);
+    }
+    long E = (long)t->ne[2], out = (long)t->ne[1], in = (long)t->ne[0];
+    if (E <= 0 || out <= 0 || in <= 0) {
+        fprintf(stderr, "FATAL: gguf moe: %s has non-positive dims (E=%ld out=%ld in=%ld)\n", gguf_name, E, out, in);
+        exit(1);
+    }
+    if (in % 32 != 0) {
+        fprintf(stderr, "FATAL: gguf moe: %s in=%ld not a multiple of MXFP4's 32-value block (native path assumes no partial blocks)\n", gguf_name, in);
+        exit(1);
+    }
+    if (g_moe_naf >= MOE_MAX_AF_TENSORS) { fprintf(stderr, "FATAL: >MOE_MAX_AF_TENSORS moe af tensors (gguf)\n"); exit(1); }
+
+    MoeAFTensor *w = &g_moe_af[g_moe_naf++];
+    snprintf(w->name, sizeof w->name, "%s", engine_name);
+    w->E = E; w->out = out; w->in = in; w->ng = 0;
+    w->packed_off = 0; w->packed_bytes = (long)t->n_bytes;
+    w->scale_off = -1; w->bias_off = -1;
+    w->base = (const uint8_t *)gguf_tensor_data(g_gguf_moe, t);   // zero-copy: mmap pointer, no malloc
+    w->sym = 0; w->bits = MOE_BITS_GGUF_MXFP4;
+    return w;
+}
+
 // D-gptoss-2: GPT-OSS's own GGUF role table -- real tensor names confirmed by hand-parsing the
 // actual ggml-org/gpt-oss-20b-GGUF header (not assumed from llama.cpp source alone). Notably
 // close to qwen3moe's own table (attn_q/k/v/output, attn_norm, ffn_gate_inp, ffn_*_exps all
@@ -8646,6 +8742,106 @@ static int run_gptoss_attn_probe_mode(int argc, char **argv) {
     return 1;
 }
 
+// D-gptoss-9: oracle re-check for gguf_register_moe_mxfp4_native_as() -- registers ONLY
+// blk.0.ffn_gate_exps.weight via the NEW zero-copy path and reads the exact same
+// (expert,row,col) samples D-gptoss-1/D-gptoss-3 already established through the OLD
+// eager-dequant path and cross-verified against gguf-py's own MXFP4.dequantize_blocks(). If
+// this new path's moe_decode_af() calls produce the SAME 8 values at both the near boundary
+// (expert 0, row 0) and far boundary (expert 31, row 2879), that's a real cross-check between
+// two independent code paths reading the identical underlying bytes -- not just "ran without
+// crashing" (this project's own named D-metal-2 bug class: "right at row 0, wrong everywhere
+// else" is exactly what the far-boundary sample is here to catch again, on the new path).
+static int run_gptoss_mxfp4_oracle_mode(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *path = getenv("QWEN_GPTOSS_MXFP4_ORACLE");
+    if (!path || !path[0]) return 0;
+
+    fprintf(stderr, "[gptoss mxfp4 oracle] QWEN_GPTOSS_MXFP4_ORACLE=%s\n", path);
+    g_gguf_moe = gguf_open(path);
+    if (!g_gguf_moe) { perror("gguf_open"); fprintf(stderr, "FATAL: could not open gguf file %s\n", path); exit(1); }
+    g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));
+
+    MoeAFTensor *te = gguf_register_moe_mxfp4_native_as("blk.0.ffn_gate_exps.weight", "oracle.ffn_gate_exps_native");
+    fprintf(stderr, "[gptoss mxfp4 oracle] blk.0.ffn_gate_exps.weight (native MXFP4): E=%ld out=%ld in=%ld bits=%d\n",
+            te->E, te->out, te->in, te->bits);
+
+    fprintf(stderr, "[gptoss mxfp4 oracle] expert0 row0 first 8 (native):");
+    for (int i = 0; i < 8; i++) fprintf(stderr, " %.6f", (double)moe_decode_af(NULL, te, 0, 0, i));
+    fprintf(stderr, "\n");
+
+    fprintf(stderr, "[gptoss mxfp4 oracle] expert31 row%ld first 8 (native):", te->out - 1);
+    for (int i = 0; i < 8; i++) fprintf(stderr, " %.6f", (double)moe_decode_af(NULL, te, 31, te->out - 1, i));
+    fprintf(stderr, "\n");
+
+    // Cross-check moe_matvec_af_row()'s own hot-path decode against moe_decode_af()'s
+    // element-level decode for the same row -- two independently-written code paths over the
+    // identical bytes must agree (a synthetic unit x-vector picking out one column at a time).
+    float x[8]; for (int i = 0; i < 8; i++) x[i] = 0.0f;
+    int mismatch = 0;
+    for (int i = 0; i < 8; i++) {
+        x[i] = 1.0f;
+        double row_dot = 0.0;
+        // Only the first 8 columns matter (x is zero elsewhere), but moe_matvec_af_row() sums
+        // the whole row -- pad x out to t->in with zeros via a full-size buffer instead.
+        float *xfull = calloc((size_t)te->in, sizeof(float));
+        xfull[i] = 1.0f;
+        row_dot = moe_matvec_af_row(NULL, te, 0, 0, xfull);
+        free(xfull);
+        x[i] = 0.0f;
+        float elem = moe_decode_af(NULL, te, 0, 0, i);
+        if (fabs(row_dot - (double)elem) > 1e-6) mismatch = 1;
+    }
+    fprintf(stderr, "RESULT: gptoss mxfp4 oracle complete, row_vs_element_mismatch=%d\n", mismatch);
+    return 1;
+}
+
+// D-gptoss-9: real memory proof -- the actual point of this whole design change. Registers
+// ALL real layers x 3 FFN expert-WEIGHT roles (not a small scoped subset like the earlier
+// load/attn probes) via the new zero-copy path and reports this process's own peak RSS, so
+// the "stays near baseline, not ~35.6GiB" claim is a measured number. Deliberately does NOT
+// attempt the old eager-dense-F16 path at this same full-layer scale -- D-gptoss-2-note's own
+// arithmetic already established that needs ~35.6GiB (more than bob's 16GB), and actually
+// running it would risk the exact swap-danger incident this whole design exists to avoid.
+static int run_gptoss_mxfp4_memprobe_mode(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *path = getenv("QWEN_GPTOSS_MXFP4_MEMPROBE");
+    if (!path || !path[0]) return 0;
+
+    fprintf(stderr, "[gptoss mxfp4 memprobe] QWEN_GPTOSS_MXFP4_MEMPROBE=%s\n", path);
+    g_gguf_moe = gguf_open(path);
+    if (!g_gguf_moe) { perror("gguf_open"); fprintf(stderr, "FATAL: could not open gguf file %s\n", path); exit(1); }
+
+    const char *arch_ptr; uint64_t arch_len;
+    if (!gguf_kv_str(g_gguf_moe, "general.architecture", &arch_ptr, &arch_len)) {
+        fprintf(stderr, "FATAL: missing general.architecture\n"); exit(1);
+    }
+    char arch[64]; snprintf(arch, sizeof arch, "%.*s", (int)arch_len, arch_ptr);
+    if (strcmp(arch, "gpt-oss")) { fprintf(stderr, "FATAL: expected gpt-oss, got %s\n", arch); exit(1); }
+
+    char key[128]; uint64_t u;
+    snprintf(key,sizeof key,"%s.block_count",arch);
+    if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: missing %s\n",key); exit(1); }
+    int NL = (int)u;
+
+    g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));
+
+    for (int l = 0; l < NL; l++) {
+        char gsrc[112], ename[112];
+        snprintf(gsrc,sizeof gsrc,"blk.%d.ffn_gate_exps.weight",l); snprintf(ename,sizeof ename,"model.layers.%d.mlp.switch_mlp.gate_proj",l);
+        gguf_register_moe_mxfp4_native_as(gsrc, ename);
+        snprintf(gsrc,sizeof gsrc,"blk.%d.ffn_up_exps.weight",l);   snprintf(ename,sizeof ename,"model.layers.%d.mlp.switch_mlp.up_proj",l);
+        gguf_register_moe_mxfp4_native_as(gsrc, ename);
+        snprintf(gsrc,sizeof gsrc,"blk.%d.ffn_down_exps.weight",l); snprintf(ename,sizeof ename,"model.layers.%d.mlp.switch_mlp.down_proj",l);
+        gguf_register_moe_mxfp4_native_as(gsrc, ename);
+    }
+
+    struct rusage ru;
+    getrusage(RUSAGE_SELF, &ru);
+    fprintf(stderr, "[gptoss mxfp4 memprobe] registered %d af tensors across %d layers (3 FFN weight roles each)\n", g_moe_naf, NL);
+    fprintf(stderr, "RESULT: gptoss mxfp4 memprobe complete, peak_rss_mb=%.2f\n", (double)ru.ru_maxrss / (1024.0*1024.0));
+    return 1;
+}
+
 static int run_gguf_moe_verify_mode(int argc, char **argv) {
     (void)argc; (void)argv;
     const char *path = getenv("QWEN_MOE_GGUF");
@@ -8788,17 +8984,28 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     int is_gptoss = !strcmp(arch, "gpt-oss");
     for (int l = 0; l < MOE_NL; l++) {
         if (is_gptoss) {
-            // D-gptoss-2/4: dense f16 registration throughout -- see gguf_register_moe_f16_as()'s
-            // own WHY comment. Bias/attn_sinks tensors now included (Phase B).
+            // D-gptoss-2/4: dense f16 registration for attention/bias/norm tensors -- see
+            // gguf_register_moe_f16_as()'s own WHY comment. D-gptoss-9: the 3 big FFN
+            // expert-WEIGHT roles (gate/up/down_exps, NOT their small .bias siblings) now go
+            // through the native zero-copy MXFP4 path instead -- see
+            // gguf_register_moe_mxfp4_native_as()'s own WHY comment (D-gptoss-2-note's
+            // ~35.6GiB eager-dense-F16 finding). Matched by `!is_expert_bias` (true only for
+            // the .weight entries, never the .bias entries, which share the same
+            // "ffn_*_exps" substring) plus the gguf_pattern substring itself.
             for (size_t r = 0; r < sizeof(GPTOSS_GGUF_LAYER_ROLES)/sizeof(GPTOSS_GGUF_LAYER_ROLES[0]); r++) {
                 const GptossGgufRole *role = &GPTOSS_GGUF_LAYER_ROLES[r];
                 char gsrc[112], ename[112];
                 snprintf(gsrc, sizeof gsrc, role->gguf_pattern, l);
                 snprintf(ename, sizeof ename, role->engine_pattern, l);
+                int is_ffn_expert_weight = !role->is_expert_bias &&
+                    (strstr(role->gguf_pattern, "ffn_gate_exps") ||
+                     strstr(role->gguf_pattern, "ffn_up_exps") ||
+                     strstr(role->gguf_pattern, "ffn_down_exps"));
                 // attn_sinks has no per-layer variant absence in real GPT-OSS (confirmed:
                 // present on every layer, layers 0-23, in the real header) -- FATAL-on-missing
                 // (gguf_register_moe_f16_as()'s own behavior) is correct here, not tolerant.
-                gguf_register_moe_f16_as_ex(gsrc, ename, role->is_expert_bias);
+                if (is_ffn_expert_weight) gguf_register_moe_mxfp4_native_as(gsrc, ename);
+                else                      gguf_register_moe_f16_as_ex(gsrc, ename, role->is_expert_bias);
             }
         } else {
             for (size_t r = 0; r < sizeof(MOE_GGUF_LAYER_ROLES)/sizeof(MOE_GGUF_LAYER_ROLES[0]); r++) {
@@ -16889,6 +17096,8 @@ int main(int argc, char **argv) {
 #endif
     if (run_gptoss_load_probe_mode(argc, argv)) return 0;
     if (run_gptoss_attn_probe_mode(argc, argv)) return 0;
+    if (run_gptoss_mxfp4_oracle_mode(argc, argv)) return 0;
+    if (run_gptoss_mxfp4_memprobe_mode(argc, argv)) return 0;
     if (run_gguf_moe_verify_mode(argc, argv)) return 0;
     if (run_moe_safetensors_verify_mode(argc, argv)) return 0;
     if (run_moe_verify_mode(argc, argv)) return 0;

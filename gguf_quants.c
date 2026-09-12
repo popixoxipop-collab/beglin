@@ -293,7 +293,7 @@ static void dequant_row_q6_k(const void *src, float *y, int64_t n) {
 static const int8_t kvalues_mxfp4[16] = {
     0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12
 };
-static float e8m0_to_fp32_half(uint8_t x) {
+float gguf_e8m0_to_fp32_half(uint8_t x) {
     uint32_t bits;
     if (x < 2) {
         bits = 0x00200000u << x;
@@ -304,12 +304,18 @@ static float e8m0_to_fp32_half(uint8_t x) {
     memcpy(&f, &bits, sizeof(f));
     return f;
 }
+// D-gptoss-9: public accessor for qwen_infer.c's own zero-copy MXFP4 row-decode branches
+// (moe_decode_af()/moe_matvec_af_row()) -- exposes the same real LUT dequant_row_mxfp4() below
+// uses, so those branches don't duplicate the table.
+int8_t gguf_mxfp4_nibble(int code) {
+    return kvalues_mxfp4[code & 0xF];
+}
 static void dequant_row_mxfp4(const void *src, float *y, int64_t n) {
     const uint8_t *blk = (const uint8_t *)src;
     const int64_t nb = n / 32;
     for (int64_t i = 0; i < nb; i++) {
         const uint8_t *b = blk + i * 17;
-        const float d = e8m0_to_fp32_half(b[0]);
+        const float d = gguf_e8m0_to_fp32_half(b[0]);
         const uint8_t *qs = b + 1;
         for (int j = 0; j < 16; j++) {
             int8_t x0 = kvalues_mxfp4[qs[j] & 0x0F];

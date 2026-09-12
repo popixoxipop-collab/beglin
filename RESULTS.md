@@ -13903,3 +13903,71 @@ formula, and without disturbing the already-verified Phase A load path.
 those paths -- not reachable via the single-token path this phase targeted). Full-model
 eager-vs-lazy loading strategy (Phase B/C boundary work). GPU/MLX attention + MXFP4 GPU path
 (Phase C). Token-exact llama.cpp cross-check (needs the above two resolved first).
+
+## D-gptoss-9 -- real fix for the ~35.6GiB constraint: native zero-copy MXFP4 decode (2026-09-12)
+
+**Why this instead of lazy materialize/release**: D-gptoss-2-note's ~35.6GiB finding came from
+`gguf_register_moe_f16_as_ex()` eagerly dequantizing every FFN expert weight into a malloc'd
+dense-F16 blob at load time, for all 24 layers. The natural next idea -- adapt this codebase's
+existing `g_moe_hi_lazy`/`moe_af_materialize()`/`moe_af_release()` mechanism -- turned out to be
+the wrong template on inspection: that mechanism is safetensors-specific and built around "cold
+tensors, replayed for 8-35% of tokens, materialize-all/release-all in one batch around a
+replay," not GPT-OSS's real access pattern (every layer's routed experts, a different top-4-of-32
+subset, read on EVERY token). Reusing it as-is would still mean holding whole layers' worth of
+dequantized experts resident, not actually fixing the memory problem.
+
+An Explore pass confirmed a better fit already exists in this exact codebase: `moe_decode_af()`
+and the hot per-row kernel `moe_matvec_af_row()` already implement a **zero-copy
+decode-during-matvec** pattern for q4g64 (bits=4), q8g64 (bits=8), and qNg64's arbitrary
+bit-plane format (bits=2-15) -- every one of these reads straight from a packed/mmap'd byte
+buffer with no eager dense copy ever materialized. The GGUF file is already `mmap()`'d for the
+whole process lifetime (`gguf_open()` is never `gguf_close()`'d) -- confirmed via direct code
+read that `gguf_tensor_data()` is pure pointer arithmetic into that region, no `read()` syscall,
+no copy. MXFP4's real 32-value/17-byte block layout divides evenly into GPT-OSS's real `in=2880`
+(90 blocks/row exactly), and the raw 3-D expert tensor bytes are E-major (confirmed by
+D-gptoss-3's own registration code) -- so addressing is a plain uniform stride, no per-expert
+prefix-sum table needed.
+
+**What changed**: new `MOE_BITS_GGUF_MXFP4 = 40` sentinel (`MoeAFTensor.bits`, chosen clear of
+q4g64/q8g64/dense-16/32 and qNg64's 2-15 range). New `gguf_register_moe_mxfp4_native_as()` --
+does NOT malloc or dequantize anything; validates the source tensor's real GGUF type is MXFP4
+(FATAL otherwise) and 3-D with `in` a multiple of 32 (FATAL otherwise), then points `t->base`
+directly at `gguf_tensor_data()`'s mmap pointer. Two new decode branches mirroring the qNg64
+template exactly: a cold element-level branch in `moe_decode_af()`, and a hot per-row branch in
+`moe_matvec_af_row()` that hoists the E8M0 scale read to once per 32-element block. Both reuse
+D-gptoss-1's own real constants (`kvalues_mxfp4[]`, the E8M0-halving formula), newly exposed as
+public `gguf_e8m0_to_fp32_half()`/`gguf_mxfp4_nibble()` in `gguf_quants.h` instead of duplicated.
+GPT-OSS's 3 big FFN expert-WEIGHT roles (`ffn_gate_exps`/`ffn_up_exps`/`ffn_down_exps`) now
+register via this new path; attention tensors and the small FFN expert biases are unchanged
+(still `gguf_register_moe_f16_as_ex()`'s dense-F16 eager path -- already proven small).
+
+**Real bug caught before syncing to bob**: a stray `#` (should have been `//`) in a new comment
+produced a genuine "invalid preprocessing directive" compile error containing an unterminated
+apostrophe that appears to have confused an automated diagnostic pass into flagging unrelated,
+already-compiling-clean lines as having undeclared functions. Caught by re-running a fresh,
+broader `grep -iE "error|implicit|undeclared|invalid"` over the compiler's own output (not just
+`grep error`, which had been silently missing this class of message) before trusting any
+"clean" result -- a real lesson: the exact grep pattern used to check "did it compile clean"
+matters, a too-narrow filter can hide a real error.
+
+**Real verification** (bob, real 12.1GB `gpt-oss-20b-MXFP4.gguf`):
+- **Oracle re-check**: `blk.0.ffn_gate_exps.weight` registered via the NEW native path, read
+  through `moe_decode_af()` at the same near boundary (expert 0, row 0) and far boundary
+  (expert 31, row 2879) D-gptoss-1/D-gptoss-3 already established via the OLD eager path --
+  **exact match** to those previously-recorded, `gguf-py`-cross-verified values:
+  `expert0 row0: 0.000000 0.000000 0.000000 -0.062500 0.000000 0.000000 -0.015625 -0.031250`
+  `expert31 row2879: 0.000000 0.015625 0.000000 -0.015625 0.000000 0.000000 0.000000 -0.015625`
+- **Row-vs-element cross-check**: `moe_matvec_af_row()`'s hot-path decode (via a synthetic
+  unit-vector matvec) agreed with `moe_decode_af()`'s element-level decode for all 8 sampled
+  columns of the same row -- `row_vs_element_mismatch=0`.
+- **Real memory proof (the headline result)**: registered ALL 24 real layers x 3 FFN
+  expert-weight roles (72 tensors total) via the new native path. **Peak RSS: 18.47MB.** Swap
+  unchanged (435.56MB/2048MB, before and after). This is what would have needed ~35.6GiB under
+  the old eager path -- the constraint D-gptoss-2-note found is now gone, not worked around.
+
+**Explicitly NOT proven by this entry**: a full real end-to-end single-token generation across
+all 24 layers with real routing (needs the attention path wired across all layers together with
+real `token_embd` loading and a real tokenizer/prompt path) -- the natural next milestone, not
+part of this specific fix. Performance of the new decode-per-token cost (no caching across
+tokens, since a different top-4-of-32 expert subset is likely selected each token) is also
+unmeasured -- correctness and the memory fix first, per this whole phase's own sequencing.

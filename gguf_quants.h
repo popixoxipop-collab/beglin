@@ -27,4 +27,12 @@ void gguf_dequant_row(GgmlType type, const void *src, float *dst, int64_t n_elem
 // container reader but not yet dequantizable).
 int gguf_dequant_supported(GgmlType type);
 
+// D-gptoss-9: public surface for MXFP4's own real E8M0-exponent-halving and E2M1-nibble LUT,
+// so qwen_infer.c's zero-copy MoE row-decode branches (moe_decode_af()/moe_matvec_af_row())
+// can reuse the exact same constants dequant_row_mxfp4() (this file) uses internally, instead
+// of duplicating the table. Not used by anything in this file besides dequant_row_mxfp4()
+// itself -- exposed purely for that external reuse.
+float gguf_e8m0_to_fp32_half(uint8_t x);
+int8_t gguf_mxfp4_nibble(int code);
+
 #endif // GGUF_QUANTS_H
