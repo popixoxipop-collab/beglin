@@ -3805,7 +3805,17 @@ static void moe_resolve_layer_tensors(void) {
 // write past a 16-sized array. MoE-1..3f/4a/4b never triggered this (always used pos<16 or
 // stayed on the separate, correctly-sized g_moe_cK/cV ragged arrays) -- a real latent bug, not a
 // hypothetical one, caught by design review before any re-verification code was written.
-#define MOE_MAXPOS 32
+// D-gptoss-11: 32 -> 160. GPT-OSS's real sliding window is 128 (attention.sliding_window);
+// at MOE_MAXPOS=32, pos never reaches the truncation threshold
+// (moe_gptoss_attention()'s `pos - MOE_SLIDING_WINDOW + 1 > 0` needs pos>=128), so the
+// SWA-truncation branch had never actually been exercised. Confirmed via grep before raising
+// this: only the single-sequence g_moe_K/V_flat arrays and small per-call stack `scores[]`
+// buffers scale with MOE_MAXPOS -- the big ~2GiB cbatch K/V families use the separate
+// MOE_CBATCH_MAXPOS (still 32, unchanged, and the existing
+// _Static_assert(MOE_CBATCH_MAXPOS <= MOE_MAXPOS) below still holds at 32<=160) -- so this is a
+// cheap, single-sequence-only change (K/V flat array growth ~21MB for GPT-OSS's real KROW=512,
+// not a repeat of D-gptoss-2-note's memory finding).
+#define MOE_MAXPOS 160
 // Phase 4 sub-part 1, Step 4 (Group B): the 4 K/V cache families, heap -- alloc_moe_buffers().
 // Converted atomically (not incrementally), not per-family: the cross-family memcpy sites
 // further below (moe_reverify_exact(), moe_cb4c_maybe_reverify(), the two prefill blocks) copy
@@ -4549,6 +4559,15 @@ static void moe_gptoss_attention(const uint8_t *af, MoeLayerTensors *t, int l, i
     int is_swa_layer = (l % 2) == 0;   // set_swa_pattern(2), dense_first=false -- even=SWA
     int j0 = (is_swa_layer && MOE_SLIDING_WINDOW > 0 && pos - MOE_SLIDING_WINDOW + 1 > 0)
              ? (pos - MOE_SLIDING_WINDOW + 1) : 0;
+    // D-gptoss-11: sliding-window real-trigger verification instrumentation, same
+    // getenv()-gated debug-print convention this file already uses elsewhere (e.g.
+    // QWEN_MOE_GQA_DEBUG_KVCHECK) -- MOE_MAXPOS=32 (until this round) meant pos never reached
+    // 128, so the truncation branch above was never actually exercised; this print is how that
+    // gets confirmed on a real run instead of just read from the source.
+    if (getenv("QWEN_MOE_GPTOSS_DEBUG_WINDOW")) {
+        fprintf(stderr, "[gptoss window] layer %d (%s) pos %d -> j0=%d window=%d\n",
+                l, is_swa_layer ? "SWA" : "full", pos, j0, pos - j0 + 1);
+    }
     const _Float16 *sinks = (const _Float16 *)t->attn_sinks->base;
     for (int hh = 0; hh < MOE_N_HEADS; hh++) {
         int kvh = hh / group;

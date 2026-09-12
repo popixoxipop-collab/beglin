@@ -14040,3 +14040,43 @@ clamped activation, and now a correctly-biased router -- has run together, on th
 checkpoint, without a single FATAL. Every remaining gap (real tokenizer, llama.cpp cross-check,
 longer-context sliding-window exercise, GPU path) is now a well-scoped follow-up on top of a
 working base, not a blocker to reaching one.
+
+## D-gptoss-11 -- real sliding-window truncation actually exercised for the first time (2026-09-12)
+
+**Why this was untested until now**: `MOE_MAXPOS` (the compile-time cap on every architecture's
+single-sequence position count, shared across MLA/GQA/GPT-OSS) was 32 -- GPT-OSS's real sliding
+window is 128, so `moe_gptoss_attention()`'s truncation condition (`pos - MOE_SLIDING_WINDOW + 1
+> 0`, i.e. `pos >= 128`) could never actually trigger. D-gptoss-8's own probe already noted this
+as a named limitation.
+
+**What changed**: `MOE_MAXPOS` raised 32 -> 160. Confirmed via `grep` before changing anything
+that only the single-sequence `g_moe_K_flat`/`g_moe_V_flat` arrays and small per-call stack
+`scores[]` buffers scale with this constant -- the ~2GiB cbatch K/V families use the separate,
+unchanged `MOE_CBATCH_MAXPOS=32`, and the existing `_Static_assert(MOE_CBATCH_MAXPOS <=
+MOE_MAXPOS)` still holds (32<=160). Real cost: ~21MB extra for GPT-OSS's real KROW=512, not a
+repeat of D-gptoss-2-note's memory finding. Added `QWEN_MOE_GPTOSS_DEBUG_WINDOW` -- a
+getenv()-gated debug print (same convention as this file's existing `QWEN_MOE_GQA_DEBUG_KVCHECK`)
+showing each layer/position's real `j0`/window size, so the truncation could be confirmed from
+actual output instead of read from source.
+
+**Real result** (bob, real checkpoint, 150-position synthetic prompt, `QWEN_MOE_GPTOSS_DEBUG_WINDOW=1`):
+```
+[gptoss window] layer 0 (SWA)  pos 127 -> j0=0  window=128
+[gptoss window] layer 0 (SWA)  pos 128 -> j0=1  window=128   <- truncation starts exactly here
+[gptoss window] layer 0 (SWA)  pos 149 -> j0=22 window=128   <- stays capped at 128 through the end
+[gptoss window] layer 1 (full) pos 127 -> j0=0  window=128
+[gptoss window] layer 1 (full) pos 149 -> j0=0  window=150   <- full layers never truncate
+RESULT: GGUF-MoE production-binary forward complete for 150 positions
+```
+Exactly the expected real behavior: even (SWA) layers hold at `window=128` from `pos=128`
+onward (`j0` incrementing 1-for-1 with `pos` past that point), odd (full) layers grow
+unboundedly. All 150 positions produced finite logits, no crash, swap unchanged
+(435.56MB/2048MB before and after). Repeated the identical run -- byte-identical output
+(deterministic). A regression re-run of the original 5-position test on the same MOE_MAXPOS=160
+binary also matched byte-for-byte, confirming the larger cap didn't disturb short-context
+behavior.
+
+**Significance**: this is the first real confirmation that `set_swa_pattern(2)`/`dense_first=false`'s
+even-layer parity (D-gptoss-7's own research finding) and the sliding-window arithmetic
+(D-gptoss-6's implementation) produce the correct real behavior at the scale where it actually
+matters, not just "the code looks right and ran without crashing at pos<32."
