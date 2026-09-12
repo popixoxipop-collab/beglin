@@ -14080,3 +14080,70 @@ behavior.
 even-layer parity (D-gptoss-7's own research finding) and the sliding-window arithmetic
 (D-gptoss-6's implementation) produce the correct real behavior at the scale where it actually
 matters, not just "the code looks right and ran without crashing at pos<32."
+
+## D-gptoss-12 -- real-prompt generation investigation: internally consistent, not yet proven correct (2026-09-12)
+
+**Context**: user asked to tackle the "real tokenizer" remaining item. `tiktoken`'s `o200k_harmony`
+encoding matched this checkpoint's real vocab size exactly (`n_vocab=201088`, confirmed against
+the GGUF header's own `VOCAB=201088` read this session) -- strong, real evidence it's the correct
+tokenizer for this checkpoint. Real prompts were encoded, fed through the engine (autoregressive,
+re-invoking the binary with the growing token sequence each step), and decoded back to text for
+the first time this session.
+
+**The problem found**: completions were incoherent -- "The capital of France is" -> word-salad
+("and", "of", "the" repeating), not "Paris." A properly-formatted `openai-harmony` chat prompt
+(the real official package, correct system/user/assistant structure) made this WORSE, not
+better -- 40 generated tokens never even produced the `<|channel|>` token the harmony format
+requires immediately after `<|start|>assistant`. This rejects "missing chat template" as the
+explanation and reopens the question of a real implementation bug.
+
+**Investigation** (competing hypotheses, evidence gathered per this project's own investigation
+discipline):
+1. *Architecture-order/embedding-scaling bug* -- checked against real HF `modeling_gpt_oss.py`
+   source (direct WebFetch): no embedding scaling exists in the real model, decoder layer order
+   (`input_layernorm -> self_attn -> residual -> post_attention_layernorm -> mlp -> residual`)
+   matches this engine exactly, attention scale is the standard `head_dim^-0.5` with nothing
+   extra, no logit softcapping. **Rejected** -- every one of these matches the real source.
+2. *Embedding/layer-0/pos-0 numeric bug* -- built an independent Python reference (`gguf`-py +
+   numpy, reading the real checkpoint directly) computing the embedding lookup and full layer-0
+   forward pass (RMSNorm, attention-with-sinks, YaRN-scaled rope reduced to its pos-0
+   pure-scale case, router-with-bias, clamped-activation MoE FFN) for token 976 ("The"). Result:
+   matched the C engine's own debug-dump (`QWEN_MOE_DEBUG_EMBEDDUMP`/`QWEN_MOE_DEBUG_LAYERDUMP`)
+   to within float-rounding noise (embedding max_abs_diff=0.030, layer-0 residual
+   max_abs_diff=0.030, mean_abs_diff~0.0002). **Rejected** as the explanation -- this specific
+   slice is correct.
+3. *Multi-position KV-cache attention bug* (not covered by check #2, since pos=0 trivially only
+   attends to itself) -- extended the same independent Python reference to the FULL 24 layers
+   across all 11 positions of a real numeric prompt ("1, 2, 3, 4,", tokens
+   `[16,11,220,17,11,220,18,11,220,19,11]`), maintaining its own K/V cache exactly mirroring the
+   C engine's real formulas (real YaRN correction-range table ported verbatim from
+   `moe_init_yarn_neox()`, not just the pos-0 special case this time). Result: this SECOND,
+   independently-written implementation produced the exact SAME final argmax (token 220, a
+   space) as the C engine. **This is strong evidence the numeric pipeline is internally
+   consistent** -- two codebases sharing only this session's own derived formulas (not shared
+   code) agree exactly, including on the "wrong-looking" answer.
+4. *Attention-sink magnitude anomaly* (a large/mis-signed sink could starve real attention of
+   softmax mass, producing generic filler-token output) -- inspected real sink values across 5
+   layers directly from the checkpoint: range roughly -2.5 to 8.2, mean 1-4, comparable in scale
+   to typical attention-score logits, not an obvious runaway magnitude. **No clear anomaly
+   found**, though a full head-by-head real-score-vs-sink comparison during an actual run was
+   not done (deferred, lower priority given hypothesis 3's stronger signal).
+
+**What this does NOT resolve**: whether the *shared architectural understanding* both
+implementations rely on (all derived this session from real HF/llama.cpp source via WebFetch)
+has some subtle, real gap neither implementation would catch since both inherit it identically.
+Genuine candidates left open: an exact formula/constant this session verified via WebFetch but
+that has a further real-world subtlety not surfaced by the sources fetched; a property specific
+to this particular MXFP4 GGUF conversion (vs. the reference bf16 checkpoint); or -- a real,
+mundane possibility -- greedy (argmax) decoding on a heavily RLHF/reasoning-tuned "harmony"
+model genuinely produces this kind of degenerate output for raw completions, independent of any
+implementation bug (a documented general phenomenon for instruction-tuned models, not unique to
+this engine).
+
+**Recommended next step**: the llama.cpp cross-check (named as a next step since Phase A, not
+yet attempted) is now the clearest way to fully resolve this -- it is a mature, independently
+maintained reference implementation. Feeding it the SAME token IDs and diffing raw logits would
+either (a) match this engine's own "consistent but odd-looking" output, closing this
+investigation as "the model itself behaves this way under greedy decoding," or (b) diverge,
+which would then localize the remaining gap precisely (llama.cpp's own real intermediate values
+could be compared the same way this round's Python reference was used).
