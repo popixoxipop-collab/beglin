@@ -14147,3 +14147,73 @@ either (a) match this engine's own "consistent but odd-looking" output, closing 
 investigation as "the model itself behaves this way under greedy decoding," or (b) diverge,
 which would then localize the remaining gap precisely (llama.cpp's own real intermediate values
 could be compared the same way this round's Python reference was used).
+
+## D-gptoss-13 -- llama.cpp cross-check finds and fixes TWO real bugs (2026-09-12)
+
+**Context**: D-gptoss-12 left the generation-quality question open, recommending the llama.cpp
+cross-check (deferred since Phase A) as the definitive next step. `llama.cpp` was already
+installed via Homebrew on bob (`llama-cli`/`llama-simple`/`llama-tokenize`/`llama-eval-callback`,
+build 10450, real `gpt-oss` architecture support confirmed) -- no build needed.
+
+**Ground truth established**: `llama-tokenize` (reading the SAME real GGUF's embedded vocab)
+produced token-IDENTICAL output to this session's `tiktoken` `o200k_harmony` encoding for two
+test prompts -- further confirming the tokenizer choice. `llama-simple -m <ckpt> -ngl 0 -n 10
+"1, 2, 3, 4,"` (CPU-only, GPU/Metal path crashed with an unrelated `ggml-metal` graph-compute
+error on this build -- irrelevant to correctness, worked around with `-ngl 0`) produced:
+**"1, 2, 3, 4, 5, 6, 7,"** -- the real, correct, coherent continuation. This proves the
+checkpoint is not corrupted and single-handedly rejects D-gptoss-12's "maybe this model just
+behaves this way" hypothesis: this engine's own output for the identical prompt was wrong.
+
+**Bug 1 -- MoE router weighting formula**: `llama-eval-callback`'s real tensor-by-tensor dump
+(`common_debug_cb_eval`) showed the real graph: `ffn_moe_probs` (router logits + bias, NOT yet
+softmaxed) -> `ffn_moe_argsort`/`GET_ROWS` selects the top-4 by RAW logit value -> `node_38 =
+SOFT_MAX(...)` applies a FRESH softmax over ONLY the 4 selected raw values. This session's own
+earlier "D-metal-7 finding" (RESULTS.md, this file) -- "softmax over all N experts, select
+top-K, no renormalization" -- was **wrong for GPT-OSS**. Algebraically, "softmax over all N
+then renormalize the top-K slice to sum to 1" IS identical to "fresh softmax over just the
+top-K raw logits" (the full-softmax denominator cancels out of the ratio) -- so the real fix
+was flipping one existing flag, `MOE_NORM_TOPK_PROB = 0` -> `MOE_NORM_TOPK_PROB = 1`, reusing
+`moe_topk_renorm()` (already correct, already used by qwen3moe) rather than writing new code.
+Verified numerically: llama.cpp's real post-select softmax for token 16/layer 0 = `[0.5082,
+0.2111, 0.1889, 0.0918]` (sums to 1.0) -- only renormalized-top-K math reproduces this.
+
+**Bug 2 -- RoPE multiply-vs-divide transcription bug (the deeper, more consequential one)**:
+after fixing Bug 1, `token=16` at **position 0** now matched llama.cpp's real `l_out-0` dump
+exactly (`[-0.1702, 0.4234, 1.1087]` vs real `[-0.1724, 0.4280, 1.1105]`) -- but position 1
+onward still diverged wildly (`[0.334, 0.021, 0.641]` vs real `[-0.453, 0.429, 0.955]`). Root
+cause, found by re-deriving `moe_init_yarn_neox()`'s own formula against `moe_init_yarn()`'s
+(the function it was explicitly modeled on, per its own comment): `g_moe_yarn_freqs_neox[i]`
+is computed by the exact same formula as `g_moe_yarn_freqs[i]`, which `moe_rope_traditional_
+apply()` (the MLA function this was copied FROM) uses via **division**
+(`ang = pos / g_moe_yarn_freqs[i]` -- confirmed by direct re-read of that function). But
+`moe_rope_neox_yarn_apply()` (the new function) used **multiplication**
+(`ang = pos * g_moe_yarn_freqs_neox[i]`), copying the *application style* from
+`moe_rope_neox_apply()` instead -- whose own table (`g_moe_rope_inv`, filled by
+`moe_init_rope_gqa()`) genuinely stores `1/theta^(2i/dim)` directly and IS meant to be
+multiplied. Mixing the period-formula from one function with the multiply-convention from a
+different function is a straightforward transcription bug -- and **completely invisible at
+`pos=0`** (`0*x == 0/x == 0` for any `x != 0`), which is exactly why this session's own
+pos-0-only verification (D-gptoss-8) passed cleanly and every subsequent single-position check
+kept missing it. Fixed: `*` -> `/` in `moe_rope_neox_yarn_apply()`.
+
+**Real verification after both fixes** (bob, real checkpoint):
+- Teacher-forced predictions across all 11 positions of `"1, 2, 3, 4,"` now follow the correct
+  increment pattern end to end (previously wrong at positions 5, 7, 8, 9, 10 after only Bug 1
+  was fixed; correct everywhere after Bug 2 was also fixed).
+- Direct generation: feeding the model's own predicted token back in twice reproduces
+  **"1, 2, 3, 4, 5"** exactly -- the correct next digit, matching `llama-simple`'s real output.
+- Layer 0 residual for token 16 at position 0: matches llama.cpp's real dump to float rounding
+  (`[-0.1702, 0.4234, 1.1087]` vs `[-0.1724, 0.4280, 1.1105]`).
+- D-gptoss-11's sliding-window real-trigger test (150 positions) re-run against the fixed
+  binary -- window still correctly caps at 128 for SWA layers from `pos=128` onward, full
+  layers still grow unboundedly -- confirms no regression from either fix.
+
+**Process lesson**: this session's own two-implementation cross-check (D-gptoss-12, C engine
+vs. an independently-written Python reference) gave false confidence -- both implementations
+inherited the SAME two bugs (the Python reference was built by transcribing this session's own
+already-buggy derived formulas, not independently from HF/llama.cpp source), so they agreed
+with each other while both being wrong. **Only a genuinely independent, separately-implemented
+reference (llama.cpp) could actually catch this** -- matches this project's own established
+"verify against real source" discipline, but sharpens it: a second implementation only counts
+as independent verification if it wasn't built by copying the first implementation's own
+derived understanding.

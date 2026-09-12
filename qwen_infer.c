@@ -3121,7 +3121,18 @@ static void moe_rope_neox_apply(float *v, int dim, int pos) {
 static void moe_rope_neox_yarn_apply(float *v, int dim, int pos) {
     int half = dim / 2;
     for (int i = 0; i < half; i++) {
-        double ang = (double)pos * g_moe_yarn_freqs_neox[i];
+        // D-gptoss-13: real bug found via llama.cpp ground-truth comparison -- g_moe_yarn_freqs_neox[i]
+        // is computed by the SAME formula as moe_init_yarn()'s own g_moe_yarn_freqs[i] (copied
+        // verbatim, see moe_init_yarn_neox()'s own comment), which stores a PERIOD (moe_rope_
+        // traditional_apply() divides pos by it: `ang = pos / g_moe_yarn_freqs[i]`), not an
+        // inverse-frequency meant to be multiplied. This function was written by analogy to
+        // moe_rope_neox_apply()'s multiply (`ang = pos * g_moe_rope_inv[i]`), which is correct
+        // FOR THAT table (g_moe_rope_inv really does store 1/theta^(2i/dim) directly) -- but
+        // wrong for this one. At pos=0 this bug is completely invisible (0*x == 0/x == 0),
+        // which is exactly why the pos=0-only verification this session did earlier (D-gptoss-8)
+        // never caught it; a real multi-position comparison against llama.cpp's own eval-callback
+        // ground truth (position 1 onward) is what surfaced it.
+        double ang = (double)pos / g_moe_yarn_freqs_neox[i];
         double c = cos(ang), s = sin(ang);
         double a = v[i], b = v[i+half];
         v[i]      = (float)((a*c - b*s) * g_moe_yarn_attn_factor_neox);
@@ -8950,8 +8961,22 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     if (!strcmp(arch, "gpt-oss")) {
         MOE_ATTN_KIND = MOE_ATTN_GPTOSS;
         MOE_ROPE_STYLE = MOE_ROPE_NEOX;
-        MOE_NORM_TOPK_PROB = 0;   // D-metal-7's own finding this session: softmax-over-all then
-                                   // select-top-K with no renorm is exactly GPT-OSS's real router
+        // D-gptoss-13: REAL bug fix, found via llama.cpp eval-callback ground truth -- the
+        // D-metal-7 finding above (softmax-over-all, select-top-K, NO renorm) was WRONG for
+        // GPT-OSS. llama.cpp's own real graph (`common_debug_cb_eval` dump) shows the router
+        // selects top-K by RAW logit+bias FIRST (`ffn_moe_argsort`/`GET_ROWS`), THEN applies a
+        // FRESH softmax over only the K SELECTED raw values (`node_38 = SOFT_MAX(ffn_moe_weights
+        // (reshaped))`) -- not a softmax over all 32 experts with the top-K slice taken
+        // unrenormalized. Mathematically, "softmax over all N then renormalize the top-K slice
+        // to sum to 1" IS algebraically identical to "fresh softmax over just the top-K raw
+        // logits" (both reduce to exp(logit_i)/sum_topK(exp(logit_j)) -- the same S_32
+        // denominator cancels out of the ratio) -- so the fix is simply MOE_NORM_TOPK_PROB=1
+        // (this file's own existing moe_topk_renorm(), already correctly wired and used by
+        // qwen3moe), not new code. Verified numerically against the real dump: llama.cpp's own
+        // post-select softmax for token 16/layer 0 = [0.5082, 0.2111, 0.1889, 0.0918] (sums to
+        // 1.0), which only the renormalized-top-K math reproduces -- the un-renormalized full-32
+        // softmax slice this file previously used cannot sum to 1.0 by construction.
+        MOE_NORM_TOPK_PROB = 1;
         MOE_N_SHARED = 0;
         MOE_FIRST_DENSE_LAYERS = 0;
         MOE_Q_HEAD_DIM = MOE_HEAD_DIM;
