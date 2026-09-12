@@ -448,26 +448,35 @@ checkpoints — but it is **not yet a general-purpose loader like
 llama.cpp**, in two specific, honest ways:
 
 - **Architecture coverage is an allowlist, not open discovery.**
-  `qwen2` and `llama` (dense) plus `qwen3moe` (MoE) are recognized;
-  anything else FATALs rather than guessing. This project's own two
-  flagship MoE architectures (DeepSeek-V2-Lite/MLA, OLMoE) are validated
-  through the separate safetensors loader (`QWEN_MOE_SAFETENSORS`), not
-  GGUF — "loads a beglin-supported checkpoint" is currently broader than
-  "loads an arbitrary GGUF file." Gemma, Phi-3, and the Mamba/Jamba/RWKV
-  family are deliberately out of scope so far (each needs real numeric
-  work this project hasn't done yet — softcapping, LongRoPE, or no
-  attention path at all).
+  `qwen2` and `llama` (dense) plus `qwen3moe` and `gpt-oss` (MoE) are
+  recognized; anything else FATALs rather than guessing. GPT-OSS-20B
+  (real 12.1GB MXFP4 checkpoint) is validated through this GGUF path
+  specifically — sliding-window + attention-sink attention, YaRN-scaled
+  RoPE, a zero-copy native decode for its MXFP4 experts (no eager
+  dense-F16 expansion — see `RESULTS.md`'s `D-gptoss-9`), and a real
+  end-to-end forward pass token-exact-verified against `llama.cpp`
+  (`D-gptoss-13`; two real bugs found and fixed via that cross-check).
+  DeepSeek-V2-Lite/MLA and OLMoE remain validated through the separate
+  safetensors loader (`QWEN_MOE_SAFETENSORS`), not GGUF. Gemma, Phi-3,
+  and the Mamba/Jamba/RWKV family are deliberately out of scope so far
+  (each needs real numeric work this project hasn't done yet —
+  softcapping, LongRoPE, or no attention path at all).
 - **Quantization coverage is real but partial**: F32/F16/BF16, Q4_0/
-  Q5_0/Q8_0, and Q3_K/Q4_K/Q5_K/Q6_K dequantize correctly (Q3_K/Q5_K
-  added this round — see `RESULTS.md`'s `D-gen-9`). Q2_K and the
-  IQ-series (lattice/codebook quantization, not simple affine
-  scale+min) are not yet supported and FATAL on load.
+  Q5_0/Q8_0, Q3_K/Q4_K/Q5_K/Q6_K, and MXFP4 (GPT-OSS's own FFN-expert
+  format, `D-gptoss-1`) dequantize correctly. Q2_K and the IQ-series
+  (lattice/codebook quantization, not simple affine scale+min) are not
+  yet supported and FATAL on load.
 
 One more real gap, not a quantization or architecture one: there is no
-real tokenizer in this engine. `QWEN_GGUF`/`QWEN_MOE_SAFETENSORS` load
+real tokenizer *in this engine*. `QWEN_GGUF`/`QWEN_MOE_SAFETENSORS` load
 pre-tokenized raw int32 files only — no BPE, no `tokenizer.ggml.*`
-metadata consumption. See [`ROADMAP.md`](ROADMAP.md) and
-`PLAN_general_purpose_loader.md` for what's planned next on each axis.
+metadata consumption. GPT-OSS's own real verification used an external
+tool instead (`tiktoken`'s `o200k_harmony` encoding — confirmed
+token-identical to `llama.cpp`'s own tokenizer output), matching this
+project's deliberate "tokenization is external, not in-engine, until
+Phase 6" stance (`PLAN_general_purpose_loader.md`'s own `D-gen-5`), not
+a general solution for every architecture. See [`ROADMAP.md`](ROADMAP.md)
+and `PLAN_general_purpose_loader.md` for what's planned next on each axis.
 
 ## Repository contents
 

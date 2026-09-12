@@ -725,6 +725,80 @@ Full writeup: `RESULTS.md`'s entries following "Phase 4 sub-part 4".
 
 ### Phase 6 — Tokenizer (separately scoped, per D-gen-5)
 
+**Partially, informally satisfied for one architecture (2026-09-12), not the general Phase 6
+this header names.** GPT-OSS verification (Phase 7 below) needed real text prompts, not just
+pre-tokenized `.i32` literals — rather than build the general in-engine tokenizer D-gen-5
+deferred, used the exact "external tool, not in-engine" stance D-gen-5 already committed to:
+`tiktoken`'s `o200k_harmony` encoding (a real, correct, off-the-shelf implementation of GPT-OSS's
+actual tokenizer — confirmed via `n_vocab=201088` matching the real GGUF header exactly, and via
+`llama-tokenize` producing token-identical output for every test prompt tried). This is real
+evidence the "small external helper, not a from-scratch BPE" approach works — but it's
+GPT-OSS/tiktoken-specific, not the general per-architecture-vocab tool D-gen-5 originally
+scoped. Phase 6 itself (a general tool reading any GGUF's own embedded `tokenizer.ggml.*` vocab)
+remains unstarted.
+
+### Phase 7 — GPT-OSS-20B (MoE, MXFP4, sliding-window + attention-sink attention) (2026-09-11/12)
+
+**Real, working, end-to-end forward pass verified correct against llama.cpp — not just "loads
+without crashing."** Full real numbers, bugs found+fixed, and verification methodology for
+every step: [`RESULTS.md`](RESULTS.md), `D-gptoss-1` through `D-gptoss-13`. Condensed here per
+this file's own §4 documentation-debt commitment.
+
+1. **MXFP4 dequant + architecture recognition** (`D-gptoss-1`/`D-gptoss-2`) — `GGML_TYPE_MXFP4`
+   added to the enum/table/dequant switch (3 files, unlike a same-enum-value addition), oracle-
+   verified bit-exact against `gguf-py`'s own reference. `gpt-oss` added to
+   `SUPPORTED_ARCH_MOE_GGUF[]`.
+2. **Precision-preserving load path, not q4g64-forced** (`D-gptoss-2`) — the existing MoE-GGUF
+   registrar unconditionally re-quantizes every tensor into this project's own int4 q4g64
+   regardless of source precision. **D2: dense-F16 registration for GPT-OSS instead of forced
+   q4g64.**
+   **WHY:** double-quantizing MXFP4 experts (already ~4-bit) through an unrelated int4 scheme,
+   and downcasting Q8_0 attention tensors, would be an unmeasured precision loss this project's
+   own Data-First Numerics discipline forbids assuming away.
+   **COST:** a new registration function (`gguf_register_moe_f16_as_ex()`), not just a role-
+   table addition — larger than the original Phase-A estimate.
+   **EXIT:** if q4g64 requantization is later measured to have negligible accuracy impact,
+   the existing forced-q4g64 path could be reused — but that measurement has to happen first.
+3. **Native zero-copy MXFP4 decode for FFN experts, not eager dense-F16** (`D-gptoss-9`) —
+   eagerly dequantizing all 24 layers' expert tensors into dense F16 needs ~35.6GiB
+   (`D-gptoss-2-note`, more than bob's 16GB). **D3: `MOE_BITS_GGUF_MXFP4` sentinel + zero-copy
+   decode-during-matvec, mirroring the ALREADY-EXISTING q4g64/qNg64 pattern.**
+   **WHY:** the GGUF file is already `mmap()`'d for the process lifetime — decoding on demand
+   from those bytes costs page-cache-backed memory (OS-reclaimable), not eager anonymous heap;
+   more consistent with this project's own "never dense-fallback a compressed format"
+   discipline than the eager path it replaces.
+   **COST:** real new code (2 decode branches + 1 registrar), though it reuses D-gptoss-1's own
+   constants via a small new public surface in `gguf_quants.h`.
+   **EXIT:** real memory proof — registering all 24 layers × 3 FFN roles (72 tensors) costs
+   **18.47MB peak RSS**, not ~35.6GiB. Not a threshold to revisit; the fix is unconditional.
+4. **Attention: sliding-window (period 2, even layers) + attention sinks + YaRN-scaled NEOX
+   RoPE** (`D-gptoss-4` through `D-gptoss-8`, `D-gptoss-11`) — real formulas transcribed from
+   HF `transformers`/llama.cpp source (not guessed), verified via a scoped 2-layer probe and
+   (after raising `MOE_MAXPOS` 32→160) a real 150-position run showing the sliding window
+   actually truncates at `pos=128` for even layers while odd layers grow unboundedly.
+5. **Router bias + MoE weighting — real bug found and fixed via llama.cpp ground truth**
+   (`D-gptoss-13`). **D4: `MOE_NORM_TOPK_PROB=1` for GPT-OSS, not 0.**
+   **WHY:** this session's own earlier "D-metal-7" assumption (softmax over all experts, take
+   top-K unrenormalized) was wrong for GPT-OSS — `llama-eval-callback`'s real graph dump shows
+   top-K selected by raw logit then a **fresh softmax over just the K selected**, which is
+   algebraically identical to renormalizing the top-K slice.
+   **COST:** none — a one-flag fix reusing the already-correct, already-used `moe_topk_renorm()`.
+   **EXIT:** n/a, this was a correctness bug, not a tunable.
+6. **RoPE multiply-vs-divide transcription bug — real bug found and fixed via llama.cpp ground
+   truth** (`D-gptoss-13`). The YaRN-NEOX frequency table was computed by the same formula as
+   the (division-based) MLA table it was modeled on, but applied via multiplication (copied
+   from a *different* function's *different* table convention) — invisible at `pos=0`
+   (`0*x==0/x==0`), which is exactly why this session's own pos-0-only checks kept passing.
+   **Real proof of the fix:** the engine now predicts "1, 2, 3, 4, **5**" and completes "The
+   capital of France is **Paris.**" — both wrong before, both correct after.
+7. **Explicitly out of scope, named gaps carried forward, not silently dropped:**
+   `moe_cbatch_step_scalar_one`/ragged-attention paths never updated for GPT-OSS (single-
+   sequence only this phase); GPU/MLX attention + MXFP4 GPU decode (needs the MLX-native-MXFP4
+   open question resolved first); real in-engine tokenizer (Phase 6 above, still unstarted);
+   performance measurement (correctness-first, matching this whole phase's sequencing);
+   real harmony-chat-format generation quality (raw-completion tests were sufficient to prove
+   correctness; a full structured conversation test is a polish item, not a blocker).
+
 ## 4. Documentation debt to close alongside implementation
 
 - `ROADMAP.md`'s COST section claimed the SME2 kernels are shape-fit to
