@@ -14217,3 +14217,17 @@ reference (llama.cpp) could actually catch this** -- matches this project's own 
 "verify against real source" discipline, but sharpens it: a second implementation only counts
 as independent verification if it wasn't built by copying the first implementation's own
 derived understanding.
+
+**Real coherent-text confirmation** (the satisfying capstone check): re-ran the earlier
+D-gptoss-12 "The capital of France is" completion against the fixed binary --
+```
+The capital of France is Paris."
+```
+Correct, coherent, real-world-accurate -- versus D-gptoss-12's own recorded pre-fix output for
+the identical prompt ("and", "of", "the" repeating, no coherent answer at all). The model then
+continues into unrelated but perfectly well-formed English/code-discussion text (expected: a
+bare factual sentence has no single "correct" continuation in training data, so the model
+moving to a different plausible pattern is normal, not a bug). This closes D-gptoss-12's open
+question definitively: the numeric pipeline was NOT "internally consistent but possibly just
+how the model behaves" -- it had two real, fixable bugs, and fixing them produces genuinely
+correct, real-world text.
