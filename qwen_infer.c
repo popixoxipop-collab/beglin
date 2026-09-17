@@ -38,6 +38,7 @@
 #include "safetensors_load.h"   // safetensors dense-model loader: container parser (own TU, same reason)
 #include "safetensors_quants.h" // safetensors dense-model loader: F32/F16/BF16 widening (own TU, same reason)
 #include "hf_config.h"           // safetensors dense-model loader: config.json reader (own TU, same reason)
+#include "bpe_tokenizer.h"  // D-tok Phase 5: real BPE encode/decode (own TU, same reason)
 #ifdef QWEN_GPU_MLX
 #include "mlx_moe.h"    // V5a: MLX GPU backend vendor boundary (own TU, C++/MLX -- see its own
                         // header comment). Absent QWEN_GPU_MLX (every default build), this
@@ -16661,6 +16662,12 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
 // Phase 2 (D-gen-2 in the plan), a deliberately separate piece of work.
 static GgufFile *g_gguf = NULL;
 
+// D-tok Phase 5: real BPE tokenizer state for the dense GGUF path. Loaded lazily (only when
+// QWEN_PROMPT_TEXT asks for real text encoding instead of a pre-tokenized .i32 file) --
+// g_bpe_ready tracks whether g_bpe_vocab currently holds a real, loaded vocab.
+static BpeVocab g_bpe_vocab;
+static int g_bpe_ready = 0;
+
 static const char *ROLE_PATTERN_GGUF[N_LAYER_ROLES] = {
     [ROLE_ATTN_Q]       = "blk.%d.attn_q.weight",
     [ROLE_ATTN_K]       = "blk.%d.attn_k.weight",
@@ -17358,6 +17365,37 @@ static void log_dispatch_tiers(void) {
             n_sme2_eligible, n_neon_q4g64, n_neon_q8g64, n_blas_f32);
 }
 
+// D-tok Phase 5: maps a GGUF's real tokenizer.ggml.model/pre KVs to a BpePretokType, or FATALs
+// with a clear reason for anything not yet supported -- same "refuse rather than guess"
+// doctrine as load_gguf_arch()'s own architecture allowlist. tokenizer.ggml.model=="llama"
+// (SentencePiece) is explicitly out of scope per D-tok-1; deepseek-llm/deepseek-coder and
+// gpt-4o pretokenizers are real gaps named in RESULTS.md's D-tok-5, not silently unsupported.
+static BpePretokType bpe_pretok_for_gguf(GgufFile *f) {
+    const char *model_ptr; uint64_t model_len;
+    if (!gguf_kv_str(f, "tokenizer.ggml.model", &model_ptr, &model_len)) {
+        fprintf(stderr, "FATAL: QWEN_PROMPT_TEXT requires a GGUF with tokenizer.ggml.model (none found)\n");
+        exit(1);
+    }
+    if (model_len != 4 || memcmp(model_ptr, "gpt2", 4) != 0) {
+        fprintf(stderr, "FATAL: QWEN_PROMPT_TEXT: tokenizer.ggml.model='%.*s' is not byte-level BPE "
+                "('gpt2') -- SentencePiece is deferred per D-tok-1, not yet supported\n",
+                (int)model_len, model_ptr);
+        exit(1);
+    }
+    const char *pre_ptr; uint64_t pre_len;
+    if (!gguf_kv_str(f, "tokenizer.ggml.pre", &pre_ptr, &pre_len)) {
+        fprintf(stderr, "FATAL: QWEN_PROMPT_TEXT requires tokenizer.ggml.pre\n");
+        exit(1);
+    }
+    if (pre_len == 5 && !memcmp(pre_ptr, "qwen2", 5)) return BPE_PRETOK_QWEN2;
+    if (pre_len == 9 && !memcmp(pre_ptr, "llama-bpe", 9)) return BPE_PRETOK_LLAMA3;
+    if (pre_len == 4 && !memcmp(pre_ptr, "olmo", 4)) return BPE_PRETOK_GPT2;
+    fprintf(stderr, "FATAL: QWEN_PROMPT_TEXT: tokenizer.ggml.pre='%.*s' has no ported pretokenizer "
+            "yet (see RESULTS.md D-tok-5 for what remains: gpt-4o, deepseek-llm, deepseek-coder)\n",
+            (int)pre_len, pre_ptr);
+    exit(1);
+}
+
 int main(int argc, char **argv) {
     // Phase MoE-3a: checked FIRST, before load_arch_cfg() or any other GQA-dense-model setup
     // runs -- if weights_moe/arch_config_moe.txt exists, this exits without touching a single
@@ -17654,12 +17692,35 @@ int main(int argc, char **argv) {
     float *xtmp=malloc((size_t)g_cfg.d*sizeof(float)); float *logits=malloc(g_cfg.vocab*sizeof(float));
 
     int prompt[g_cfg.maxseq];
-    const char *pf = getenv("QWEN_PROMPT");
-    if (pf && pf[0]) snprintf(path,sizeof path,"%s",pf);
-    else snprintf(path,sizeof path,"%s/ref/prompt_ids.i32",base);
-    int np=load_ids(path,prompt,g_cfg.maxseq);
+    int np;
+    const char *ptext = getenv("QWEN_PROMPT_TEXT");
+    if (ptext && ptext[0]) {
+        // D-tok Phase 5: real text prompt, no external tool and no pre-tokenized .i32 file.
+        // GGUF-only (g_gguf is NULL for the legacy fp32/int4/safetensors dense paths, which
+        // have no tokenizer.ggml.* KVs to read) -- same scope this whole Phase 6 track has had
+        // since D-tok-0's real-file shape soak.
+        if (!g_gguf) {
+            fprintf(stderr, "FATAL: QWEN_PROMPT_TEXT requires a GGUF-loaded model (tokenizer.ggml.* KVs)\n");
+            return 1;
+        }
+        if (!g_bpe_ready) {
+            BpePretokType pretok = bpe_pretok_for_gguf(g_gguf);
+            if (!bpe_vocab_load(g_gguf, pretok, &g_bpe_vocab)) {
+                fprintf(stderr, "FATAL: bpe_vocab_load failed despite tokenizer.ggml.model/pre being present\n");
+                return 1;
+            }
+            g_bpe_ready = 1;
+        }
+        np = bpe_encode(&g_bpe_vocab, ptext, strlen(ptext), prompt, g_cfg.maxseq);
+        if (np < 0) { fprintf(stderr, "FATAL: bpe_encode failed (prompt too long for maxseq=%d?)\n", g_cfg.maxseq); return 1; }
+    } else {
+        const char *pf = getenv("QWEN_PROMPT");
+        if (pf && pf[0]) snprintf(path,sizeof path,"%s",pf);
+        else snprintf(path,sizeof path,"%s/ref/prompt_ids.i32",base);
+        np=load_ids(path,prompt,g_cfg.maxseq);
+    }
     if (strcmp(mode,"ppl") && np < 1) {
-        fprintf(stderr,"FATAL: no prompt ids at %s (load_ids=%d)\n", path, np); return 1; }
+        fprintf(stderr,"FATAL: no prompt ids (np=%d)\n", np); return 1; }
 
     if (!strcmp(mode,"dump")) {
         for(int p=0;p<np;p++) forward_token(prompt[p],p,xtmp,p==np-1);
@@ -17673,7 +17734,16 @@ int main(int argc, char **argv) {
         final_logits(xtmp,logits);
         int pos=np-1; printf("greedy:");
         for(int g=0;g<n_gen;g++){ int am=argmax_v(logits);
-            printf(" %d",am); fflush(stdout);
+            // D-tok Phase 5: real text output when the real tokenizer loaded this prompt --
+            // still raw ids otherwise (load_ids()/.i32 path, unchanged, matches every prior
+            // verified run byte-for-byte).
+            if (g_bpe_ready) {
+                char dbuf[256];
+                int dn = bpe_decode(&g_bpe_vocab, &am, 1, dbuf, sizeof dbuf);
+                if (dn > 0) { fwrite(dbuf, 1, (size_t)dn, stdout); fflush(stdout); }
+            } else {
+                printf(" %d",am); fflush(stdout);
+            }
             if(pos+1>=g_cfg.maxseq) break;                 // KV cache holds MAXSEQ positions
             pos++; forward_token(am,pos,xtmp,0); final_logits(xtmp,logits); }
         printf("\n");

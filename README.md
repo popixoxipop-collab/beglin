@@ -258,6 +258,7 @@ clang -O3 -w -c gguf_transcode.c -o gguf_transcode.o
 clang -O3 -w -c hf_config.c -o hf_config.o
 clang -O3 -w -c safetensors_load.c -o safetensors_load.o
 clang -O3 -w -c safetensors_quants.c -o safetensors_quants.o
+clang -O3 -w -c bpe_tokenizer.c -o bpe_tokenizer.o  # Phase 6 (D-tok): real BPE tokenizer (own TU, same reason)
 
 # SME2 kernel wrapper (also plain -- it dispatches through function
 # pointers, no SME/SVE code of its own):
@@ -277,7 +278,7 @@ clang -O2 -march=armv9.2-a+sme2 -I. -c \
 
 # Link
 clang -O3 qwen_infer.o gguf_cache.o gguf_load.o gguf_quants.o gguf_transcode.o \
-  hf_config.o safetensors_load.o safetensors_quants.o sme2_kai.o kai_*.o \
+  hf_config.o safetensors_load.o safetensors_quants.o bpe_tokenizer.o sme2_kai.o kai_*.o \
   -o qwen_infer -framework Accelerate -lpthread
 
 # Verify no SVE/SME instruction leaked into the plain-compiled caller
@@ -467,16 +468,22 @@ llama.cpp**, in two specific, honest ways:
   (lattice/codebook quantization, not simple affine scale+min) are not
   yet supported and FATAL on load.
 
-One more real gap, not a quantization or architecture one: there is no
-real tokenizer *in this engine*. `QWEN_GGUF`/`QWEN_MOE_SAFETENSORS` load
-pre-tokenized raw int32 files only — no BPE, no `tokenizer.ggml.*`
-metadata consumption. GPT-OSS's own real verification used an external
-tool instead (`tiktoken`'s `o200k_harmony` encoding — confirmed
-token-identical to `llama.cpp`'s own tokenizer output), matching this
-project's deliberate "tokenization is external, not in-engine, until
-Phase 6" stance (`PLAN_general_purpose_loader.md`'s own `D-gen-5`), not
-a general solution for every architecture. See [`ROADMAP.md`](ROADMAP.md)
-and `PLAN_general_purpose_loader.md` for what's planned next on each axis.
+**Phase 6's real in-engine tokenizer is partially landed, not a full general solution yet.**
+`bpe_tokenizer.c`/`.h` is a real byte-level BPE encoder/decoder, ported from llama.cpp's own
+algorithm and token-exact-verified against `llama-tokenize` (`RESULTS.md`'s `D-tok-0` through
+`D-tok-6`) — covering `qwen2`/`qwen3moe` (`qwen2` pre-type), Llama-3.x (`llama-bpe`), and OLMoE
+(`olmo`, including the real literal-special-token pre-scan needed for chat-control markers and
+code-indent whitespace runs). Wired into the dense-GGUF `greedy` mode's real text path via
+`QWEN_PROMPT_TEXT` (env var, alternative to the pre-tokenized `.i32` file `QWEN_PROMPT` still
+uses) — real text in, real text out, no external tool, verified against the same generation
+`.i32`-driven runs already produce. **Not yet done**: `gpt-4o` (`gpt-oss`) and
+`deepseek-llm`/`deepseek-coder` (`deepseek_v2`) pretokenizers (no hand-coded llama.cpp reference
+exists for either, more complex patterns — real gap, not silently dropped); SentencePiece
+(Mistral-7B-v0.3, deferred per `D-tok-1` since it's a different algorithm entirely, not a
+pretokenizer variant); wiring the MoE/safetensors generation paths (only the dense-GGUF `greedy`
+mode has real text I/O so far — `bench`/`spec`/MoE `generate` modes still print raw ids). See
+[`ROADMAP.md`](ROADMAP.md) and `PLAN_general_purpose_loader.md` for what's planned next on each
+axis.
 
 ## Repository contents
 

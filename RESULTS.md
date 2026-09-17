@@ -14634,3 +14634,71 @@ need to be hand-derived from the regex text with no reference implementation to 
 -- higher risk, deferred rather than rushed without adequate verification budget this pass.
 `deepseek-llm`'s pattern is a large explicit Unicode-script-range enumeration, also undocumented
 here in full yet. Engine wiring (Phase 5) and SentencePiece (deferred per `D-tok-1`) also remain.
+
+## D-tok-6 -- Phase 5: real text-in/text-out generation, no external tool (2026-09-17)
+
+**Context**: every real-model verification this project has ever done, including GPT-OSS's own
+Phase 7, used an external tokenizer to produce a `.i32` file `load_ids()` then reads. Phase 5
+wires the now-working `bpe_tokenizer.c` (`D-tok-4`/`D-tok-5`) into the actual dense-GGUF
+generation path -- the real "text in, text out" milestone this whole Phase 6 track exists for.
+
+**What changed** (`qwen_infer.c`, only): a new `bpe_pretok_for_gguf()` reads a GGUF's real
+`tokenizer.ggml.model`/`pre` KVs and selects the right `BpePretokType`, FATALing with a named
+reason for anything not yet ported (SentencePiece, `gpt-4o`, `deepseek-llm`/`-coder`) rather than
+guessing -- same doctrine as `load_gguf_arch()`'s own architecture allowlist. A new env var,
+`QWEN_PROMPT_TEXT`, is checked alongside the existing `QWEN_PROMPT` (`.i32` file path): when set,
+the prompt buffer is filled via `bpe_encode()` against a lazily-loaded `BpeVocab` instead of
+`load_ids()` -- GGUF-only (`g_gguf` must be open; the legacy fp32/int4/safetensors dense paths
+have no `tokenizer.ggml.*` KVs to read, so `QWEN_PROMPT_TEXT` against those FATALs with a clear
+reason rather than silently doing nothing). The `greedy` mode's per-token print loop now calls
+`bpe_decode()` on each generated id and prints real text when the real tokenizer loaded the
+prompt, falling back to the original `printf(" %d",am)` raw-id output otherwise (byte-identical
+to every prior verified `.i32`-driven run -- this is a pure addition, no existing path's output
+changed). Other modes (`bench`/`spec`/`dump`) and the MoE/safetensors generation paths still use
+raw ids -- explicitly out of scope this pass, not silently dropped.
+
+**Real end-to-end run** (bob, Qwen2.5-0.5B-Instruct real checkpoint):
+```
+$ QWEN_GGUF=.../qwen2.5-0.5b-instruct-q4_k_m.gguf QWEN_PROMPT_TEXT='The capital of France is' \
+  ./qwen_infer_bpe greedy 3
+greedy: Paris.
+Paris
+```
+Real text prompt in, real text out -- no `.i32` file, no external tokenizer, no `llama-tokenize`
+in the loop.
+
+**Verification -- cross-checked against the equivalent `.i32`-driven run's own ids, per this
+project's own established bar (not just "produced plausible-looking text")**:
+1. `llama-tokenize --no-bos --ids -p 'The capital of France is'` (the same real oracle every
+   other `D-tok-N` entry trusts) → `[785, 6722, 315, 9625, 374]` -- confirms `QWEN_PROMPT_TEXT`
+   encodes this exact prompt to these exact ids (already proven generally by `D-tok-4`'s
+   corpus-wide oracle match; this is the specific-prompt instance).
+2. Built a `.i32` file from those same 5 ids by hand and ran the **old**, unchanged
+   `QWEN_PROMPT=<file>` path against the identical checkpoint: generated ids
+   `[12095, 624, 59604]`.
+3. Decoded those 3 ids against the real vocab: `12095`=`"ĠParis"`, `624`=`".Ċ"`,
+   `59604`=`"Paris"` -- concatenated: `" Paris.\nParis"`, **exactly matching** what
+   `QWEN_PROMPT_TEXT`'s own real-time `bpe_decode()` output printed live. Two independent code
+   paths (new text-encode path vs. old file-read path, both feeding the same, unmodified
+   generation loop) produce byte-identical results.
+
+**Compile check**: full engine build (`clang -O3 -w -c qwen_infer.c` + every sibling TU +
+`bpe_tokenizer.o`, real link against `-framework Accelerate -lpthread`) succeeds with the
+project's own production flags, zero new warnings attributable to this change (pre-existing
+`cblas_sgemv` deprecation/sign-compare/unused-function warnings elsewhere in the file are
+unrelated, unchanged by this diff).
+
+**Process note**: `qwen_infer.c` had unrelated, in-progress uncommitted changes at the time of
+this work (`D-neartie-batch-1`, near-tie-event batch-size logging) -- confirmed with the user
+before touching the file, then `git add -p` used to stage only this change's own 5 hunks,
+leaving the other 3 hunks untouched in the working tree. Built/tested via a scratch `/tmp` copy
+on bob (siblings copied alongside), not the file's real working-tree location, specifically to
+avoid needing to compile someone else's in-progress edits together with this change before they
+were ready to.
+
+**Not yet done**: the remaining architectures' pretokenizers (`D-tok-5`'s open list);
+`bench`/`spec`/`dump` modes and the MoE/safetensors generation paths still print raw ids, not
+text; no streaming-detokenize edge-case testing yet (a token that's part of a multi-byte UTF-8
+character split across two ids would print a byte fragment mid-stream -- known, accepted
+behavior matching most real streaming tokenizer implementations, not tested here since it didn't
+come up in this prompt).
