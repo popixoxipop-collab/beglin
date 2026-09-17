@@ -39,6 +39,8 @@
 #include "safetensors_quants.h" // safetensors dense-model loader: F32/F16/BF16 widening (own TU, same reason)
 #include "hf_config.h"           // safetensors dense-model loader: config.json reader (own TU, same reason)
 #include "bpe_tokenizer.h"  // D-tok Phase 5: real BPE encode/decode (own TU, same reason)
+#include "gguf_write.h"        // D-export Phase 1: real GGUF writer (own TU, same reason)
+#include "gguf_write_quants.h" // D-export Phase 2: Q4_0/Q8_0 encoders (own TU, same reason)
 #ifdef QWEN_GPU_MLX
 #include "mlx_moe.h"    // V5a: MLX GPU backend vendor boundary (own TU, C++/MLX -- see its own
                         // header comment). Absent QWEN_GPU_MLX (every default build), this
@@ -17501,6 +17503,156 @@ static BpePretokType bpe_pretok_for_gguf(GgufFile *f) {
     exit(1);
 }
 
+// D-export Phase 3: matches one "prefix%dsuffix" role pattern (exactly one %d, no other format
+// specifiers -- true of every entry in ROLE_PATTERN_HF/_GGUF and the qkv-bias names below) and
+// extracts the layer index on success.
+static int wt_match_role_pattern(const char *name, const char *pattern, int *out_layer) {
+    const char *pct = strstr(pattern, "%d");
+    if (!pct) return 0;
+    size_t prefix_len = (size_t)(pct - pattern);
+    const char *suffix = pct + 2;
+    size_t suffix_len = strlen(suffix);
+    size_t name_len = strlen(name);
+    if (name_len < prefix_len + suffix_len) return 0;
+    if (memcmp(name, pattern, prefix_len) != 0) return 0;
+    if (memcmp(name + name_len - suffix_len, suffix, suffix_len) != 0) return 0;
+    size_t mid_len = name_len - suffix_len - prefix_len;
+    if (mid_len == 0 || mid_len >= 16) return 0;
+    const char *mid = name + prefix_len;
+    for (size_t i = 0; i < mid_len; i++) if (mid[i] < '0' || mid[i] > '9') return 0;
+    char buf[16];
+    memcpy(buf, mid, mid_len); buf[mid_len] = '\0';
+    *out_layer = atoi(buf);
+    return 1;
+}
+
+// Reverses D-gen-loader-1's HF-name translation (ROLE_PATTERN_HF -> ROLE_PATTERN_GGUF, plus
+// the 3 hardcoded singletons and 3 qkv-bias names load_gguf_weights() also registers) so an
+// exported file's tensor-info table carries real GGUF names a real GGUF reader can find --
+// g_wt[]'s own WT.name is this engine's internal HF-style name, never a valid GGUF name itself.
+static int wt_hf_name_to_gguf_name(const char *hf_name, char *out, size_t out_cap) {
+    if (!strcmp(hf_name, "model.embed_tokens.weight")) { snprintf(out, out_cap, "token_embd.weight"); return 1; }
+    if (!strcmp(hf_name, "model.norm.weight"))         { snprintf(out, out_cap, "output_norm.weight"); return 1; }
+    if (!strcmp(hf_name, "lm_head.weight"))            { snprintf(out, out_cap, "output.weight"); return 1; }
+    int layer;
+    for (int r = 0; r < N_LAYER_ROLES; r++) {
+        if (wt_match_role_pattern(hf_name, ROLE_PATTERN_HF[r], &layer)) {
+            snprintf(out, out_cap, ROLE_PATTERN_GGUF[r], layer);
+            return 1;
+        }
+    }
+    if (wt_match_role_pattern(hf_name, "model.layers.%d.self_attn.q_proj.bias", &layer)) { snprintf(out, out_cap, "blk.%d.attn_q.bias", layer); return 1; }
+    if (wt_match_role_pattern(hf_name, "model.layers.%d.self_attn.k_proj.bias", &layer)) { snprintf(out, out_cap, "blk.%d.attn_k.bias", layer); return 1; }
+    if (wt_match_role_pattern(hf_name, "model.layers.%d.self_attn.v_proj.bias", &layer)) { snprintf(out, out_cap, "blk.%d.attn_v.bias", layer); return 1; }
+    return 0;
+}
+
+// D-export Phase 3: QWEN_EXPORT_GGUF=<path> -- exports the currently-loaded dense-GGUF model
+// (already role-precision-applied, per D-export-4) as a real, standard GGUF file. Every source
+// KV is copied through unchanged (D-export-5, covers tokenizer.ggml.* and every arch scalar
+// without needing to know each key's name individually). K_F32 tensors pass through as
+// GGML_TYPE_F32; K_Q4G64/K_Q8G64 are dequantized via the exact same per-row primitives
+// inference itself uses (q4_unpack_row()/q8_unpack_row(), q4gemv.h -- no full-tensor dequant
+// utility existed before this), then re-quantized via Phase 2's gguf_w_quantize_q4_0()/
+// _q8_0() into real GGML_TYPE_Q4_0/Q8_0 blocks (D-export-1).
+static void run_export_gguf_mode(const char *out_path) {
+    if (!g_gguf) {
+        fprintf(stderr, "FATAL: QWEN_EXPORT_GGUF requires a GGUF-loaded model (source tokenizer/arch KVs come from g_gguf)\n");
+        exit(1);
+    }
+    fprintf(stderr, "[engine] QWEN_EXPORT_GGUF=%s -- exporting %d tensors\n", out_path, g_nwt);
+
+    GgufWriter *gw = gguf_w_open(out_path);
+    if (!gw) { perror("gguf_w_open"); exit(1); }
+
+    int n_kv_copied = 0, n_kv_skipped = 0;
+    for (uint64_t i = 0; i < g_gguf->n_kv; i++) {
+        GgufKV *kv = &g_gguf->kv[i];
+        if (kv->is_array) {
+            if (kv->type == GGUF_VTYPE_STRING) gguf_w_kv_str_array(gw, kv->key, kv->arr_str, kv->arr_len);
+            else if (kv->type == GGUF_VTYPE_INT32) gguf_w_kv_i32_array(gw, kv->key, (const int32_t *)kv->arr_fixed, kv->arr_len);
+            else if (kv->type == GGUF_VTYPE_FLOAT32) gguf_w_kv_f32_array(gw, kv->key, (const float *)kv->arr_fixed, kv->arr_len);
+            else { fprintf(stderr, "[engine] export: skip array KV '%s' (unsupported elem type %d)\n", kv->key, (int)kv->type); n_kv_skipped++; continue; }
+        } else {
+            switch (kv->type) {
+                case GGUF_VTYPE_STRING:  gguf_w_kv_str(gw, kv->key, kv->scalar.str.ptr, kv->scalar.str.len); break;
+                case GGUF_VTYPE_FLOAT32: gguf_w_kv_f32(gw, kv->key, (float)kv->scalar.f); break;
+                case GGUF_VTYPE_FLOAT64: gguf_w_kv_f64(gw, kv->key, kv->scalar.f); break;
+                case GGUF_VTYPE_UINT8: case GGUF_VTYPE_UINT16: case GGUF_VTYPE_UINT32: case GGUF_VTYPE_UINT64:
+                    gguf_w_kv_int_raw(gw, kv->key, kv->type, kv->scalar.u); break;
+                case GGUF_VTYPE_INT8: case GGUF_VTYPE_INT16: case GGUF_VTYPE_INT32: case GGUF_VTYPE_INT64:
+                    gguf_w_kv_int_raw(gw, kv->key, kv->type, (uint64_t)kv->scalar.i); break;
+                case GGUF_VTYPE_BOOL:
+                    gguf_w_kv_int_raw(gw, kv->key, GGUF_VTYPE_BOOL, kv->scalar.b ? 1 : 0); break;
+                default:
+                    fprintf(stderr, "[engine] export: skip scalar KV '%s' (unsupported type %d)\n", kv->key, (int)kv->type); n_kv_skipped++; continue;
+            }
+        }
+        n_kv_copied++;
+    }
+    fprintf(stderr, "[engine] export: copied %d source KVs, skipped %d\n", n_kv_copied, n_kv_skipped);
+
+    // rope_freqs.weight -- lives outside g_wt[] entirely (Llama-3 NTK scaling); dropping it
+    // silently would produce a file that loads but has wrong RoPE for Llama-3 checkpoints.
+    if (g_rope_freqs_gguf) {
+        int half = g_cfg.hd / 2;
+        uint64_t ne[1] = { (uint64_t)half };
+        gguf_w_add_tensor(gw, "rope_freqs.weight", GGML_TYPE_F32, 1, ne, g_rope_freqs_gguf, (uint64_t)half * sizeof(float));
+        fprintf(stderr, "[engine] export: rope_freqs.weight (%d elements) included\n", half);
+    }
+
+    int n_f32 = 0, n_q4 = 0, n_q8 = 0;
+    for (int i = 0; i < g_nwt; i++) {
+        WT *t = &g_wt[i];
+        char gguf_name[128];
+        if (!wt_hf_name_to_gguf_name(t->name, gguf_name, sizeof gguf_name)) {
+            fprintf(stderr, "FATAL: export: no GGUF-name translation for '%s'\n", t->name);
+            exit(1);
+        }
+        uint64_t ne[2] = { (uint64_t)t->in, (uint64_t)t->out };
+        uint32_t n_dims = (t->out > 1) ? 2 : 1;
+
+        if (t->kind == K_F32) {
+            uint64_t nbytes = (uint64_t)t->out * (uint64_t)t->in * sizeof(float);
+            gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_F32, n_dims, ne, t->f32, nbytes);
+            n_f32++;
+        } else if (t->kind == K_Q4G64 || t->kind == K_Q8G64) {
+            int64_t n = (int64_t)t->out * (int64_t)t->in;
+            float *f32buf = malloc((size_t)n * sizeof(float));
+            for (int r = 0; r < t->out; r++) {
+                if (t->kind == K_Q4G64) {
+                    q4_unpack_row(t->packed + (size_t)r * (t->in / 2), t->scales + (size_t)r * t->ng,
+                                  f32buf + (size_t)r * t->in, t->in);
+                } else {
+                    q8_unpack_row((const int8_t *)(t->packed + (size_t)r * t->in), t->scales + (size_t)r * t->ng,
+                                  f32buf + (size_t)r * t->in, t->in);
+                }
+            }
+            if (t->kind == K_Q8G64) {
+                uint64_t nbytes = gguf_w_q8_0_nbytes(n);
+                uint8_t *qbuf = malloc(nbytes);   // intentionally not freed -- must outlive gguf_w_finish(), process exits right after
+                gguf_w_quantize_q8_0(f32buf, n, qbuf);
+                gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q8_0, n_dims, ne, qbuf, nbytes);
+                n_q8++;
+            } else {
+                uint64_t nbytes = gguf_w_q4_0_nbytes(n);
+                uint8_t *qbuf = malloc(nbytes);   // intentionally not freed, same reason
+                gguf_w_quantize_q4_0(f32buf, n, qbuf);
+                gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q4_0, n_dims, ne, qbuf, nbytes);
+                n_q4++;
+            }
+            free(f32buf);
+        } else {
+            fprintf(stderr, "FATAL: export: tensor '%s' has unsupported kind %d (K_Q4G256SF export not implemented)\n", t->name, t->kind);
+            exit(1);
+        }
+    }
+    fprintf(stderr, "[engine] export: %d tensors (%d F32, %d Q4_0, %d Q8_0)\n", g_nwt, n_f32, n_q4, n_q8);
+
+    if (!gguf_w_finish(gw)) { fprintf(stderr, "FATAL: gguf_w_finish failed writing %s\n", out_path); exit(1); }
+    fprintf(stderr, "[engine] export: wrote %s\n", out_path);
+}
+
 int main(int argc, char **argv) {
     // Phase MoE-3a: checked FIRST, before load_arch_cfg() or any other GQA-dense-model setup
     // runs -- if weights_moe/arch_config_moe.txt exists, this exits without touching a single
@@ -17753,6 +17905,18 @@ int main(int argc, char **argv) {
                                // g_qbias_l/g_kbias_l/g_vbias_l) and before any forward pass
     init_tensor_roles();       // D-gen-tensorrole-1: must run after g_int8_head is finalized
                                // (just above) and after weights are loaded, before any forward pass
+
+    // D-export Phase 3: checked right after loading finishes, before any inference-oriented
+    // setup (KV cache alloc, fused dispatch, etc.) that an export-only run doesn't need --
+    // same "additive short-circuit mode" convention every other env-var-gated mode here uses.
+    {
+        const char *export_path = getenv("QWEN_EXPORT_GGUF");
+        if (export_path && export_path[0]) {
+            run_export_gguf_mode(export_path);
+            return 0;
+        }
+    }
+
     init_fused_dispatch();
 
     if (kv_int4_on() && kv_int8_on()) {           // M24-D5: precedence, checked once

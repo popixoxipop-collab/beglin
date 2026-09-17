@@ -14857,3 +14857,63 @@ quantization error, not a bug), `Q8_0` decodes to `-5.5989` (8-bit, ~20x tighter
 **Not yet done**: wiring these encoders into a real engine export mode that walks a loaded
 model's tensors and writes a complete file (Phase 3) -- this phase only proves the two
 requantizers themselves are correct in isolation.
+
+## D-export-3 -- Phase 3: real end-to-end export, loads+generates coherent text in real llama.cpp (2026-09-18)
+
+**Context**: the actual point of this whole track -- prove a file this engine exports needs
+nothing but itself, no dependency on this engine at all, to run in the real world. New mode:
+`QWEN_EXPORT_GGUF=<path>`, checked in `main()` right after `init_tensor_roles()` finishes
+(before any inference-only setup an export run doesn't need), gated the same additive-
+short-circuit way every other env-var mode in this file already is.
+
+**What it does**: every source KV in `g_gguf` is copied through unchanged (D-export-5) via a
+generic loop over `g_gguf->kv[]` -- no need to enumerate `tokenizer.ggml.*`/arch-scalar key
+names individually, and a new `gguf_w_kv_int_raw()` (added to `gguf_write.h`/`.c` this phase)
+preserves each integer KV's exact original width/signedness instead of lossily widening
+everything to u64. Two new small helpers reverse `load_gguf_weights()`'s own
+`ROLE_PATTERN_HF -> ROLE_PATTERN_GGUF` name translation (`wt_match_role_pattern()`/
+`wt_hf_name_to_gguf_name()`) so the exported file's tensor-info table carries real GGUF names
+(`blk.%d.attn_q.weight` etc.) -- `g_wt[]`'s own `WT.name` is this engine's internal HF-style
+name, never a valid GGUF name by itself. `g_rope_freqs_gguf` (Llama-3 NTK-scaling tensor, lives
+entirely outside `g_wt[]`) is handled as a real special case, not silently dropped. Every
+`K_F32` tensor passes through as `GGML_TYPE_F32`; every `K_Q4G64`/`K_Q8G64` tensor is
+dequantized via the **exact same per-row primitives inference itself uses**
+(`q4_unpack_row()`/`q8_unpack_row()`, `q4gemv.h` -- no full-tensor dequant utility existed
+before this phase) then re-quantized via Phase 2's `gguf_w_quantize_q4_0()`/`_q8_0()`.
+
+**Real run** (bob, Qwen2.5-0.5B-Instruct, real Q4_K_M source checkpoint):
+```
+$ QWEN_GGUF=.../qwen2.5-0.5b-instruct-q4_k_m.gguf QWEN_EXPORT_GGUF=/tmp/qwen25_exported.gguf ./qwen_infer_export
+[engine] export: copied 26 source KVs, skipped 0
+[engine] export: 291 tensors (122 F32, 168 Q4_0, 1 Q8_0)
+[engine] export: wrote /tmp/qwen25_exported.gguf
+```
+Output file: 896,693,088 bytes. Larger than the source `Q4_K_M` file (~397MB) -- an expected,
+already-documented tradeoff (`D-export-1`'s own COST note): embed/norm/bias tensors stay
+`K_F32` in this engine's own current role policy, so they export as full F32 rather than a
+K-quant's smaller packed form; `Q4_0`'s own 18-byte/32-element blocks are also less compact
+than `Q4_K`'s 144-byte/256-element super-blocks. Not a bug -- the real, known coarser-tier cost
+of skipping K-quant encoders this round (`D-export-1`).
+
+**Verification -- the real bar, external tool, zero engine dependency**:
+1. `llama-tokenize -m <exported.gguf> --no-bos --ids -p 'The capital of France is'` ->
+   `[785, 6722, 315, 9625, 374]` -- **identical** to the same prompt's real ids against the
+   original source file (confirms the tokenizer KVs round-tripped correctly through the export).
+2. `llama-simple -m <exported.gguf> -n 8 'The capital of France is'` (real inference, real
+   weights, captured via `od -c` to rule out terminal-formatting artifacts) ->
+   `"The capital of France is ____\nA. Paris\nB.\n"` -- **coherent, real, semantically correct
+   text, generated entirely by `llama.cpp`, zero dependency on this engine.** This is the actual
+   "someone can download and use this without our engine" proof this whole plan exists for --
+   not a self-consistency check, a real independent tool loading and running the file.
+
+**Compile check**: `-Wall -Wextra` on the qwen_infer.c diff, zero new warnings.
+
+**Process note**: `qwen_infer.c` continued accumulating unrelated in-progress work from another
+session throughout this phase (confirmed via `git diff` before every edit) -- `git add -p` used
+again to stage only this phase's own hunks, same discipline every prior `D-tok-N`/`D-export-N`
+qwen_infer.c change this session has used.
+
+**Not yet done**: MoE architectures (qwen3moe/gpt-oss/deepseek/olmoe export); K-quants (would
+close the file-size gap above); precision-search-driven export (still not converged for any
+model, per this session's own earlier finding) -- all named, deliberate follow-ups per the
+approved plan's "explicitly out of scope this round" section, not silently dropped.
