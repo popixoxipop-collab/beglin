@@ -14702,3 +14702,73 @@ text; no streaming-detokenize edge-case testing yet (a token that's part of a mu
 character split across two ids would print a byte fragment mid-stream -- known, accepted
 behavior matching most real streaming tokenizer implementations, not tested here since it didn't
 come up in this prompt).
+
+## D-tok-7 -- MoE-GGUF real generation: qwen3moe succeeds, olmoe finds+fixes a real routing bug (2026-09-18)
+
+**Context**: after D-tok-6 proved dense-GGUF text-in/text-out, the next highest-value/lowest-
+risk extension was wiring the same real tokenizer into `run_gguf_moe_verify_mode()` -- the
+CPU-only MoE-GGUF generation function GPT-OSS's own `D-gptoss-10`..`15` work already used --
+for `qwen3moe` and `olmoe`, both already oracle-verified at the tokenizer layer (`D-tok-4`/
+`D-tok-5`). Same `QWEN_MOE_PROMPT_TEXT` env var pattern as `QWEN_PROMPT_TEXT`, plus real
+generated-token output (`bpe_decode()` per step) added to the `QWEN_MOE_GGUF_GEN_N` loop, which
+previously only measured timing and never printed/saved what it generated.
+
+**qwen3moe: real success, first try.** `QWEN_MOE_GGUF=<Qwen3-30B-A3B> QWEN_MOE_PROMPT_TEXT='The
+capital of France is'` -- prompt teacher-forcing's pos-4 argmax (the position right after "is")
+is token `12095` = `"ĠParis"`, and the free-run continuation decodes to `". What is the capital
+of Italy?"` -- coherent, plausible instruct-model text. `MOE_ATTN_KIND=MOE_ATTN_GQA` dispatch
+and every config fact this function already set for qwen3moe were correct as-is; no fixes
+needed.
+
+**olmoe: 3 real gaps found and fixed, in order, each confirmed against a real independent
+source before moving to the next -- not guessed, not left half-fixed**:
+
+1. `olmoe.attention.key_length` is genuinely absent from OLMoE's real GGUF header (confirmed by
+   direct read, not assumed) -- `run_gguf_moe_verify_mode()` FATALed on it. Real GGUF convention
+   llama.cpp itself follows: head_dim = embedding_length/head_count when the key is absent.
+   Real OLMoE values (2048/16=128) confirmed against the same file. Fixed with a fallback, not a
+   hardcoded olmoe-specific constant -- any future architecture missing this key benefits too.
+2. `olmoe.expert_feed_forward_length` is also absent -- OLMoE has no dense/expert FFN-size
+   split (every layer is uniformly MoE), so its conversion reuses the one shared
+   `feed_forward_length` key (real value 1024, matching OLMoE-1B-7B's published per-expert
+   `intermediate_size`) for both roles. Same fallback-with-log pattern as #1.
+3. **The real bug, found only after generation produced grammatically-incoherent garbage
+   despite #1/#2's fixes and every scalar config value cross-checked correct against the
+   already-established, previously-verified safetensors reference
+   (`load_moe_safetensors_arch()`'s own `is_olmoe` branches for `MOE_QKNORM_WHOLE_VECTOR`,
+   `MOE_ROPE_STYLE`, head_dim fallback, `clip_qkv`) and q_norm tensor data confirmed byte-exact
+   against an independent `gguf-py` read (sum=178.775487, both sides, to full float precision)
+   -- ruling out every hypothesis except one:** `MOE_NORM_TOPK_PROB` (whether the router
+   renormalizes its selected top-K expert weights to sum to 1) was hardcoded `=1` for the whole
+   `else` branch (qwen3moe + olmoe together), on the assumption it was a shared architectural
+   constant like the other facts in that branch. It is not. The established safetensors
+   reference reads this dynamically, per-model, from `config.json`'s own `norm_topk_prob` field
+   -- confirmed live against OLMoE's real `/Users/bob/olmoe_1b7b_hf/config.json`:
+   `"norm_topk_prob": false`. qwen3moe's is `true` (this session's own prior finding,
+   unchanged). Every routed token's expert-mixture weights were being renormalized when they
+   should not have been -- wrong for every single generated token, which is exactly consistent
+   with the observed "loads fine, teacher-forces fine-looking logits, but free generation is
+   incoherent" symptom (a routing-weight bug corrupts the FFN output smoothly, not with a
+   crash or an obviously-wrong logit distribution at any single position).
+
+**Fix verification**: before the fix, `QWEN_MOE_PROMPT_TEXT='The capital of France is'` against
+OLMoE's real checkpoint predicted token `45` (`"L"`) at the critical position -- nonsense. After
+the fix, the same run predicts token `7785` = `"ĠParis"` -- **exact match** with
+`llama-simple`'s own real reference generation for the identical prompt+checkpoint (`"The
+capital of France is Paris.\n\nThe capital of France\n"`, captured via `od -c` to rule out
+terminal-formatting artifacts). The free-run continuation after the fix (`".\n\nThe capital of
+France is"`) reproduces the exact same repetition-loop pattern the real reference independently
+exhibits -- not just "no longer garbage," but the *same* real base-model behavior.
+
+**Process note**: this is a genuine instance of this project's own repeated lesson (see
+`feedback_reactive_debugging`-class findings elsewhere) -- cross-checking against a real
+external oracle (`llama-simple`) caught a bug that every internal consistency check (compiles
+clean, loads without FATAL, tensor data byte-exact, config values matching an established
+reference) had already passed. "Loads and runs without crashing" was never the bar; "matches
+independently-verified real output" is, and stayed the bar here even under time pressure to
+call the milestone done after the loading fixes alone looked sufficient.
+
+**Not yet done**: `deepseek_v2` (MLA attention, different generation function entirely, and its
+own pretokenizer per `D-tok-5` is also still unported); `bench`/`spec`/`dump` modes for the
+dense path; the GPU/MLX generation gates (`QWEN_MOE_GPU_GQA_GENERATE` etc., Phase C, a separate
+unstarted track).

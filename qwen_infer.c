@@ -8471,7 +8471,12 @@ static int run_moe_gqa_olmoe_selftest_mode(int argc, char **argv) {
 // falls through, byte-identical to every existing code path.
 // ============================================================================
 
-static const char *SUPPORTED_ARCH_MOE_GGUF[] = { "qwen3moe", "gpt-oss" };  // D-gptoss-2
+// D-tok Phase 5b: "olmoe" added. Real GQA architecture, same as qwen3moe's own else-branch
+// config (D-tok-0's real shape soak already confirmed OLMoE's `tokenizer.ggml.pre="olmo"`,
+// D-tok-5 already ported+verified its real pretokenizer) -- the one real numeric difference is
+// MOE_QKNORM_WHOLE_VECTOR, set explicitly below via an is_olmoe check, not left to the
+// zero-init default qwen3moe happened to coincide with.
+static const char *SUPPORTED_ARCH_MOE_GGUF[] = { "qwen3moe", "gpt-oss", "olmoe" };  // D-gptoss-2, D-tok Phase 5b
 
 // GGUF tensor dims (E/out/in, ng derived from in) come directly from the file's own metadata --
 // this project's established discipline for any file-derived count/offset (see gguf_cache.c's
@@ -8530,6 +8535,18 @@ static const MoeGgufRole MOE_GGUF_LAYER_ROLES[] = {
 };
 
 static GgufFile *g_gguf_moe = NULL;
+
+// D-tok Phase 5b: real BPE tokenizer state for the MoE-GGUF path, mirroring the dense path's
+// own g_bpe_vocab/g_bpe_ready (qwen_infer.c, near g_gguf) -- kept separate rather than shared
+// since the two paths use different GgufFile handles and are mutually exclusive per process
+// (main()'s dispatch runs exactly one of run_gguf_moe_verify_mode()/dense-mode main body), so
+// sharing would only add confusion, not save anything real.
+static BpeVocab g_bpe_vocab_moe;
+static int g_bpe_ready_moe = 0;
+// Forward declaration: bpe_pretok_for_gguf() is defined near main() (dense path), but this
+// MoE-GGUF function (defined earlier in the file) needs to call it too -- plain C ordering,
+// not a design split. See bpe_pretok_for_gguf()'s own definition for what it does.
+static BpePretokType bpe_pretok_for_gguf(GgufFile *f);
 
 // Mirrors gguf_register_q4g64_as() (the dense loader's own registration function) but writes
 // into g_moe_af[]/MoeAFTensor instead of g_wt[]/WT, and handles the 3-D expert-stacked case
@@ -9086,7 +9103,7 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
             !memcmp(arch_ptr, SUPPORTED_ARCH_MOE_GGUF[i], arch_len)) { arch_ok = 1; break; }
     }
     if (!arch_ok) {
-        fprintf(stderr, "FATAL: gguf moe architecture '%.*s' not validated by this engine; supported: qwen3moe, gpt-oss\n",
+        fprintf(stderr, "FATAL: gguf moe architecture '%.*s' not validated by this engine; supported: qwen3moe, gpt-oss, olmoe\n",
                 (int)arch_len, arch_ptr);
         exit(1);
     }
@@ -9101,14 +9118,42 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_N_HEADS=(int)u;
     snprintf(key,sizeof key,"%s.attention.head_count_kv",arch);
     if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_N_KV_HEADS=(int)u;
+    // D-tok Phase 5b: OLMoE's real GGUF has no `olmoe.attention.key_length` key at all
+    // (confirmed by direct header read on bob's real checkpoint, not assumed) -- this KV is
+    // genuinely optional per the GGUF convention llama.cpp itself follows: when absent, head_dim
+    // is embedding_length/head_count (real OLMoE values: 2048/16=128, a clean integer, verified
+    // against the same real file). qwen3moe/gpt-oss both DO carry this key (already proven by
+    // every prior D-gptoss-N/D-tok-N run against their real checkpoints) so this only changes
+    // behavior for the one arch that was FATALing before.
     snprintf(key,sizeof key,"%s.attention.key_length",arch);
-    if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_HEAD_DIM=(int)u;
+    if (gguf_kv_u64(g_gguf_moe,key,&u)) {
+        MOE_HEAD_DIM=(int)u;
+    } else if (MOE_N_HEADS > 0 && MOE_HIDDEN % MOE_N_HEADS == 0) {
+        MOE_HEAD_DIM = MOE_HIDDEN / MOE_N_HEADS;
+        fprintf(stderr, "[engine] gguf moe: '%s' absent, derived MOE_HEAD_DIM=%d from embedding_length/head_count\n", key, MOE_HEAD_DIM);
+    } else {
+        fprintf(stderr, "FATAL: gguf moe missing '%s' and embedding_length(%d) not evenly divisible by head_count(%d)\n",
+                key, MOE_HIDDEN, MOE_N_HEADS);
+        exit(1);
+    }
     snprintf(key,sizeof key,"%s.expert_count",arch);
     if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_N_EXPERTS=(int)u;
     snprintf(key,sizeof key,"%s.expert_used_count",arch);
     if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_TOP_K=(int)u;
+    // D-tok Phase 5b: OLMoE's real GGUF has no `olmoe.expert_feed_forward_length` key either
+    // (confirmed against the real checkpoint, alongside key_length above) -- every OLMoE layer
+    // is uniformly MoE (MOE_FIRST_DENSE_LAYERS=0), so its conversion just uses the one shared
+    // `feed_forward_length` key (real value 1024, matching OLMoE-1B-7B's published per-expert
+    // intermediate_size) for both roles. qwen3moe/gpt-oss both carry the distinct key already.
     snprintf(key,sizeof key,"%s.expert_feed_forward_length",arch);
-    if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_IM_DIM=(int)u;
+    if (gguf_kv_u64(g_gguf_moe,key,&u)) {
+        MOE_IM_DIM=(int)u;
+    } else {
+        char fallback_key[128]; snprintf(fallback_key,sizeof fallback_key,"%s.feed_forward_length",arch);
+        if (!gguf_kv_u64(g_gguf_moe,fallback_key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s' and fallback '%s'\n",key,fallback_key); exit(1); }
+        MOE_IM_DIM=(int)u;
+        fprintf(stderr, "[engine] gguf moe: '%s' absent, using '%s'=%d for MOE_IM_DIM\n", key, fallback_key, MOE_IM_DIM);
+    }
     snprintf(key,sizeof key,"%s.feed_forward_length",arch);
     if (!gguf_kv_u64(g_gguf_moe,key,&u)) { fprintf(stderr,"FATAL: gguf moe missing '%s'\n",key); exit(1); } MOE_DENSE_IM=(int)u;
     snprintf(key,sizeof key,"%s.rope.freq_base",arch);
@@ -9166,14 +9211,33 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     } else {
         // Architecture-level facts about qwen3moe (verified this session against real config.json /
         // mlx_lm source, sub-part 3's own F-3/C-6 findings -- not read from any KV key, because none
-        // exists for these): NEOX RoPE, top-k renormalization always on, no shared experts, every
-        // layer is MoE (no forced-dense layers).
+        // exists for these): NEOX RoPE, no shared experts, every layer is MoE (no forced-dense
+        // layers). These ARE shared with olmoe (D-tok-0's real GGUF header confirms both else-
+        // branch archs need MOE_ATTN_GQA/NEOX/no-shared-experts).
         MOE_ATTN_KIND = MOE_ATTN_GQA;
         MOE_ROPE_STYLE = MOE_ROPE_NEOX;
-        MOE_NORM_TOPK_PROB = 1;
+        // D-tok Phase 5c: REAL bug found via cross-check against llama.cpp's real generation
+        // output (llama-simple said "Paris", this engine said garbage) -- top-k renormalization
+        // is NOT shared between qwen3moe and olmoe the way every other config fact in this
+        // branch is. The established safetensors reference (load_moe_safetensors_arch()) reads
+        // this dynamically per-model from config.json's own `norm_topk_prob` field -- it is NOT
+        // a fixed architectural constant the way this branch's comment previously implied.
+        // Confirmed live: OLMoE's real /Users/bob/olmoe_1b7b_hf/config.json has
+        // `"norm_topk_prob": false`, qwen3moe's real config has it `true` (this project's own
+        // prior sub-part-3 finding, unchanged). Hardcoding =1 for both was the actual root
+        // cause of OLMoE's wrong generation -- every routed token's expert-mixture weights were
+        // renormalized when they should not have been.
+        MOE_NORM_TOPK_PROB = !strcmp(arch, "olmoe") ? 0 : 1;
         MOE_N_SHARED = 0;
         MOE_FIRST_DENSE_LAYERS = 0;
         MOE_Q_HEAD_DIM = MOE_HEAD_DIM;
+        // D-tok Phase 5b: MOE_QKNORM_WHOLE_VECTOR is NOT a qwen3moe-vs-gpt-oss axis -- it's an
+        // olmoe-specific real numeric fact (see this global's own doc comment: "whole_vector=1
+        // (OLMoE only)"). This else-branch previously left it at its zero-init default, which
+        // happened to be qwen3moe's correct value (0) by coincidence, not by a real check --
+        // every other OLMoE code path in this file (moe_load_gqa_cbatch_config(),
+        // load_moe_safetensors_arch()) sets this explicitly; this one now does too.
+        MOE_QKNORM_WHOLE_VECTOR = !strcmp(arch, "olmoe") ? 1 : 0;
         // MLA-only fields this GQA path never reads (moe_cfg_validate()/alloc_moe_buffers() require
         // them positive regardless of ATTN_KIND) -- same dummy-but-valid placeholders the sub-part-2
         // self-test and sub-part-3 exporter already proved run clean, see moe_cfg_validate()'s own
@@ -9280,6 +9344,17 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
 
     moe_resolve_layer_tensors();
     fprintf(stderr, "[gguf moe check] all %d layers' tensors resolved\n", MOE_NL);
+    if (getenv("QWEN_TOK_DEBUG_QNORM")) {
+        MoeF32Tensor *qn = g_moe_lt[0].q_norm;
+        if (qn) {
+            float *w = (float *)(g_moe_f32_blob + qn->off);
+            double sum = 0; for (long i = 0; i < qn->numel; i++) sum += w[i];
+            fprintf(stderr, "[DEBUG qnorm] layer0 numel=%ld sum=%.6f first3=%.6f,%.6f,%.6f last3=%.6f,%.6f,%.6f\n",
+                    qn->numel, sum, w[0], w[1], w[2], w[qn->numel-3], w[qn->numel-2], w[qn->numel-1]);
+        } else {
+            fprintf(stderr, "[DEBUG qnorm] layer0 q_norm is NULL\n");
+        }
+    }
 
     MoeAFTensor *t_embed = moe_find_af("model.embed_tokens");
     MoeAFTensor *t_lmhead = moe_find_af("lm_head");
@@ -9297,16 +9372,33 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     static int prompt_ids_override[MOE_MAXPOS];
     int *prompt_ids = prompt_ids_default;
     int N = sizeof(prompt_ids_default) / sizeof(prompt_ids_default[0]);
-    const char *prompt_ids_env = getenv("QWEN_MOE_PROMPT_IDS");
-    if (prompt_ids_env && prompt_ids_env[0]) {
-        char buf[1024];
-        strncpy(buf, prompt_ids_env, sizeof buf - 1);
-        buf[sizeof buf - 1] = '\0';
-        int n = 0;
-        char *tok = strtok(buf, ",");
-        while (tok && n < MOE_MAXPOS) { prompt_ids_override[n++] = atoi(tok); tok = strtok(NULL, ","); }
+    // D-tok Phase 5b: real text prompt, checked first -- takes precedence over QWEN_MOE_PROMPT_IDS
+    // when set, same "additive, byte-identical when unset" convention D-tok-6 already established
+    // for the dense path's QWEN_PROMPT_TEXT.
+    const char *ptext_moe = getenv("QWEN_MOE_PROMPT_TEXT");
+    if (ptext_moe && ptext_moe[0]) {
+        BpePretokType pretok = bpe_pretok_for_gguf(g_gguf_moe);
+        if (!bpe_vocab_load(g_gguf_moe, pretok, &g_bpe_vocab_moe)) {
+            fprintf(stderr, "FATAL: bpe_vocab_load failed for MoE-GGUF despite tokenizer.ggml.model/pre being present\n");
+            exit(1);
+        }
+        g_bpe_ready_moe = 1;
+        int n = bpe_encode(&g_bpe_vocab_moe, ptext_moe, strlen(ptext_moe), prompt_ids_override, MOE_MAXPOS);
+        if (n < 0) { fprintf(stderr, "FATAL: bpe_encode failed (prompt too long for MOE_MAXPOS=%d?)\n", MOE_MAXPOS); exit(1); }
         prompt_ids = prompt_ids_override;
         N = n;
+    } else {
+        const char *prompt_ids_env = getenv("QWEN_MOE_PROMPT_IDS");
+        if (prompt_ids_env && prompt_ids_env[0]) {
+            char buf[1024];
+            strncpy(buf, prompt_ids_env, sizeof buf - 1);
+            buf[sizeof buf - 1] = '\0';
+            int n = 0;
+            char *tok = strtok(buf, ",");
+            while (tok && n < MOE_MAXPOS) { prompt_ids_override[n++] = atoi(tok); tok = strtok(NULL, ","); }
+            prompt_ids = prompt_ids_override;
+            N = n;
+        }
     }
     if (N > MOE_MAXPOS) { fprintf(stderr, "FATAL: N=%d > MOE_MAXPOS=%d\n", N, MOE_MAXPOS); exit(1); }
 
@@ -9396,6 +9488,11 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
         struct timespec gt0, gt1;
         clock_gettime(CLOCK_MONOTONIC, &gt0);
         int actual_gen = 0;
+        // D-tok Phase 5b: real generated-token output, previously absent -- this loop only ever
+        // measured timing before. Text when the real tokenizer loaded this prompt (bpe_decode()
+        // per step, matching D-tok-6's dense-path streaming convention exactly); raw ids
+        // otherwise (QWEN_MOE_PROMPT_IDS path, unchanged).
+        fprintf(stdout, "gen:");
         for (int i = 0; i < gen_n; i++) {
             int pos = N + i;
             if (pos >= MOE_MAXPOS) {
@@ -9405,9 +9502,17 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
             moe_forward_token(NULL, t_embed, t_lmhead, w_finalnorm, next_tok, pos, logits, NULL, NULL, NULL);
             int argmax = 0; float best = logits[0];
             for (int v = 1; v < MOE_VOCAB; v++) if (logits[v] > best) { best = logits[v]; argmax = v; }
+            if (g_bpe_ready_moe) {
+                char dbuf[256];
+                int dn = bpe_decode(&g_bpe_vocab_moe, &argmax, 1, dbuf, sizeof dbuf);
+                if (dn > 0) { fwrite(dbuf, 1, (size_t)dn, stdout); fflush(stdout); }
+            } else {
+                fprintf(stdout, " %d", argmax); fflush(stdout);
+            }
             next_tok = argmax;
             actual_gen++;
         }
+        fprintf(stdout, "\n");
         clock_gettime(CLOCK_MONOTONIC, &gt1);
         double gen_ms = (gt1.tv_sec - gt0.tv_sec) * 1e3 + (gt1.tv_nsec - gt0.tv_nsec) / 1e6;
         fprintf(stderr, "RESULT: gptoss gen timing: %d tokens in %.2fms (%.3f tok/s, %.3fms/tok)\n",
