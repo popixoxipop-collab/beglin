@@ -26,10 +26,27 @@
 
 typedef enum {
     BPE_PRETOK_QWEN2 = 0,   // D-tok-4: also covers qwen3moe/qwen3_moe (same real pre-type)
+    BPE_PRETOK_LLAMA3 = 1,  // D-tok-5: real port of unicode_regex_split_custom_llama3
+    BPE_PRETOK_GPT2 = 2,    // D-tok-5: real port of unicode_regex_split_custom_gpt2 -- also
+                            // used for olmoe's "olmo" pre-type (no hand-coded llama.cpp
+                            // reference exists for "olmo"; its regex_exprs is textually GPT2's
+                            // pattern plus an explicit \s+(?!\S) alternative GPT2's hand-coded
+                            // function already implements as its whitespace fallback -- oracle-
+                            // verified empirically against llama-tokenize on a real OLMoE
+                            // checkpoint, not assumed from the regex-text argument alone).
 } BpePretokType;
 
 typedef struct { const char *ptr; uint32_t len; uint32_t value; int used; } BpeHTEntry;
 typedef struct { BpeHTEntry *entries; uint32_t cap; uint32_t count; } BpeStrIntMap;
+
+// D-tok-5: a CONTROL/USER_DEFINED/UNKNOWN-type vocab entry (real GGUF token_type != NORMAL,
+// e.g. "<|endoftext|>", or OLMoE's literal multi-space code-indent tokens "  "/"   ") is matched
+// against the RAW input text as a literal substring BEFORE normal pretokenization+BPE runs --
+// confirmed necessary, not assumed, by a real oracle mismatch this session (see RESULTS.md's
+// D-tok-5): without this, OLMoE's own real tokenizer output for text containing a double-space
+// run diverged from llama-tokenize's real output, because that "  " is its own literal vocab
+// entry, not reachable via byte-mapped BPE merging at all.
+typedef struct { const char *ptr; uint32_t len; int32_t id; } BpeSpecialTok;
 
 typedef struct {
     const GgufStr *tokens;      // zero-copy, points into the GgufFile's mmap (Phase 1)
@@ -40,6 +57,8 @@ typedef struct {
     BpeStrIntMap merge_map;     // "left right" string -> rank (index into merges[])
     BpePretokType pretok;
     int32_t bos_id, eos_id;     // -1 if not present in the GGUF
+    BpeSpecialTok *special;     // token_type != NORMAL entries, for literal pre-scan matching
+    uint32_t n_special;
 } BpeVocab;
 
 // Loads tokens/merges/special-ids from an already-open GgufFile (see gguf_load.h). Returns 1 on

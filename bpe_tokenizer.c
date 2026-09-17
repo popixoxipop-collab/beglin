@@ -518,6 +518,228 @@ static int qwen2_split_span(const uint32_t *cpts, size_t offset_ini, size_t offs
     return n_out;
 }
 
+// ---- llama3 pre-tokenizer split (ported verbatim from unicode_regex_split_custom_llama3,
+// src/unicode.cpp, fetched this session -- identical to qwen2's function except the number
+// branch groups digits in runs of up to 3, matching llama3's real \p{N}{1,3} vs qwen2's \p{N}) ----
+
+static int llama3_split_span(const uint32_t *cpts, size_t offset_ini, size_t offset_end,
+                              BpeSpan *out_spans, int cap) {
+    int n_out = 0;
+    size_t prev_end = offset_ini;
+
+    #define GET_CPT(p) (((p) >= offset_ini && (p) < offset_end) ? cpts[p] : 0xFFFFFFFFu)
+    #define GET_FLAGS(p) (((p) >= offset_ini && (p) < offset_end) ? unicode_cpt_flags(cpts[p]) : 0)
+    #define ADD_TOKEN(end_pos) do { \
+        size_t _end = (size_t)(end_pos); \
+        size_t _len = _end - prev_end; \
+        if (_len > 0) { \
+            if (n_out >= cap) return -1; \
+            out_spans[n_out].start = prev_end; \
+            out_spans[n_out].len = _len; \
+            n_out++; \
+        } \
+        prev_end = _end; \
+        pos = _end; \
+    } while (0)
+
+    for (size_t pos = offset_ini; pos < offset_end; ) {
+        uint32_t cpt = GET_CPT(pos);
+        uint16_t flags = GET_FLAGS(pos);
+
+        // regex: (?i:'s|'t|'re|'ve|'m|'ll|'d)
+        if (cpt == '\'' && pos + 1 < offset_end) {
+            uint32_t c1 = ascii_tolower(GET_CPT(pos + 1));
+            if (c1 == 's' || c1 == 't' || c1 == 'm' || c1 == 'd') {
+                ADD_TOKEN(pos + 2);
+                continue;
+            }
+            if (pos + 2 < offset_end) {
+                uint32_t c2 = ascii_tolower(GET_CPT(pos + 2));
+                if ((c1 == 'r' && c2 == 'e') || (c1 == 'v' && c2 == 'e') || (c1 == 'l' && c2 == 'l')) {
+                    ADD_TOKEN(pos + 3);
+                    continue;
+                }
+            }
+        }
+
+        // regex: [^\r\n\p{L}\p{N}]?\p{L}+
+        if (!(cpt == '\r' || cpt == '\n' || (flags & UCPT_NUMBER))) {
+            if ((flags & UCPT_LETTER) || (GET_FLAGS(pos + 1) & UCPT_LETTER)) {
+                pos++;
+                while (GET_FLAGS(pos) & UCPT_LETTER) pos++;
+                ADD_TOKEN(pos);
+                continue;
+            }
+        }
+
+        // regex: \p{N}{1,3}  -- the one real difference from qwen2_split_span
+        if (flags & UCPT_NUMBER) {
+            size_t ini = pos;
+            while (GET_FLAGS(pos) & UCPT_NUMBER) {
+                pos++;
+                if (pos - ini >= 3) {
+                    ADD_TOKEN(pos);
+                    ini = pos;
+                }
+            }
+            ADD_TOKEN(pos);
+            continue;
+        }
+
+        // regex: <space>?[^\s\p{L}\p{N}]+[\r\n]*
+        {
+            uint16_t flags2 = (cpt == ' ') ? GET_FLAGS(pos + 1) : flags;
+            if (!(flags2 & (UCPT_WHITESPACE | UCPT_LETTER | UCPT_NUMBER)) && flags != 0) {
+                if (cpt == ' ') pos++;
+                while (!(flags2 & (UCPT_WHITESPACE | UCPT_LETTER | UCPT_NUMBER)) && flags2 != 0) {
+                    pos++;
+                    flags2 = GET_FLAGS(pos);
+                }
+                uint32_t cpt2 = GET_CPT(pos);
+                while (cpt2 == '\r' || cpt2 == '\n') {
+                    pos++;
+                    cpt2 = GET_CPT(pos);
+                }
+                ADD_TOKEN(pos);
+                continue;
+            }
+        }
+
+        {
+            size_t num_ws = 0;
+            size_t last_end_rn = 0;
+            while (GET_FLAGS(pos + num_ws) & UCPT_WHITESPACE) {
+                uint32_t cpt2 = GET_CPT(pos + num_ws);
+                if (cpt2 == '\r' || cpt2 == '\n') last_end_rn = pos + num_ws + 1;
+                num_ws++;
+            }
+
+            // regex: \s*[\r\n]+
+            if (last_end_rn > 0) {
+                ADD_TOKEN(last_end_rn);
+                continue;
+            }
+
+            // regex: \s+(?!\S)
+            if (num_ws > 1 && GET_CPT(pos + num_ws) != 0xFFFFFFFFu) {
+                ADD_TOKEN(pos + num_ws - 1);
+                continue;
+            }
+
+            // regex: \s+
+            if (num_ws > 0) {
+                ADD_TOKEN(pos + num_ws);
+                continue;
+            }
+        }
+
+        // no matches
+        ADD_TOKEN(pos + 1);
+    }
+
+    #undef GET_CPT
+    #undef GET_FLAGS
+    #undef ADD_TOKEN
+    return n_out;
+}
+
+// ---- gpt2 pre-tokenizer split (ported verbatim from unicode_regex_split_custom_gpt2,
+// src/unicode.cpp, fetched this session). Also used for olmoe's "olmo" pre-type -- see the
+// BPE_PRETOK_GPT2 comment in bpe_tokenizer.h for why, and D-tok-5 for the oracle verification
+// that confirms this empirically rather than resting on the regex-text argument alone. ----
+
+static int gpt2_split_span(const uint32_t *cpts, size_t offset_ini, size_t offset_end,
+                            BpeSpan *out_spans, int cap) {
+    int n_out = 0;
+    size_t prev_end = offset_ini;
+
+    #define GET_CPT(p) (((p) >= offset_ini && (p) < offset_end) ? cpts[p] : 0xFFFFFFFFu)
+    #define GET_FLAGS(p) (((p) >= offset_ini && (p) < offset_end) ? unicode_cpt_flags(cpts[p]) : 0)
+    #define ADD_TOKEN(end_pos) do { \
+        size_t _end = (size_t)(end_pos); \
+        size_t _len = _end - prev_end; \
+        if (_len > 0) { \
+            if (n_out >= cap) return -1; \
+            out_spans[n_out].start = prev_end; \
+            out_spans[n_out].len = _len; \
+            n_out++; \
+        } \
+        prev_end = _end; \
+        pos = _end; \
+    } while (0)
+
+    for (size_t pos = offset_ini; pos < offset_end; ) {
+        uint32_t cpt = GET_CPT(pos);
+
+        // regex: 's|'t|'re|'ve|'m|'ll|'d  (NOT case-insensitive here, unlike qwen2/llama3 --
+        // matches the real gpt2 function exactly, which uses _get_cpt directly, no tolower())
+        if (cpt == '\'' && pos + 1 < offset_end) {
+            uint32_t c1 = GET_CPT(pos + 1);
+            if (c1 == 's' || c1 == 't' || c1 == 'm' || c1 == 'd') {
+                ADD_TOKEN(pos + 2);
+                continue;
+            }
+            if (pos + 2 < offset_end) {
+                uint32_t c2 = GET_CPT(pos + 2);
+                if ((c1 == 'r' && c2 == 'e') || (c1 == 'v' && c2 == 'e') || (c1 == 'l' && c2 == 'l')) {
+                    ADD_TOKEN(pos + 3);
+                    continue;
+                }
+            }
+        }
+
+        uint16_t flags2 = (cpt == ' ') ? GET_FLAGS(pos + 1) : GET_FLAGS(pos);
+
+        // regex: <space>?\p{L}+
+        if (flags2 & UCPT_LETTER) {
+            if (cpt == ' ') pos++;
+            while (GET_FLAGS(pos) & UCPT_LETTER) pos++;
+            ADD_TOKEN(pos);
+            continue;
+        }
+        // regex: <space>?\p{N}+
+        if (flags2 & UCPT_NUMBER) {
+            if (cpt == ' ') pos++;
+            while (GET_FLAGS(pos) & UCPT_NUMBER) pos++;
+            ADD_TOKEN(pos);
+            continue;
+        }
+        // regex: <space>?[^\s\p{L}\p{N}]+
+        if (!(flags2 & (UCPT_WHITESPACE | UCPT_LETTER | UCPT_NUMBER)) && flags2 != 0) {
+            if (cpt == ' ') pos++;
+            while (!(GET_FLAGS(pos) & (UCPT_WHITESPACE | UCPT_LETTER | UCPT_NUMBER)) && GET_FLAGS(pos) != 0) {
+                pos++;
+            }
+            ADD_TOKEN(pos);
+            continue;
+        }
+
+        {
+            size_t num_ws = 0;
+            while (GET_FLAGS(pos + num_ws) & UCPT_WHITESPACE) num_ws++;
+
+            // regex: \s+(?!\S)
+            if (num_ws > 1 && GET_CPT(pos + num_ws) != 0xFFFFFFFFu) {
+                ADD_TOKEN(pos + num_ws - 1);
+                continue;
+            }
+            // regex: \s+
+            if (num_ws > 0) {
+                ADD_TOKEN(pos + num_ws);
+                continue;
+            }
+        }
+
+        // no matches
+        ADD_TOKEN(pos + 1);
+    }
+
+    #undef GET_CPT
+    #undef GET_FLAGS
+    #undef ADD_TOKEN
+    return n_out;
+}
+
 // ---- BPE merge core (ported from llm_tokenizer_bpe_session::tokenize, src/llama-vocab.cpp) ----
 //
 // O(n^2) best-candidate scan per merge step rather than a true priority queue -- deliberate
@@ -651,16 +873,52 @@ int bpe_vocab_load(const GgufFile *f, BpePretokType pretok, BpeVocab *v) {
     int64_t bos, eos;
     v->bos_id = gguf_kv_i64(f, "tokenizer.ggml.bos_token_id", &bos) ? (int32_t)bos : -1;
     v->eos_id = gguf_kv_i64(f, "tokenizer.ggml.eos_token_id", &eos) ? (int32_t)eos : -1;
+
+    // GGUF token_type enum (ground truth: gguf-py's TokenType, confirmed against real GGUF
+    // headers this session): 1=NORMAL, 2=UNKNOWN, 3=CONTROL, 4=USER_DEFINED, 5=UNUSED, 6=BYTE.
+    // Everything except NORMAL and UNUSED gets a literal pre-scan entry (UNUSED/padding tokens
+    // are reserved placeholders, not real matchable text).
+    #define BPE_TOKTYPE_NORMAL 1
+    #define BPE_TOKTYPE_UNUSED 5
+    const int32_t *ttype = NULL;
+    uint64_t n_ttype = 0;
+    gguf_kv_i32_array(f, "tokenizer.ggml.token_type", &ttype, &n_ttype);
+    v->special = NULL;
+    v->n_special = 0;
+    if (ttype && n_ttype == v->n_tokens) {
+        uint32_t cnt = 0;
+        for (uint64_t i = 0; i < n_ttype; i++) {
+            if (ttype[i] != BPE_TOKTYPE_NORMAL && ttype[i] != BPE_TOKTYPE_UNUSED) cnt++;
+        }
+        if (cnt > 0) {
+            v->special = malloc(cnt * sizeof(BpeSpecialTok));
+            uint32_t si = 0;
+            for (uint64_t i = 0; i < n_ttype; i++) {
+                if (ttype[i] != BPE_TOKTYPE_NORMAL && ttype[i] != BPE_TOKTYPE_UNUSED) {
+                    v->special[si].ptr = v->tokens[i].ptr;
+                    v->special[si].len = (uint32_t)v->tokens[i].len;
+                    v->special[si].id = (int32_t)i;
+                    si++;
+                }
+            }
+            v->n_special = cnt;
+        }
+    }
+    #undef BPE_TOKTYPE_NORMAL
+    #undef BPE_TOKTYPE_UNUSED
     return 1;
 }
 
 void bpe_vocab_free(BpeVocab *v) {
     free(v->vocab_map.entries);
     free(v->merge_map.entries);
+    free(v->special);
     memset(v, 0, sizeof(*v));
 }
 
-int bpe_encode(const BpeVocab *v, const char *text, size_t text_len, int32_t *out_ids, int cap) {
+// The original single-pass encode (UTF-8 decode -> pretokenize -> BPE merge), now applied to
+// each "normal text" span BETWEEN literal special-token matches -- see bpe_encode() below.
+static int bpe_encode_normal(const BpeVocab *v, const char *text, size_t text_len, int32_t *out_ids, int cap) {
     #define BPE_MAX_CPTS 65536
     static _Thread_local uint32_t cpts_buf[BPE_MAX_CPTS];
     static _Thread_local size_t byte_off_buf[BPE_MAX_CPTS + 1];
@@ -679,6 +937,10 @@ int bpe_encode(const BpeVocab *v, const char *text, size_t text_len, int32_t *ou
     int n_spans;
     if (v->pretok == BPE_PRETOK_QWEN2) {
         n_spans = qwen2_split_span(cpts_buf, 0, n_cpts, spans, BPE_MAX_SPANS);
+    } else if (v->pretok == BPE_PRETOK_LLAMA3) {
+        n_spans = llama3_split_span(cpts_buf, 0, n_cpts, spans, BPE_MAX_SPANS);
+    } else if (v->pretok == BPE_PRETOK_GPT2) {
+        n_spans = gpt2_split_span(cpts_buf, 0, n_cpts, spans, BPE_MAX_SPANS);
     } else {
         return -1;
     }
@@ -703,6 +965,43 @@ int bpe_encode(const BpeVocab *v, const char *text, size_t text_len, int32_t *ou
     }
     #undef BPE_MAX_CPTS
     #undef BPE_MAX_SPANS
+    return n_out;
+}
+
+int bpe_encode(const BpeVocab *v, const char *text, size_t text_len, int32_t *out_ids, int cap) {
+    int n_out = 0;
+    size_t seg_start = 0;
+    size_t pos = 0;
+    while (pos < text_len) {
+        uint32_t best_len = 0;
+        int32_t best_id = -1;
+        for (uint32_t si = 0; si < v->n_special; si++) {
+            const BpeSpecialTok *st = &v->special[si];
+            if (st->len > best_len && st->len <= text_len - pos &&
+                memcmp(text + pos, st->ptr, st->len) == 0) {
+                best_len = st->len;
+                best_id = st->id;
+            }
+        }
+        if (best_id >= 0) {
+            if (pos > seg_start) {
+                int w = bpe_encode_normal(v, text + seg_start, pos - seg_start, out_ids + n_out, cap - n_out);
+                if (w < 0) return -1;
+                n_out += w;
+            }
+            if (n_out >= cap) return -1;
+            out_ids[n_out++] = best_id;
+            pos += best_len;
+            seg_start = pos;
+        } else {
+            pos++;
+        }
+    }
+    if (pos > seg_start) {
+        int w = bpe_encode_normal(v, text + seg_start, pos - seg_start, out_ids + n_out, cap - n_out);
+        if (w < 0) return -1;
+        n_out += w;
+    }
     return n_out;
 }
 

@@ -14572,3 +14572,65 @@ tool this project's GPT-OSS work already trusted, `D-gptoss-13`).
 `gpt-oss`, `deepseek-llm` for `deepseek_v2`, `olmo` for `olmoe`, `llama-bpe` for Llama-3.x --
 Phase 4); wiring `bpe_encode`/`bpe_decode` into the actual engine's `load_ids()` call sites and
 generation-output print sites (Phase 5); SentencePiece (deferred per `D-tok-1`).
+
+## D-tok-5 -- Phase 4 (partial): llama3 + olmo pretokenizers, and a real structural gap found + fixed (2026-09-17)
+
+**llama3** (`llama-bpe` pre-type, Llama-3.x family): real port of
+`unicode_regex_split_custom_llama3` (`src/unicode.cpp`, fetched this session) -- identical to
+`qwen2_split_span` except the number branch groups digits in runs of up to 3 (`\p{N}{1,3}` vs
+qwen2's plain `\p{N}`). Tested against llama.cpp's own real `ggml-vocab-llama-bpe.gguf`
+reference fixture, the same diverse 14-line corpus `D-tok-4` used: **byte-exact `diff`, 0
+differences.**
+
+**gpt2 + olmo** (`olmo` pre-type, OLMoE): real port of `unicode_regex_split_custom_gpt2`
+(`src/unicode.cpp`). No hand-coded llama.cpp reference exists for `olmo` specifically --
+confirmed via full-file search this session, it falls through to llama.cpp's own generic
+`std::regex` fallback path. `olmo`'s real `regex_exprs` string is textually GPT2's pattern plus
+one explicit `\s+(?!\S)` alternative that GPT2's *hand-coded* function already implements as its
+whitespace fallback -- reused `gpt2_split_span` for `olmo` on that basis, **then empirically
+verified rather than trusted the regex-text argument alone** (this project's own standing rule).
+
+**Real structural gap found by that verification, not assumed away**: the first OLMoE run
+against the corpus showed a genuine mismatch -- `[..., 340, 209, 1852, 247, ...]` (mine) vs
+`[..., 340, 50276, 4, 247, ...]` (oracle) around a double-space-before-`#` run in the Python
+comment line. Decoding the diverging ids: `50276` = `"  "` (two literal ASCII space
+*characters*, not the byte-mapped `Ġ` representation), `4` = `"#"` alone -- and both are
+`tokenizer.ggml.token_type = 4` (`USER_DEFINED`), confirmed via a direct GGUF read alongside
+`|||EMAIL_ADDRESS|||`/`|||PHONE_NUMBER|||` (also type 4) and `<|endoftext|>` (type 3,
+`CONTROL`). **Root cause**: this vocab has literal, non-byte-mapped special/added tokens
+(common code-indentation whitespace runs, PII placeholders, chat-control markers) that must be
+matched against the *raw* input text before normal pretokenization+BPE runs at all -- a
+mechanism this implementation didn't have. Byte-mapped BPE merging can never produce these
+tokens on its own (merging two `Ġ` byte-mapped-space characters would yield `"ĠĠ"` bytes, not
+literal `"  "` bytes -- a real, structural mismatch, not a close-enough approximation).
+
+**Fix**: `BpeVocab` gained a `special[]` list (every vocab entry with `token_type` != `NORMAL`
+(1) and != `UNUSED` (5, reserved padding slots) -- GGUF's real `token_type` enum, confirmed
+against real headers: 1=NORMAL, 2=UNKNOWN, 3=CONTROL, 4=USER_DEFINED, 5=UNUSED, 6=BYTE),
+populated once at load time via Phase 1's `gguf_kv_i32_array()` on `tokenizer.ggml.token_type`.
+`bpe_encode()` is now a pre-scan pass over the *raw, un-mapped* text: at each byte position,
+check every special token for a literal longest-match; on a match, flush any accumulated
+"normal" text through the original encode logic (renamed `bpe_encode_normal()`), emit the
+special token's id directly, and continue past it. This is the standard added-token mechanism
+every real tokenizer implementation needs (not OLMo-specific) -- it just hadn't been exercised
+by `D-tok-4`'s own test corpus, which had no literal special-token substrings in it.
+
+**Re-verification after the fix**:
+- OLMoE + the original diverging corpus: **now byte-exact, 0 differences.**
+- Regression check -- Qwen2.5-0.5B, Qwen3-30B-A3B (qwen2), and the llama-bpe fixture (llama3),
+  same corpus: **all three still byte-exact, 0 differences** (the pre-scan correctly finds zero
+  special-token matches in that corpus and falls through to the unchanged normal path).
+- **New, directly relevant test**: a real chat-formatted prompt (`<|im_start|>system\n...
+  <|im_end|>\n<|im_start|>user\n...`) against Qwen2.5-0.5B -- **byte-exact match**, with
+  `<|im_start|>`/`<|im_end|>` each correctly emitted as single control-token ids (151644/151645),
+  not fragmented character-by-character. This is the realistic case Phase 5's eventual engine
+  wiring will actually depend on (chat-formatted generation), not just an edge-case curiosity.
+
+**Still not done**: `deepseek-llm`/`deepseek-coder` (`deepseek_v2`) and `gpt-4o` (`gpt-oss`) --
+neither has a hand-coded llama.cpp reference function (both fall to the generic regex path);
+`gpt-4o`'s real `regex_exprs` is significantly more complex than every pattern ported so far
+(lookahead-based case-sensitive run splitting, `(?=[\p{L}])([^a-z])` style constructs) and would
+need to be hand-derived from the regex text with no reference implementation to port faithfully
+-- higher risk, deferred rather than rushed without adequate verification budget this pass.
+`deepseek-llm`'s pattern is a large explicit Unicode-script-range enumeration, also undocumented
+here in full yet. Engine wiring (Phase 5) and SentencePiece (deferred per `D-tok-1`) also remain.
