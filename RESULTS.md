@@ -14451,3 +14451,63 @@ stricter `-Wall -Wextra -std=c11` pass both clean, zero warnings.
 scalar `model`/`pre`/vocab-count KVs through the pre-existing scalar accessors, which this phase
 didn't change) -- deferred to Phase 3/4 when each architecture's actual BPE encode/decode gets
 built and needs its real vocab/merge table anyway, rather than re-verified twice.
+
+## D-tok-3 -- Phase 2: Unicode codepoint classification table, exhaustive C-vs-Python match (2026-09-17)
+
+**Context**: every hand-coded pre-tokenizer split function this project will port in Phase 3/4
+(`llama.cpp`'s real `unicode_regex_split_custom_{qwen2,gpt2,llama3,...}`, confirmed via direct
+source read this session) depends on "is this codepoint a Letter/Number/Separator/Punctuation/
+etc." -- the `\p{L}`, `\p{N}` classes the regex patterns use. llama.cpp itself doesn't run a
+Unicode-aware regex engine for this; it hand-codes the split logic over a precomputed per-
+codepoint category lookup table (`unicode_cpt_flags` -- confirmed via direct read of llama.cpp's
+`unicode.h`: `NUMBER=\p{N}`, `LETTER=\p{L}`, `SEPARATOR=\p{Z}`, `ACCENT_MARK=\p{M}`,
+`PUNCTUATION=\p{P}`, `SYMBOL=\p{S}`, `CONTROL=\p{C}`, plus an orthogonal `WHITESPACE` flag).
+D-tok-3 (the plan's own decision) required this table be a real vendored, oracle-verified
+artifact before any split function depends on it -- this phase builds and verifies it.
+
+**Generator**: `tools/unicode_cpt_flags_gen.py` computes `unicodedata.category(chr(cp))` (Python
+stdlib, CPython's own implementation of the Unicode Character Database, version 16.0.0 as bundled
+with this session's Python) for every codepoint `0..0x10FFFF`, maps the category's major letter
+to the matching flag, ORs in `WHITESPACE` via `str.isspace()`, then run-length-encodes into
+`(start_codepoint, flags)` transition pairs -- the same shape llama.cpp's own
+`unicode_ranges_flags` uses (`std::initializer_list<std::pair<uint32_t,uint16_t>>`, confirmed via
+source read). Result: **2325 ranges cover all 1,114,112 codepoints** (0.21% of a naive
+one-entry-per-codepoint table). Emitted as `unicode_cpt_flags.h` -- a plain C header, a static
+range array, and an inline binary-search `unicode_cpt_flags(cp)` lookup function. Generated, not
+hand-edited (header says so); regenerate via `python3 tools/unicode_cpt_flags_gen.py >
+unicode_cpt_flags.h`.
+
+**Verification -- exhaustive, not sampled, two independent layers**:
+1. **Generator's own self-consistency check** (runs automatically before the header is ever
+   emitted): decode the RLE ranges back and diff against the original per-codepoint computation,
+   for all 1,114,112 codepoints. Result: **0 mismatches**. This catches RLE-encoding bugs but
+   only proves the Python-side encode/decode round-trips -- not that a *separate* C
+   implementation of the binary search is correct.
+2. **Real cross-language oracle**: `tools/unicode_cpt_flags_dump.c` (built against the actual
+   generated `unicode_cpt_flags.h`) prints `unicode_cpt_flags(cp)` for every codepoint
+   `0..0x10FFFF` to a flat file; an independent Python script recomputes the same flags directly
+   from `unicodedata` (not reusing the generator's RLE-building code at all) into a second flat
+   file. `diff` between the two: **0 differences across all 1,114,112 codepoints.** This is the
+   real bar -- a working C binary search against a working Python direct computation, not one
+   implementation checking itself.
+
+**Spot-check against real Unicode facts** (independent of both files above, sanity-check only):
+`'A'`(Lu)->LETTER, `'0'`(Nd)->NUMBER, space(Zs)->SEPARATOR|WHITESPACE, tab(Cc)->CONTROL|
+WHITESPACE, `'.'`(Po)->PUNCTUATION, CJK `中`(Lo)->LETTER, ZWJ U+200D(Cf)->CONTROL, grinning-face
+emoji U+1F600(So)->SYMBOL -- all match the table's real output exactly.
+
+**Real finding, not just a verification footnote**: a WebFetch-based attempt to cross-check
+specific entries against llama.cpp's *actual* `unicode-data.cpp` table (a genuinely huge,
+repetitive hex-pair initializer list) returned an **incorrect** value for `'.'` (U+002E),
+claiming its covering range has `SYMBOL` (0x0040) flags -- real Unicode fact: `'.'` is `Po`
+(Punctuation, other), confirmed independently via Python's own `unicodedata.category('.')`
+above, an unambiguous, well-documented fact WebFetch's own answer contradicts. Every *other*
+value WebFetch reported for that same query happened to be correct. **Conclusion, worth carrying
+forward**: WebFetch's page-summarization step is not a reliable oracle for extracting exact
+values out of large, dense, repetitive data tables (it can silently misread one entry among many
+that look alike) -- for this kind of fine-grained numeric cross-check, an independent
+recomputation (what step 2 above actually did) is the real verification; a WebFetch-based lookup
+against upstream source is, at best, a sanity check, not proof.
+
+**Not yet done**: wiring `unicode_cpt_flags()` into any actual pre-tokenizer split function --
+that's Phase 3's job, using this table as its dependency.
