@@ -14813,3 +14813,47 @@ that exact key.
 **Not yet done**: any quantized tensor type (Phase 2: Q8_0/Q4_0 encoders); wiring into a real
 engine export mode (Phase 3); MoE architectures, K-quants, precision-search-driven export --
 all explicitly out of scope this round per the approved plan.
+
+## D-export-2 -- Phase 2: real Q4_0/Q8_0 encoders, dual-oracle exact match (2026-09-18)
+
+**Context**: this engine's own internal quant formats (q4g64/q8g64) are confirmed, this
+session, to not be byte-compatible with any real GGUF type (64-element groups vs. GGUF's 32,
+out-of-band fp32 scale vs. inline fp16, consecutive-pair nibbles vs. real `Q4_0`'s split-half
+layout) -- every export needs a genuine requantization pass, not a repack. New files:
+`gguf_write_quants.h`/`.c` (own TU, mirrors the `gguf_load.c`/`gguf_quants.c` container-vs-
+algorithm split on the read side).
+
+**`gguf_w_quantize_q4_0()`**: ported from `gguf_transcode.c`'s
+`gguf_quantize_q4g64_error_feedback()` -- same sequential error-feedback diffusion (this
+project's own real accuracy technique over plain RTN, per `D-export-2`'s own plan reasoning),
+re-blocked to GGUF's real 32-element block with an inline fp16 scale (`WBlockQ4_0 = {ggml_half
+d; uint8_t qs[16]}`, matching `gguf_quants.c`'s own `GgmlBlockQ4_0` read-side struct exactly),
+and re-packed **split-half** (byte `j`'s low nibble = element `j`, high nibble = element
+`j+16`) instead of q4g64's own consecutive-pair layout -- a real, deliberate difference, not a
+copy-paste, matching real `GGML_TYPE_Q4_0`'s actual dequant convention.
+
+**`gguf_w_quantize_q8_0()`**: ported from `gguf_quantize_q8g64()` -- same plain direct-division
+RTN (no error feedback, matching that function's own already-established choice, itself found
+via an earlier oracle check recorded in this same file), re-blocked to 32 elements with an
+inline fp16 scale instead of q8g64's out-of-band fp32 array.
+
+**Verification -- two independent oracles on the same written bytes, same bar `D-export-1` used**:
+a 128-element synthetic test vector (varied magnitude/sign, `tools/gguf_write_quants_oracle_test.c`)
+was quantized with both new encoders, then dequantized two ways:
+1. This project's **own** existing `gguf_dequant_row(GGML_TYPE_Q4_0/Q8_0, ...)`
+   (`gguf_quants.c`, already oracle-verified on the read side by earlier `D-gen-N` entries).
+2. **`gguf-py`'s own independent** `Q4_0.dequantize()`/`Q8_0.dequantize()`, zero code shared
+   with this project, run on bob.
+
+Both decoders agree **exactly**, to six decimal places, on the same quantized bytes:
+`Q4_0: max_err=1.653600 mean_err=0.516625` (both sides, identical); `Q8_0: max_err=0.046843
+mean_err=0.019544` (both sides, identical) -- proving the written byte layout is genuinely
+`GGML_TYPE_Q4_0`/`GGML_TYPE_Q8_0`-conformant, not just self-consistent with this project's own
+reader. Sample real values: `w[0]=-5.562` -> `Q4_0` decodes to `-5.9766` (4-bit, real
+quantization error, not a bug), `Q8_0` decodes to `-5.5989` (8-bit, ~20x tighter).
+
+**Compile check**: `-Wall -Wextra`, zero warnings.
+
+**Not yet done**: wiring these encoders into a real engine export mode that walks a loaded
+model's tensors and writes a complete file (Phase 3) -- this phase only proves the two
+requantizers themselves are correct in isolation.
