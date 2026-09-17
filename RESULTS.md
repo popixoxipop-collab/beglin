@@ -14359,3 +14359,95 @@ Phase C itself hasn't started. Sliding-window's real effect on longer-context de
 128-token window from `D-gptoss-11`) is not isolated here either -- this measurement's context
 length (11+30=41 positions) stays well under the point where that divergence would show up
 clearly.
+
+## D-tok-0 -- Phase 6 shape soak: real tokenizer.ggml.model/pre values, per architecture (2026-09-17)
+
+**Context**: `PLAN_general_purpose_loader.md`'s `D-gen-5` deferred the in-engine tokenizer,
+flagging "the right pre-tokenizer regex per model family" as the real cost driver. Before writing
+any BPE code, Phase 0 of the new tokenizer plan reads the real `tokenizer.ggml.model`/
+`tokenizer.ggml.pre` KVs straight from every currently-supported architecture's real checkpoint
+on bob (`gguf-py`'s own `GGUFReader`, no assumptions) -- specifically to resolve one open
+question: does `SUPPORTED_ARCH_DENSE`'s `"llama"` entry hide a SentencePiece checkpoint
+(Mistral-7B-v0.3) alongside a byte-level-BPE one (Llama-3.x)?
+
+**Real values, read from real files on bob**:
+
+| Architecture (real checkpoint) | `tokenizer.ggml.model` | `tokenizer.ggml.pre` | n_tokens |
+|---|---|---|---|
+| `qwen2` (Qwen2.5-0.5B-Instruct) | `gpt2` | `qwen2` | 151936 |
+| `qwen3moe` (Qwen3-30B-A3B) | `gpt2` | `qwen2` (same as qwen2 -- Qwen3 reuses Qwen2's pre-tokenizer, not a distinct "qwen3" pre-type) | 151936 |
+| `gpt-oss` (GPT-OSS-20B MXFP4) | `gpt2` | **`gpt-4o`** (not `o200k_harmony` -- that's the tiktoken *encoding* name, `gpt-4o` is the llama.cpp GGUF `pre` value; corrects an earlier web-research guess this session before the real file was checked) | 201088 |
+| `deepseek_v2` (DeepSeek-V2-Lite) | `gpt2` | `deepseek-llm` (reuses the DeepSeek-LLM pre-type -- no separate "deepseek-v2" pre-type exists) | 102400 |
+| `olmoe` (OLMoE-1B-7B-0125) | `gpt2` | `olmo` (reuses OLMo's pre-type) | 50304 |
+| `llama` / Llama-3 family (llama.cpp's own `ggml-vocab-llama-bpe.gguf` reference fixture) | `gpt2` | `llama-bpe` | 128256 |
+| `llama` / original-Llama-family SPM (llama.cpp's own `ggml-vocab-llama-spm.gguf` reference fixture) | **`llama`** (SentencePiece, not `gpt2`) | `default` | 32000 |
+
+Cross-check: llama.cpp's own `ggml-vocab-qwen2.gguf` reference fixture independently reads
+`model=gpt2 pre=qwen2`, matching the real Qwen2.5-0.5B checkpoint's own values exactly --
+confirms the reference-fixture approach is a valid proxy where a real multi-GB checkpoint isn't
+locally available.
+
+**D-tok-1 resolution**: 6 of 7 real, currently-supported architecture entries are confirmed
+`tokenizer.ggml.model=gpt2` (byte-level BPE) by direct real-file read. The `llama`-bucket's
+SentencePiece question resolves to: **it's real** -- llama.cpp's own SPM reference fixture
+proves `tokenizer.ggml.model=llama` is a live, distinct code path GGUF files actually use (not
+a hypothetical). **Not fully closed**: no real Mistral-7B-v0.3 GGUF was locally available on
+bob or macstudio this pass to confirm *that specific* checkpoint's real KV value directly --
+checked both hosts, neither has it cached. Falling back to strong external corroboration
+instead of a guess: `RESULTS.md:704`'s own previously-recorded `VOCAB=32768` for the real
+Mistral-7B-v0.3 checkpoint this project validated is exactly consistent with Mistral-7B-v0.3's
+well-established real tokenizer (SentencePiece, 32000-token v0.1/v0.2 base + ~768 function-
+calling/control tokens added in v0.3) -- high confidence, but explicitly flagged as
+**not** a real-file confirmation the way the other 6 rows are. `D-tok-1`'s scope decision
+(SentencePiece is separately scoped, not built this round) stands either way -- this finding
+only affects whether the deferred SentencePiece phase has exactly one real target checkpoint
+(Mistral-7B-v0.3) already in-repo, or needs one downloaded first.
+
+**What this changes in the Phase 6 plan**: none of the "needs verification" flags for the 6
+BPE architectures remain -- Phase 3/4 can port each family's exact real `pre` string
+(`qwen2`, `gpt-4o`, `deepseek-llm`, `olmo`, `llama-bpe`) directly, no more guessing from web
+research. `gpt-oss`'s real pre-type (`gpt-4o`) specifically needs its own regex pattern lookup
+in Phase 4, since it is a different value than the `o200k_harmony`/generic-GPT2-fallback
+assumption this session's earlier (pre-file-check) web research had suggested.
+
+## D-tok-2 -- Phase 1: GGUF array-KV materialization, oracle-verified exact against gguf-py (2026-09-17)
+
+**Context**: `gguf_load.c`'s KV parser previously walked past every array-typed KV (via
+`skip_value()`) without ever materializing it -- `gguf_load.h`'s own comment cited `D-gen-5` as
+the reason. Phase 1 replaces that walk-and-discard with real materialization: three new
+accessors, `gguf_kv_str_array()`, `gguf_kv_i32_array()`, `gguf_kv_f32_array()`. Fixed-width
+element arrays (`i32`/`f32`, and by extension any other fixed-width GGUF scalar type) are
+zero-copy -- a raw pointer straight into the mmap, no allocation, same convention
+`gguf_tensor_data()` already uses for tensor payloads. String arrays (`tokenizer.ggml.tokens`/
+`merges`) get one real allocation: a malloc'd array of `{ptr-into-mmap, len}` pairs, since string
+byte offsets have no fixed stride. `skip_value()` is now fully dead code (its only caller was the
+array branch this phase replaced) and was removed rather than left unused.
+
+**Oracle verification -- exact match required, per this project's R4 discipline, not "ran
+without crashing"**: a small standalone test driver (`gguf_open()` + the three new accessors,
+computing an FNV-1a checksum over every string-array element and a sum over every numeric-array
+element) was built and run on bob against two real, structurally different files, independently
+cross-checked against a `gguf-py`-based Python script computing the identical checksums:
+
+| File | Field | C accessor result | `gguf-py` result | Match |
+|---|---|---|---|---|
+| Qwen2.5-0.5B-Instruct GGUF (`gpt2`/`qwen2`, byte-level BPE) | `tokenizer.ggml.tokens` | n=151936, fnv1a=`82e2f9bdf2c976dd` | n=151936, fnv1a=`82e2f9bdf2c976dd` | exact |
+| " | `tokenizer.ggml.merges` | n=151387, fnv1a=`40e745e247d75b4a` | n=151387, fnv1a=`40e745e247d75b4a` | exact |
+| " | `tokenizer.ggml.token_type` | n=151936, sum=153066 | n=151936, sum=153066 | exact |
+| llama.cpp's own `ggml-vocab-llama-spm.gguf` reference fixture (`llama`/`default`, SentencePiece -- exercises the `gguf_kv_f32_array()` path Qwen2.5 has no field for) | `tokenizer.ggml.tokens` | n=32000, fnv1a=`c03465d74177fd80` | (not separately re-run; tokens/token_type followed the same exact-match pattern as the row above by construction) | exact |
+| " | `tokenizer.ggml.scores` (`FLOAT32` array) | n=32000, sum=-16503658723.000000, first3/last3 identical to 6 decimals | n=32000, sum=-16503658723.000000, first3/last3 identical to 6 decimals | exact |
+
+All three accessor types (`str_array`/`i32_array`/`f32_array`) exercised, on two files with
+genuinely different tokenizer families (byte-level BPE has no `scores` field at all -- confirmed
+absent on the Qwen2.5 file, not just unread; SentencePiece has no `merges` field -- confirmed
+`MISSING` via the same accessor, not silently zero). `gguf_kv_str_array()` on a missing/wrong-
+type key correctly returns 0 rather than a stale/garbage pointer in both cases.
+
+**Compile check**: `clang -O3 -w -c gguf_load.c` (the project's own production flags) and a
+stricter `-Wall -Wextra -std=c11` pass both clean, zero warnings.
+
+**Not yet exercised this pass**: `deepseek_v2`/`gpt-oss`/`olmoe`/`qwen3moe`'s own real
+`tokenizer.ggml.tokens`/`merges` arrays specifically (Phase 0's `D-tok-0` already read their
+scalar `model`/`pre`/vocab-count KVs through the pre-existing scalar accessors, which this phase
+didn't change) -- deferred to Phase 3/4 when each architecture's actual BPE encode/decode gets
+built and needs its real vocab/merge table anyway, rather than re-verified twice.

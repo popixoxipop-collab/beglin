@@ -19,10 +19,14 @@
 // to quantize anything. A residual/error-feedback term is a training-time technique for a
 // quantization scheme with a tunable choice in it -- there is no such choice here to tune.
 //
-// This header intentionally does NOT expose array-of-string KV values (tokenizer vocab/
-// merges) beyond their raw byte-range -- see the project's own D-gen-5 (tokenizer is
-// explicitly out of scope through Phase 5). The parser still walks over them correctly to
-// reach subsequent KV entries; it just doesn't materialize them.
+// D-tok (Phase 6, tokenizer): array-of-string/int32/float32 KV materialization (tokenizer
+// vocab/merges/scores/token_type, or any other array KV) IS exposed, via gguf_kv_str_array()/
+// gguf_kv_i32_array()/gguf_kv_f32_array() below -- this was the one deliberate gap D-gen-5 left
+// (see PLAN_general_purpose_loader.md's D-gen-5 for why it was deferred, not why it's absent;
+// it's no longer absent). Fixed-width element arrays are zero-copy (a raw pointer straight into
+// the mmap, same "caller casts per kv->type" convention gguf_tensor_data() already uses for
+// tensor payloads); string arrays are a malloc'd array of {ptr-into-mmap, len} pairs, since
+// string byte offsets aren't a fixed stride and can't be zero-copy-indexed.
 
 #ifndef GGUF_LOAD_H
 #define GGUF_LOAD_H
@@ -77,6 +81,10 @@ typedef enum {
     GGML_TYPE_MXFP4 = 39,
 } GgmlType;
 
+// Shared string-view shape: pointer into the mmap + length, NOT NUL-terminated. Used both for
+// a scalar STRING value and for each element of a STRING array (GgufKV.arr_str below).
+typedef struct { const char *ptr; uint64_t len; } GgufStr;
+
 typedef struct {
     char *key;              // NUL-terminated, malloc'd copy
     GgufValueType type;      // scalar type, or element type if is_array
@@ -85,8 +93,17 @@ typedef struct {
 
     union {
         uint64_t u; int64_t i; double f; int b;
-        struct { const char *ptr; uint64_t len; } str;  // points into the mmap, NOT NUL-terminated
+        GgufStr str;
     } scalar;
+
+    // Only meaningful when is_array (see gguf_kv_str_array()/gguf_kv_i32_array()/
+    // gguf_kv_f32_array() below). For elem type STRING, arr_str is a malloc'd array of
+    // arr_len GgufStr. For every other (fixed-width) elem type, arr_fixed points directly
+    // into the mmap at the array's first element in the file's own native packed layout
+    // (zero-copy) -- caller casts per `type` the same way gguf_tensor_data() callers already
+    // cast tensor payloads. NULL/unused when !is_array.
+    GgufStr *arr_str;
+    const void *arr_fixed;
 } GgufKV;
 
 typedef struct {
@@ -119,6 +136,12 @@ int gguf_kv_u64(const GgufFile *f, const char *key, uint64_t *out);
 int gguf_kv_i64(const GgufFile *f, const char *key, int64_t *out);
 int gguf_kv_f64(const GgufFile *f, const char *key, double *out);
 int gguf_kv_bool(const GgufFile *f, const char *key, int *out);
+
+// Array KV accessors (D-tok, Phase 6) -- each returns 0 if the key is missing, not an array,
+// or the array's element type doesn't match. out_arr/out_len are only written on success (1).
+int gguf_kv_str_array(const GgufFile *f, const char *key, const GgufStr **out_arr, uint64_t *out_len);
+int gguf_kv_i32_array(const GgufFile *f, const char *key, const int32_t **out_arr, uint64_t *out_len);
+int gguf_kv_f32_array(const GgufFile *f, const char *key, const float **out_arr, uint64_t *out_len);
 
 const GgufTensorInfo *gguf_find_tensor(const GgufFile *f, const char *name);
 const void *gguf_tensor_data(const GgufFile *f, const GgufTensorInfo *t);

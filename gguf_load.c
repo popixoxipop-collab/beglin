@@ -88,25 +88,6 @@ static char *dupstr(const char *ptr, uint64_t len) {
     return s;
 }
 
-// Reads and discards one value of the given type (used for array element skipping and for KV
-// entries whose value we don't need to decode, but whose byte extent we must still account for
-// to reach the next entry -- this is the "walk over tokenizer arrays correctly without
-// materializing them" path described in gguf_load.h).
-static void skip_value(Cur *c, GgufValueType t) {
-    int width;
-    if (gguf_vtype_width(t, &width)) { cur_need(c, width); c->pos += width; return; }
-    if (t == GGUF_VTYPE_STRING) { uint64_t len = cur_u64(c); cur_need(c, len); c->pos += len; return; }
-    if (t == GGUF_VTYPE_ARRAY) {
-        GgufValueType elem_t = (GgufValueType)cur_u32(c);
-        uint64_t n = cur_u64(c);
-        if (elem_t == GGUF_VTYPE_ARRAY) { fprintf(stderr, "FATAL: gguf_load: nested array KV value not supported\n"); exit(1); }
-        for (uint64_t i = 0; i < n; i++) skip_value(c, elem_t);
-        return;
-    }
-    fprintf(stderr, "FATAL: gguf_load: unrecognized GGUF value type %d -- cannot safely skip, refusing to guess a byte width\n", (int)t);
-    exit(1);
-}
-
 static void decode_scalar_into(Cur *c, GgufValueType t, GgufKV *kv) {
     switch (t) {
         case GGUF_VTYPE_UINT8:  kv->scalar.u = cur_u8(c); break;
@@ -172,9 +153,36 @@ GgufFile *gguf_open(const char *path) {
             kv->type = elem_t;
             kv->is_array = 1;
             kv->arr_len = n;
-            // Arrays aren't materialized (see header contract) -- just walk past the payload
-            // so the cursor lands correctly on the next KV entry's key.
-            for (uint64_t j = 0; j < n; j++) skip_value(&c, elem_t);
+            // D-tok (Phase 6): materialize array KVs instead of just walking past them --
+            // this is the one place gguf_load.h's own contract changed (see its header comment).
+            if (elem_t == GGUF_VTYPE_ARRAY) {
+                fprintf(stderr, "FATAL: gguf_load: %s: nested array KV value not supported (key '%s')\n", path, kv->key);
+                exit(1);
+            } else if (elem_t == GGUF_VTYPE_STRING) {
+                // Each string has its own variable-length encoding -- no fixed stride, so this
+                // needs a real allocation of {ptr,len} pairs, one cur_str() call per element.
+                kv->arr_str = n ? malloc((size_t)n * sizeof(GgufStr)) : NULL;
+                for (uint64_t j = 0; j < n; j++) {
+                    cur_str(&c, &kv->arr_str[j].ptr, &kv->arr_str[j].len);
+                }
+            } else {
+                // Fixed-width element type: the array is already tightly packed in native
+                // layout in the file, so this is a zero-copy pointer into the mmap, not a
+                // per-element decode loop -- same convention gguf_tensor_data() already uses.
+                int width;
+                if (!gguf_vtype_width(elem_t, &width)) {
+                    fprintf(stderr, "FATAL: gguf_load: %s: unrecognized array element type %d (key '%s')\n", path, (int)elem_t, kv->key);
+                    exit(1);
+                }
+                if (width != 0 && n > (uint64_t)SIZE_MAX / (uint64_t)width) {
+                    fprintf(stderr, "FATAL: gguf_load: %s: array length overflow for key '%s'\n", path, kv->key);
+                    exit(1);
+                }
+                size_t nbytes = (size_t)n * (size_t)width;
+                cur_need(&c, nbytes); // bounds-check the whole run at once, not per-element
+                kv->arr_fixed = c.base + c.pos;
+                c.pos += nbytes;
+            }
         } else {
             kv->type = vtype;
             kv->is_array = 0;
@@ -241,7 +249,11 @@ GgufFile *gguf_open(const char *path) {
 
 void gguf_close(GgufFile *f) {
     if (!f) return;
-    for (uint64_t i = 0; i < f->n_kv; i++) free(f->kv[i].key);
+    for (uint64_t i = 0; i < f->n_kv; i++) {
+        free(f->kv[i].key);
+        // arr_fixed points into the mmap (nothing to free); arr_str is the one real allocation.
+        if (f->kv[i].is_array && f->kv[i].type == GGUF_VTYPE_STRING) free(f->kv[i].arr_str);
+    }
     free(f->kv);
     for (uint64_t i = 0; i < f->n_tensors; i++) free(f->tensors[i].name);
     free(f->tensors);
@@ -292,6 +304,22 @@ int gguf_kv_bool(const GgufFile *f, const char *key, int *out) {
     const GgufKV *kv = find_kv(f, key);
     if (!kv || kv->is_array || kv->type != GGUF_VTYPE_BOOL) return 0;
     *out = kv->scalar.b; return 1;
+}
+
+int gguf_kv_str_array(const GgufFile *f, const char *key, const GgufStr **out_arr, uint64_t *out_len) {
+    const GgufKV *kv = find_kv(f, key);
+    if (!kv || !kv->is_array || kv->type != GGUF_VTYPE_STRING) return 0;
+    *out_arr = kv->arr_str; *out_len = kv->arr_len; return 1;
+}
+int gguf_kv_i32_array(const GgufFile *f, const char *key, const int32_t **out_arr, uint64_t *out_len) {
+    const GgufKV *kv = find_kv(f, key);
+    if (!kv || !kv->is_array || kv->type != GGUF_VTYPE_INT32) return 0;
+    *out_arr = (const int32_t *)kv->arr_fixed; *out_len = kv->arr_len; return 1;
+}
+int gguf_kv_f32_array(const GgufFile *f, const char *key, const float **out_arr, uint64_t *out_len) {
+    const GgufKV *kv = find_kv(f, key);
+    if (!kv || !kv->is_array || kv->type != GGUF_VTYPE_FLOAT32) return 0;
+    *out_arr = (const float *)kv->arr_fixed; *out_len = kv->arr_len; return 1;
 }
 
 const GgufTensorInfo *gguf_find_tensor(const GgufFile *f, const char *name) {
