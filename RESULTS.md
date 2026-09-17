@@ -14511,3 +14511,64 @@ against upstream source is, at best, a sanity check, not proof.
 
 **Not yet done**: wiring `unicode_cpt_flags()` into any actual pre-tokenizer split function --
 that's Phase 3's job, using this table as its dependency.
+
+## D-tok-4 -- Phase 3: real byte-level BPE encode/decode, token-exact vs llama-tokenize (2026-09-17)
+
+**Context**: the first real BPE implementation this project has ever had. Ports llama.cpp's own
+algorithm end to end, every piece sourced by direct code read this session (not guessed):
+the GPT2-style byte<->printable-unicode bijection (`unicode_byte_to_utf8_map`), the qwen2 hand-
+coded pre-tokenizer split (`unicode_regex_split_custom_qwen2`, `src/unicode.cpp`), and the
+classic rank-ordered greedy BPE merge (`llm_tokenizer_bpe_session::tokenize`,
+`src/llama-vocab.cpp`). New file: `bpe_tokenizer.c`/`.h` (own translation unit, `gguf_load.h` +
+`unicode_cpt_flags.h` as its only dependencies).
+
+**Real implementation choices, stated not hidden**:
+- **BPE merge candidate selection is O(n) best-of-scan per merge step, not a true priority
+  queue.** Real pre-tokenized "words" from `qwen2_split_span` are short (a single word/number/
+  punctuation-run/whitespace-run) so this is cheap in practice; correctness-first sequencing,
+  matching this project's own established precedent (`D-metal-6` scoped GPU throughput out
+  until correctness was settled first).
+- **`ascii_tolower()`, not llama.cpp's full Unicode `unicode_tolower()` table.** The only call
+  site (the `'s/'t/'re/'ve/'m/'ll/'d` contraction check) only ever compares the result against
+  ASCII literals -- for non-ASCII input, the full Unicode table would also never equal those
+  literals, so this is numerically identical for this specific comparison, not an approximation.
+- Vocab/merge-rank lookups are open-addressing hash tables (FNV-1a) built once at load time,
+  keyed by zero-copy `{ptr,len}` views into the `GgufFile`'s own mmap (Phase 1's string arrays)
+  -- no vocab/merge bytes are ever copied.
+
+**Oracle verification -- token-exact, per this project's `D-gptoss-13` bar, not "produces
+plausible-looking output"**: a standalone test driver (`tools/bpe_encode_oracle_test.c`) encodes
+a real prompt file and prints the resulting ids as a Python-list-formatted line, directly
+`diff`-able against `llama-tokenize -m <gguf> --no-bos --ids -f <file>` (the same real oracle
+tool this project's GPT-OSS work already trusted, `D-gptoss-13`).
+
+1. **Individual hand-picked prompts** (contractions, decimals, CJK, emoji, camelCase/snake_case):
+   5/5 exact id-sequence match.
+2. **Whitespace/tab/newline-focused prompts** (multiple spaces, real tabs, embedded newline,
+   leading+trailing whitespace runs) -- these specifically exercise the split function's most
+   failure-prone branches: 3/3 exact match. (A first pass here showed an apparent mismatch that
+   turned out to be a shell quoting artifact -- `\t` inside single quotes reached the C tool as
+   two literal characters `\` `t`, not a real tab byte, while `printf`'s interpretation of the
+   same escape in the comparison command produced a real tab for llama-tokenize's copy. Not a
+   real bug -- refixtured both sides to read from the same file, byte-identical input, and the
+   mismatch disappeared. Recorded so a future session doesn't re-chase this exact false lead.)
+3. **A real, diverse 14-line corpus** (news-style prose with an em-dash and smart quotes; café/
+   naïve/Zürich/São Paulo; CJK, Cyrillic, Arabic, Hebrew; currency symbols across 3 scripts;
+   Python code with a comment; a git commit message; emoji including multi-codepoint flag
+   sequences; a real tab-indented line; trailing-whitespace line; math/Unicode symbols
+   (`Ω≈c²  ∀x∈ℝ: x²≥0  →  √4=2`); scientific/hex number notation; Roman numerals, circled
+   numbers, vulgar fractions) -- **byte-exact `diff`, 0 differences, across all 1491 bytes of
+   ID-sequence output**, against Qwen2.5-0.5B-Instruct's real checkpoint.
+4. **Cross-checkpoint repeat**: the identical corpus, same encoder, against Qwen3-30B-A3B's real
+   checkpoint (a completely different vocab/merge table, same `qwen2` pre-type per `D-tok-0`) --
+   **also byte-exact, 0 differences.** Confirms the implementation generalizes across vocabs
+   sharing a pretokenizer family, not just correct-by-coincidence for one specific file.
+5. **Round-trip**: every tested prompt's `bpe_decode(bpe_encode(text))` reproduces the original
+   text byte-for-byte (`memcmp` exact), for both hand-picked prompts and the full corpus.
+
+**Compile check**: `-Wall -Wextra` on `bpe_tokenizer.c`, zero warnings.
+
+**Not yet done**: the remaining architectures' pre-tokenizer split functions (`gpt-4o` for
+`gpt-oss`, `deepseek-llm` for `deepseek_v2`, `olmo` for `olmoe`, `llama-bpe` for Llama-3.x --
+Phase 4); wiring `bpe_encode`/`bpe_decode` into the actual engine's `load_ids()` call sites and
+generation-output print sites (Phase 5); SentencePiece (deferred per `D-tok-1`).
