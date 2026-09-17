@@ -14772,3 +14772,44 @@ call the milestone done after the loading fixes alone looked sufficient.
 own pretokenizer per `D-tok-5` is also still unported); `bench`/`spec`/`dump` modes for the
 dense path; the GPU/MLX generation gates (`QWEN_MOE_GPU_GQA_GENERATE` etc., Phase C, a separate
 unstarted track).
+
+## D-export-1 -- Phase 1: real GGUF writer, self + gguf-py round-trip exact (2026-09-18)
+
+**Context**: this project has never written GGUF's own container format before -- confirmed
+this session by a real Explore pass (zero existing GGUF-write code anywhere; the similarly-named
+`gguf_write_cache()` writes the unrelated `.beglin`/`BEGLINC2` ad hoc cache format, 64-byte
+alignment, fixed-size names, no KV table). A parallel research pass first confirmed the
+originally-imagined "export a precision-search-hardened model" idea is premature (the
+Supabase-driven precision search has produced exactly one real promoted (role,layer) pair in
+this project's whole history) -- decision, this session: build the writer now against the
+engine's existing *uniform* role→bit-width policy, not gated on that search converging.
+
+**New files**: `gguf_write.h`/`.c` (own translation unit, mirrors `gguf_load.h`'s type enums and
+KV-accessor shape but for writing). Scalar KV writers (str/u32/u64/i64/f32/f64/bool) and array
+KV writers (str_array/i32_array/f32_array, symmetric to Phase 6's own read-side accessors).
+Two-pass by construction (`gguf_w_add_tensor()` only buffers; `gguf_w_finish()` computes every
+tensor's aligned offset before writing the tensor-info table, which precedes the data section it
+describes) -- the natural shape of the format, not a shortcut. 32-byte default alignment
+(GGUF's real spec default, not `gguf_cache.c`'s unrelated 64-byte convention), overridable via
+an explicit `general.alignment` KV the same way `gguf_load.c`'s read side already special-cases
+that exact key.
+
+**Verification -- two independent oracles, same bar `D-tok-2`/`D-tok-3` already used**:
+1. `tools/gguf_write_oracle_test.c` writes a synthetic file exercising every scalar KV type
+   (str/u32/u64/i64/f32/f64/bool), every array KV type (str_array/i32_array/f32_array, including
+   an empty string element and negative int32 values), and two odd-shaped F32 tensors
+   (`[2,3]` and `[5]`, deliberately not alignment-friendly sizes to exercise the padding path) --
+   then reads it back with `gguf_load.c` (Phase 6's own already-trusted reader) and diffs every
+   value. **All checks passed.**
+2. The same file, independently opened with `gguf-py` (`GGUFReader`, zero code shared with this
+   project) on bob: every KV value, every array element, every tensor's shape and real float
+   data matched exactly what was written -- `block_count=7`, `embedding_length=12345678901234`,
+   `some_signed=-42`, `rope_freq_base=1e6`, `eps=1e-6`, `flag_true/false` correct, `tokens=
+   ['hello','world!','']`, `token_type=[1,-2,3,-4]`, `scores=[1.5,-2.25,0.0]`, both tensors'
+   real float values byte-for-byte.
+
+**Compile check**: `-Wall -Wextra`, zero warnings.
+
+**Not yet done**: any quantized tensor type (Phase 2: Q8_0/Q4_0 encoders); wiring into a real
+engine export mode (Phase 3); MoE architectures, K-quants, precision-search-driven export --
+all explicitly out of scope this round per the approved plan.
