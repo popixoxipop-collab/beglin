@@ -48,6 +48,16 @@ void gguf_w_kv_f32(GgufWriter *w, const char *key, float val);
 void gguf_w_kv_f64(GgufWriter *w, const char *key, double val);
 void gguf_w_kv_bool(GgufWriter *w, const char *key, int val);
 
+// D-export-3 (Phase 3): writes a scalar KV under its EXACT original GGUF type tag (UINT8/
+// INT8/UINT16/INT16/UINT32/INT32/UINT64/INT64/BOOL only -- FATALs on FLOAT32/FLOAT64/STRING/
+// ARRAY, use the dedicated functions above for those). For a passthrough copy of a source
+// KV read via gguf_load.h's GgufKV (whose scalar union already upcasts every integer width to
+// u/i uint64_t/int64_t, per its own comment), pass `type` from the source KV and `bits` as
+// that same union's `.u` (unsigned types) or `.i` reinterpreted as uint64_t (signed types) --
+// truncating to the narrower original width on write reproduces the exact original bit
+// pattern for both signed and unsigned integers.
+void gguf_w_kv_int_raw(GgufWriter *w, const char *key, GgufValueType type, uint64_t bits);
+
 // Array KV writers. `key` is copied; `arr`/`n` are NOT (see ownership note above) -- for
 // gguf_w_kv_str_array, each GgufStr's own .ptr must also stay valid until gguf_w_finish().
 void gguf_w_kv_str_array(GgufWriter *w, const char *key, const GgufStr *arr, uint64_t n);

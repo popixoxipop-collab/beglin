@@ -103,6 +103,23 @@ void gguf_w_kv_bool(GgufWriter *w, const char *key, int val) {
     kv->scalar.b = val ? 1 : 0;
 }
 
+void gguf_w_kv_int_raw(GgufWriter *w, const char *key, GgufValueType type, uint64_t bits) {
+    switch (type) {
+        case GGUF_VTYPE_UINT8: case GGUF_VTYPE_INT8: case GGUF_VTYPE_UINT16: case GGUF_VTYPE_INT16:
+        case GGUF_VTYPE_UINT32: case GGUF_VTYPE_INT32: case GGUF_VTYPE_UINT64: case GGUF_VTYPE_INT64:
+        case GGUF_VTYPE_BOOL: {
+            WKv *kv = push_kv(w, key);
+            kv->type = type;
+            kv->scalar.u = bits;   // re-narrowed to the real width in w_scalar_value() below
+            maybe_update_alignment(w, key, bits);
+            break;
+        }
+        default:
+            fprintf(stderr, "FATAL: gguf_write: gguf_w_kv_int_raw called on non-integer type %d for key '%s'\n", (int)type, key);
+            exit(1);
+    }
+}
+
 void gguf_w_kv_str_array(GgufWriter *w, const char *key, const GgufStr *arr, uint64_t n) {
     WKv *kv = push_kv(w, key);
     kv->type = GGUF_VTYPE_STRING;

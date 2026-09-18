@@ -17645,6 +17645,21 @@ static int wt_hf_name_to_gguf_name(const char *hf_name, char *out, size_t out_ca
 // inference itself uses (q4_unpack_row()/q8_unpack_row(), q4gemv.h -- no full-tensor dequant
 // utility existed before this), then re-quantized via Phase 2's gguf_w_quantize_q4_0()/
 // _q8_0() into real GGML_TYPE_Q4_0/Q8_0 blocks (D-export-1).
+//
+// D-export-4 (K-quant follow-up): K_Q4G64 rows prefer real GGML_TYPE_Q4_K (gguf_w_quantize_q4_k(),
+// gguf_write_quants.c) over Q4_0 when the row length is a multiple of 256 (Q4_K's real
+// super-block size -- GGML itself refuses non-multiple-of-256 rows for this type, same
+// constraint gguf_quants.c's own D-gen-N comment already found for the real Q4_K_M source
+// recipe on this exact small model: D=896 isn't a multiple of 256, so q/k/v/o/gate/up all stay
+// Q4_0-eligible only; IM=4864 is, so ffn_down alone upgrades). IMPORTANT, verified by direct
+// calculation, NOT the assumption the original D-export-3 entry made: Q4_K and Q4_0 have the
+// IDENTICAL 4.5 bits/element (18B/32elem == 144B/256elem) -- switching type does NOT shrink
+// the file. Q4_K's real advantage is fidelity (asymmetric per-32-sub-block affine scale+min
+// vs Q4_0's single per-32-block symmetric scale) at the SAME bit-width, not size. The real
+// ~500MB gap vs the original Q4_K_M source is dominated by this engine's K_F32 role policy
+// keeping embed_tokens/norms/biases at full F32 (embed_tokens alone: 151936*896*4B ~= 545MB)
+// -- quantizing those, not switching the already-4-bit tensors' type, is what would actually
+// close it, and stays explicitly out of scope for this pass (see RESULTS.md D-export-4).
 static void run_export_gguf_mode(const char *out_path) {
     if (!g_gguf) {
         fprintf(stderr, "FATAL: QWEN_EXPORT_GGUF requires a GGUF-loaded model (source tokenizer/arch KVs come from g_gguf)\n");
@@ -17691,7 +17706,7 @@ static void run_export_gguf_mode(const char *out_path) {
         fprintf(stderr, "[engine] export: rope_freqs.weight (%d elements) included\n", half);
     }
 
-    int n_f32 = 0, n_q4 = 0, n_q8 = 0;
+    int n_f32 = 0, n_q4 = 0, n_q4k = 0, n_q8 = 0;
     for (int i = 0; i < g_nwt; i++) {
         WT *t = &g_wt[i];
         char gguf_name[128];
@@ -17724,6 +17739,16 @@ static void run_export_gguf_mode(const char *out_path) {
                 gguf_w_quantize_q8_0(f32buf, n, qbuf);
                 gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q8_0, n_dims, ne, qbuf, nbytes);
                 n_q8++;
+            } else if (t->in % 256 == 0) {
+                // D-export-4: Q4_K eligible -- row length is a real multiple of the K-quant
+                // super-block size. Same fidelity edge over Q4_0 as this file's own header
+                // comment on gguf_w_quantize_q4_k() describes; does NOT change file size
+                // (both are 4.5 bits/element).
+                uint64_t nbytes = gguf_w_q4_k_nbytes(n);
+                uint8_t *qbuf = malloc(nbytes);   // intentionally not freed, same reason
+                gguf_w_quantize_q4_k(f32buf, n, qbuf);
+                gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q4_K, n_dims, ne, qbuf, nbytes);
+                n_q4k++;
             } else {
                 uint64_t nbytes = gguf_w_q4_0_nbytes(n);
                 uint8_t *qbuf = malloc(nbytes);   // intentionally not freed, same reason
@@ -17737,7 +17762,7 @@ static void run_export_gguf_mode(const char *out_path) {
             exit(1);
         }
     }
-    fprintf(stderr, "[engine] export: %d tensors (%d F32, %d Q4_0, %d Q8_0)\n", g_nwt, n_f32, n_q4, n_q8);
+    fprintf(stderr, "[engine] export: %d tensors (%d F32, %d Q4_0, %d Q4_K, %d Q8_0)\n", g_nwt, n_f32, n_q4, n_q4k, n_q8);
 
     if (!gguf_w_finish(gw)) { fprintf(stderr, "FATAL: gguf_w_finish failed writing %s\n", out_path); exit(1); }
     fprintf(stderr, "[engine] export: wrote %s\n", out_path);

@@ -14888,12 +14888,17 @@ $ QWEN_GGUF=.../qwen2.5-0.5b-instruct-q4_k_m.gguf QWEN_EXPORT_GGUF=/tmp/qwen25_e
 [engine] export: 291 tensors (122 F32, 168 Q4_0, 1 Q8_0)
 [engine] export: wrote /tmp/qwen25_exported.gguf
 ```
-Output file: 896,693,088 bytes. Larger than the source `Q4_K_M` file (~397MB) -- an expected,
+Output file: 896,693,088 bytes. Larger than the source `Q4_K_M` file (491,400,032 bytes, real
+measured size, not the ~397MB earlier estimate this entry originally used) -- an expected,
 already-documented tradeoff (`D-export-1`'s own COST note): embed/norm/bias tensors stay
 `K_F32` in this engine's own current role policy, so they export as full F32 rather than a
-K-quant's smaller packed form; `Q4_0`'s own 18-byte/32-element blocks are also less compact
-than `Q4_K`'s 144-byte/256-element super-blocks. Not a bug -- the real, known coarser-tier cost
-of skipping K-quant encoders this round (`D-export-1`).
+K-quant's smaller packed form. **Correction (D-export-4, 2026-09-18)**: the claim that `Q4_0`'s
+18-byte/32-element blocks are "less compact" than `Q4_K`'s 144-byte/256-element super-blocks was
+WRONG -- both are 4.5 bits/element exactly (18*8/32 == 144*8/256), verified by direct
+calculation and confirmed empirically (see D-export-4: switching eligible tensors to Q4_K
+produced a byte-identical file size). The real, dominant driver of this gap is `K_F32`
+embed_tokens/norm/bias passthrough alone (embed_tokens: 151936*896*4B ~= 545MB, over 60% of the
+exported file by itself) -- not quant-type choice among already-4-bit tensors.
 
 **Verification -- the real bar, external tool, zero engine dependency**:
 1. `llama-tokenize -m <exported.gguf> --no-bos --ids -p 'The capital of France is'` ->
@@ -14913,7 +14918,88 @@ session throughout this phase (confirmed via `git diff` before every edit) -- `g
 again to stage only this phase's own hunks, same discipline every prior `D-tok-N`/`D-export-N`
 qwen_infer.c change this session has used.
 
-**Not yet done**: MoE architectures (qwen3moe/gpt-oss/deepseek/olmoe export); K-quants (would
-close the file-size gap above); precision-search-driven export (still not converged for any
-model, per this session's own earlier finding) -- all named, deliberate follow-ups per the
-approved plan's "explicitly out of scope this round" section, not silently dropped.
+**Not yet done**: MoE architectures (qwen3moe/gpt-oss/deepseek/olmoe export); K-quants (added
+next, `D-export-4` -- turned out NOT to close the file-size gap above, see that entry for why);
+precision-search-driven export (still not converged for any model, per this session's own
+earlier finding) -- all named, deliberate follow-ups per the approved plan's "explicitly out of
+scope this round" section, not silently dropped.
+
+## D-export-4 -- K-quant (Q4_K) encoder, dual-oracle exact, file-size finding corrected (2026-09-18)
+
+**Context**: user asked to add a K-quant encoder and redo the export, specifically to close the
+`D-export-3` file-size gap. Real research first (`quantize_row_q4_K_ref()`/
+`dequantize_row_q4_K()`/`get_scale_min_k4()`, fetched verbatim from ggml's real
+`ggml-quants.c`): `Q4_K` uses 256-element super-blocks, 8 sub-blocks of 32, an asymmetric affine
+scale+min per sub-block (`value = d*sc[j]*code - dmin*m[j]`, unlike `Q4_0`'s symmetric
+`code*scale`), with the sub-block scale/min 6-bit-packed into a 12-byte `scales[]` array via
+`get_scale_min_k4`'s specific bit-borrowing scheme. `make_qkx2_quants()` (ggml's own real
+per-sub-block scale/min search, an iterative weighted optimizer) was NOT available to port
+faithfully -- consistent with this track's established `D-export-2` stance (the GGUF container
+doesn't constrain how codes were chosen, only the byte layout), this encoder instead derives
+each sub-block's scale/min directly from its real min/max (clamping the sub-block min to <=0 so
+the packed, unsigned 6-bit "min" term is always representable) and applies this project's own
+established error-feedback diffusion when choosing the final 4-bit codes.
+
+**New code**: `gguf_w_quantize_q4_k()`/`gguf_w_q4_k_nbytes()` in `gguf_write_quants.c`/`.h`
+(`WBlockQ4_K` struct and `get_scale_min_k4_local()` ported verbatim byte-for-byte from the real
+container format -- confirmed identical to this project's own already-existing
+`GgmlBlockQ4_K`/`get_scale_min_k4` on the read side, `gguf_quants.c`). `run_export_gguf_mode()`
+(`qwen_infer.c`) now routes `K_Q4G64` rows through `gguf_w_quantize_q4_k()` instead of
+`gguf_w_quantize_q4_0()` whenever the row length is a real multiple of 256 (`GGML` itself
+refuses non-multiple-of-256 rows for `Q4_K`), falling back to `Q4_0` otherwise.
+
+**The file-size premise was wrong -- caught by direct calculation before re-running anything**:
+`Q4_0` is 18 bytes/32 elements, `Q4_K` is 144 bytes/256 elements -- both exactly 4.5
+bits/element. Switching an already-4-bit tensor's TYPE cannot shrink it; `Q4_K`'s real advantage
+is fidelity (asymmetric per-sub-block affine vs one symmetric scale per block) at the identical
+bit-width, not size. This corrects the wrong assumption `D-export-1`/`D-export-3` both made (see
+those entries' corrections above) -- caught here via arithmetic (`18*8/32 == 144*8/256`) before
+spending a real run "discovering" it, though the real run below confirms it empirically too.
+
+**Real-model divisibility finding**: Qwen2.5-0.5B's `D=896` is NOT a multiple of 256 (896/256 =
+3.5) -- every tensor whose row length is `D` (all of q/k/v/o/gate/up-proj) stays `Q4_0`-only.
+Only `IM=4864` (divisible: 4864/256=19) qualifies, which is `ffn_down`'s row length -- so exactly
+24 tensors (one `ffn_down` per layer, NL=24) upgrade to `Q4_K` out of 291 total. This matches
+`gguf_quants.c`'s own earlier-documented finding that the real `Q4_K_M` recipe for this exact
+small model drops `ffn_gate`/`ffn_up`/`token_embd` to `Q5_0` rather than `Q4_K`, for the same
+underlying reason.
+
+**Verification -- dual-oracle on the raw encoder, then real external-tool re-verification**:
+1. Synthetic 1024-element (4 super-block) test vector, deliberately including an all-positive
+   sub-block (exercises the lo-clamped-to-0 path), an all-negative sub-block, and mixed-sign
+   sub-blocks (`tools/gguf_write_quants_oracle_test.c`). Round-tripped through this project's
+   OWN existing `gguf_dequant_row(GGML_TYPE_Q4_K,...)` (already implemented, unrelated to this
+   phase) -> `max_abs_err=2.563325, rel=37.77%` (a worst-single-element metric on wide-range
+   synthetic data, same order as `Q4_0`'s own `33.77%` on its own synthetic test -- consistent,
+   not a red flag).
+2. Independent Python cross-check, `gguf-py`'s own `Q4_K.dequantize_blocks()` (installed in an
+   isolated venv, `/tmp/gguf_venv`) on the SAME raw bytes -> **byte-identical**
+   `max_abs_err=2.563325` to oracle 1, two completely independent decoders agreeing exactly on
+   the same file -- the strongest real proof the container byte layout is spec-correct.
+3. Real end-to-end re-export (bob, same real `qwen2.5-0.5b-instruct-q4_k_m.gguf` source,
+   rebuilt `qwen_infer_export` with the vendored SME2/SVE2 kernel `.c`/`.S` files compiled with
+   `-march=armv9-a+sve2+sme2` and every caller file plain, per this project's established
+   `vdsp_sme2_build_caller_plain_convention`):
+   ```
+   [engine] export: 291 tensors (122 F32, 144 Q4_0, 24 Q4_K, 1 Q8_0)
+   [engine] export: wrote /tmp/qwen25_exported_q4k.gguf
+   ```
+   Output file: **896,693,088 bytes -- byte-identical to the `D-export-3` Q4_0-only export.**
+   Empirical confirmation of the arithmetic finding above.
+4. `llama-tokenize -m qwen25_exported_q4k.gguf --no-bos --ids -p 'The capital of France is'` ->
+   `[785, 6722, 315, 9625, 374]` -- identical to `D-export-3`'s reference ids.
+5. `llama-simple -m qwen25_exported_q4k.gguf -n 32 -p 'The capital of France is'` -> `"The
+   capital of France is Paris, which is in the heart of the city, and the capital of the United
+   Kingdom is London, which is in the heart of the country. The capital"` -- coherent, real
+   generation via Metal-accelerated `llama.cpp`, zero dependency on this engine, GPU kernels
+   engaged (`kernel_mul_mv_q8_0_f32` loaded), 216.71 tok/s eval.
+
+**Compile check**: local (`clang -O3 -w -c`) and bob, both `gguf_write_quants.c` and the
+`qwen_infer.c` diff, zero new warnings.
+
+**Not yet done, named not silently dropped**: `Q5_K`/`Q6_K` encoders (would let `ffn_gate`/
+`ffn_up`/`token_embd`-class 896-row tensors also move off `Q4_0`/current `F32`, matching what
+the real `Q4_K_M` recipe actually does for those -- `Q5_0` block-32 is the real reference
+fallback for those tensors, not currently implemented either); quantizing the `K_F32` tier
+(embed_tokens/norms/biases) -- the actual real lever for the file-size gap, per the corrected
+finding above, explicitly out of scope for this pass since it wasn't what was asked.

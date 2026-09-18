@@ -31,4 +31,12 @@ size_t gguf_w_q8_0_nbytes(int64_t n);
 void gguf_w_quantize_q4_0(const float *w, int64_t n, uint8_t *out);
 void gguf_w_quantize_q8_0(const float *w, int64_t n, uint8_t *out);
 
+// D-export-4 (K-quant follow-up): real GGUF Q4_K, 256-element super-blocks (8 sub-blocks of
+// 32, 6-bit-packed per-sub-block scale+min, matching real GGML_TYPE_Q4_K's own container
+// exactly -- see gguf_write_quants.c's header comment for the byte layout and the one real
+// algorithmic simplification this encoder makes vs. llama.cpp's own optimizer). `n` must be a
+// multiple of 256.
+size_t gguf_w_q4_k_nbytes(int64_t n);
+void gguf_w_quantize_q4_k(const float *w, int64_t n, uint8_t *out);
+
 #endif // GGUF_WRITE_QUANTS_H
