@@ -5,8 +5,8 @@ memory(`~/.claude/projects/-Users-xox/memory/`)에 있던 vdsp_*.md 11개를
 전부 여기로 이전. 신규 vdsp-engine 관련 메모리는 앞으로 여기 저장할 것
 (전역 저장 시 `repo-isolation-guard.py`가 차단+리다이렉트).
 
-## GGUF Export 트랙 (2026-09-18 착수)
-- [project_gguf_export_track](project_gguf_export_track.md) — ★★★ Q4_0/Q8_0/Q4_K/Q5_0 인코더+real llama.cpp 검증 완료(D-export-1~5). Q4_K는 Q4_0과 동일 4.5bpe라 파일크기 안 줄임(D-export-4, 이전세션 오류 정정) — 진짜 레버는 embed_tokens(K_F32) 하나였고 실 소스파일 조회로 확인한 Q5_0으로 양자화해 897MB→446MB(50.3%↓, 원본보다도 작음, D-export-5)
+## GGUF Export 트랙 (2026-09-18, D-export-1~6 완료)
+- [project_gguf_export_track](project_gguf_export_track.md) — ★★★ Q4_0/Q8_0/Q4_K/Q5_0/Q6_K 인코더+real llama.cpp 검증 완료. Q4_K/Q5_K/Q6_K 전부 QK_K=256 정렬 필요해 D=896인 q/k/v/o/gate/up엔 원천불가(구조적 사실, D-export-4/6) — 실 소스파일 gguf-py 조회로 진짜 레시피(attn_v=Q8_0,ffn_down=Q6_K,나머지=Q5_0) 확인 후 매칭해 505.4MB(원본 491.4MB 대비 2.85%이내, D-export-6). caveat: 엔진 로더가 이미 int4로 다운캐스트해서 재인코딩은 2차손실방지일 뿐 원본충실도 복구 아님
 
 ## 상호작용 / 세션 운영 피드백
 - [feedback_monitor_checkpoint_cadence](feedback_monitor_checkpoint_cadence.md) — 장기 스윕 모니터 알림은 32의 배수 등 체크포인트에만 보고, 매 이벤트 응답 금지

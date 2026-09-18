@@ -1,6 +1,6 @@
 ---
 name: project_gguf_export_track
-description: GGUF export 트랙(D-export-1~5) 현재 상태 — Q4_0/Q8_0/Q4_K/Q5_0 인코더 완료, 897MB→446MB(50.3%↓)
+description: GGUF export 트랙(D-export-1~6) 완료 — 실 레시피 정밀도 매칭, 원본 대비 2.85% 이내
 metadata:
   type: project
 ---
@@ -36,14 +36,35 @@ F32-tier follow-up 완료.
   소스(491.4MB)보다도 작아짐**. llama-tokenize ids 동일+llama-simple 정상
   생성(coherent, load time 481ms→102ms) 재확인 완료.
 
+- **★★★D-export-6 완료 — 실 레시피 정밀도 매칭**: "남은 Q4_0 텐서에 Q5_K/
+  Q6_K 추가"라는 사용자 요청을 실행하기 전 실 소스파일을 gguf-py로 먼저
+  조회 → **Q5_K/Q6_K 둘 다 Q4_K와 동일한 QK_K=256 정렬 제약**이라 D=896인
+  q/k/v/o/gate/up 전부에 애초에 적용 불가능함을 사전에 확인(코드로 해결
+  불가능한 구조적 사실). `Q5_K`는 이 모델에서 실제 적용 대상이 전혀
+  없음(스킵), `Q6_K`는 `ffn_down`(IM=4864, 256 배수)에만 적용되고 실
+  소스파일도 거기서 Q6_K를 씀(D-export-4가 Q4_K로 잘못 골랐던 것도 이때
+  정정). 실 레이어0 전수조사 결과: attn_q/k/output+ffn_gate/up→Q5_0,
+  attn_v→**Q8_0**(실 llama.cpp "M"레시피의 알려진 휴리스틱), ffn_down→Q6_K.
+  Q6_K 인코더 신규구현+dual-oracle 검증(own dequant+gguf-py 완전일치,
+  rel=8.9% vs Q4_K의 37.8%로 fidelity 개선 확인) 후 나머지는 이미 만들어둔
+  Q5_0/Q8_0으로 이름기반 라우팅. **결과: 505,399,136 bytes, 원본
+  (491,400,032 bytes) 대비 2.85% 이내** — 텐서타입 구성이 실 레시피와
+  정확히 일치(Q4_0 잔존 0개). llama-tokenize ids 동일+llama-simple 정상
+  생성 재확인(주관적으로 이전 라운드보다 더 일관된 출력, 단일샘플이라
+  과대해석 안 함). **★중요 공개 caveat**: 이 엔진 자체 로더가 lm_head
+  제외 모든 양자화 텐서를 이미 로드시점에 K_Q4G64(int4)로 다운캐스트하므로,
+  export시 더 높은 비트폭으로 재인코딩해도 원본의 진짜 정밀도를 복구하는
+  게 아니라 "두 번째 손실 양자화를 추가로 얹지 않는다"는 좁은 의미의
+  이득만 진짜임 — 컨테이너 타입 일치≠수치 충실도 일치, 과장하지 않음.
+
 **Why**: Mac 기반 로컬 LLM 파인튜너 대상 배포용 산출물이라는 새 전략
 목표. 이전 트랙(Phase 6 토크나이저)의 ROI 논의 이후 사용자가 명시적으로
 승인한 다음 단계.
 
-**How to apply**: "K-quant을 추가하면 파일이 작아진다"는 가정은 이미
-실증으로 반증됨(D-export-4) — 파일 크기를 줄이는 진짜 레버는 K_F32
-티어(주로 embed_tokens 단일 텐서) 양자화였고, 이미 완료+검증됨
-(D-export-5). 다음에 파일 크기를 더 줄이고 싶다면 `Q4_0`이 아직 남아있는
-896-row 텐서(q/k/v/o/gate/up, attn_output도 Q5_0)들에 `Q5_K`/`Q6_K` 인코더를
-추가하는 게 다음 후보 — 아직 구현 안 됨, 스코프아웃 상태. 상세 진행 로그는
-[[../history/2026-09-18_gguf-export-q4k-encoder.md]] 참고.
+**How to apply**: 이 트랙(D-export-1~6)은 사실상 완료 상태 — 균일정밀도
+writer+K-quant+F32티어+실레시피 매칭까지 전부 실검증됨. 다음에 더 갈
+곳이 있다면 (a) 이 엔진 자체 로더의 uniform-int4 정책을 real
+per-tensor-precision 보존으로 바꾸는 아키텍처 변경(위 caveat의 진짜
+해결책, 훨씬 큰 스코프) (b) MoE 아키텍처 export (c) precision-search
+기반 export — 전부 명시적으로 스코프아웃 상태, 아직 요청 없음. 상세
+진행 로그는 [[../history/2026-09-18_gguf-export-q4k-encoder.md]] 참고.
