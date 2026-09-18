@@ -103,5 +103,24 @@ int main(void) {
     FILE *fqk = fopen("/tmp/qtest_q4k.bin", "wb"); fwrite(qkbuf, 1, qkbytes, fqk); fclose(fqk);
     printf("dumped /tmp/qtest_wk.f32 /tmp/qtest_q4k.bin (n=%lld)\n", (long long)nk);
 
+    // D-export-6: Q6_K round-trip, reusing the same 1024-element vector (also a real multiple
+    // of 256, no new vector needed).
+    size_t q6kbytes = gguf_w_q6_k_nbytes(nk);
+    uint8_t *q6kbuf = malloc(q6kbytes);
+    gguf_w_quantize_q6_k(wk, nk, q6kbuf);
+    float *q6kdec = malloc(nk * sizeof(float));
+    gguf_dequant_row(GGML_TYPE_Q6_K, q6kbuf, q6kdec, nk);
+    double q6k_maxerr = 0, q6k_sumabs = 0;
+    for (int64_t i = 0; i < nk; i++) {
+        double e = fabs(q6kdec[i] - wk[i]);
+        if (e > q6k_maxerr) q6k_maxerr = e;
+        q6k_sumabs += fabs(wk[i]);
+    }
+    printf("Q6_K: n=%lld bytes=%zu max_abs_err=%.6f mean_abs_val=%.6f rel=%.4f%%\n",
+        (long long)nk, q6kbytes, q6k_maxerr, q6k_sumabs/nk, 100.0*q6k_maxerr/(q6k_sumabs/nk));
+
+    FILE *fq6k = fopen("/tmp/qtest_q6k.bin", "wb"); fwrite(q6kbuf, 1, q6kbytes, fq6k); fclose(fq6k);
+    printf("dumped /tmp/qtest_q6k.bin (n=%lld)\n", (long long)nk);
+
     return 0;
 }

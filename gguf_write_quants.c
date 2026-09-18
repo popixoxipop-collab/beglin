@@ -258,3 +258,96 @@ void gguf_w_quantize_q5_0(const float *w, int64_t n, uint8_t *out) {
         memcpy(blocks[b].qh, &qh, sizeof(qh));
     }
 }
+
+// D-export-6: real GGUF Q6_K. Field order {ql[128]; qh[64]; scales[16]; d} -- `d` LAST, unlike
+// Q4_K/Q5_K where d/dmin come first (confirmed against this project's own already-existing
+// GgmlBlockQ6_K/dequant_row_q6_k, gguf_quants.c). Symmetric (no dmin -- one scale per 16-
+// element sub-group, code range [-32,31] biased +32 for the unsigned 6-bit field, exact
+// analog of gguf_w_quantize_q4_0()'s symmetric scheme at 6 bits instead of 4). 210 bytes/256
+// elements = 6.5625 bits/element.
+//
+// The decoder's own loop (nn in {0,128}, l in 0..31, is=l/16, reading sc[is+0/2/4/6] for the
+// 4 elements at offsets {0,32,64,96} from nn+l) LOOKS like an interleaved scale-group mapping
+// but isn't: working through the index arithmetic by hand shows sub-group g (0..15) covers
+// exactly the CONTIGUOUS elements [16*g, 16*g+16) -- i.e. plain sequential 16-groups, same as
+// this encoder's own gscale[]/sc8[] indexing below. Only the qs/qh BIT PACKING is interleaved
+// (for SIMD-friendly decode), not the scale grouping -- confirmed by manual derivation before
+// writing this encoder, not assumed.
+#define QK6_K_G 16   // elements per scale sub-group (QK_K/16 = 16 groups of 16)
+
+#pragma pack(push, 1)
+typedef struct { uint8_t ql[QK_K / 2]; uint8_t qh[QK_K / 4]; int8_t scales[QK_K / 16]; ggml_half d; } WBlockQ6_K;
+#pragma pack(pop)
+
+size_t gguf_w_q6_k_nbytes(int64_t n) { return (size_t)(n / QK_K) * sizeof(WBlockQ6_K); }
+
+void gguf_w_quantize_q6_k(const float *w, int64_t n, uint8_t *out) {
+    int64_t nb = n / QK_K;
+    WBlockQ6_K *blocks = (WBlockQ6_K *)out;
+    for (int64_t b = 0; b < nb; b++) {
+        const float *sb = w + b * QK_K;
+
+        // Pass 1: per-16-element sub-group symmetric scale from real absmax (16 groups).
+        float gscale[16];
+        for (int g = 0; g < 16; g++) {
+            const float *grp = sb + g * QK6_K_G;
+            float maxabs = 0.0f;
+            for (int l = 0; l < QK6_K_G; l++) { float a = fabsf(grp[l]); if (a > maxabs) maxabs = a; }
+            float sc = maxabs / 31.0f;
+            if (sc < 1e-12f) sc = 1.0f;
+            gscale[g] = sc;
+        }
+        float maxscale = 0.0f;
+        for (int g = 0; g < 16; g++) if (gscale[g] > maxscale) maxscale = gscale[g];
+        float d = maxscale / 127.0f;
+        if (d < 1e-12f) d = 1.0f;
+        blocks[b].d = fp32_to_fp16(d);
+
+        // Pass 2: round each group's scale to its int8 code (non-negative, [0,127] -- this
+        // encoder's own min/max-based choice, not a replica of ggml's own signed-scale
+        // optimizer, same D-export-2/4 stance every other type in this file already takes).
+        int8_t sc8[16];
+        for (int g = 0; g < 16; g++) {
+            int v = (int)rintf(gscale[g] / d);
+            if (v > 127) v = 127;
+            if (v < 0)   v = 0;
+            sc8[g] = (int8_t)v;
+        }
+        memcpy(blocks[b].scales, sc8, 16);
+
+        // Pass 3: re-derive each group's ACTUAL applied scale from the rounded int8 code (not
+        // the original float gscale), requantize with error-feedback diffusion within the
+        // 16-element sub-group -- same consistency reasoning as gguf_w_quantize_q4_k() above.
+        int8_t L[QK_K];   // signed code, [-32,31]
+        for (int g = 0; g < 16; g++) {
+            float dg = d * (float)sc8[g];
+            float err_feedback = 0.0f;
+            for (int l = 0; l < QK6_K_G; l++) {
+                float x = sb[g * QK6_K_G + l] + err_feedback;
+                float qf = dg > 0.0f ? rintf(x / dg) : 0.0f;
+                if (qf > 31.0f)  qf = 31.0f;
+                if (qf < -32.0f) qf = -32.0f;
+                float deq = qf * dg;
+                err_feedback = x - deq;
+                L[g * QK6_K_G + l] = (int8_t)qf;
+            }
+        }
+
+        // Pack: verbatim inverse of dequant_row_q6_k()'s own loop (derived by hand above,
+        // confirmed element->group mapping is contiguous so L[] is already in absolute order).
+        for (int nn = 0; nn < QK_K; nn += 128) {
+            uint8_t *ql = blocks[b].ql + (nn / 128) * 64;
+            uint8_t *qh = blocks[b].qh + (nn / 128) * 32;
+            for (int l = 0; l < 32; l++) {
+                uint8_t c1 = (uint8_t)(L[nn + l + 0]  + 32);
+                uint8_t c2 = (uint8_t)(L[nn + l + 32] + 32);
+                uint8_t c3 = (uint8_t)(L[nn + l + 64] + 32);
+                uint8_t c4 = (uint8_t)(L[nn + l + 96] + 32);
+                ql[l + 0]  = (uint8_t)((c1 & 0x0F) | ((c3 & 0x0F) << 4));
+                ql[l + 32] = (uint8_t)((c2 & 0x0F) | ((c4 & 0x0F) << 4));
+                qh[l] = (uint8_t)(((c1 >> 4) & 3) | (((c2 >> 4) & 3) << 2) |
+                                  (((c3 >> 4) & 3) << 4) | (((c4 >> 4) & 3) << 6));
+            }
+        }
+    }
+}

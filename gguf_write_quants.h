@@ -49,4 +49,14 @@ void gguf_w_quantize_q4_k(const float *w, int64_t n, uint8_t *out);
 size_t gguf_w_q5_0_nbytes(int64_t n);
 void gguf_w_quantize_q5_0(const float *w, int64_t n, uint8_t *out);
 
+// D-export-6 (real-recipe-parity follow-up): real GGUF Q6_K, 256-element super-blocks, 16
+// sub-groups of 16 with an int8 per-group scale, symmetric (no separate min, unlike Q4_K/
+// Q5_K -- ggml's own real Q3_K/Q6_K convention). `n` must be a multiple of 256. Used for
+// ffn_down.weight at export -- matches the REAL source Q4_K_M checkpoint's own choice for
+// that exact tensor (verified via gguf-py against the real file: type=14=Q6_K, not the Q4_K
+// this project's own D-export-4 had assumed/used). Same error-feedback (residual) diffusion
+// technique as gguf_w_quantize_q4_0()/_q5_0() above, applied per 16-element sub-group.
+size_t gguf_w_q6_k_nbytes(int64_t n);
+void gguf_w_quantize_q6_k(const float *w, int64_t n, uint8_t *out);
+
 #endif // GGUF_WRITE_QUANTS_H

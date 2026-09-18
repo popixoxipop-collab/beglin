@@ -15080,7 +15080,108 @@ bypass) rather than the `INT4_RESIDUAL_OK=1` env var (requires a session restart
 effect, confirmed unavailable mid-session).
 
 **Not yet done, named not silently dropped**: `Q5_K`/`Q6_K` encoders for `ffn_gate`/`ffn_up`/
-`attn_output`-class 896-row tensors (would move those off `Q4_0`, closer to the source's own
-mixed recipe, at some further file-size cost); this pass only targeted the one `K_F32` tensor
-that actually mattered by size -- norms/biases deliberately left `F32` per the real-source-file
-evidence above, not an oversight.
+`attn_output`-class 896-row tensors -- **correction (`D-export-6`)**: this was wrong when
+written. `Q5_K`/`Q6_K` are real K-quants (`QK_K=256` super-blocks, same as `Q4_K`) and can
+NEVER apply to a 896-row tensor for the identical reason `Q4_K` couldn't (`D-export-4`'s own
+256-divisibility finding) -- the real fix for those tensors turned out to be `Q5_0`/`Q8_0`,
+not a K-quant at all. This pass only targeted the one `K_F32` tensor that actually mattered by
+size -- norms/biases deliberately left `F32` per the real-source-file evidence above, not an
+oversight.
+
+## D-export-6 -- real per-tensor-role precision matches source recipe, 505.4MB vs 491.4MB (2026-09-18)
+
+**Context**: user asked to add `Q5_K`/`Q6_K` for the tensors still on `Q4_0` (q/k/v/o/gate/up).
+Checked the real source `Q4_K_M` checkpoint's own per-tensor types via `gguf-py` (ground truth,
+not assumed) before writing any code -- this caught a real premise problem before it wasted
+effort: `attn_q.weight`/`attn_k.weight`/`attn_output.weight`/`ffn_gate.weight`/`ffn_up.weight`
+all have `in=896`, NOT a multiple of 256 (`896/256=3.5`) -- **the identical structural wall that
+blocked `Q4_K` for these tensors in `D-export-4` blocks `Q5_K`/`Q6_K` too, since all three are
+`QK_K=256` K-quants.** No amount of new encoder code fixes this; it's a real dimensional fact
+about this model, not a gap in this project's own code. `Q5_K` specifically turned out to have
+**zero real application in this model** -- nothing in the real source file uses it, and nothing
+in this export could use it either. `Q6_K` DOES apply, but only to `ffn_down.weight` (`in=4864`,
+divisible by 256) -- and the real source file uses `Q6_K` there, not the `Q4_K` this project's
+own `D-export-4` had assumed/used (a second real correction, caught the same way: checking the
+actual file instead of assuming). The real source's actual per-tensor recipe for layer 0 (`gguf-py`
+direct inspection): `attn_q`/`attn_k`/`attn_output`/`ffn_gate`/`ffn_up` -> `Q5_0`; `attn_v` ->
+**`Q8_0`** (a real, well-known llama.cpp "M"-recipe heuristic: attention-value gets boosted
+precision); `ffn_down` -> `Q6_K`.
+
+**Decision**: implement `Q6_K` (real application: `ffn_down`, correcting `D-export-4`'s `Q4_K`
+choice for that tensor), skip `Q5_K` (no real application, would be untestable-in-practice
+infrastructure), and route every other previously-`Q4_0` tensor by real role -- `attn_v` to the
+already-existing `Q8_0` encoder, everything else 896-row to the already-existing `Q5_0` encoder
+(`D-export-5`) -- matching the real source recipe with code already built and oracle-verified
+this session, no new encoder needed beyond `Q6_K`.
+
+**New code**: `gguf_w_quantize_q6_k()`/`gguf_w_q6_k_nbytes()` (`gguf_write_quants.c`/`.h`) --
+real `GGML_TYPE_Q6_K` (`{ql[128]; qh[64]; scales[16]; d}` field order -- `d` LAST, unlike
+`Q4_K`/`Q5_K` -- confirmed against this project's own already-existing `GgmlBlockQ6_K`/
+`dequant_row_q6_k` before writing a line of the encoder). Symmetric, 16 sub-groups of 16
+elements each with an int8 scale (no separate min, unlike `Q4_K`/`Q5_K`'s asymmetric affine).
+The decode loop's apparent interleaved indexing was worked through by hand first: sub-group
+`g` (0..15) covers the plain CONTIGUOUS elements `[16*g, 16*g+16)` -- only the `qs`/`qh` BIT
+PACKING is interleaved (for SIMD-friendly decode), not the scale grouping. Same error-feedback
+(residual) diffusion as every other encoder in this file. `run_export_gguf_mode()`
+(`qwen_infer.c`) now dispatches `K_Q4G64` tensors by real role: `self_attn.v_proj.weight` (by
+name) -> `Q8_0`; `in%256==0` -> `Q6_K` (was `Q4_K`, now strictly preferred whenever available
+since it's better fidelity at the same alignment requirement -- `gguf_w_quantize_q4_k()` stays
+real, oracle-verified infrastructure, just no longer selected by this dispatch); `in%32==0` ->
+`Q5_0` (was `Q4_0`); final `Q4_0` fallback kept as a real safety net for any future
+non-32-aligned row (never triggers on this model).
+
+**Verification -- dual-oracle on the raw encoder, then real external-tool re-verification**:
+1. Reused the existing 1024-element super-block test vector (`tools/gguf_write_quants_oracle_test.c`)
+   -- round-tripped through this project's own `gguf_dequant_row(GGML_TYPE_Q6_K,...)` ->
+   `max_abs_err=0.603773, rel=8.90%` -- much tighter than `Q4_K`'s `37.77%` on the IDENTICAL
+   data, the expected fidelity gain from 6.5625 vs 4.5 bits/element (real sanity check, not
+   itself proof of correctness).
+2. Independent `gguf-py` cross-check (`Q6_K.dequantize_blocks()`, same isolated venv) on the
+   SAME raw bytes -> **byte-identical** `max_abs_err=0.603773` -- two independent decoders in
+   exact agreement, same bar every type in this track has cleared.
+3. Real re-export (bob, same real `qwen2.5-0.5b-instruct-q4_k_m.gguf` source, rebuilt
+   `qwen_infer_export`):
+   ```
+   [engine] export: 291 tensors (121 F32, 0 Q4_0, 121 Q5_0, 24 Q6_K, 25 Q8_0)
+   [engine] export: wrote /tmp/qwen25_exported_recipe.gguf
+   ```
+   Tensor counts match the real recipe exactly: 121 `Q5_0` (120 q/k/o/gate/up + 1 embed_tokens
+   from `D-export-5`), 25 `Q8_0` (24 `attn_v` + 1 `lm_head`, already-handled from `D-export-3`),
+   24 `Q6_K` (`ffn_down`), 0 `Q4_0` remaining. Output file: **505,399,136 bytes** -- up from
+   `D-export-5`'s `445,747,040` (higher-fidelity types cost real bytes), but now within **2.85%**
+   of the real source file (`491,400,032` bytes) -- the closest this export has ever gotten to
+   real recipe parity, both in per-tensor type AND overall size.
+4. `llama-tokenize -m qwen25_exported_recipe.gguf --no-bos --ids -p 'The capital of France is'`
+   -> `[785, 6722, 315, 9625, 374]` -- identical to every prior entry's reference ids.
+5. `llama-simple -m qwen25_exported_recipe.gguf -n 32 -p 'The capital of France is'` -> `"The
+   capital of France is Paris. The capital of Italy is Rome. The capital of Spain is Madrid.
+   The capital of Portugal is Lisbon. The capital of Mexico is Mexico City. The"` -- coherent,
+   real generation, real `llama.cpp`, zero engine dependency. Notably cleaner/more consistent
+   than `D-export-4`/`D-export-5`'s runs (which drifted mid-generation) -- consistent with the
+   higher per-tensor fidelity, though this is one sample and not treated as a rigorous quality
+   claim (`feedback_avoid_overinterpretation` discipline).
+
+**Important, disclosed caveat**: this engine's own role policy already downcasts every
+non-`F32`, non-explicitly-int8 tensor to its internal `K_Q4G64` (int4) representation AT LOAD
+TIME, regardless of the source file's own precision -- confirmed via the real dispatch-tier log
+(`1 NEON-q8g64` = only `lm_head`; every other quantized tensor, including the real source's own
+`Q8_0` `attn_v.weight`, is already living as `K_Q4G64` in memory by the time export runs).
+Re-encoding a dequantized `K_Q4G64` tensor into `Q5_0`/`Q6_K`/`Q8_0` at export time does NOT
+recover the fidelity the real source file's own higher-precision tensors had -- that information
+was already lost at this engine's own load-time int4 transcode, before export ever runs. The
+real, honest benefit of this pass is narrower but still real: re-encoding at a HIGHER precision
+than the internal 4-bit representation avoids adding a SECOND, independent round of lossy
+quantization on top of the first (uses this project's own error-feedback diffusion in a way
+that can represent the already-int4-quantized values losslessly, rather than re-quantizing them
+down to 4 bits again with fresh, uncorrelated rounding). Matching the source file's container
+TYPE is real progress toward portability/compatibility parity; it is not the same claim as
+matching the source file's numerical fidelity, and this entry does not claim the latter.
+
+**Compile check**: local (`clang -O3 -w -c`) and bob, `gguf_write_quants.c` and the
+`qwen_infer.c` diff, zero new warnings.
+
+**Not yet done, named not silently dropped**: preserving the real source file's own per-tensor
+precision through this engine's LOAD path (rather than the current uniform-int4-except-lm_head
+policy) is the only way to close the remaining fidelity gap the caveat above describes -- a real
+architectural change to the loader/role-policy system, well beyond this export-only track's
+scope, not attempted here.
