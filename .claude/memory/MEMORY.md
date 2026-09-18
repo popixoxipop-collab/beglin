@@ -6,7 +6,7 @@ memory(`~/.claude/projects/-Users-xox/memory/`)에 있던 vdsp_*.md 11개를
 (전역 저장 시 `repo-isolation-guard.py`가 차단+리다이렉트).
 
 ## GGUF Export 트랙 (2026-09-18 착수)
-- [project_gguf_export_track](project_gguf_export_track.md) — ★★ Q4_0/Q8_0/Q4_K 인코더+real llama.cpp 검증 완료(D-export-1~4). Q4_K는 Q4_0과 동일 4.5bpe라 파일크기 안 줄임(직접계산+실측 확인, 이전세션 오류 정정) — 진짜 원인은 K_F32 embed_tokens 등 티어(~545MB), 스코프아웃 상태
+- [project_gguf_export_track](project_gguf_export_track.md) — ★★★ Q4_0/Q8_0/Q4_K/Q5_0 인코더+real llama.cpp 검증 완료(D-export-1~5). Q4_K는 Q4_0과 동일 4.5bpe라 파일크기 안 줄임(D-export-4, 이전세션 오류 정정) — 진짜 레버는 embed_tokens(K_F32) 하나였고 실 소스파일 조회로 확인한 Q5_0으로 양자화해 897MB→446MB(50.3%↓, 원본보다도 작음, D-export-5)
 
 ## 상호작용 / 세션 운영 피드백
 - [feedback_monitor_checkpoint_cadence](feedback_monitor_checkpoint_cadence.md) — 장기 스윕 모니터 알림은 32의 배수 등 체크포인트에만 보고, 매 이벤트 응답 금지
