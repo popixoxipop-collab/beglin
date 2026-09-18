@@ -81,12 +81,7 @@ def main():
     #   WHY this fix: attribution rows (kind="attribution") never carried
     #   their own margin field (see qwen_infer.c's attribution fprintf --
     #   only corrected_argmax/orig_argmax/threshold). The margin instead
-    #   lives on the "event" row that triggered the attribution replay, and
-    #   both kinds share one file in append order with the event always
-    #   written first (moe_neartie_maybe_log() fires, THEN
-    #   moe_attrib_replay_one() may run against that same near-tie). So:
-    #   track margin per (model,corpus,req,pos) as event rows stream past,
-    #   and look it up when a matching attribution row arrives.
+    #   lives on the "event" row for the same (req,pos).
     #   COST/caveat: (req,pos) is only unique within one manifest -- per
     #   D-qNg64-9's own comment, req numbering restarts at 0 per manifest
     #   file. If a single JSONL file accumulates runs from MULTIPLE
@@ -96,35 +91,58 @@ def main():
     #   fully guarded here -- documented, not silently assumed safe.
     #   EXIT: if this becomes a real problem, add "manifest" to the event
     #   row's JSON too and widen the join key to (model,corpus,manifest,req,pos).
-    events, attribs = [], []
-    margin_by_key = {}
-    n_events = n_attribs = 0
+    #
+    # D-push-margin-2 (this session, SAME-DAY correction of D-push-margin-1's
+    # own bug): the first version above built margin_by_key incrementally
+    # while streaming forward and assumed the event row always precedes its
+    # attribution rows in the file -- verified FALSE by actually looking at a
+    # real JSONL: moe_neartie_maybe_correct() (which writes attribution rows)
+    # runs BEFORE moe_neartie_maybe_log() (which writes the event row) in
+    # both emit loops (qwen_infer.c decode/prefill columns) -- same ordering
+    # fact promotion_controller.py's own docstring already documented, which
+    # this fix somehow missed the first time despite reading that exact file
+    # this session. Caught by re-checking a real fresh JSONL's actual line
+    # order after the "fix" landed instead of trusting it worked -- min_margin
+    # was STILL null after D-push-margin-1's own supposed fix, which is what
+    # forced this second look.
+    #   FIX: two passes over the new lines instead of one streaming pass --
+    #   pass 1 builds the COMPLETE margin_by_key index from every event row
+    #   in this batch, pass 2 resolves every attribution row against it,
+    #   independent of which kind physically comes first in the file.
+    lines = []
     with open(path) as f:
         f.seek(offset)
         for line in f:
             line = line.strip()
-            if not line:
-                continue
-            row = json.loads(line)
-            if row.get("kind") == "event":
-                events.append({
-                    "req": row["req"], "pos": row["pos"],
-                    "predicted_token": row["predicted_token"], "competing_token": row["competing_token"],
-                    "margin": row["margin"], "model": row["model"], "corpus": row["corpus"],
-                    "batch_size": row.get("batch_size"),
-                    # D-neartie-batch-2: paired B=1 single-stream replay margin for the same
-                    # (req,pos) -- absent (None) on any JSONL line from before this instrumentation.
-                    "replay_margin_b1": row.get("replay_margin_b1"),
-                })
-                n_events += 1
-                margin_by_key[(row["model"], row["corpus"], row["req"], row["pos"])] = row["margin"]
-            elif row.get("kind") == "attribution":
-                ev_key = (row["model"], row["corpus"], row["req"], row["pos"])
-                attribs.append((row["model"], row["corpus"], row["role"], row["layer"], margin_by_key.get(ev_key)))
-                n_attribs += 1
-            if len(events) >= BATCH:
-                post(url, key, "/rest/v1/moe_neartie_events", events); events = []
+            if line:
+                lines.append(json.loads(line))
         new_offset = f.tell()
+
+    margin_by_key = {}
+    for row in lines:
+        if row.get("kind") == "event":
+            margin_by_key[(row["model"], row["corpus"], row["req"], row["pos"])] = row["margin"]
+
+    events, attribs = [], []
+    n_events = n_attribs = 0
+    for row in lines:
+        if row.get("kind") == "event":
+            events.append({
+                "req": row["req"], "pos": row["pos"],
+                "predicted_token": row["predicted_token"], "competing_token": row["competing_token"],
+                "margin": row["margin"], "model": row["model"], "corpus": row["corpus"],
+                "batch_size": row.get("batch_size"),
+                # D-neartie-batch-2: paired B=1 single-stream replay margin for the same
+                # (req,pos) -- absent (None) on any JSONL line from before this instrumentation.
+                "replay_margin_b1": row.get("replay_margin_b1"),
+            })
+            n_events += 1
+        elif row.get("kind") == "attribution":
+            ev_key = (row["model"], row["corpus"], row["req"], row["pos"])
+            attribs.append((row["model"], row["corpus"], row["role"], row["layer"], margin_by_key.get(ev_key)))
+            n_attribs += 1
+        if len(events) >= BATCH:
+            post(url, key, "/rest/v1/moe_neartie_events", events); events = []
 
     post(url, key, "/rest/v1/moe_neartie_events", events)
     for model, corpus, role, layer, margin in attribs:
