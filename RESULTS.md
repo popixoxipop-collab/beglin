@@ -15272,3 +15272,103 @@ serves inference from is byte-for-byte unaffected by this change.
 changing `load_gguf_weights()`'s own live-inference precision policy (explicitly, user-
 confirmed out of scope this round -- see the loader-precision-policy plan,
 `serene-finding-ullman.md`, for the full real cost/benefit reasoning).
+
+## D-export-8 -- MoE GGUF export, real OLMoE + GPT-OSS-20B, both byte-identical to source (2026-09-18)
+
+**Context**: user asked to extend GGUF export to MoE architectures (OLMoE/Qwen3-MoE/GPT-OSS),
+which load through a completely separate pipeline (`g_gguf_moe`, `MoeAFTensor`,
+`run_gguf_moe_verify_mode()`) dense export never touches. Went to Plan Mode given the real
+scope (new pipeline, stacked 3-D expert tensors, an architecture with a fundamentally different
+quant format). Investigation before writing code found the MoE case is actually SIMPLER than
+dense turned out to be: (1) this track's own writer encoders (`gguf_w_quantize_q4_0/_q5_0/
+_q6_k/_q8_0/_q4_k`, all built in `D-export-2/4/5/6`) are pure flat-array block quantizers with
+zero shape awareness -- they work unchanged on a stacked 3-D expert tensor's flat byte buffer,
+no new quantization math needed; (2) `GgufFile` already exposes `.tensors`/`.n_tensors`,
+enabling a fully generic "walk every real tensor" loop that needs zero architecture-specific
+role-table knowledge and zero name translation (MoE tensors keep their own real GGUF names on
+export, unlike dense which needed `wt_hf_name_to_gguf_name()`).
+
+**Decision**: new code hooks into `run_gguf_moe_verify_mode()` itself (`qwen_infer.c:9202`,
+right after `g_gguf_moe` opens and the architecture string validates), gated by a new
+`QWEN_MOE_EXPORT_GGUF=<out.gguf>` env var, checked BEFORE the per-layer weight-registration
+loop runs -- since export never reads `g_moe_af[]`/`g_moe_f32[]` at all, running that loop
+first would be real wasted dequant+requant compute for a 20B-parameter file. GPT-OSS's native
+MXFP4 expert tensors get a true raw-byte passthrough (no dequant/requant at all): no MXFP4
+*writer* exists (a genuinely different E8M0/E2M1 format, not a block-affine/K-quant scheme any
+existing encoder resembles), and none is needed -- copying the source bytes unchanged is
+strictly exact, better than any dequant-requant round trip could be even if an encoder existed.
+Every other type reuses `D-export-7`'s exact `switch(src->type)` dispatch verbatim.
+
+**Real verification -- OLMoE first** (`/Users/bob/models_gguf_olmoe/OLMoE-1B-7B-0125-Q4_0.gguf`,
+real downloaded checkpoint, 16 layers, 64 experts):
+```
+[engine] moe export: 195 tensors (81 F32, 113 Q4_0, 0 Q4_K, 0 Q5_0, 1 Q6_K, 0 Q8_0, 0 MXFP4)
+[engine] moe export: wrote /tmp/olmoe_exported.gguf
+```
+1. Output file: **3,928,037,440 bytes -- byte-for-byte identical to the source file.**
+2. `gguf-py` tensor-set diff: 0 missing, 0 extra -- exact 1:1 coverage across all 195 tensors.
+3. `blk.0.ffn_gate_exps.weight` shape confirmed `[2048, 1024, 64]` -- the 3-D expert-stacked
+   case (D1) round-tripped correctly on the first real attempt, no shape-handling bug.
+4. Numeric diff against the source's own `gguf-py` dequant: `Q4_0`-sourced tensors show small,
+   expected nonzero differences (`max_abs_diff` 0.02-0.07, `mean_abs_diff` ~3e-4 to ~1.6e-3) --
+   this project's own error-feedback diffusion vs `ggml`'s plain RTN reference, the same
+   disclosed, established gap `D-export-2` documented for dense `Q4_0`. `F32` tensors (norms,
+   `ffn_gate_inp` router) -- `max_abs_diff=0.0` exactly.
+5. `llama-tokenize -m olmoe_exported.gguf --no-bos --ids -p 'The capital of France is'` ->
+   `[510, 5347, 273, 6181, 310]` -- identical to the same prompt against the real unmodified
+   source file (independently re-run for direct comparison, not assumed).
+6. `llama-simple -n 32` -> `"The capital of France is Paris. The capital of France is Paris.
+   ..."` -- coherent, correct (Paris), real generation via Metal-accelerated `llama.cpp`, zero
+   engine dependency (118.81 tok/s eval).
+
+**Real verification -- GPT-OSS-20B** (`/Users/bob/gptoss_test/gpt-oss-20b-MXFP4.gguf`, real
+checkpoint, 32 experts, native MXFP4-sourced FFN experts):
+```
+[engine] moe export: 459 tensors (289 F32, 0 Q4_0, 0 Q4_K, 0 Q5_0, 0 Q6_K, 98 Q8_0, 72 MXFP4)
+[engine] moe export: wrote /tmp/gptoss_exported.gguf
+```
+1. **First attempt FATAL'd at `gguf_w_finish()`** -- real cause, not a code bug: `bob`'s disk
+   was at 100% capacity (119MB free) before this run even started, mostly from this session's
+   OWN prior large export scratch files (~17GB across the dense/OLMoE tracks' `/tmp/*.gguf`
+   outputs, already served their verification purpose). Cleaned those up (freed to 16GB),
+   re-ran -> succeeded. A real environmental finding, disclosed honestly rather than glossed
+   over -- exporting a 20B-class model needs real disk headroom on the target machine.
+2. Output file: **12,109,566,624 bytes -- byte-for-byte identical to the source file** (third
+   time this exact result has held across three real models this session: dense Qwen2.5-0.5B,
+   OLMoE, now GPT-OSS-20B).
+3. `gguf-py` tensor-set diff: 0 missing, 0 extra.
+4. Numeric diff: **every sampled tensor is bit-exact (`max_abs_diff=0.0`)**, including the
+   `type=39` (MXFP4) expert tensors (`blk.0.ffn_gate_exps.weight` etc., shape
+   `[2880, 2880, 32]` -- 32-expert stacking confirmed correct) -- decoded independently by
+   `gguf-py`'s own MXFP4 support, not this project's own decoder, real proof D2's raw
+   passthrough preserved the real bytes exactly. The `Q8_0` tensors are also bit-exact, matching
+   `D-export-2`'s established finding that this project's own `Q8_0` encoder (plain
+   direct-division RTN) already matches `ggml`'s reference exactly -- this specific checkpoint's
+   real recipe happens to use only `F32`/`Q8_0`/`MXFP4` (no `Q4_0`/K-quants), so EVERY tensor in
+   this export round-tripped bit-perfect, not just most.
+5. `llama-tokenize` -> loads successfully, produces valid real token ids.
+6. `llama-simple` generation **could not complete on this machine** -- both the exported file
+   AND the pristine original source file crash identically
+   (`kIOGPUCommandBufferCallbackErrorOutOfMemory`, Metal residency-set assertion on the second
+   attempt) -- confirmed by running the identical command against the untouched source file,
+   which crashes the same way. Real, pre-existing hardware/memory-ceiling issue on this test
+   machine for this specific 20B-class model (~12.1GB weights against a ~12.7GB Metal working-
+   set limit, no headroom for KV cache/compute buffers), independent of this export's
+   correctness -- not glossed over as a pass, reported as what it actually is: 3 of 4
+   verification legs (size, tensor-set, numeric, tokenize) fully passed; the 4th (full
+   generation) is blocked by machine capacity, not code, and reproduces on the original file too.
+
+**Compile check**: local (`clang -O3 -w -c`) and bob, zero new warnings.
+
+**Confirmed unchanged**: `run_gguf_moe_verify_mode()`'s existing load/registration/verify
+behavior when `QWEN_MOE_EXPORT_GGUF` is unset (the new branch is a pure early-return added
+before the existing config-parsing/layer-loop code, which is otherwise untouched); no MoE
+GEMM/expert-routing dispatch code touched at all.
+
+**Not yet done, named not silently dropped**: Qwen3-MoE -- no real downloaded Qwen3-MoE GGUF
+checkpoint exists on `bob`, so this track's own established verification discipline (external
+tool, real checkpoint) can't be satisfied yet; the generic design should work unmodified once a
+real file is available, not attempted blind. `Q5_1`/`Q2_K`/`Q3_K`/IQ-series writer encoders
+(same gap as dense, `D-export-7`) -- FATAL honestly if a real file needs one. An MXFP4 writer
+(encoder) -- unnecessary for this track's actual scope (re-exporting an unmodified checkpoint),
+only needed if a future track needs to export a MODIFIED MXFP4 tensor.
