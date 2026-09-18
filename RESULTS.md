@@ -15441,3 +15441,81 @@ once at startup only -- sufficient to prove the mechanism, not yet "no restart n
 same live sense MoE's already achieves); real dense precision-search telemetry (would let this
 be autopilot-driven instead of manually-specified, same blocker `D-export-8`'s own investigation
 already found -- zero real data for any dense model today).
+
+## D-promo-moe-gguf-1 -- GGUF export now reflects live MoE promotions, real end-to-end (2026-09-18)
+
+**Context**: Phase B of the precision-search-adaptive-engine plan -- connect `D-export-8`'s MoE
+GGUF export to the real, already-verified MoE promotion mechanism (`g_moe_lt_active`,
+`RESULTS.md`'s own 2026-09-02/09-10 entries). Investigation found a decisive architectural fact
+that changed this phase's scope: `moe_promotion_maybe_apply()` (the ONLY existing promotion-
+trigger call site, `qwen_infer.c:7703`) sits inside `run_moe_cbatch_verify_mode()`
+(7324-9178) -- strictly BEFORE `run_gguf_moe_verify_mode()` (9179+, where `D-export-8`'s export
+lives) even starts. Direct search confirmed `g_moe_lt_active`/`g_moe_lt_cur` appear ZERO times
+anywhere in `run_gguf_moe_verify_mode()`'s own body -- this mode reads `g_moe_lt[]` directly,
+never through the promotion-active indirection. **A GGUF-loaded model (OLMoE, GPT-OSS) could
+never reach a promoted state in any mode, under any env var, before this entry -- not a bug in
+`D-export-8`, a real gap this closes.** This also meant `RESULTS.md`'s own real promoted
+examples (`kv_a_proj_with_mqa`/`kv_b_proj`, qNg64 experts) are `deepseek-v2-lite`-specific and
+loaded via the engine's native AF-blob format, not GGUF at all -- there was no way to reuse them
+directly; this entry builds the GGUF-loaded equivalent instead, tested on `OLMoE` (real GGUF
+checkpoint already verified in `D-export-8`).
+
+**Design**: reuses `bits=32` (raw F32 passthrough) -- an ALREADY-real, ALREADY-used
+`MoeAFTensor` convention (`moe_decode_af()`'s own comment names it explicitly: "a promoted
+expert inside a mixed E>1 tensor"), not a new bits value invented for this. Values come from
+`g_gguf_moe`'s real source bytes (`gguf_dequant_row()`, same `D-export-7`/`D-promo-dense-1`
+infrastructure) -- for an E-stacked expert tensor, GGUF's real `[in,out,E]` memory order (E
+slowest-varying) is byte-identical to what `moe_decode_af()`'s `bits==32` formula expects
+(`e*out*in + row*in + col`), so the flat dequant output needs zero reshaping. Simpler than
+reusing `g_moe_lt_active`/`moe_promotion_apply_one()`: since `run_gguf_moe_verify_mode()` never
+reads `g_moe_lt_active` at all, a direct `g_moe_lt[layer].<field>` assignment (mirroring
+`D-promo-dense-1`'s `g_role_wt[role][layer]` design) is both correct and simpler than wiring in
+machinery this mode doesn't consult.
+
+**The real design question this phase had to resolve** (does export reflect a live promotion,
+or is it always a static source-file snapshot): resolved by making it TRUE, not by documenting
+a limitation. `D-export-8`'s own export check ran BEFORE the layer-registration loop specifically
+to avoid wasted dequant work when no promotion is pending -- so it now checks
+`QWEN_MOE_GGUF_PROMOTION_FILE` too and skips itself when a promotion IS pending, deferring to a
+second call site placed AFTER `moe_gguf_promotion_maybe_apply()` runs. Both call sites share ONE
+extracted `run_moe_gguf_export_body()` function (no duplicated export logic) that checks, per
+tensor, whether its (role,layer) is in `g_moe_gguf_promoted[]` (all-zero when no promotion ever
+ran, so this check is a real no-op for the common case, not just harmless) -- if promoted,
+exports the LIVE in-process F32 value (`g_moe_lt[layer].<field>->base`) instead of re-reading
+`g_gguf_moe`.
+
+**Real verification, on `bob`, OLMoE-1B-7B-0125-Q4_0**:
+1. Export WITHOUT promotion (fast path, unchanged): `195 tensors (81 F32 [0 promoted], 113
+   Q4_0, ..., 1 Q6_K)`, output file byte-identical to source (`3,928,037,440` bytes) -- confirms
+   zero regression to `D-export-8`'s own already-verified behavior.
+2. Promote `q_proj`/layer=0 via `QWEN_MOE_GGUF_PROMOTION_FILE`, then export in that state (same
+   run): log shows the promotion taking the FULL load path this time (`[gguf moe load] layer
+   16/16 transcoded`, confirming the fast-path skip worked correctly), then
+   `[moe gguf promotion] role=q_proj layer=0 PROMOTED to bits=32 (real source precision) --
+   permanent, no restart`, then `195 tensors (82 F32 [1 promoted], 112 Q4_0, ..., 1 Q6_K)` --
+   the tensor-type counts shifted EXACTLY as expected (one `Q4_0`->`F32`, nothing else moved).
+3. **Dual-oracle verification** (`gguf-py`, same discipline every `D-export-N`/`D-promo-N` entry
+   has used): `blk.0.attn_q.weight`'s real source type is `Q4_0` (type=2); the promoted export's
+   type is `F32` (type=0) -- confirmed the type change is real, not just the log line. `gguf-py`
+   dequant of the REAL ORIGINAL source vs the promoted export's raw F32 values ->
+   **`max_abs_diff=0.0`, exact match** -- the exported promoted tensor genuinely contains real
+   source precision, not an approximation.
+4. **Non-promoted tensor structurally unaffected, verified not assumed**: `blk.0.attn_k.weight`
+   -- source type `Q4_0`, export type still `Q4_0` in the SAME promoted-export file. Every
+   tensor this promotion didn't touch exports exactly as before.
+5. `llama-tokenize -m olmoe_promoted.gguf --no-bos --ids -p 'The capital of France is'` ->
+   `[510, 5347, 273, 6181, 310]` -- identical to every prior OLMoE entry's reference ids.
+   `llama-simple -n 24` -> `"The capital of France is Paris. The capital of France is Paris.
+   ..."` -- coherent, real generation, real `llama.cpp`, zero engine dependency, loading a file
+   that genuinely contains a live in-process promotion's real values.
+
+**Compile check**: local (`clang -O3 -w -c`) and bob, zero new warnings.
+
+**Not yet done, named not silently dropped**: `kv_a_proj`/`kv_b_proj` (MLA-only) and
+`dense_*`/`shared_*` (dense-layer-only) roles are not yet mapped to a GGUF source pattern in
+`MOE_ATTRIB_TO_GGUF[]` -- FATALs honestly if named in a promotion file, not silently
+mis-mapped; would need a real MLA/dense-layer GGUF checkpoint to test against, none tested this
+session. Real precision-search telemetry connecting to THIS mechanism (vs. a manually-specified
+test promotion) -- same blocker as `D-promo-dense-1` and `D-export-8`'s own findings: zero real
+data exists for any GGUF-loaded model (`qwen2.5-0.5b`/`olmoe`/`gpt-oss`) today, only
+`deepseek-v2-lite`'s native-AF-blob-loaded telemetry.

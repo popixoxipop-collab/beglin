@@ -9176,6 +9176,289 @@ static int run_gptoss_mxfp4_memprobe_mode(int argc, char **argv) {
     return 1;
 }
 
+// D-promo-moe-gguf-1 (Phase B of the precision-search-adaptive-engine plan): GGUF-loaded MoE
+// promotion. Real finding this exists to fix: moe_promotion_maybe_apply() (the ONLY existing
+// promotion-trigger call site, qwen_infer.c:7703) sits inside run_moe_cbatch_verify_mode()
+// (7324-9178) -- strictly BEFORE run_gguf_moe_verify_mode() even starts (9179). Confirmed by
+// direct search: g_moe_lt_active/g_moe_lt_cur appear ZERO times anywhere in
+// run_gguf_moe_verify_mode()'s own body -- this mode reads g_moe_lt[] directly, never through
+// the promotion-active indirection MoE's own real mechanism uses. A GGUF-loaded model
+// (D-export-8's own OLMoE/GPT-OSS) could never reach a promoted state before this, in any mode,
+// under any env var -- not a bug in D-export-8, a real gap this function closes.
+//
+// Design: reuses bits=32 (raw F32 passthrough), an ALREADY-real, ALREADY-used MoeAFTensor
+// convention -- moe_decode_af()'s own comment names it explicitly: "st_register_moe_f32_as_af()
+// for E=1 attention tensors, OR A PROMOTED EXPERT inside a mixed E>1 tensor." Not inventing a
+// new bits value. Values come from g_gguf_moe's real source bytes (gguf_dequant_row(), same
+// D-export-7/D-promo-dense-1 infrastructure) -- for an E-stacked expert tensor, GGUF's own real
+// [in,out,E] memory order (E slowest-varying, confirmed against a real header in
+// gguf_register_moe_q4g64_as()'s own comment) is BYTE-IDENTICAL to what moe_decode_af()'s
+// bits==32 formula expects (e*out*in + row*in + col) -- the flat dequant output needs zero
+// reshaping. Simpler than reusing g_moe_lt_active/moe_promotion_apply_one(): since this mode
+// never reads g_moe_lt_active at all, a direct g_moe_lt[layer].<field> assignment (mirroring
+// D-promo-dense-1's g_role_wt[role][layer] design exactly) is both correct and simpler than
+// wiring in machinery this mode doesn't consult.
+// Forward decl: real definition lives at wt_match_role_pattern() (qwen_infer.c, near
+// wt_hf_name_to_gguf_name() -- dense's own name-pattern matcher, generic enough to reuse here
+// unchanged rather than duplicating it), defined much later in the file than this MoE section
+// needs it -- plain C ordering, not a design split.
+static int wt_match_role_pattern(const char *name, const char *pattern, int *out_layer);
+
+static const struct { MoeAttribRole role; const char *gguf_pattern; } MOE_ATTRIB_TO_GGUF[] = {
+    { MOE_ATTRIB_Q_PROJ,      "blk.%d.attn_q.weight" },
+    { MOE_ATTRIB_K_PROJ,      "blk.%d.attn_k.weight" },
+    { MOE_ATTRIB_V_PROJ,      "blk.%d.attn_v.weight" },
+    { MOE_ATTRIB_O_PROJ,      "blk.%d.attn_output.weight" },
+    { MOE_ATTRIB_EXPERT_GATE, "blk.%d.ffn_gate_exps.weight" },
+    { MOE_ATTRIB_EXPERT_UP,   "blk.%d.ffn_up_exps.weight" },
+    { MOE_ATTRIB_EXPERT_DOWN, "blk.%d.ffn_down_exps.weight" },
+    // kv_a_proj/kv_b_proj (MLA-only) and dense_*/shared_* (dense-layer-only) deliberately not
+    // mapped yet -- no real GGUF-loaded MLA/dense-layer model has been tested against this path
+    // this session; FATALs honestly below rather than guessing a pattern unverified.
+};
+
+static int g_moe_gguf_promoted[MOE_ATTRIB_ROLE_COUNT];   // bitmask over layers, mirrors g_wt_promoted
+
+static void moe_gguf_promotion_apply_one(MoeAttribRole role, int layer) {
+    const char *pattern = NULL;
+    for (size_t i = 0; i < sizeof(MOE_ATTRIB_TO_GGUF)/sizeof(MOE_ATTRIB_TO_GGUF[0]); i++)
+        if (MOE_ATTRIB_TO_GGUF[i].role == role) { pattern = MOE_ATTRIB_TO_GGUF[i].gguf_pattern; break; }
+    if (!pattern) {
+        fprintf(stderr, "FATAL: moe gguf promotion: role '%s' has no known GGUF source pattern yet\n",
+                MOE_ATTRIB_ROLE_NAMES[role]);
+        exit(1);
+    }
+    char gguf_name[96];
+    snprintf(gguf_name, sizeof gguf_name, pattern, layer);
+    const GgufTensorInfo *src = gguf_find_tensor(g_gguf_moe, gguf_name);
+    if (!src) { fprintf(stderr, "FATAL: moe gguf promotion: source tensor '%s' not found\n", gguf_name); exit(1); }
+    if (!gguf_dequant_supported(src->type)) {
+        fprintf(stderr, "FATAL: moe gguf promotion: source tensor '%s' has type %d with no dequant support\n",
+                gguf_name, (int)src->type);
+        exit(1);
+    }
+    int64_t n = (int64_t)src->n_elements;
+    float *f32buf = malloc((size_t)n * sizeof(float));
+    if (!f32buf) { fprintf(stderr, "FATAL: moe gguf promotion: dequant buffer alloc failed for '%s'\n", gguf_name); exit(1); }
+    gguf_dequant_row(src->type, gguf_tensor_data(g_gguf_moe, src), f32buf, n);
+
+    long E = (src->n_dims >= 3) ? (long)src->ne[2] : 1;
+    long out = (long)src->ne[1], in = (long)src->ne[0];
+
+    MoeAFTensor *hi = malloc(sizeof(MoeAFTensor));
+    if (!hi) { fprintf(stderr, "FATAL: moe gguf promotion: MoeAFTensor alloc failed for '%s'\n", gguf_name); exit(1); }
+    memset(hi, 0, sizeof(MoeAFTensor));
+    snprintf(hi->name, sizeof hi->name, "%s", gguf_name);
+    hi->E = E; hi->out = out; hi->in = in; hi->ng = in / 64;
+    hi->packed_off = 0; hi->packed_bytes = n * (long)sizeof(float);
+    hi->scale_off = -1; hi->bias_off = -1;   // unused by bits==32's decode short-circuit
+    hi->base = (const uint8_t *)f32buf;
+    hi->bits = 32;
+
+    switch (role) {
+        case MOE_ATTRIB_Q_PROJ:      g_moe_lt[layer].q_proj      = hi; break;
+        case MOE_ATTRIB_K_PROJ:      g_moe_lt[layer].k_proj      = hi; break;
+        case MOE_ATTRIB_V_PROJ:      g_moe_lt[layer].v_proj      = hi; break;
+        case MOE_ATTRIB_O_PROJ:      g_moe_lt[layer].o_proj      = hi; break;
+        case MOE_ATTRIB_EXPERT_GATE: g_moe_lt[layer].switch_gate = hi; break;
+        case MOE_ATTRIB_EXPERT_UP:   g_moe_lt[layer].switch_up   = hi; break;
+        case MOE_ATTRIB_EXPERT_DOWN: g_moe_lt[layer].switch_down = hi; break;
+        default:
+            fprintf(stderr, "FATAL: moe gguf promotion: role '%s' matched a gguf_pattern but has "
+                "no g_moe_lt[] field mapping\n", MOE_ATTRIB_ROLE_NAMES[role]);
+            exit(1);
+    }
+    fprintf(stderr, "[moe gguf promotion] role=%s layer=%d PROMOTED to bits=32 (real source "
+        "precision) -- permanent, no restart\n", MOE_ATTRIB_ROLE_NAMES[role], layer);
+    g_moe_gguf_promoted[role] |= (1u << layer);
+}
+
+// Mirrors wt_promotion_maybe_apply()'s (D-promo-dense-1) format/semantics exactly: "<role_name>
+// <layer>" lines, best-effort (missing file = feature off), applied once. Phase B scope: called
+// once after moe_resolve_layer_tensors() finishes (g_moe_lt[] must already hold the default
+// bits=4 tensors before one field can be overwritten) and before generation starts -- same
+// "prove the mechanism with a manual promotion" honesty as Phase A, not an autopilot-driven one.
+static void moe_gguf_promotion_maybe_apply(const char *path) {
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    char role_buf[64]; int layer;
+    while (fscanf(f, "%63s %d", role_buf, &layer) == 2) {
+        if (layer < 0 || layer >= MOE_NL) continue;
+        int role = -1;
+        for (int r = 0; r < MOE_ATTRIB_ROLE_COUNT; r++)
+            if (!strcmp(role_buf, MOE_ATTRIB_ROLE_NAMES[r])) { role = r; break; }
+        if (role < 0) continue;
+        moe_gguf_promotion_apply_one((MoeAttribRole)role, layer);
+    }
+    fclose(f);
+}
+
+// D-promo-moe-gguf-1 (Phase B): extracted from D-export-8's own inline export block so it can
+// be called from TWO points -- the original fast path (before the layer-registration loop, when
+// no promotion is pending -- byte-identical to D-export-8's prior behavior) and a second point
+// AFTER moe_gguf_promotion_maybe_apply() runs (when a promotion WAS requested, so g_moe_lt[]
+// must already be fully populated first). Per-tensor, checks g_moe_gguf_promoted[] (all-zero
+// when no promotion ever ran, so this check is a real no-op for the fast path, not just
+// harmless) and exports the LIVE in-process promoted value (g_moe_lt[layer].<field>->base,
+// already real-source-precision F32 per moe_gguf_promotion_apply_one()) instead of re-reading
+// g_gguf_moe for that one tensor -- this is the real fix for this phase's own design question
+// (does export reflect a live promotion): before this function existed, the answer was
+// structurally "no" (export and promotion lived in mutually exclusive code paths entirely);
+// now it's a real, verified "yes, when both are requested in the same run."
+static void run_moe_gguf_export_body(const char *out_path, const char *arch) {
+    fprintf(stderr, "[engine] QWEN_MOE_EXPORT_GGUF=%s -- exporting %llu tensors (arch=%s)\n",
+            out_path, (unsigned long long)g_gguf_moe->n_tensors, arch);
+    GgufWriter *gw = gguf_w_open(out_path);
+    if (!gw) { perror("gguf_w_open"); exit(1); }
+
+    int n_kv_copied = 0, n_kv_skipped = 0;
+    for (uint64_t i = 0; i < g_gguf_moe->n_kv; i++) {
+        GgufKV *kv = &g_gguf_moe->kv[i];
+        if (kv->is_array) {
+            if (kv->type == GGUF_VTYPE_STRING) gguf_w_kv_str_array(gw, kv->key, kv->arr_str, kv->arr_len);
+            else if (kv->type == GGUF_VTYPE_INT32) gguf_w_kv_i32_array(gw, kv->key, (const int32_t *)kv->arr_fixed, kv->arr_len);
+            else if (kv->type == GGUF_VTYPE_FLOAT32) gguf_w_kv_f32_array(gw, kv->key, (const float *)kv->arr_fixed, kv->arr_len);
+            else { fprintf(stderr, "[engine] moe export: skip array KV '%s' (unsupported elem type %d)\n", kv->key, (int)kv->type); n_kv_skipped++; continue; }
+        } else {
+            switch (kv->type) {
+                case GGUF_VTYPE_STRING:  gguf_w_kv_str(gw, kv->key, kv->scalar.str.ptr, kv->scalar.str.len); break;
+                case GGUF_VTYPE_FLOAT32: gguf_w_kv_f32(gw, kv->key, (float)kv->scalar.f); break;
+                case GGUF_VTYPE_FLOAT64: gguf_w_kv_f64(gw, kv->key, kv->scalar.f); break;
+                case GGUF_VTYPE_UINT8: case GGUF_VTYPE_UINT16: case GGUF_VTYPE_UINT32: case GGUF_VTYPE_UINT64:
+                    gguf_w_kv_int_raw(gw, kv->key, kv->type, kv->scalar.u); break;
+                case GGUF_VTYPE_INT8: case GGUF_VTYPE_INT16: case GGUF_VTYPE_INT32: case GGUF_VTYPE_INT64:
+                    gguf_w_kv_int_raw(gw, kv->key, kv->type, (uint64_t)kv->scalar.i); break;
+                case GGUF_VTYPE_BOOL:
+                    gguf_w_kv_int_raw(gw, kv->key, GGUF_VTYPE_BOOL, kv->scalar.b ? 1 : 0); break;
+                default:
+                    fprintf(stderr, "[engine] moe export: skip scalar KV '%s' (unsupported type %d)\n", kv->key, (int)kv->type); n_kv_skipped++; continue;
+            }
+        }
+        n_kv_copied++;
+    }
+    fprintf(stderr, "[engine] moe export: copied %d source KVs, skipped %d\n", n_kv_copied, n_kv_skipped);
+
+    int n_f32 = 0, n_q4 = 0, n_q4k = 0, n_q6k = 0, n_q8 = 0, n_q5 = 0, n_mxfp4 = 0, n_promoted = 0;
+    for (uint64_t i = 0; i < g_gguf_moe->n_tensors; i++) {
+        const GgufTensorInfo *src = &g_gguf_moe->tensors[i];
+        uint64_t ne[4];
+        for (uint32_t d = 0; d < src->n_dims; d++) ne[d] = src->ne[d];
+        int64_t n = (int64_t)src->n_elements;
+
+        int promoted_role = -1, promoted_layer = -1;
+        for (size_t ri = 0; ri < sizeof(MOE_ATTRIB_TO_GGUF)/sizeof(MOE_ATTRIB_TO_GGUF[0]); ri++) {
+            int layer;
+            if (wt_match_role_pattern(src->name, MOE_ATTRIB_TO_GGUF[ri].gguf_pattern, &layer) &&
+                (g_moe_gguf_promoted[MOE_ATTRIB_TO_GGUF[ri].role] & (1u << layer))) {
+                promoted_role = MOE_ATTRIB_TO_GGUF[ri].role; promoted_layer = layer; break;
+            }
+        }
+        if (promoted_role >= 0) {
+            MoeAFTensor *hi = NULL;
+            switch (promoted_role) {
+                case MOE_ATTRIB_Q_PROJ:      hi = g_moe_lt[promoted_layer].q_proj;      break;
+                case MOE_ATTRIB_K_PROJ:      hi = g_moe_lt[promoted_layer].k_proj;      break;
+                case MOE_ATTRIB_V_PROJ:      hi = g_moe_lt[promoted_layer].v_proj;      break;
+                case MOE_ATTRIB_O_PROJ:      hi = g_moe_lt[promoted_layer].o_proj;      break;
+                case MOE_ATTRIB_EXPERT_GATE: hi = g_moe_lt[promoted_layer].switch_gate; break;
+                case MOE_ATTRIB_EXPERT_UP:   hi = g_moe_lt[promoted_layer].switch_up;   break;
+                case MOE_ATTRIB_EXPERT_DOWN: hi = g_moe_lt[promoted_layer].switch_down; break;
+            }
+            uint64_t nbytes = (uint64_t)n * sizeof(float);
+            gguf_w_add_tensor(gw, src->name, GGML_TYPE_F32, src->n_dims, ne, hi->base, nbytes);
+            n_f32++; n_promoted++;
+            continue;
+        }
+
+        if (src->type == GGML_TYPE_MXFP4) {
+            // D2: raw byte passthrough -- no writer encoder exists for MXFP4 (real
+            // E8M0/E2M1 format, no block-affine/K-quant scheme any existing encoder
+            // resembles), and none is needed: copying the source bytes unchanged is
+            // strictly exact, better than any dequant-requant round trip could be.
+            gguf_w_add_tensor(gw, src->name, GGML_TYPE_MXFP4, src->n_dims, ne,
+                               gguf_tensor_data(g_gguf_moe, src), src->n_bytes);
+            n_mxfp4++;
+            continue;
+        }
+
+        if (!gguf_dequant_supported(src->type)) {
+            fprintf(stderr, "FATAL: moe export: source tensor '%s' has type %d with no "
+                "dequant support -- real gap, not silently dropped\n", src->name, (int)src->type);
+            exit(1);
+        }
+        float *f32buf = malloc((size_t)n * sizeof(float));
+        if (!f32buf) { fprintf(stderr, "FATAL: moe export: dequant buffer alloc failed for '%s'\n", src->name); exit(1); }
+        gguf_dequant_row(src->type, gguf_tensor_data(g_gguf_moe, src), f32buf, n);
+
+        switch (src->type) {
+            case GGML_TYPE_F32:
+            case GGML_TYPE_F16: {
+                // Not freed -- gguf_w_add_tensor() does not copy tensor data, must
+                // outlive gguf_w_finish() below.
+                uint64_t nbytes = (uint64_t)n * sizeof(float);
+                gguf_w_add_tensor(gw, src->name, GGML_TYPE_F32, src->n_dims, ne, f32buf, nbytes);
+                n_f32++;
+                break;
+            }
+            case GGML_TYPE_Q4_0:
+            case GGML_TYPE_Q4_1: {
+                uint64_t nbytes = gguf_w_q4_0_nbytes(n);
+                uint8_t *qbuf = malloc(nbytes);
+                gguf_w_quantize_q4_0(f32buf, n, qbuf);
+                gguf_w_add_tensor(gw, src->name, GGML_TYPE_Q4_0, src->n_dims, ne, qbuf, nbytes);
+                n_q4++;
+                free(f32buf);
+                break;
+            }
+            case GGML_TYPE_Q4_K: {
+                uint64_t nbytes = gguf_w_q4_k_nbytes(n);
+                uint8_t *qbuf = malloc(nbytes);
+                gguf_w_quantize_q4_k(f32buf, n, qbuf);
+                gguf_w_add_tensor(gw, src->name, GGML_TYPE_Q4_K, src->n_dims, ne, qbuf, nbytes);
+                n_q4k++;
+                free(f32buf);
+                break;
+            }
+            case GGML_TYPE_Q5_0: {
+                uint64_t nbytes = gguf_w_q5_0_nbytes(n);
+                uint8_t *qbuf = malloc(nbytes);
+                gguf_w_quantize_q5_0(f32buf, n, qbuf);
+                gguf_w_add_tensor(gw, src->name, GGML_TYPE_Q5_0, src->n_dims, ne, qbuf, nbytes);
+                n_q5++;
+                free(f32buf);
+                break;
+            }
+            case GGML_TYPE_Q6_K: {
+                uint64_t nbytes = gguf_w_q6_k_nbytes(n);
+                uint8_t *qbuf = malloc(nbytes);
+                gguf_w_quantize_q6_k(f32buf, n, qbuf);
+                gguf_w_add_tensor(gw, src->name, GGML_TYPE_Q6_K, src->n_dims, ne, qbuf, nbytes);
+                n_q6k++;
+                free(f32buf);
+                break;
+            }
+            case GGML_TYPE_Q8_0: {
+                uint64_t nbytes = gguf_w_q8_0_nbytes(n);
+                uint8_t *qbuf = malloc(nbytes);
+                gguf_w_quantize_q8_0(f32buf, n, qbuf);
+                gguf_w_add_tensor(gw, src->name, GGML_TYPE_Q8_0, src->n_dims, ne, qbuf, nbytes);
+                n_q8++;
+                free(f32buf);
+                break;
+            }
+            default:
+                fprintf(stderr, "FATAL: moe export: source tensor '%s' has type %d with no "
+                    "writer encoder implemented\n", src->name, (int)src->type);
+                exit(1);
+        }
+    }
+    fprintf(stderr, "[engine] moe export: %llu tensors (%d F32 [%d promoted], %d Q4_0, %d Q4_K, %d Q5_0, %d Q6_K, %d Q8_0, %d MXFP4)\n",
+            (unsigned long long)g_gguf_moe->n_tensors, n_f32, n_promoted, n_q4, n_q4k, n_q5, n_q6k, n_q8, n_mxfp4);
+
+    if (!gguf_w_finish(gw)) { fprintf(stderr, "FATAL: gguf_w_finish failed writing %s\n", out_path); exit(1); }
+    fprintf(stderr, "[engine] moe export: wrote %s\n", out_path);
+}
+
 static int run_gguf_moe_verify_mode(int argc, char **argv) {
     (void)argc; (void)argv;
     const char *path = getenv("QWEN_MOE_GGUF");
@@ -9208,139 +9491,16 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     // the same source-type-aware design D-export-7 used for dense (see the loader-precision-
     // policy plan, serene-finding-ullman.md, D1-D3 of the MoE GGUF export plan). Running the
     // full registration loop first would be real wasted dequant+requant work for a 20B-param
-    // file. No architecture-specific role table is needed (MOE_GGUF_LAYER_ROLES[]/
-    // GPTOSS_GGUF_LAYER_ROLES[] exist so the LOADER can translate to this engine's own HF-style
-    // internal names -- export re-emits tensors under their own real GGUF names, so no
-    // translation is needed at all).
+    // file -- so this fast path only applies when NO promotion is pending (a promotion needs
+    // g_moe_lt[] populated first, per D-promo-moe-gguf-1 below; when one IS pending, this block
+    // is deliberately skipped and the SAME run_moe_gguf_export_body() runs again later, after
+    // moe_gguf_promotion_maybe_apply() -- see that second call site further down).
     {
         const char *moe_export_path = getenv("QWEN_MOE_EXPORT_GGUF");
-        if (moe_export_path && moe_export_path[0]) {
-            fprintf(stderr, "[engine] QWEN_MOE_EXPORT_GGUF=%s -- exporting %llu tensors (arch=%s)\n",
-                    moe_export_path, (unsigned long long)g_gguf_moe->n_tensors, arch);
-            GgufWriter *gw = gguf_w_open(moe_export_path);
-            if (!gw) { perror("gguf_w_open"); exit(1); }
-
-            int n_kv_copied = 0, n_kv_skipped = 0;
-            for (uint64_t i = 0; i < g_gguf_moe->n_kv; i++) {
-                GgufKV *kv = &g_gguf_moe->kv[i];
-                if (kv->is_array) {
-                    if (kv->type == GGUF_VTYPE_STRING) gguf_w_kv_str_array(gw, kv->key, kv->arr_str, kv->arr_len);
-                    else if (kv->type == GGUF_VTYPE_INT32) gguf_w_kv_i32_array(gw, kv->key, (const int32_t *)kv->arr_fixed, kv->arr_len);
-                    else if (kv->type == GGUF_VTYPE_FLOAT32) gguf_w_kv_f32_array(gw, kv->key, (const float *)kv->arr_fixed, kv->arr_len);
-                    else { fprintf(stderr, "[engine] moe export: skip array KV '%s' (unsupported elem type %d)\n", kv->key, (int)kv->type); n_kv_skipped++; continue; }
-                } else {
-                    switch (kv->type) {
-                        case GGUF_VTYPE_STRING:  gguf_w_kv_str(gw, kv->key, kv->scalar.str.ptr, kv->scalar.str.len); break;
-                        case GGUF_VTYPE_FLOAT32: gguf_w_kv_f32(gw, kv->key, (float)kv->scalar.f); break;
-                        case GGUF_VTYPE_FLOAT64: gguf_w_kv_f64(gw, kv->key, kv->scalar.f); break;
-                        case GGUF_VTYPE_UINT8: case GGUF_VTYPE_UINT16: case GGUF_VTYPE_UINT32: case GGUF_VTYPE_UINT64:
-                            gguf_w_kv_int_raw(gw, kv->key, kv->type, kv->scalar.u); break;
-                        case GGUF_VTYPE_INT8: case GGUF_VTYPE_INT16: case GGUF_VTYPE_INT32: case GGUF_VTYPE_INT64:
-                            gguf_w_kv_int_raw(gw, kv->key, kv->type, (uint64_t)kv->scalar.i); break;
-                        case GGUF_VTYPE_BOOL:
-                            gguf_w_kv_int_raw(gw, kv->key, GGUF_VTYPE_BOOL, kv->scalar.b ? 1 : 0); break;
-                        default:
-                            fprintf(stderr, "[engine] moe export: skip scalar KV '%s' (unsupported type %d)\n", kv->key, (int)kv->type); n_kv_skipped++; continue;
-                    }
-                }
-                n_kv_copied++;
-            }
-            fprintf(stderr, "[engine] moe export: copied %d source KVs, skipped %d\n", n_kv_copied, n_kv_skipped);
-
-            int n_f32 = 0, n_q4 = 0, n_q4k = 0, n_q6k = 0, n_q8 = 0, n_q5 = 0, n_mxfp4 = 0;
-            for (uint64_t i = 0; i < g_gguf_moe->n_tensors; i++) {
-                const GgufTensorInfo *src = &g_gguf_moe->tensors[i];
-                uint64_t ne[4];
-                for (uint32_t d = 0; d < src->n_dims; d++) ne[d] = src->ne[d];
-                int64_t n = (int64_t)src->n_elements;
-
-                if (src->type == GGML_TYPE_MXFP4) {
-                    // D2: raw byte passthrough -- no writer encoder exists for MXFP4 (real
-                    // E8M0/E2M1 format, no block-affine/K-quant scheme any existing encoder
-                    // resembles), and none is needed: copying the source bytes unchanged is
-                    // strictly exact, better than any dequant-requant round trip could be.
-                    gguf_w_add_tensor(gw, src->name, GGML_TYPE_MXFP4, src->n_dims, ne,
-                                       gguf_tensor_data(g_gguf_moe, src), src->n_bytes);
-                    n_mxfp4++;
-                    continue;
-                }
-
-                if (!gguf_dequant_supported(src->type)) {
-                    fprintf(stderr, "FATAL: moe export: source tensor '%s' has type %d with no "
-                        "dequant support -- real gap, not silently dropped\n", src->name, (int)src->type);
-                    exit(1);
-                }
-                float *f32buf = malloc((size_t)n * sizeof(float));
-                if (!f32buf) { fprintf(stderr, "FATAL: moe export: dequant buffer alloc failed for '%s'\n", src->name); exit(1); }
-                gguf_dequant_row(src->type, gguf_tensor_data(g_gguf_moe, src), f32buf, n);
-
-                switch (src->type) {
-                    case GGML_TYPE_F32:
-                    case GGML_TYPE_F16: {
-                        // Not freed -- gguf_w_add_tensor() does not copy tensor data, must
-                        // outlive gguf_w_finish() below.
-                        uint64_t nbytes = (uint64_t)n * sizeof(float);
-                        gguf_w_add_tensor(gw, src->name, GGML_TYPE_F32, src->n_dims, ne, f32buf, nbytes);
-                        n_f32++;
-                        break;
-                    }
-                    case GGML_TYPE_Q4_0:
-                    case GGML_TYPE_Q4_1: {
-                        uint64_t nbytes = gguf_w_q4_0_nbytes(n);
-                        uint8_t *qbuf = malloc(nbytes);
-                        gguf_w_quantize_q4_0(f32buf, n, qbuf);
-                        gguf_w_add_tensor(gw, src->name, GGML_TYPE_Q4_0, src->n_dims, ne, qbuf, nbytes);
-                        n_q4++;
-                        free(f32buf);
-                        break;
-                    }
-                    case GGML_TYPE_Q4_K: {
-                        uint64_t nbytes = gguf_w_q4_k_nbytes(n);
-                        uint8_t *qbuf = malloc(nbytes);
-                        gguf_w_quantize_q4_k(f32buf, n, qbuf);
-                        gguf_w_add_tensor(gw, src->name, GGML_TYPE_Q4_K, src->n_dims, ne, qbuf, nbytes);
-                        n_q4k++;
-                        free(f32buf);
-                        break;
-                    }
-                    case GGML_TYPE_Q5_0: {
-                        uint64_t nbytes = gguf_w_q5_0_nbytes(n);
-                        uint8_t *qbuf = malloc(nbytes);
-                        gguf_w_quantize_q5_0(f32buf, n, qbuf);
-                        gguf_w_add_tensor(gw, src->name, GGML_TYPE_Q5_0, src->n_dims, ne, qbuf, nbytes);
-                        n_q5++;
-                        free(f32buf);
-                        break;
-                    }
-                    case GGML_TYPE_Q6_K: {
-                        uint64_t nbytes = gguf_w_q6_k_nbytes(n);
-                        uint8_t *qbuf = malloc(nbytes);
-                        gguf_w_quantize_q6_k(f32buf, n, qbuf);
-                        gguf_w_add_tensor(gw, src->name, GGML_TYPE_Q6_K, src->n_dims, ne, qbuf, nbytes);
-                        n_q6k++;
-                        free(f32buf);
-                        break;
-                    }
-                    case GGML_TYPE_Q8_0: {
-                        uint64_t nbytes = gguf_w_q8_0_nbytes(n);
-                        uint8_t *qbuf = malloc(nbytes);
-                        gguf_w_quantize_q8_0(f32buf, n, qbuf);
-                        gguf_w_add_tensor(gw, src->name, GGML_TYPE_Q8_0, src->n_dims, ne, qbuf, nbytes);
-                        n_q8++;
-                        free(f32buf);
-                        break;
-                    }
-                    default:
-                        fprintf(stderr, "FATAL: moe export: source tensor '%s' has type %d with no "
-                            "writer encoder implemented\n", src->name, (int)src->type);
-                        exit(1);
-                }
-            }
-            fprintf(stderr, "[engine] moe export: %llu tensors (%d F32, %d Q4_0, %d Q4_K, %d Q5_0, %d Q6_K, %d Q8_0, %d MXFP4)\n",
-                    (unsigned long long)g_gguf_moe->n_tensors, n_f32, n_q4, n_q4k, n_q5, n_q6k, n_q8, n_mxfp4);
-
-            if (!gguf_w_finish(gw)) { fprintf(stderr, "FATAL: gguf_w_finish failed writing %s\n", moe_export_path); exit(1); }
-            fprintf(stderr, "[engine] moe export: wrote %s\n", moe_export_path);
+        const char *moe_promo_peek = getenv("QWEN_MOE_GGUF_PROMOTION_FILE");
+        int promotion_pending = moe_promo_peek && moe_promo_peek[0];
+        if (moe_export_path && moe_export_path[0] && !promotion_pending) {
+            run_moe_gguf_export_body(moe_export_path, arch);
             return 1;
         }
     }
@@ -9580,6 +9740,28 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
 
     moe_resolve_layer_tensors();
     fprintf(stderr, "[gguf moe check] all %d layers' tensors resolved\n", MOE_NL);
+
+    // D-promo-moe-gguf-1 (Phase B): must run after moe_resolve_layer_tensors() (g_moe_lt[]
+    // holds the default bits=4 tensors to overwrite) and before generation starts below.
+    // No-op for every existing run that doesn't set QWEN_MOE_GGUF_PROMOTION_FILE.
+    {
+        const char *moe_promo_path = getenv("QWEN_MOE_GGUF_PROMOTION_FILE");
+        if (moe_promo_path && moe_promo_path[0]) {
+            moe_gguf_promotion_maybe_apply(moe_promo_path);
+            // The fast-path export check above deliberately skipped itself when this promotion
+            // file was set (it runs BEFORE g_moe_lt[] is populated) -- now that promotion has
+            // actually applied, re-check QWEN_MOE_EXPORT_GGUF here so a combined "promote then
+            // export" run reaches run_moe_gguf_export_body() with g_moe_gguf_promoted[] non-
+            // empty, closing this phase's own real design question (export DOES now reflect a
+            // live promotion, verified, not assumed).
+            const char *moe_export_path = getenv("QWEN_MOE_EXPORT_GGUF");
+            if (moe_export_path && moe_export_path[0]) {
+                run_moe_gguf_export_body(moe_export_path, arch);
+                return 1;
+            }
+        }
+    }
+
     if (getenv("QWEN_TOK_DEBUG_QNORM")) {
         MoeF32Tensor *qn = g_moe_lt[0].q_norm;
         if (qn) {
