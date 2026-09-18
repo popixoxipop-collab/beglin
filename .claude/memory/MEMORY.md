@@ -5,8 +5,8 @@ memory(`~/.claude/projects/-Users-xox/memory/`)에 있던 vdsp_*.md 11개를
 전부 여기로 이전. 신규 vdsp-engine 관련 메모리는 앞으로 여기 저장할 것
 (전역 저장 시 `repo-isolation-guard.py`가 차단+리다이렉트).
 
-## GGUF Export 트랙 (2026-09-18, D-export-1~7 완료)
-- [project_gguf_export_track](project_gguf_export_track.md) — ★★★★ source-type-aware export(D-export-7)로 최종완료: 각 텐서 원본 GGUF타입을 g_gguf에서 직접 조회해 소스와 동일타입 재인코딩, export 결과가 원본과 바이트단위 완전동일크기(491.4MB=491.4MB), Q8_0텐서는 비트일치. "로더 바꿔달라" 요청은 Plan Mode+AskUserQuestion으로 export-only 확정(SME2가 int4가중치 전용이라 실추론 정밀도 변경시 168개텐서 가속상실 근거). 부수발견: D-export-6의 "attn_v=전부Q8_0" 결론이 레이어0만 보고 낸 오류였음(실제론 레이어별로 Q8_0/Q5_0 반반) — 새 코드는 자동으로 정확
+## GGUF Export 트랙 (2026-09-18, D-export-1~8 완료)
+- [project_gguf_export_track](project_gguf_export_track.md) — ★★★★★ dense+MoE(OLMoE/GPT-OSS-20B) 전부 완료. source-type-aware export(D-export-7)로 dense는 원본과 바이트단위 완전동일(491.4MB=491.4MB). MoE(D-export-8)는 기존 writer 인코더가 shape-agnostic이라 3D expert-stacked 텐서에도 코드변경 없이 그대로 작동+완전제네릭 텐서순회로 확장, OLMoE(3.93GB)/GPT-OSS-20B(12.1GB) 둘 다 원본과 바이트단위 완전동일+GPT-OSS는 텐서전부 비트일치(MXFP4 raw passthrough 포함). "로더 바꿔달라" 요청은 Plan Mode+AskUserQuestion으로 export-only 확정(SME2가 int4가중치 전용이라 실추론 정밀도 변경시 텐서 대부분 가속상실 근거)
 
 ## 상호작용 / 세션 운영 피드백
 - [feedback_monitor_checkpoint_cadence](feedback_monitor_checkpoint_cadence.md) — 장기 스윕 모니터 알림은 32의 배수 등 체크포인트에만 보고, 매 이벤트 응답 금지

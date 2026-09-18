@@ -1,6 +1,6 @@
 ---
 name: project_gguf_export_track
-description: GGUF export 트랙(D-export-1~7) 완료 — source-type-aware export, 원본과 바이트단위 크기 동일
+description: GGUF export 트랙(D-export-1~8) 완료 — dense+MoE(OLMoE/GPT-OSS) 전부 원본과 바이트단위 동일크기
 metadata:
   type: project
 ---
@@ -90,19 +90,50 @@ F32-tier follow-up 완료.
   llama-tokenize ids 동일+llama-simple 정상생성(실 Metal `kernel_mul_mv_
   q6_K_f32` 커널 로드 확인, Q6_K 태깅이 진짜임을 독립 재확인).
 
+- **★★★★★D-export-8 완료 — MoE 아키텍처(OLMoE+GPT-OSS-20B) export**: dense
+  전용이던 export를 완전히 별개 파이프라인(`g_gguf_moe`/`MoeAFTensor`/
+  `run_gguf_moe_verify_mode()`)으로 확장. Plan Mode 조사 결과 MoE가
+  오히려 dense보다 간단함을 발견: (1) 기존 writer 인코더들이 flat-array
+  기반이라 3D expert-stacked 텐서에도 코드 변경 없이 그대로 작동(GGUF
+  블록양자화 자체가 shape-agnostic), (2) `GgufFile`이 이미 `.tensors`/
+  `.n_tensors`를 노출해 아키텍처별 role table도 이름번역 함수도 전혀
+  필요없는 완전 제네릭 순회가 가능(MoE 텐서는 자기 진짜 GGUF 이름 그대로
+  재출력). `QWEN_MOE_EXPORT_GGUF` 신설, 전체 weight 등록 루프 실행 전에
+  삽입해 불필요한 재양자화 연산 회피. GPT-OSS의 native MXFP4 expert는
+  진짜 raw byte passthrough(writer 인코더 자체가 불필요 — 그대로 복사가
+  이미 최선).
+  **실 검증(OLMoE-1B-7B, 64 experts)**: `195 tensors (81 F32, 113 Q4_0,
+  1 Q6_K)`, **3,928,037,440 bytes — 원본과 바이트단위 완전동일**,
+  `ffn_gate_exps.weight` shape `[2048,1024,64]`로 3D expert-stacking
+  최초 실증(버그없이 한번에 성공), gguf-py 텐서셋diff 0/0, Q4_0텐서는
+  기대된 작은 오차(자체 에러피드백 vs ggml RTN, D-export-2와 동일
+  트레이드오프), llama-tokenize ids 원본과 재비교해 완전동일, llama-simple
+  "Paris" 정답 생성 확인.
+  **실 검증(GPT-OSS-20B, 32 experts, native MXFP4)**: `459 tensors
+  (289 F32, 98 Q8_0, 72 MXFP4)`. 1차 시도 disk 100% full로 FATAL(이
+  세션이 스스로 쌓아둔 ~17GB 스크래치파일 원인, 정리 후 재시도 성공).
+  **12,109,566,624 bytes — 원본과 바이트단위 완전동일**(이 세션에서만
+  3번째 동일결과). gguf-py로 **샘플 텐서 전부 max_abs_diff=0.0 완전
+  비트일치**(MXFP4 expert 포함 — gguf-py 자체 독립 MXFP4 디코더로 재확인),
+  이 체크포인트 실레시피가 F32/Q8_0/MXFP4만 써서(K-quant 없음) Q8_0의
+  기존 발견(비트일치)이 텐서 전부에 적용됨. llama-tokenize 성공.
+  llama-simple 전체생성은 **이 머신의 실 GPU 메모리 한계로 실패**(원본
+  파일도 동일하게 크래시 재현 확인 — export 결함 아님, 정직히 보고).
+
 **Why**: Mac 기반 로컬 LLM 파인튜너 대상 배포용 산출물이라는 새 전략
 목표. 이전 트랙(Phase 6 토크나이저)의 ROI 논의 이후 사용자가 명시적으로
 승인한 다음 단계.
 
-**How to apply**: 이 트랙(D-export-1~7)은 완료 상태 — 균일정밀도
-writer+K-quant+F32티어+실레시피 매칭+source-type-aware export까지 전부
-실검증됨. Export된 파일은 이제 원본과 바이트단위로 동일한 크기이고,
-Q8_0 소스 텐서는 비트일치까지 확인됨. **"로더를 바꿔달라"는 요청은
-export-only로 스코프를 좁혀 이미 완료됨** — 실 추론경로(load_gguf_
-weights, SME2 디스패치)는 여전히 uniform-int4 그대로, 사용자가 명시적
-확인 후 선택한 스코프임(SME2가 int4 가중치 전용이라 바꾸면 168개 텐서가
-가속을 잃는다는 실측 근거 때문). 다음에 더 갈 곳이 있다면 (a) 실
-추론경로 정밀도 변경(SME2 가속 상실 감수, 새 근거 필요) (b) MoE
-아키텍처 export (c) precision-search 기반 export — 전부 명시적으로
-스코프아웃 상태, 아직 요청 없음. 상세 진행 로그는
+**How to apply**: 이 트랙(D-export-1~8)은 완료 상태 — dense 균일정밀도
+writer+K-quant+F32티어+실레시피매칭+source-type-aware export, 그리고
+MoE(OLMoE+GPT-OSS) export까지 전부 실검증됨. dense/MoE 양쪽 export
+결과물이 전부 원본과 바이트단위로 동일한 크기, GPT-OSS는 텐서 전부
+비트일치까지 확인됨. **"로더를 바꿔달라"는 요청은 export-only로
+스코프를 좁혀 완료됨** — 실 추론경로(load_gguf_weights/MoE 등록루프,
+SME2 디스패치)는 여전히 uniform-int4 그대로, 사용자가 명시적 확인 후
+선택한 스코프임. 다음에 더 갈 곳이 있다면 (a) 실 추론경로 정밀도
+변경(SME2 가속 상실 감수, 새 근거 필요) (b) Qwen3-MoE export(bob에 실
+체크포인트 없어 오라클 검증 불가, 파일 생기면 코드 변경 없이 바로
+작동할 것) (c) precision-search 기반 export — 전부 명시적으로 스코프아웃
+상태, 아직 요청 없음. 상세 진행 로그는
 [[../history/2026-09-18_gguf-export-q4k-encoder.md]] 참고.
