@@ -415,3 +415,26 @@ create index if not exists moe_quant_sweep_results_target_idx
 --   64-experts) would need a new `expert_idx` PK column -- this change is
 --   additive only, no migration of the 191 already-seeded rows required.
 -- =============================================================================
+
+-- =============================================================================
+-- D-neartie-batch-1 (this session, NOT YET RUN LIVE -- prepared for review):
+-- moe_neartie_events gets a `batch_size` column.
+--   WHY: qwen_infer.c's moe_neartie_maybe_log() now records A (the packed
+--   active-slot count for that decode step, from cbatch_step()) alongside
+--   every near-tie event -- see the D-log comment on that function. This
+--   column is where that value lands once pushed. Original motivating
+--   question: does batch COMPOSITION itself (not just which role/layer got
+--   quantized) shift a token's top1/top2 margin, since batched-kernel
+--   summation order differs from single-stream and float addition isn't
+--   associative?
+--   COST: nullable, additive-only column -- existing 578 rows stay NULL
+--   (no batch_size was ever recorded for them; this is an honest "unknown",
+--   not backfilled with a guessed value). d4_supabase_push.py already
+--   updated to pass `row.get("batch_size")` through on new pushes (falls
+--   back to NULL for any pre-this-change JSONL line, which lacks the key).
+--   EXIT: if batch-size shows no correlation with margin once real
+--   post-instrumentation data accumulates, this column stays harmless and
+--   unused -- same precedent as attributed_role/attributed_layer.
+-- =============================================================================
+
+alter table moe_neartie_events add column if not exists batch_size integer;

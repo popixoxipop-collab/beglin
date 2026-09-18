@@ -6146,20 +6146,99 @@ static char *moe_routing_capture_json(int slot) {
     return buf;
 }
 
-static double moe_neartie_maybe_log(int slot, int req, int pos, int token_id, int argmax, const float *logits) {
+// D-neartie-batch-1 (this session): added `batch_size` param -- records how
+// many requests were actively co-batched (A, the packed active-slot count
+// from cbatch_step()) at the moment this near-tie fired.
+//   WHY: existing near-tie attribution (moe_attrib_replay_one()) answers
+//   "which role/layer's quantization caused this near-tie" but nothing in
+//   the schema could answer "did the batch COMPOSITION itself (vs. a
+//   single-stream run) change this token's margin" -- a numerically real
+//   possibility since batched matmul kernels can take a different
+//   summation order than the single-stream path (SME2/NEON tiling, or a
+//   different kernel dispatch when B doesn't match a specialized shape),
+//   and floating-point addition is not associative.
+//   COST: one int param threaded through both call sites (decode-column
+//   loop and prefill-column loop) -- pure passthrough, zero behavior
+//   change for the function's own logic.
+//   EXIT: if batch-size turns out NOT to correlate with margin once real
+//   data accumulates, this field stays harmless and unused -- same
+//   "keep it, unused" precedent as attributed_role/attributed_layer in
+//   the original schema (supabase_schema_d_roadmap4.sql).
+// D-neartie-batch-2 (this session): forward-declared here (definition lives right after
+// moe_attrib_replay_one(), which it wraps) so moe_neartie_maybe_log() can call it without
+// needing MoeAttribRole in scope this early in the file -- MoeAttribRole is a real enum
+// (can't be forward-declared in standard C the way a struct can), so a thin wrapper with a
+// plain-types signature is the clean way around that ordering constraint, not a workaround.
+static int moe_attrib_replay_baseline(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
+                                       float *w_finalnorm, int req, int pos, float *logits_out);
+static float *g_moe_neartie_replay_scratch = NULL;
+
+// D-neartie-batch-1 (this session): added `batch_size` param -- records how
+// many requests were actively co-batched (A, the packed active-slot count
+// from cbatch_step()) at the moment this near-tie fired.
+//   WHY: existing near-tie attribution (moe_attrib_replay_one()) answers
+//   "which role/layer's quantization caused this near-tie" but nothing in
+//   the schema could answer "did the batch COMPOSITION itself (vs. a
+//   single-stream run) change this token's margin" -- a numerically real
+//   possibility since batched matmul kernels can take a different
+//   summation order than the single-stream path (SME2/NEON tiling, or a
+//   different kernel dispatch when B doesn't match a specialized shape),
+//   and floating-point addition is not associative.
+//   COST: one int param threaded through both call sites (decode-column
+//   loop and prefill-column loop) -- pure passthrough, zero behavior
+//   change for the function's own logic.
+//   EXIT: if batch-size turns out NOT to correlate with margin once real
+//   data accumulates, this field stays harmless and unused -- same
+//   "keep it, unused" precedent as attributed_role/attributed_layer in
+//   the original schema (supabase_schema_d_roadmap4.sql).
+//
+// D-neartie-batch-2 (this session): the raw batch_size-vs-margin correlation
+// from D-neartie-batch-1 (N=38, real run) came back non-significant
+// (r=-0.13, t=-0.80) -- but that comparison is OBSERVATIONAL and confounded:
+// different batch_size values come from DIFFERENT (req,pos) tokens (batch
+// composition varies naturally over the run's timeline), so it can't
+// separate "this token is just inherently borderline" from "batching
+// changed this token's margin". Fix: for every REAL near-tie event (i.e.
+// only after the threshold gate below -- NOT every decoded token, since
+// each replay costs pos+1 full forward passes), immediately replay the
+// SAME (req,pos) single-stream (moe_attrib_replay_baseline(), effectively
+// A=1, no ablation) and log both margins side by side. This is now a
+// genuine PAIRED design -- same weights, same tokens, same role/layer,
+// the only thing that differs is real-batch vs single-stream computation
+// path -- same paired-t-test pattern already used for the GICP kernel
+// comparison earlier this session.
+//   COST: ~(pos+1) extra full forward passes per near-tie event (rare
+//   event, not every token -- 38 events in the N=38 run, so ~342 extra
+//   forward passes total, roughly comparable in cost to re-running a
+//   meaningful fraction of the original 24-request pass).
+//   EXIT: if replay_margin_b1 shows no significant paired difference from
+//   margin either, that's a real, properly-controlled null result --
+//   unlike D-neartie-batch-1's confounded one.
+static double moe_neartie_maybe_log(int slot, int req, int pos, int token_id, int argmax, const float *logits, int batch_size,
+                                     const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead, float *w_finalnorm) {
     if (!g_moe_neartie_log_on) return -1.0;
     int competing_token = -1;
     double margin = moe_cb4c_margin_ex(logits, &competing_token);
     double threshold = moe_neartie_threshold();
     if (margin >= threshold) return -1.0;
-    fprintf(stderr, "[moe neartie] event req=%d slot=%d pos=%d token=%d argmax=%d vs_token=%d margin=%.6f threshold=%.6f\n",
-            req, slot, pos, token_id, argmax, competing_token, margin, threshold);
+    double replay_margin_b1 = -1.0;
+    if (!g_moe_neartie_replay_scratch) {
+        g_moe_neartie_replay_scratch = malloc(MOE_VOCAB * sizeof(float));
+        if (!g_moe_neartie_replay_scratch) { fprintf(stderr, "FATAL: D-neartie-batch-2: replay scratch alloc failed\n"); exit(1); }
+    }
+    {
+        int replay_competing = -1;
+        moe_attrib_replay_baseline(af, t_embed, t_lmhead, w_finalnorm, req, pos, g_moe_neartie_replay_scratch);
+        replay_margin_b1 = moe_cb4c_margin_ex(g_moe_neartie_replay_scratch, &replay_competing);
+    }
+    fprintf(stderr, "[moe neartie] event req=%d slot=%d pos=%d token=%d argmax=%d vs_token=%d margin=%.6f threshold=%.6f batch_size=%d replay_margin_b1=%.6f\n",
+            req, slot, pos, token_id, argmax, competing_token, margin, threshold, batch_size, replay_margin_b1);
     if (g_moe_nt_events_fp) {
         char *routing_json = g_moe_routing_capture ? moe_routing_capture_json(slot) : NULL;
         fprintf(g_moe_nt_events_fp,
                 "{\"kind\":\"event\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,\"predicted_token\":%d,\"competing_token\":%d,"
-                "\"margin\":%.6f,\"active_experts_by_layer\":%s,\"model\":\"%s\",\"corpus\":\"%s\"}\n",
-                (long)time(NULL), req, pos, argmax, competing_token, margin, routing_json ? routing_json : "null",
+                "\"margin\":%.6f,\"batch_size\":%d,\"replay_margin_b1\":%.6f,\"active_experts_by_layer\":%s,\"model\":\"%s\",\"corpus\":\"%s\"}\n",
+                (long)time(NULL), req, pos, argmax, competing_token, margin, batch_size, replay_margin_b1, routing_json ? routing_json : "null",
                 g_moe_nt_events_model, g_moe_nt_events_corpus);
         fflush(g_moe_nt_events_fp);
         free(routing_json);
@@ -6409,6 +6488,17 @@ static int moe_attrib_replay_one(const uint8_t *af, MoeAFTensor *t_embed, MoeAFT
     am = 0; float bm = logits_out[0];
     for (int v = 1; v < MOE_VOCAB; v++) if (logits_out[v] > bm) { bm = logits_out[v]; am = v; }
     return am;
+}
+
+// D-neartie-batch-2: thin baseline-probe wrapper (layer=-1 -> no tensor swap at all, per
+// moe_attrib_replay_one()'s own D-d5-22 comment) -- exists so moe_neartie_maybe_log(), which
+// is defined earlier in this file, can call it via the plain-types forward declaration above
+// without needing MoeAttribRole visible that early. The role argument is truly unused when
+// layer<0 (moe_attrib_replay_one() skips its whole role-switch block in that case), so any
+// enum value works here -- 0 is arbitrary, not a real role choice.
+static int moe_attrib_replay_baseline(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead,
+                                       float *w_finalnorm, int req, int pos, float *logits_out) {
+    return moe_attrib_replay_one(af, t_embed, t_lmhead, w_finalnorm, req, pos, (MoeAttribRole)0, -1, logits_out, 0);
 }
 
 // D-roadmap-4 ddmin-plan prerequisite check (2026-09-02): monotonicity has NEVER been tested --
@@ -7695,7 +7785,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
             moe_neartie_maybe_correct(af_blob, t_embed, t_lmhead, w_finalnorm, r, sposs[m], lm, &step_budget);   // D-roadmap-3
             int am = 0; float bm = lm[0];
             for (int v = 1; v < MOE_VOCAB; v++) if (lm[v] > bm) { bm = lm[v]; am = v; }
-            { double ntm = moe_neartie_maybe_log(s, r, sposs[m], ids[m], am, lm);   // D-roadmap-3
+            { double ntm = moe_neartie_maybe_log(s, r, sposs[m], ids[m], am, lm, A, af_blob, t_embed, t_lmhead, w_finalnorm);   // D-roadmap-3, D-neartie-batch-1/2
               if (ntm >= 0.0) { neartie_events++; neartie_margin_sum += ntm;
                                  if (ntm < neartie_margin_min) neartie_margin_min = ntm; } }
             rq_out[r][rq_nout[r]++] = am; mcb_pos[s]++;
@@ -7715,7 +7805,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
                 moe_neartie_maybe_correct(af_blob, t_embed, t_lmhead, w_finalnorm, r, sposs[m], lm, &step_budget);   // D-roadmap-3
                 int am = 0; float bm = lm[0];
                 for (int v = 1; v < MOE_VOCAB; v++) if (lm[v] > bm) { bm = lm[v]; am = v; }
-                { double ntm = moe_neartie_maybe_log(s, r, sposs[m], ids[m], am, lm);   // D-roadmap-3
+                { double ntm = moe_neartie_maybe_log(s, r, sposs[m], ids[m], am, lm, A, af_blob, t_embed, t_lmhead, w_finalnorm);   // D-roadmap-3, D-neartie-batch-1/2
                   if (ntm >= 0.0) { neartie_events++; neartie_margin_sum += ntm;
                                      if (ntm < neartie_margin_min) neartie_margin_min = ntm; } }
                 rq_out[r][rq_nout[r]++] = am; rq_t_first[r] = temit;
