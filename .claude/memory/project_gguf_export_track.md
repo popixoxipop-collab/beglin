@@ -1,6 +1,6 @@
 ---
 name: project_gguf_export_track
-description: GGUF export 트랙(D-export-1~6) 완료 — 실 레시피 정밀도 매칭, 원본 대비 2.85% 이내
+description: GGUF export 트랙(D-export-1~7) 완료 — source-type-aware export, 원본과 바이트단위 크기 동일
 metadata:
   type: project
 ---
@@ -57,14 +57,52 @@ F32-tier follow-up 완료.
   게 아니라 "두 번째 손실 양자화를 추가로 얹지 않는다"는 좁은 의미의
   이득만 진짜임 — 컨테이너 타입 일치≠수치 충실도 일치, 과장하지 않음.
 
+- **★★★★D-export-7 완료 — 로더 정밀도 정책 트랙, export-only로 스코프 확정
+  후 완료**: 사용자가 "엔진 로더 자체를 uniform-int4에서 per-tensor-precision
+  보존으로 바꿔"라고 요청 → Plan Mode 진입해 조사한 결과 두 가지 중요한
+  실측 근거 발견: (1) `load_gguf_weights()`의 uniform-int4 정책 자체가
+  이 프로젝트 자신의 D7/D9/D17(`eval/quantize_int4.py`) 실측으로 이미
+  검증된 선택(tied embed int4=ppl 10.6→20.4, lm_head는 int8이 near-
+  lossless) — 실수가 아님. (2) vendored SME2 커널 전체가 int4 가중치
+  전용으로 고정(`qsi4c32`, 다른 정밀도 변형 벤더링 안 됨) — 실 추론경로
+  정밀도를 소스에 맞추면 현재 SME2 가속되는 168개 텐서 대부분이 가속을
+  잃음. AskUserQuestion으로 사용자에게 "Export 전용" vs "실 추론경로도
+  변경" 확인 → **"Export 전용(추천)" 선택**받아 스코프 확정. 구현:
+  `run_export_gguf_mode()`가 이제 각 텐서의 진짜 원본 GGUF 타입을 g_gguf
+  (프로세스 전체수명 동안 mmap 유지 확인됨, gguf_close() 호출 0건)에서
+  직접 조회해 소스와 동일 타입으로 재인코딩(`switch(src->type)`) —
+  D-export-6의 이름/정렬 기반 추측(`is_v`/`in%256`) 완전 대체.
+  load_gguf_weights()/GEMM·SME2 디스패치/실 추론경로는 전혀 안 건드림
+  (Explore agent로 blast radius 확인: 전체 33개 `->kind==` 비교 중 진짜
+  연산 디스패처는 4개뿐, 이 변경은 그 4개 중 어느 것도 안 건드림).
+  **★★부수 발견(과잉일반화 자기교정)**: 24개 레이어 전수조사(gguf-py)
+  결과 D-export-6의 "attn_v는 전부 Q8_0, ffn_down은 전부 Q6_K"라는
+  결론이 **레이어0 하나만 보고 낸 틀린 일반화**였음을 발견 — 실제로는
+  attn_v가 12레이어 Q8_0/12레이어 Q5_0, ffn_down이 12레이어 Q6_K/12레이어
+  Q4_K로 레이어별로 갈림(llama.cpp의 실제 알려진 target-bpw 히스토그램
+  방식). 새 코드는 패턴을 몰라도 텐서별로 직접 물어보니 자동으로 정확함.
+  **결과: 491,400,032 bytes — 원본 소스 파일과 바이트 단위로 완전 동일한
+  크기**. gguf-py로 두 파일 텐서셋 diff(0 missing/0 extra)+원본 실값과
+  수치 diff까지 확인: Q8_0 소스 텐서는 **max_abs_diff=0.0 완전 비트일치**
+  (자체 Q8_0 인코더가 ggml 레퍼런스와 이미 동일한 direct-division RTN),
+  Q5_0/Q6_K/Q4_K는 작은 기대된 차이(자체 min/max+에러피드백 스케일 탐색
+  vs ggml의 make_qkx2_quants류 옵티마이저, 기존 확립된 공개 트레이드오프).
+  llama-tokenize ids 동일+llama-simple 정상생성(실 Metal `kernel_mul_mv_
+  q6_K_f32` 커널 로드 확인, Q6_K 태깅이 진짜임을 독립 재확인).
+
 **Why**: Mac 기반 로컬 LLM 파인튜너 대상 배포용 산출물이라는 새 전략
 목표. 이전 트랙(Phase 6 토크나이저)의 ROI 논의 이후 사용자가 명시적으로
 승인한 다음 단계.
 
-**How to apply**: 이 트랙(D-export-1~6)은 사실상 완료 상태 — 균일정밀도
-writer+K-quant+F32티어+실레시피 매칭까지 전부 실검증됨. 다음에 더 갈
-곳이 있다면 (a) 이 엔진 자체 로더의 uniform-int4 정책을 real
-per-tensor-precision 보존으로 바꾸는 아키텍처 변경(위 caveat의 진짜
-해결책, 훨씬 큰 스코프) (b) MoE 아키텍처 export (c) precision-search
-기반 export — 전부 명시적으로 스코프아웃 상태, 아직 요청 없음. 상세
-진행 로그는 [[../history/2026-09-18_gguf-export-q4k-encoder.md]] 참고.
+**How to apply**: 이 트랙(D-export-1~7)은 완료 상태 — 균일정밀도
+writer+K-quant+F32티어+실레시피 매칭+source-type-aware export까지 전부
+실검증됨. Export된 파일은 이제 원본과 바이트단위로 동일한 크기이고,
+Q8_0 소스 텐서는 비트일치까지 확인됨. **"로더를 바꿔달라"는 요청은
+export-only로 스코프를 좁혀 이미 완료됨** — 실 추론경로(load_gguf_
+weights, SME2 디스패치)는 여전히 uniform-int4 그대로, 사용자가 명시적
+확인 후 선택한 스코프임(SME2가 int4 가중치 전용이라 바꾸면 168개 텐서가
+가속을 잃는다는 실측 근거 때문). 다음에 더 갈 곳이 있다면 (a) 실
+추론경로 정밀도 변경(SME2 가속 상실 감수, 새 근거 필요) (b) MoE
+아키텍처 export (c) precision-search 기반 export — 전부 명시적으로
+스코프아웃 상태, 아직 요청 없음. 상세 진행 로그는
+[[../history/2026-09-18_gguf-export-q4k-encoder.md]] 참고.
