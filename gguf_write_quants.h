@@ -39,4 +39,14 @@ void gguf_w_quantize_q8_0(const float *w, int64_t n, uint8_t *out);
 size_t gguf_w_q4_k_nbytes(int64_t n);
 void gguf_w_quantize_q4_k(const float *w, int64_t n, uint8_t *out);
 
+// D-export-5 (F32-tier follow-up): real GGUF Q5_0, 32-element blocks, inline fp16 scale +
+// 5-bit symmetric codes (4-bit nibble in qs[] + 1 high bit in qh[], real GGML_TYPE_Q5_0
+// layout). `n` must be a multiple of 32. Used for embed_tokens.weight at export -- matches
+// the REAL source Q4_K_M checkpoint's own choice for this exact tensor (verified via gguf-py
+// against the real file, not assumed), a deliberately higher-than-4-bit precision for
+// embeddings specifically. Same error-feedback (residual) diffusion technique as
+// gguf_w_quantize_q4_0() above, applied per 32-element block before the 5-bit code is packed.
+size_t gguf_w_q5_0_nbytes(int64_t n);
+void gguf_w_quantize_q5_0(const float *w, int64_t n, uint8_t *out);
+
 #endif // GGUF_WRITE_QUANTS_H

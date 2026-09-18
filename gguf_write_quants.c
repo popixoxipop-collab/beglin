@@ -205,3 +205,56 @@ void gguf_w_quantize_q4_k(const float *w, int64_t n, uint8_t *out) {
         }
     }
 }
+
+// D-export-5: real GGUF Q5_0. Block layout {ggml_half d; uint8_t qh[4]; uint8_t qs[16];} (22
+// bytes/32 elements, 5.5 bits/element) is real GGML_TYPE_Q5_0 (gguf_quants.c's own
+// GgmlBlockQ5_0/dequant_row_q5_0 -- the read-side spec reference). qs[] uses the same
+// split-half nibble packing as gguf_w_quantize_q4_0() above (byte j's low nibble = element j,
+// high nibble = element j+16); qh[] is a 32-bit bitmask where bit i is element i's 5th
+// (highest) bit, confirmed by inspecting dequant_row_q5_0()'s own bit extraction (no
+// interleaving despite the split-half nibble packing -- qh addresses elements directly by
+// their real index). Symmetric quantization: code = round(x/scale)+16, code range [0,31],
+// value = (code-16)*scale -- direct 5-bit analog of gguf_w_quantize_q4_0()'s own 4-bit
+// [-8,7]/scale=maxabs/7 scheme (scale=maxabs/15, range [-16,15]), same error-feedback
+// (residual) diffusion technique carried over unchanged.
+#define QK5_0 32
+
+#pragma pack(push, 1)
+typedef struct { ggml_half d; uint8_t qh[4]; uint8_t qs[QK5_0 / 2]; } WBlockQ5_0;
+#pragma pack(pop)
+
+size_t gguf_w_q5_0_nbytes(int64_t n) { return (size_t)(n / QK5_0) * sizeof(WBlockQ5_0); }
+
+void gguf_w_quantize_q5_0(const float *w, int64_t n, uint8_t *out) {
+    int64_t nb = n / QK5_0;
+    WBlockQ5_0 *blocks = (WBlockQ5_0 *)out;
+    for (int64_t b = 0; b < nb; b++) {
+        const float *grp = w + b * QK5_0;
+        float maxabs = 0.0f;
+        for (int p = 0; p < QK5_0; p++) { float a = fabsf(grp[p]); if (a > maxabs) maxabs = a; }
+        float scale = maxabs / 15.0f;
+        if (scale < 1e-12f) scale = 1.0f;
+        blocks[b].d = fp32_to_fp16(scale);
+        float inv = 1.0f / scale;
+        float err_feedback = 0.0f;
+        int codes[QK5_0];   // unsigned 5-bit, [0,31]
+        for (int p = 0; p < QK5_0; p++) {
+            float x = grp[p] + err_feedback;
+            float qf = rintf(x * inv);
+            if (qf > 15.0f)  qf = 15.0f;
+            if (qf < -16.0f) qf = -16.0f;
+            float deq = qf * scale;
+            err_feedback = x - deq;
+            codes[p] = (int)qf + 16;
+        }
+        uint32_t qh = 0;
+        for (int j = 0; j < QK5_0 / 2; j++) {
+            int c0 = codes[j];              // element j
+            int c1 = codes[j + QK5_0 / 2];  // element j+16
+            blocks[b].qs[j] = (uint8_t)((c0 & 0x0F) | ((c1 & 0x0F) << 4));
+            if (c0 & 0x10) qh |= (1u << j);
+            if (c1 & 0x10) qh |= (1u << (j + QK5_0 / 2));
+        }
+        memcpy(blocks[b].qh, &qh, sizeof(qh));
+    }
+}

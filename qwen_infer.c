@@ -17706,7 +17706,7 @@ static void run_export_gguf_mode(const char *out_path) {
         fprintf(stderr, "[engine] export: rope_freqs.weight (%d elements) included\n", half);
     }
 
-    int n_f32 = 0, n_q4 = 0, n_q4k = 0, n_q8 = 0;
+    int n_f32 = 0, n_q4 = 0, n_q4k = 0, n_q8 = 0, n_q5 = 0;
     for (int i = 0; i < g_nwt; i++) {
         WT *t = &g_wt[i];
         char gguf_name[128];
@@ -17717,7 +17717,27 @@ static void run_export_gguf_mode(const char *out_path) {
         uint64_t ne[2] = { (uint64_t)t->in, (uint64_t)t->out };
         uint32_t n_dims = (t->out > 1) ? 2 : 1;
 
-        if (t->kind == K_F32) {
+        // D-export-5: this engine's role policy keeps embed_tokens.weight (and, on models
+        // where it's untied, lm_head/output.weight) at K_F32 in memory regardless of the
+        // source file's own precision -- real, measured dominant driver of the export's file
+        // size (RESULTS.md D-export-4/5: 544.5MB of the 896.7MB Qwen2.5-0.5B export was this
+        // ONE tensor). Norms and biases are ALSO K_F32 here but are deliberately left
+        // untouched: verified against the real Q4_K_M source checkpoint itself via gguf-py
+        // (attn_norm.weight/ffn_norm.weight are F32 even in that aggressively-quantized file),
+        // and they total well under 1MB combined for this model (negligible size benefit,
+        // real accuracy risk since norm weights scale every activation). Only embed_tokens
+        // gets quantized, matching the real source file's own choice for that exact tensor
+        // (verified via gguf-py against the real file: token_embd.weight is Q5_0, not Q4_0/
+        // Q8_0 -- a deliberately higher-than-bulk-4-bit precision for embeddings specifically).
+        int is_embed = !strcmp(t->name, "model.embed_tokens.weight");
+        if (t->kind == K_F32 && is_embed && t->in % 32 == 0) {
+            int64_t n = (int64_t)t->out * (int64_t)t->in;
+            uint64_t nbytes = gguf_w_q5_0_nbytes(n);
+            uint8_t *qbuf = malloc(nbytes);   // intentionally not freed, same reason as below
+            gguf_w_quantize_q5_0(t->f32, n, qbuf);
+            gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q5_0, n_dims, ne, qbuf, nbytes);
+            n_q5++;
+        } else if (t->kind == K_F32) {
             uint64_t nbytes = (uint64_t)t->out * (uint64_t)t->in * sizeof(float);
             gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_F32, n_dims, ne, t->f32, nbytes);
             n_f32++;
@@ -17762,7 +17782,7 @@ static void run_export_gguf_mode(const char *out_path) {
             exit(1);
         }
     }
-    fprintf(stderr, "[engine] export: %d tensors (%d F32, %d Q4_0, %d Q4_K, %d Q8_0)\n", g_nwt, n_f32, n_q4, n_q4k, n_q8);
+    fprintf(stderr, "[engine] export: %d tensors (%d F32, %d Q4_0, %d Q4_K, %d Q5_0, %d Q8_0)\n", g_nwt, n_f32, n_q4, n_q4k, n_q5, n_q8);
 
     if (!gguf_w_finish(gw)) { fprintf(stderr, "FATAL: gguf_w_finish failed writing %s\n", out_path); exit(1); }
     fprintf(stderr, "[engine] export: wrote %s\n", out_path);

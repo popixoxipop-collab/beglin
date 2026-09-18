@@ -49,11 +49,26 @@ int main(void) {
     }
     printf("Q8_0: n=%lld bytes=%zu max_abs_err=%.6f\n", (long long)n, q8bytes, q8_maxerr);
 
+    // D-export-5: Q5_0 round-trip, reusing the same 128-element vector (32-element blocks,
+    // same as Q4_0/Q8_0 -- no new test vector needed).
+    size_t q5bytes = gguf_w_q5_0_nbytes(n);
+    uint8_t *q5buf = malloc(q5bytes);
+    gguf_w_quantize_q5_0(w, n, q5buf);
+    float *q5dec = malloc(n * sizeof(float));
+    gguf_dequant_row(GGML_TYPE_Q5_0, q5buf, q5dec, n);
+    double q5_maxerr = 0;
+    for (int64_t i = 0; i < n; i++) {
+        double e = fabs(q5dec[i] - w[i]);
+        if (e > q5_maxerr) q5_maxerr = e;
+    }
+    printf("Q5_0: n=%lld bytes=%zu max_abs_err=%.6f\n", (long long)n, q5bytes, q5_maxerr);
+
     // Dump inputs + raw quantized bytes for an independent Python cross-check.
     FILE *fw = fopen("/tmp/qtest_w.f32", "wb"); fwrite(w, sizeof(float), n, fw); fclose(fw);
     FILE *fq4 = fopen("/tmp/qtest_q4.bin", "wb"); fwrite(q4buf, 1, q4bytes, fq4); fclose(fq4);
     FILE *fq8 = fopen("/tmp/qtest_q8.bin", "wb"); fwrite(q8buf, 1, q8bytes, fq8); fclose(fq8);
-    printf("dumped /tmp/qtest_w.f32 /tmp/qtest_q4.bin /tmp/qtest_q8.bin (n=%lld)\n", (long long)n);
+    FILE *fq5 = fopen("/tmp/qtest_q5.bin", "wb"); fwrite(q5buf, 1, q5bytes, fq5); fclose(fq5);
+    printf("dumped /tmp/qtest_w.f32 /tmp/qtest_q4.bin /tmp/qtest_q8.bin /tmp/qtest_q5.bin (n=%lld)\n", (long long)n);
 
     // D-export-4: Q4_K round-trip. Needs a real 256-element super-block (n=128 above is too
     // short); build a second, independent test vector at n=1024 (4 super-blocks) covering an
