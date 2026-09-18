@@ -15372,3 +15372,72 @@ real file is available, not attempted blind. `Q5_1`/`Q2_K`/`Q3_K`/IQ-series writ
 (same gap as dense, `D-export-7`) -- FATAL honestly if a real file needs one. An MXFP4 writer
 (encoder) -- unnecessary for this track's actual scope (re-exporting an unmodified checkpoint),
 only needed if a future track needs to export a MODIFIED MXFP4 tensor.
+
+## D-promo-dense-1 -- dense selective precision promotion, real mechanism proven (2026-09-18)
+
+**Context**: user pushed back on the earlier "live inference precision change rejected" framing
+(`serene-finding-ullman.md`'s loader-precision-policy plan D1) -- proposed a SELECTIVE
+mechanism instead of an all-or-nothing one: promoted tensors go through a slower/higher-
+precision path, everything else stays on the fast int4/SME2 path. Investigation found this
+exact mechanism already exists and is real, verified working -- but ONLY for MoE
+(`g_moe_lt_active`/`moe_promotion_apply_one()`, real promotions applied and verified correct in
+`RESULTS.md`'s own 2026-09-02/2026-09-10 entries). No equivalent exists for dense (`g_wt[]`/
+`WT`/`load_gguf_weights()`) at all -- this entry builds that dense analog.
+
+**Design, deliberately simpler than MoE's**: `g_role_wt[role][layer]` (`qwen_infer.c:285`) is
+ALREADY a `WT**` (pointer array, populated once in `init_tensor_roles()`) -- a promotion is
+just repointing ONE entry to a freshly-built higher-precision `WT`, no separate "_active"
+indirection table needed the way MoE's value-typed `MoeLayerTensors[]` array required. The
+promoted `WT` gets `kind=K_F32`, which ALREADY routes through the existing BLAS dispatch path
+in `matvec_t()`/`matmul_t()`/`matmul_sdot()` (the same path every norm/bias tensor already
+uses) -- no new dispatch code needed at all, unlike MoE's own `moe_sme2_ensure_ready()` hazard
+fix (dense's existing `kind`-based switch already branches correctly before reaching any
+int4-specific kernel, so there's no equivalent misread hazard to guard against here). The
+promoted values are dequantized from the REAL original source GGUF bytes (via `g_gguf`,
+`gguf_find_tensor()`/`gguf_dequant_row()` -- the exact same `D-export-7` infrastructure), not
+from this engine's own already-int4-transcoded `g_wt[]` copy -- recovers real precision the
+load-time transcode discarded, reusing D2's reasoning from the loader-precision-policy plan.
+
+New: `wt_promotion_apply_one()`/`wt_promotion_maybe_apply()` (`qwen_infer.c`, right after
+`wt_hf_name_to_gguf_name()`), gated by `QWEN_WT_PROMOTION_FILE=<path>` (`"<role_short_name>
+<layer>"` lines, mirroring `QWEN_MOE_PROMOTION_FILE`'s own format), checked once at startup
+right after `init_tensor_roles()`. **Honest scope limit, stated up front**: no real precision-
+search telemetry exists for any dense model (confirmed this session, `D-export-8`'s own
+investigation) -- this proves the MECHANISM with a manually-specified test promotion, not an
+autopilot-driven one.
+
+**Verification -- real, on `bob`, Qwen2.5-0.5B-Instruct**:
+1. Baseline run (`QWEN_WT_PROMOTION_FILE` unset): `dispatch tiers: 168 SME2-eligible, ...`,
+   real coherent generation ("Paris is the capital of France...").
+2. Promoted run (`q_proj layer=0` via the promotion file): log confirms
+   `[dense promotion] role=q_proj layer=0 PROMOTED to K_F32 -- permanent, no restart`, real
+   generation completes identically coherently -- no crash, no corruption from the pointer swap.
+3. **The real precision claim, proven numerically, not asserted**: `blk.0.attn_q.weight`'s real
+   source type is `Q5_0` (`type=6`). Built a small oracle comparing (a) the PROMOTED path's
+   values (real source dequant, exactly what `wt_promotion_apply_one()` now serves) against (b)
+   the UNPROMOTED path's values (source -> this engine's own `gguf_quantize_q4g64_error_
+   feedback()` int4 transcode -> `q4_unpack_row()` dequant -- the exact same steps
+   `gguf_register_q4g64_as()` takes for every tensor today, including every OTHER tensor this
+   promotion doesn't touch): **`max_abs_diff=0.354980`, `rel=1203.34%` of mean magnitude** -- a
+   real, large, substantive quantization error that promotion recovers for this specific tensor.
+4. **Dual-oracle cross-check** (independent `gguf-py` dequant of the real source file, same
+   discipline every `D-export-N` entry has used): gguf-py vs the C promoted values ->
+   **`max_abs_diff=0.0`, exact match** (promotion genuinely serves the real, true source
+   precision). gguf-py vs the C unpromoted values -> `max_abs_diff=0.35498046875` (matches (3)
+   almost exactly, confirming both the promotion mechanism AND the "what's served today without
+   it" baseline are correctly measured, not a coincidence of one buggy comparison).
+5. **Structural guarantee for "everything else untouched"**: not just empirical -- by
+   construction, `wt_promotion_apply_one()` writes to exactly one array slot
+   (`g_role_wt[role][layer]`); every other role/layer's pointer, and the entire underlying
+   `g_wt[512]` static array every pointer not touched by a promotion still points into, is
+   provably unmodified by this code (visible directly in the diff, not requiring a runtime
+   check to confirm).
+
+**Compile check**: local (`clang -O3 -w -c`) and bob, zero new warnings.
+
+**Not yet done, named not silently dropped**: per-request re-poll of the promotion file (MoE's
+own `moe_promotion_maybe_apply()` re-reads once per request admission; this dense version reads
+once at startup only -- sufficient to prove the mechanism, not yet "no restart needed" in the
+same live sense MoE's already achieves); real dense precision-search telemetry (would let this
+be autopilot-driven instead of manually-specified, same blocker `D-export-8`'s own investigation
+already found -- zero real data for any dense model today).

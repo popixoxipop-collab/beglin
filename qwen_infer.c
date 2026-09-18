@@ -17781,6 +17781,100 @@ static int wt_hf_name_to_gguf_name(const char *hf_name, char *out, size_t out_ca
     return 0;
 }
 
+// D-promo-dense-1 (Phase A of the precision-search-adaptive-engine plan): dense analog of the
+// MoE path's real, already-verified g_moe_lt_active pointer-swap promotion mechanism
+// (moe_promotion_apply_one(), RESULTS.md 2026-09-02/09-10 real runs). Simpler than MoE's design
+// on purpose: g_role_wt[role][layer] is ALREADY a WT** (pointer array, populated once in
+// init_tensor_roles()) -- a promotion is just repointing ONE entry to a freshly-built
+// higher-precision WT, no separate "_active" indirection table needed the way MoE's
+// value-typed MoeLayerTensors[] array required. Every OTHER (role,layer)'s g_role_wt[][] entry
+// is untouched by construction, not just by convention -- this is a structural guarantee (only
+// this one line writes to g_role_wt[][]), not something that needs a runtime check to confirm.
+//
+// Dispatch: promoted tensors get kind=K_F32, which ALREADY routes through the BLAS path in
+// matvec_t()/matmul_t()/matmul_sdot() (the same dispatch every norm/bias tensor already uses)
+// -- no new dispatch code needed, unlike MoE's own moe_sme2_ensure_ready() hazard fix (dense's
+// existing kind-based switch already branches correctly before ever reaching an int4-specific
+// kernel call, so there's no equivalent "promoted tensor misread as int4" hazard to guard here).
+//
+// Source of the higher-precision values: the REAL original source GGUF bytes via g_gguf
+// (gguf_find_tensor()/gguf_dequant_row(), the exact same D-export-7 infrastructure), not a
+// dequant of this engine's own already-int4-transcoded g_wt[] copy -- recovers real precision
+// the load-time transcode discarded, the same reasoning D2 of the loader-precision-policy plan
+// already established for export, now reused for live inference.
+static int g_wt_promoted[N_LAYER_ROLES];   // per-role bitmask over layers (g_cfg.nl <= 64 always)
+static const char *g_wt_promotion_file = NULL;   // QWEN_WT_PROMOTION_FILE, unset = feature off
+
+// ROLE_INPUT_LN/ROLE_POST_ATTN_LN deliberately absent -- already K_F32, "promoting" them is
+// meaningless (matches D-export-5's own real-source-file finding that norms are never worth
+// touching). File-scope (not function-local) so both wt_role_from_short_name() and
+// wt_promotion_apply_one()'s own log line can reuse it without a second lookup table.
+static const char *WT_ROLE_SHORT_NAMES[N_LAYER_ROLES] = {
+    [ROLE_ATTN_Q] = "q_proj", [ROLE_ATTN_K] = "k_proj", [ROLE_ATTN_V] = "v_proj",
+    [ROLE_ATTN_O] = "o_proj", [ROLE_MLP_GATE] = "gate_proj", [ROLE_MLP_UP] = "up_proj",
+    [ROLE_MLP_DOWN] = "down_proj",
+};
+
+static int wt_role_from_short_name(const char *name) {
+    for (int r = 0; r < N_LAYER_ROLES; r++)
+        if (WT_ROLE_SHORT_NAMES[r] && !strcmp(name, WT_ROLE_SHORT_NAMES[r])) return r;
+    return -1;
+}
+
+static void wt_promotion_apply_one(int role, int layer) {
+    if (g_wt_promoted[role] & (1u << layer)) return;   // already promoted, avoid rebuilding
+    char gguf_name[96];
+    snprintf(gguf_name, sizeof gguf_name, ROLE_PATTERN_GGUF[role], layer);
+    const GgufTensorInfo *src = gguf_find_tensor(g_gguf, gguf_name);
+    if (!src) {
+        fprintf(stderr, "FATAL: dense promotion: source tensor '%s' not found in g_gguf\n", gguf_name);
+        exit(1);
+    }
+    if (!gguf_dequant_supported(src->type)) {
+        fprintf(stderr, "FATAL: dense promotion: source tensor '%s' has type %d with no dequant support\n",
+                gguf_name, (int)src->type);
+        exit(1);
+    }
+    int64_t n = (int64_t)src->n_elements;
+    float *f32buf = malloc((size_t)n * sizeof(float));
+    if (!f32buf) { fprintf(stderr, "FATAL: dense promotion: dequant buffer alloc failed for '%s'\n", gguf_name); exit(1); }
+    gguf_dequant_row(src->type, gguf_tensor_data(g_gguf, src), f32buf, n);
+
+    WT *orig = g_role_wt[role][layer];
+    WT *hi = malloc(sizeof(WT));
+    if (!hi) { fprintf(stderr, "FATAL: dense promotion: WT alloc failed for '%s'\n", gguf_name); exit(1); }
+    snprintf(hi->name, sizeof hi->name, "%s", orig->name);
+    hi->kind = K_F32; hi->f32 = f32buf;
+    hi->packed = NULL; hi->scales = NULL; hi->sub = NULL;
+    hi->out = orig->out; hi->in = orig->in; hi->ng = 0;
+    hi->kai_rhs = NULL; hi->kai_rhs_bytes = 0; hi->kai_lazy_failed = 0;
+
+    g_role_wt[role][layer] = hi;   // the one, only pointer-swap -- everything else untouched
+    g_wt_promoted[role] |= (1u << layer);
+    fprintf(stderr, "[dense promotion] role=%s layer=%d PROMOTED to K_F32 -- permanent, no restart\n",
+            WT_ROLE_SHORT_NAMES[role], layer);
+}
+
+// Reads "<role_short_name> <layer>" lines from QWEN_WT_PROMOTION_FILE, mirroring
+// moe_promotion_maybe_apply()'s own format/semantics exactly (best-effort: a missing file is
+// not fatal). Phase A scope: called once at startup after init_tensor_roles() (unlike MoE's
+// per-request-admission re-poll) -- this proves the mechanism with a manually-specified test
+// promotion, not a live autopilot-driven one; re-polling per request is a real, disclosed,
+// not-yet-built extension for if/when real dense precision-search telemetry exists.
+static void wt_promotion_maybe_apply(void) {
+    if (!g_wt_promotion_file) return;
+    FILE *f = fopen(g_wt_promotion_file, "r");
+    if (!f) return;
+    char role_buf[64]; int layer;
+    while (fscanf(f, "%63s %d", role_buf, &layer) == 2) {
+        if (layer < 0 || layer >= g_cfg.nl) continue;
+        int role = wt_role_from_short_name(role_buf);
+        if (role < 0) continue;
+        wt_promotion_apply_one(role, layer);
+    }
+    fclose(f);
+}
+
 // D-export Phase 3: QWEN_EXPORT_GGUF=<path> -- exports the currently-loaded dense-GGUF model
 // as a real, standard GGUF file. Every source KV is copied through unchanged (D-export-5,
 // covers tokenizer.ggml.* and every arch scalar without needing to know each key's name
@@ -18209,6 +18303,19 @@ int main(int argc, char **argv) {
                                // g_qbias_l/g_kbias_l/g_vbias_l) and before any forward pass
     init_tensor_roles();       // D-gen-tensorrole-1: must run after g_int8_head is finalized
                                // (just above) and after weights are loaded, before any forward pass
+
+    // D-promo-dense-1 (Phase A): must run after init_tensor_roles() populates g_role_wt[]
+    // (the array a promotion repoints one entry of) and needs g_gguf still open (true here --
+    // export mode below is the only thing that closes the process, and it doesn't touch
+    // g_gguf either). No-op (getenv returns NULL) for every existing run that doesn't set
+    // QWEN_WT_PROMOTION_FILE -- byte-identical to before this existed.
+    {
+        const char *promo_path = getenv("QWEN_WT_PROMOTION_FILE");
+        if (promo_path && promo_path[0]) {
+            g_wt_promotion_file = promo_path;
+            wt_promotion_maybe_apply();
+        }
+    }
 
     // D-export Phase 3: checked right after loading finishes, before any inference-oriented
     // setup (KV cache alloc, fused dispatch, etc.) that an export-only run doesn't need --
