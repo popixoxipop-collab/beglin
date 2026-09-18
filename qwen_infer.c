@@ -17638,28 +17638,19 @@ static int wt_hf_name_to_gguf_name(const char *hf_name, char *out, size_t out_ca
 }
 
 // D-export Phase 3: QWEN_EXPORT_GGUF=<path> -- exports the currently-loaded dense-GGUF model
-// (already role-precision-applied, per D-export-4) as a real, standard GGUF file. Every source
-// KV is copied through unchanged (D-export-5, covers tokenizer.ggml.* and every arch scalar
-// without needing to know each key's name individually). K_F32 tensors pass through as
-// GGML_TYPE_F32; K_Q4G64/K_Q8G64 are dequantized via the exact same per-row primitives
-// inference itself uses (q4_unpack_row()/q8_unpack_row(), q4gemv.h -- no full-tensor dequant
-// utility existed before this), then re-quantized via Phase 2's gguf_w_quantize_q4_0()/
-// _q8_0() into real GGML_TYPE_Q4_0/Q8_0 blocks (D-export-1).
+// as a real, standard GGUF file. Every source KV is copied through unchanged (D-export-5,
+// covers tokenizer.ggml.* and every arch scalar without needing to know each key's name
+// individually).
 //
-// D-export-4 (K-quant follow-up): K_Q4G64 rows prefer real GGML_TYPE_Q4_K (gguf_w_quantize_q4_k(),
-// gguf_write_quants.c) over Q4_0 when the row length is a multiple of 256 (Q4_K's real
-// super-block size -- GGML itself refuses non-multiple-of-256 rows for this type, same
-// constraint gguf_quants.c's own D-gen-N comment already found for the real Q4_K_M source
-// recipe on this exact small model: D=896 isn't a multiple of 256, so q/k/v/o/gate/up all stay
-// Q4_0-eligible only; IM=4864 is, so ffn_down alone upgrades). IMPORTANT, verified by direct
-// calculation, NOT the assumption the original D-export-3 entry made: Q4_K and Q4_0 have the
-// IDENTICAL 4.5 bits/element (18B/32elem == 144B/256elem) -- switching type does NOT shrink
-// the file. Q4_K's real advantage is fidelity (asymmetric per-32-sub-block affine scale+min
-// vs Q4_0's single per-32-block symmetric scale) at the SAME bit-width, not size. The real
-// ~500MB gap vs the original Q4_K_M source is dominated by this engine's K_F32 role policy
-// keeping embed_tokens/norms/biases at full F32 (embed_tokens alone: 151936*896*4B ~= 545MB)
-// -- quantizing those, not switching the already-4-bit tensors' type, is what would actually
-// close it, and stays explicitly out of scope for this pass (see RESULTS.md D-export-4).
+// D-export-7 (current, supersedes D-export-1/3/4/6's approach): every tensor is re-encoded
+// from its REAL original source bytes via g_gguf (dequant_supported/gguf_dequant_row) at the
+// SAME type the source used -- NOT dequantized from this engine's own transcoded K_Q4G64/
+// K_Q8G64 in-memory copy the way earlier D-export-N revisions did. Earlier revisions'
+// heuristics (row-length divisibility, tensor-name pattern matching to guess "this is probably
+// attn_v/ffn_down") are gone -- this revision just asks the source file what type it really is.
+// See the per-tensor `switch (src->type)` inside the loop below for exactly which source types
+// have a writer encoder; see the loader-precision-policy plan (serene-finding-ullman.md) for
+// why this is scoped as export-only and does not touch load_gguf_weights()/inference.
 static void run_export_gguf_mode(const char *out_path) {
     if (!g_gguf) {
         fprintf(stderr, "FATAL: QWEN_EXPORT_GGUF requires a GGUF-loaded model (source tokenizer/arch KVs come from g_gguf)\n");
@@ -17706,7 +17697,22 @@ static void run_export_gguf_mode(const char *out_path) {
         fprintf(stderr, "[engine] export: rope_freqs.weight (%d elements) included\n", half);
     }
 
-    int n_f32 = 0, n_q4 = 0, n_q6k = 0, n_q8 = 0, n_q5 = 0;
+    // D-export-7: source-type-aware export (closes the D-export-6 caveat). Every tensor is
+    // re-encoded from its REAL original source bytes (via g_gguf, confirmed still live and
+    // mmap'd -- never gguf_close()'d anywhere in this repo, an explicit page-cache-backed
+    // zero-copy design also documented on g_gguf_moe) at the SAME type the source used --
+    // NOT from this engine's own transcoded K_Q4G64/K_Q8G64 in-memory copy (D7/D9/D17's own
+    // uniform-int4-for-projections policy, `load_gguf_weights()`), which already discarded
+    // whatever precision the source had. This is deliberately export-only: `load_gguf_weights()`,
+    // every GEMM/GEMV/SME2 dispatch function, and the live inference forward pass are all
+    // completely unchanged -- this engine still computes with int4 projections exactly as
+    // before; only what QWEN_EXPORT_GGUF=<path> writes to disk now reflects the real source
+    // precision instead of a re-derived guess. See the loader-precision-policy plan
+    // (serene-finding-ullman.md) D1/D2/D3 for the full reasoning, including why changing the
+    // LIVE inference path was explicitly rejected (SME2 kernels are hard-locked to int4
+    // weights; promoting to match source precision would cost SME2 eligibility on ~168
+    // tensors, with no measured evidence the accuracy gain is worth that throughput loss).
+    int n_f32 = 0, n_q4 = 0, n_q4k = 0, n_q6k = 0, n_q8 = 0, n_q5 = 0;
     for (int i = 0; i < g_nwt; i++) {
         WT *t = &g_wt[i];
         char gguf_name[128];
@@ -17717,89 +17723,91 @@ static void run_export_gguf_mode(const char *out_path) {
         uint64_t ne[2] = { (uint64_t)t->in, (uint64_t)t->out };
         uint32_t n_dims = (t->out > 1) ? 2 : 1;
 
-        // D-export-5: this engine's role policy keeps embed_tokens.weight (and, on models
-        // where it's untied, lm_head/output.weight) at K_F32 in memory regardless of the
-        // source file's own precision -- real, measured dominant driver of the export's file
-        // size (RESULTS.md D-export-4/5: 544.5MB of the 896.7MB Qwen2.5-0.5B export was this
-        // ONE tensor). Norms and biases are ALSO K_F32 here but are deliberately left
-        // untouched: verified against the real Q4_K_M source checkpoint itself via gguf-py
-        // (attn_norm.weight/ffn_norm.weight are F32 even in that aggressively-quantized file),
-        // and they total well under 1MB combined for this model (negligible size benefit,
-        // real accuracy risk since norm weights scale every activation). Only embed_tokens
-        // gets quantized, matching the real source file's own choice for that exact tensor
-        // (verified via gguf-py against the real file: token_embd.weight is Q5_0, not Q4_0/
-        // Q8_0 -- a deliberately higher-than-bulk-4-bit precision for embeddings specifically).
-        int is_embed = !strcmp(t->name, "model.embed_tokens.weight");
-        // D-export-6: real per-tensor-role precision, matching the real Q4_K_M source
-        // checkpoint's own recipe (verified via gguf-py against the real file, not assumed --
-        // see RESULTS.md D-export-6): attn_v.weight is Q8_0 there (higher precision than the
-        // rest of attention -- a well-known real llama.cpp "M"-recipe heuristic), ffn_down is
-        // Q6_K (not Q4_K, correcting D-export-4's own earlier assumption), and every other
-        // 896-row tensor (q/k/o_proj, gate/up_proj) is Q5_0. None of q/k/v/o/gate/up can ever
-        // be a real K-quant (Q4_K/Q5_K/Q6_K all require QK_K=256-aligned rows; this model's
-        // D=896 isn't) -- Q5_K specifically has NO real tensor to apply to in this model and
-        // is intentionally not implemented (would be untestable-in-practice infrastructure).
-        int is_v = strstr(t->name, "self_attn.v_proj.weight") != NULL;
-        if (t->kind == K_F32 && is_embed && t->in % 32 == 0) {
-            int64_t n = (int64_t)t->out * (int64_t)t->in;
-            uint64_t nbytes = gguf_w_q5_0_nbytes(n);
-            uint8_t *qbuf = malloc(nbytes);   // intentionally not freed, same reason as below
-            gguf_w_quantize_q5_0(t->f32, n, qbuf);
-            gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q5_0, n_dims, ne, qbuf, nbytes);
-            n_q5++;
-        } else if (t->kind == K_F32) {
-            uint64_t nbytes = (uint64_t)t->out * (uint64_t)t->in * sizeof(float);
-            gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_F32, n_dims, ne, t->f32, nbytes);
-            n_f32++;
-        } else if (t->kind == K_Q4G64 || t->kind == K_Q8G64) {
-            int64_t n = (int64_t)t->out * (int64_t)t->in;
-            float *f32buf = malloc((size_t)n * sizeof(float));
-            for (int r = 0; r < t->out; r++) {
-                if (t->kind == K_Q4G64) {
-                    q4_unpack_row(t->packed + (size_t)r * (t->in / 2), t->scales + (size_t)r * t->ng,
-                                  f32buf + (size_t)r * t->in, t->in);
-                } else {
-                    q8_unpack_row((const int8_t *)(t->packed + (size_t)r * t->in), t->scales + (size_t)r * t->ng,
-                                  f32buf + (size_t)r * t->in, t->in);
-                }
+        const GgufTensorInfo *src = gguf_find_tensor(g_gguf, gguf_name);
+        if (!src) {
+            fprintf(stderr, "FATAL: export: source tensor '%s' not found in g_gguf -- this "
+                "path only supports re-exporting an unmodified loaded checkpoint, not a "
+                "fine-tuned/renamed one (see loader-precision-policy plan D2's own EXIT note)\n",
+                gguf_name);
+            exit(1);
+        }
+        if (!gguf_dequant_supported(src->type)) {
+            fprintf(stderr, "FATAL: export: source tensor '%s' has type %d with no dequant "
+                "support -- real gap, not silently dropped\n", gguf_name, (int)src->type);
+            exit(1);
+        }
+        int64_t n = (int64_t)src->n_elements;
+        float *f32buf = malloc((size_t)n * sizeof(float));
+        if (!f32buf) { fprintf(stderr, "FATAL: export: dequant buffer alloc failed for '%s'\n", gguf_name); exit(1); }
+        gguf_dequant_row(src->type, gguf_tensor_data(g_gguf, src), f32buf, n);
+
+        switch (src->type) {
+            case GGML_TYPE_F32:
+            case GGML_TYPE_F16: {
+                // Not freed -- gguf_w_add_tensor() does not copy tensor data (gguf_write.h's
+                // own ownership convention), must outlive gguf_w_finish() below.
+                uint64_t nbytes = (uint64_t)n * sizeof(float);
+                gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_F32, n_dims, ne, f32buf, nbytes);
+                n_f32++;
+                break;
             }
-            if (t->kind == K_Q8G64 || (t->kind == K_Q4G64 && is_v)) {
-                uint64_t nbytes = gguf_w_q8_0_nbytes(n);
-                uint8_t *qbuf = malloc(nbytes);   // intentionally not freed -- must outlive gguf_w_finish(), process exits right after
-                gguf_w_quantize_q8_0(f32buf, n, qbuf);
-                gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q8_0, n_dims, ne, qbuf, nbytes);
-                n_q8++;
-            } else if (t->in % 256 == 0) {
-                // D-export-6: Q6_K eligible -- real multiple of the K-quant super-block size.
-                // Strictly better fidelity than Q4_K at the same 256-alignment requirement, so
-                // preferred whenever available (gguf_w_quantize_q4_k() stays real, oracle-
-                // verified infrastructure -- just not selected by this dispatch policy, not
-                // deleted).
-                uint64_t nbytes = gguf_w_q6_k_nbytes(n);
-                uint8_t *qbuf = malloc(nbytes);   // intentionally not freed, same reason
-                gguf_w_quantize_q6_k(f32buf, n, qbuf);
-                gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q6_K, n_dims, ne, qbuf, nbytes);
-                n_q6k++;
-            } else if (t->in % 32 == 0) {
-                uint64_t nbytes = gguf_w_q5_0_nbytes(n);
-                uint8_t *qbuf = malloc(nbytes);   // intentionally not freed, same reason
-                gguf_w_quantize_q5_0(f32buf, n, qbuf);
-                gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q5_0, n_dims, ne, qbuf, nbytes);
-                n_q5++;
-            } else {
+            case GGML_TYPE_Q4_0:
+            case GGML_TYPE_Q4_1: {
                 uint64_t nbytes = gguf_w_q4_0_nbytes(n);
                 uint8_t *qbuf = malloc(nbytes);   // intentionally not freed, same reason
                 gguf_w_quantize_q4_0(f32buf, n, qbuf);
                 gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q4_0, n_dims, ne, qbuf, nbytes);
                 n_q4++;
+                free(f32buf);
+                break;
             }
-            free(f32buf);
-        } else {
-            fprintf(stderr, "FATAL: export: tensor '%s' has unsupported kind %d (K_Q4G256SF export not implemented)\n", t->name, t->kind);
-            exit(1);
+            case GGML_TYPE_Q4_K: {
+                uint64_t nbytes = gguf_w_q4_k_nbytes(n);
+                uint8_t *qbuf = malloc(nbytes);   // intentionally not freed, same reason
+                gguf_w_quantize_q4_k(f32buf, n, qbuf);
+                gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q4_K, n_dims, ne, qbuf, nbytes);
+                n_q4k++;
+                free(f32buf);
+                break;
+            }
+            case GGML_TYPE_Q5_0: {
+                uint64_t nbytes = gguf_w_q5_0_nbytes(n);
+                uint8_t *qbuf = malloc(nbytes);   // intentionally not freed, same reason
+                gguf_w_quantize_q5_0(f32buf, n, qbuf);
+                gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q5_0, n_dims, ne, qbuf, nbytes);
+                n_q5++;
+                free(f32buf);
+                break;
+            }
+            case GGML_TYPE_Q6_K: {
+                uint64_t nbytes = gguf_w_q6_k_nbytes(n);
+                uint8_t *qbuf = malloc(nbytes);   // intentionally not freed, same reason
+                gguf_w_quantize_q6_k(f32buf, n, qbuf);
+                gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q6_K, n_dims, ne, qbuf, nbytes);
+                n_q6k++;
+                free(f32buf);
+                break;
+            }
+            case GGML_TYPE_Q8_0: {
+                uint64_t nbytes = gguf_w_q8_0_nbytes(n);
+                uint8_t *qbuf = malloc(nbytes);   // intentionally not freed, same reason
+                gguf_w_quantize_q8_0(f32buf, n, qbuf);
+                gguf_w_add_tensor(gw, gguf_name, GGML_TYPE_Q8_0, n_dims, ne, qbuf, nbytes);
+                n_q8++;
+                free(f32buf);
+                break;
+            }
+            default:
+                // Real gap (e.g. Q2_K/Q3_K/Q5_1/IQ-series -- no writer encoder built for these
+                // yet, this exact model's source doesn't use any of them): named honestly, not
+                // silently downgraded to a lossier type this engine happens to already support.
+                fprintf(stderr, "FATAL: export: source tensor '%s' has type %d with no "
+                    "writer encoder implemented\n", gguf_name, (int)src->type);
+                exit(1);
         }
     }
-    fprintf(stderr, "[engine] export: %d tensors (%d F32, %d Q4_0, %d Q5_0, %d Q6_K, %d Q8_0)\n", g_nwt, n_f32, n_q4, n_q5, n_q6k, n_q8);
+    fprintf(stderr, "[engine] export: %d tensors (%d F32, %d Q4_0, %d Q4_K, %d Q5_0, %d Q6_K, %d Q8_0)\n",
+            g_nwt, n_f32, n_q4, n_q4k, n_q5, n_q6k, n_q8);
 
     if (!gguf_w_finish(gw)) { fprintf(stderr, "FATAL: gguf_w_finish failed writing %s\n", out_path); exit(1); }
     fprintf(stderr, "[engine] export: wrote %s\n", out_path);

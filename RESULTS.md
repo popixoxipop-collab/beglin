@@ -15185,3 +15185,90 @@ precision through this engine's LOAD path (rather than the current uniform-int4-
 policy) is the only way to close the remaining fidelity gap the caveat above describes -- a real
 architectural change to the loader/role-policy system, well beyond this export-only track's
 scope, not attempted here.
+
+## D-export-7 -- source-type-aware export, byte-identical size to real source (2026-09-18)
+
+**Context**: user asked to "change the engine loader itself from uniform-int4 to per-tensor-
+precision preservation," closing `D-export-6`'s own honest caveat (re-encoding a tensor
+dequantized from this engine's already-int4-transcoded in-memory copy can't recover fidelity
+already lost before export runs). Went to Plan Mode given the real scope/risk (CLAUDE.md's
+Plan-First rule) -- investigation before writing any code found two real, material facts that
+changed what "fix" made sense:
+
+1. `load_gguf_weights()`'s own header comment states the uniform-int4-for-projections policy is
+   "D7 in `eval/quantize_int4.py`, replicated exactly, not reinvented" -- real, prior, measured
+   evidence in this project's history (int4 on the tied embed cost ppl 10.6->20.4; norms/biases
+   measured not worth quantizing; D17 validated int8, not int4, for lm_head). Not an oversight.
+2. The vendored SME2 kernel family is hard-locked to int4 RHS weights (`qsi4c32` in every SME2
+   kernel name this engine vendors, no int5/int6/int8-weight variant exists). Confirmed via the
+   real dispatch-tier log: `168 SME2-eligible, 0 NEON-q4g64, 1 NEON-q8g64`. Changing the LIVE
+   inference precision policy to match the source's mixed Q5_0/Q6_K/Q8_0 recipe would cost SME2
+   eligibility on essentially all 168 currently-accelerated projection tensors -- a real,
+   severe throughput regression, with no new measured evidence the accuracy gain justifies it.
+
+**Decision** (user confirmed via `AskUserQuestion`, choosing "Export 전용 (추천)" over "실 추론
+경로도 변경"): scope this as an EXPORT-TIME fix only. `load_gguf_weights()`, every GEMM/GEMV/
+SME2 dispatch function, `WT.kind`, and the live inference forward pass are completely
+unchanged -- this engine still computes with uniform int4 projections exactly as before. Only
+`run_export_gguf_mode()` changes: instead of dequantizing this engine's own already-lossy
+`K_Q4G64`/`K_Q8G64` in-memory copy and re-quantizing via a name/divisibility-based heuristic
+(`D-export-6`'s `is_v`/`in%256`/`in%32` guesses), it now looks up each tensor's REAL original
+`GgufTensorInfo` via `g_gguf` (confirmed still live and mmap'd for the whole process --
+`gguf_close()` has zero call sites on `g_gguf` anywhere in the repo, an explicit page-cache-
+backed zero-copy design) and re-encodes at the SAME type the source actually used, dispatched
+by a `switch (src->type)` over every writer encoder this track has built (`F32`/`F16`->F32,
+`Q4_0`/`Q4_1`->`gguf_w_quantize_q4_0()`, `Q4_K`->`_q4_k()`, `Q5_0`->`_q5_0()`, `Q6_K`->`_q6_k()`,
+`Q8_0`->`_q8_0()`; any other real type FATALs honestly rather than silently downgrading).
+
+**Real, non-obvious finding this change surfaced (not assumed, verified via `gguf-py` across
+all 24 layers before trusting the export's own counts)**: `D-export-6`'s hand-derived recipe
+("`attn_v` is uniformly `Q8_0`, `ffn_down` is uniformly `Q6_K`") was WRONG -- it only checked
+layer 0. The real source file uses a genuine PER-LAYER precision pattern: `attn_v.weight` is
+`Q8_0` on 12 layers and `Q5_0` on the other 12; `ffn_down.weight` is `Q6_K` on 12 layers and
+`Q4_K` on the other 12 (a real, known `llama.cpp` "M"-recipe behavior -- picking a subset of
+layers by a hash/formula to hit a target average bits-per-weight, not a simple depth rule).
+This session's own earlier D-export-6 conclusion, generalized from a single-layer sample, was a
+real instance of exactly the failure mode this project's own `feedback_avoid_overinterpretation`
+discipline exists to catch -- caught here because this new approach doesn't need to KNOW the
+pattern at all, it just asks the source file directly per-tensor.
+
+**Verification**:
+1. Real re-export (bob, same `qwen2.5-0.5b-instruct-q4_k_m.gguf` source, rebuilt
+   `qwen_infer_export`, kernel `.c`/`.S` files with `-march=armv9-a+sve2+sme2`, callers plain):
+   ```
+   [engine] export: 291 tensors (121 F32, 0 Q4_0, 12 Q4_K, 133 Q5_0, 12 Q6_K, 13 Q8_0)
+   [engine] export: wrote /tmp/qwen25_exported_source.gguf
+   ```
+2. **Output file: 491,400,032 bytes -- byte-for-byte IDENTICAL to the real source file's exact
+   size.** Not just close (`D-export-6`'s 2.85%): exact, because size is a pure function of
+   type+element-count and the type now genuinely matches source per-tensor, not per-role.
+3. Tensor-set diff (`gguf-py`, both files): 0 missing, 0 extra -- exact 1:1 tensor coverage.
+4. Numeric diff against the REAL source's own values (`gguf-py` dequant of both files, same
+   tensors): `Q8_0`-sourced tensors (`attn_v`/`output.weight`) -- **`max_abs_diff=0.0`, bit-
+   identical to source** (this project's own `Q8_0` encoder is plain direct-division RTN,
+   matching `ggml`'s own reference exactly, per `D-export-2`'s established finding). `F32`
+   tensors (norms) -- `max_abs_diff=0.0` (no quantization involved). `Q5_0`/`Q6_K`/`Q4_K`-
+   sourced tensors -- small nonzero differences (`max_abs_diff` 0.007-0.18 depending on tensor,
+   `mean_abs_diff` ~1e-4 to ~2e-3) -- expected and disclosed: this project's own min/max+error-
+   feedback scale search, not a bit-exact replica of `ggml`'s own `make_qkx2_quants()`-class
+   optimizer (the same disclosed design choice every `D-export-N` K-quant/Q5_0 entry has made).
+5. `llama-tokenize -m qwen25_exported_source.gguf --no-bos --ids -p 'The capital of France is'`
+   -> `[785, 6722, 315, 9625, 374]` -- identical to every prior entry's reference ids.
+6. `llama-simple -m qwen25_exported_source.gguf -n 32 -p 'The capital of France is'` -> coherent
+   real generation, real Metal kernel `kernel_mul_mv_q6_K_f32` loaded (independent confirmation
+   the `Q6_K` tagging is genuine, not just header metadata llama.cpp happens to ignore),
+   190.68 tok/s eval.
+
+**Confirmed unchanged (per D1's own scope)**: `load_gguf_weights()`, `gguf_register_q4g64_as()`/
+`_q8g64_as()`, `kai_route_min`/`matvec_t`/`matmul_t`/`matmul_sdot` (the 4 real compute-dispatch
+functions this session's own Explore pass found touch `->kind`), `WT.kind` -- zero diff outside
+`run_export_gguf_mode()`/its two small helper functions. The live model this engine actually
+serves inference from is byte-for-byte unaffected by this change.
+
+**Compile check**: local (`clang -O3 -w -c`) and bob, zero new warnings.
+
+**Not yet done, named not silently dropped**: `Q5_1`/`Q2_K`/`Q3_K`/IQ-series writer encoders
+(FATAL honestly if a future source file uses one of these -- not needed for this exact model);
+changing `load_gguf_weights()`'s own live-inference precision policy (explicitly, user-
+confirmed out of scope this round -- see the loader-precision-policy plan,
+`serene-finding-ullman.md`, for the full real cost/benefit reasoning).
