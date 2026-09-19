@@ -15690,3 +15690,34 @@ where the "early layer has more downstream leverage" argument applies directly).
 negative candidates are `shared_down_proj`/`shared_gate_proj` (shared-FFN roles, not attention)
 at layer 26 (the second-to-last layer, `NL=27`) -- the same leverage argument may not transfer,
 and this entry does not test them. Not re-run for those roles this session.
+
+## D-promo-qng64-real-4 -- earlier-layer hypothesis confirmed for all 4 remaining negatives (2026-09-19)
+
+**Follow-up to `D-promo-qng64-real-3`**, which confirmed the hypothesis for one candidate
+(`kv_a_proj_with_mqa`/12) using 7 combos of one role. This entry tests the remaining 4 negative
+candidates from `D-promo-qng64-real-1` (`shared_down_proj`/26, `shared_down_proj`/4,
+`shared_gate_proj`/26, `kv_a_proj_with_mqa`/11) in one combined run: a single 22-entry combo
+file spanning multiple layers of all 3 involved roles (`shared_down_proj`: 1,2,3,4,6,11,16,21,26;
+`shared_gate_proj`: 1,6,11,16,21,26; `kv_a_proj_with_mqa`: 0,2,4,6,8,10,11), replayed against
+the exact same 50-request WikiText-2-short corpus used for the original negative results.
+
+**Result**: exactly one near-tie event occurred in this run -- the same `req=7/pos=8`
+(`orig=252 -> corrected=21197`) event `D-promo-qng64-real-3` already saw. **11 of the 22 tested
+combos independently reproduce the correction alone**: `kv_a_proj_with_mqa` layers 0, 2, 4, 6;
+`shared_gate_proj` layers 1, 6, 16; `shared_down_proj` layers 2, 3, 6, 21. **None of the 4
+original target layers (`shared_down_proj`/4, `shared_down_proj`/26, `shared_gate_proj`/26,
+`kv_a_proj_with_mqa`/11) are among the 11 hits** -- every one of them individually misses the
+one real near-tie this sample produced, while a majority of their own role's OTHER layers catch
+it.
+
+**Conclusion, for all 5 of `D-promo-qng64-real-1`'s negative candidates now**: none were a
+correctly-identified-but-unluckily-sampled case -- for the one near-tie event common to this
+sample, every original target layer is demonstrably the wrong single-tensor cause, while many
+other layers of the exact same roles are not. Detection (near-tie margin check) is combo-
+independent -- the same event almost certainly also occurred, unrecognized, in each of the
+original single-candidate negative runs. This does not mean the 5 original candidates are
+"bad picks" in general (their `event_count` ranking reflects a different, larger historical
+sample this session never reproduced) -- it means a single 50-request, single-corpus probe is a
+narrow enough sample that a target's true fix-layer landscape (which for `req=7/pos=8` turns out
+to include roughly half of the 22 layers tried, scattered non-monotonically across 3 different
+role families) can easily miss the specific layers that were pre-ranked highest.
