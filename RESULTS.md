@@ -15651,3 +15651,42 @@ promotion, full stop, for this event. Recovering it (if ever needed) would requi
 promoting this role/layer to a much higher precision than the real ladder supports, or a
 multi-role joint promotion -- both out of scope for the single-(role,layer) mechanism this
 project has built.
+
+## D-promo-qng64-real-3 -- earlier-layer hypothesis confirmed for one negative candidate (2026-09-19)
+
+**Question raised**: for the 5 candidates that found zero real flips in `D-promo-qng64-real-1`
+(`shared_down_proj`/26, `shared_down_proj`/4, `kv_a_proj_with_mqa`/11, `shared_gate_proj`/26,
+`kv_a_proj_with_mqa`/12), is the true causal layer actually EARLIER than the one the historical
+`event_count` heatmap pointed at?
+
+**Mechanism check first**: `moe_neartie_reverify_hi()` (`qwen_infer.c:5827`) --
+`g_moe_lt_cur = g_moe_hi_combos_on ? g_moe_lt_sel : g_moe_lt_hi;` -- confirms each single-layer
+negative test IS a direct, isolated causal probe (promotes exactly that one role/layer, nothing
+else) -- not an indirect/attributed search that could structurally misattribute to the wrong
+layer. So a "0 flips" result cannot be explained by an attribution bug pointing at the wrong
+layer; it can only mean either (a) the sampled 50 requests didn't contain the near-ties that
+layer historically fixed (in a different corpus/sample), or (b) that layer genuinely has zero
+causal power over the near-ties that DID occur in this sample.
+
+**Real test, one candidate** (`kv_a_proj_with_mqa`/12): re-ran attribution over the SAME 50
+WikiText-2-short requests, but with a combo file listing 7 layers of the same role at once
+(`0, 2, 4, 6, 8, 10, 12`) instead of layer 12 alone -- directly distinguishes (a) from (b) for
+whatever near-ties this sample actually contains.
+
+**Result -- both explanations are real, for different events in the same sample**:
+- req=7/pos=8 (`orig=252 -> corrected=21197`): **layers 0, 2, 4, 6 each independently fix it
+  alone** (`4/7 effective combos flagged`); layers 8, 10, 12 (including the original candidate)
+  do not. Confirms hypothesis (b) is real for this event -- layer 12 was never the right
+  candidate; the true cause is 6+ layers earlier. Architecturally consistent: an early KV
+  projection fix propagates through every subsequent layer's attention, giving it much more
+  downstream leverage than a fix at layer 12 has.
+- req=25/pos=8 (`orig=207 -> corrected=254`): **0 of the 7 tested layers (0-12) fix it**
+  (`0/7 effective combos flagged`) -- not explained by "too-early a layer wasn't tried"; this
+  event's true cause (if single-role-recoverable at all) lies outside this role/layer range
+  entirely, or has a too-thin margin like `D-promo-qng64-real-2`'s L5 case.
+
+**Scope, honestly stated**: only tested for `kv_a_proj_with_mqa` (an attention/MLA-KV role,
+where the "early layer has more downstream leverage" argument applies directly). The other 4
+negative candidates are `shared_down_proj`/`shared_gate_proj` (shared-FFN roles, not attention)
+at layer 26 (the second-to-last layer, `NL=27`) -- the same leverage argument may not transfer,
+and this entry does not test them. Not re-run for those roles this session.
