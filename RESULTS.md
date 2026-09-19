@@ -15617,3 +15617,37 @@ Coverage is 10 of the shadow autopilot's ranked candidates, not the full 459-com
 No dense-model or GGUF-loaded-model (`qwen2.5-0.5b`/`olmoe`/`gpt-oss`) real telemetry exists yet
 -- same blocker `D-promo-dense-1`/`D-promo-moe-gguf-1` already named, untouched by this entry
 (scoped to `deepseek-v2-lite`'s native-AF-blob path only, matching the plan's own Phase C scope).
+
+## D-promo-qng64-real-2 -- root cause: why kv_a_proj_with_mqa/5 is unrecoverable at any real n (2026-09-19)
+
+**Follow-up to `D-promo-qng64-real-1`**, which left `kv_a_proj_with_mqa`/5 flagged unsafe
+(real flip found, n={5,6,7} all fail) without investigating why. The sweep's own self-log
+JSONL files (`/private/tmp/qng64_ctl/runs/kv_a_l5_sweep1_{step0,n5,n6,n7}.jsonl`, still on bob
+after the sweep, no new engine invocation needed) carry the real margin at every stage --
+comparing them answers it directly, not by guessing.
+
+**The true margin at full bits=16 precision is 0.001249** -- one of the thinnest near-ties this
+project has recorded, an order of magnitude below the `0.1` correction threshold and near the
+edge of numerical noise. At every real deployable qNg64 precision, the WRONG token (`4191`,
+the uncorrected argmax) wins with a real, non-borderline margin: **n=5 margin=0.096819, n=6
+margin=0.096569, n=7 margin=0.045471** -- not a near-miss at any of the three, a comfortable win
+for the wrong answer even at the highest deployable precision. Promoting this single
+(role,layer) to qNg64(n<=7)'s residual quantization error is, by itself, larger than the entire
+true margin this correction depends on -- a genuine numerical fact about this specific tensor
+at this specific position, not a wrong derivation or an unrelated attribution.
+
+**Contrast, same req/pos, different role -- shows this is margin-driven, not position-driven**:
+`kv_a_proj_with_mqa`/9's event is the SAME req=46/pos=8, SAME `orig_argmax=4191`, but corrects
+to a DIFFERENT token (`21628`, not `76431`) with a true bits=16 margin of **0.079235 -- ~63x
+larger than layer 5's 0.001249**. That margin survives real quantization noise easily, which is
+exactly why layer 9 passes at n=5 while layer 5 fails at n=7. The near-tie at this position is a
+genuine multi-way contest between the original token and at least two different competing
+tokens, each "owned" by a different tensor's correction, at very different margin scales -- not
+a single clean two-way tie.
+
+**Conclusion**: `kv_a_proj_with_mqa`/5 is not a bug, a wrong sweep, or a candidate worth
+retrying at a different n -- it is honestly unpromotable via a single-role qNg64(n<=7)
+promotion, full stop, for this event. Recovering it (if ever needed) would require either
+promoting this role/layer to a much higher precision than the real ladder supports, or a
+multi-role joint promotion -- both out of scope for the single-(role,layer) mechanism this
+project has built.
