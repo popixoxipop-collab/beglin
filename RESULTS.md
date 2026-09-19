@@ -15519,3 +15519,101 @@ session. Real precision-search telemetry connecting to THIS mechanism (vs. a man
 test promotion) -- same blocker as `D-promo-dense-1` and `D-export-8`'s own findings: zero real
 data exists for any GGUF-loaded model (`qwen2.5-0.5b`/`olmoe`/`gpt-oss`) today, only
 `deepseek-v2-lite`'s native-AF-blob-loaded telemetry.
+
+## D-promo-qng64-real-1 -- Phase C: real qNg64 sweep data for deepseek-v2-lite, 2 promotions live (2026-09-19)
+
+**Context**: Phase C of the precision-search-adaptive-engine plan (`serene-finding-ullman.md`) --
+`D-promo-moe-gguf-1`'s own "not yet done" closed with exactly this framing: "zero real data
+exists ... only `deepseek-v2-lite`'s native-AF-blob-loaded telemetry [is possible]." This entry
+generates that real data. `target_safe_n()` (`tools/promotion_writeback.py`) only approves a
+promotion when EVERY known event for a (model,role,layer) target -- across every corpus,
+including ones tested long ago in simulation -- has real, kernel-verified
+(`source='qng64_real'`) coverage; partial coverage is refused wholesale, not partially trusted.
+Ranked the same 10 highest-`event_count` "no decision" candidates the real shadow autopilot
+already identified (commit `a23a6d1`, live re-query, not re-derived) and attempted all 10.
+
+**Method, per candidate**: natural attribution replay (unmodified bits=16 hi-mirror,
+`QWEN_MOE_NEARTIE_CORRECT=1`, no `SIM_QN` override) over the WikiText-2 short corpus, req=50 --
+looking for a genuine near-tie correction ("REAL FLIP" in the log). On a hit: derive an isolated
+single-request manifest (`quant_search_n.derive_isolated_manifest()`, `req % mf_n`), run
+`step0_baseline_gate()` to confirm the isolation reproduces the exact recorded orig/corrected
+argmax before trusting anything downstream, then `sweep_triple()` for the real ladder n={5,6,7}
+(`QWEN_MOE_ATTRIB_SIM_QN`, the real qNg64 bit-plane kernel, not a simulated F32 override). Every
+push used the Management API (PAT-based) rather than `push_sweep_results_atomic()`'s own REST
+path -- `QWEN_SUPABASE_URL`/`QWEN_SUPABASE_KEY` are confirmed absent in this environment (same
+finding prior sessions already made) -- but matched its exact schema/columns and its
+re-SELECT-to-verify discipline on every one of the 8 pushes this entry made. All 4 real
+`BOB_LOAD_OK=1`-gated runs per candidate ran under explicit, per-bypass user authorization
+(bob was at ~260-520MB free throughout -- a real, informed risk, not a rubber stamp).
+
+**Result: 10/10 candidates attempted, 2 promoted to bob's live `QWEN_MOE_PROMOTION_FILE_NQ`.**
+
+| role / layer | event_count | outcome |
+|---|---|---|
+| `kv_a_proj_with_mqa`/13 | 16 | **promoted n=7** (real non-monotonic violation found, see below) |
+| `shared_up_proj`/3 | 14 | **promoted n=5** (clean slate, 2 events both pass n=5-7) |
+| `kv_a_proj_with_mqa`/6 | 14 | new event clean (n=5-7 pass) but blocked by an unresolved pre-existing sim gap |
+| `kv_a_proj_with_mqa`/9 | 14 | new event clean but blocked by an unresolved pre-existing sim gap |
+| `kv_a_proj_with_mqa`/5 | 13 | real flip found, but n=5/6/7 **all fail** -- this role/layer alone cannot recover it |
+| `shared_down_proj`/26 | 20 | negative -- 2 attempts, 0 real flips over 116 requests |
+| `shared_down_proj`/4 | 16 | negative -- 0 flips / 50 requests |
+| `kv_a_proj_with_mqa`/11 | 15 | negative -- 0 flips / 50 requests |
+| `shared_gate_proj`/26 | 15 | negative -- 0 flips / 50 requests |
+| `kv_a_proj_with_mqa`/12 | 14 | negative -- 0 flips / 50 requests |
+
+**`kv_a_proj_with_mqa`/13, the hard case**: the first candidate's own fresh event
+(req=7/pos=8, wikitext-2, n=5-7 all pass) still left `target_safe_n()` at `None` -- a SECOND,
+older event on this exact target (corpus `deepseek-moe4a-builtin-corpus`, req=5/pos=4) had only
+`source='sim'` coverage. Traced "builtin-corpus" to its real source: not a manifest file at
+all, but a hardcoded fixed 8-prompt array in `qwen_infer.c` (`prompt_ids[8][...]`,
+`prompt_len[]`, `moe_cbatch_gen[]`), selected via `sp = req % 8` when
+`QWEN_MOE_CB_PROMPT_MANIFEST` is unset -- fully deterministic and readable straight from source,
+unlike the genuinely ambiguous external-manifest-chunk case `promotion_controller.py`'s own
+docstring explicitly declines to automate (D-d5-27's documented trap). Rebuilt the engine binary
+from current source (README's caller-plain recipe; needed two new object files,
+`gguf_write.o`/`gguf_write_quants.o`, that postdate the recipe -- `otool -tV` leak-check clean).
+Attribution regen against the builtin corpus reproduced the exact known event
+(`orig_argmax=276 -> corrected=473`, req=5/pos=4) -- confirming this really is the same event
+the old sim sweep tested. Hand-built a raw int32 isolated manifest directly from the source
+array's own tokens (`{100000, 10522, 3343, 9531, 3071}`) -- zero derivation ambiguity, since the
+values came from `qwen_infer.c` itself, not guessed. `step0_baseline_gate()` confirmed the
+isolation reproduces the recorded flip exactly. The real sweep then surfaced a genuine
+non-monotonic violation: **n=5 PASS, n=6 FAIL (no flip), n=7 PASS** -- exactly the
+pass-fail-pass case `suffix_closed_knee()` exists to catch (a naive "first passing n" rule would
+have wrongly deployed n=5). Both events real-verified -> `target_safe_n=7`. Wrote and re-read
+via `promotion_writeback.py`'s real atomic upsert (`read_remote_promotion_file`/
+`write_remote_promotion_file_atomic`) -- confirmed on bob.
+
+**`shared_up_proj`/3**: a clean-slate target with zero pre-existing sweep rows of any kind.
+Attribution replay found two real flips in one pass (req=7/pos=8: `252->21197`; req=46/pos=8:
+`4191->76431`). Both swept clean, all n=5/6/7 pass both events -> `target_safe_n=5`. Promoted.
+
+**Two gaps deliberately left unresolved, not guessed at**: `kv_a_proj_with_mqa`/6's blocking
+event is the well-known "p60" event (`wikitext-2-raw-v1-validation-short-fullext`, req=0/
+pos=14, `orig=8713/corrected=4794`, reused across many `D-qNg64-N` rounds for OTHER roles per
+this file's own earlier entries) -- two independent isolated-manifest reconstructions (the
+9-token `d4_wikitext2_short_manifest/p60.i32` and the 24-token `d4_wikitext2_manifest/p60.i32`)
+both returned `step0_baseline_gate()`'s "position never reached" diagnostic, not a value
+mismatch -- informative, but not resolved with the corpus files available today.
+`kv_a_proj_with_mqa`/9's blocker is `wikitext-103-raw-v1-validation-short`, req=0/pos=10 -- this
+project's own prior entries already document this exact corpus's prompt files being found wiped
+and regenerated TWICE (D-qNg64 round history, this file, ~line 10706-10831); a fresh natural
+replay against the currently-live `p0.i32` produced no near-tie correction at pos=10 at all,
+consistent with content drift since the original sim sweep rather than a wrong derivation.
+Forcing either would risk exactly the silent wrong-position corruption this project's own
+tooling exists to prevent -- reported as genuinely open, not closed by assumption.
+
+**Live promotion file, verified via re-read**:
+```
+kv_a_proj_with_mqa 13 7
+shared_up_proj      3 5
+```
+
+**Not yet done, named not silently dropped**: the two blocked gaps above (`kv_a_proj_with_mqa`/
+6, /9) and the one genuinely-unsafe target (`kv_a_proj_with_mqa`/5, real flip found but no real
+n in {5,6,7} recovers it) remain real, open findings -- not further pursued this session.
+Coverage is 10 of the shadow autopilot's ranked candidates, not the full 459-combo (17 roles x
+27 layers) `moe_attrib` search space `qwen_infer.c`'s own log line reports as the real ceiling.
+No dense-model or GGUF-loaded-model (`qwen2.5-0.5b`/`olmoe`/`gpt-oss`) real telemetry exists yet
+-- same blocker `D-promo-dense-1`/`D-promo-moe-gguf-1` already named, untouched by this entry
+(scoped to `deepseek-v2-lite`'s native-AF-blob path only, matching the plan's own Phase C scope).
