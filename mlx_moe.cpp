@@ -83,6 +83,16 @@ struct QNg64Tensor {
 static std::unordered_map<std::string, QTensor> g_tensors;
 static std::unordered_map<std::string, DTensor> g_dtensors;  // bits=16/32, dense (D-gpu-5)
 static std::unordered_map<std::string, QNg64Tensor> g_qng64_tensors;  // n=7,9-15 (D-metal-4)
+
+struct BindingSnapshot {
+    std::string name;
+    int kind = 0;  // 1=native quant, 2=dense, 3=custom qNg64
+    std::optional<QTensor> q;
+    std::optional<DTensor> d;
+    std::optional<QNg64Tensor> ng64;
+};
+static uint64_t g_binding_snapshot_next_id = 1;
+static std::unordered_map<uint64_t, BindingSnapshot> g_binding_snapshots;
 static int g_bound_count = 0;
 
 static void noop_deleter(void *) {
@@ -320,6 +330,70 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
     } catch (...) {
         return 0;
     }
+}
+
+int mlx_gpu_snapshot_binding(const char *name, uint64_t *snapshot_id) {
+    if (!mlx_gpu_available() || !name || !snapshot_id) return 0;
+    std::string key(name);
+    int present = (int)g_tensors.count(key) + (int)g_dtensors.count(key)
+                + (int)g_qng64_tensors.count(key);
+    if (present != 1) return 0;  // missing or already-corrupt multi-map state
+
+    BindingSnapshot snap;
+    snap.name = key;
+    if (auto it = g_qng64_tensors.find(key); it != g_qng64_tensors.end()) {
+        snap.kind = 3;
+        snap.ng64 = it->second;
+    } else if (auto it = g_tensors.find(key); it != g_tensors.end()) {
+        snap.kind = 1;
+        snap.q = it->second;
+    } else {
+        auto it = g_dtensors.find(key);
+        if (it == g_dtensors.end()) return 0;
+        snap.kind = 2;
+        snap.d = it->second;
+    }
+
+    uint64_t id = g_binding_snapshot_next_id++;
+    if (id == 0) id = g_binding_snapshot_next_id++;
+    g_binding_snapshots.insert_or_assign(id, std::move(snap));
+    *snapshot_id = id;
+    return 1;
+}
+
+// SAFETY CONTRACT: caller must pause admission, drain existing requests, and
+// synchronize pending MLX/Metal work before calling this restore primitive.
+// This function only restores registry ownership/selection; it does not make
+// an in-flight graph safe by itself.
+int mlx_gpu_restore_binding_snapshot(uint64_t snapshot_id) {
+    auto sit = g_binding_snapshots.find(snapshot_id);
+    if (sit == g_binding_snapshots.end()) return 0;
+    const BindingSnapshot &snap = sit->second;
+    const std::string &key = snap.name;
+
+    g_tensors.erase(key);
+    g_dtensors.erase(key);
+    g_qng64_tensors.erase(key);
+
+    if (snap.kind == 1 && snap.q) {
+        g_tensors.insert_or_assign(key, *snap.q);
+    } else if (snap.kind == 2 && snap.d) {
+        g_dtensors.insert_or_assign(key, *snap.d);
+    } else if (snap.kind == 3 && snap.ng64) {
+        g_qng64_tensors.insert_or_assign(key, *snap.ng64);
+    } else {
+        return 0;
+    }
+    g_bound_count++;
+    return 1;
+}
+
+int mlx_gpu_drop_binding_snapshot(uint64_t snapshot_id) {
+    return g_binding_snapshots.erase(snapshot_id) ? 1 : 0;
+}
+
+int mlx_gpu_binding_snapshot_count(void) {
+    return (int)g_binding_snapshots.size();
 }
 
 int mlx_gpu_binding_kind(const char *name, int *bits_out) {
