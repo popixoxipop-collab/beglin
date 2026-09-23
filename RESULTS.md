@@ -15721,3 +15721,28 @@ sample this session never reproduced) -- it means a single 50-request, single-co
 narrow enough sample that a target's true fix-layer landscape (which for `req=7/pos=8` turns out
 to include roughly half of the 22 layers tried, scattered non-monotonically across 3 different
 role families) can easily miss the specific layers that were pre-ranked highest.
+
+## D-l4-2 -- P2 guarded live-promotion approval gate (2026-09-23)
+
+Implemented `tools/autopilot_guarded.py` as the next step after P1 shadow mode. `prepare`
+is read-only: it reads the live remote promotion file, caps ranked candidates locally even if
+the REST backend ignores `limit`, re-audits existing live promotions, recomputes
+`target_safe_n()` from trusted `qng64_real` evidence, and writes an exact preimage/postimage
+approval plan. Unsafe existing entries are surfaced as explicit `REMOVE_UNSAFE` changes; no
+downgrade happens during prepare.
+
+`apply` is an explicit approval boundary. It takes a remote mkdir lock, rejects a stale
+preimage hash, revalidates every planned safe_n, snapshots the remote file, uses the existing
+atomic writer, requires exact readback, then revalidates the evidence again. Any failure after
+the write triggers an atomic rollback to the preimage. `rollback` itself refuses to overwrite
+a live file that no longer equals this plan's exact postimage.
+
+Regression coverage: `tools/test_autopilot_guarded.py` has 6 passing tests covering local
+candidate caps + live-target audit, explicit unsafe removal, successful apply, post-write
+evidence-regression rollback, stale-plan rejection, and stale-postimage rollback refusal.
+
+Real verification on XOX + bob: production `prepare --limit 10` audited the current live
+state and proposed **0 changes**; `apply` closed as `no_changes`, and the live file remained
+exactly `kv_a_proj_with_mqa 13 7` + `shared_up_proj 3 5`. A separate bob scratch canary then
+executed the real SSH lock/snapshot/atomic-write/readback/revalidation path by adding
+`shared_up_proj/L3 n=5`, followed by `rollback`; the canary returned exactly to its preimage.
