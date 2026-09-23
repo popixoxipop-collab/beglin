@@ -15923,3 +15923,66 @@ file was polled at request admission, and the engine logged
 Regression coverage after P5: P5 **7/7 PASS**, P4 **13/13 PASS**, P3 **9/9 PASS**, P2
 **6/6 PASS**; Python byte-compile, plain C compile, no-SVE/SME caller leak check, and diff check
 all pass. Production `promotion_nq_live.txt` remains unchanged.
+
+## D-l4-6 -- P5 fresh PRE collection exposes live-composition false positive; mandatory preflight gate (2026-09-23)
+
+The initial P5 blocker was missing fresh PRE provenance for attention candidate
+`kv_a_proj_with_mqa/L4`. A current-source CPU binary was built on bob and the
+50-request WikiText-2 short corpus was replayed with attribution restricted to exactly L4.
+A fresh event was found at req=7/pos=8: `252 -> 21197`, margin 0.373697, with a 1/1 L4
+single-role attribution hit. The event was isolated to `p7.i32`; real packed qNg64 n=5/6/7
+all reproduced the correction and were pushed as `source=qng64_real`, moving L4 to
+`safe_n=5` across the historical p60 event plus the fresh req7 event.
+
+Before using that as a P4 baseline, the methodology was tightened: PRE must match the exact
+production preimage, not an all-base model. The temporary L4 guarded apply was therefore rolled
+back, restoring production to only `kv_a_proj_with_mqa/L13 n=7` and
+`shared_up_proj/L3 n=5`. The same 50 requests were then replayed with those two existing live
+promotions enabled and L4 absent. This production-matched run completed all 50 requests with
+14 near-tie events and exactly one L4 attribution: req=49/pos=8,
+`orig=2449 -> corrected=3078`. The event was isolated to `p49.i32` and reproduced exactly.
+
+The key finding: actual serving-path qNg64 promotion disagreed with the earlier real-kernel
+hi-mirror sweep. With the real production composition held fixed:
+- L4 n=5: base remained wrong at 2449; correction REAL FLIP was still required to reach 3078.
+- L4 n=6: base was wrong at 2258; correction REAL FLIP was still required.
+- L4 n=7: base remained 2449 and no correction fired because the margin was above the correction
+  threshold; emitted token stayed wrong.
+Thus n=5/6/7 are all FAIL for the production-matched req49 event. Three explicit real FAIL rows
+were atomically pushed for corpus `p5-pre-prodmatched-2026-09-23-wt2-short-50`,
+req=49/pos=8. `target_safe_n(deepseek-v2-lite, kv_a_proj_with_mqa, 4)` now correctly returns
+None, and a fresh P5 production-state plan returns `changes=[]` with L4 `SKIP_UNSAFE`.
+Production itself remained unchanged throughout the final state.
+
+This revealed a structural safety gap: `qng64_real` attribution sweeps exercise a real packed
+kernel, but through the correction/hi-mirror path; that is not sufficient proof that the same n
+works when installed through the actual `QWEN_MOE_PROMOTION_FILE_NQ` base-serving pointer path.
+
+Added `tools/autopilot_live_preflight.py` and made it mandatory before P5 `--arm-apply`.
+For each proposed ADD/UPGRADE it:
+1. finds the latest PRE attribution with manifest/req/pos/orig/corrected provenance;
+2. derives a one-request manifest;
+3. runs the exact P5 preimage via a scratch promotion file and requires the recorded baseline flip;
+4. runs the preimage plus proposed n through the actual promotion-file pointer path;
+5. passes only if the emitted token is the recorded corrected token **without** a correction
+   `REAL FLIP`.
+No production file is touched during preflight.
+
+Real preflight verification used the production-matched req49 event and a manual prepared L4 n=5
+plan. Baseline isolation passed; candidate execution returned emitted token 3078 only because
+`REAL FLIP orig=2449 corrected=3078` was still required. Preflight therefore failed before
+apply with `correction REAL FLIP was still required`. Durable scratch evidence is under
+`/Users/bob/vdsp_p5_pre/2026-09-23_l4/live_preflight/`.
+
+Verification after the gate:
+- P5 live-preflight tests: 5/5 PASS
+- P5 controller tests: 8/8 PASS
+- P4 observer tests: 13/13 PASS
+- P3 tests: 9/9 PASS
+- P2 tests: 6/6 PASS
+- all modified Python modules py_compile successfully
+
+Final production state remains:
+`kv_a_proj_with_mqa 13 7`
+`shared_up_proj 3 5`
+with no production demotion/quarantine file.

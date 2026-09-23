@@ -110,8 +110,11 @@ class FullAutopilotTests(unittest.TestCase):
         self.assertEqual(result["status"], "disabled")
         arm.assert_not_called()
     @patch.object(p5, "prepare")
+    @patch.object(p5.live_preflight, "run_preflight")
     @patch.object(p5.observer, "arm")
-    def test_enabled_arm_apply_delegates_to_observer(self, arm, prepare):
+    def test_enabled_arm_apply_runs_preflight_before_observer(
+        self, arm, preflight, prepare
+    ):
         os.environ[p5.lowrisk.P5_ENABLE_ENV] = "1"
         prepare.return_value = {
             "phase": "P5-full-auto",
@@ -121,15 +124,41 @@ class FullAutopilotTests(unittest.TestCase):
                 "layer": 4, "new_n": 5,
             }],
         }
+        preflight.return_value = {"status": "passed"}
         arm.return_value = {"status": "observing"}
         result = p5.arm_apply(
             "m", 100, "h", "/promotion", "/quarantine",
             self.plan, self.audit, "local", "/events",
-            self.state, self.audit,
+            self.state, self.audit, preflight_bin="/tmp/current-bin",
         )
         self.assertEqual(result["status"], "observing")
+        preflight.assert_called_once()
         arm.assert_called_once()
         self.assertTrue(arm.call_args.kwargs["apply_after"])
+
+    @patch.object(p5, "prepare")
+    @patch.object(p5.live_preflight, "run_preflight")
+    @patch.object(p5.observer, "arm")
+    def test_enabled_missing_preflight_bin_blocks_apply(
+        self, arm, preflight, prepare
+    ):
+        os.environ[p5.lowrisk.P5_ENABLE_ENV] = "1"
+        prepare.return_value = {
+            "phase": "P5-full-auto",
+            "status": "prepared",
+            "changes": [{
+                "action": "ADD", "role": "kv_a_proj_with_mqa",
+                "layer": 4, "new_n": 5,
+            }],
+        }
+        with self.assertRaisesRegex(RuntimeError, "requires --preflight-bin"):
+            p5.arm_apply(
+                "m", 100, "h", "/promotion", "/quarantine",
+                self.plan, self.audit, "local", "/events",
+                self.state, self.audit,
+            )
+        preflight.assert_not_called()
+        arm.assert_not_called()
 
     @patch.object(p5, "prepare")
     @patch.object(p5.observer, "arm")

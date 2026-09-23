@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 import autopilot_guarded as guarded
 import autopilot_lowrisk as lowrisk
 import autopilot_observer as observer
+import autopilot_live_preflight as live_preflight
 import autopilot_shadow as shadow
 import promotion_writeback as pwb
 
@@ -169,7 +170,13 @@ def prepare(model, limit, ssh_host, promotion_file, quarantine_file,
 
 def arm_apply(model, limit, ssh_host, promotion_file, quarantine_file,
               plan_path, audit_path, log_host, events_log, state_path,
-              observer_audit):
+              observer_audit, preflight_bin=None,
+              preflight_cwd="/Users/bob/vdsp_m4_bench",
+              preflight_moe_base="/Users/bob/moe_base_deepseek",
+              preflight_safetensors_index="/Volumes/D50/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json",
+              preflight_remote_dir="/private/tmp/qng64_ctl/p5_preflight",
+              preflight_report=live_preflight.DEFAULT_REPORT,
+              preflight_timeout=180):
     plan = prepare(
         model, limit, ssh_host, promotion_file,
         quarantine_file, plan_path, audit_path,
@@ -188,6 +195,17 @@ def arm_apply(model, limit, ssh_host, promotion_file, quarantine_file,
             f"set {lowrisk.P5_ENABLE_ENV}=1"
         )
         return plan
+
+    if not preflight_bin:
+        raise RuntimeError(
+            "P5 arm-apply requires --preflight-bin: "
+            "live-composition canary is mandatory"
+        )
+    live_preflight.run_preflight(
+        plan_path, log_host, events_log, preflight_bin,
+        preflight_cwd, preflight_moe_base, preflight_safetensors_index,
+        preflight_remote_dir, preflight_report, timeout=preflight_timeout,
+    )
 
     return observer.arm(
         plan_path,
@@ -222,6 +240,19 @@ def main():
         "--observer-audit",
         default=observer.DEFAULT_AUDIT,
     )
+    ap.add_argument("--preflight-bin")
+    ap.add_argument("--preflight-cwd", default="/Users/bob/vdsp_m4_bench")
+    ap.add_argument("--preflight-moe-base", default="/Users/bob/moe_base_deepseek")
+    ap.add_argument(
+        "--preflight-safetensors-index",
+        default="/Volumes/D50/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json",
+    )
+    ap.add_argument(
+        "--preflight-remote-dir",
+        default="/private/tmp/qng64_ctl/p5_preflight",
+    )
+    ap.add_argument("--preflight-report", default=live_preflight.DEFAULT_REPORT)
+    ap.add_argument("--preflight-timeout", type=int, default=180)
     args = ap.parse_args()
 
     if args.prepare_only:
@@ -238,6 +269,13 @@ def main():
         args.promotion_file, args.quarantine_file,
         args.plan, args.audit, args.log_host,
         args.events_log, args.state, args.observer_audit,
+        preflight_bin=args.preflight_bin,
+        preflight_cwd=args.preflight_cwd,
+        preflight_moe_base=args.preflight_moe_base,
+        preflight_safetensors_index=args.preflight_safetensors_index,
+        preflight_remote_dir=args.preflight_remote_dir,
+        preflight_report=args.preflight_report,
+        preflight_timeout=args.preflight_timeout,
     )
 
 
