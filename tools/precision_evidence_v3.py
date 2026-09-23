@@ -65,6 +65,7 @@ def _write(table, payload, *, conflict=None):
 
 def upsert_execution_context(context):
     payload = context.payload()
+    payload["schema_version"] = payload.pop("schema")
     payload["context_hash"] = context.context_hash
     return _write(
         "moe_execution_contexts_v3",
