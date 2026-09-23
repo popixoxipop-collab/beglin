@@ -16169,3 +16169,39 @@ by this result-recording step.
 Production remains unchanged (`kv_a_proj_with_mqa/L13 n=7`, `shared_up_proj/L3 n=5`) with no
 production quarantine file. Durable candidate JSONLs for all three n values and refreshed
 `SHA256SUMS_GATE14` are under `/Users/bob/vdsp_p5_pre/2026-09-23_shared_gate14_scaleup/`.
+
+## D-l4-9 -- production runtime rebuilt/deployed with P4/P5 safety path (2026-09-23)
+
+The bob production runtime binary was still the Aug-28 build (`qwen_infer_prod`, SHA256
+`a23cb3f1c4ed6f1f91f015b7777f5d1968f239bfc3f5fe8cd2c28f53e047a209`), predating P4 qNg64
+hot-demotion. No production serving process was running, so deployment could be done without
+interrupting an active request/process.
+
+Built a fresh production candidate from XOX commit
+`51c67f8b3a50e68b03e42e30de2f536101df5971`: current `qwen_infer.c` and current plain C
+dependencies were rebuilt on bob, linked against bob's already-verified SME2/KleidiAI objects.
+The plain caller object passed the no-SVE/SME/addvl leak check. Candidate SHA256:
+`3cac67f0ee9f01319027b266dee4ac2cebf23cc99bc797b0327d3aea0df3469a`.
+
+Before install, the candidate was compared against the previously verified current-source
+`/tmp/qwen_l4_precollect` binary on the exact p7 isolated request with the live production
+promotion file. After removing only `ts_unix`, the JSON event objects were byte-for-byte
+semantically identical: predicted=21197, competing=252, margin=0.340887, batch_size=9,
+replay_margin_b1=0.011007, and identical active-expert lists. Both loaded the current production
+promotions (`kv_a_proj_with_mqa/L13 n=7`, `shared_up_proj/L3 n=5`) and completed normally.
+
+P4 data-plane smoke was then repeated on the candidate using scratch control files: startup
+materialized `kv_a_proj_with_mqa/L4 n=5`, the first request admission polled the demotion file,
+logged `DEMOTED from qNg64(n=5) to production base`, then emitted token 21197 and completed.
+
+Deployment was atomic on the same filesystem after preserving the old binary as
+`/Users/bob/vdsp_m4_bench/qwen_infer_prod.backup.20260924T000800.a23cb3f1c4ed`.
+Installed `qwen_infer_prod` now has SHA256
+`3cac67f0ee9f01319027b266dee4ac2cebf23cc99bc797b0327d3aea0df3469a`.
+A post-deploy p7 smoke using the installed production name passed with the same event values and
+confirmed P4 demotion polling is enabled. Production promotion/quarantine state itself was not
+changed.
+
+Durable deployment manifest on bob:
+`/Users/bob/vdsp_p5_pre/runtime_deploy_latest.md`
+(SHA256 `9beb12529662c5d5f7340313f85d1f7335d6bb9486cfdf60bfdad0815474b4a6`).
