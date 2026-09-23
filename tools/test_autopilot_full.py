@@ -317,6 +317,69 @@ class FullAutopilotTests(unittest.TestCase):
         ][0]
         self.assertEqual(deferred["action"], "DEFERRED_SERIAL_PREIMAGE")
 
+    @patch.object(p5.live_preflight, "fetch_latest_evidence")
+    def test_live_ladder_selects_higher_passing_n(self, fetch):
+        rows = {
+            5: {"status": "failed", "pass": False, "reason": "n5 failed"},
+            6: {"status": "passed", "pass": True, "reason": "n6 passed"},
+        }
+        fetch.side_effect = lambda model, role, layer, n, pre: rows[n]
+        action, detail = p5._live_evidence_gate(
+            "m", "shared_gate_proj", 14, 5, "pre"
+        )
+        self.assertIsNone(action)
+        self.assertEqual(detail["selected_n"], 6)
+        self.assertEqual(detail["qng64_safe_n"], 5)
+
+    @patch.object(p5.live_preflight, "fetch_latest_evidence")
+    def test_live_ladder_requests_first_unmeasured_higher_n(self, fetch):
+        rows = {
+            5: {"status": "failed", "pass": False, "reason": "n5 failed"},
+            6: None,
+        }
+        fetch.side_effect = lambda model, role, layer, n, pre: rows[n]
+        action, detail = p5._live_evidence_gate(
+            "m", "shared_gate_proj", 14, 5, "pre"
+        )
+        self.assertEqual(action, "NEEDS_LIVE_PREFLIGHT")
+        self.assertEqual(detail["next_n"], 6)
+
+    @patch.object(p5.live_preflight, "fetch_latest_evidence")
+    def test_live_ladder_all_failed_is_unsafe(self, fetch):
+        fetch.return_value = {
+            "status": "failed", "pass": False,
+            "reason": "correction REAL FLIP still required",
+        }
+        action, detail = p5._live_evidence_gate(
+            "m", "shared_gate_proj", 14, 5, "pre"
+        )
+        self.assertEqual(action, "LIVE_LADDER_UNSAFE")
+        self.assertEqual(detail["tested_ns"], [5, 6, 7])
+        self.assertEqual(fetch.call_count, 3)
+
+    @patch.object(p5, "_live_evidence_gate")
+    @patch.object(p5.shadow, "fetch_candidates")
+    @patch.object(p5.pwb, "target_safe_n")
+    @patch.object(p5.pwb, "read_remote_promotion_file", return_value={})
+    def test_planner_uses_live_selected_higher_n(
+        self, _read, safe_n, fetch, gate
+    ):
+        fetch.return_value = [{
+            "role": "shared_gate_proj", "layer": 14,
+            "event_count": 6, "current_bits": 4,
+        }]
+        safe_n.return_value = (5, {})
+        gate.return_value = (None, {
+            "qng64_safe_n": 5,
+            "selected_n": 6,
+            "reason": "n6 live pass",
+            "evidence": {"status": "passed", "pass": True},
+        })
+        plan = p5.build_plan("m", 100, "h", "/promotion", None, self.plan)
+        self.assertEqual(plan["changes"][0]["new_n"], 6)
+        self.assertEqual(plan["decisions"][0]["qng64_safe_n"], 5)
+        self.assertEqual(plan["decisions"][0]["live_selected_n"], 6)
+
     @patch.object(p5, "prepare")
     @patch.object(p5.observer, "arm")
     def test_no_changes_never_calls_observer(self, arm, prepare):

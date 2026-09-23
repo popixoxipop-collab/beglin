@@ -21,6 +21,7 @@ import autopilot_observer as observer
 import autopilot_live_preflight as live_preflight
 import autopilot_shadow as shadow
 import promotion_writeback as pwb
+import quant_search_n as qsn
 
 DEFAULT_PLAN = "/private/tmp/qng64_ctl/autopilot_p5_plan.json"
 DEFAULT_AUDIT = "/private/tmp/qng64_ctl/autopilot_p5_audit.jsonl"
@@ -54,35 +55,78 @@ def _merge_candidate(by_target, row):
             f"inconsistent current_bits for {key}: "
             f"{dst['current_bits']} vs {bits}"
         )
-def _live_evidence_gate(model, role, layer, n, preimage_sha256):
-    try:
-        evidence = live_preflight.fetch_latest_evidence(
-            model, role, layer, n, preimage_sha256
-        )
-    except live_preflight.EvidenceStoreUnavailable as exc:
-        return "EVIDENCE_STORE_UNAVAILABLE", {
-            "reason": str(exc),
-            "evidence": None,
+def _live_evidence_gate(model, role, layer, safe_n, preimage_sha256):
+    ladder = [n for n in qsn.REAL_LADDER if int(n) >= int(safe_n)]
+    if not ladder:
+        return "LIVE_LADDER_UNSAFE", {
+            "reason": f"no live ladder value >= qng64 safe_n={safe_n}",
+            "qng64_safe_n": safe_n,
+            "evidence_by_n": {},
         }
-    if evidence is None:
-        return "NEEDS_LIVE_PREFLIGHT", {
-            "reason": "no durable live-preflight evidence for current promotion preimage",
-            "evidence": None,
-        }
-    status = evidence.get("status")
-    if status == "passed" and evidence.get("pass") is True:
-        return None, {
-            "reason": "latest live-preflight evidence passed for current preimage",
-            "evidence": evidence,
-        }
-    if status == "no_current_signal":
-        return "NO_CURRENT_SIGNAL", {
-            "reason": evidence.get("reason") or "no current production-matched attribution signal",
-            "evidence": evidence,
-        }
-    return "LIVE_PREFLIGHT_FAILED", {
-        "reason": evidence.get("reason") or f"latest evidence status={status}",
-        "evidence": evidence,
+
+    evidence_by_n = {}
+    for candidate_n in ladder:
+        try:
+            evidence = live_preflight.fetch_latest_evidence(
+                model, role, layer, candidate_n, preimage_sha256
+            )
+        except live_preflight.EvidenceStoreUnavailable as exc:
+            return "EVIDENCE_STORE_UNAVAILABLE", {
+                "reason": str(exc),
+                "qng64_safe_n": safe_n,
+                "evidence_by_n": evidence_by_n,
+            }
+        evidence_by_n[str(candidate_n)] = evidence
+        if evidence is None:
+            return "NEEDS_LIVE_PREFLIGHT", {
+                "reason": (
+                    "no durable live-preflight evidence for current production "
+                    f"preimage at n={candidate_n}"
+                ),
+                "qng64_safe_n": safe_n,
+                "next_n": candidate_n,
+                "evidence_by_n": evidence_by_n,
+            }
+
+        status = evidence.get("status")
+        if status == "passed" and evidence.get("pass") is True:
+            return None, {
+                "reason": (
+                    "live-preflight passed for current preimage at "
+                    f"n={candidate_n}"
+                ),
+                "qng64_safe_n": safe_n,
+                "selected_n": candidate_n,
+                "evidence": evidence,
+                "evidence_by_n": evidence_by_n,
+            }
+        if status == "no_current_signal":
+            return "NO_CURRENT_SIGNAL", {
+                "reason": evidence.get("reason") or (
+                    "no current production-matched attribution signal"
+                ),
+                "qng64_safe_n": safe_n,
+                "evidence": evidence,
+                "evidence_by_n": evidence_by_n,
+            }
+        if status == "baseline_failed":
+            return "LIVE_PREFLIGHT_FAILED", {
+                "reason": evidence.get("reason") or "baseline isolation failed",
+                "qng64_safe_n": safe_n,
+                "evidence": evidence,
+                "evidence_by_n": evidence_by_n,
+            }
+        # A candidate-path failure does not prove that a higher n fails.
+        # Continue up the deployable ladder before declaring the target unsafe.
+
+    return "LIVE_LADDER_UNSAFE", {
+        "reason": (
+            f"actual serving-path preflight failed for every n in {ladder} "
+            f"at production preimage {preimage_sha256}"
+        ),
+        "qng64_safe_n": safe_n,
+        "tested_ns": ladder,
+        "evidence_by_n": evidence_by_n,
     }
 
 
@@ -201,12 +245,18 @@ def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
                 model, role, layer, safe_n, preimage_sha256
             )
             d["live_evidence"] = live_detail
+            candidate_n = int(
+                live_detail.get("selected_n",
+                                live_detail.get("next_n", safe_n))
+            )
+            d["qng64_safe_n"] = safe_n
+            d["live_selected_n"] = live_detail.get("selected_n")
             candidate = {
                 "action": proposed_action,
                 "role": role,
                 "layer": layer,
                 "old_n": old_n,
-                "new_n": safe_n,
+                "new_n": candidate_n,
                 "event_count": c.get("event_count"),
             }
             if gate_action is None:

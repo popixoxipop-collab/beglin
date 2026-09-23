@@ -16091,3 +16091,48 @@ Durable evidence is stored under
 `/Users/bob/vdsp_p5_pre/2026-09-23_shared_gate14_scaleup/`, including the 200-context summary,
 fresh req10 attribution/event pair, isolated baseline, qNg64 n=5/6/7 logs, live-preflight report,
 and `SHA256SUMS_GATE14`.
+
+## D-l4-8 -- L14 scale-up finds fresh signal; actual live ladder is unsafe (2026-09-23)
+
+P5 scale-up for `shared_gate_proj/L14` was run against the exact production preimage
+`kv_a_proj_with_mqa/L13 n=7 + shared_up_proj/L3 n=5`
+(preimage SHA256 `85d05d666aecd1fb45235dd0b3aada32177ccb5d004e06462c38ad9ec77e626e`).
+
+WikiText-2 short produced no current L14 signal through 200 cumulative requests:
+50-request stage = 14 near-tie events / 0 L14 attributions; additional p50..p199 stage =
+47 near-tie events / 0 L14 attributions; cumulative = 61 / 0. Evidence Contract v2 was updated
+as `NO_CURRENT_SIGNAL` at that checkpoint.
+
+A WikiText-2 full p0..p299 exploration was then stopped and excluded from evidence after noticing
+that `max_new_tokens=1` only probes generated pos23, while the historical L14 event was at pos14.
+The partial log is retained as a discarded methodology branch, not counted in scale-up evidence.
+
+The next corpus, WikiText-103 short, found a fresh production-matched L14 signal before its
+240-entry manifest completed, so the scan was intentionally stopped immediately per the
+stop-on-hit policy. Before stop it had 7 near-tie events and exactly 1 L14 attribution:
+req=10/pos=8, `orig=3912 -> corrected=3000`. Isolated replay reproduced the exact event and L14
+1/1 attribution hit.
+
+On this same fresh event, the real packed qNg64 correction/hi-mirror path passes at n=5/6/7,
+and those `qng64_real` rows are present in `moe_quant_sweep_results`; consequently
+`target_safe_n(shared_gate_proj/L14)` remains 5 and now includes this fresh corpus/event.
+However, the actual serving `QWEN_MOE_PROMOTION_FILE_NQ` path fails at every deployable n:
+- n=5: correction `REAL FLIP` still required;
+- n=6: correction `REAL FLIP` still required;
+- n=7: correction `REAL FLIP` still required.
+
+Durable `moe_live_preflight_results` rows for the current preimage are n5=id7, n6=id6, n7=id8,
+all status=`failed`, pass=false. This is a direct same-event demonstration that real packed-kernel
+correction-path PASS does not imply serving-pointer-path PASS, even across the full deployable
+ladder.
+
+`tools/autopilot_full.py` is now ladder-aware. Starting from `qng64_safe_n`, it checks durable
+live-preflight evidence upward through `REAL_LADDER`: a higher n PASS is selected automatically;
+an unmeasured higher n becomes the next preflight candidate; and all n failed becomes
+`LIVE_LADDER_UNSAFE`. Real live planner verification now returns for L14:
+`qng64_safe_n=5`, `LIVE_LADDER_UNSAFE`, `changes=[]`, `preflight_candidates=[]`.
+
+Durable evidence bundle:
+`/Users/bob/vdsp_p5_pre/2026-09-23_shared_gate14_scaleup/RESULT_FINAL.txt`
+(SHA256 `6a707656eee6a36fcd0a749ef43283df5e358359d65c502b3fb5ad11a1d3cfe6`).
+No production promotion or quarantine state was changed.
