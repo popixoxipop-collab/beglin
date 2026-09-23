@@ -57,7 +57,7 @@ class PreflightV3Tests(unittest.TestCase):
             "finite_logits": True,
         })
 
-    def run(self, **kwargs):
+    def run_case(self, **kwargs):
         return run_preflight(
             self.adapter,
             expected_context_hash=kwargs.get("context_hash", self.ctx.context_hash),
@@ -69,7 +69,7 @@ class PreflightV3Tests(unittest.TestCase):
         )
 
     def test_pass_restores_isolated_worker_baseline(self):
-        got = self.run()
+        got = self.run_case()
         self.assertEqual(got["status"], "passed")
         self.assertEqual(got["candidate"]["emitted_token"], 1224)
         state = self.adapter.query_applied_state()
@@ -83,7 +83,7 @@ class PreflightV3Tests(unittest.TestCase):
             "finite_logits": True,
         })
         with self.assertRaisesRegex(PreflightV3Error, "correction must be OFF"):
-            self.run()
+            self.run_case()
         state = self.adapter.query_applied_state()
         self.assertEqual(state.policy_hash, pc.policy_hash(BASE))
         self.assertFalse(state.admission_paused)
@@ -95,7 +95,7 @@ class PreflightV3Tests(unittest.TestCase):
             "finite_logits": True,
         })
         with self.assertRaisesRegex(PreflightV3Error, "reference token"):
-            self.run()
+            self.run_case()
         self.assertEqual(
             self.adapter.query_applied_state().policy_hash,
             pc.policy_hash(BASE),
@@ -109,24 +109,24 @@ class PreflightV3Tests(unittest.TestCase):
             "applied_policy_hash": "wrong",
         })
         with self.assertRaisesRegex(PreflightV3Error, "applied policy hash mismatch"):
-            self.run()
+            self.run_case()
 
     def test_context_mismatch_is_rejected_before_mutation(self):
         with self.assertRaisesRegex(RuntimeError, "execution context mismatch"):
-            self.run(context_hash=h("f"))
+            self.run_case(context_hash=h("f"))
         state = self.adapter.query_applied_state()
         self.assertEqual(state.epoch, 4)
         self.assertEqual(state.policy_hash, pc.policy_hash(BASE))
 
     def test_stale_epoch_is_rejected_before_mutation(self):
         with self.assertRaisesRegex(PreflightV3Error, "stale worker epoch"):
-            self.run(epoch=3)
+            self.run_case(epoch=3)
         self.assertEqual(self.adapter.query_applied_state().epoch, 4)
 
     def test_reference_must_match_recorded_corrected_token(self):
         bad = {"run_id": "ref-x", "context_hash": "oracle", "emitted_token": 777}
         with self.assertRaisesRegex(PreflightV3Error, "reference token"):
-            self.run(reference=bad)
+            self.run_case(reference=bad)
 
 
 if __name__ == "__main__":
