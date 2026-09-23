@@ -57,6 +57,8 @@ class EvidenceStoreTests(unittest.TestCase):
         body = json.loads(req.data)
         self.assertEqual(body["backend"], "mlx_metal")
         self.assertEqual(body["context_hash"], ctx.context_hash)
+        self.assertEqual(body["schema_version"], "precision-context-v3")
+        self.assertNotIn("schema", body)
         self.assertIn("on_conflict=context_hash", req.full_url)
 
     @patch.object(ev, "_credentials", return_value=("https://x", "k"))
