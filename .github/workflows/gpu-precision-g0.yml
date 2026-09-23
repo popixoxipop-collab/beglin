@@ -1,10 +1,10 @@
-name: gpu-precision-g0
+name: gpu-precision-g1-g3
 
 on:
   push:
-    branches: [gpu-precision-g0]
+    branches: [gpu-precision-g1-g3]
   pull_request:
-    branches: [main]
+    branches: [gpu-precision-g0, main]
 
 jobs:
   control-plane:
@@ -16,12 +16,39 @@ jobs:
           python-version: "3.11"
       - name: Compile Python control plane
         run: |
-          python -m py_compile             d4_supabase_push.py             tools/autopilot_live_preflight.py             tools/backend_capabilities.py             tools/test_d4_supabase_push.py             tools/test_autopilot_live_preflight.py             tools/test_backend_capabilities.py             tools/test_gpu_binding_source_guards.py
-      - name: Telemetry checkpoint tests
-        run: PYTHONPATH=. python tools/test_d4_supabase_push.py
-      - name: Preflight tests
-        run: PYTHONPATH=tools python tools/test_autopilot_live_preflight.py
-      - name: Capability tests
-        run: PYTHONPATH=tools python tools/test_backend_capabilities.py
-      - name: GPU registry source guards
-        run: PYTHONPATH=tools python tools/test_gpu_binding_source_guards.py
+          python -m py_compile \
+            d4_supabase_push.py \
+            tools/autopilot_live_preflight.py \
+            tools/backend_capabilities.py \
+            tools/precision_context.py \
+            tools/backend_adapters.py \
+            tools/precision_transactions.py \
+            tools/precision_evidence_v3.py \
+            tools/autopilot_observer_v3.py \
+            tools/autopilot_preflight_v3.py \
+            tools/test_d4_supabase_push.py \
+            tools/test_autopilot_live_preflight.py \
+            tools/test_backend_capabilities.py \
+            tools/test_gpu_binding_source_guards.py \
+            tools/test_precision_transactions.py \
+            tools/test_precision_evidence_v3.py \
+            tools/test_autopilot_observer_v3.py \
+            tools/test_autopilot_preflight_v3.py
+      - name: G0 safety tests
+        run: |
+          PYTHONPATH=. python tools/test_d4_supabase_push.py
+          PYTHONPATH=tools python tools/test_autopilot_live_preflight.py
+          PYTHONPATH=tools python tools/test_backend_capabilities.py
+          PYTHONPATH=tools python tools/test_gpu_binding_source_guards.py
+      - name: G1 context and evidence tests
+        run: |
+          PYTHONPATH=tools python tools/test_precision_evidence_v3.py
+      - name: G2 G3 transaction tests
+        run: |
+          PYTHONPATH=tools python tools/test_precision_transactions.py
+      - name: G4 mock preflight tests
+        run: |
+          PYTHONPATH=tools python tools/test_autopilot_preflight_v3.py
+      - name: G5 observer semantics tests
+        run: |
+          PYTHONPATH=tools python tools/test_autopilot_observer_v3.py
