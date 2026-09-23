@@ -24,6 +24,8 @@ jobs:
             tools/backend_adapters.py \
             tools/precision_transactions.py \
             tools/precision_evidence_v3.py \
+            tools/precision_planner_v3.py \
+            tools/precision_control_state.py \
             tools/autopilot_observer_v3.py \
             tools/autopilot_preflight_v3.py \
             tools/test_d4_supabase_push.py \
@@ -32,6 +34,8 @@ jobs:
             tools/test_gpu_binding_source_guards.py \
             tools/test_precision_transactions.py \
             tools/test_precision_evidence_v3.py \
+            tools/test_precision_planner_v3.py \
+            tools/test_precision_control_state.py \
             tools/test_autopilot_observer_v3.py \
             tools/test_autopilot_preflight_v3.py
       - name: G0 safety tests
@@ -40,12 +44,14 @@ jobs:
           PYTHONPATH=tools python tools/test_autopilot_live_preflight.py
           PYTHONPATH=tools python tools/test_backend_capabilities.py
           PYTHONPATH=tools python tools/test_gpu_binding_source_guards.py
-      - name: G1 context and evidence tests
+      - name: G1 context evidence planner tests
         run: |
           PYTHONPATH=tools python tools/test_precision_evidence_v3.py
-      - name: G2 G3 transaction tests
+          PYTHONPATH=tools python tools/test_precision_planner_v3.py
+      - name: G2 G3 transaction and control-state tests
         run: |
           PYTHONPATH=tools python tools/test_precision_transactions.py
+          PYTHONPATH=tools python tools/test_precision_control_state.py
       - name: G4 mock preflight tests
         run: |
           PYTHONPATH=tools python tools/test_autopilot_preflight_v3.py
