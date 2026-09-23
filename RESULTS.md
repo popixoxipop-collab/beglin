@@ -15855,3 +15855,71 @@ Operational flow for future P3 changes:
    and starts the POST window after apply.
 3. `autopilot_observer.py check ...` collects until the equal-size POST window is complete, then
    marks healthy or, with the P4 kill switch enabled, auto-demotes failed P3 targets.
+
+Verification: P4 observer regression suite is **13/13 PASS**, P3 remains **9/9 PASS**, P2 remains
+**6/6 PASS**, all Python modules py_compile, and plain `clang -O3 -w -c qwen_infer.c` succeeds.
+
+Bad-promotion control-plane canary (scratch only): baseline had 2 near-tie events with
+`shared_up_proj/L3` attributed in 1/2, median attributed margin 0.02. The equal-size post window
+also had 1/2 attributed events (median 0.03). Margin improved, but attribution count did not
+strictly fall, so P4 correctly classified this as regression and, with the P4 kill switch enabled,
+reported `auto_demoted: failed=1 demoted=1`. The scratch promotion file retained its unrelated
+`kv_a_proj_with_mqa/L13 n=7` entry and the demotion file gained only `shared_up_proj 3`.
+
+Real data-plane canary on bob used a newly built temporary CPU binary and the already-verified
+`shared_up_proj/L3 n=5` target. Actual engine logs showed, in order:
+`PROMOTED to qNg64(n=5)` -> P4 demotion-file polling enabled -> first request admission
+`DEMOTED from qNg64(n=5) to production base`. No qNg64 tensor was rebuilt during demotion.
+The final caller object also passed the existing no-SVE/SME-leak check.
+
+Scope: this hot-demotion path is wired to the CPU online scheduler only. GPU qNg64 serving still
+has startup-only promotion binding and no P4 hot-demotion mechanism yet. Also, today's telemetry
+does not expose an all-request denominator, so P4 compares target attribution within equal-size
+near-tie-event windows rather than claiming a request-normalized near-tie rate. Production P3
+currently had no new ADD/UPGRADE to observe, so no production P4 state was armed and the real bob
+promotion file stayed unchanged.
+
+## D-l4-5 -- P5 attention expansion under mandatory P4 observation (2026-09-23)
+
+Implemented `tools/autopilot_full.py` as the P5 controller. P5 expands the automatic role
+universe from P3's dense/shared FFN set to attention roles
+(`q_proj`, `kv_a_proj_with_mqa`, `kv_b_proj`, `o_proj`, `k_proj`, `v_proj`).
+Routed experts and global embed/lm-head stay out of this rollout because the original P5 design
+specifically called for expanding P4 coverage to attention, not every independently controllable
+tensor family at once.
+
+P5 still reuses `target_safe_n()`, so simulated rows can never authorize deployment; every known
+event/corpus for a target must be covered by trusted `qng64_real` results. Candidate rows from
+multiple corpora are merged by (role,layer) before ranking output is interpreted. Existing live
+attention promotions are re-audited, and the same P4 quarantine blocks automatic re-promotion.
+
+P5 has a separate hard kill switch: `QWEN_AUTOPILOT_P5=1`. More importantly, even with the
+switch enabled P5 never directly calls the guarded writer. `--arm-apply` must go through the P4
+observer: a PRE attribution window is required first, then guarded apply runs, then P4 owns the
+equal-size POST window and automatic demotion. `autopilot_observer.py` independently re-checks
+the P5 kill switch at the actual apply boundary, so invoking the observer directly cannot bypass
+the controller's opt-in.
+
+Real production prepare-only result: 186 aggregated P5 targets were evaluated. Exactly two new
+ADDs were safe: attention `kv_a_proj_with_mqa/L4 -> n=5` and FFN
+`shared_gate_proj/L14 -> n=5`. Existing `kv_a_proj_with_mqa/L13 -> n=7` and
+`shared_up_proj/L3 -> n=5` were NOOP/live. All other P5 targets were unsafe/no-real-data.
+The production file was not modified: the historical PRE-attribution JSONL for L4 is no longer
+present on bob/XOX, so the mandatory P4 baseline prerequisite is intentionally unsatisfied.
+
+Scratch full-pipeline canary used synthetic PRE telemetry containing one attributed event for
+each proposed target. P5 prepared and guarded-applied both ADDs, P4 began observation after the
+apply byte boundary, and an equal-size POST window deliberately kept each target at one
+attribution. P4 classified both unhealthy and reported `auto_demoted: failed=2 demoted=2`.
+The scratch promotion file returned exactly to the two unrelated production-like entries, while
+the scratch quarantine contained `kv_a_proj_with_mqa 4` and `shared_gate_proj 14`.
+
+Attention data-plane canary on bob then used a separately built current-source CPU binary:
+`kv_a_proj_with_mqa/L4` was actually materialized as qNg64(n=5) at startup, the P4 demotion
+file was polled at request admission, and the engine logged
+`DEMOTED from qNg64(n=5) to production base` before completing the request normally
+(`RESULT: MoE-4b online cbatch complete, B=4 R=1 PREFILL_MODE=1`).
+
+Regression coverage after P5: P5 **7/7 PASS**, P4 **13/13 PASS**, P3 **9/9 PASS**, P2
+**6/6 PASS**; Python byte-compile, plain C compile, no-SVE/SME caller leak check, and diff check
+all pass. Production `promotion_nq_live.txt` remains unchanged.
