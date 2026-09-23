@@ -16205,3 +16205,37 @@ changed.
 Durable deployment manifest on bob:
 `/Users/bob/vdsp_p5_pre/runtime_deploy_latest.md`
 (SHA256 `9beb12529662c5d5f7340313f85d1f7335d6bb9486cfdf60bfdad0815474b4a6`).
+
+## D-l4-9 -- shared_down_proj/L26 real-kernel closure + concurrent push verifier hardening (2026-09-24)
+
+After production runtime deployment, `shared_down_proj/L26` was the highest-ranked unresolved P5-role target
+(event_count=20) but had only simulated historical sweep data. A fresh current-production discovery found
+req=38/pos8 (`orig=19 -> corrected=18`) and isolated reproduction confirmed L26 as the 1/1 attribution cause;
+real qNg64 correction-path n=5/6/7 all hit on that fresh event and were pushed as `qng64_real`.
+
+The old historical sim-only events were then reconstructed under the original empty-promotion base preimage,
+not the current production preimage. Provenance was recovered and directly reproduced for:
+- WT103 p17/pos9: `372 -> 1`, L26 HIT;
+- WT103 p33/pos11: `19 -> 18`, HIT;
+- WT103 p38/pos8: `19 -> 18`, HIT;
+- WT103 p106/pos10: `27311 -> 11652`, HIT;
+- WT103 p226/pos9: `17120 -> 1222`, HIT;
+- WT2 p152/pos8: `779 -> 245`, HIT.
+
+The first decisive historical event, p17/pos9, was swept with the real qNg64 deploy ladder:
+`n=5 FAIL, n=6 PASS, n=7 FAIL`. This is not suffix-closed over `{5,6,7}`, so the event has no safe deployable n.
+Those rows were written as `source='qng64_real'` into the original historical corpus key
+`wikitext-103-raw-v1-validation-short`, req=0/pos=9. `target_safe_n(deepseek-v2-lite,shared_down_proj,26)`
+thereafter returns `None`; remaining historical events no longer need full ladder sweeps for a deployment decision.
+
+During the fresh req38 push, another session wrote the same real triple concurrently. The table has no uniqueness
+constraint, so the post-push SELECT returned two identical rows for each n. The old verifier incorrectly treated
+that as `PUSH_UNVERIFIED` because it required exactly three physical rows. `tools/quant_search_n.py` now validates
+by logical n/value instead: duplicate identical `(n,pass)` rows are accepted, while missing/extra n values,
+contradictory PASS/FAIL duplicates, or outcomes disagreeing with the current push remain fatal. New regression
+suite `tools/test_quant_search_n_push.py`: 6/6 PASS.
+
+Durable evidence:
+`/Users/bob/vdsp_p5_pre/shared_down26_historical/RESULT_REAL_UNSAFE.txt`
+SHA256 `b61d39553d0c4b2861960dc684b22df897fe9845f655af18187d3a6b8bcdf009`.
+No production promotion or quarantine state was changed by this closure.

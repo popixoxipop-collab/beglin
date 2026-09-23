@@ -732,6 +732,30 @@ def sweep_triple(ssh_host, moe_base, bin_path, cwd, derived_manifest, combo_path
     return results, None
 
 
+def _verify_real_ladder_rows(landed, results):
+    """Validate post-push qng64_real rows under concurrent identical writers.
+
+    Duplicate rows with the same (n, pass) are benign because the table has no
+    uniqueness constraint and two workers can race the same verified triple.
+    Contradictory PASS/FAIL rows for one n, a missing/extra n, or a value that
+    disagrees with this push's result remain fatal.
+    """
+    expected = {int(n): (results[n][0] == "pass") for n in REAL_LADDER}
+    by_n = {}
+    for row in landed:
+        by_n.setdefault(int(row["n"]), set()).add(bool(row["pass"]))
+
+    if set(by_n) != set(expected):
+        return False, f"expected n={sorted(expected)}, found n={sorted(by_n)}"
+    for n, wanted in expected.items():
+        flags = by_n[n]
+        if flags != {wanted}:
+            return False, (
+                f"n={n} expected pass={wanted}, found flags={sorted(flags)}"
+            )
+    return True, None
+
+
 def push_sweep_results_atomic(model, corpus, role, layer, req, pos, results):
     """results: {n: (outcome, detail)} from sweep_triple(), ALL n present (never called on a
     partial/aborted triple -- sweep_triple() returns None for `results` in that case, caller
@@ -740,10 +764,11 @@ def push_sweep_results_atomic(model, corpus, role, layer, req, pos, results):
     posting would silently lose it), source='qng64_real' EXPLICITLY asserted present before
     serializing (a push that forgets it would be indistinguishable from real data mislabeled as
     simulated -- the single worst outcome this whole effort exists to prevent). Then re-SELECTs
-    to confirm exactly len(REAL_LADDER) rows landed with that exact (model,corpus,role,layer,req,
-    pos,source) -- `Prefer: return=minimal` on the POST means nothing about the write result is
-    otherwise observable. Raises RuntimeError on ANY unverified state -- caller must not proceed
-    to promotion_writeback on an unverified push."""
+    to confirm the complete REAL_LADDER landed with the expected PASS/FAIL values for that exact
+    (model,corpus,role,layer,req,pos,source). Concurrent identical writers may create duplicate
+    rows because the table has no unique constraint; identical duplicates are accepted, while
+    contradictory flags, missing/extra n values, or mismatched outcomes remain fatal. Raises
+    RuntimeError on ANY unverified state -- caller must not proceed to promotion_writeback."""
     url = os.environ.get("QWEN_SUPABASE_URL")
     key = os.environ.get("QWEN_SUPABASE_KEY")
     if not url or not key:
@@ -780,11 +805,12 @@ def push_sweep_results_atomic(model, corpus, role, layer, req, pos, results):
     )
     with urllib.request.urlopen(verify_req, timeout=30) as resp:
         landed = json.loads(resp.read())
-    landed_ns = sorted(r["n"] for r in landed)
-    if landed_ns != sorted(REAL_LADDER):
-        raise RuntimeError(f"PUSH_UNVERIFIED: expected rows for n={sorted(REAL_LADDER)}, "
-                            f"post-push SELECT found n={landed_ns} -- do NOT proceed to "
-                            f"promotion_writeback on this triple until this is resolved")
+    ok, reason = _verify_real_ladder_rows(landed, results)
+    if not ok:
+        raise RuntimeError(
+            f"PUSH_UNVERIFIED: {reason} -- do NOT proceed to promotion_writeback "
+            f"on this triple until this is resolved"
+        )
     return landed
 
 
