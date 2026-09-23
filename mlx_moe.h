@@ -41,6 +41,15 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
 // for proving requested/applied binding identity across rebind/rollback tests.
 int mlx_gpu_binding_kind(const char *name, int *bits_out);
 
+// G2 registry transaction primitive. Snapshot retains the active MLX arrays so
+// rollback can restore the exact prior representation after the caller has
+// paused admission, drained requests, and synchronized GPU work.
+// These functions do NOT perform that quiescence themselves.
+int mlx_gpu_snapshot_binding(const char *name, uint64_t *snapshot_id);
+int mlx_gpu_restore_binding_snapshot(uint64_t snapshot_id);
+int mlx_gpu_drop_binding_snapshot(uint64_t snapshot_id);
+int mlx_gpu_binding_snapshot_count(void);
+
 // Reports how many previously-bound tensors got true zero-copy vs an
 // explicit-copy fallback, and total bytes copied (should be near 0 -- only
 // the F-10 stragglers with unaligned offsets fall back). Returns the total
