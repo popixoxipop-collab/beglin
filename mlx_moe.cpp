@@ -149,6 +149,7 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
             // and the mixed-precision check still read it back as quantized. A tensor
             // must exist in exactly one of g_tensors/g_dtensors at a time.
             g_tensors.erase(std::string(name));
+            g_qng64_tensors.erase(std::string(name));
             g_dtensors.insert_or_assign(std::string(name), DTensor{w, E, out, in, bits});
             g_bound_count++;
             return 1;
@@ -310,6 +311,7 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
         // D-gpu-7-fix: symmetric with the bits=16/32 branch's own erase above -- a name
         // previously bound dense must not leave a stale g_dtensors entry either.
         g_dtensors.erase(std::string(name));
+        g_qng64_tensors.erase(std::string(name));
         g_tensors.insert_or_assign(
             std::string(name),
             QTensor{w, scales, biases, E, out, in, ng, bits});
@@ -318,6 +320,28 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
     } catch (...) {
         return 0;
     }
+}
+
+int mlx_gpu_binding_kind(const char *name, int *bits_out) {
+    if (bits_out) *bits_out = 0;
+    if (!name) return 0;
+    std::string key(name);
+    auto ng = g_qng64_tensors.find(key);
+    if (ng != g_qng64_tensors.end()) {
+        if (bits_out) *bits_out = ng->second.n;
+        return 3;  // custom qNg64 bit-plane binding
+    }
+    auto q = g_tensors.find(key);
+    if (q != g_tensors.end()) {
+        if (bits_out) *bits_out = q->second.bits;
+        return 1;  // native MLX quantized binding
+    }
+    auto d = g_dtensors.find(key);
+    if (d != g_dtensors.end()) {
+        if (bits_out) *bits_out = d->second.bits;
+        return 2;  // dense fp16/fp32 binding
+    }
+    return 0;
 }
 
 int mlx_gpu_zerocopy_count(int *zero_copy, int *copied, size_t *bytes_copied) {
