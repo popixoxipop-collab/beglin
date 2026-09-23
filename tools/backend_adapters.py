@@ -65,6 +65,10 @@ class BackendAdapter:
     def resume_admission(self) -> None:
         raise NotImplementedError
 
+    def run_validation(self, request: dict) -> dict:
+        """Run one backend-local validation request and self-report applied state."""
+        raise NotImplementedError
+
     def verify_policy(self, expected_hash: str) -> AppliedState:
         state = self.query_applied_state()
         if state.policy_hash != expected_hash:
@@ -114,6 +118,9 @@ class MlxMetalBackendAdapter(BackendAdapter):
     def resume_admission(self):
         self._deny()
 
+    def run_validation(self, request):
+        self._deny()
+
 
 class MockBackendAdapter(BackendAdapter):
     """Deterministic backend used to validate G2/G3 control semantics."""
@@ -138,11 +145,15 @@ class MockBackendAdapter(BackendAdapter):
         self._fail_restore = False
         self._fail_sync = False
         self._context = context
+        self._validation_results = {}
 
     def inject_failure(self, *, apply=False, restore=False, sync=False):
         self._fail_apply = bool(apply)
         self._fail_restore = bool(restore)
         self._fail_sync = bool(sync)
+
+    def set_validation_result(self, key: str, result: dict):
+        self._validation_results[str(key)] = copy.deepcopy(result)
 
     def collect_context(self):
         if self._context is None:
@@ -207,6 +218,20 @@ class MockBackendAdapter(BackendAdapter):
             raise BackendError("cannot resume with active requests from old epoch")
         self._paused = False
         self._synced = False
+
+    def run_validation(self, request):
+        key = str(request.get("validation_key", "default"))
+        if key not in self._validation_results:
+            raise BackendError(f"no mock validation result for {key}")
+        result = copy.deepcopy(self._validation_results[key])
+        state = self.query_applied_state()
+        result.setdefault("backend", self.name)
+        result.setdefault("context_hash", self.collect_context().context_hash)
+        result.setdefault("applied_policy_hash", state.policy_hash)
+        result.setdefault("weight_epoch", state.epoch)
+        result.setdefault("correction_mode", "off")
+        result.setdefault("finite_logits", True)
+        return result
 
 
 def backend_from_name(name: str, *, allow_unverified_gpu: bool = False):
