@@ -35,6 +35,12 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
                      long E, long out, long in, long ng,
                      long packed_off, long scale_off, long bias_off, int bits);
 
+// Returns the active representation for a previously-bound tensor name:
+// 0=missing, 1=native MLX quantized, 2=dense fp16/fp32, 3=custom qNg64.
+// bits_out receives the active bit width. This is a G0 control-plane probe
+// for proving requested/applied binding identity across rebind/rollback tests.
+int mlx_gpu_binding_kind(const char *name, int *bits_out);
+
 // Reports how many previously-bound tensors got true zero-copy vs an
 // explicit-copy fallback, and total bytes copied (should be near 0 -- only
 // the F-10 stragglers with unaligned offsets fall back). Returns the total

@@ -73,6 +73,55 @@ class LivePreflightTests(unittest.TestCase):
         self.assertFalse(pf._baseline_ok(good, 2449, 9999, 8))
         self.assertFalse(pf._baseline_ok(good, 2449, 3078, 9))
 
+    def test_wrong_position_flip_does_not_poison_candidate(self):
+        out = (
+            "[moe neartie] correct req=0 pos=9 REAL FLIP "
+            "orig=1 corrected=999 -- running attribution\n"
+            "[moe cb4b] req 0 prompt 0 slot 0 arrive 0 admit_step 0 "
+            "ttft_ms 1.0 nout 1 tokens: 3078\n"
+        )
+        v = pf.classify_candidate(out, pos=8, prompt_len=9, corrected=3078)
+        self.assertTrue(v["pass"])
+        self.assertEqual(v["real_flips"], [])
+
+    def test_baseline_rejects_flip_from_wrong_position(self):
+        out = (
+            "[moe neartie] correct req=0 pos=8 n_scalar=9\n"
+            "[moe neartie] correct req=0 pos=9 REAL FLIP "
+            "orig=2449 corrected=3078 -- running attribution\n"
+        )
+        self.assertFalse(pf._baseline_ok(out, 2449, 3078, 8))
+
+    def test_gpu_backend_is_fail_closed_in_cpu_runner(self):
+        with self.assertRaisesRegex(RuntimeError, "dedicated MLX/Metal adapter"):
+            pf._validate_backend("mlx_metal")
+
+    @patch.object(
+        pf, "_ssh",
+        return_value=(
+            "0123456789abcdef0123456789abcdef"
+            "0123456789abcdef0123456789abcdef  /tmp/bin\n"
+            "12345\nBOB.local\narm64\n"
+        ),
+    )
+    def test_worker_identity_uses_remote_binary_sha(self, _ssh):
+        got = pf._worker_identity("bob", "/tmp/bin", "cpu")
+        self.assertEqual(got["binary_size"], 12345)
+        self.assertEqual(got["host"], "BOB.local")
+        self.assertEqual(got["arch"], "arm64")
+        self.assertIsNone(got["engine_commit"])
+
+    def test_evidence_never_uses_controller_commit_as_worker_commit(self):
+        row = pf._evidence_row(
+            {"model": "m", "before_sha256": "pre"},
+            {"role": "r", "layer": 1, "new_n": 5},
+            {"req": 0, "pos": 8, "orig_argmax": 1, "corrected_argmax": 2},
+            {"pass": True, "real_flips": [], "reason": "ok"},
+            "post", "passed",
+            worker_identity={"binary_sha256": "abc", "engine_commit": None},
+        )
+        self.assertIsNone(row["engine_commit"])
+
     @patch.object(pf, "_rest_credentials", return_value=("https://example.test", "k"))
     @patch.object(pf.urllib.request, "urlopen")
     def test_persist_evidence_requires_returned_row(self, urlopen, _creds):
