@@ -54,6 +54,93 @@ def _merge_candidate(by_target, row):
             f"inconsistent current_bits for {key}: "
             f"{dst['current_bits']} vs {bits}"
         )
+def _live_evidence_gate(model, role, layer, n, preimage_sha256):
+    try:
+        evidence = live_preflight.fetch_latest_evidence(
+            model, role, layer, n, preimage_sha256
+        )
+    except live_preflight.EvidenceStoreUnavailable as exc:
+        return "EVIDENCE_STORE_UNAVAILABLE", {
+            "reason": str(exc),
+            "evidence": None,
+        }
+    if evidence is None:
+        return "NEEDS_LIVE_PREFLIGHT", {
+            "reason": "no durable live-preflight evidence for current promotion preimage",
+            "evidence": None,
+        }
+    status = evidence.get("status")
+    if status == "passed" and evidence.get("pass") is True:
+        return None, {
+            "reason": "latest live-preflight evidence passed for current preimage",
+            "evidence": evidence,
+        }
+    if status == "no_current_signal":
+        return "NO_CURRENT_SIGNAL", {
+            "reason": evidence.get("reason") or "no current production-matched attribution signal",
+            "evidence": evidence,
+        }
+    return "LIVE_PREFLIGHT_FAILED", {
+        "reason": evidence.get("reason") or f"latest evidence status={status}",
+        "evidence": evidence,
+    }
+
+
+def _bootstrap_preflight_plan(plan, path):
+    preflight = dict(plan)
+    preflight["status"] = "prepared"
+    preflight["changes"] = [dict(c) for c in plan.get("preflight_candidates", [])]
+    after = guarded._mapping(plan["before"])
+    for c in preflight["changes"]:
+        after[(c["role"], int(c["layer"]))] = int(c["new_n"])
+    preflight["after"] = guarded._rows(after)
+    preflight["after_sha256"] = guarded._mapping_hash(after)
+    guarded._atomic_json(path, preflight)
+    return preflight
+
+
+def _work_priority(c):
+    count = c.get("event_count")
+    return (-(count if count is not None else -1), c["role"], int(c["layer"]))
+
+
+def _mark_deferred(decisions, candidate):
+    for d in decisions:
+        if d.get("role") == candidate["role"] and int(d.get("layer")) == int(candidate["layer"]):
+            d["action"] = "DEFERRED_SERIAL_PREIMAGE"
+            d["deferred_reason"] = (
+                "P5 v2 admits one new target per production preimage; "
+                "re-evaluate after the selected target changes live state"
+            )
+            return
+
+
+def _serialize_new_work(existing, decisions, changes, preflight_candidates):
+    """Admit at most one new target for a given production preimage."""
+    selected_changes = []
+    selected_preflight = []
+
+    if changes:
+        chosen = sorted(changes, key=_work_priority)[0]
+        selected_changes = [chosen]
+        for c in changes:
+            if c is not chosen:
+                _mark_deferred(decisions, c)
+        for c in preflight_candidates:
+            _mark_deferred(decisions, c)
+    elif preflight_candidates:
+        chosen = sorted(preflight_candidates, key=_work_priority)[0]
+        selected_preflight = [chosen]
+        for c in preflight_candidates:
+            if c is not chosen:
+                _mark_deferred(decisions, c)
+
+    after = dict(existing)
+    for c in selected_changes:
+        after[(c["role"], int(c["layer"]))] = int(c["new_n"])
+    return after, selected_changes, selected_preflight
+
+
 def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
                plan_path):
     existing = pwb.read_remote_promotion_file(ssh_host, promotion_file)
@@ -61,6 +148,7 @@ def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
         ssh_host, quarantine_file
     ) if quarantine_file else set()
 
+    preimage_sha256 = guarded._mapping_hash(existing)
     ranked = shadow.fetch_candidates(model, limit)[:limit]
     by_target = {}
     for c in ranked:
@@ -83,7 +171,7 @@ def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
         }
 
     after = dict(existing)
-    decisions, changes = [], []
+    decisions, changes, preflight_candidates = [], [], []
     for (role, layer), c in sorted(by_target.items()):
         old_n = existing.get((role, layer))
         if (role, layer) in quarantine:
@@ -106,18 +194,32 @@ def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
             c.get("event_count"), detail,
         )
         d["source_rows"] = c.get("source_rows", 0)
-        decisions.append(d)
 
-        if d["action"] in ("ADD", "UPGRADE"):
-            after[(role, layer)] = safe_n
-            changes.append({
-                "action": d["action"],
+        proposed_action = d["action"]
+        if proposed_action in ("ADD", "UPGRADE"):
+            gate_action, live_detail = _live_evidence_gate(
+                model, role, layer, safe_n, preimage_sha256
+            )
+            d["live_evidence"] = live_detail
+            candidate = {
+                "action": proposed_action,
                 "role": role,
                 "layer": layer,
                 "old_n": old_n,
                 "new_n": safe_n,
                 "event_count": c.get("event_count"),
-            })
+            }
+            if gate_action is None:
+                changes.append(candidate)
+            else:
+                d["action"] = gate_action
+                if gate_action == "NEEDS_LIVE_PREFLIGHT":
+                    preflight_candidates.append(candidate)
+        decisions.append(d)
+
+    after, changes, preflight_candidates = _serialize_new_work(
+        existing, decisions, changes, preflight_candidates
+    )
     plan = {
         "version": guarded.PLAN_VERSION,
         "phase": "P5-full-auto",
@@ -128,12 +230,16 @@ def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
         "ssh_host": ssh_host,
         "promotion_file": promotion_file,
         "quarantine_file": quarantine_file,
+        "promotion_preimage_sha256": preimage_sha256,
         "before": guarded._rows(existing),
         "after": guarded._rows(after),
         "before_sha256": guarded._mapping_hash(existing),
         "after_sha256": guarded._mapping_hash(after),
         "decisions": decisions,
         "changes": changes,
+        "preflight_candidates": preflight_candidates,
+        "evidence_contract": "p5-v2",
+        "serialization": "one-target-per-preimage",
         "p5_roles": sorted(lowrisk.P5_ROLES),
     }
     guarded._atomic_json(plan_path, plan)
@@ -143,7 +249,8 @@ def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
 def print_plan(plan):
     print(
         f"[autopilot-p5] targets={len(plan['decisions'])} "
-        f"changes={len(plan['changes'])}"
+        f"changes={len(plan['changes'])} "
+        f"preflight_candidates={len(plan.get('preflight_candidates', []))}"
     )
     for d in plan["decisions"]:
         old = "<none>" if d["old_n"] is None else f"n={d['old_n']}"
@@ -181,10 +288,21 @@ def arm_apply(model, limit, ssh_host, promotion_file, quarantine_file,
         model, limit, ssh_host, promotion_file,
         quarantine_file, plan_path, audit_path,
     )
-    if not plan["changes"]:
+
+    unavailable = [
+        d for d in plan["decisions"]
+        if d.get("action") == "EVIDENCE_STORE_UNAVAILABLE"
+    ]
+    if unavailable:
+        raise RuntimeError(
+            "P5 evidence store unavailable; fail-closed before live apply"
+        )
+
+    has_work = bool(plan["changes"] or plan.get("preflight_candidates"))
+    if not has_work:
         plan["status"] = "no_changes"
         guarded._atomic_json(plan_path, plan)
-        print("[autopilot-p5] no safe ADD/UPGRADE target; live state untouched")
+        print("[autopilot-p5] no evidence-admissible work; live state untouched")
         return plan
 
     if os.environ.get(lowrisk.P5_ENABLE_ENV) != "1":
@@ -196,16 +314,31 @@ def arm_apply(model, limit, ssh_host, promotion_file, quarantine_file,
         )
         return plan
 
-    if not preflight_bin:
-        raise RuntimeError(
-            "P5 arm-apply requires --preflight-bin: "
-            "live-composition canary is mandatory"
+    if plan.get("preflight_candidates"):
+        if not preflight_bin:
+            raise RuntimeError(
+                "P5 arm-apply requires --preflight-bin: "
+                "live-composition canary is mandatory"
+            )
+        bootstrap_path = plan_path + ".preflight"
+        _bootstrap_preflight_plan(plan, bootstrap_path)
+        live_preflight.run_preflight(
+            bootstrap_path, log_host, events_log, preflight_bin,
+            preflight_cwd, preflight_moe_base, preflight_safetensors_index,
+            preflight_remote_dir, preflight_report, timeout=preflight_timeout,
         )
-    live_preflight.run_preflight(
-        plan_path, log_host, events_log, preflight_bin,
-        preflight_cwd, preflight_moe_base, preflight_safetensors_index,
-        preflight_remote_dir, preflight_report, timeout=preflight_timeout,
-    )
+        # Durable evidence was written by preflight. Rebuild the planner view;
+        # only same-preimage PASS rows can now become ADD/UPGRADE changes.
+        plan = prepare(
+            model, limit, ssh_host, promotion_file,
+            quarantine_file, plan_path, audit_path,
+        )
+
+    if not plan["changes"]:
+        plan["status"] = "no_changes"
+        guarded._atomic_json(plan_path, plan)
+        print("[autopilot-p5] preflight produced no admissible change")
+        return plan
 
     return observer.arm(
         plan_path,

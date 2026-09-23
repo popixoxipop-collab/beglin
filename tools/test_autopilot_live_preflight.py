@@ -1,7 +1,26 @@
 #!/usr/bin/env python3
+import io
+import json
 import unittest
+import urllib.error
+from unittest.mock import MagicMock, patch
 
 import autopilot_live_preflight as pf
+
+
+class FakeResponse:
+    def __init__(self, body, status=200):
+        self.body = body if isinstance(body, bytes) else body.encode()
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return self.body
 
 
 class LivePreflightTests(unittest.TestCase):
@@ -53,6 +72,63 @@ class LivePreflightTests(unittest.TestCase):
         self.assertTrue(pf._baseline_ok(good, 2449, 3078, 8))
         self.assertFalse(pf._baseline_ok(good, 2449, 9999, 8))
         self.assertFalse(pf._baseline_ok(good, 2449, 3078, 9))
+
+    @patch.object(pf, "_rest_credentials", return_value=("https://example.test", "k"))
+    @patch.object(pf.urllib.request, "urlopen")
+    def test_persist_evidence_requires_returned_row(self, urlopen, _creds):
+        row = {
+            "model": "m", "role": "r", "layer": 1, "n": 5,
+            "promotion_preimage_sha256": "pre",
+            "promotion_postimage_sha256": "post",
+            "pass": True, "status": "passed",
+        }
+        urlopen.return_value = FakeResponse(json.dumps([{**row, "id": 7}]))
+        got = pf.persist_evidence(row)
+        self.assertEqual(got["id"], 7)
+        req = urlopen.call_args.args[0]
+        self.assertEqual(req.get_method(), "POST")
+        payload = json.loads(req.data)
+        self.assertEqual(payload["source"], pf.EVIDENCE_SOURCE)
+        self.assertEqual(payload["promotion_preimage_sha256"], "pre")
+
+    @patch.object(pf, "_rest_credentials", return_value=("https://example.test", "k"))
+    @patch.object(pf.urllib.request, "urlopen")
+    def test_fetch_latest_evidence_is_exact_preimage(self, urlopen, _creds):
+        row = {
+            "id": 9, "status": "passed", "pass": True,
+            "promotion_preimage_sha256": "abc",
+            "promotion_postimage_sha256": "def",
+        }
+        urlopen.return_value = FakeResponse(json.dumps([row]))
+        got = pf.fetch_latest_evidence("m", "r", 2, 5, "abc")
+        self.assertEqual(got["id"], 9)
+        req = urlopen.call_args.args[0]
+        self.assertIn("promotion_preimage_sha256=eq.abc", req.full_url)
+        self.assertIn("order=tested_at.desc", req.full_url)
+
+    @patch.object(pf, "_rest_credentials", return_value=("https://example.test", "k"))
+    @patch.object(pf.urllib.request, "urlopen")
+    def test_missing_evidence_table_is_fail_closed(self, urlopen, _creds):
+        body = json.dumps({
+            "message": "Could not find the table 'public.moe_live_preflight_results'"
+        }).encode()
+        urlopen.side_effect = urllib.error.HTTPError(
+            "https://example.test", 404, "not found", None, io.BytesIO(body)
+        )
+        with self.assertRaises(pf.EvidenceStoreUnavailable):
+            pf.fetch_latest_evidence("m", "r", 2, 5, "abc")
+
+    @patch.object(pf, "persist_evidence")
+    def test_no_current_signal_is_explicit_nonpass(self, persist):
+        persist.return_value = {"id": 3}
+        pf.persist_no_current_signal(
+            "m", "shared_gate_proj", 14, 5, "pre", "post",
+            corpus="c", evidence_path="/tmp/evidence",
+        )
+        row = persist.call_args.args[0]
+        self.assertEqual(row["status"], "no_current_signal")
+        self.assertFalse(row["pass"])
+        self.assertIsNone(row["correction_required"])
 
 
 if __name__ == "__main__":

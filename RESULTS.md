@@ -15986,3 +15986,56 @@ Final production state remains:
 `kv_a_proj_with_mqa 13 7`
 `shared_up_proj 3 5`
 with no production demotion/quarantine file.
+
+## D-l4-7 -- P5 Evidence Contract v2: durable live-preflight evidence (2026-09-23)
+
+P5 now requires two independent evidence classes before an ADD/UPGRADE can reach live state:
+(1) `target_safe_n()` must still be suffix-closed safe using `source='qng64_real'`; and
+(2) the latest durable `qng64_live_preflight` row for the exact current production preimage
+must be PASS. Historical real-kernel evidence is therefore no longer sufficient by itself.
+
+Live DB migration `supabase_migration_p5_live_preflight.sql` was applied to project
+`btdjbfgqzglucifcnuoc`. It creates `moe_live_preflight_results` with model/role/layer/n,
+corpus/req/pos, `promotion_preimage_sha256`, `promotion_postimage_sha256`, orig/corrected/
+emitted token IDs, whether correction was still required, PASS/status/reason, manifest,
+engine commit, and evidence path. Direct Management API verification returned count=0 immediately
+after creation; PostgREST lookup through the normal project credentials also resolved the table.
+
+`tools/autopilot_live_preflight.py` now persists PASS/FAIL/baseline-failure evidence and exposes
+exact-preimage lookup. Missing/unavailable evidence storage is fail-closed. It also has an explicit
+`no_current_signal` state for production-matched scans that find no target attribution.
+
+Existing real observations were backfilled against the current production preimage
+`85d05d666aecd1fb45235dd0b3aada32177ccb5d004e06462c38ad9ec77e626e`:
+- row 1: `kv_a_proj_with_mqa/L4 n=5` -> `failed`, PASS=false, because correction
+  `REAL FLIP 2449 -> 3078` was still required in the actual serving-path preflight.
+- row 2: `shared_gate_proj/L14 n=5` -> `no_current_signal`, PASS=false, because the
+  production-matched 50-request scan produced 14 near-tie events and 0 L14 attributions.
+
+Planner states are now distinct:
+- `NEEDS_LIVE_PREFLIGHT`: qng64_real-safe but no durable evidence for this exact preimage.
+- `LIVE_PREFLIGHT_FAILED`: latest exact-preimage preflight failed.
+- `NO_CURRENT_SIGNAL`: production-matched observation found no current attribution.
+- `EVIDENCE_STORE_UNAVAILABLE`: lookup unavailable; P5 live apply refuses to proceed.
+- normal `ADD/UPGRADE`: only when latest exact-preimage evidence is PASS.
+
+P5 v2 additionally serializes new work to one target per production preimage. If multiple
+targets are otherwise eligible, the highest event_count target is selected and all others are
+`DEFERRED_SERIAL_PREIMAGE`. After one target changes live state, every deferred target must be
+re-evaluated/preflighted against the new preimage instead of reusing stale combination evidence.
+
+Final live verification:
+- production promotions remain `kv_a_proj_with_mqa/L13 n=7` and
+  `shared_up_proj/L3 n=5`;
+- current preimage hash is the value above;
+- durable evidence lookup returns L4=(failed,false), L14=(no_current_signal,false);
+- full P5 planner at limit=1000 returns `changes=[]`, `preflight_candidates=[]`;
+- decisions: L4=`SKIP_UNSAFE`, L14=`NO_CURRENT_SIGNAL`.
+
+Regression status:
+- P5 live-preflight tests: 9/9 PASS
+- P5 planner/controller tests: 15/15 PASS
+- P4 observer: 13/13 PASS
+- P3: 9/9 PASS
+- P2: 6/6 PASS
+- py_compile and diff-check PASS.

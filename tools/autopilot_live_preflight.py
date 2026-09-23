@@ -22,7 +22,11 @@ import os
 import re
 import shlex
 import subprocess
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 
 import autopilot_guarded as guarded
 import autopilot_observer as observer
@@ -30,6 +34,170 @@ import quant_search_n as qsn
 import promotion_writeback as pwb
 
 DEFAULT_REPORT = "/private/tmp/qng64_ctl/autopilot_p5_preflight.json"
+EVIDENCE_SOURCE = "qng64_live_preflight"
+EVIDENCE_TABLE = "moe_live_preflight_results"
+
+
+class EvidenceStoreUnavailable(RuntimeError):
+    pass
+
+
+def _rest_credentials():
+    url = os.environ.get("QWEN_SUPABASE_URL", "").rstrip("/")
+    key = os.environ.get("QWEN_SUPABASE_KEY", "")
+    if not url or not key:
+        raise EvidenceStoreUnavailable(
+            "QWEN_SUPABASE_URL / QWEN_SUPABASE_KEY are required for P5 evidence"
+        )
+    return url, key
+
+
+def _rest_headers(key, content=False):
+    out = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+    }
+    if content:
+        out["Content-Type"] = "application/json"
+    return out
+
+
+def persist_evidence(row):
+    """Persist one P5 Evidence Contract v2 row and require representation back."""
+    url, key = _rest_credentials()
+    payload = dict(row)
+    payload.setdefault("source", EVIDENCE_SOURCE)
+    req = urllib.request.Request(
+        f"{url}/rest/v1/{EVIDENCE_TABLE}",
+        data=json.dumps(payload).encode(),
+        headers={
+            **_rest_headers(key, content=True),
+            "Prefer": "return=representation",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            rows = json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(errors="replace")
+        if exc.code in (404, 400) and EVIDENCE_TABLE in body:
+            raise EvidenceStoreUnavailable(
+                f"P5 evidence table unavailable: HTTP {exc.code}: {body[:300]}"
+            ) from exc
+        raise RuntimeError(
+            f"P5 evidence insert failed: HTTP {exc.code}: {body[:500]}"
+        ) from exc
+    if not isinstance(rows, list) or len(rows) != 1:
+        raise RuntimeError(f"P5 evidence insert unverified: response={rows!r}")
+    return rows[0]
+
+
+def fetch_latest_evidence(model, role, layer, n, promotion_preimage_sha256):
+    """Return latest durable evidence row for this exact target+n+preimage."""
+    url, key = _rest_credentials()
+    params = {
+        "model": f"eq.{model}",
+        "role": f"eq.{role}",
+        "layer": f"eq.{int(layer)}",
+        "n": f"eq.{int(n)}",
+        "promotion_preimage_sha256": f"eq.{promotion_preimage_sha256}",
+        "source": f"eq.{EVIDENCE_SOURCE}",
+        "select": (
+            "id,tested_at,source,model,role,layer,n,corpus,req,pos,"
+            "promotion_preimage_sha256,promotion_postimage_sha256,"
+            "orig_token,corrected_token,emitted_token,correction_required,"
+            "pass,status,reason,manifest,baseline_rc,candidate_rc,evidence_path,"
+            "engine_commit"
+        ),
+        "order": "tested_at.desc",
+        "limit": "1",
+    }
+    qs = urllib.parse.urlencode(params, safe=".,")
+    req = urllib.request.Request(
+        f"{url}/rest/v1/{EVIDENCE_TABLE}?{qs}",
+        headers=_rest_headers(key),
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            rows = json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(errors="replace")
+        if exc.code in (404, 400) and EVIDENCE_TABLE in body:
+            raise EvidenceStoreUnavailable(
+                f"P5 evidence table unavailable: HTTP {exc.code}: {body[:300]}"
+            ) from exc
+        raise RuntimeError(
+            f"P5 evidence lookup failed: HTTP {exc.code}: {body[:500]}"
+        ) from exc
+    return rows[0] if rows else None
+
+
+def _engine_commit():
+    repo = Path(__file__).resolve().parents[1]
+    p = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        capture_output=True, text=True, timeout=10,
+    )
+    return p.stdout.strip() if p.returncode == 0 else None
+
+
+def _evidence_row(plan, change, attr, verdict, candidate_hash, status,
+                  baseline_rc=None, candidate_rc=None, evidence_path=None):
+    return {
+        "source": EVIDENCE_SOURCE,
+        "model": plan["model"],
+        "role": change["role"],
+        "layer": int(change["layer"]),
+        "n": int(change["new_n"]),
+        "corpus": attr.get("corpus"),
+        "req": int(attr["req"]) if attr.get("req") is not None else None,
+        "pos": int(attr["pos"]) if attr.get("pos") is not None else None,
+        "promotion_preimage_sha256": plan["before_sha256"],
+        "promotion_postimage_sha256": candidate_hash,
+        "orig_token": int(attr["orig_argmax"]) if attr.get("orig_argmax") is not None else None,
+        "corrected_token": int(attr["corrected_argmax"]) if attr.get("corrected_argmax") is not None else None,
+        "emitted_token": verdict.get("emitted_token") if verdict else None,
+        "correction_required": bool(verdict.get("real_flips")) if verdict else None,
+        "pass": bool(verdict and verdict.get("pass")),
+        "status": status,
+        "reason": verdict.get("reason") if verdict else status,
+        "manifest": attr.get("manifest"),
+        "baseline_rc": baseline_rc,
+        "candidate_rc": candidate_rc,
+        "evidence_path": evidence_path,
+        "engine_commit": _engine_commit(),
+    }
+
+
+def persist_no_current_signal(model, role, layer, n, promotion_preimage_sha256,
+                              promotion_postimage_sha256, corpus=None,
+                              evidence_path=None, reason=None):
+    row = {
+        "source": EVIDENCE_SOURCE,
+        "model": model,
+        "role": role,
+        "layer": int(layer),
+        "n": int(n),
+        "corpus": corpus,
+        "req": None,
+        "pos": None,
+        "promotion_preimage_sha256": promotion_preimage_sha256,
+        "promotion_postimage_sha256": promotion_postimage_sha256,
+        "orig_token": None,
+        "corrected_token": None,
+        "emitted_token": None,
+        "correction_required": None,
+        "pass": False,
+        "status": "no_current_signal",
+        "reason": reason or "production-matched observation found no attribution",
+        "manifest": None,
+        "baseline_rc": None,
+        "candidate_rc": None,
+        "evidence_path": evidence_path,
+        "engine_commit": _engine_commit(),
+    }
+    return persist_evidence(row)
 def _ssh(host, command, timeout=30):
     p = subprocess.run(
         ["ssh", host, command],
@@ -216,6 +384,7 @@ def run_preflight(plan_path, log_host, events_log, bin_path, cwd, moe_base,
         pwb.write_remote_promotion_file_atomic(host, before_file, before)
         candidate = dict(before)
         candidate[(role, layer)] = n
+        candidate_hash = guarded._mapping_hash(candidate)
         pwb.write_remote_promotion_file_atomic(
             host, candidate_file, candidate
         )
@@ -228,6 +397,20 @@ def run_preflight(plan_path, log_host, events_log, bin_path, cwd, moe_base,
             baseline_log, max(pos, 19), timeout,
         )
         if rc0 != 0 or not _baseline_ok(out0, orig, corrected, pos):
+            baseline_verdict = {
+                "pass": False,
+                "emitted_token": None,
+                "real_flips": [],
+                "reason": (
+                    f"baseline isolation failed: rc={rc0}; "
+                    f"expected exact {orig}->{corrected} at pos={pos}"
+                ),
+            }
+            persist_evidence(_evidence_row(
+                plan, change, attr, baseline_verdict, candidate_hash,
+                "baseline_failed", baseline_rc=rc0,
+                candidate_rc=None, evidence_path=baseline_log,
+            ))
             raise RuntimeError(
                 f"{role}/L{layer} baseline isolation failed: rc={rc0}; "
                 f"expected exact {orig}->{corrected} at pos={pos}"
@@ -248,6 +431,12 @@ def run_preflight(plan_path, log_host, events_log, bin_path, cwd, moe_base,
             "candidate_log": candidate_log,
         })
         results.append(verdict)
+        evidence_status = "passed" if rc1 == 0 and verdict["pass"] else "failed"
+        persist_evidence(_evidence_row(
+            plan, change, attr, verdict, candidate_hash,
+            evidence_status, baseline_rc=rc0, candidate_rc=rc1,
+            evidence_path=candidate_log,
+        ))
         if rc1 != 0 or not verdict["pass"]:
             report = {
                 "status": "failed",
