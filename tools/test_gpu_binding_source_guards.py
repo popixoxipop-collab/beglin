@@ -31,6 +31,29 @@ class BindingSourceGuardTests(unittest.TestCase):
         self.assertIn("int mlx_gpu_binding_kind(", CPP)
         self.assertIn("int mlx_gpu_binding_kind(", HDR)
 
+    def test_snapshot_restore_api_is_public(self):
+        for symbol in (
+            "mlx_gpu_snapshot_binding",
+            "mlx_gpu_restore_binding_snapshot",
+            "mlx_gpu_drop_binding_snapshot",
+            "mlx_gpu_binding_snapshot_count",
+        ):
+            self.assertIn(symbol, CPP)
+            self.assertIn(symbol, HDR)
+
+    def test_restore_clears_all_representation_maps_before_insert(self):
+        block = CPP.split("int mlx_gpu_restore_binding_snapshot", 1)[1]
+        block = block.split("int mlx_gpu_drop_binding_snapshot", 1)[0]
+        self.assertIn("g_tensors.erase(key)", block)
+        self.assertIn("g_dtensors.erase(key)", block)
+        self.assertIn("g_qng64_tensors.erase(key)", block)
+
+    def test_restore_requires_quiescence_by_contract_comment(self):
+        block = CPP.split("int mlx_gpu_restore_binding_snapshot", 1)[0]
+        self.assertIn("pause admission", block)
+        self.assertIn("drain existing requests", block)
+        self.assertIn("synchronize pending MLX/Metal work", block)
+
 
 if __name__ == "__main__":
     unittest.main()
