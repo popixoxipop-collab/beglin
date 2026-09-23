@@ -16136,3 +16136,36 @@ Durable evidence bundle:
 `/Users/bob/vdsp_p5_pre/2026-09-23_shared_gate14_scaleup/RESULT_FINAL.txt`
 (SHA256 `6a707656eee6a36fcd0a749ef43283df5e358359d65c502b3fb5ad11a1d3cfe6`).
 No production promotion or quarantine state was changed.
+
+## D-l4-9 -- L14 actual serving ladder fully rejected (2026-09-23)
+
+Follow-up live evidence closed the remaining question left by D-l4-8: whether a higher deployable
+n could work even though serving-path n=5 failed. Durable Evidence Contract v2 rows now exist for
+the full qNg64-safe ladder at the exact same production preimage
+`85d05d666aecd1fb45235dd0b3aada32177ccb5d004e06462c38ad9ec77e626e`:
+
+- n=5: row 7, FAIL, `correction REAL FLIP was still required`.
+- n=6: row 6, FAIL, `correction REAL FLIP was still required`.
+- n=7: row 8, FAIL, `correction REAL FLIP was still required`.
+
+All three rows refer to the same fresh WikiText-103 signal (`orig=3912`, `corrected=3000`,
+pos=8; isolated runs renumber req to 0 where applicable), and all candidate processes completed
+normally. `emitted_token=3000` does not make these PASSes: in every case the correction path still
+had to flip the base result, so the actual serving promotion had not fixed the computation.
+
+This produces a useful two-layer result rather than a contradiction:
+- correction-path real qNg64 sweep: n=5/6/7 all PASS, so `target_safe_n(L14)=5`.
+- actual serving-path live evidence: n=5/6/7 all FAIL.
+
+The current ladder-aware P5 planner therefore classifies L14 as `LIVE_LADDER_UNSAFE`, with
+`changes=[]` and `preflight_candidates=[]`. This prevents retrying n=5 forever and also prevents
+silently escalating to n=6/7 without serving-path proof.
+
+Read-only regression verification of the current working tree: P5 planner/controller 19/19 PASS,
+live-preflight 9/9 PASS, and Python compile PASS. The P5 source/test edits producing that ladder
+behavior were already present as concurrent working-tree changes and were deliberately not staged
+by this result-recording step.
+
+Production remains unchanged (`kv_a_proj_with_mqa/L13 n=7`, `shared_up_proj/L3 n=5`) with no
+production quarantine file. Durable candidate JSONLs for all three n values and refreshed
+`SHA256SUMS_GATE14` are under `/Users/bob/vdsp_p5_pre/2026-09-23_shared_gate14_scaleup/`.
