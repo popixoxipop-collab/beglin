@@ -162,11 +162,19 @@ def baseline_suffix(events, targets):
 
 
 def _plan_targets(plan):
+    phase = plan.get("phase")
+    if phase == "P3-lowrisk-auto":
+        allowed_roles = lowrisk.P3_ROLES
+    elif phase == "P5-full-auto":
+        allowed_roles = lowrisk.P5_ROLES
+    else:
+        raise RuntimeError(f"P4 observer does not recognize plan phase {phase!r}")
+
     targets = []
     for c in plan.get("changes", []):
         if c.get("action") not in ("ADD", "UPGRADE"):
             continue
-        if c["role"] not in lowrisk.P3_ROLES:
+        if c["role"] not in allowed_roles:
             continue
         if c.get("new_n") is None:
             continue
@@ -185,7 +193,14 @@ def arm(plan_path, log_host, log_path, state_path, demotion_file,
         )
     targets = _plan_targets(plan)
     if not targets:
-        raise RuntimeError("plan has no P3 ADD/UPGRADE target to observe")
+        raise RuntimeError("plan has no observable ADD/UPGRADE target")
+    if (
+        apply_after and plan.get("phase") == "P5-full-auto" and
+        os.environ.get(lowrisk.P5_ENABLE_ENV) != "1"
+    ):
+        raise RuntimeError(
+            f"P5 apply kill switch is OFF: set {lowrisk.P5_ENABLE_ENV}=1"
+        )
 
     blob = _read_bytes(log_host, log_path)
     events = parse_events(blob, model=plan["model"])
@@ -272,7 +287,7 @@ def _read_demotion_targets(host, path):
             text = f.read()
     else:
         p = subprocess.run(
-            ["ssh", host, "sh", "-c", f"test -f {path} && cat {path} || true"],
+            ["ssh", host, f"test -f {path} && cat {path} || true"],
             capture_output=True, text=True, timeout=30,
         )
         if p.returncode != 0:
@@ -307,31 +322,48 @@ def _write_demotion_targets_atomic(host, path, targets):
         raise RuntimeError(f"cannot write demotion file: {p.stderr}")
 def _demote_failed(state, failed):
     host = state["ssh_host"]
-    current = pwb.read_remote_promotion_file(
-        host, state["promotion_file"]
-    )
-    merged = dict(current)
-    demoted = []
-    for t in failed:
-        key = (t["role"], int(t["layer"]))
-        if current.get(key) != int(t["new_n"]):
-            continue
-        merged.pop(key, None)
-        demoted.append(key)
-    if not demoted:
-        return []
+    promotion_file = state["promotion_file"]
+    lock = guarded._acquire_lock(host, promotion_file)
+    try:
+        current = pwb.read_remote_promotion_file(host, promotion_file)
+        merged = dict(current)
+        demoted = []
+        for t in failed:
+            key = (t["role"], int(t["layer"]))
+            # State may have legitimately changed since observation began.
+            # Never demote a different n or a target already removed elsewhere.
+            if current.get(key) != int(t["new_n"]):
+                continue
+            merged.pop(key, None)
+            demoted.append(key)
+        if not demoted:
+            return []
 
-    pwb.write_remote_promotion_file_atomic(
-        host, state["promotion_file"], merged
-    )
-    live_demotions = _read_demotion_targets(
-        host, state["demotion_file"]
-    )
-    live_demotions.update(demoted)
-    _write_demotion_targets_atomic(
-        host, state["demotion_file"], live_demotions
-    )
-    return demoted
+        # Hot-control first: a running P4-aware CPU engine can revert immediately.
+        # If the subsequent cold-start-file update fails, the safer state is still
+        # "currently demoted + quarantined", not "still serving the bad promotion".
+        live_demotions = _read_demotion_targets(host, state["demotion_file"])
+        live_demotions.update(demoted)
+        _write_demotion_targets_atomic(
+            host, state["demotion_file"], live_demotions
+        )
+        demotion_readback = _read_demotion_targets(
+            host, state["demotion_file"]
+        )
+        if demotion_readback != live_demotions:
+            raise RuntimeError("P4 demotion-control exact readback mismatch")
+
+        pwb.write_remote_promotion_file_atomic(
+            host, promotion_file, merged
+        )
+        promotion_readback = pwb.read_remote_promotion_file(
+            host, promotion_file
+        )
+        if promotion_readback != merged:
+            raise RuntimeError("P4 promotion-file exact readback mismatch")
+        return demoted
+    finally:
+        guarded._release_lock(host, lock)
 
 
 def check(state_path, audit_path):

@@ -40,6 +40,7 @@ class ObserverTests(unittest.TestCase):
         self.audit = os.path.join(self.tmp.name, "audit.jsonl")
         self.demote = os.path.join(self.tmp.name, "demote.txt")
         os.environ.pop(obs.P4_ENABLE_ENV, None)
+        os.environ.pop(obs.lowrisk.P5_ENABLE_ENV, None)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -172,18 +173,25 @@ class ObserverTests(unittest.TestCase):
             result["criteria"]["attribution_count_strictly_lower"]
         )
 
+    @patch.object(obs.guarded, "_release_lock")
+    @patch.object(obs.guarded, "_acquire_lock", return_value="/lock")
     @patch.object(obs.pwb, "write_remote_promotion_file_atomic")
     @patch.object(obs.pwb, "read_remote_promotion_file")
     @patch.object(obs, "_write_demotion_targets_atomic")
     @patch.object(obs, "_read_demotion_targets")
     def test_demotion_preserves_unrelated_promotions(
-        self, read_demote, write_demote, read_promote, write_promote
+        self, read_demote, write_demote, read_promote, write_promote,
+        _lock, _unlock
     ):
-        read_promote.return_value = {
+        current = {
             ("shared_up_proj", 3): 5,
             ("kv_a_proj_with_mqa", 13): 7,
         }
-        read_demote.return_value = {("shared_gate_proj", 14)}
+        merged = {("kv_a_proj_with_mqa", 13): 7}
+        read_promote.side_effect = [current, merged]
+        existing_demotions = {("shared_gate_proj", 14)}
+        final_demotions = existing_demotions | {("shared_up_proj", 3)}
+        read_demote.side_effect = [existing_demotions, final_demotions]
         state = {
             "ssh_host": "fake",
             "promotion_file": "/tmp/promotion.txt",
@@ -195,14 +203,10 @@ class ObserverTests(unittest.TestCase):
         demoted = obs._demote_failed(state, failed)
         self.assertEqual(demoted, [("shared_up_proj", 3)])
         write_promote.assert_called_once_with(
-            "fake", "/tmp/promotion.txt",
-            {("kv_a_proj_with_mqa", 13): 7},
+            "fake", "/tmp/promotion.txt", merged,
         )
         written = write_demote.call_args.args[2]
-        self.assertEqual(
-            written,
-            {("shared_gate_proj", 14), ("shared_up_proj", 3)},
-        )
+        self.assertEqual(written, final_demotions)
     def test_local_demotion_file_round_trip(self):
         obs._write_demotion_targets_atomic(
             "local", self.demote,
@@ -212,6 +216,78 @@ class ObserverTests(unittest.TestCase):
         self.assertEqual(
             got,
             {("shared_up_proj", 3), ("shared_gate_proj", 14)},
+        )
+
+    def test_p5_plan_targets_accept_attention(self):
+        plan = {
+            "phase": "P5-full-auto",
+            "changes": [{
+                "action": "ADD", "role": "kv_a_proj_with_mqa",
+                "layer": 4, "new_n": 5,
+            }],
+        }
+        self.assertEqual(
+            obs._plan_targets(plan),
+            [{"role": "kv_a_proj_with_mqa", "layer": 4, "new_n": 5}],
+        )
+
+    @patch.object(obs.guarded, "apply_plan")
+    def test_p5_direct_apply_requires_kill_switch(self, apply):
+        os.environ.pop(obs.lowrisk.P5_ENABLE_ENV, None)
+        plan = {
+            "version": 1, "phase": "P5-full-auto", "status": "prepared",
+            "model": "m", "ssh_host": "fake",
+            "promotion_file": "/tmp/promotion.txt",
+            "before": [], "after": [],
+            "before_sha256": obs.guarded._mapping_hash({}),
+            "after_sha256": obs.guarded._mapping_hash({}),
+            "changes": [{
+                "action": "ADD", "role": "kv_a_proj_with_mqa",
+                "layer": 4, "new_n": 5,
+            }], "decisions": [],
+        }
+        obs.guarded._atomic_json(self.plan, plan)
+        with self.assertRaisesRegex(RuntimeError, "P5 apply kill switch is OFF"):
+            obs.arm(
+                self.plan, "local", self.log, self.state,
+                self.demote, self.audit, apply_after=True,
+            )
+        apply.assert_not_called()
+
+    @patch.object(obs.guarded, "apply_plan")
+    def test_p5_missing_pre_attribution_blocks_apply(self, apply):
+        os.environ[obs.lowrisk.P5_ENABLE_ENV] = "1"
+        plan = {
+            "version": 1, "phase": "P5-full-auto", "status": "prepared",
+            "model": "m", "ssh_host": "fake",
+            "promotion_file": "/tmp/promotion.txt",
+            "before": [], "after": [],
+            "before_sha256": obs.guarded._mapping_hash({}),
+            "after_sha256": obs.guarded._mapping_hash({}),
+            "changes": [{
+                "action": "ADD", "role": "kv_a_proj_with_mqa",
+                "layer": 4, "new_n": 5,
+            }], "decisions": [],
+        }
+        obs.guarded._atomic_json(self.plan, plan)
+        write_rows(self.log, [event(0, 0.05)])
+        with self.assertRaisesRegex(RuntimeError, "baseline lacks"):
+            obs.arm(
+                self.plan, "local", self.log, self.state,
+                self.demote, self.audit, apply_after=True,
+            )
+        apply.assert_not_called()
+
+    @patch.object(obs.subprocess, "run")
+    def test_remote_demotion_read_uses_single_ssh_command(self, run):
+        run.return_value.returncode = 0
+        run.return_value.stdout = "kv_a_proj_with_mqa 4\n"
+        run.return_value.stderr = ""
+        got = obs._read_demotion_targets("bob", "/tmp/d")
+        self.assertEqual(got, {("kv_a_proj_with_mqa", 4)})
+        self.assertEqual(
+            run.call_args.args[0],
+            ["ssh", "bob", "test -f /tmp/d && cat /tmp/d || true"],
         )
 
 

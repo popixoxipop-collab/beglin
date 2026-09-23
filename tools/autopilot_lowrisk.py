@@ -26,6 +26,7 @@ import autopilot_shadow as shadow
 import promotion_writeback as pwb
 
 P3_ENABLE_ENV = "QWEN_AUTOPILOT_P3"
+P5_ENABLE_ENV = "QWEN_AUTOPILOT_P5"
 DEFAULT_PLAN = "/private/tmp/qng64_ctl/autopilot_p3_plan.json"
 DEFAULT_AUDIT = "/private/tmp/qng64_ctl/autopilot_p3_audit.jsonl"
 
@@ -37,6 +38,15 @@ P3_ROLES = frozenset({
     "shared_up_proj",
     "shared_down_proj",
 })
+ATTENTION_ROLES = frozenset({
+    "q_proj",
+    "kv_a_proj_with_mqa",
+    "kv_b_proj",
+    "o_proj",
+    "k_proj",
+    "v_proj",
+})
+P5_ROLES = P3_ROLES | ATTENTION_ROLES
 DEFAULT_QUARANTINE_FILE = "/private/tmp/qng64_ctl/demotion_nq_live.txt"
 _SAFE_HOST = re.compile(r"^[A-Za-z0-9._-]+$")
 _SAFE_PATH = re.compile(r"^/[A-Za-z0-9._/-]+$")
@@ -48,7 +58,7 @@ def _read_quarantine(ssh_host, path):
     if not _SAFE_HOST.fullmatch(ssh_host) or not _SAFE_PATH.fullmatch(path):
         raise ValueError("unsafe quarantine host/path")
     p = subprocess.run(
-        ["ssh", ssh_host, "sh", "-c", f"test -f {path} && cat {path} || true"],
+        ["ssh", ssh_host, f"test -f {path} && cat {path} || true"],
         capture_output=True, text=True, timeout=30,
     )
     if p.returncode != 0:

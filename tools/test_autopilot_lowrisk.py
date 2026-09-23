@@ -137,6 +137,18 @@ class LowRiskAutopilotTests(unittest.TestCase):
         self.assertEqual(result["status"], "prepared")
         apply.assert_not_called()
 
+    @patch.object(p3.subprocess, "run")
+    def test_remote_quarantine_read_uses_single_ssh_command(self, run):
+        run.return_value.returncode = 0
+        run.return_value.stdout = "shared_up_proj 3\n"
+        run.return_value.stderr = ""
+        got = p3._read_quarantine("bob", "/tmp/q")
+        self.assertEqual(got, {("shared_up_proj", 3)})
+        self.assertEqual(
+            run.call_args.args[0],
+            ["ssh", "bob", "test -f /tmp/q && cat /tmp/q || true"],
+        )
+
     @patch.object(p3, "build_plan")
     @patch.object(p3.guarded, "apply_plan")
     def test_enabled_no_changes_does_not_mutate(self, apply, build):
