@@ -102,6 +102,41 @@ class LowRiskAutopilotTests(unittest.TestCase):
             "shared_down_proj", 4, 7, 5, 2, {"per_corpus": {}}
         )
         self.assertEqual(d["action"], "P2_REVIEW_DOWNGRADE")
+    @patch.object(p3, "_read_quarantine", return_value={("shared_up_proj", 3)})
+    @patch.object(p3.shadow, "fetch_candidates")
+    @patch.object(p3.pwb, "target_safe_n")
+    @patch.object(p3.pwb, "read_remote_promotion_file", return_value={})
+    def test_p4_quarantine_blocks_repromotion(
+        self, _read, safe_n, fetch, _quarantine
+    ):
+        fetch.return_value = [{
+            "role": "shared_up_proj", "layer": 3,
+            "event_count": 14, "current_bits": 4,
+        }]
+        plan = p3.build_plan(
+            "m", 10, "h", "/x", self.plan, quarantine_file="/q"
+        )
+        self.assertEqual(plan["decisions"][0]["action"], "P4_QUARANTINED")
+        self.assertEqual(plan["changes"], [])
+        safe_n.assert_not_called()
+
+    @patch.object(p3, "build_plan")
+    @patch.object(p3.guarded, "apply_plan")
+    def test_prepare_only_keeps_plan_for_p4(self, apply, build):
+        build.return_value = {
+            "phase": "P3-lowrisk-auto",
+            "status": "prepared",
+            "model": "m",
+            "decisions": [],
+            "changes": [{"action": "ADD"}],
+        }
+        result = p3.run_once(
+            "m", 10, "h", "/x", self.plan, self.audit,
+            prepare_only=True,
+        )
+        self.assertEqual(result["status"], "prepared")
+        apply.assert_not_called()
+
     @patch.object(p3, "build_plan")
     @patch.object(p3.guarded, "apply_plan")
     def test_enabled_no_changes_does_not_mutate(self, apply, build):

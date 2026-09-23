@@ -7100,6 +7100,7 @@ static void moe_lt_active_init(void) {
 
 static int g_moe_promoted[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];   // avoid redundant reapply/logging on repeat polls
 static const char *g_moe_promotion_file = NULL;   // QWEN_MOE_PROMOTION_FILE, unset = feature off
+static const char *g_moe_demotion_file_nq = NULL; // P4: startup-cached QWEN_MOE_DEMOTION_FILE_NQ
 
 // D-qNg64-3 (L3a): arbitrary-n promotion tracking, separate from g_moe_promoted (which is the
 // bits=16-only hi-mirror mechanism above and stays untouched). Stores the promoted n itself
@@ -7109,6 +7110,7 @@ static int g_moe_promoted_nq[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
 // Forward decl: defined near the qNg64 registration functions it calls (st_register_moe_*_
 // qNg64_as()), which are declared later in this file than this startup call site needs.
 static void moe_promotion_nq_init(void);
+static void moe_demotion_nq_maybe_apply(void);   // P4: admission-time pointer rollback only; never builds weights
 #ifdef QWEN_GPU_MLX
 // D-qNg64-gpu-1: GPU mirror of g_moe_promoted_nq above -- kept separate rather than reused
 // because the two gates are mutually-exclusive dispatch branches within one process (main()'s
@@ -7501,6 +7503,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     // D-roadmap-4 Phase 6 (D6): closed-loop promotion source, see moe_promotion_maybe_apply()'s
     // own comment for why this is a local file this round, not Supabase directly.
     const char *env_promotion_file = getenv("QWEN_MOE_PROMOTION_FILE");
+    const char *env_demotion_file_nq = getenv("QWEN_MOE_DEMOTION_FILE_NQ");   // P4: demotion-only hot control
 
     int B            = env_slots  && env_slots[0]  ? atoi(env_slots)  : 4;
     int R            = env_reqs   && env_reqs[0]   ? atoi(env_reqs)   : 12;
@@ -7606,6 +7609,8 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     // g_moe_lt_active -- every other verify-mode gate is untouched.
     moe_lt_active_init();
     moe_promotion_nq_init();   // D-qNg64-3 (L3a): independent of g_moe_neartie_correct_on, see its own comment
+    g_moe_demotion_file_nq = (env_demotion_file_nq && env_demotion_file_nq[0]) ? env_demotion_file_nq : NULL;
+    if (g_moe_demotion_file_nq) fprintf(stderr, "[moe demotion nq] polling '%s' once per request admission (P4)\n", g_moe_demotion_file_nq);
     g_moe_lt_cur = g_moe_lt_active;
     g_moe_promotion_file = (env_promotion_file && env_promotion_file[0]) ? env_promotion_file : NULL;
     if (g_moe_promotion_file) fprintf(stderr, "[moe promotion] polling '%s' once per request admission (D6)\n", g_moe_promotion_file);
@@ -7701,6 +7706,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
             if (mcb_freed_before[s]) admitted_after_evict++;
             rq_slot_of[r] = s;
             moe_promotion_maybe_apply();   // D-roadmap-4 Phase 6 (D6): once per admission, not per token
+            moe_demotion_nq_maybe_apply(); // P4: zero-build qNg64 rollback; pointer swap back to base only
             // D-d5-15: re-read the global tensors after promotion. Everything else the forward
             // uses is reached through g_moe_lt_cur, which promotion updates in place; these two
             // are locals captured before the loop, so they have to be refreshed here or a
@@ -16484,6 +16490,56 @@ static void moe_promotion_nq_init(void) {
     fclose(f);
     g_st_moe = saved_st_moe;
     fprintf(stderr, "[moe promotion nq] '%s': %d lines, %d promotions applied\n", path, n_lines, n_applied);
+}
+
+// L4 P4: admission-time qNg64 DEMOTION only. Promotion still materializes qNg64 shadows once
+// at startup because building them during request admission can stall serving. Demotion needs no
+// build: the original g_moe_lt tensor is still resident, so reverting is a single pointer swap.
+// QWEN_MOE_DEMOTION_FILE_NQ format is "<role> <layer>". Missing file = no-op; malformed or
+// architecture-inapplicable entries are skipped rather than FATALing serving. If a separate
+// bits=16 promotion is active for the same target, restore that hi pointer instead of base.
+static void moe_demotion_nq_maybe_apply(void) {
+    const char *path = g_moe_demotion_file_nq;
+    if (!path) return;
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    char role_buf[64]; int layer;
+    while (fscanf(f, "%63s %d", role_buf, &layer) == 2) {
+        int role_i = moe_attrib_role_from_name(role_buf);
+        if (role_i < 0 || layer < 0 || layer >= MOE_NL) {
+            fprintf(stderr, "[moe demotion nq] SKIP invalid target role=%s layer=%d\n", role_buf, layer);
+            continue;
+        }
+        MoeAttribRole role = (MoeAttribRole)role_i;
+        int old_n = g_moe_promoted_nq[role][layer];
+        if (!old_n) continue;
+        MoeLayerTensors *dst = &g_moe_lt_active[layer];
+        MoeLayerTensors *src = g_moe_promoted[role][layer] ? &g_moe_lt_hi[layer] : &g_moe_lt[layer];
+        switch (role) {
+            case MOE_ATTRIB_Q_PROJ:      dst->q_proj      = src->q_proj;      break;
+            case MOE_ATTRIB_KV_A_PROJ:   dst->kv_a_proj   = src->kv_a_proj;   break;
+            case MOE_ATTRIB_KV_B_PROJ:   dst->kv_b_proj   = src->kv_b_proj;   break;
+            case MOE_ATTRIB_O_PROJ:      dst->o_proj      = src->o_proj;      break;
+            case MOE_ATTRIB_K_PROJ:      dst->k_proj      = src->k_proj;      break;
+            case MOE_ATTRIB_V_PROJ:      dst->v_proj      = src->v_proj;      break;
+            case MOE_ATTRIB_DENSE_GATE:  dst->dense_gate  = src->dense_gate;  break;
+            case MOE_ATTRIB_DENSE_UP:    dst->dense_up    = src->dense_up;    break;
+            case MOE_ATTRIB_DENSE_DOWN:  dst->dense_down  = src->dense_down;  break;
+            case MOE_ATTRIB_SHARED_GATE: dst->shared_gate = src->shared_gate; break;
+            case MOE_ATTRIB_SHARED_UP:   dst->shared_up   = src->shared_up;   break;
+            case MOE_ATTRIB_SHARED_DOWN: dst->shared_down = src->shared_down; break;
+            case MOE_ATTRIB_EXPERT_GATE: dst->switch_gate = src->switch_gate; break;
+            case MOE_ATTRIB_EXPERT_UP:   dst->switch_up   = src->switch_up;   break;
+            case MOE_ATTRIB_EXPERT_DOWN: dst->switch_down = src->switch_down; break;
+            default:
+                fprintf(stderr, "[moe demotion nq] SKIP unsupported global role=%s layer=%d\n", role_buf, layer);
+                continue;
+        }
+        g_moe_promoted_nq[role][layer] = 0;
+        fprintf(stderr, "[moe demotion nq] role=%s layer=%d DEMOTED from qNg64(n=%d) to %s\n",
+                role_buf, layer, old_n, g_moe_promoted[role][layer] ? "bits=16 promotion" : "production base");
+    }
+    fclose(f);
 }
 
 #ifdef QWEN_GPU_MLX

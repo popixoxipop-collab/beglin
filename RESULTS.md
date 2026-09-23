@@ -15779,3 +15779,79 @@ Current limitation: qNg64 promotion config is still consumed at engine startup; 
 the autonomous control-plane decision/write path, not zero-downtime qNg64 hot-reload. The older
 bits=16 `g_moe_lt_active` path supports admission-time pointer swaps, but qNg64 intentionally
 keeps startup materialization to avoid unmeasured request-admission build stalls.
+
+## D-l4-4 -- P4 post-promotion observation + hot demotion (2026-09-23)
+
+Implemented `tools/autopilot_observer.py` and a CPU online qNg64 demotion path. P4 arms only
+prepared P3 ADD/UPGRADE targets, derives its baseline window from real JSONL data (shortest recent
+near-tie-event suffix containing at least one attribution for every target), then waits for an
+equal-size post-promotion near-tie-event window. No percentage/tolerance constant is invented:
+a target is healthy only when its attributed-event count strictly falls and, if any attributed
+events remain, their median margin strictly rises.
+
+The arm/apply race is closed explicitly: baseline is captured before apply, but `begin` re-reads
+the log after apply and moves the post-window byte offset to the new EOF; any events emitted while
+the guarded transaction was executing are excluded. Log truncation/prefix mutation is detected by
+SHA-256 and aborts observation rather than silently comparing unrelated windows.
+
+If `QWEN_AUTOPILOT_P4=1` and a target fails, P4 removes only that exact target/n from the remote
+cold-start promotion file, preserving unrelated promotions, and atomically adds `<role> <layer>`
+to the demotion/quarantine file. P3 now reads that file and emits `P4_QUARANTINED`, so an
+auto-demoted target cannot immediately thrash back into an automatic re-promotion.
+
+## D-l4-4 -- P4 post-promotion observation + automatic qNg64 demotion (2026-09-23)
+
+Implemented `tools/autopilot_observer.py` plus a demotion-only hot path in `qwen_infer.c`.
+P4 is intentionally restricted to the P3 dense/shared FFN subset. It does not invent a fixed
+percentage threshold: `arm` takes the shortest recent PRE-promotion near-tie window containing
+at least one attribution for every changed target, and `check` waits for the same number of
+POST-promotion near-tie events. A target is healthy only when its attributed-event count strictly
+falls and, if attributed events remain, their median margin strictly rises. This gives equal
+near-tie-event sample sizes and a direction-of-improvement rule without an arbitrary +X% cutoff.
+
+The observer reads the engine JSONL directly because that stream already carries `ts_unix`,
+event margins and one-to-many attribution rows. The current Supabase aggregate
+(`event_count`/`min_margin_observed`) cannot reconstruct a precise pre/post window, and the
+push path does not preserve the engine's `ts_unix`; P4 therefore avoids pretending the
+aggregate has time-window provenance it does not have.
+
+Race handling: `arm` snapshots the PRE window before apply. After the guarded P3 plan is
+applied, `begin_observation()` moves the POST byte offset to the current end of the same JSONL,
+so any events emitted during arm→apply are excluded rather than misclassified as post-promotion.
+The JSONL prefix SHA256 is checked on every observation to refuse silent truncation/rotation.
+
+On a failed observation with `QWEN_AUTOPILOT_P4=1`, P4 removes only the failed target from the
+cold-start qNg64 promotion file and atomically adds `<role> <layer>` to the demotion/quarantine
+file. P3 now reads that quarantine file and labels such targets `P4_QUARANTINED`, preventing an
+immediate automatic re-promotion loop. Downgrade is therefore sticky until an operator clears
+the quarantine after new evidence.
+
+The CPU online engine now reads `QWEN_MOE_DEMOTION_FILE_NQ` once per request admission. This is
+demotion-only: it never builds a new qNg64 tensor on the hot path. If a listed target is currently
+qNg64-promoted, the already-resident production pointer (or an existing bits=16 promotion, if
+present) is restored and `g_moe_promoted_nq[role][layer]` is cleared. Missing/invalid entries are
+best-effort skips rather than serving-fatal configuration errors.
+
+Regression coverage: P4 observer 9/9 PASS, P3 including quarantine/prepare-only 8/8 PASS, P2
+6/6 PASS; Python byte-compile and plain-caller `clang -O3 -w -c qwen_infer.c` both PASS.
+
+Real bad-promotion canary: PRE window had 2 near-tie events with `shared_up_proj/L3` attributed
+once (rate 0.5, median attributed margin 0.02). The synthetic POST window had the same 2-event
+sample size, still one attribution (rate 0.5) with margin 0.03. Margin improved, but attribution
+count did not strictly fall, so P4 correctly classified the target unhealthy and auto-demoted it.
+The scratch promotion file returned to only `kv_a_proj_with_mqa 13 7`, and the scratch demotion
+file contained `shared_up_proj 3`. Production `promotion_nq_live.txt` remained unchanged.
+
+Real engine canary on bob: a separate current-source CPU binary loaded
+`shared_up_proj/L3 qNg64(n=5)` from a scratch promotion file, logged the P4 demotion-file poll,
+then at first request admission logged
+`DEMOTED from qNg64(n=5) to production base`. The request completed normally:
+`RESULT: MoE-4b online cbatch complete, B=4 R=1 PREFILL_MODE=1`. The caller object was also
+checked for SME/SVE leakage after a plain compile; none was present.
+
+Operational flow for future P3 changes:
+1. `autopilot_lowrisk.py --prepare-only ...` leaves an exact prepared P3 plan.
+2. `autopilot_observer.py arm --plan ... --events-log ... --apply` captures PRE, guarded-applies,
+   and starts the POST window after apply.
+3. `autopilot_observer.py check ...` collects until the equal-size POST window is complete, then
+   marks healthy or, with the P4 kill switch enabled, auto-demotes failed P3 targets.

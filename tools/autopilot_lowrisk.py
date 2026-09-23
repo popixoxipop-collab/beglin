@@ -17,6 +17,8 @@ The controller is opt-in. Unless QWEN_AUTOPILOT_P3=1, run mode is read-only.
 import argparse
 import json
 import os
+import re
+import subprocess
 from datetime import datetime, timezone
 
 import autopilot_guarded as guarded
@@ -35,6 +37,28 @@ P3_ROLES = frozenset({
     "shared_up_proj",
     "shared_down_proj",
 })
+DEFAULT_QUARANTINE_FILE = "/private/tmp/qng64_ctl/demotion_nq_live.txt"
+_SAFE_HOST = re.compile(r"^[A-Za-z0-9._-]+$")
+_SAFE_PATH = re.compile(r"^/[A-Za-z0-9._/-]+$")
+
+
+def _read_quarantine(ssh_host, path):
+    if not path:
+        return set()
+    if not _SAFE_HOST.fullmatch(ssh_host) or not _SAFE_PATH.fullmatch(path):
+        raise ValueError("unsafe quarantine host/path")
+    p = subprocess.run(
+        ["ssh", ssh_host, "sh", "-c", f"test -f {path} && cat {path} || true"],
+        capture_output=True, text=True, timeout=30,
+    )
+    if p.returncode != 0:
+        raise RuntimeError(f"cannot read P4 quarantine file: {p.stderr}")
+    toks = p.stdout.split()
+    if len(toks) % 2:
+        raise RuntimeError("malformed P4 quarantine file")
+    return {(toks[i], int(toks[i + 1])) for i in range(0, len(toks), 2)}
+
+
 def _audit(path, payload):
     directory = os.path.dirname(path) or "."
     os.makedirs(directory, exist_ok=True)
@@ -66,8 +90,10 @@ def _decision(role, layer, old_n, safe_n, event_count, detail):
     return base
 
 
-def build_plan(model, limit, ssh_host, promotion_file, plan_path):
+def build_plan(model, limit, ssh_host, promotion_file, plan_path,
+               quarantine_file=None):
     existing = pwb.read_remote_promotion_file(ssh_host, promotion_file)
+    quarantine = _read_quarantine(ssh_host, quarantine_file) if quarantine_file else set()
     ranked = shadow.fetch_candidates(model, limit)[:limit]
     by_target = {}
     for c in ranked:
@@ -93,8 +119,16 @@ def build_plan(model, limit, ssh_host, promotion_file, plan_path):
     after = dict(existing)
     decisions, changes = [], []
     for (role, layer), c in sorted(by_target.items()):
-        safe_n, detail = pwb.target_safe_n(model, role, layer)
         old_n = existing.get((role, layer))
+        if (role, layer) in quarantine:
+            decisions.append({
+                "role": role, "layer": layer, "old_n": old_n,
+                "safe_n": None, "event_count": c.get("event_count"),
+                "action": "P4_QUARANTINED",
+                "detail": {"reason": "P4 demotion quarantine blocks automatic re-promotion"},
+            })
+            continue
+        safe_n, detail = pwb.target_safe_n(model, role, layer)
         d = _decision(
             role, layer, old_n, safe_n, c.get("event_count"), detail
         )
@@ -119,6 +153,7 @@ def build_plan(model, limit, ssh_host, promotion_file, plan_path):
         "limit": limit,
         "ssh_host": ssh_host,
         "promotion_file": promotion_file,
+        "quarantine_file": quarantine_file,
         "before": guarded._rows(existing),
         "after": guarded._rows(after),
         "before_sha256": guarded._mapping_hash(existing),
@@ -146,9 +181,22 @@ def print_plan(plan):
 
 
 def run_once(model, limit, ssh_host, promotion_file, plan_path, audit_path,
-             dry_run=False):
-    plan = build_plan(model, limit, ssh_host, promotion_file, plan_path)
+             quarantine_file=None, dry_run=False, prepare_only=False):
+    plan = build_plan(
+        model, limit, ssh_host, promotion_file, plan_path,
+        quarantine_file=quarantine_file,
+    )
     print_plan(plan)
+
+    if prepare_only:
+        _audit(audit_path, {
+            "phase": plan["phase"],
+            "status": "prepared",
+            "model": model,
+            "changes": plan["changes"],
+        })
+        print("[autopilot-p3] prepared only; hand this plan to P4 arm --apply")
+        return plan
 
     enabled = os.environ.get(P3_ENABLE_ENV) == "1"
     if dry_run or not enabled:
@@ -211,9 +259,16 @@ def main():
     ap.add_argument("--limit", type=int, default=100)
     ap.add_argument("--ssh-host", default="bob")
     ap.add_argument("--promotion-file", default=pwb.DEFAULT_PROMOTION_FILE)
+    ap.add_argument("--quarantine-file", default=DEFAULT_QUARANTINE_FILE,
+                    help="P4 two-column demotion/quarantine file; listed targets are never auto-repromoted")
     ap.add_argument("--plan", default=DEFAULT_PLAN)
     ap.add_argument("--audit", default=DEFAULT_AUDIT)
-    ap.add_argument("--dry-run", action="store_true")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument(
+        "--prepare-only", action="store_true",
+        help="build a prepared P3 plan without applying it (for P4 arm --apply)",
+    )
     args = ap.parse_args()
     run_once(
         args.model,
@@ -222,7 +277,9 @@ def main():
         args.promotion_file,
         args.plan,
         args.audit,
+        quarantine_file=args.quarantine_file,
         dry_run=args.dry_run,
+        prepare_only=args.prepare_only,
     )
 
 
