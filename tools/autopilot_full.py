@@ -19,6 +19,7 @@ import autopilot_guarded as guarded
 import autopilot_lowrisk as lowrisk
 import autopilot_observer as observer
 import autopilot_live_preflight as live_preflight
+import attribution_provenance as provenance
 import autopilot_shadow as shadow
 import promotion_writeback as pwb
 import quant_search_n as qsn
@@ -185,6 +186,20 @@ def _serialize_new_work(existing, decisions, changes, preflight_candidates):
     return after, selected_changes, selected_preflight
 
 
+def _needs_real_sweep(detail):
+    per = detail.get("per_corpus", {}) if isinstance(detail, dict) else {}
+    if any(v.get("unsafe_events") for v in per.values() if isinstance(v, dict)):
+        return False
+    reason = (detail or {}).get("reason", "")
+    markers = (
+        "no prior sweep data",
+        "no source='qng64_real' rows exist yet",
+        "have no source='qng64_real' data yet",
+        "not fully real-kernel-verified",
+    )
+    return any(m in reason for m in markers)
+
+
 def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
                plan_path):
     existing = pwb.read_remote_promotion_file(ssh_host, promotion_file)
@@ -215,7 +230,7 @@ def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
         }
 
     after = dict(existing)
-    decisions, changes, preflight_candidates = [], [], []
+    decisions, changes, preflight_candidates, real_sweep_candidates = [], [], [], []
     for (role, layer), c in sorted(by_target.items()):
         old_n = existing.get((role, layer))
         if (role, layer) in quarantine:
@@ -238,6 +253,25 @@ def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
             c.get("event_count"), detail,
         )
         d["source_rows"] = c.get("source_rows", 0)
+
+        proposed_action = d["action"]
+        if safe_n is None and old_n is None and _needs_real_sweep(detail):
+            try:
+                prov = provenance.fetch_best(model, role, layer)
+            except provenance.ProvenanceStoreUnavailable as exc:
+                prov = None
+                d["action"] = "PROVENANCE_STORE_UNAVAILABLE"
+                d["provenance_error"] = str(exc)
+            if prov is not None:
+                d["action"] = "NEEDS_REAL_SWEEP"
+                d["provenance"] = prov
+                real_sweep_candidates.append({
+                    "model": model, "role": role, "layer": layer,
+                    "event_count": c.get("event_count"),
+                    "provenance": prov,
+                })
+            elif d.get("action") == "SKIP_UNSAFE":
+                d["action"] = "NEEDS_ATTRIBUTION_PROVENANCE"
 
         proposed_action = d["action"]
         if proposed_action in ("ADD", "UPGRADE"):
@@ -288,6 +322,7 @@ def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
         "decisions": decisions,
         "changes": changes,
         "preflight_candidates": preflight_candidates,
+        "real_sweep_candidates": sorted(real_sweep_candidates, key=_work_priority),
         "evidence_contract": "p5-v2",
         "serialization": "one-target-per-preimage",
         "p5_roles": sorted(lowrisk.P5_ROLES),
@@ -300,7 +335,8 @@ def print_plan(plan):
     print(
         f"[autopilot-p5] targets={len(plan['decisions'])} "
         f"changes={len(plan['changes'])} "
-        f"preflight_candidates={len(plan.get('preflight_candidates', []))}"
+        f"preflight_candidates={len(plan.get('preflight_candidates', []))} "
+        f"real_sweep_candidates={len(plan.get('real_sweep_candidates', []))}"
     )
     for d in plan["decisions"]:
         old = "<none>" if d["old_n"] is None else f"n={d['old_n']}"

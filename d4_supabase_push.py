@@ -36,6 +36,30 @@ def post(url, key, path, rows):
         print(f"[d4 push] WARN {type(e).__name__} pushing {len(rows)} rows to {path}: {e}", file=sys.stderr)
         return False
 
+
+
+def upsert_provenance(url, key, rows):
+    if not rows:
+        return True
+    conflict = 'model,corpus,role,layer,manifest,req,pos,orig_argmax,corrected_argmax'
+    req = urllib.request.Request(
+        url + '/rest/v1/moe_attribution_provenance?on_conflict=' + conflict,
+        data=json.dumps(rows).encode(),
+        headers={
+            'apikey': key,
+            'Authorization': f'Bearer {key}',
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates,return=minimal',
+        },
+        method='POST',
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10)
+        return True
+    except Exception as e:
+        print(f'[d4 push] WARN provenance upsert failed: {e}', file=sys.stderr)
+        return False
+
 def rpc_increment(url, key, model, corpus, role, layer, margin=None):
     # D-quant-supabase-2: increment_role_precision() now takes p_corpus too --
     # moe_role_precision_state's PK widened to (model,corpus,role,layer) so a
@@ -118,12 +142,17 @@ def main():
                 lines.append(json.loads(line))
         new_offset = f.tell()
 
-    margin_by_key = {}
+    event_by_key = {}
+    ambiguous_event_keys = set()
     for row in lines:
         if row.get("kind") == "event":
-            margin_by_key[(row["model"], row["corpus"], row["req"], row["pos"])] = row["margin"]
+            key = (row["model"], row["corpus"], row["req"], row["pos"])
+            if key in event_by_key:
+                ambiguous_event_keys.add(key)
+            else:
+                event_by_key[key] = row
 
-    events, attribs = [], []
+    events, attribs, provenance = [], [], []
     n_events = n_attribs = 0
     for row in lines:
         if row.get("kind") == "event":
@@ -139,7 +168,26 @@ def main():
             n_events += 1
         elif row.get("kind") == "attribution":
             ev_key = (row["model"], row["corpus"], row["req"], row["pos"])
-            attribs.append((row["model"], row["corpus"], row["role"], row["layer"], margin_by_key.get(ev_key)))
+            ev = None if ev_key in ambiguous_event_keys else event_by_key.get(ev_key)
+            margin = None if ev is None else ev.get("margin")
+            attribs.append((row["model"], row["corpus"], row["role"], row["layer"], margin))
+            manifest = row.get("manifest")
+            if manifest and row.get("orig_argmax") is not None and row.get("corrected_argmax") is not None:
+                provenance.append({
+                    "model": row["model"], "corpus": row["corpus"],
+                    "role": row["role"], "layer": row["layer"],
+                    "manifest": manifest, "req": row["req"], "pos": row["pos"],
+                    "orig_argmax": row["orig_argmax"],
+                    "corrected_argmax": row["corrected_argmax"],
+                    "threshold": row.get("threshold"),
+                    "margin": margin,
+                    "batch_size": None if ev is None else ev.get("batch_size"),
+                    "replay_margin_b1": None if ev is None else ev.get("replay_margin_b1"),
+                    "attribution_ts_unix": row.get("ts_unix"),
+                    "event_ts_unix": None if ev is None else ev.get("ts_unix"),
+                    "source_jsonl": os.path.abspath(path),
+                    "last_seen_at": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                })
             n_attribs += 1
         if len(events) >= BATCH:
             post(url, key, "/rest/v1/moe_neartie_events", events); events = []
@@ -147,10 +195,12 @@ def main():
     post(url, key, "/rest/v1/moe_neartie_events", events)
     for model, corpus, role, layer, margin in attribs:
         rpc_increment(url, key, model, corpus, role, layer, margin)
+    for i in range(0, len(provenance), BATCH):
+        upsert_provenance(url, key, provenance[i:i + BATCH])
 
     with open(offset_path, "w") as f:
         f.write(str(new_offset))
-    print(f"[d4 push] pushed {n_events} events, {n_attribs} attribution increments (offset {offset}->{new_offset})")
+    print(f"[d4 push] pushed {n_events} events, {n_attribs} attribution increments, {len(provenance)} replayable provenance row(s) (offset {offset}->{new_offset})")
 
 if __name__ == "__main__":
     main()

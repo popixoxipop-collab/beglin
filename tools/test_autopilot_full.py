@@ -393,5 +393,28 @@ class FullAutopilotTests(unittest.TestCase):
         arm.assert_not_called()
 
 
+    def test_needs_real_sweep_rejects_known_unsafe(self):
+        self.assertFalse(p5._needs_real_sweep({
+            "reason": "not fully real-kernel-verified",
+            "per_corpus": {"c": {"unsafe_events": ["x"]}},
+        }))
+
+    def test_needs_real_sweep_accepts_coverage_gap(self):
+        self.assertTrue(p5._needs_real_sweep({
+            "reason": "no source='qng64_real' rows exist yet for this target"
+        }))
+
+    @patch.object(p5.provenance, "fetch_best")
+    @patch.object(p5.shadow, "fetch_candidates")
+    @patch.object(p5.pwb, "target_safe_n")
+    @patch.object(p5.pwb, "read_remote_promotion_file", return_value={})
+    def test_provenance_turns_coverage_gap_into_real_sweep_work(self, _read, safe, fetch, prov):
+        fetch.return_value = [{"role":"kv_b_proj","layer":4,"event_count":13,"current_bits":8}]
+        safe.return_value = (None, {"reason":"no prior sweep data"})
+        prov.return_value = {"id":7,"manifest":"/m","req":3,"pos":16,"orig_argmax":1,"corrected_argmax":2,"corpus":"c"}
+        plan=p5.build_plan("m",100,"h","/promotion",None,self.plan)
+        self.assertEqual(plan["decisions"][0]["action"],"NEEDS_REAL_SWEEP")
+        self.assertEqual(plan["real_sweep_candidates"][0]["provenance"]["id"],7)
+
 if __name__ == "__main__":
     unittest.main()

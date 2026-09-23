@@ -16283,3 +16283,49 @@ p0..p59 with gen10 and current production promotions. It was intentionally stopp
 round ended rather than left running asynchronously. Partial evidence: 20 near-tie events,
 0 L26 attribution hits. This is only a partial negative, not a deployment conclusion. Durable
 partial logs and SHA256SUMS are under `/Users/bob/vdsp_p5_pre/shared_gate26_discovery/`.
+
+## D-l4-11 -- durable attribution provenance and direct real-sweep worklist (2026-09-24)
+
+The next discovery bottleneck was not qNg64 execution but losing the identity of historical
+attribution events. `moe_role_precision_state` retained only aggregate event_count/min-margin, so
+a later candidate review knew *that* `role/layer` had fired but not which manifest/req/pos could
+reproduce it. This forced expensive corpus rescans such as the L4/L14/L26 recovery work above.
+
+Live migration `supabase_migration_attribution_provenance.sql` now creates
+`moe_attribution_provenance`. A replayable row persists model/corpus/role/layer plus the exact
+`manifest, req, pos, orig_argmax, corrected_argmax`, threshold, paired event margin/batch metadata,
+timestamps, and source JSONL. The natural key
+`(model,corpus,role,layer,manifest,req,pos,orig_argmax,corrected_argmax)` is UNIQUE, so repeated
+telemetry pushes are idempotent.
+
+`d4_supabase_push.py` now performs provenance upserts in addition to the existing event insert and
+aggregate RPC increment. Attribution rows that predate manifest/orig/corrected instrumentation are
+still counted in the aggregate but are intentionally not inserted as replayable provenance.
+Event metadata is joined only when the `(model,corpus,req,pos)` key is unambiguous inside the new
+batch; ambiguous multi-run keys keep the replay-critical attribution fields but leave margin/batch
+metadata NULL rather than guessing.
+
+New `tools/attribution_provenance.py` provides exact target lookup, and
+`tools/autopilot_real_sweep.py` consumes it directly:
+`DB provenance -> remote one-request manifest -> Step-0 exact-flip gate -> real qNg64 {5,6,7} ->
+atomic sweep-result push`. It never edits the live promotion file; the existing P5 Evidence
+Contract/live-preflight remains the only route from real-kernel evidence to deployment.
+
+`tools/autopilot_full.py` now distinguishes coverage gaps from proven unsafe targets. For a
+non-live target with missing real-kernel coverage:
+- replayable DB provenance -> `NEEDS_REAL_SWEEP` + `real_sweep_candidates` worklist;
+- no replayable provenance -> `NEEDS_ATTRIBUTION_PROVENANCE`;
+- an already-proven unsafe event remains `SKIP_UNSAFE` and is not rescanned.
+This prevents the system from repeatedly rediscovering L14/L26-style rejected targets while
+allowing a future worker to consume a durable event without another broad corpus scan.
+
+Representative provenance-only backfill (aggregate counters untouched) inserted four existing
+verified events. Live lookup verified:
+- id=1 `shared_down_proj/L4`, req0/pos16, manifest `req3_pos16_iso.txt`;
+- ids=2,4 `shared_gate_proj/L14`, req0/pos8 across the two verified WT103/current-preimage runs;
+- id=3 `shared_down_proj/L26`, req0/pos8, manifest `req38_iso.txt`.
+Future JSONL pushes populate the table automatically.
+
+Verification: P5 planner/controller tests 22/22 PASS; all new/modified Python modules py_compile;
+`git diff --check` passes. Current production promotions remain L13 n=7 + shared_down/L4 n=6 +
+shared_up/L3 n=5; this change is discovery/control-plane only.
