@@ -16239,3 +16239,47 @@ Durable evidence:
 `/Users/bob/vdsp_p5_pre/shared_down26_historical/RESULT_REAL_UNSAFE.txt`
 SHA256 `b61d39553d0c4b2861960dc684b22df897fe9845f655af18187d3a6b8bcdf009`.
 No production promotion or quarantine state was changed by this closure.
+
+## D-l4-10 -- shared_down_proj/L4 n=6 passes P4 observation; L14 re-rejected on new preimage (2026-09-24)
+
+`shared_down_proj/L4` produced a fresh production-matched event at req=3/pos=16
+(`orig=3268 -> corrected=1224`). Real qNg64 correction-path sweep was nontrivial but suffix-closed:
+`n=5 FAIL, n=6 PASS, n=7 PASS`, therefore `target_safe_n(..., shared_down_proj,4)=6`.
+Evidence Contract v2 serving-path preflight at n=6 also PASSed: the base serving promotion emitted
+1224 directly without needing the correction flip. The guarded transaction added
+`shared_down_proj 4 6` to the production promotion file alongside the existing L13/shared_up entries.
+
+P4 observation was armed before apply with a one-event baseline. Baseline metrics for L4 were
+`attributed_events=1`, attribution_rate=1.0, median_margin=0.021061. The observer tracked
+`/Users/bob/vdsp_p5_pre/shared_down4_discovery/req3_step0.jsonl` from exact byte offset 4129 with
+prefix SHA256 `58fa9f3f4e29ff6bb56d0e69dcd994ddafbac801328246b60ecd1b32148c5ad5`.
+A production POST replay of the same isolated req3 prompt was appended to that exact file under the
+new live promotion set. The first POST near-tie event had zero L4 attributions; P4 check with
+`QWEN_AUTOPILOT_P4=1` therefore produced `healthy`, failed=0, demoted=0. Final P4 comparison:
+baseline attributed_events 1 -> post 0; the zero-attribution margin criterion passed by design.
+No quarantine entry was created.
+
+Current production promotions are now:
+```
+kv_a_proj_with_mqa 13 7
+shared_down_proj 4 6
+shared_up_proj 3 5
+```
+Current promotion preimage/hash is
+`2675b825af7168c5da7af8119b6593b6e1feb96065abae27098a13c4b4c03d6d`.
+
+Because Evidence Contract v2 keys evidence to the exact production preimage, `shared_gate_proj/L14`
+was re-evaluated after L4 changed the composition. Fresh WT103 p10/pos8 PRE attribution still reproduced
+`orig=3912 -> corrected=3000` with L14 as a 1/1 hit. Actual serving-path preflight was then repeated
+for the entire deployable ladder on the new preimage:
+- n=5: evidence row 13, FAIL, correction REAL FLIP still required;
+- n=6: evidence row 14, FAIL, correction REAL FLIP still required;
+- n=7: evidence row 15, FAIL, correction REAL FLIP still required.
+The ladder-aware gate again returns `LIVE_LADDER_UNSAFE`, so L14 remains excluded even after the
+production composition changed.
+
+A next-candidate exploratory multi-position scan for `shared_gate_proj/L26` was started on WT103
+p0..p59 with gen10 and current production promotions. It was intentionally stopped before this
+round ended rather than left running asynchronously. Partial evidence: 20 near-tie events,
+0 L26 attribution hits. This is only a partial negative, not a deployment conclusion. Durable
+partial logs and SHA256SUMS are under `/Users/bob/vdsp_p5_pre/shared_gate26_discovery/`.
