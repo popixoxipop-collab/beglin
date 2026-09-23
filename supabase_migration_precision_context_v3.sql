@@ -88,6 +88,7 @@ create table if not exists moe_live_preflight_results_v3 (
   role text not null,
   layer integer not null,
   n integer not null,
+  baseline_policy_hash text not null,
   requested_policy_hash text not null,
   applied_policy_hash text,
   expected_epoch bigint,
