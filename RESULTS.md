@@ -15746,3 +15746,36 @@ state and proposed **0 changes**; `apply` closed as `no_changes`, and the live f
 exactly `kv_a_proj_with_mqa 13 7` + `shared_up_proj 3 5`. A separate bob scratch canary then
 executed the real SSH lock/snapshot/atomic-write/readback/revalidation path by adding
 `shared_up_proj/L3 n=5`, followed by `rollback`; the canary returned exactly to its preimage.
+
+## D-l4-3 -- P3 low-risk autonomous FFN controller (2026-09-23)
+
+Implemented `tools/autopilot_lowrisk.py` for the L4 P3 rollout. Approval-free changes are
+strictly allowlisted to dense/shared FFN roles:
+`dense_{gate,up,down}_proj` and `shared_{gate,up,down}_proj`. Attention, routed-expert,
+embed, and lm-head roles are never mutated by this controller.
+
+P3 reuses `target_safe_n()`, so deployment decisions still require already-collected
+`source='qng64_real'` evidence. It launches no new sweeps. It also re-audits existing P3-owned
+live entries, but evidence regressions or a lower newly-computed safe_n are deliberately surfaced
+as `P2_REVIEW_UNSAFE` / `P2_REVIEW_DOWNGRADE`; P3 never auto-removes or auto-downgrades.
+ADD/UPGRADE mutation delegates to P2's guarded transaction (remote lock, stale-preimage check,
+snapshot, atomic write, exact readback, second evidence check, rollback on failure).
+
+The controller has a hard opt-in kill switch: without `QWEN_AUTOPILOT_P3=1`, it is read-only.
+Every run writes an append-only local JSONL audit record. Six P3 regression tests pass; the six
+P2 guarded-transaction tests also remain green.
+
+Real production dry-run: 36 FFN targets were considered; 35 were unsafe/no-real-data and the
+only safe current candidate, `shared_up_proj/L3 n=5`, was already live (NOOP). A separate
+historical sweep result exists for `shared_gate_proj/L14 n=5`, but it is not present in the
+current live-attribution candidate aggregate, so P3 correctly did not auto-promote it.
+
+A real opt-in P3 run then completed with `status=no_changes`, zero live mutations, and the bob
+promotion file remained exactly:
+`kv_a_proj_with_mqa 13 7`
+`shared_up_proj 3 5`.
+
+Current limitation: qNg64 promotion config is still consumed at engine startup; this P3 closes
+the autonomous control-plane decision/write path, not zero-downtime qNg64 hot-reload. The older
+bits=16 `g_moe_lt_active` path supports admission-time pointer swaps, but qNg64 intentionally
+keeps startup materialization to avoid unmeasured request-admission build stalls.
