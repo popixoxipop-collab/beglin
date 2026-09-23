@@ -16039,3 +16039,55 @@ Regression status:
 - P3: 9/9 PASS
 - P2: 6/6 PASS
 - py_compile and diff-check PASS.
+
+## D-l4-8 -- L14 corpus scale-up finds fresh signal, but actual serving preflight rejects it (2026-09-23)
+
+P5 Evidence Contract v2 had left `shared_gate_proj/L14 -> n=5` in `NO_CURRENT_SIGNAL` under the
+current production preimage (`kv_a_proj_with_mqa/L13 n=7` + `shared_up_proj/L3 n=5`). The target
+was therefore scaled up instead of being promoted from historical evidence alone.
+
+Production-matched WikiText-2 short coverage was expanded from 50 to 200 contexts:
+- p0..p49: 50 requests, 14 near-tie events, 0 L14 attributions.
+- p50..p199: 150 requests, 47 near-tie events, 0 L14 attributions.
+- cumulative: 200 contexts, 61 near-tie events, 0 L14 attributions.
+This was persisted as Evidence Contract v2 row 3 (`status=no_current_signal`).
+
+Rather than spend the next 300 contexts only on longer versions of the same WikiText-2 prompts,
+the next scale-up diversified the workload to WikiText-103 short prompts. A fresh L14 signal was
+found quickly and the scan stopped at the first signal by design:
+- corpus: `p5-scaleup-gate14-wt103-short-p0-p239`
+- req=10, pos=8
+- orig=3912, corrected=3000
+- event margin=0.045263, B=1 replay margin=0.005125
+- `shared_gate_proj/L14` single-role add attribution: 1/1 HIT.
+
+The event was isolated to `p10.i32`; under the exact production preimage the isolated baseline
+reproduced `REAL FLIP orig=3912 corrected=3000` and the L14 attribution hit. Real packed qNg64
+correction-path replays then passed at every deployable n:
+- n=5 PASS
+- n=6 PASS
+- n=7 PASS
+The three rows were atomically pushed with `source=qng64_real`; `target_safe_n(L14)` remains 5 and
+now covers both the historical WikiText-2 event and the fresh WikiText-103 event.
+
+The actual serving-path preflight produced a different result. With n=5 installed through a
+scratch `QWEN_MOE_PROMOTION_FILE_NQ` containing the exact current production preimage plus L14,
+the process emitted token 3000 only after the correction path logged
+`REAL FLIP orig=3912 corrected=3000`. Therefore the promoted base serving computation itself was
+still wrong. P5 live-preflight rejected it with `correction REAL FLIP was still required`.
+The result was persisted as Evidence Contract v2 row 7 (`status=failed`, `pass=false`) for exact
+preimage SHA256 `85d05d666aecd1fb45235dd0b3aada32177ccb5d004e06462c38ad9ec77e626e`.
+
+Final planner state is deliberately split across the two evidence layers:
+- qNg64 correction-path `target_safe_n(shared_gate_proj/L14) = 5`.
+- actual serving-path evidence = FAIL.
+- P5 decision = `LIVE_PREFLIGHT_FAILED`.
+- `changes=[]`, `preflight_candidates=[]`.
+
+No production promotion or quarantine state changed. Live promotion file remains:
+`kv_a_proj_with_mqa 13 7` and `shared_up_proj 3 5`.
+
+Durable evidence is stored under
+`/Users/bob/vdsp_p5_pre/2026-09-23_shared_gate14_scaleup/`, including the 200-context summary,
+fresh req10 attribution/event pair, isolated baseline, qNg64 n=5/6/7 logs, live-preflight report,
+and `SHA256SUMS_GATE14`.
