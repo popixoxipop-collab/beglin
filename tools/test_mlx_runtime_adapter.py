@@ -49,6 +49,7 @@ class MlxRuntimeAdapterTests(unittest.TestCase):
             "schema": grc.ACK_SCHEMA,
             "status": "PROMOTION_APPLIED",
             "backend": "mlx_metal",
+            "correction_mode": "off",
             "weight_epoch": 7,
             "changed_targets": 2,
             "snapshot_count": 2,
