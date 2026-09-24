@@ -126,6 +126,63 @@ class PlannerV3Tests(unittest.TestCase):
         )
         self.assertEqual(got["action"], "EVIDENCE_CONTEXT_MISMATCH")
 
+    def test_isolated_restart_evidence_admits_restart_canary_not_hot_apply(self):
+        ctx = context()
+        candidate = BASE + [{"role": "shared_down_proj", "layer": 4, "n": 6}]
+        evidence = {
+            "evidence_mode": "isolated_restart",
+            "context_hash": ctx.context_hash,
+            "baseline_policy_hash": pc.policy_hash(BASE),
+            "requested_policy_hash": pc.policy_hash(candidate),
+            "applied_policy_hash": pc.policy_hash(candidate),
+            "expected_epoch": 7,
+            "status": "passed",
+            "pass": True,
+            "binary_sha256": ctx.binary_sha256,
+            "correction_mode": "off",
+            "isolated_baseline_epoch": 1,
+            "isolated_candidate_epoch": 2,
+        }
+        got = evaluate_candidate(
+            context=ctx,
+            current_policy=BASE,
+            current_epoch=7,
+            role="shared_down_proj",
+            layer=4,
+            n=6,
+            preflight_evidence=evidence,
+        )
+        self.assertEqual(got["action"], "ADMIT_ONE_TARGET_RESTART_CANARY")
+        self.assertEqual(got["evidence_mode"], "isolated_restart")
+
+    def test_isolated_restart_rejects_different_binary(self):
+        ctx = context(binary="a")
+        candidate = BASE + [{"role": "shared_down_proj", "layer": 4, "n": 6}]
+        evidence = {
+            "evidence_mode": "isolated_restart",
+            "context_hash": ctx.context_hash,
+            "baseline_policy_hash": pc.policy_hash(BASE),
+            "requested_policy_hash": pc.policy_hash(candidate),
+            "applied_policy_hash": pc.policy_hash(candidate),
+            "expected_epoch": 7,
+            "status": "passed",
+            "pass": True,
+            "binary_sha256": h("b"),
+            "correction_mode": "off",
+            "isolated_baseline_epoch": 1,
+            "isolated_candidate_epoch": 2,
+        }
+        got = evaluate_candidate(
+            context=ctx,
+            current_policy=BASE,
+            current_epoch=7,
+            role="shared_down_proj",
+            layer=4,
+            n=6,
+            preflight_evidence=evidence,
+        )
+        self.assertEqual(got["action"], "EVIDENCE_BINARY_MISMATCH")
+
 
 if __name__ == "__main__":
     unittest.main()

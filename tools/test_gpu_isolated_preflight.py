@@ -335,6 +335,30 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
                 reference={"emitted_token": 222}, prompt_len=1,
             )
 
+    def test_to_planner_evidence_marks_restart_mode_without_live_epoch_claim(self):
+        result = {
+            "status": "passed",
+            "backend": "mlx_metal",
+            "correction_mode": "off",
+            "binary_sha256": "a" * 64,
+            "baseline_policy_hash": pc.policy_hash(BASE),
+            "candidate_policy_hash": pc.policy_hash(CAND),
+            "baseline_epoch": 0,
+            "candidate_epoch": 1,
+            "baseline_emitted_token": 111,
+            "candidate_emitted_token": 222,
+            "reference_emitted_token": 222,
+        }
+        got = gp.to_planner_evidence(
+            result,
+            context_hash="c" * 64,
+            expected_epoch=7,
+        )
+        self.assertEqual(got["evidence_mode"], "isolated_restart")
+        self.assertEqual(got["expected_epoch"], 7)
+        self.assertNotIn("observed_epoch", got)
+        self.assertEqual(got["isolated_candidate_epoch"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

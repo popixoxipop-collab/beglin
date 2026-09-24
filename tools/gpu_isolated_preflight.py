@@ -492,6 +492,47 @@ def run_ab_preflight(
     }
 
 
+def to_planner_evidence(result: dict, *, context_hash: str, expected_epoch: int) -> dict:
+    """Translate isolated A/B proof into planner evidence without faking a live epoch."""
+    if result.get("status") != "passed":
+        raise GpuPreflightError("only passed isolated preflight can become planner evidence")
+    if result.get("backend") != BACKEND:
+        raise GpuPreflightError("isolated preflight backend is not mlx_metal")
+    if result.get("correction_mode") != "off":
+        raise GpuPreflightError("isolated preflight correction mode must be OFF")
+    binary_sha256 = result.get("binary_sha256")
+    if not isinstance(binary_sha256, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", binary_sha256):
+        raise GpuPreflightError("isolated preflight lacks valid binary_sha256")
+    baseline_hash = result.get("baseline_policy_hash")
+    candidate_hash = result.get("candidate_policy_hash")
+    if not baseline_hash or not candidate_hash:
+        raise GpuPreflightError("isolated preflight lacks policy hashes")
+    baseline_epoch = int(result.get("baseline_epoch", -1))
+    candidate_epoch = int(result.get("candidate_epoch", -1))
+    if baseline_epoch < 0 or candidate_epoch <= baseline_epoch:
+        raise GpuPreflightError(
+            "isolated candidate worker did not prove a startup epoch transition"
+        )
+    return {
+        "evidence_mode": "isolated_restart",
+        "status": "passed",
+        "pass": True,
+        "backend": BACKEND,
+        "context_hash": str(context_hash),
+        "expected_epoch": int(expected_epoch),
+        "baseline_policy_hash": baseline_hash,
+        "requested_policy_hash": candidate_hash,
+        "applied_policy_hash": candidate_hash,
+        "binary_sha256": binary_sha256.lower(),
+        "correction_mode": "off",
+        "isolated_baseline_epoch": baseline_epoch,
+        "isolated_candidate_epoch": candidate_epoch,
+        "baseline_emitted_token": result.get("baseline_emitted_token"),
+        "candidate_emitted_token": result.get("candidate_emitted_token"),
+        "reference_emitted_token": result.get("reference_emitted_token"),
+    }
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--host")

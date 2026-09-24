@@ -69,6 +69,46 @@ def evaluate_candidate(
             "action": "UNVERIFIED_APPLIED_POLICY",
             "reason": "preflight did not prove the requested policy was actually applied",
         }
+
+    evidence_mode = preflight_evidence.get("evidence_mode", "live_transition")
+    if evidence_mode == "isolated_restart":
+        if context.backend != "mlx_metal":
+            return {
+                "action": "BLOCKED_BACKEND_EVIDENCE",
+                "reason": "isolated_restart evidence is only valid for mlx_metal",
+            }
+        if preflight_evidence.get("correction_mode") != "off":
+            return {
+                "action": "BLOCKED_BACKEND_EVIDENCE",
+                "reason": "isolated GPU preflight must run with correction OFF",
+            }
+        if preflight_evidence.get("binary_sha256") != context.binary_sha256.lower():
+            return {
+                "action": "EVIDENCE_BINARY_MISMATCH",
+                "reason": "isolated GPU preflight used a different worker binary",
+            }
+        baseline_iso = preflight_evidence.get("isolated_baseline_epoch")
+        candidate_iso = preflight_evidence.get("isolated_candidate_epoch")
+        if (
+            baseline_iso is None
+            or candidate_iso is None
+            or int(candidate_iso) <= int(baseline_iso)
+        ):
+            return {
+                "action": "UNVERIFIED_EPOCH_TRANSITION",
+                "reason": "isolated restart evidence did not prove candidate startup transition",
+            }
+        return {
+            "action": "ADMIT_ONE_TARGET_RESTART_CANARY",
+            "baseline_policy_hash": baseline_hash,
+            "candidate_policy_hash": candidate_hash,
+            "candidate_policy": candidate_policy,
+            "context_hash": context.context_hash,
+            "backend": context.backend,
+            "expected_epoch": int(current_epoch),
+            "evidence_mode": evidence_mode,
+        }
+
     observed_epoch = preflight_evidence.get("observed_epoch")
     if observed_epoch is None or int(observed_epoch) <= int(current_epoch):
         return {
