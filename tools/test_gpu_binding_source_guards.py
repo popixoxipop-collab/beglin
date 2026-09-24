@@ -124,6 +124,47 @@ class BindingSourceGuardTests(unittest.TestCase):
         demote = demote.split("// D-qNg64-gpu-1:", 1)[0]
         self.assertIn("restore verified but durable ACK failed; admission remains stopped", demote)
 
+    def test_gpu_txn_protocol_is_one_target_and_has_cas_fields(self):
+        self.assertIn("QWEN_MOE_GPU_TXN_FILE", QWEN)
+        self.assertIn(
+            "DEMOTE <txn_id> <expected_epoch> <expected_n> <role> <layer> <policy_sha256>",
+            QWEN,
+        )
+        parser = QWEN.split("static int moe_gpu_txn_read(", 1)[1]
+        parser = parser.split("static int moe_gpu_ack_already_has_txn", 1)[0]
+        self.assertIn('strcmp(op, "DEMOTE")', parser)
+        self.assertIn("out->expected_epoch", parser)
+        self.assertIn("out->expected_n", parser)
+        self.assertIn("out->expected_policy_hash", parser)
+        self.assertIn("out->role", parser)
+        self.assertIn("out->layer", parser)
+
+    def test_gpu_txn_rejects_stale_before_drain_or_registry_mutation(self):
+        poll = QWEN.split("static int moe_gpu_demotion_pending(void)", 2)[2]
+        poll = poll.split("static int moe_gpu_demotion_apply_quiescent(void)", 1)[0]
+        self.assertIn("cmd.expected_epoch != g_moe_gpu_weight_epoch", poll)
+        self.assertIn("current_n != cmd.expected_n", poll)
+        self.assertIn('"STALE_COMMAND"', poll)
+        self.assertNotIn("mlx_gpu_restore_binding_snapshot", poll)
+        self.assertNotIn("mlx_gpu_reset_runtime_epoch", poll)
+
+    def test_gpu_txn_duplicate_is_idempotent_from_ack(self):
+        dup = QWEN.split("static int moe_gpu_ack_already_has_txn", 1)[1]
+        dup = dup.split("static int moe_gpu_txn_mark_terminal", 1)[0]
+        self.assertIn("g_moe_gpu_last_txn_id", dup)
+        self.assertIn("QWEN_MOE_GPU_APPLIED_ACK", dup)
+        self.assertIn('\\\"txn_id\\\":\\\"%s\\\"', dup)
+        poll = QWEN.split("static int moe_gpu_demotion_pending(void)", 2)[2]
+        poll = poll.split("static int moe_gpu_demotion_apply_quiescent(void)", 1)[0]
+        self.assertIn("moe_gpu_ack_already_has_txn(cmd.txn_id)", poll)
+
+    def test_gpu_txn_ack_carries_expected_and_actual_epoch_context(self):
+        ack = QWEN.split("static int moe_gpu_write_applied_ack", 2)[2]
+        ack = ack.split("static int moe_gpu_txn_token_safe", 1)[0]
+        for field in ("txn_id", "expected_epoch", "expected_n", "expected_policy_hash",
+                      "target_role", "target_layer", "weight_epoch", "active_policy"):
+            self.assertIn(field, ack)
+
 
 if __name__ == "__main__":
     unittest.main()
