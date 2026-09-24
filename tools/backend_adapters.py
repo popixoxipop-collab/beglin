@@ -10,6 +10,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any
 
+import gpu_runtime_control as grc
 import precision_context as pc
 
 
@@ -82,44 +83,103 @@ class BackendAdapter:
 class MlxMetalBackendAdapter(BackendAdapter):
     name = "mlx_metal"
 
-    def __init__(self, *, verified: bool = False):
+    def __init__(
+        self,
+        *,
+        verified: bool = False,
+        context: pc.ExecutionContext | None = None,
+        ack_path: str | None = None,
+        txn_path: str | None = None,
+    ):
         self.verified = bool(verified)
+        self._context = context
+        self._ack_path = ack_path
+        self._txn_path = txn_path
 
-    def _deny(self):
+    def _deny(self, operation="runtime mutation"):
         raise BackendUnverified(
-            "mlx_metal runtime mutation is IMPLEMENTED_UNVERIFIED; "
-            "Apple-Silicon transition tests must pass before enabling it"
+            f"mlx_metal {operation} is IMPLEMENTED_UNVERIFIED; "
+            "Apple-Silicon transition tests must pass before enabling generic mutation"
         )
 
+    def _require_probe(self):
+        if not self.verified:
+            self._deny("runtime probe")
+        if self._context is None or self._context.backend != self.name:
+            raise BackendError("mlx_metal execution context not configured")
+        if not self._ack_path:
+            raise BackendError("mlx_metal runtime ACK path not configured")
+
     def collect_context(self):
-        self._deny()
+        self._require_probe()
+        return self._context
 
     def query_applied_state(self):
-        self._deny()
+        self._require_probe()
+        ack = grc.read_runtime_ack(self._ack_path)
+        return AppliedState(
+            backend=self.name,
+            epoch=int(ack["weight_epoch"]),
+            policy=copy.deepcopy(ack["active_policy"]),
+            policy_hash=ack["active_policy_hash"],
+            admission_paused=False,
+            active_requests=0,
+        )
+
+    def request_demote(
+        self,
+        *,
+        txn_id: str,
+        expected_epoch: int,
+        expected_policy_hash: str,
+        role: str,
+        layer: int,
+        expected_n: int,
+    ):
+        self._require_probe()
+        if not self._txn_path:
+            raise BackendError("mlx_metal runtime txn path not configured")
+        return grc.prepare_demote(
+            ack_path=self._ack_path,
+            txn_path=self._txn_path,
+            txn_id=txn_id,
+            expected_epoch=expected_epoch,
+            expected_policy_hash=expected_policy_hash,
+            role=role,
+            layer=layer,
+            expected_n=expected_n,
+        )
+
+    def verify_runtime_txn(self, txn_id: str):
+        self._require_probe()
+        return grc.verify_terminal_ack(
+            ack_path=self._ack_path,
+            txn_id=txn_id,
+        )
 
     def pause_admission(self):
-        self._deny()
+        self._deny("generic pause_admission")
 
     def drain(self):
-        self._deny()
+        self._deny("generic drain")
 
     def synchronize(self):
-        self._deny()
+        self._deny("generic synchronize")
 
     def snapshot(self):
-        self._deny()
+        self._deny("generic snapshot")
 
     def apply_policy(self, policy):
-        self._deny()
+        self._deny("generic apply_policy")
 
     def restore(self, snapshot):
-        self._deny()
+        self._deny("generic restore")
 
     def resume_admission(self):
-        self._deny()
+        self._deny("generic resume_admission")
 
     def run_validation(self, request):
-        self._deny()
+        self._deny("validation runner")
 
 
 class MockBackendAdapter(BackendAdapter):
@@ -234,9 +294,21 @@ class MockBackendAdapter(BackendAdapter):
         return result
 
 
-def backend_from_name(name: str, *, allow_unverified_gpu: bool = False):
+def backend_from_name(
+    name: str,
+    *,
+    allow_unverified_gpu: bool = False,
+    context: pc.ExecutionContext | None = None,
+    ack_path: str | None = None,
+    txn_path: str | None = None,
+):
     if name == "mlx_metal":
-        return MlxMetalBackendAdapter(verified=allow_unverified_gpu)
+        return MlxMetalBackendAdapter(
+            verified=allow_unverified_gpu,
+            context=context,
+            ack_path=ack_path,
+            txn_path=txn_path,
+        )
     raise BackendUnverified(
         f"no generic mutable adapter registered for backend={name!r}; "
         "existing CPU production path remains on its proven controller"

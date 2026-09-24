@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+import json
 import tempfile
 import unittest
+from pathlib import Path
 
 import precision_context as pc
 from backend_adapters import MockBackendAdapter, MlxMetalBackendAdapter, BackendUnverified
@@ -56,6 +58,76 @@ class ContextTests(unittest.TestCase):
     def test_mlx_adapter_is_fail_closed(self):
         with self.assertRaises(BackendUnverified):
             MlxMetalBackendAdapter().query_applied_state()
+
+    def test_verified_mlx_adapter_reads_runtime_ack(self):
+        with tempfile.TemporaryDirectory() as td:
+            ack = Path(td) / "ack.json"
+            ack.write_text(json.dumps({
+                "schema": "gpu-precision-applied-v1",
+                "status": "PROMOTION_APPLIED",
+                "backend": "mlx_metal",
+                "weight_epoch": 7,
+                "changed_targets": 1,
+                "snapshot_count": 1,
+                "txn_id": None,
+                "expected_epoch": None,
+                "expected_n": None,
+                "expected_policy_hash": None,
+                "target_role": None,
+                "target_layer": None,
+                "active_policy": BASE,
+            }))
+            a = MlxMetalBackendAdapter(
+                verified=True,
+                context=context(),
+                ack_path=str(ack),
+            )
+            self.assertEqual(a.collect_context().backend, "mlx_metal")
+            state = a.query_applied_state()
+            self.assertEqual(state.epoch, 7)
+            self.assertEqual(state.policy_hash, pc.policy_hash(BASE))
+            self.assertFalse(state.admission_paused)
+            self.assertEqual(state.active_requests, 0)
+
+    def test_verified_mlx_adapter_emits_cas_demote_command(self):
+        with tempfile.TemporaryDirectory() as td:
+            ack = Path(td) / "ack.json"
+            txn = Path(td) / "txn.txt"
+            ack.write_text(json.dumps({
+                "schema": "gpu-precision-applied-v1",
+                "status": "PROMOTION_APPLIED",
+                "backend": "mlx_metal",
+                "weight_epoch": 7,
+                "changed_targets": 1,
+                "snapshot_count": 1,
+                "txn_id": None,
+                "expected_epoch": None,
+                "expected_n": None,
+                "expected_policy_hash": None,
+                "target_role": None,
+                "target_layer": None,
+                "active_policy": BASE,
+            }))
+            a = MlxMetalBackendAdapter(
+                verified=True,
+                context=context(),
+                ack_path=str(ack),
+                txn_path=str(txn),
+            )
+            got = a.request_demote(
+                txn_id="rt-1",
+                expected_epoch=7,
+                expected_policy_hash=pc.policy_hash(BASE),
+                role="shared_up_proj",
+                layer=3,
+                expected_n=5,
+            )
+            self.assertEqual(got["status"], "REQUESTED")
+            self.assertTrue(
+                txn.read_text().startswith("DEMOTE rt-1 7 5 shared_up_proj 3 ")
+            )
+            with self.assertRaises(BackendUnverified):
+                a.apply_policy(CANDIDATE)
 
 
 class TransactionTests(unittest.TestCase):
