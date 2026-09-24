@@ -2324,6 +2324,14 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
         g_cbatch_x = new mx::array(x_out);   // still LAZY -- not evaluated until finalize()
         g_cbatch_layers_done = l + 1;
         return 1;
+    } catch (const std::exception &e) {
+        // D-metal-4 pattern (see mlx_gpu_layer_step_lazy's own catch above): a bare
+        // catch(...) here turns any real MLX-side failure into an uninformative generic
+        // "failed at layer/step" from the caller. Surface it.
+        fprintf(stderr, "[moe gpu cb online] mlx_gpu_cbatch_layer_step_lazy exception: %s\n", e.what());
+        delete g_cbatch_x; g_cbatch_x = nullptr;
+        g_cbatch_A = 0; g_cbatch_layers_done = 0;
+        return 0;
     } catch (...) {
         delete g_cbatch_x; g_cbatch_x = nullptr;
         g_cbatch_A = 0; g_cbatch_layers_done = 0;
