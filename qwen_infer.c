@@ -17088,17 +17088,29 @@ static void moe_promotion_nq_init_gpu(void) {
     if (!path || !path[0]) return;
 
     if (!g_moe_hi_st) {
+        const char *promo_st = getenv("QWEN_MOE_PROMOTION_SAFETENSORS");
         const char *nt_on = getenv("QWEN_MOE_NEARTIE_CORRECT");
         const char *nt_st = getenv("QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS");
-        if (!nt_on || !nt_on[0] || atoi(nt_on) == 0 || !nt_st || !nt_st[0]) {
-            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ requires a real safetensors "
-                            "checkpoint (QWEN_MOE_NEARTIE_CORRECT=1 + "
-                            "QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS=<path>) -- neither GPU online "
-                            "gate opens one on its own\n");
-            exit(1);
+        if (promo_st && promo_st[0]) {
+            moe_neartie_correct_load_attn_hi(promo_st);
+            fprintf(stderr,
+                    "[moe promotion nq gpu] opened '%s' from "
+                    "QWEN_MOE_PROMOTION_SAFETENSORS; correction remains independently configurable\n",
+                    promo_st);
+        } else {
+            if (!nt_on || !nt_on[0] || atoi(nt_on) == 0 || !nt_st || !nt_st[0]) {
+                fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ requires a real safetensors "
+                                "checkpoint via QWEN_MOE_PROMOTION_SAFETENSORS=<path> "
+                                "(preferred for correction-OFF validation), or legacy "
+                                "QWEN_MOE_NEARTIE_CORRECT=1 + "
+                                "QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS=<path>\n");
+                exit(1);
+            }
+            moe_neartie_correct_load_attn_hi(nt_st);
+            fprintf(stderr,
+                    "[moe promotion nq gpu] opened '%s' via legacy correction-owned source\n",
+                    nt_st);
         }
-        moe_neartie_correct_load_attn_hi(nt_st);   // also populates g_moe_hi_st as a side effect
-        fprintf(stderr, "[moe promotion nq gpu] opened '%s' for qNg64 GPU promotion source\n", nt_st);
     }
 
     SafetensorsMulti *saved_st_moe = g_st_moe;

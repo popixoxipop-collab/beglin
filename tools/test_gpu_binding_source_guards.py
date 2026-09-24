@@ -114,6 +114,18 @@ class BindingSourceGuardTests(unittest.TestCase):
             QWEN,
         )
 
+    def test_gpu_startup_promotion_source_is_independent_from_correction(self):
+        block = QWEN.split("static void moe_promotion_nq_init_gpu(void)", 2)[2]
+        block = block.split("#endif", 1)[0]
+        self.assertIn("QWEN_MOE_PROMOTION_SAFETENSORS", block)
+        self.assertIn("moe_neartie_correct_load_attn_hi(promo_st)", block)
+        branch = block.split(
+            'const char *promo_st = getenv("QWEN_MOE_PROMOTION_SAFETENSORS")',
+            1,
+        )[1].split("} else {", 1)[0]
+        self.assertIn("moe_neartie_correct_load_attn_hi(promo_st)", branch)
+        self.assertNotIn("atoi(nt_on)", branch)
+
     def test_gpu_ack_is_fsync_then_rename_and_fail_closed(self):
         block = QWEN.split("static int moe_gpu_write_applied_ack", 2)[2]
         block = block.split("static MoeAFTensor *moe_gpu_role_base_tensor", 1)[0]
