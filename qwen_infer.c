@@ -7107,10 +7107,12 @@ static const char *g_moe_demotion_file_nq = NULL; // P4: startup-cached QWEN_MOE
 // (0 = not promoted) rather than a bool, by design -- avoids the write-once bug the Opus review
 // found in the bool-only g_moe_promoted (editing a promotion file entry silently no-opped).
 static int g_moe_promoted_nq[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
+static uint64_t g_moe_cpu_weight_epoch = 0;
 // Forward decl: defined near the qNg64 registration functions it calls (st_register_moe_*_
 // qNg64_as()), which are declared later in this file than this startup call site needs.
 static void moe_promotion_nq_init(void);
 static void moe_demotion_nq_maybe_apply(void);   // P4: admission-time pointer rollback only; never builds weights
+static int moe_precision_control_pending_cpu(void);
 #ifdef QWEN_GPU_MLX
 // D-qNg64-gpu-1: GPU mirror of g_moe_promoted_nq above -- kept separate rather than reused
 // because the two gates are mutually-exclusive dispatch branches within one process (main()'s
@@ -7123,6 +7125,7 @@ static uint64_t g_moe_promoted_nq_gpu_snapshot[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAY
 static int g_moe_promoted_nq_gpu_snapshot_kind[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
 static int g_moe_promoted_nq_gpu_snapshot_bits[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
 static uint64_t g_moe_gpu_weight_epoch = 0;
+static int moe_gpu_write_applied_ack(const char *status, int changed_targets);
 static void moe_promotion_nq_init_gpu(void);
 static int moe_gpu_demotion_pending(void);
 static int moe_gpu_demotion_apply_quiescent(void);
@@ -7691,6 +7694,7 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     for (int r = 0; r < R; r++) for (int p = 0; p < MOE_CBATCH_MAXPOS; p++) rq_hist[r][p] = -1;
 
     int qhead = 0, nact = 0, step = 0;
+    int cpu_precision_drain = 0;
     long steps_idle = 0, steps_with_idle_slot = 0, admitted_after_evict = 0;
     long queue_wait_events = 0, queue_wait_max_steps = 0, steps_pure_prefill = 0;
     long neartie_events = 0; double neartie_margin_sum = 0.0, neartie_margin_min = 1e30;   // D-roadmap-3
@@ -7701,9 +7705,29 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
     while (qhead < R || nact > 0) {
         while (qhead < R && rq_plen[qhead] < 0) qhead++;   // D9: skip requests dropped by the guard
 
+        // G3 CPU parity: the legacy code changed global weight pointers inside
+        // the admission loop even while other slots were alive. That can make
+        // one request use old-policy KV/history and new-policy weights. Treat
+        // both bits=16 promotion and qNg64 demotion as epoch transitions:
+        // stop refilling slots, drain current requests, then mutate pointers.
+        if (!cpu_precision_drain && moe_precision_control_pending_cpu()) {
+            cpu_precision_drain = 1;
+            fprintf(stderr, "[moe cpu precision] transition requested: admission paused, draining %d active requests\n", nact);
+        }
+        if (cpu_precision_drain && nact == 0) {
+            moe_promotion_maybe_apply();
+            moe_demotion_nq_maybe_apply();
+            g_moe_cpu_weight_epoch++;
+            cpu_precision_drain = 0;
+            if (g_moe_embed_active)  t_embed  = g_moe_embed_active;
+            if (g_moe_lmhead_active) t_lmhead = g_moe_lmhead_active;
+            fprintf(stderr, "[moe cpu precision] transition committed at quiescent boundary epoch=%llu; admission resumed\n",
+                    (unsigned long long)g_moe_cpu_weight_epoch);
+        }
+
         // 1. admission (D2): occupy free slots whose request has arrived, ZERO forward work in
         //    PREFILL_MODE=1; a full scalar prefill burst (mirrors MoE-4a) in PREFILL_MODE=0.
-        for (int s = 0; s < B && qhead < R; s++) {
+        if (!cpu_precision_drain) for (int s = 0; s < B && qhead < R; s++) {
             if (mcb_active[s]) continue;
             if (rq_arrive[qhead] > step) break;   // D10: FIFO head-of-line block
             int r = qhead++;
@@ -7713,15 +7737,6 @@ static int run_moe_cbatch_verify_mode(int argc, char **argv, const char *dir) {
             rq_t_admit[r] = nowt();
             if (mcb_freed_before[s]) admitted_after_evict++;
             rq_slot_of[r] = s;
-            moe_promotion_maybe_apply();   // D-roadmap-4 Phase 6 (D6): once per admission, not per token
-            moe_demotion_nq_maybe_apply(); // P4: zero-build qNg64 rollback; pointer swap back to base only
-            // D-d5-15: re-read the global tensors after promotion. Everything else the forward
-            // uses is reached through g_moe_lt_cur, which promotion updates in place; these two
-            // are locals captured before the loop, so they have to be refreshed here or a
-            // promotion of embed_tokens/lm_head would apply to nothing -- the same shape of
-            // failure D-d5-11 was.
-            if (g_moe_embed_active)  t_embed  = g_moe_embed_active;
-            if (g_moe_lmhead_active) t_lmhead = g_moe_lmhead_active;
 
             // Phase MoE-4c 조정2: 요청ID로 키잉되는 Tier2 replay가 필요로 하는 실제 토큰열.
             // prompt 구간은 두 PREFILL_MODE 모두 admission 시점에 이미 확정돼있음.
@@ -16592,7 +16607,116 @@ static void moe_demotion_nq_maybe_apply(void) {
     fclose(f);
 }
 
+static int moe_precision_control_pending_cpu(void) {
+    if (g_moe_promotion_file && g_moe_neartie_correct_on) {
+        FILE *f = fopen(g_moe_promotion_file, "r");
+        if (f) {
+            char role_buf[64]; int layer;
+            while (fscanf(f, "%63s %d", role_buf, &layer) == 2) {
+                int role_i = moe_attrib_role_from_name(role_buf);
+                if (role_i < 0 || layer < 0 || layer >= MOE_NL) continue;
+                if (!g_moe_promoted[role_i][layer]) {
+                    fclose(f);
+                    return 1;
+                }
+            }
+            fclose(f);
+        }
+    }
+    if (g_moe_demotion_file_nq) {
+        FILE *f = fopen(g_moe_demotion_file_nq, "r");
+        if (f) {
+            char role_buf[64]; int layer;
+            while (fscanf(f, "%63s %d", role_buf, &layer) == 2) {
+                int role_i = moe_attrib_role_from_name(role_buf);
+                if (role_i < 0 || layer < 0 || layer >= MOE_NL) continue;
+                if (g_moe_promoted_nq[role_i][layer]) {
+                    fclose(f);
+                    return 1;
+                }
+            }
+            fclose(f);
+        }
+    }
+    return 0;
+}
+
 #ifdef QWEN_GPU_MLX
+// G3 durable applied-state ACK. Runtime writes the exact active qNg64 policy
+// rows and weight epoch after a verified transition. The Python control plane
+// canonicalizes this list with precision_context.policy_hash(), keeping one
+// hash implementation instead of reimplementing SHA-256 in this C TU.
+//
+// QWEN_MOE_GPU_APPLIED_ACK remains optional for old standalone gates. If it
+// is configured, any write failure is fail-closed: callers must not resume
+// admission into a state that was applied but not durably acknowledged.
+static int moe_gpu_write_applied_ack(const char *status, int changed_targets) {
+    const char *path = getenv("QWEN_MOE_GPU_APPLIED_ACK");
+    if (!path || !path[0]) return 1;
+
+    char tmp[1200];
+    int nn = snprintf(tmp, sizeof tmp, "%s.tmp.%ld", path, (long)getpid());
+    if (nn <= 0 || nn >= (int)sizeof tmp) {
+        fprintf(stderr, "[moe gpu ack] FAIL: ACK path too long\n");
+        return 0;
+    }
+    int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+        fprintf(stderr, "[moe gpu ack] FAIL: cannot open temp ACK '%s'\n", tmp);
+        return 0;
+    }
+    FILE *f = fdopen(fd, "w");
+    if (!f) {
+        close(fd);
+        unlink(tmp);
+        fprintf(stderr, "[moe gpu ack] FAIL: fdopen temp ACK '%s'\n", tmp);
+        return 0;
+    }
+
+    fprintf(f,
+            "{\"schema\":\"gpu-precision-applied-v1\","
+            "\"status\":\"%s\",\"backend\":\"mlx_metal\","
+            "\"weight_epoch\":%llu,\"changed_targets\":%d,"
+            "\"snapshot_count\":%d,\"active_policy\":[",
+            status ? status : "UNKNOWN",
+            (unsigned long long)g_moe_gpu_weight_epoch,
+            changed_targets,
+            mlx_gpu_binding_snapshot_count());
+    int first = 1;
+    for (int r = 0; r < MOE_ATTRIB_ROLE_COUNT; r++) {
+        for (int l = 0; l < MOE_NL; l++) {
+            int qn = g_moe_promoted_nq_gpu[r][l];
+            if (!qn) continue;
+            fprintf(f, "%s{\"role\":\"%s\",\"layer\":%d,\"n\":%d}",
+                    first ? "" : ",", MOE_ATTRIB_ROLE_NAMES[r], l, qn);
+            first = 0;
+        }
+    }
+    fprintf(f, "]}\n");
+
+    if (fflush(f) != 0 || fsync(fd) != 0) {
+        fclose(f);
+        unlink(tmp);
+        fprintf(stderr, "[moe gpu ack] FAIL: flush/fsync temp ACK '%s'\n", tmp);
+        return 0;
+    }
+    if (fclose(f) != 0) {
+        unlink(tmp);
+        fprintf(stderr, "[moe gpu ack] FAIL: close temp ACK '%s'\n", tmp);
+        return 0;
+    }
+    if (rename(tmp, path) != 0) {
+        unlink(tmp);
+        fprintf(stderr, "[moe gpu ack] FAIL: rename '%s' -> '%s'\n", tmp, path);
+        return 0;
+    }
+    fprintf(stderr, "[moe gpu ack] %s epoch=%llu changed_targets=%d path=%s\n",
+            status ? status : "UNKNOWN",
+            (unsigned long long)g_moe_gpu_weight_epoch,
+            changed_targets, path);
+    return 1;
+}
+
 static MoeAFTensor *moe_gpu_role_base_tensor(MoeAttribRole role, int layer) {
     if (layer < 0 || layer >= MOE_NL) return NULL;
     switch (role) {
@@ -16696,6 +16820,11 @@ static int moe_gpu_demotion_apply_quiescent(void) {
         g_moe_gpu_weight_epoch++;
         fprintf(stderr, "[moe demotion nq gpu] quiescent restore + runtime epoch reset complete targets=%d epoch=%llu\n",
                 applied, (unsigned long long)g_moe_gpu_weight_epoch);
+        if (!moe_gpu_write_applied_ack("ROLLBACK_APPLIED", applied)) {
+            fprintf(stderr,
+                    "[moe demotion nq gpu] FAIL: restore verified but durable ACK failed; admission remains stopped\n");
+            return 0;
+        }
     }
     return 1;
 }
@@ -16916,6 +17045,11 @@ static void moe_promotion_nq_init_gpu(void) {
     fprintf(stderr, "[moe promotion nq gpu] '%s': %d lines, %d promoted, %d bind failures, %d verify failures, g_moe_naf now %d epoch=%llu\n",
             path, n_lines, n_applied, n_bind_failed, n_verify_failed, g_moe_naf,
             (unsigned long long)g_moe_gpu_weight_epoch);
+    if (n_applied && !moe_gpu_write_applied_ack("PROMOTION_APPLIED", n_applied)) {
+        fprintf(stderr,
+                "FATAL: [moe promotion nq gpu] promotion verified but durable ACK failed; refusing to serve unacknowledged state\n");
+        exit(1);
+    }
 }
 #endif
 
