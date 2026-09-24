@@ -20,6 +20,7 @@ class RuntimeControlTests(unittest.TestCase):
             "schema": ctl.ACK_SCHEMA,
             "status": "PROMOTION_APPLIED",
             "backend": "mlx_metal",
+            "correction_mode": "off",
             "weight_epoch": 7,
             "changed_targets": 1,
             "snapshot_count": 2,
@@ -41,6 +42,25 @@ class RuntimeControlTests(unittest.TestCase):
             ack = ctl.read_runtime_ack(self.write_ack(td))
             self.assertEqual(ack["active_policy"], pc.normalize_policy(POLICY))
             self.assertEqual(ack["active_policy_hash"], pc.policy_hash(POLICY))
+            self.assertEqual(len(ack["ack_sha256"]), 64)
+
+    def test_dict_normalizer_matches_file_reader(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = self.write_ack(td)
+            raw = json.loads(path.read_text())
+            self.assertEqual(
+                ctl.normalize_runtime_ack(raw),
+                ctl.read_runtime_ack(path),
+            )
+
+    def test_ack_requires_explicit_correction_mode(self):
+        with self.assertRaises(ctl.RuntimeControlError):
+            ctl.normalize_runtime_ack({
+                "schema": ctl.ACK_SCHEMA,
+                "backend": "mlx_metal",
+                "weight_epoch": 0,
+                "active_policy": [],
+            })
 
     def test_prepare_demote_writes_exact_runtime_command(self):
         with tempfile.TemporaryDirectory() as td:

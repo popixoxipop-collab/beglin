@@ -8,6 +8,7 @@ planner's expected GPU epoch, policy preimage and target precision.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -78,8 +79,14 @@ def _validate_sha256(value: str, field: str) -> str:
     return value.lower()
 
 
-def read_runtime_ack(path: str | os.PathLike) -> dict:
-    ack = _read_json(path)
+def normalize_runtime_ack(value: dict) -> dict:
+    """Validate one runtime ACK object and attach deterministic evidence hashes."""
+    if not isinstance(value, dict):
+        raise RuntimeControlError("runtime ACK must be a JSON object")
+    ack = dict(value)
+    raw_ack_sha256 = hashlib.sha256(
+        pc.canonical_json(ack).encode()
+    ).hexdigest()
     if ack.get("schema") != ACK_SCHEMA:
         raise RuntimeControlError(
             f"unexpected ACK schema: {ack.get('schema')!r}"
@@ -87,6 +94,11 @@ def read_runtime_ack(path: str | os.PathLike) -> dict:
     if ack.get("backend") != BACKEND:
         raise RuntimeControlError(
             f"unexpected ACK backend: {ack.get('backend')!r}"
+        )
+    correction_mode = ack.get("correction_mode")
+    if correction_mode not in {"off", "on"}:
+        raise RuntimeControlError(
+            f"unexpected ACK correction_mode: {correction_mode!r}"
         )
     try:
         epoch = int(ack["weight_epoch"])
@@ -114,7 +126,12 @@ def read_runtime_ack(path: str | os.PathLike) -> dict:
         "weight_epoch": epoch,
         "active_policy": normalized,
         "active_policy_hash": pc.policy_hash(normalized),
+        "ack_sha256": raw_ack_sha256,
     }
+
+
+def read_runtime_ack(path: str | os.PathLike) -> dict:
+    return normalize_runtime_ack(_read_json(path))
 
 
 def _target_n(policy: list[dict], role: str, layer: int) -> int | None:

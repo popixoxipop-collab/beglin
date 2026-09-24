@@ -18,10 +18,11 @@ import shlex
 import subprocess
 from pathlib import Path
 
+import gpu_runtime_control as grc
 import precision_context as pc
 
 
-ACK_SCHEMA = "gpu-precision-applied-v1"
+ACK_SCHEMA = grc.ACK_SCHEMA
 BACKEND = "mlx_metal"
 FIRST_RELEASE_NS = {5, 6, 7}
 ARCH_GATE = {
@@ -148,40 +149,13 @@ def _binary_identity(host, binary):
 
 def _parse_ack_text(text: str) -> dict:
     try:
-        ack = json.loads(text)
+        raw = json.loads(text)
     except json.JSONDecodeError as exc:
         raise GpuPreflightError(f"invalid runtime ACK JSON: {exc}") from exc
-    if not isinstance(ack, dict):
-        raise GpuPreflightError("runtime ACK must be a JSON object")
-    if ack.get("schema") != ACK_SCHEMA:
-        raise GpuPreflightError(
-            f"unexpected ACK schema: {ack.get('schema')!r}"
-        )
-    if ack.get("backend") != BACKEND:
-        raise GpuPreflightError(
-            f"unexpected ACK backend: {ack.get('backend')!r}"
-        )
-    if ack.get("correction_mode") not in {"off", "on"}:
-        raise GpuPreflightError("runtime ACK lacks valid correction_mode")
     try:
-        epoch = int(ack["weight_epoch"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise GpuPreflightError("runtime ACK has invalid weight_epoch") from exc
-    policy = ack.get("active_policy")
-    if not isinstance(policy, list):
-        raise GpuPreflightError("runtime ACK active_policy must be a list")
-    rows = pc.normalize_policy(policy)
-    keys = [(r["role"], r["layer"]) for r in rows]
-    if len(keys) != len(set(keys)):
-        raise GpuPreflightError(
-            "runtime ACK has duplicate role/layer policy rows"
-        )
-    return {
-        **ack,
-        "weight_epoch": epoch,
-        "active_policy": rows,
-        "active_policy_hash": pc.policy_hash(rows),
-    }
+        return grc.normalize_runtime_ack(raw)
+    except grc.RuntimeControlError as exc:
+        raise GpuPreflightError(str(exc)) from exc
 
 
 def parse_emitted_tokens(output: str, architecture: str, req: int = 0) -> list[int]:
