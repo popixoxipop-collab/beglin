@@ -21,6 +21,59 @@ class FakeProc:
 
 
 class GpuIsolatedPreflightTests(unittest.TestCase):
+    @patch.object(gp.bc, "collect")
+    def test_binary_capability_requires_control_plane_and_requested_width(self, collect):
+        collect.return_value = {
+            "worker": {
+                "host": "XOX.local",
+                "arch": "arm64",
+                "binary_path": "/bin/q",
+                "binary_sha256": "a" * 64,
+                "binary_size": 123,
+            },
+            "backends": {
+                "mlx_metal": {
+                    "compiled": True,
+                    "qng64_widths": {
+                        "5": "IMPLEMENTED_UNVERIFIED",
+                        "6": "IMPLEMENTED_UNVERIFIED",
+                        "7": "IMPLEMENTED_UNVERIFIED",
+                    },
+                    "runtime_control": {
+                        "compiled": True,
+                        "symbols": {"mlx_gpu_available": True},
+                    },
+                }
+            },
+        }
+        identity = {
+            "host": "XOX.local",
+            "arch": "arm64",
+            "binary_path": "/bin/q",
+            "binary_sha256": "a" * 64,
+            "binary_size": 123,
+        }
+        got = gp._require_binary_capability(
+            "xox", "/bin/q", CAND, identity=identity
+        )
+        self.assertTrue(got["backends"]["mlx_metal"]["runtime_control"]["compiled"])
+        collect.return_value["backends"]["mlx_metal"]["runtime_control"]["compiled"] = False
+        with self.assertRaises(gp.GpuPreflightError):
+            gp._require_binary_capability(
+                "xox", "/bin/q", CAND, identity=identity
+            )
+
+    def test_binary_identity_drift_between_probes_is_rejected(self):
+        identity = {
+            "host": "XOX.local", "arch": "arm64",
+            "binary_sha256": "a" * 64, "binary_size": 123,
+        }
+        capability = {"worker": dict(identity)}
+        gp._require_same_worker_identity(identity, capability)
+        capability["worker"]["binary_sha256"] = "b" * 64
+        with self.assertRaises(gp.GpuPreflightError):
+            gp._require_same_worker_identity(identity, capability)
+
     def test_render_policy_is_canonical(self):
         rows = [
             {"role": "shared_up_proj", "layer": 3, "n": 5},
@@ -104,6 +157,32 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
         got = gp._parse_ack_text(json.dumps(base))
         self.assertEqual(got["active_policy_hash"], pc.policy_hash([]))
 
+    def test_capability_identity_mismatch_fails_closed(self):
+        identity = {
+            "host": "XOX.local",
+            "arch": "arm64",
+            "binary_sha256": "a" * 64,
+            "binary_size": 123,
+        }
+        same = {
+            "worker": {
+                "host": "XOX.local",
+                "arch": "arm64",
+                "binary_sha256": "a" * 64,
+                "binary_size": 123,
+            }
+        }
+        gp._require_same_worker_identity(identity, same)
+        changed = {
+            "worker": {
+                **same["worker"],
+                "binary_sha256": "b" * 64,
+            }
+        }
+        with self.assertRaises(gp.GpuPreflightError):
+            gp._require_same_worker_identity(identity, changed)
+
+    @patch.object(gp, "_remote_sha256", new=lambda *a, **k: "f" * 64)
     @patch.object(gp, "_require_binary_capability", new=lambda *a, **k: {"schema": "test-capability"})
     @patch.object(gp, "_binary_identity")
     @patch.object(gp, "_read_text")
@@ -152,7 +231,11 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
         self.assertEqual(got["weight_epoch"], 0)
         self.assertEqual(got["applied_policy_hash"], pc.policy_hash([]))
         self.assertEqual(got["correction_mode"], "off")
+        self.assertEqual(got["manifest_sha256"], "f" * 64)
+        self.assertEqual(got["safetensors_sha256"], "f" * 64)
+        self.assertEqual(len(got["worker_log_sha256"]), 64)
 
+    @patch.object(gp, "_remote_sha256", new=lambda *a, **k: "f" * 64)
     @patch.object(gp, "_require_binary_capability", new=lambda *a, **k: {"schema": "test-capability"})
     @patch.object(gp, "_binary_identity")
     @patch.object(gp, "_read_text")
@@ -196,6 +279,7 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
                 policy=CAND,
             )
 
+    @patch.object(gp, "_remote_sha256", new=lambda *a, **k: "f" * 64)
     @patch.object(gp, "_require_binary_capability", new=lambda *a, **k: {"schema": "test-capability"})
     @patch.object(gp, "_binary_identity")
     @patch.object(gp, "_read_text")

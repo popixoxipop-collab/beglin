@@ -148,7 +148,19 @@ def _binary_identity(host, binary):
     }
 
 
-def _require_binary_capability(host, binary, policy):
+def _require_same_worker_identity(identity, capability):
+    worker = capability.get("worker")
+    if not isinstance(worker, dict):
+        raise GpuPreflightError("capability artifact is missing worker identity")
+    for key in ("host", "arch", "binary_sha256", "binary_size"):
+        if str(worker.get(key)) != str(identity.get(key)):
+            raise GpuPreflightError(
+                f"binary identity changed between probes for {key}: "
+                f"identity={identity.get(key)!r} capability={worker.get(key)!r}"
+            )
+
+
+def _require_binary_capability(host, binary, policy, identity=None):
     try:
         capability = bc.collect(host, str(binary))
     except Exception as exc:
@@ -179,6 +191,8 @@ def _require_binary_capability(host, binary, policy):
             raise GpuPreflightError(
                 f"GPU binary does not support {row['role']}/L{row['layer']} n={row['n']}: {status}"
             )
+    if identity is not None:
+        _require_same_worker_identity(identity, capability)
     return capability
 
 
@@ -371,7 +385,9 @@ def run_isolated_worker(
         stop_extra=stop_extra,
     )
     identity = _binary_identity(host, binary)
-    capability = _require_binary_capability(host, binary, rows)
+    capability = _require_binary_capability(
+        host, binary, rows, identity=identity
+    )
     proc = _run(
         host,
         _command(cwd, binary, env),
@@ -459,6 +475,25 @@ def run_isolated_worker(
     }
 
 
+def _worker_bundle_view(run):
+    return {
+        "backend": run["backend"],
+        "architecture": run["architecture"],
+        "correction_mode": run["correction_mode"],
+        "policy": run["policy"],
+        "applied_policy_hash": run["applied_policy_hash"],
+        "weight_epoch": run["weight_epoch"],
+        "worker": run["worker"],
+        "promotion_file_sha256": run["promotion_file_sha256"],
+        "ack_sha256": run["ack_sha256"],
+        "validation": run["validation"],
+        "worker_log_path": run["worker_log_path"],
+        "worker_log_sha256": run["worker_log_sha256"],
+        "manifest_sha256": run["manifest_sha256"],
+        "safetensors_sha256": run["safetensors_sha256"],
+    }
+
+
 def run_ab_preflight(
     *,
     host,
@@ -475,6 +510,7 @@ def run_ab_preflight(
     reference,
     prompt_len,
     timeout=180,
+    persist_bundle=True,
 ):
     for key in ("orig_token", "corrected_token", "pos"):
         if key not in event:
