@@ -13863,6 +13863,10 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
     const char *env_arrive    = getenv("QWEN_MOE_CB_ARRIVE");
     const char *env_stopextra = getenv("QWEN_MOE_CB_STOP_EXTRA");
     const char *env_check     = getenv("QWEN_MOE_GPU_CB_CHECK");
+    const char *env_validation = getenv("QWEN_MOE_GPU_VALIDATION_REPORT");
+    const char *env_correction = getenv("QWEN_MOE_NEARTIE_CORRECT");
+    int validation_on = env_validation && env_validation[0] && atoi(env_validation) != 0;
+    int validation_finite = 1; long validation_logits_checked = 0;
 
     int B          = env_slots  && env_slots[0]  ? atoi(env_slots)  : 4;
     int R          = env_reqs   && env_reqs[0]   ? atoi(env_reqs)   : 12;
@@ -14042,6 +14046,13 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
                                 "at step %d (pass %d)\n", step, pass);
                 exit(1);
             }
+            if (validation_on && pass == 1) {
+                size_t nlogits = (size_t)A * (size_t)MOE_VOCAB;
+                for (size_t vi = 0; vi < nlogits; vi++) {
+                    if (!isfinite(gpu_logits[vi])) validation_finite = 0;
+                }
+                validation_logits_checked += (long)nlogits;
+            }
             double temit = nowt();
 
             for (int m = 0; m < ndec; m++) {
@@ -14095,6 +14106,14 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
             step, steps_idle, steps_with_idle_slot, admitted_after_evict, queue_wait_events,
             queue_wait_max_steps, steps_pure_prefill, ttft_max, ttft_n ? ttft_sum/ttft_n : 0.0, ms_wall, toksec);
     fprintf(stderr, "RESULT: MoE GPU V5j-ragged online GQA cbatch gate complete, B=%d R=%d\n", B, R);
+    if (validation_on) {
+        int correction_on = env_correction && env_correction[0] && atoi(env_correction) != 0;
+        fprintf(stderr,
+                "GPU_VALIDATION_V1 backend=mlx_metal arch=gqa correction=%s finite_logits=%d "
+                "logits_checked=%ld requests=%d\n",
+                correction_on ? "on" : "off", validation_finite,
+                validation_logits_checked, R);
+    }
     free(x_embed); free(gpu_logits);
     return 1;
 }
@@ -14575,6 +14594,10 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     const char *env_arrive    = getenv("QWEN_MOE_CB_ARRIVE");
     const char *env_stopextra = getenv("QWEN_MOE_CB_STOP_EXTRA");
     const char *env_check     = getenv("QWEN_MOE_GPU_CB_CHECK");
+    const char *env_validation = getenv("QWEN_MOE_GPU_VALIDATION_REPORT");
+    const char *env_correction = getenv("QWEN_MOE_NEARTIE_CORRECT");
+    int validation_on = env_validation && env_validation[0] && atoi(env_validation) != 0;
+    int validation_finite = 1; long validation_logits_checked = 0;
 
     int B          = env_slots  && env_slots[0]  ? atoi(env_slots)  : 4;
     int R          = env_reqs   && env_reqs[0]   ? atoi(env_reqs)   : 12;
@@ -14775,6 +14798,13 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                                 "at step %d (pass %d)\n", step, pass);
                 exit(1);
             }
+            if (validation_on && pass == 1) {
+                size_t nlogits = (size_t)A * (size_t)MOE_VOCAB;
+                for (size_t vi = 0; vi < nlogits; vi++) {
+                    if (!isfinite(gpu_logits[vi])) validation_finite = 0;
+                }
+                validation_logits_checked += (long)nlogits;
+            }
             double temit = nowt();
 
             // 4. decode columns: emit + evict (EOS / stop_extra / maxnew / position cap).
@@ -14830,6 +14860,14 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
             step, steps_idle, steps_with_idle_slot, admitted_after_evict, queue_wait_events,
             queue_wait_max_steps, steps_pure_prefill, ttft_max, ttft_n ? ttft_sum/ttft_n : 0.0, ms_wall, toksec);
     fprintf(stderr, "RESULT: MoE GPU V5h online cbatch gate complete, B=%d R=%d\n", B, R);
+    if (validation_on) {
+        int correction_on = env_correction && env_correction[0] && atoi(env_correction) != 0;
+        fprintf(stderr,
+                "GPU_VALIDATION_V1 backend=mlx_metal arch=mla correction=%s finite_logits=%d "
+                "logits_checked=%ld requests=%d\n",
+                correction_on ? "on" : "off", validation_finite,
+                validation_logits_checked, R);
+    }
     free(x_embed); free(gpu_logits);
     return 1;
 }

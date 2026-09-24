@@ -144,6 +144,18 @@ class BindingSourceGuardTests(unittest.TestCase):
             QWEN.count("moe_gpu_argmax_finite(lg, MOE_VOCAB"), 4
         )
 
+    def test_gpu_validation_report_covers_both_online_schedulers(self):
+        self.assertGreaterEqual(
+            QWEN.count("QWEN_MOE_GPU_VALIDATION_REPORT"), 2
+        )
+        self.assertGreaterEqual(
+            QWEN.count("GPU_VALIDATION_V1 backend=mlx_metal"), 2
+        )
+        self.assertIn("arch=gqa correction=%s finite_logits=%d", QWEN)
+        self.assertIn("arch=mla correction=%s finite_logits=%d", QWEN)
+        self.assertGreaterEqual(QWEN.count("validation_logits_checked"), 6)
+        self.assertGreaterEqual(QWEN.count("isfinite(gpu_logits[vi])"), 2)
+
     def test_gpu_ack_is_fsync_then_rename_and_fail_closed(self):
         block = QWEN.split("static int moe_gpu_write_applied_ack", 2)[2]
         block = block.split("static MoeAFTensor *moe_gpu_role_base_tensor", 1)[0]
