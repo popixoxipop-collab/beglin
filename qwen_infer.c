@@ -17289,9 +17289,12 @@ static void moe_promotion_nq_init_gpu(void) {
     fprintf(stderr, "[moe promotion nq gpu] '%s': %d lines, %d promoted, %d bind failures, %d verify failures, g_moe_naf now %d epoch=%llu\n",
             path, n_lines, n_applied, n_bind_failed, n_verify_failed, g_moe_naf,
             (unsigned long long)g_moe_gpu_weight_epoch);
-    if (n_applied && !moe_gpu_write_applied_ack("PROMOTION_APPLIED", n_applied, NULL)) {
+    const char *ack_path = getenv("QWEN_MOE_GPU_APPLIED_ACK");
+    const char *ack_status = n_applied ? "PROMOTION_APPLIED" : "STARTUP_STATE";
+    if (ack_path && ack_path[0] &&
+        !moe_gpu_write_applied_ack(ack_status, n_applied, NULL)) {
         fprintf(stderr,
-                "FATAL: [moe promotion nq gpu] promotion verified but durable ACK failed; refusing to serve unacknowledged state\n");
+                "FATAL: [moe promotion nq gpu] startup applied-state ACK failed; refusing to serve unacknowledged state\n");
         exit(1);
     }
 }

@@ -126,6 +126,14 @@ class BindingSourceGuardTests(unittest.TestCase):
         self.assertIn("moe_neartie_correct_load_attn_hi(promo_st)", branch)
         self.assertNotIn("atoi(nt_on)", branch)
 
+    def test_gpu_startup_ack_exists_even_for_empty_policy(self):
+        block = QWEN.split("static void moe_promotion_nq_init_gpu(void)", 2)[2]
+        block = block.split("#endif", 1)[0]
+        self.assertIn('"STARTUP_STATE"', block)
+        self.assertIn("ack_path && ack_path[0]", block)
+        self.assertIn("moe_gpu_write_applied_ack(ack_status, n_applied, NULL)", block)
+        self.assertNotIn("if (n_applied && !moe_gpu_write_applied_ack", block)
+
     def test_gpu_ack_is_fsync_then_rename_and_fail_closed(self):
         block = QWEN.split("static int moe_gpu_write_applied_ack", 2)[2]
         block = block.split("static MoeAFTensor *moe_gpu_role_base_tensor", 1)[0]
