@@ -107,6 +107,7 @@ def evaluate_candidate(
             "backend": context.backend,
             "expected_epoch": int(current_epoch),
             "evidence_mode": evidence_mode,
+            "binary_sha256": context.binary_sha256.lower(),
         }
 
     observed_epoch = preflight_evidence.get("observed_epoch")

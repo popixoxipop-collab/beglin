@@ -29,6 +29,7 @@ class ObservationEvidence:
     run_errors: int = 0
     median_margin: float | None = None
     target_replay_pass: bool | None = None
+    worker_instance_id: str | None = None
 
     @property
     def attribution_rate(self):
@@ -43,17 +44,32 @@ def evaluate(
     *,
     min_requests: int = 50,
     min_effective_checks: int = 1,
+    transition_mode: str = "live",
 ):
     if baseline.context_hash != post.context_hash or baseline.backend != post.backend:
         return {
             "status": "INCONCLUSIVE_CONTEXT_MISMATCH",
             "reason": "PRE/POST execution context or backend differs",
         }
-    if post.weight_epoch <= baseline.weight_epoch:
-        return {
-            "status": "INCONCLUSIVE_CONTEXT_MISMATCH",
-            "reason": "POST weight epoch did not advance",
-        }
+    if transition_mode == "live":
+        if post.weight_epoch <= baseline.weight_epoch:
+            return {
+                "status": "INCONCLUSIVE_CONTEXT_MISMATCH",
+                "reason": "POST weight epoch did not advance",
+            }
+    elif transition_mode == "restart":
+        if not baseline.worker_instance_id or not post.worker_instance_id:
+            return {
+                "status": "INCONCLUSIVE_CONTEXT_MISMATCH",
+                "reason": "restart canary requires PRE/POST worker instance ids",
+            }
+        if baseline.worker_instance_id == post.worker_instance_id:
+            return {
+                "status": "INCONCLUSIVE_CONTEXT_MISMATCH",
+                "reason": "restart canary did not prove a new worker instance",
+            }
+    else:
+        raise ValueError(f"unsupported transition_mode={transition_mode!r}")
     if baseline.policy_hash == post.policy_hash:
         return {
             "status": "INCONCLUSIVE_CONTEXT_MISMATCH",

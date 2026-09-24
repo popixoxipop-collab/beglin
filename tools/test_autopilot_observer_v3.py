@@ -19,6 +19,7 @@ def sample(**kw):
         run_errors=0,
         median_margin=0.02,
         target_replay_pass=True,
+        worker_instance_id="worker-pre",
     )
     base.update(kw)
     return ObservationEvidence(**base)
@@ -74,6 +75,35 @@ class ObserverV3Tests(unittest.TestCase):
             ),
         )
         self.assertEqual(got["status"], "REGRESSION_DETECTED")
+
+    def test_restart_mode_allows_epoch_reset_but_requires_new_worker(self):
+        got = evaluate(
+            sample(weight_epoch=9, worker_instance_id="old"),
+            sample(
+                policy_hash="post",
+                weight_epoch=1,
+                worker_instance_id="new",
+                effective_attribution_checks=10,
+                attribution_hits=0,
+                median_margin=None,
+            ),
+            transition_mode="restart",
+        )
+        self.assertEqual(got["status"], "CANARY_PASS")
+
+    def test_restart_mode_rejects_same_or_missing_worker_instance(self):
+        same = evaluate(
+            sample(worker_instance_id="same"),
+            sample(policy_hash="post", weight_epoch=2, worker_instance_id="same"),
+            transition_mode="restart",
+        )
+        self.assertEqual(same["status"], "INCONCLUSIVE_CONTEXT_MISMATCH")
+        missing = evaluate(
+            sample(worker_instance_id=None),
+            sample(policy_hash="post", weight_epoch=1, worker_instance_id="new"),
+            transition_mode="restart",
+        )
+        self.assertEqual(missing["status"], "INCONCLUSIVE_CONTEXT_MISMATCH")
 
 
 if __name__ == "__main__":
