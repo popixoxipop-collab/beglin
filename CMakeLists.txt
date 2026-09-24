@@ -106,3 +106,15 @@ add_executable(qwen_infer_gpu
   $<TARGET_OBJECTS:mlx_moe_obj>
 )
 target_link_libraries(qwen_infer_gpu PRIVATE mlx "-framework Accelerate" pthread)
+
+# G2 precision-control runtime gate. This intentionally links only the MLX
+# registry bridge, not the full model, so binding representation changes and
+# snapshot/restore can be certified independently on Apple Silicon.
+add_executable(mlx_binding_transition_test
+  mlx_binding_transition_test.cpp
+  $<TARGET_OBJECTS:mlx_moe_obj>
+)
+target_link_libraries(mlx_binding_transition_test PRIVATE mlx)
+
+enable_testing()
+add_test(NAME mlx_binding_transition COMMAND mlx_binding_transition_test)

@@ -7117,7 +7117,15 @@ static void moe_demotion_nq_maybe_apply(void);   // P4: admission-time pointer r
 // GPU/CPU serving gates never coexist in one run), so there's no cross-talk risk either way, but
 // writing GPU state into a CPU-labeled global is needless confusion for zero benefit.
 static int g_moe_promoted_nq_gpu[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
+// G2/G3: retain the exact pre-promotion GPU registry representation so a later
+// quiescent demotion restores the approved binding rather than rebuilding it.
+static uint64_t g_moe_promoted_nq_gpu_snapshot[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
+static int g_moe_promoted_nq_gpu_snapshot_kind[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
+static int g_moe_promoted_nq_gpu_snapshot_bits[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
+static uint64_t g_moe_gpu_weight_epoch = 0;
 static void moe_promotion_nq_init_gpu(void);
+static int moe_gpu_demotion_pending(void);
+static int moe_gpu_demotion_apply_quiescent(void);
 #endif
 
 static void moe_promotion_apply_one(MoeAttribRole role, int layer) {
@@ -13890,6 +13898,7 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
         for (int s = 0; s < B; s++) { mcb_active[s] = 0; mcb_freed_before[s] = 0; }
 
         int qhead = 0, nact = 0;
+        int gpu_demotion_drain = 0;
         step = 0; total_tok_processed = 0;
         steps_idle = 0; steps_with_idle_slot = 0; admitted_after_evict = 0;
         queue_wait_events = 0; queue_wait_max_steps = 0; steps_pure_prefill = 0;
@@ -13898,7 +13907,21 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
         while (qhead < R || nact > 0) {
             while (qhead < R && rq_plen[qhead] < 0) qhead++;
 
-            for (int s = 0; s < B && qhead < R; s++) {
+            if (pass == 1 && !gpu_demotion_drain && moe_gpu_demotion_pending()) {
+                gpu_demotion_drain = 1;
+                fprintf(stderr, "[moe gpu gqa cb online] GPU demotion requested: admission paused, draining %d active requests\n", nact);
+            }
+            if (gpu_demotion_drain && nact == 0) {
+                if (!moe_gpu_demotion_apply_quiescent()) {
+                    fprintf(stderr, "FATAL: [moe gpu gqa cb online] GPU demotion failed at quiescent boundary; admission remains stopped\n");
+                    exit(1);
+                }
+                gpu_demotion_drain = 0;
+                fprintf(stderr, "[moe gpu gqa cb online] GPU demotion committed; admission resumed epoch=%llu\n",
+                        (unsigned long long)g_moe_gpu_weight_epoch);
+            }
+
+            if (!gpu_demotion_drain) for (int s = 0; s < B && qhead < R; s++) {
                 if (mcb_active[s]) continue;
                 if (rq_arrive[qhead] > step) break;
                 int r = qhead++;
@@ -13991,6 +14014,12 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
             }
             total_tok_processed += A;
             step++;
+        }
+        if (pass == 1 && moe_gpu_demotion_pending()) {
+            if (!moe_gpu_demotion_apply_quiescent()) {
+                fprintf(stderr, "FATAL: [moe gpu gqa cb online] final GPU demotion failed after drain\n");
+                exit(1);
+            }
         }
         if (pass == 1) t_run1 = nowt();
         if (pass == 0) fprintf(stderr, "[moe gpu gqa cb online] warmup pass done (%d steps, untimed) -- now starting the real timed run\n", step);
@@ -14599,6 +14628,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
         for (int s = 0; s < B; s++) { mcb_active[s] = 0; mcb_freed_before[s] = 0; }
 
         int qhead = 0, nact = 0;
+        int gpu_demotion_drain = 0;
         step = 0; total_tok_processed = 0;
         steps_idle = 0; steps_with_idle_slot = 0; admitted_after_evict = 0;
         queue_wait_events = 0; queue_wait_max_steps = 0; steps_pure_prefill = 0;
@@ -14607,8 +14637,22 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
         while (qhead < R || nact > 0) {
             while (qhead < R && rq_plen[qhead] < 0) qhead++;   // skip requests dropped by the guard
 
+            if (pass == 1 && !gpu_demotion_drain && moe_gpu_demotion_pending()) {
+                gpu_demotion_drain = 1;
+                fprintf(stderr, "[moe gpu cb online] GPU demotion requested: admission paused, draining %d active requests\n", nact);
+            }
+            if (gpu_demotion_drain && nact == 0) {
+                if (!moe_gpu_demotion_apply_quiescent()) {
+                    fprintf(stderr, "FATAL: [moe gpu cb online] GPU demotion failed at quiescent boundary; admission remains stopped\n");
+                    exit(1);
+                }
+                gpu_demotion_drain = 0;
+                fprintf(stderr, "[moe gpu cb online] GPU demotion committed; admission resumed epoch=%llu\n",
+                        (unsigned long long)g_moe_gpu_weight_epoch);
+            }
+
             // 1. admission: occupy free slots whose request has arrived.
-            for (int s = 0; s < B && qhead < R; s++) {
+            if (!gpu_demotion_drain) for (int s = 0; s < B && qhead < R; s++) {
                 if (mcb_active[s]) continue;
                 if (rq_arrive[qhead] > step) break;   // FIFO head-of-line block
                 int r = qhead++;
@@ -14707,6 +14751,12 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
             }
             total_tok_processed += A;
             step++;
+        }
+        if (pass == 1 && moe_gpu_demotion_pending()) {
+            if (!moe_gpu_demotion_apply_quiescent()) {
+                fprintf(stderr, "FATAL: [moe gpu cb online] final GPU demotion failed after drain\n");
+                exit(1);
+            }
         }
         if (pass == 1) t_run1 = nowt();
         if (pass == 0) fprintf(stderr, "[moe gpu cb online] warmup pass done (%d steps, untimed) -- now starting the real timed run\n", step);
@@ -16543,6 +16593,113 @@ static void moe_demotion_nq_maybe_apply(void) {
 }
 
 #ifdef QWEN_GPU_MLX
+static MoeAFTensor *moe_gpu_role_base_tensor(MoeAttribRole role, int layer) {
+    if (layer < 0 || layer >= MOE_NL) return NULL;
+    switch (role) {
+        case MOE_ATTRIB_Q_PROJ:      return g_moe_lt[layer].q_proj;
+        case MOE_ATTRIB_KV_A_PROJ:   return g_moe_lt[layer].kv_a_proj;
+        case MOE_ATTRIB_KV_B_PROJ:   return g_moe_lt[layer].kv_b_proj;
+        case MOE_ATTRIB_O_PROJ:      return g_moe_lt[layer].o_proj;
+        case MOE_ATTRIB_K_PROJ:      return g_moe_lt[layer].k_proj;
+        case MOE_ATTRIB_V_PROJ:      return g_moe_lt[layer].v_proj;
+        case MOE_ATTRIB_DENSE_GATE:  return g_moe_lt[layer].dense_gate;
+        case MOE_ATTRIB_DENSE_UP:    return g_moe_lt[layer].dense_up;
+        case MOE_ATTRIB_DENSE_DOWN:  return g_moe_lt[layer].dense_down;
+        case MOE_ATTRIB_SHARED_GATE: return g_moe_lt[layer].shared_gate;
+        case MOE_ATTRIB_SHARED_UP:   return g_moe_lt[layer].shared_up;
+        case MOE_ATTRIB_SHARED_DOWN: return g_moe_lt[layer].shared_down;
+        case MOE_ATTRIB_EXPERT_GATE: return g_moe_lt[layer].switch_gate;
+        case MOE_ATTRIB_EXPERT_UP:   return g_moe_lt[layer].switch_up;
+        case MOE_ATTRIB_EXPERT_DOWN: return g_moe_lt[layer].switch_down;
+        default: return NULL;
+    }
+}
+
+static int moe_gpu_demotion_pending(void) {
+    const char *path = getenv("QWEN_MOE_DEMOTION_FILE_NQ");
+    if (!path || !path[0]) return 0;
+    FILE *f = fopen(path, "r");
+    if (!f) return 0;
+    char role_buf[64]; int layer;
+    int pending = 0;
+    while (fscanf(f, "%63s %d", role_buf, &layer) == 2) {
+        int role_i = moe_attrib_role_from_name(role_buf);
+        if (role_i < 0 || layer < 0 || layer >= MOE_NL) continue;
+        MoeAttribRole role = (MoeAttribRole)role_i;
+        if (g_moe_promoted_nq_gpu[role][layer] != 0) { pending = 1; break; }
+    }
+    fclose(f);
+    return pending;
+}
+
+static int moe_gpu_demotion_apply_quiescent(void) {
+    const char *path = getenv("QWEN_MOE_DEMOTION_FILE_NQ");
+    if (!path || !path[0]) return 1;
+    FILE *f = fopen(path, "r");
+    if (!f) return 1;
+    if (!mlx_gpu_synchronize()) {
+        fclose(f);
+        fprintf(stderr, "[moe demotion nq gpu] FAIL: MLX synchronize failed at quiescent boundary\n");
+        return 0;
+    }
+    char role_buf[64]; int layer;
+    int applied = 0;
+    while (fscanf(f, "%63s %d", role_buf, &layer) == 2) {
+        int role_i = moe_attrib_role_from_name(role_buf);
+        if (role_i < 0 || layer < 0 || layer >= MOE_NL) {
+            fprintf(stderr, "[moe demotion nq gpu] SKIP invalid target role=%s layer=%d\n", role_buf, layer);
+            continue;
+        }
+        MoeAttribRole role = (MoeAttribRole)role_i;
+        int old_n = g_moe_promoted_nq_gpu[role][layer];
+        if (!old_n) continue;
+        uint64_t sid = g_moe_promoted_nq_gpu_snapshot[role][layer];
+        MoeAFTensor *base_ptr = moe_gpu_role_base_tensor(role, layer);
+        if (!sid || !base_ptr) {
+            fclose(f);
+            fprintf(stderr, "[moe demotion nq gpu] FAIL: promoted target has no rollback snapshot role=%s layer=%d n=%d\n",
+                    role_buf, layer, old_n);
+            return 0;
+        }
+        if (!mlx_gpu_restore_binding_snapshot(sid)) {
+            fclose(f);
+            fprintf(stderr, "[moe demotion nq gpu] FAIL: snapshot restore failed role=%s layer=%d snapshot=%llu\n",
+                    role_buf, layer, (unsigned long long)sid);
+            return 0;
+        }
+        int restored_bits = 0;
+        int restored_kind = mlx_gpu_binding_kind(base_ptr->name, &restored_bits);
+        int expected_kind = g_moe_promoted_nq_gpu_snapshot_kind[role][layer];
+        int expected_bits = g_moe_promoted_nq_gpu_snapshot_bits[role][layer];
+        if (restored_kind != expected_kind || restored_bits != expected_bits) {
+            fclose(f);
+            fprintf(stderr, "[moe demotion nq gpu] FAIL: restore verification mismatch role=%s layer=%d got(kind=%d,bits=%d) expected(kind=%d,bits=%d)\n",
+                    role_buf, layer, restored_kind, restored_bits, expected_kind, expected_bits);
+            return 0;
+        }
+        (void)mlx_gpu_drop_binding_snapshot(sid);
+        g_moe_promoted_nq_gpu_snapshot[role][layer] = 0;
+        g_moe_promoted_nq_gpu_snapshot_kind[role][layer] = 0;
+        g_moe_promoted_nq_gpu_snapshot_bits[role][layer] = 0;
+        g_moe_promoted_nq_gpu[role][layer] = 0;
+        applied++;
+        fprintf(stderr, "[moe demotion nq gpu] role=%s layer=%d DEMOTED from qNg64(n=%d) to kind=%d bits=%d\n",
+                role_buf, layer, old_n, restored_kind, restored_bits);
+    }
+    fclose(f);
+    if (applied) {
+        if (!mlx_gpu_reset_runtime_epoch()) {
+            fprintf(stderr,
+                    "[moe demotion nq gpu] FAIL: could not reset lazy/KV state at new weight epoch; admission remains stopped\n");
+            return 0;
+        }
+        g_moe_gpu_weight_epoch++;
+        fprintf(stderr, "[moe demotion nq gpu] quiescent restore + runtime epoch reset complete targets=%d epoch=%llu\n",
+                applied, (unsigned long long)g_moe_gpu_weight_epoch);
+    }
+    return 1;
+}
+
 // D-qNg64-gpu-1: GPU mirror of moe_promotion_nq_init() above. Same env var
 // (QWEN_MOE_PROMOTION_FILE_NQ), same 3-column file format, same validated n range, same
 // "read once at startup, no hot-reload" semantic -- quirky-stirring-trinket.md's B2 tradeoff
@@ -16553,11 +16710,10 @@ static void moe_demotion_nq_maybe_apply(void) {
 //   pointer swap (g_moe_lt_active[layer].<role> repointed at the new struct, any name works),
 //   but GPU's mlx_gpu_bind_af() keys into a name -> tensor hash map (g_tensors/g_dtensors) that
 //   resolve_ffn_role()/lazy_matvec_e0() look up BY NAME per call -- so the promoted tensor must
-//   bind under the same name production used, exactly the technique run_moe_gpu_mode()'s GATE7
-//   already uses for its own bits=16 promotion test.
-//   n=7 has no native MLX kernel on this build (confirmed via MLX's own quantized.h
-//   static_assert) -- mlx_gpu_bind_af() cleanly returns 0 for it; treated as an expected
-//   platform limit (log + skip), never a FATAL.
+//   bind under the same name production used. n=7 and n=9..15 are valid here: mlx_moe.cpp
+//   routes them to the custom qNg64 Metal representation while n=2/3/5/6 ride MLX's native
+//   quantized path. Promotion therefore verifies the applied registry kind+bits rather than
+//   assuming every successful request landed on the native representation.
 //   PREREQUISITE: like the CPU driver, needs g_moe_hi_st (the open bf16 checkpoint handle qNg64
 //   dequantizes from) -- but unlike the CPU driver, NEITHER GPU online-serving gate has any
 //   other code path that populates it, so this function opens it itself (idempotently), reusing
@@ -16589,7 +16745,7 @@ static void moe_promotion_nq_init_gpu(void) {
     FILE *f = fopen(path, "r");
     if (!f) { fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: cannot open '%s'\n", path); exit(1); }
     char role_buf[64]; int layer, n;
-    int n_lines = 0, n_applied = 0, n_skipped_n7 = 0, n_bind_failed = 0;
+    int n_lines = 0, n_applied = 0, n_bind_failed = 0, n_verify_failed = 0;
     while (fscanf(f, "%63s %d %d", role_buf, &layer, &n) == 3) {
         n_lines++;
         int role_i = moe_attrib_role_from_name(role_buf);
@@ -16662,6 +16818,27 @@ static void moe_promotion_nq_init_gpu(void) {
             continue;
         }
 
+        int before_bits = 0;
+        int before_kind = mlx_gpu_binding_kind(base_ptr->name, &before_bits);
+        if (before_kind == 0) {
+            fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d REFUSED: current GPU binding for '%s' is missing\n",
+                    role_buf, layer, base_ptr->name);
+            n_bind_failed++;
+            continue;
+        }
+        if (!mlx_gpu_synchronize()) {
+            fprintf(stderr, "FATAL: [moe promotion nq gpu] GPU synchronize failed before snapshot role=%s layer=%d\n",
+                    role_buf, layer);
+            exit(1);
+        }
+        uint64_t attempt_snapshot = 0;
+        if (!mlx_gpu_snapshot_binding(base_ptr->name, &attempt_snapshot)) {
+            fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d REFUSED: could not snapshot current GPU binding kind=%d bits=%d\n",
+                    role_buf, layer, before_kind, before_bits);
+            n_bind_failed++;
+            continue;
+        }
+
         char st_name[192];
         MoeAFTensor *qnt;
         if (is_expert) {
@@ -16676,30 +16853,69 @@ static void moe_promotion_nq_init_gpu(void) {
         int ok = mlx_gpu_bind_af(qnt->base, 0, qnt->name, qnt->E, qnt->out, qnt->in, qnt->ng,
                                   qnt->packed_off, qnt->scale_off, qnt->bias_off, qnt->bits);
         if (!ok) {
-            if (n == 7) {
-                fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d SKIP: n=7 has no native "
-                                "MLX kernel (expected platform limit) -- stays bits=%d on GPU\n", role_buf, layer, base_bits);
-                n_skipped_n7++;
-            } else {
-                fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d SKIP: mlx_gpu_bind_af "
-                                "failed for qNg64(n=%d) (unexpected)\n", role_buf, layer, n);
-                n_bind_failed++;
+            fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d SKIP: mlx_gpu_bind_af failed for qNg64(n=%d); restoring pre-attempt snapshot\n",
+                    role_buf, layer, n);
+            if (!mlx_gpu_synchronize() || !mlx_gpu_restore_binding_snapshot(attempt_snapshot)) {
+                fprintf(stderr, "FATAL: [moe promotion nq gpu] failed to restore binding after candidate bind failure role=%s layer=%d\n",
+                        role_buf, layer);
+                exit(1);
             }
+            int rb_bits = 0;
+            int rb_kind = mlx_gpu_binding_kind(base_ptr->name, &rb_bits);
+            if (rb_kind != before_kind || rb_bits != before_bits) {
+                fprintf(stderr, "FATAL: [moe promotion nq gpu] rollback verification mismatch role=%s layer=%d got(kind=%d,bits=%d) expected(kind=%d,bits=%d)\n",
+                        role_buf, layer, rb_kind, rb_bits, before_kind, before_bits);
+                exit(1);
+            }
+            (void)mlx_gpu_drop_binding_snapshot(attempt_snapshot);
+            n_bind_failed++;
             continue;
+        }
+
+        int applied_bits = 0;
+        int applied_kind = mlx_gpu_binding_kind(base_ptr->name, &applied_bits);
+        int expected_kind = (n == 7 || (n >= 9 && n <= 15)) ? 3 : 1;
+        if (applied_kind != expected_kind || applied_bits != n) {
+            fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d VERIFY FAIL: requested n=%d expected(kind=%d,bits=%d) got(kind=%d,bits=%d); rolling back\n",
+                    role_buf, layer, n, expected_kind, n, applied_kind, applied_bits);
+            if (!mlx_gpu_synchronize() || !mlx_gpu_restore_binding_snapshot(attempt_snapshot)) {
+                fprintf(stderr, "FATAL: [moe promotion nq gpu] restore failed after applied-binding mismatch role=%s layer=%d\n",
+                        role_buf, layer);
+                exit(1);
+            }
+            int rb_bits = 0;
+            int rb_kind = mlx_gpu_binding_kind(base_ptr->name, &rb_bits);
+            if (rb_kind != before_kind || rb_bits != before_bits) {
+                fprintf(stderr, "FATAL: [moe promotion nq gpu] rollback verification mismatch role=%s layer=%d got(kind=%d,bits=%d) expected(kind=%d,bits=%d)\n",
+                        role_buf, layer, rb_kind, rb_bits, before_kind, before_bits);
+                exit(1);
+            }
+            (void)mlx_gpu_drop_binding_snapshot(attempt_snapshot);
+            n_verify_failed++;
+            continue;
+        }
+
+        if (g_moe_promoted_nq_gpu_snapshot[role][layer] == 0) {
+            g_moe_promoted_nq_gpu_snapshot[role][layer] = attempt_snapshot;
+            g_moe_promoted_nq_gpu_snapshot_kind[role][layer] = before_kind;
+            g_moe_promoted_nq_gpu_snapshot_bits[role][layer] = before_bits;
+        } else {
+            (void)mlx_gpu_drop_binding_snapshot(attempt_snapshot);
         }
         if (g_moe_promoted_nq_gpu[role][layer] != 0 && g_moe_promoted_nq_gpu[role][layer] != n)
             fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d: duplicate line, n=%d overrides earlier n=%d (last line wins)\n",
                     role_buf, layer, n, g_moe_promoted_nq_gpu[role][layer]);
         g_moe_promoted_nq_gpu[role][layer] = n;
-        fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d PROMOTED to qNg64(n=%d) on GPU "
-                        "-- permanent, no restart within this process (base_bits was %d)\n", role_buf, layer, n, base_bits);
+        g_moe_gpu_weight_epoch++;
+        fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d PROMOTED to qNg64(n=%d) on GPU kind=%d; rollback snapshot retained (base_bits=%d epoch=%llu)\n",
+                role_buf, layer, n, applied_kind, base_bits, (unsigned long long)g_moe_gpu_weight_epoch);
         n_applied++;
     }
     fclose(f);
     g_st_moe = saved_st_moe;
-    fprintf(stderr, "[moe promotion nq gpu] '%s': %d lines, %d promoted, %d skipped (n=7 "
-                    "platform limit), %d bind failures, g_moe_naf now %d\n",
-            path, n_lines, n_applied, n_skipped_n7, n_bind_failed, g_moe_naf);
+    fprintf(stderr, "[moe promotion nq gpu] '%s': %d lines, %d promoted, %d bind failures, %d verify failures, g_moe_naf now %d epoch=%llu\n",
+            path, n_lines, n_applied, n_bind_failed, n_verify_failed, g_moe_naf,
+            (unsigned long long)g_moe_gpu_weight_epoch);
 }
 #endif
 

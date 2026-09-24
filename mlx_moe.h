@@ -23,6 +23,18 @@ extern "C" {
 // otherwise. Every other function below re-checks this internally.
 int mlx_gpu_available(void);
 
+// G3 precision-transition fence. Blocks until work queued on MLX's current
+// default stream has completed. Callers use this only after admission has
+// stopped and all serving requests have drained.
+int mlx_gpu_synchronize(void);
+
+// G3 weight-epoch boundary. After the serving scheduler has stopped admission
+// and drained all requests, discard persistent lazy residual state and every
+// fused MLA/GQA K/V cache so no request in the next weight epoch can observe
+// state created under the previous binding set. Performs a final synchronize
+// before destruction and returns 1 on success.
+int mlx_gpu_reset_runtime_epoch(void);
+
 // Registers one AF-family tensor (E experts, out x in, group size ng) with
 // MLX, reading directly out of `blob` at the given byte offsets -- same
 // mmap the CPU arm (moe_decode_af/moe_matvec_af) reads, zero-copy where

@@ -9,6 +9,7 @@
 // residual-vs-stochastic-rounding tradeoff does not apply here.
 #include "mlx_moe.h"
 #include "mlx/mlx.h"
+#include "mlx/scheduler.h"
 
 #include <cmath>
 #include <cstdint>
@@ -115,6 +116,16 @@ int mlx_gpu_available(void) {
         available = 0;
     }
     return available;
+}
+
+int mlx_gpu_synchronize(void) {
+    if (!mlx_gpu_available()) return 0;
+    try {
+        mx::synchronize();
+        return 1;
+    } catch (...) {
+        return 0;
+    }
 }
 
 int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
@@ -2836,6 +2847,45 @@ int mlx_gpu_gqa_cbatch_forward_finalize(const float *w_finalnorm, float *logits_
     } catch (...) {
         delete g_cbatch_x; g_cbatch_x = nullptr;
         g_cbatch_A = 0; g_cbatch_layers_done = 0;
+        return 0;
+    }
+}
+
+int mlx_gpu_reset_runtime_epoch(void) {
+    if (!mlx_gpu_available()) return 0;
+    try {
+        // Callers already drained serving requests. This fence additionally
+        // guarantees that evaluated work no longer references the old binding
+        // set before persistent arrays and any unevaluated pending graph are
+        // released below.
+        mx::synchronize();
+
+        delete g_fused_x;
+        g_fused_x = nullptr;
+        g_fused_pos = -1;
+        g_fused_layers_done = 0;
+
+        delete g_cbatch_x;
+        g_cbatch_x = nullptr;
+        g_cbatch_A = 0;
+        g_cbatch_layers_done = 0;
+
+        g_fused_K.clear();
+        g_fused_V.clear();
+        g_fused_kv_inited = false;
+        g_fused_kv_inited_B = 0;
+
+        g_fused_gqa_K.clear();
+        g_fused_gqa_V.clear();
+        g_fused_gqa_kv_inited = false;
+        g_fused_gqa_kv_inited_B = 0;
+
+        g_fused_gqa_cK.clear();
+        g_fused_gqa_cV.clear();
+        g_fused_gqa_ck_inited = 0;
+        g_fused_gqa_ck_inited_B = 0;
+        return 1;
+    } catch (...) {
         return 0;
     }
 }

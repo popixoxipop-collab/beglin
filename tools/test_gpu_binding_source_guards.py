@@ -6,6 +6,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CPP = (ROOT / "mlx_moe.cpp").read_text()
 HDR = (ROOT / "mlx_moe.h").read_text()
+QWEN = (ROOT / "qwen_infer.c").read_text()
 
 
 class BindingSourceGuardTests(unittest.TestCase):
@@ -41,6 +42,11 @@ class BindingSourceGuardTests(unittest.TestCase):
             self.assertIn(symbol, CPP)
             self.assertIn(symbol, HDR)
 
+    def test_synchronize_api_is_public(self):
+        self.assertIn("int mlx_gpu_synchronize(", CPP)
+        self.assertIn("int mlx_gpu_synchronize(", HDR)
+        self.assertIn("mx::synchronize()", CPP)
+
     def test_restore_clears_all_representation_maps_before_insert(self):
         block = CPP.split("int mlx_gpu_restore_binding_snapshot", 1)[1]
         block = block.split("int mlx_gpu_drop_binding_snapshot", 1)[0]
@@ -53,6 +59,35 @@ class BindingSourceGuardTests(unittest.TestCase):
         self.assertIn("pause admission", block)
         self.assertIn("drain existing requests", block)
         self.assertIn("synchronize pending MLX/Metal work", block)
+
+    def test_gpu_promotion_is_transactional_and_verified(self):
+        block = QWEN.split("static void moe_promotion_nq_init_gpu(void)", 2)[2]
+        block = block.split("#endif", 1)[0]
+        self.assertLess(
+            block.index("mlx_gpu_snapshot_binding"),
+            block.index("mlx_gpu_bind_af"),
+        )
+        self.assertIn("mlx_gpu_binding_kind(base_ptr->name, &applied_bits)", block)
+        self.assertIn("expected_kind = (n == 7 || (n >= 9 && n <= 15)) ? 3 : 1", block)
+        self.assertIn("mlx_gpu_restore_binding_snapshot(attempt_snapshot)", block)
+        self.assertNotIn("n=7 has no native MLX kernel", block)
+
+    def test_gpu_demotion_requires_quiescent_sync_and_verified_restore(self):
+        block = QWEN.split("static int moe_gpu_demotion_apply_quiescent(void)", 2)[2]
+        block = block.split("// D-qNg64-gpu-1:", 1)[0]
+        self.assertLess(block.index("mlx_gpu_synchronize()"), block.index("mlx_gpu_restore_binding_snapshot"))
+        self.assertIn("mlx_gpu_binding_kind(base_ptr->name, &restored_bits)", block)
+        self.assertIn("restored_kind != expected_kind || restored_bits != expected_bits", block)
+        self.assertIn("g_moe_gpu_weight_epoch++", block)
+
+    def test_both_online_gpu_schedulers_pause_admission_for_demotion(self):
+        self.assertGreaterEqual(QWEN.count("int gpu_demotion_drain = 0;"), 2)
+        self.assertGreaterEqual(QWEN.count("moe_gpu_demotion_pending()"), 4)
+        self.assertGreaterEqual(QWEN.count("moe_gpu_demotion_apply_quiescent()"), 4)
+        self.assertIn(
+            "if (!gpu_demotion_drain) for (int s = 0; s < B && qhead < R; s++)",
+            QWEN,
+        )
 
 
 if __name__ == "__main__":

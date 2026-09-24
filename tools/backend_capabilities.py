@@ -10,6 +10,16 @@ from datetime import datetime, timezone
 
 GPU_NATIVE_QNG64 = (2, 3, 5, 6)
 GPU_CUSTOM_QNG64 = (7, 9, 10, 11, 12, 13, 14, 15)
+GPU_CONTROL_SYMBOLS = (
+    "mlx_gpu_available",
+    "mlx_gpu_binding_kind",
+    "mlx_gpu_snapshot_binding",
+    "mlx_gpu_restore_binding_snapshot",
+    "mlx_gpu_drop_binding_snapshot",
+    "mlx_gpu_binding_snapshot_count",
+    "mlx_gpu_synchronize",
+    "mlx_gpu_reset_runtime_epoch",
+)
 
 
 def _run(host, command, timeout=30):
@@ -28,7 +38,9 @@ def _identity(host, binary):
             f"set -e; shasum -a 256 {q}; stat -f '%z' {q}; "
             "hostname; uname -m; "
             f"(otool -L {q} || true); "
-            f"(nm -gU {q} 2>/dev/null | grep 'mlx_gpu_available' || true)"
+            f"(nm -gU {q} 2>/dev/null | "
+            "egrep 'mlx_gpu_(available|binding_kind|snapshot_binding|restore_binding_snapshot|"
+            "drop_binding_snapshot|binding_snapshot_count|synchronize|reset_runtime_epoch)' || true)"
         ),
     )
     lines = out.splitlines()
@@ -38,6 +50,7 @@ def _identity(host, binary):
     if len(sha) != 64:
         raise RuntimeError(f"invalid sha256 line: {lines[0]!r}")
     tail = "\n".join(lines[4:])
+    control_symbols = {symbol: symbol in tail for symbol in GPU_CONTROL_SYMBOLS}
     return {
         "host": lines[2].strip(),
         "arch": lines[3].strip(),
@@ -45,6 +58,7 @@ def _identity(host, binary):
         "binary_sha256": sha,
         "binary_size": int(lines[1].strip()),
         "mlx_symbol_present": "mlx_gpu_available" in tail,
+        "mlx_control_symbols": control_symbols,
         "link_report": tail,
     }
 
@@ -52,6 +66,7 @@ def _identity(host, binary):
 def collect(host, binary):
     ident = _identity(host, binary)
     gpu_compiled = bool(ident["mlx_symbol_present"])
+    gpu_control_compiled = gpu_compiled and all(ident["mlx_control_symbols"].values())
     gpu_widths = {}
     for n in GPU_NATIVE_QNG64:
         gpu_widths[str(n)] = (
@@ -73,6 +88,15 @@ def collect(host, binary):
                 "qng64_widths": gpu_widths,
                 "native_widths": list(GPU_NATIVE_QNG64),
                 "custom_metal_widths": list(GPU_CUSTOM_QNG64),
+                "runtime_control": {
+                    "compiled": gpu_control_compiled,
+                    "status": (
+                        "IMPLEMENTED_UNVERIFIED"
+                        if gpu_control_compiled
+                        else ("INCOMPLETE_BINARY" if gpu_compiled else "UNSUPPORTED_BINARY")
+                    ),
+                    "symbols": ident["mlx_control_symbols"],
+                },
             },
         },
     }
