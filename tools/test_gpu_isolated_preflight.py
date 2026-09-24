@@ -353,6 +353,7 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
             event={"orig_token": 111, "corrected_token": 222, "pos": 3},
             reference={"emitted_token": 222},
             prompt_len=4,
+            persist_bundle=False,
         )
         self.assertEqual(got["status"], "passed")
         self.assertEqual(got["baseline_emitted_token"], 111)
@@ -395,6 +396,7 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
                 event={"orig_token": 111, "corrected_token": 222, "pos": 3},
                 reference={"emitted_token": 222},
                 prompt_len=4,
+                persist_bundle=False,
             )
 
     @patch.object(gp, "run_isolated_worker")
@@ -420,6 +422,7 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
                 root="/tmp/r", baseline_policy=BASE, candidate_policy=CAND,
                 event={"orig_token": 111, "corrected_token": 222, "pos": 0},
                 reference={"emitted_token": 222}, prompt_len=1,
+                persist_bundle=False,
             )
 
     def test_to_planner_evidence_marks_restart_mode_without_live_epoch_claim(self):

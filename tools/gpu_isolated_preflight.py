@@ -578,7 +578,27 @@ def run_ab_preflight(
             "baseline/candidate ran different GPU binaries"
         )
 
-    return {
+    for field in ("manifest_sha256", "safetensors_sha256"):
+        if (
+            baseline.get(field)
+            and candidate.get(field)
+            and baseline[field] != candidate[field]
+        ):
+            raise GpuPreflightError(
+                f"baseline/candidate input artifact mismatch for {field}"
+            )
+    baseline_cap = baseline.get("capability")
+    candidate_cap = candidate.get("capability")
+    if baseline_cap and candidate_cap:
+        if (
+            baseline_cap.get("worker_identity_sha256")
+            != candidate_cap.get("worker_identity_sha256")
+        ):
+            raise GpuPreflightError(
+                "baseline/candidate capability worker identity mismatch"
+            )
+
+    result = {
         "status": "passed",
         "backend": BACKEND,
         "architecture": architecture,
@@ -594,6 +614,61 @@ def run_ab_preflight(
         "baseline": baseline,
         "candidate": candidate,
     }
+    if persist_bundle:
+        if not candidate_cap:
+            raise GpuPreflightError(
+                "cannot persist evidence bundle without binary capability artifact"
+            )
+        root_path = str(root).rstrip("/")
+        inputs = {
+            "schema": "gpu-preflight-inputs-v1",
+            "architecture": architecture,
+            "manifest_path": str(manifest),
+            "manifest_sha256": candidate["manifest_sha256"],
+            "safetensors_path": str(safetensors),
+            "safetensors_sha256": candidate["safetensors_sha256"],
+            "prompt_len": int(prompt_len),
+            "event": event,
+            "reference": reference,
+            "baseline_policy": normalize_policy(baseline_policy),
+            "candidate_policy": normalize_policy(candidate_policy),
+        }
+        verdict = {
+            "schema": "gpu-isolated-preflight-verdict-v1",
+            "status": "passed",
+            "backend": BACKEND,
+            "architecture": architecture,
+            "binary_sha256": result["binary_sha256"],
+            "worker_identity_sha256": candidate_cap["worker_identity_sha256"],
+            "capability_sha256": pc.sha256_json(candidate_cap),
+            "inputs_sha256": pc.sha256_json(inputs),
+            "baseline_policy_hash": result["baseline_policy_hash"],
+            "candidate_policy_hash": result["candidate_policy_hash"],
+            "baseline_epoch": result["baseline_epoch"],
+            "candidate_epoch": result["candidate_epoch"],
+            "baseline_emitted_token": baseline_token,
+            "candidate_emitted_token": candidate_token,
+            "reference_emitted_token": int(reference["emitted_token"]),
+            "correction_mode": "off",
+            "baseline": _worker_bundle_view(baseline),
+            "candidate": _worker_bundle_view(candidate),
+        }
+        verdict["verdict_payload_sha256"] = pc.sha256_json(verdict)
+        capability_path = f"{root_path}/capability.json"
+        inputs_path = f"{root_path}/inputs.json"
+        verdict_path = f"{root_path}/verdict.json"
+        _write_json(host, capability_path, candidate_cap)
+        _write_json(host, inputs_path, inputs)
+        _write_json(host, verdict_path, verdict)
+        result["evidence_bundle"] = {
+            "capability_path": capability_path,
+            "capability_sha256": verdict["capability_sha256"],
+            "inputs_path": inputs_path,
+            "inputs_sha256": verdict["inputs_sha256"],
+            "verdict_path": verdict_path,
+            "verdict_payload_sha256": verdict["verdict_payload_sha256"],
+        }
+    return result
 
 
 def to_planner_evidence(result: dict, *, context_hash: str, expected_epoch: int) -> dict:
