@@ -359,10 +359,10 @@ int mlx_gpu_snapshot_binding(const char *name, uint64_t *snapshot_id) {
         snap.kind = 1;
         snap.q = it->second;
     } else {
-        auto it = g_dtensors.find(key);
-        if (it == g_dtensors.end()) return 0;
+        auto dit = g_dtensors.find(key);
+        if (dit == g_dtensors.end()) return 0;
         snap.kind = 2;
-        snap.d = it->second;
+        snap.d = dit->second;
     }
 
     uint64_t id = g_binding_snapshot_next_id++;
