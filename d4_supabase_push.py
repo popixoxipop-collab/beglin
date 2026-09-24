@@ -38,6 +38,31 @@ def post(url, key, path, rows):
 
 
 
+def upsert_events(url, key, rows):
+    if not rows:
+        return True
+    req = urllib.request.Request(
+        url + "/rest/v1/moe_neartie_events?on_conflict=ingest_id",
+        data=json.dumps(rows).encode(),
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=ignore-duplicates,return=minimal",
+        },
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10)
+        return True
+    except Exception as e:
+        print(
+            f"[d4 push] WARN event upsert failed: {e}",
+            file=sys.stderr,
+        )
+        return False
+
+
 def upsert_provenance(url, key, rows):
     if not rows:
         return True
@@ -60,15 +85,22 @@ def upsert_provenance(url, key, rows):
         print(f'[d4 push] WARN provenance upsert failed: {e}', file=sys.stderr)
         return False
 
-def rpc_increment(url, key, model, corpus, role, layer, margin=None):
+def rpc_increment(url, key, ingest_id, model, corpus, role, layer, margin=None):
     # D-quant-supabase-2: increment_role_precision() now takes p_corpus too --
     # moe_role_precision_state's PK widened to (model,corpus,role,layer) so a
     # different corpus's data (e.g. WikiText-103, once Phase 7/8 pushes it)
     # can't silently conflate its counts with WikiText-2's under the same
     # (model,role,layer) row. See migrate_corpus_pk.sql / RESULTS.md.
     req = urllib.request.Request(
-        url + "/rest/v1/rpc/increment_role_precision",
-        data=json.dumps({"p_model": model, "p_corpus": corpus, "p_role": role, "p_layer": layer, "p_margin": margin}).encode(),
+        url + "/rest/v1/rpc/increment_role_precision_idempotent",
+        data=json.dumps({
+            "p_ingest_id": ingest_id,
+            "p_model": model,
+            "p_corpus": corpus,
+            "p_role": role,
+            "p_layer": layer,
+            "p_margin": margin,
+        }).encode(),
         headers={
             "apikey": key,
             "Authorization": f"Bearer {key}",
@@ -81,7 +113,7 @@ def rpc_increment(url, key, model, corpus, role, layer, margin=None):
         urllib.request.urlopen(req, timeout=10)
         return True
     except Exception as e:
-        print(f"[d4 push] WARN increment_role_precision({model},{corpus},{role},{layer},margin={margin}) failed: {e}", file=sys.stderr)
+        print(f"[d4 push] WARN increment_role_precision_idempotent({ingest_id},{model},{corpus},{role},{layer},margin={margin}) failed: {e}", file=sys.stderr)
         return False
 
 def _atomic_write_json(path, value):
@@ -119,15 +151,26 @@ def _read_complete_records(path, offset):
         return [], offset, b""
     complete = data[:last_nl + 1]
     rows = []
-    for i, raw in enumerate(complete.splitlines(), 1):
-        if not raw.strip():
-            continue
-        try:
-            rows.append(json.loads(raw))
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(
-                f"invalid complete JSONL record at relative line {i}: {exc}"
-            ) from exc
+    cursor = int(offset)
+    for i, raw_with_nl in enumerate(complete.splitlines(keepends=True), 1):
+        raw = raw_with_nl.rstrip(b"\r\n")
+        if raw.strip():
+            try:
+                row = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    f"invalid complete JSONL record at relative line {i}: {exc}"
+                ) from exc
+            seed = (
+                os.path.abspath(path).encode()
+                + b":"
+                + str(cursor).encode()
+                + b":"
+                + raw
+            )
+            row["_ingest_id"] = hashlib.sha256(seed).hexdigest()
+            rows.append(row)
+        cursor += len(raw_with_nl)
     return rows, offset + last_nl + 1, complete
 
 
@@ -154,6 +197,7 @@ def _build_operations(lines, source_path):
                 "corpus": row["corpus"],
                 "batch_size": row.get("batch_size"),
                 "replay_margin_b1": row.get("replay_margin_b1"),
+                "ingest_id": row["_ingest_id"],
             })
             n_events += 1
         elif row.get("kind") == "attribution":
@@ -164,6 +208,7 @@ def _build_operations(lines, source_path):
             )
             margin = None if event is None else event.get("margin")
             attribs.append({
+                "ingest_id": row["_ingest_id"],
                 "model": row["model"], "corpus": row["corpus"],
                 "role": row["role"], "layer": row["layer"],
                 "margin": margin,
@@ -211,12 +256,12 @@ def _build_operations(lines, source_path):
 
 def _execute_operation(url, api_key, op):
     if op["kind"] == "events":
-        return post(url, api_key, "/rest/v1/moe_neartie_events", op["rows"])
+        return upsert_events(url, api_key, op["rows"])
     if op["kind"] == "increment":
         a = op["args"]
         return rpc_increment(
-            url, api_key, a["model"], a["corpus"], a["role"], a["layer"],
-            a.get("margin"),
+            url, api_key, a["ingest_id"], a["model"], a["corpus"],
+            a["role"], a["layer"], a.get("margin"),
         )
     if op["kind"] == "provenance":
         return upsert_provenance(url, api_key, op["rows"])
