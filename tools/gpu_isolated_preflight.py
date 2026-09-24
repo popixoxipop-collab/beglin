@@ -32,6 +32,10 @@ ARCH_PREFIX = {
     "mla": "moe gpu cb online",
     "gqa": "moe gpu gqa cb online",
 }
+VALIDATION_RE = re.compile(
+    r"GPU_VALIDATION_V1 backend=(\S+) arch=(\S+) correction=(\S+) "
+    r"finite_logits=(\d+) logits_checked=(\d+) requests=(\d+)"
+)
 
 
 class GpuPreflightError(RuntimeError):
@@ -216,6 +220,33 @@ def emitted_token_at_position(
     return None
 
 
+def parse_validation_report(output: str, architecture: str) -> dict:
+    if architecture not in ARCH_GATE:
+        raise GpuPreflightError(
+            f"unsupported architecture mode {architecture!r}"
+        )
+    matches = VALIDATION_RE.findall(output)
+    if not matches:
+        raise GpuPreflightError("GPU_VALIDATION_V1 report missing")
+    backend, arch, correction, finite, checked, requests = matches[-1]
+    if backend != BACKEND:
+        raise GpuPreflightError(
+            f"validation backend mismatch: {backend!r}"
+        )
+    if arch != architecture:
+        raise GpuPreflightError(
+            f"validation architecture mismatch: expected={architecture!r} actual={arch!r}"
+        )
+    return {
+        "backend": backend,
+        "architecture": arch,
+        "correction_mode": correction,
+        "finite_logits": finite == "1",
+        "logits_checked": int(checked),
+        "requests": int(requests),
+    }
+
+
 def _worker_env(
     *,
     architecture,
@@ -243,6 +274,7 @@ def _worker_env(
         "QWEN_MOE_PROMOTION_FILE_NQ": str(promotion_file),
         "QWEN_MOE_PROMOTION_SAFETENSORS": str(safetensors),
         "QWEN_MOE_GPU_APPLIED_ACK": str(ack_path),
+        "QWEN_MOE_GPU_VALIDATION_REPORT": "1",
         # G4 hard requirement: candidate quality is measured without the
         # correction/oracle path mutating output.
         "QWEN_MOE_NEARTIE_CORRECT": "0",
@@ -319,6 +351,21 @@ def run_isolated_worker(
             f"{output[-4000:]}"
         )
 
+    validation = parse_validation_report(output, architecture)
+    if validation["correction_mode"] != "off":
+        raise GpuPreflightError(
+            "GPU validation report says correction is not OFF"
+        )
+    if not validation["finite_logits"]:
+        raise GpuPreflightError("GPU validation reported non-finite logits")
+    if validation["logits_checked"] <= 0:
+        raise GpuPreflightError("GPU validation checked zero logits")
+    if validation["requests"] != int(requests):
+        raise GpuPreflightError(
+            f"GPU validation request count mismatch: expected={requests} "
+            f"actual={validation['requests']}"
+        )
+
     ack = _parse_ack_text(_read_text(host, ack_path))
     if ack["correction_mode"] != "off":
         raise GpuPreflightError(
@@ -364,6 +411,7 @@ def run_isolated_worker(
             render_promotion_file(rows).encode()
         ).hexdigest(),
         "ack": ack,
+        "validation": validation,
         "output": output,
         "returncode": proc.returncode,
     }

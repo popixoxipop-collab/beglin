@@ -68,6 +68,25 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
         self.assertEqual(env["QWEN_MOE_GPU_CBATCH_ONLINE"], "1")
         self.assertNotIn("QWEN_MOE_GPU_GQA_CBATCH_ONLINE", env)
         self.assertEqual(env["QWEN_MOE_PROMOTION_SAFETENSORS"], "/st")
+        self.assertEqual(env["QWEN_MOE_GPU_VALIDATION_REPORT"], "1")
+
+    def test_parse_validation_report_requires_matching_finite_gpu_report(self):
+        got = gp.parse_validation_report(
+            "GPU_VALIDATION_V1 backend=mlx_metal arch=mla correction=off "
+            "finite_logits=1 logits_checked=64000 requests=1\n",
+            "mla",
+        )
+        self.assertTrue(got["finite_logits"])
+        self.assertEqual(got["logits_checked"], 64000)
+        self.assertEqual(got["requests"], 1)
+        with self.assertRaises(gp.GpuPreflightError):
+            gp.parse_validation_report("", "mla")
+        with self.assertRaises(gp.GpuPreflightError):
+            gp.parse_validation_report(
+                "GPU_VALIDATION_V1 backend=mlx_metal arch=gqa correction=off "
+                "finite_logits=1 logits_checked=1 requests=1\n",
+                "mla",
+            )
 
     def test_parse_ack_requires_runtime_correction_mode(self):
         base = {
@@ -104,6 +123,8 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
             stdout=(
                 "[moe gpu cb online] req 0 prompt 4 slot 0 arrive 0 "
                 "admit_step 0 ttft_ms 1.0 nout 1 tokens: 42\n"
+                "GPU_VALIDATION_V1 backend=mlx_metal arch=mla correction=off "
+                "finite_logits=1 logits_checked=100 requests=1\n"
             )
         )
         read.return_value = json.dumps({
@@ -146,7 +167,10 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
             "binary_sha256": "a" * 64,
             "binary_size": 123,
         }
-        run.return_value = FakeProc()
+        run.return_value = FakeProc(stdout=(
+            "GPU_VALIDATION_V1 backend=mlx_metal arch=mla correction=off "
+            "finite_logits=1 logits_checked=100 requests=1\n"
+        ))
         read.return_value = json.dumps({
             "schema": gp.ACK_SCHEMA,
             "status": "STARTUP_STATE",
@@ -168,6 +192,42 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
                 safetensors="/st",
                 run_dir="/tmp/run",
                 policy=CAND,
+            )
+
+    @patch.object(gp, "_binary_identity")
+    @patch.object(gp, "_read_text")
+    @patch.object(gp, "_run")
+    @patch.object(gp, "_remove")
+    @patch.object(gp, "_write_text")
+    def test_run_worker_rejects_nonfinite_validation_report(
+        self, write, remove, run, read, identity
+    ):
+        identity.return_value = {
+            "host": "XOX.local",
+            "arch": "arm64",
+            "binary_path": "/bin/q",
+            "binary_sha256": "a" * 64,
+            "binary_size": 123,
+        }
+        run.return_value = FakeProc(stdout=(
+            "GPU_VALIDATION_V1 backend=mlx_metal arch=mla correction=off "
+            "finite_logits=0 logits_checked=100 requests=1\n"
+        ))
+        read.return_value = json.dumps({
+            "schema": gp.ACK_SCHEMA,
+            "status": "STARTUP_STATE",
+            "backend": "mlx_metal",
+            "correction_mode": "off",
+            "weight_epoch": 0,
+            "changed_targets": 0,
+            "snapshot_count": 0,
+            "active_policy": [],
+        })
+        with self.assertRaises(gp.GpuPreflightError):
+            gp.run_isolated_worker(
+                host="xox", cwd="/repo", binary="/bin/q", architecture="mla",
+                moe_base="/m", manifest="/manifest", safetensors="/st",
+                run_dir="/tmp/run", policy=[],
             )
 
     @patch.object(gp, "run_isolated_worker")
