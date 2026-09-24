@@ -104,6 +104,7 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
         got = gp._parse_ack_text(json.dumps(base))
         self.assertEqual(got["active_policy_hash"], pc.policy_hash([]))
 
+    @patch.object(gp, "_require_binary_capability", new=lambda *a, **k: {"schema": "test-capability"})
     @patch.object(gp, "_binary_identity")
     @patch.object(gp, "_read_text")
     @patch.object(gp, "_run")
@@ -152,6 +153,7 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
         self.assertEqual(got["applied_policy_hash"], pc.policy_hash([]))
         self.assertEqual(got["correction_mode"], "off")
 
+    @patch.object(gp, "_require_binary_capability", new=lambda *a, **k: {"schema": "test-capability"})
     @patch.object(gp, "_binary_identity")
     @patch.object(gp, "_read_text")
     @patch.object(gp, "_run")
@@ -194,6 +196,7 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
                 policy=CAND,
             )
 
+    @patch.object(gp, "_require_binary_capability", new=lambda *a, **k: {"schema": "test-capability"})
     @patch.object(gp, "_binary_identity")
     @patch.object(gp, "_read_text")
     @patch.object(gp, "_run")

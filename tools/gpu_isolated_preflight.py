@@ -18,6 +18,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
+import backend_capabilities as bc
 import gpu_runtime_control as grc
 import precision_context as pc
 
@@ -145,6 +146,63 @@ def _binary_identity(host, binary):
         "binary_sha256": sha,
         "binary_size": int(lines[1].strip()),
     }
+
+
+def _require_binary_capability(host, binary, policy):
+    try:
+        capability = bc.collect(host, str(binary))
+    except Exception as exc:
+        raise GpuPreflightError(
+            f"could not collect GPU binary capability: {exc}"
+        ) from exc
+    gpu = capability["backends"]["mlx_metal"]
+    runtime_control = gpu["runtime_control"]
+    if not gpu.get("compiled"):
+        raise GpuPreflightError("worker binary has no MLX/Metal backend")
+    if not runtime_control.get("compiled"):
+        missing = [
+            symbol
+            for symbol, present in runtime_control.get("symbols", {}).items()
+            if not present
+        ]
+        raise GpuPreflightError(
+            f"worker binary has incomplete GPU control plane: missing={missing}"
+        )
+    if capability["worker"].get("arch") not in {"arm64", "aarch64"}:
+        raise GpuPreflightError(
+            "MLX/Metal preflight requires Apple arm64 worker"
+        )
+    widths = gpu.get("qng64_widths", {})
+    for row in normalize_policy(policy):
+        status = widths.get(str(int(row["n"])))
+        if status in {None, "UNSUPPORTED_BINARY", "FAILED"}:
+            raise GpuPreflightError(
+                f"GPU binary does not support {row['role']}/L{row['layer']} n={row['n']}: {status}"
+            )
+    return capability
+
+
+def _remote_sha256(host, path):
+    p = _require_ok(
+        _run(host, f"shasum -a 256 {shlex.quote(str(path))}", timeout=30),
+        f"hash {path}",
+    )
+    sha = p.stdout.split()[0].lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", sha):
+        raise GpuPreflightError(f"invalid SHA-256 for {path}: {p.stdout!r}")
+    return sha
+
+
+def _write_json(host, path, value):
+    _write_text(
+        host,
+        path,
+        json.dumps(value, indent=2, sort_keys=True) + "\n",
+    )
+
+
+def _sha256_text(text):
+    return hashlib.sha256(str(text).encode()).hexdigest()
 
 
 def _parse_ack_text(text: str) -> dict:
@@ -313,12 +371,16 @@ def run_isolated_worker(
         stop_extra=stop_extra,
     )
     identity = _binary_identity(host, binary)
+    capability = _require_binary_capability(host, binary, rows)
     proc = _run(
         host,
         _command(cwd, binary, env),
         timeout=timeout,
     )
     output = (proc.stdout or "") + (proc.stderr or "")
+    worker_log_path = f"{run_dir}/worker.log"
+    _write_text(host, worker_log_path, output)
+    worker_log_sha256 = _sha256_text(output)
     if proc.returncode != 0:
         raise GpuPreflightError(
             f"isolated GPU worker failed rc={proc.returncode}: "
@@ -381,6 +443,7 @@ def run_isolated_worker(
         "applied_policy_hash": ack["active_policy_hash"],
         "weight_epoch": ack["weight_epoch"],
         "worker": identity,
+        "capability": capability,
         "promotion_file_sha256": hashlib.sha256(
             render_promotion_file(rows).encode()
         ).hexdigest(),
@@ -388,6 +451,11 @@ def run_isolated_worker(
         "validation": validation,
         "output": output,
         "returncode": proc.returncode,
+        "worker_log_path": worker_log_path,
+        "worker_log_sha256": worker_log_sha256,
+        "manifest_sha256": _remote_sha256(host, manifest),
+        "safetensors_sha256": _remote_sha256(host, safetensors),
+        "ack_sha256": ack["ack_sha256"],
     }
 
 
