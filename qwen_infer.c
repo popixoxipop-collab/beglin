@@ -13798,6 +13798,31 @@ static int run_moe_gqa_cbatch_online_cpu_gate(int argc, char **argv) {
 // precedent for MLA exactly (already re-confirmed empirically by Phase C needing zero mlx_moe.cpp
 // changes on top of Phase B). MoE-4c's margin-gated reverify layer is intentionally not ported,
 // same reasoning V5h's own header comment gives (no SME2 numerical noise on the GPU MLX path).
+static int moe_gpu_argmax_finite(const float *lg, int vocab,
+                                 const char *tag, int step, int req) {
+    if (!lg || vocab <= 0) {
+        fprintf(stderr, "FATAL: [%s] invalid logits buffer/vocab at step=%d req=%d\n",
+                tag, step, req);
+        exit(1);
+    }
+    int am = 0;
+    float bm = lg[0];
+    if (!isfinite(bm)) {
+        fprintf(stderr, "FATAL: [%s] non-finite logit v=0 step=%d req=%d\n",
+                tag, step, req);
+        exit(1);
+    }
+    for (int v = 1; v < vocab; v++) {
+        if (!isfinite(lg[v])) {
+            fprintf(stderr, "FATAL: [%s] non-finite logit v=%d step=%d req=%d\n",
+                    tag, v, step, req);
+            exit(1);
+        }
+        if (lg[v] > bm) { bm = lg[v]; am = v; }
+    }
+    return am;
+}
+
 static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
     (void)argc; (void)argv;
     const char *gate_env = getenv("QWEN_MOE_GPU_GQA_CBATCH_ONLINE");
@@ -14022,8 +14047,7 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
             for (int m = 0; m < ndec; m++) {
                 int s = slot_arr[m], r = mcb_req[s];
                 float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
-                int am = 0; float bm = lg[0];
-                for (int v = 1; v < MOE_VOCAB; v++) if (lg[v] > bm) { bm = lg[v]; am = v; }
+                int am = moe_gpu_argmax_finite(lg, MOE_VOCAB, "moe gpu gqa cb online", step, r);
                 rq_out[r][rq_nout[r]++] = am; mcb_pos[s]++;
                 if (am == OLMOE_EOS || am == stop_extra || rq_nout[r] >= rq_maxnew[r] || mcb_pos[s] >= MOE_CBATCH_MAXPOS)
                     { mcb_active[s] = 0; mcb_freed_before[s] = 1; nact--; }
@@ -14033,8 +14057,7 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
                 int s = slot_arr[m], r = mcb_req[s];
                 if (spos_arr[m] != rq_plen[r] - 1) continue;
                 float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
-                int am = 0; float bm = lg[0];
-                for (int v = 1; v < MOE_VOCAB; v++) if (lg[v] > bm) { bm = lg[v]; am = v; }
+                int am = moe_gpu_argmax_finite(lg, MOE_VOCAB, "moe gpu gqa cb online", step, r);
                 rq_out[r][rq_nout[r]++] = am; rq_t_first[r] = temit;
                 if (am == OLMOE_EOS || am == stop_extra || rq_nout[r] >= rq_maxnew[r])
                     { mcb_active[s] = 0; mcb_freed_before[s] = 1; nact--; }
@@ -14758,8 +14781,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
             for (int m = 0; m < ndec; m++) {
                 int s = slot_arr[m], r = mcb_req[s];
                 float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
-                int am = 0; float bm = lg[0];
-                for (int v = 1; v < MOE_VOCAB; v++) if (lg[v] > bm) { bm = lg[v]; am = v; }
+                int am = moe_gpu_argmax_finite(lg, MOE_VOCAB, "moe gpu cb online", step, r);
                 rq_out[r][rq_nout[r]++] = am; mcb_pos[s]++;
                 if (am == MOE_EOS_TOKEN_ID || am == stop_extra || rq_nout[r] >= rq_maxnew[r] || mcb_pos[s] >= MOE_CBATCH_MAXPOS)
                     { mcb_active[s] = 0; mcb_freed_before[s] = 1; nact--; }
@@ -14770,8 +14792,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 int s = slot_arr[m], r = mcb_req[s];
                 if (spos_arr[m] != rq_plen[r] - 1) continue;
                 float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
-                int am = 0; float bm = lg[0];
-                for (int v = 1; v < MOE_VOCAB; v++) if (lg[v] > bm) { bm = lg[v]; am = v; }
+                int am = moe_gpu_argmax_finite(lg, MOE_VOCAB, "moe gpu cb online", step, r);
                 rq_out[r][rq_nout[r]++] = am; rq_t_first[r] = temit;
                 if (am == MOE_EOS_TOKEN_ID || am == stop_extra || rq_nout[r] >= rq_maxnew[r])
                     { mcb_active[s] = 0; mcb_freed_before[s] = 1; nact--; }
@@ -16687,12 +16708,17 @@ static int moe_gpu_write_applied_ack(
         return 0;
     }
 
+    const char *corr_env = getenv("QWEN_MOE_NEARTIE_CORRECT");
+    const char *corr_mode =
+        (corr_env && corr_env[0] && atoi(corr_env) != 0) ? "on" : "off";
     fprintf(f,
             "{\"schema\":\"gpu-precision-applied-v1\","
             "\"status\":\"%s\",\"backend\":\"mlx_metal\","
+            "\"correction_mode\":\"%s\","
             "\"weight_epoch\":%llu,\"changed_targets\":%d,"
             "\"snapshot_count\":%d,",
             status ? status : "UNKNOWN",
+            corr_mode,
             (unsigned long long)g_moe_gpu_weight_epoch,
             changed_targets,
             mlx_gpu_binding_snapshot_count());

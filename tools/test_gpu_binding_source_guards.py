@@ -134,6 +134,16 @@ class BindingSourceGuardTests(unittest.TestCase):
         self.assertIn("moe_gpu_write_applied_ack(ack_status, n_applied, NULL)", block)
         self.assertNotIn("if (n_applied && !moe_gpu_write_applied_ack", block)
 
+    def test_gpu_online_argmax_rejects_nonfinite_logits(self):
+        self.assertIn("static int moe_gpu_argmax_finite(", QWEN)
+        helper = QWEN.split("static int moe_gpu_argmax_finite(", 1)[1]
+        helper = helper.split("static int run_moe_gpu_gqa_cbatch_online_gate", 1)[0]
+        self.assertIn("isfinite(bm)", helper)
+        self.assertIn("isfinite(lg[v])", helper)
+        self.assertGreaterEqual(
+            QWEN.count("moe_gpu_argmax_finite(lg, MOE_VOCAB"), 4
+        )
+
     def test_gpu_ack_is_fsync_then_rename_and_fail_closed(self):
         block = QWEN.split("static int moe_gpu_write_applied_ack", 2)[2]
         block = block.split("static MoeAFTensor *moe_gpu_role_base_tensor", 1)[0]
@@ -182,7 +192,8 @@ class BindingSourceGuardTests(unittest.TestCase):
         ack = QWEN.split("static int moe_gpu_write_applied_ack", 2)[2]
         ack = ack.split("static int moe_gpu_txn_token_safe", 1)[0]
         for field in ("txn_id", "expected_epoch", "expected_n", "expected_policy_hash",
-                      "target_role", "target_layer", "weight_epoch", "active_policy"):
+                      "target_role", "target_layer", "weight_epoch", "active_policy",
+                      "correction_mode"):
             self.assertIn(field, ack)
 
 
