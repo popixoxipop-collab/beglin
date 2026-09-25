@@ -193,6 +193,36 @@ def launch(
     }
 
 
+def _summarize_last_cycle(path: Path, launch_id: str | None):
+    if not path.is_file():
+        return None
+    try:
+        obj = json.loads(path.read_text())
+    except Exception:
+        return {"relation": "UNREADABLE", "status": "UNREADABLE_LAST_CYCLE"}
+    cycle_launch_id = obj.get("launch_id")
+    relation = (
+        "CURRENT"
+        if launch_id and cycle_launch_id == launch_id
+        else (
+            "LEGACY_UNLINKED"
+            if not cycle_launch_id
+            else "PREVIOUS"
+        )
+    )
+    return {
+        "relation": relation,
+        "status": obj.get("status"),
+        "launch_id": cycle_launch_id,
+        "cycle_id": obj.get("cycle_id"),
+        "shadow_run_id": obj.get("shadow_run_id")
+            or (obj.get("shadow_run") or {}).get("run_id"),
+        "selected_candidate_id": obj.get("selected_candidate_id"),
+        "ready_count": obj.get("ready_count"),
+        "shadow_status": (obj.get("shadow_run") or {}).get("shadow_status"),
+    }
+
+
 def worker(config_path: str, python_bin: str = sys.executable) -> int:
     pid = os.getpid()
     launch_id = os.environ.get("GPU_SHADOW_LAUNCH_ID") or None
@@ -221,32 +251,7 @@ def worker(config_path: str, python_bin: str = sys.executable) -> int:
             f.write(proc.stderr.encode())
 
     last_cycle = DEFAULT_SHADOW_ROOT / "last_cycle.json"
-    summary = None
-    if last_cycle.is_file():
-        try:
-            obj = json.loads(last_cycle.read_text())
-            relation = (
-                "CURRENT"
-                if launch_id and obj.get("launch_id") == launch_id
-                else (
-                    "LEGACY_UNLINKED"
-                    if not obj.get("launch_id")
-                    else "PREVIOUS"
-                )
-            )
-            summary = {
-                "relation": relation,
-                "status": obj.get("status"),
-                "launch_id": obj.get("launch_id"),
-                "cycle_id": obj.get("cycle_id"),
-                "shadow_run_id": obj.get("shadow_run_id")
-                    or (obj.get("shadow_run") or {}).get("run_id"),
-                "selected_candidate_id": obj.get("selected_candidate_id"),
-                "ready_count": obj.get("ready_count"),
-                "shadow_status": (obj.get("shadow_run") or {}).get("shadow_status"),
-            }
-        except Exception:
-            summary = {"status": "UNREADABLE_LAST_CYCLE"}
+    summary = _summarize_last_cycle(last_cycle, launch_id)
 
     _atomic_json(STATUS_FILE, {
         "schema": "gpu-shadow-xox-launch-v1",
