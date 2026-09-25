@@ -328,7 +328,12 @@ def build_report(shadow_root: str | Path, *, pid_alive_fn=_pid_alive) -> dict:
     else:
         gpu_validation_state = "unknown"
 
-    if relation == "current" and gpu_validation_state in {"passed", "failed"}:
+    explicit_gpu_stage = bool(g4_status or g6_status)
+    if (
+        relation == "current"
+        and explicit_gpu_stage
+        and gpu_validation_state in {"passed", "failed"}
+    ):
         evidence_level = "real_gpu"
     elif pipeline_state == "not_run":
         evidence_level = "not_run"
