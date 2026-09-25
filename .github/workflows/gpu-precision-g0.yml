@@ -2,7 +2,7 @@ name: gpu-precision-g1-g3
 
 on:
   push:
-    branches: [gpu-precision-g1-g3]
+    branches: [gpu-precision-g1-g3, gpu-shadow-mode]
   pull_request:
     branches: [gpu-precision-g0, main]
 
@@ -28,6 +28,7 @@ jobs:
             tools/precision_control_state.py \
             tools/autopilot_observer_v3.py \
             tools/autopilot_preflight_v3.py \
+            tools/gpu_shadow_runner.py \
             tools/test_d4_supabase_push.py \
             tools/test_autopilot_live_preflight.py \
             tools/test_backend_capabilities.py \
@@ -37,7 +38,8 @@ jobs:
             tools/test_precision_planner_v3.py \
             tools/test_precision_control_state.py \
             tools/test_autopilot_observer_v3.py \
-            tools/test_autopilot_preflight_v3.py
+            tools/test_autopilot_preflight_v3.py \
+            tools/test_gpu_shadow_runner.py
       - name: G0 safety tests
         run: |
           PYTHONPATH=. python tools/test_d4_supabase_push.py
@@ -58,3 +60,6 @@ jobs:
       - name: G5 observer semantics tests
         run: |
           PYTHONPATH=tools python tools/test_autopilot_observer_v3.py
+      - name: GPU production-shadow safety tests
+        run: |
+          PYTHONPATH=tools python tools/test_gpu_shadow_runner.py
