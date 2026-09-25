@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import json
-import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -68,6 +67,18 @@ class GpuShadowRunnerTests(unittest.TestCase):
                     forbidden_roots=[str(production)],
                 )
 
+    def test_shadow_root_parent_of_forbidden_control_root_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            s = spec(td)
+            shadow_parent = Path(td) / "all-control"
+            production = shadow_parent / "production"
+            with self.assertRaises(gs.ShadowModeError):
+                gs.validate_shadow_root(
+                    str(shadow_parent),
+                    candidate_cwd=s["cwd"],
+                    forbidden_roots=[str(production)],
+                )
+
     def test_command_always_forces_supplied_scratch_control_root(self):
         with tempfile.TemporaryDirectory() as td:
             s = spec(td)
@@ -109,6 +120,7 @@ class GpuShadowRunnerTests(unittest.TestCase):
                     base_env={
                         "QWEN_PRECISION_CONTROL_DIR": "/prod/live",
                         "QWEN_MOE_GPU_TXN_FILE": "/prod/txn",
+                        "QWEN_SUPABASE_KEY": "secret",
                     },
                 )
 
@@ -116,11 +128,18 @@ class GpuShadowRunnerTests(unittest.TestCase):
             self.assertFalse(got["production_write_allowed"])
             self.assertNotIn("QWEN_PRECISION_CONTROL_DIR", captured["env"])
             self.assertNotIn("QWEN_MOE_GPU_TXN_FILE", captured["env"])
+            self.assertNotIn("QWEN_SUPABASE_KEY", captured["env"])
             self.assertIn("--control-root", captured["command"])
             result_path = shadow / "runs" / "run-1" / "shadow_result.json"
             saved = json.loads(result_path.read_text())
             self.assertEqual(saved["shadow_status"], "SHADOW_ADMITTED")
             self.assertFalse(saved["production_write_allowed"])
+
+    def test_pretty_printed_child_json_is_classified(self):
+        payload = {"status": "ADMITTED", "nested": {"ok": True}}
+        got = gs._extract_last_json("prefix log\n" + json.dumps(payload, indent=2) + "\n")
+        self.assertEqual(got, payload)
+        self.assertEqual(gs._shadow_status(0, got), "SHADOW_ADMITTED")
 
     def test_rejected_child_stays_shadow_rejected(self):
         with tempfile.TemporaryDirectory() as td:
@@ -164,6 +183,13 @@ class GpuShadowRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             s = spec(td)
             s["binary_sha256"] = "not-a-hash"
+            with self.assertRaises(gs.ShadowModeError):
+                gs.validate_spec(s)
+
+    def test_missing_event_contract_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            s = spec(td)
+            del s["event"]["pos"]
             with self.assertRaises(gs.ShadowModeError):
                 gs.validate_spec(s)
 
