@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import tempfile
 import unittest
 
@@ -14,6 +13,7 @@ def h(ch):
 
 BASELINE = [{"role": "shared_down_proj", "layer": 4, "n": 5}]
 CANDIDATE = [{"role": "shared_down_proj", "layer": 4, "n": 6}]
+NOW = datetime(2026, 9, 26, 0, 1, tzinfo=timezone.utc)
 
 
 def base_proposal(**overrides):
@@ -106,37 +106,37 @@ class ContractTests(unittest.TestCase):
 
     def test_self_approval_is_rejected(self):
         p = base_proposal()
-        a = approval(p, issuer="planner-agent")
         with self.assertRaises(mc.ManualCanaryContractError):
-            mc.validate_approval(proposal=p, approval=a, now=datetime(2026, 9, 26, 0, 1, tzinfo=timezone.utc))
+            mc.validate_approval(proposal=p, approval=approval(p, issuer="planner-agent"), now=NOW)
 
     def test_forged_proposal_digest_is_rejected(self):
         p = base_proposal()
-        a = approval(p, proposal_digest=h("f"))
         with self.assertRaises(mc.ManualCanaryContractError):
-            mc.validate_approval(proposal=p, approval=a, now=datetime(2026, 9, 26, 0, 1, tzinfo=timezone.utc))
+            mc.validate_approval(proposal=p, approval=approval(p, proposal_digest=h("f")), now=NOW)
 
-    def test_expired_approval_is_rejected(self):
+    def test_expired_approval_is_rejected_at_boundary(self):
         p = base_proposal()
-        now = datetime(2026, 9, 26, tzinfo=timezone.utc)
-        a = approval(p, now=now, expires_at=(now + timedelta(seconds=1)).isoformat())
+        issued = datetime(2026, 9, 26, tzinfo=timezone.utc)
+        a = approval(p, now=issued, expires_at=(issued + timedelta(seconds=1)).isoformat())
         with self.assertRaises(mc.ManualCanaryContractError):
-            mc.validate_approval(proposal=p, approval=a, now=now + timedelta(seconds=1))
+            mc.validate_approval(proposal=p, approval=a, now=issued + timedelta(seconds=1))
 
     def test_untrusted_signature_status_is_rejected(self):
         p = base_proposal()
-        a = approval(p, signature_status="TRUSTED_PRODUCTION_SIGNATURE")
-        with self.assertRaises(mc.ManualCanaryContractError):
-            mc.validate_approval(proposal=p, approval=a, now=datetime(2026, 9, 26, 0, 1, tzinfo=timezone.utc))
-
-    def test_nonce_reuse_is_rejected(self):
-        p = base_proposal()
-        a = approval(p)
         with self.assertRaises(mc.ManualCanaryContractError):
             mc.validate_approval(
                 proposal=p,
-                approval=a,
-                now=datetime(2026, 9, 26, 0, 1, tzinfo=timezone.utc),
+                approval=approval(p, signature_status="TRUSTED_PRODUCTION_SIGNATURE"),
+                now=NOW,
+            )
+
+    def test_nonce_reuse_is_rejected(self):
+        p = base_proposal()
+        with self.assertRaises(mc.ManualCanaryContractError):
+            mc.validate_approval(
+                proposal=p,
+                approval=approval(p),
+                now=NOW,
                 consumed_nonces={"nonce-1"},
             )
 
@@ -162,19 +162,40 @@ class ControllerTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def approve(self):
+    def approve(self, *, nonce="nonce-1"):
         self.controller.initialize()
         self.controller.verify_shadow_evidence(evidence(self.p))
         self.controller.await_approval()
         return self.controller.validate_manual_approval(
-            approval(self.p),
-            now=datetime(2026, 9, 26, 0, 1, tzinfo=timezone.utc),
+            approval(self.p, nonce=nonce),
+            now=NOW,
         )
 
     def start(self):
         self.approve()
         self.controller.prepare_canary()
         return self.controller.start_canary()
+
+    def test_start_before_approval_is_rejected(self):
+        self.controller.initialize()
+        with self.assertRaises(ctl.ManualCanaryControllerError):
+            self.controller.start_canary()
+
+    def test_verify_before_initialize_is_rejected(self):
+        with self.assertRaises(ctl.ManualCanaryControllerError):
+            self.controller.verify_shadow_evidence(evidence(self.p))
+
+    def test_reinitialize_same_run_is_rejected(self):
+        self.controller.initialize()
+        with self.assertRaises(ctl.ManualCanaryControllerError):
+            self.controller.initialize()
+
+    def test_duplicate_evidence_rows_are_rejected(self):
+        self.controller.initialize()
+        ev = evidence(self.p)
+        ev["refs"].append(dict(ev["refs"][0]))
+        with self.assertRaises(ctl.ManualCanaryControllerError):
+            self.controller.verify_shadow_evidence(ev)
 
     def test_happy_dry_run_ends_review_required_not_auto_promoted(self):
         self.start()
@@ -249,9 +270,8 @@ class ControllerTests(unittest.TestCase):
                     controller.initialize()
                     controller.verify_shadow_evidence(evidence(self.p))
                     controller.await_approval()
-                    a = approval(self.p, nonce=f"nonce-{idx}")
                     controller.validate_manual_approval(
-                        a, now=datetime(2026,9,26,0,1,tzinfo=timezone.utc)
+                        approval(self.p, nonce=f"nonce-{idx}"), now=NOW
                     )
                     controller.prepare_canary()
                     controller.start_canary()
@@ -261,19 +281,25 @@ class ControllerTests(unittest.TestCase):
                 finally:
                     tmp.cleanup()
 
+    def test_negative_metric_is_rejected(self):
+        self.start()
+        with self.assertRaises(ctl.ManualCanaryControllerError):
+            self.controller.observe(
+                requests=-1,tokens=1,duration_ms=1,memory_bytes=1,regression=False
+            )
+
     def test_regression_requires_rollback(self):
         self.start()
         state = self.controller.observe(
-            requests=1, tokens=1, duration_ms=1, memory_bytes=1,
-            regression=True,
+            requests=1,tokens=1,duration_ms=1,memory_bytes=1,regression=True
         )
         self.assertEqual(state["state"], "ROLLBACK_REQUIRED")
 
     def test_inconclusive_requires_rollback(self):
         self.start()
         state = self.controller.observe(
-            requests=1, tokens=1, duration_ms=1, memory_bytes=1,
-            regression=False, inconclusive=True,
+            requests=1,tokens=1,duration_ms=1,memory_bytes=1,
+            regression=False,inconclusive=True,
         )
         self.assertEqual(state["state"], "ROLLBACK_REQUIRED")
 
@@ -281,82 +307,102 @@ class ControllerTests(unittest.TestCase):
         self.approve()
         self.controller.prepare_canary()
         self.adapter.fail_apply = True
-        state = self.controller.start_canary()
-        self.assertEqual(state["state"], "ISOLATED")
+        self.assertEqual(self.controller.start_canary()["state"], "ISOLATED")
 
     def test_sync_failure_is_isolated(self):
         self.start()
-        self.controller.observe(
-            requests=1,tokens=1,duration_ms=1,memory_bytes=1,regression=True
-        )
+        self.controller.observe(requests=1,tokens=1,duration_ms=1,memory_bytes=1,regression=True)
         self.adapter.fail_sync = True
-        state = self.controller.rollback(txn_id="txn-sync")
-        self.assertEqual(state["state"], "ISOLATED")
+        self.assertEqual(self.controller.rollback(txn_id="txn-sync")["state"], "ISOLATED")
 
     def test_restore_failure_is_isolated(self):
         self.start()
-        self.controller.observe(
-            requests=1,tokens=1,duration_ms=1,memory_bytes=1,regression=True
-        )
+        self.controller.observe(requests=1,tokens=1,duration_ms=1,memory_bytes=1,regression=True)
         self.adapter.fail_restore = True
-        state = self.controller.rollback(txn_id="txn-restore")
-        self.assertEqual(state["state"], "ISOLATED")
+        self.assertEqual(self.controller.rollback(txn_id="txn-restore")["state"], "ISOLATED")
 
     def test_nonce_is_durable_across_store_restart(self):
         self.approve()
         restarted = ctl.ManualCanaryStore(self.tmp.name, "run-2")
         self.assertIn("nonce-1", restarted.consumed_nonces())
 
-    def test_restart_reconcile_baseline_becomes_verified(self):
+    def test_restart_before_mutation_preserves_approval_state(self):
         self.approve()
-        self.controller.prepare_canary()
+        state = self.controller.reconcile_after_restart()
+        self.assertEqual(state["state"], "APPROVAL_VALIDATED")
+
+    def test_restart_pending_baseline_becomes_verified(self):
+        self.start()
+        self.controller.observe(requests=1,tokens=1,duration_ms=1,memory_bytes=1,regression=True)
         self.store.transition("ROLLBACK_PENDING", txn_id="txn-r")
         self.adapter.policy = BASELINE.copy()
         self.adapter.policy_hash = mc.sha256_json(BASELINE)
         self.adapter.epoch = 9
-        state = self.controller.reconcile_after_restart()
-        self.assertEqual(state["state"], "ROLLBACK_VERIFIED")
+        self.assertEqual(self.controller.reconcile_after_restart()["state"], "ROLLBACK_VERIFIED")
 
-    def test_restart_reconcile_candidate_requires_rollback(self):
+    def test_restart_candidate_requires_rollback(self):
         self.start()
-        state = self.controller.reconcile_after_restart()
-        self.assertEqual(state["state"], "ROLLBACK_REQUIRED")
+        self.assertEqual(self.controller.reconcile_after_restart()["state"], "ROLLBACK_REQUIRED")
 
-    def test_restart_reconcile_unknown_policy_is_isolated(self):
+    def test_restart_unknown_policy_is_isolated(self):
         self.start()
         self.adapter.policy_hash = h("f")
-        state = self.controller.reconcile_after_restart()
-        self.assertEqual(state["state"], "ISOLATED")
+        self.assertEqual(self.controller.reconcile_after_restart()["state"], "ISOLATED")
 
-    def test_wrong_rollback_policy_report_is_isolated(self):
-        class WrongAck(ctl.DryRunAdapter):
-            def restore_baseline(self, *, policy, policy_hash):
-                self.epoch += 1
-                self.policy_hash = h("f")
-                return self.query()
-
-        adapter = WrongAck(
-            policy=BASELINE.copy(), epoch=7,
-            policy_hash=mc.sha256_json(BASELINE),
-        )
-        store = ctl.ManualCanaryStore(self.tmp.name, "wrong-ack")
+    def _rollback_with_adapter(self, adapter):
+        store = ctl.ManualCanaryStore(self.tmp.name, "ack-fixture-"+str(id(adapter)))
         controller = ctl.ManualCanaryController(
-            store=store, adapter=adapter, proposal=self.p,
-            baseline_policy=BASELINE, candidate_policy=CANDIDATE,
+            store=store,adapter=adapter,proposal=self.p,
+            baseline_policy=BASELINE,candidate_policy=CANDIDATE,
         )
         controller.initialize()
         controller.verify_shadow_evidence(evidence(self.p))
         controller.await_approval()
         controller.validate_manual_approval(
-            approval(self.p, nonce="nonce-wrong"),
-            now=datetime(2026,9,26,0,1,tzinfo=timezone.utc),
+            approval(self.p, nonce="nonce-"+str(id(adapter))),now=NOW
         )
-        controller.prepare_canary(); controller.start_canary()
-        controller.observe(
-            requests=1,tokens=1,duration_ms=1,memory_bytes=1,regression=True
-        )
-        state = controller.rollback(txn_id="txn-wrong")
-        self.assertEqual(state["state"], "ISOLATED")
+        controller.prepare_canary()
+        controller.start_canary()
+        controller.observe(requests=1,tokens=1,duration_ms=1,memory_bytes=1,regression=True)
+        return controller.rollback(txn_id="txn-expected")
+
+    def test_wrong_rollback_policy_report_is_isolated(self):
+        class WrongPolicy(ctl.DryRunAdapter):
+            def restore_baseline(self, *, policy, policy_hash, txn_id):
+                before=self.epoch
+                self.epoch += 1
+                self.policy_hash=h("f")
+                return {**self.query(),"txn_id":txn_id,"previous_epoch":before}
+        adapter=WrongPolicy(policy=BASELINE.copy(),epoch=7,policy_hash=mc.sha256_json(BASELINE))
+        self.assertEqual(self._rollback_with_adapter(adapter)["state"],"ISOLATED")
+
+    def test_wrong_rollback_txn_is_isolated(self):
+        class WrongTxn(ctl.DryRunAdapter):
+            def restore_baseline(self, *, policy, policy_hash, txn_id):
+                row=super().restore_baseline(policy=policy,policy_hash=policy_hash,txn_id=txn_id)
+                row["txn_id"]="other"
+                return row
+        adapter=WrongTxn(policy=BASELINE.copy(),epoch=7,policy_hash=mc.sha256_json(BASELINE))
+        self.assertEqual(self._rollback_with_adapter(adapter)["state"],"ISOLATED")
+
+    def test_wrong_previous_epoch_is_isolated(self):
+        class WrongPrevious(ctl.DryRunAdapter):
+            def restore_baseline(self, *, policy, policy_hash, txn_id):
+                row=super().restore_baseline(policy=policy,policy_hash=policy_hash,txn_id=txn_id)
+                row["previous_epoch"] -= 1
+                return row
+        adapter=WrongPrevious(policy=BASELINE.copy(),epoch=7,policy_hash=mc.sha256_json(BASELINE))
+        self.assertEqual(self._rollback_with_adapter(adapter)["state"],"ISOLATED")
+
+    def test_nonadvancing_restore_epoch_is_isolated(self):
+        class NoAdvance(ctl.DryRunAdapter):
+            def restore_baseline(self, *, policy, policy_hash, txn_id):
+                before=self.epoch
+                self.policy=list(policy)
+                self.policy_hash=policy_hash
+                return {**self.query(),"txn_id":txn_id,"previous_epoch":before}
+        adapter=NoAdvance(policy=BASELINE.copy(),epoch=7,policy_hash=mc.sha256_json(BASELINE))
+        self.assertEqual(self._rollback_with_adapter(adapter)["state"],"ISOLATED")
 
 
 if __name__ == "__main__":
