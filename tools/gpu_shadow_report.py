@@ -559,8 +559,9 @@ def render_markdown(report: dict) -> str:
 def _validate_output(path: str | None, shadow_root: Path) -> Path | None:
     if not path:
         return None
+    root = Path(shadow_root).expanduser().resolve(strict=False)
     target = Path(path).expanduser().resolve(strict=False)
-    if target == shadow_root or _is_within(target, shadow_root):
+    if target == root or _is_within(target, root):
         raise ShadowReportError(
             "report output must be outside the observed shadow root"
         )
