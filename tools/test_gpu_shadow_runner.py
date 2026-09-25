@@ -11,6 +11,9 @@ import gpu_shadow_runner as gs
 def spec(root):
     repo = Path(root) / "repo"
     repo.mkdir(exist_ok=True)
+    tools_dir = repo / "tools"
+    tools_dir.mkdir(exist_ok=True)
+    (tools_dir / "gpu_autopilot.py").write_text("# certified test autopilot\n")
     return {
         "role": "shared_down_proj",
         "layer": 4,
@@ -85,7 +88,7 @@ class GpuShadowRunnerTests(unittest.TestCase):
             control = Path(td) / "shadow" / "runs" / "r1" / "control"
             cmd = gs.build_autopilot_command(
                 s,
-                autopilot="/repo/tools/gpu_autopilot.py",
+                autopilot=str(Path(s["cwd"]) / "tools" / "gpu_autopilot.py"),
                 control_root=control,
                 python_bin="python3",
             )
@@ -113,7 +116,7 @@ class GpuShadowRunnerTests(unittest.TestCase):
                 got = gs.run_shadow(
                     s,
                     shadow_root=str(shadow),
-                    autopilot="/repo/tools/gpu_autopilot.py",
+                    autopilot=str(Path(s["cwd"]) / "tools" / "gpu_autopilot.py"),
                     python_bin="python3",
                     run_id="run-1",
                     forbidden_roots=[str(Path(td) / "prod")],
@@ -135,6 +138,36 @@ class GpuShadowRunnerTests(unittest.TestCase):
             self.assertEqual(saved["shadow_status"], "SHADOW_ADMITTED")
             self.assertFalse(saved["production_write_allowed"])
 
+
+    def test_run_shadow_rejects_noncertified_autopilot_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            s = spec(td)
+            rogue = Path(td) / "rogue.py"
+            rogue.write_text("print('rogue')\n")
+            with self.assertRaises(gs.ShadowModeError):
+                gs.run_shadow(
+                    s,
+                    shadow_root=str(Path(td) / "shadow"),
+                    autopilot=str(rogue),
+                    run_id="rogue-run",
+                )
+
+    def test_run_shadow_rejects_symlinked_certified_autopilot(self):
+        with tempfile.TemporaryDirectory() as td:
+            s = spec(td)
+            expected = Path(s["cwd"]) / "tools" / "gpu_autopilot.py"
+            expected.unlink()
+            target = Path(td) / "real-autopilot.py"
+            target.write_text("# outside repo\n")
+            expected.symlink_to(target)
+            with self.assertRaises(gs.ShadowModeError):
+                gs.run_shadow(
+                    s,
+                    shadow_root=str(Path(td) / "shadow"),
+                    autopilot=str(expected),
+                    run_id="symlink-run",
+                )
+
     def test_pretty_printed_child_json_is_classified(self):
         payload = {"status": "ADMITTED", "nested": {"ok": True}}
         got = gs._extract_last_json("prefix log\n" + json.dumps(payload, indent=2) + "\n")
@@ -155,7 +188,7 @@ class GpuShadowRunnerTests(unittest.TestCase):
                 got = gs.run_shadow(
                     s,
                     shadow_root=str(Path(td) / "shadow"),
-                    autopilot="/repo/tools/gpu_autopilot.py",
+                    autopilot=str(Path(s["cwd"]) / "tools" / "gpu_autopilot.py"),
                     run_id="run-2",
                 )
             self.assertEqual(got["shadow_status"], "SHADOW_REJECTED")
@@ -172,7 +205,7 @@ class GpuShadowRunnerTests(unittest.TestCase):
                 got = gs.run_shadow(
                     s,
                     shadow_root=str(Path(td) / "shadow"),
-                    autopilot="/repo/tools/gpu_autopilot.py",
+                    autopilot=str(Path(s["cwd"]) / "tools" / "gpu_autopilot.py"),
                     run_id="run-3",
                 )
             self.assertEqual(got["shadow_status"], "SHADOW_ERROR")
