@@ -3,7 +3,7 @@
 
 This wrapper deliberately has no production mutation path. It consumes an
 explicit candidate spec, launches tools/gpu_autopilot.py with a scratch-only
-control root, scrubs inherited mutation/control environment variables, and
+control root, scrubs inherited mutation/control credentials and paths, and
 persists only shadow evidence/results.
 """
 from __future__ import annotations
@@ -40,8 +40,9 @@ REQUIRED_SPEC = (
     "safetensors",
 )
 
-# Never inherit a live control path into the child process. gpu_autopilot.py is
-# itself scratch-root scoped, but shadow mode adds a second independent guard.
+# Never inherit a live control path or DB credential into the child process.
+# gpu_autopilot.py is itself scratch-root scoped, but shadow mode adds a
+# second independent guard.
 MUTATION_ENV = (
     "QWEN_MOE_PROMOTION_FILE",
     "QWEN_MOE_PROMOTION_FILE_NQ",
@@ -53,6 +54,10 @@ MUTATION_ENV = (
     "QWEN_AUTOPILOT_GPU",
     "QWEN_AUTOPILOT_P3",
     "QWEN_AUTOPILOT_P5",
+    "QWEN_SUPABASE_URL",
+    "QWEN_SUPABASE_KEY",
+    "SUPABASE_URL",
+    "SUPABASE_KEY",
 )
 
 
@@ -108,17 +113,33 @@ def validate_spec(spec: Mapping) -> None:
         raise ShadowModeError("candidate spec missing: " + ", ".join(missing))
     if not isinstance(spec["event"], dict) or not isinstance(spec["reference"], dict):
         raise ShadowModeError("event/reference must be JSON objects")
-    for key in ("layer", "n", "prompt_len"):
-        try:
-            value = int(spec[key])
-        except (TypeError, ValueError) as exc:
-            raise ShadowModeError(f"{key} must be an integer") from exc
-        if value < 0:
-            raise ShadowModeError(f"{key} must be non-negative")
+
+    event_missing = [
+        key for key in ("orig_token", "corrected_token", "pos")
+        if key not in spec["event"]
+    ]
+    if event_missing:
+        raise ShadowModeError("event missing: " + ", ".join(event_missing))
+    if "emitted_token" not in spec["reference"]:
+        raise ShadowModeError("reference missing emitted_token")
+
+    try:
+        layer = int(spec["layer"])
+        n = int(spec["n"])
+        prompt_len = int(spec["prompt_len"])
+    except (TypeError, ValueError) as exc:
+        raise ShadowModeError("layer/n/prompt_len must be integers") from exc
+    if layer < 0:
+        raise ShadowModeError("layer must be non-negative")
+    if n <= 0:
+        raise ShadowModeError("n must be positive")
+    if prompt_len <= 0:
+        raise ShadowModeError("prompt_len must be positive")
+
     for key in ("binary_sha256", "checkpoint_sha256"):
         value = str(spec[key]).lower()
         if not re.fullmatch(r"[0-9a-f]{64}", value):
-            raise ShadowModeError(f"{key} must be 64 lowercase/uppercase hex chars")
+            raise ShadowModeError(f"{key} must be 64 hex chars")
 
 
 def _resolved(path: str) -> Path:
@@ -133,6 +154,10 @@ def _is_within(path: Path, root: Path) -> bool:
         return False
 
 
+def _overlaps(a: Path, b: Path) -> bool:
+    return a == b or _is_within(a, b) or _is_within(b, a)
+
+
 def validate_shadow_root(
     shadow_root: str,
     *,
@@ -144,7 +169,7 @@ def validate_shadow_root(
         raise ShadowModeError("shadow root may not be filesystem root")
 
     repo = _resolved(candidate_cwd)
-    if _is_within(root, repo) or _is_within(repo, root):
+    if _overlaps(root, repo):
         raise ShadowModeError(
             "shadow root must be outside the engine checkout/worktree"
         )
@@ -160,7 +185,7 @@ def validate_shadow_root(
 
     for item in defaults:
         forbidden = _resolved(str(item))
-        if root == forbidden or _is_within(root, forbidden):
+        if _overlaps(root, forbidden):
             raise ShadowModeError(
                 f"shadow root overlaps forbidden production/control root: {forbidden}"
             )
@@ -221,6 +246,7 @@ def build_autopilot_command(
 
 
 def _extract_last_json(text: str):
+    # Fast path for the common one-line final JSON record.
     for line in reversed(text.splitlines()):
         line = line.strip()
         if not line:
@@ -231,7 +257,25 @@ def _extract_last_json(text: str):
             continue
         if isinstance(value, dict):
             return value
-    return None
+
+    # Also accept a pretty-printed JSON object mixed with log lines. Keep the
+    # dict whose decoded range ends latest in the stream.
+    decoder = json.JSONDecoder()
+    best = None
+    best_end = -1
+    for idx, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            value, consumed = decoder.raw_decode(text[idx:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            absolute_end = idx + consumed
+            if absolute_end > best_end:
+                best = value
+                best_end = absolute_end
+    return best
 
 
 def _shadow_status(returncode: int, child_payload) -> str:
@@ -241,6 +285,7 @@ def _shadow_status(returncode: int, child_payload) -> str:
         return "SHADOW_COMPLETED_UNCLASSIFIED"
     raw = str(
         child_payload.get("status")
+        or child_payload.get("final_status")
         or child_payload.get("action")
         or child_payload.get("decision")
         or ""
