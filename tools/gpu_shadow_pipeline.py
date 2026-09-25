@@ -13,6 +13,8 @@ No production promotion/control/Supabase writes are performed.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -24,6 +26,7 @@ import gpu_shadow_runner as runner
 
 
 SCHEMA = "gpu-shadow-pipeline-v1"
+HISTORY_SCHEMA = "gpu-shadow-history-v1"
 
 
 class ShadowPipelineError(RuntimeError):
@@ -45,6 +48,61 @@ def _atomic_json(path: Path, value):
     os.replace(tmp, path)
 
 
+def _read_json(path: Path, default):
+    if not path.exists():
+        return default
+    with open(path) as f:
+        return json.load(f)
+
+
+def _candidate_fingerprint(row: dict) -> str:
+    return discovery.sha256_json(row)
+
+
+def _load_history(path: Path) -> dict:
+    value = _read_json(path, {"schema": HISTORY_SCHEMA, "candidates": {}})
+    if not isinstance(value, dict) or value.get("schema") != HISTORY_SCHEMA:
+        raise ShadowPipelineError("invalid shadow candidate history")
+    if not isinstance(value.get("candidates"), dict):
+        raise ShadowPipelineError("invalid shadow candidate history candidates map")
+    return value
+
+
+def _record_history(path: Path, history: dict, row: dict, run: dict) -> None:
+    candidate_id = str(row["candidate_id"])
+    next_history = {
+        "schema": HISTORY_SCHEMA,
+        "updated_at": _now(),
+        "candidates": dict(history.get("candidates", {})),
+    }
+    next_history["candidates"][candidate_id] = {
+        "fingerprint": _candidate_fingerprint(row),
+        "shadow_status": run.get("shadow_status"),
+        "result_sha256": run.get("result_sha256"),
+        "observed_at": _now(),
+    }
+    _atomic_json(path, next_history)
+
+
+@contextmanager
+def _cycle_lock(shadow_root: Path):
+    path = shadow_root / ".cycle.lock"
+    handle = open(path, "a+")
+    try:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ShadowPipelineError(
+                f"another shadow cycle already holds {path}"
+            ) from exc
+        yield
+    finally:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+
+
 def load_config(path):
     with open(path) as f:
         value = json.load(f)
@@ -60,7 +118,7 @@ def _require(config, key):
     return value
 
 
-def run_cycle(
+def _run_cycle_locked(
     config: dict,
     *,
     discover_fn=discovery.discover,
@@ -73,20 +131,26 @@ def run_cycle(
     cwd = str(_require(config, "cwd"))
     autopilot = str(_require(config, "autopilot"))
 
-    # Reuse the runner's stronger root guard before any local writes.
-    runner.validate_shadow_root(
-        str(shadow_root),
-        candidate_cwd=cwd,
-        forbidden_roots=config.get("forbidden_roots", []),
-    )
-    shadow_root.mkdir(parents=True, exist_ok=True)
-
     started_at = _now()
     discovered = discover_fn(model, limit)
     discovery_path = shadow_root / "discovery.json"
     _atomic_json(discovery_path, discovered)
 
     ready = discovered.get("ready") or []
+    history_path = shadow_root / "candidate_history.json"
+    history = _load_history(history_path)
+
+    already_observed = []
+    eligible = []
+    for row in ready:
+        candidate_id = str(row.get("candidate_id"))
+        previous = history["candidates"].get(candidate_id)
+        fingerprint = _candidate_fingerprint(row)
+        if previous and previous.get("fingerprint") == fingerprint:
+            already_observed.append(candidate_id)
+        else:
+            eligible.append(row)
+
     if not ready:
         result = {
             "schema": SCHEMA,
@@ -95,7 +159,26 @@ def run_cycle(
             "status": "NO_READY_CANDIDATE",
             "model": model,
             "ready_count": 0,
+            "already_observed_candidate_ids": [],
             "discovery_path": str(discovery_path),
+            "history_path": str(history_path),
+            "started_at": started_at,
+            "finished_at": _now(),
+        }
+        _atomic_json(shadow_root / "last_cycle.json", result)
+        return result
+
+    if not eligible:
+        result = {
+            "schema": SCHEMA,
+            "mode": "shadow",
+            "production_write_allowed": False,
+            "status": "NO_NEW_READY_CANDIDATE",
+            "model": model,
+            "ready_count": len(ready),
+            "already_observed_candidate_ids": already_observed,
+            "discovery_path": str(discovery_path),
+            "history_path": str(history_path),
             "started_at": started_at,
             "finished_at": _now(),
         }
@@ -104,8 +187,8 @@ def run_cycle(
 
     # Deliberately serialize one candidate per shadow cycle. This preserves the
     # same one-target-at-a-time evidence discipline as the real canary path.
-    selected = ready[0]
-    deferred = [row.get("candidate_id") for row in ready[1:]]
+    selected = eligible[0]
+    deferred = [row.get("candidate_id") for row in eligible[1:]]
 
     mappings = materialize.parse_maps(config.get("path_maps", []))
     spec_result = materialize_fn(
@@ -131,6 +214,7 @@ def run_cycle(
         forbidden_roots=config.get("forbidden_roots", []),
     )
 
+    _record_history(history_path, history, selected, run)
     result = {
         "schema": SCHEMA,
         "mode": "shadow",
@@ -139,15 +223,44 @@ def run_cycle(
         "model": model,
         "selected_candidate_id": selected["candidate_id"],
         "deferred_candidate_ids": deferred,
+        "already_observed_candidate_ids": already_observed,
         "ready_count": len(ready),
         "discovery_path": str(discovery_path),
         "candidate_spec": spec_result["candidate_spec"],
+        "history_path": str(history_path),
         "shadow_run": run,
         "started_at": started_at,
         "finished_at": _now(),
     }
     _atomic_json(shadow_root / "last_cycle.json", result)
     return result
+
+
+def run_cycle(
+    config: dict,
+    *,
+    discover_fn=discovery.discover,
+    materialize_fn=materialize.materialize,
+    run_shadow_fn=runner.run_shadow,
+) -> dict:
+    shadow_root = Path(_require(config, "shadow_root")).expanduser().resolve(strict=False)
+    cwd = str(_require(config, "cwd"))
+
+    # Validate and create the scratch root before acquiring the process lock.
+    runner.validate_shadow_root(
+        str(shadow_root),
+        candidate_cwd=cwd,
+        forbidden_roots=config.get("forbidden_roots", []),
+    )
+    shadow_root.mkdir(parents=True, exist_ok=True)
+
+    with _cycle_lock(shadow_root):
+        return _run_cycle_locked(
+            config,
+            discover_fn=discover_fn,
+            materialize_fn=materialize_fn,
+            run_shadow_fn=run_shadow_fn,
+        )
 
 
 def main():
