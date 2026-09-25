@@ -1,0 +1,133 @@
+{
+  "schema": "beglin-agent-result/1",
+  "session_id": "2026-09-26-agent-e-manual-canary",
+  "agent_id": "E",
+  "status": "READY_FOR_REVIEW",
+  "base_commit": "018c0147dcb7853642078e359606ca876678d85f",
+  "agent_commit": "8e824fa7ed728be76ecc4d31a43876707337813e",
+  "integration_commit": null,
+  "observed_at": "2026-09-25T15:18:33Z",
+  "started_at": "2026-09-25T15:15:00Z",
+  "finished_at": "2026-09-25T15:18:33Z",
+  "host": "github-actions",
+  "platform": "ubuntu-24.04 / Python 3.11.16",
+  "model_revision": "fixture-model",
+  "backend": "mlx_metal",
+  "architecture": "deepseek-v2-lite",
+  "binary_sha256": null,
+  "binary_build_source_commit": null,
+  "checkpoint_sha256": null,
+  "policy_hash": null,
+  "run_id": "github-actions-36153245385",
+  "evidence_level": "simulated",
+  "production_write_allowed": false,
+  "changed_files": [
+    "tools/manual_canary_contract.py",
+    "tools/manual_canary_controller.py",
+    "tools/manual_canary_fixture_run.py",
+    "tools/test_manual_canary.py",
+    "docs/MANUAL_CANARY_CONTRACT.md",
+    ".github/workflows/agent-e-manual-canary.yml"
+  ],
+  "tests": [
+    {
+      "name": "manual canary dry-run unit suite",
+      "kind": "unit",
+      "command": "PYTHONPATH=tools python tools/test_manual_canary.py",
+      "exit_code": 0,
+      "actual_count": 35,
+      "status": "PASS",
+      "log_ref": "GitHub Actions run 36153245385 / job 108131474709",
+      "log_sha256": null
+    },
+    {
+      "name": "production isolation static guard",
+      "kind": "static",
+      "command": "AST import isolation check",
+      "exit_code": 0,
+      "actual_count": null,
+      "status": "PASS",
+      "log_ref": "GitHub Actions run 36153245385 / job 108131474709",
+      "log_sha256": null
+    },
+    {
+      "name": "dry-run journal fixture",
+      "kind": "simulated",
+      "command": "PYTHONPATH=tools python tools/manual_canary_fixture_run.py --output agent-e-evidence",
+      "exit_code": 0,
+      "actual_count": 2,
+      "status": "PASS",
+      "log_ref": "GitHub Actions run 36153245385 / job 108131474709",
+      "log_sha256": null
+    }
+  ],
+  "real_runs": [],
+  "artifacts": [
+    {
+      "name": "agent-e-manual-canary-evidence",
+      "artifact_id": 10872940087,
+      "size_bytes": 3340,
+      "sha256": "ee30d2d352b0c6b62205e13a7354b7813e01148455c9b77455f1653c0194c225",
+      "source_commit": "8e824fa7ed728be76ecc4d31a43876707337813e",
+      "run_id": "github-actions-36153245385",
+      "scope": "simulated dry-run journals only"
+    },
+    {
+      "name": "happy journal",
+      "sha256": "25ee9d0ed0dcf36d7cedfe712e828c66b323c26cf90c2a506e4d6bac642efd65",
+      "scope": "fixture happy path"
+    },
+    {
+      "name": "happy terminal state",
+      "sha256": "c3466c819f1da32fd0d07b6020a9fb1d82bffb457330f9ee5ff852b84289c279",
+      "scope": "fixture CANARY_PASS_REVIEW_REQUIRED"
+    },
+    {
+      "name": "rollback journal",
+      "sha256": "856c936defc988eb1301c3a5f5ed2c04e1924a50eb5fec7fc43d70467690fc41",
+      "scope": "fixture rollback path"
+    },
+    {
+      "name": "rollback terminal state",
+      "sha256": "9153d0e479a733edb9f52be3a99c4ee214f168e62e01b0cd8d9085a01cd060a2",
+      "scope": "fixture ROLLBACK_VERIFIED"
+    }
+  ],
+  "limitations": [
+    "Agent E branch is based on remote staging commit 018c0147..., not the latest certified XOX BASE_SHA.",
+    "No real GPU canary was run by Agent E.",
+    "No production adapter, production write path, service restart, or Supabase write is connected.",
+    "DRY_RUN_TEST_ONLY is intentionally not a trusted production signature scheme.",
+    "binary/checkpoint/policy hashes in fixture proposals are synthetic and are not recorded as real result identities.",
+    "Latest XOX G5/G6 evidence has not yet been rebound to this contract; A0 must integrate on certified BASE_SHA and rerun."
+  ],
+  "blocked_by": [
+    "A0 integration onto current certified XOX BASE_SHA",
+    "B/F real evidence if a real-context read-only validation is desired",
+    "separate trusted approval-signature design before any production adapter bridge"
+  ],
+  "reproduction_commands": [
+    "python -m py_compile tools/manual_canary_contract.py tools/manual_canary_controller.py tools/test_manual_canary.py",
+    "PYTHONPATH=tools python tools/test_manual_canary.py",
+    "PYTHONPATH=tools python tools/manual_canary_fixture_run.py --output agent-e-evidence"
+  ],
+  "handoff": {
+    "completed": [
+      "dry-run approval contract",
+      "strict single-target state ordering",
+      "durable nonce and kill-switch scratch state",
+      "budget/regression/inconclusive rollback-required semantics",
+      "exact-baseline rollback ACK txn/epoch/policy checks",
+      "restart reconciliation rules",
+      "CI production-isolation guard",
+      "simulated happy and rollback journal artifacts"
+    ],
+    "remaining": [
+      "cherry-pick squash onto A0 certified BASE_SHA",
+      "rerun Agent E suite on integration SHA",
+      "bind actual B/F evidence read-only if desired",
+      "design a real trusted human approval signature mechanism before any production bridge"
+    ],
+    "next_owner": "A0"
+  }
+}
