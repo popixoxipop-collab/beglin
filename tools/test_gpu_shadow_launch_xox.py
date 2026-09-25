@@ -81,6 +81,41 @@ class ShadowXoxLaunchTests(unittest.TestCase):
         self.assertEqual(got["QWEN_SUPABASE_KEY"], "secret")
         self.assertEqual(got["PATH"], "/bin")
 
+
+    def test_summarize_last_cycle_marks_current_previous_and_legacy(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "last_cycle.json"
+
+            path.write_text(json.dumps({
+                "status": "SHADOW_CYCLE_COMPLETE",
+                "launch_id": "launch-1",
+                "cycle_id": "cycle-1",
+                "shadow_run_id": "run-1",
+                "ready_count": 1,
+            }))
+            current = gl._summarize_last_cycle(path, "launch-1")
+            self.assertEqual(current["relation"], "CURRENT")
+            self.assertEqual(current["cycle_id"], "cycle-1")
+            self.assertEqual(current["shadow_run_id"], "run-1")
+
+            previous = gl._summarize_last_cycle(path, "launch-2")
+            self.assertEqual(previous["relation"], "PREVIOUS")
+
+            path.write_text(json.dumps({
+                "status": "NO_NEW_READY_CANDIDATE",
+                "ready_count": 1,
+            }))
+            legacy = gl._summarize_last_cycle(path, "launch-2")
+            self.assertEqual(legacy["relation"], "LEGACY_UNLINKED")
+
+    def test_summarize_last_cycle_handles_corrupt_json(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "last_cycle.json"
+            path.write_text("{not-json")
+            got = gl._summarize_last_cycle(path, "launch-1")
+            self.assertEqual(got["relation"], "UNREADABLE")
+            self.assertEqual(got["status"], "UNREADABLE_LAST_CYCLE")
+
     def test_status_payload_never_contains_credential_values(self):
         with tempfile.TemporaryDirectory() as td:
             payload = {
