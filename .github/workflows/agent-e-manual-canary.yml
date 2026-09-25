@@ -22,25 +22,38 @@ jobs:
       - name: Static production-isolation guard
         run: |
           python - <<'PY'
+          import ast
           from pathlib import Path
+
           files = [
               Path("tools/manual_canary_contract.py"),
               Path("tools/manual_canary_controller.py"),
           ]
-          text = "\n".join(p.read_text() for p in files)
-          forbidden = [
+          forbidden_modules = {
               "backend_adapters",
               "gpu_runtime_control",
               "subprocess",
               "urllib",
               "requests",
               "supabase",
-              "QWEN_SUPABASE",
-          ]
-          found = [x for x in forbidden if x in text]
-          if found:
-              raise SystemExit("forbidden production/live dependency in dry-run layer: " + repr(found))
-          if "production_write_allowed" not in text:
+          }
+          imported = set()
+          combined = ""
+          for path in files:
+              source = path.read_text()
+              combined += "\n" + source
+              tree = ast.parse(source, filename=str(path))
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      imported.update(alias.name.split(".")[0] for alias in node.names)
+                  elif isinstance(node, ast.ImportFrom) and node.module:
+                      imported.add(node.module.split(".")[0])
+          bad = sorted(imported & forbidden_modules)
+          if bad:
+              raise SystemExit("forbidden production/live imports: " + repr(bad))
+          if "QWEN_SUPABASE" in combined:
+              raise SystemExit("credential-bearing production env name found")
+          if "production_write_allowed" not in combined:
               raise SystemExit("missing production_write_allowed guard")
           print("production isolation static guard PASS")
           PY
