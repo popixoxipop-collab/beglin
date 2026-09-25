@@ -45,6 +45,83 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _canonical_json(value) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def checkpoint_identity_from_safetensors(safetensors: str):
+    """Return a content-bound checkpoint identity and its audit manifest.
+
+    For a Hugging Face safetensors index, the identity binds the index bytes
+    plus every distinct shard referenced by weight_map.  For a single
+    safetensors file it binds that file directly.  Index entries must be
+    relative paths without '..'; symlinked shard files are allowed because
+    common model caches use them, but the index itself controls only the
+    relative filename.
+    """
+    path = Path(safetensors).expanduser().resolve(strict=False)
+    if not path.is_file():
+        raise ShadowMaterializeError(
+            f"safetensors checkpoint artifact does not exist: {path}"
+        )
+
+    if path.name.endswith(".index.json"):
+        try:
+            obj = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ShadowMaterializeError(
+                f"invalid safetensors index JSON: {path}: {exc}"
+            ) from exc
+        weight_map = obj.get("weight_map")
+        if not isinstance(weight_map, dict) or not weight_map:
+            raise ShadowMaterializeError(
+                "safetensors index must contain a non-empty weight_map"
+            )
+
+        shard_names = sorted({str(v) for v in weight_map.values()})
+        shards = []
+        for name in shard_names:
+            rel = PurePosixPath(name)
+            if rel.is_absolute() or ".." in rel.parts:
+                raise ShadowMaterializeError(
+                    f"unsafe shard path in safetensors index: {name!r}"
+                )
+            shard = path.parent.joinpath(*rel.parts)
+            if not shard.is_file():
+                raise ShadowMaterializeError(
+                    f"safetensors shard referenced by index is missing: {shard}"
+                )
+            shards.append({
+                "name": name,
+                "size_bytes": shard.stat().st_size,
+                "sha256": _sha256_file(shard),
+            })
+
+        manifest = {
+            "schema": "checkpoint-identity-v1",
+            "kind": "safetensors-index",
+            "index": {
+                "name": path.name,
+                "size_bytes": path.stat().st_size,
+                "sha256": _sha256_file(path),
+            },
+            "shards": shards,
+        }
+    else:
+        manifest = {
+            "schema": "checkpoint-identity-v1",
+            "kind": "single-file",
+            "file": {
+                "name": path.name,
+                "size_bytes": path.stat().st_size,
+                "sha256": _sha256_file(path),
+            },
+        }
+
+    identity = hashlib.sha256(_canonical_json(manifest).encode()).hexdigest()
+    return identity, manifest
+
+
 def load_json(path):
     with open(path) as f:
         value = json.load(f)
@@ -206,9 +283,23 @@ def materialize(
     if not binary_path.is_file():
         raise ShadowMaterializeError(f"GPU binary does not exist: {binary_path}")
     binary_sha256 = _sha256_file(binary_path)
-    checkpoint_sha256 = str(checkpoint_sha256).lower()
-    if len(checkpoint_sha256) != 64 or any(c not in "0123456789abcdef" for c in checkpoint_sha256):
-        raise ShadowMaterializeError("checkpoint_sha256 must be 64 lowercase hex chars")
+    checkpoint_input = str(checkpoint_sha256).strip().lower()
+    checkpoint_identity = None
+    if checkpoint_input == "auto":
+        checkpoint_sha256, checkpoint_identity = checkpoint_identity_from_safetensors(
+            safetensors
+        )
+    else:
+        checkpoint_sha256 = checkpoint_input
+        if len(checkpoint_sha256) != 64 or any(c not in "0123456789abcdef" for c in checkpoint_sha256):
+            raise ShadowMaterializeError(
+                'checkpoint_sha256 must be 64 lowercase hex chars or "auto"'
+            )
+        checkpoint_identity = {
+            "schema": "checkpoint-identity-v1",
+            "kind": "manual",
+            "sha256": checkpoint_sha256,
+        }
 
     candidate_dir = output_dir / str(row["candidate_id"])
     g4_path = candidate_dir / "g4_manifest.txt"
@@ -249,6 +340,7 @@ def materialize(
             "mapped_source_manifest": str(local_manifest),
             "mapped_raw_token_file": str(local_token),
             "raw_token_sha256": _sha256_file(local_token),
+            "checkpoint_identity": checkpoint_identity,
             "g6_repeats": int(g6_repeats),
         },
     }
@@ -262,6 +354,7 @@ def materialize(
         "g6_manifest": str(g6_path),
         "prompt_len": prompt_len,
         "binary_sha256": binary_sha256,
+        "checkpoint_sha256": checkpoint_sha256,
     }
 
 
@@ -273,7 +366,11 @@ def main() -> int:
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--cwd", required=True)
     ap.add_argument("--binary", required=True)
-    ap.add_argument("--checkpoint-sha256", required=True)
+    ap.add_argument(
+        "--checkpoint-sha256",
+        required=True,
+        help='64-hex checkpoint identity, or "auto" to hash the safetensors index and all referenced shards',
+    )
     ap.add_argument("--moe-base", required=True)
     ap.add_argument("--safetensors", required=True)
     ap.add_argument("--g6-repeats", type=int, default=64)
