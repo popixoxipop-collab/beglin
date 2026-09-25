@@ -204,3 +204,54 @@ GitHub Actions also recorded a successful earlier shadow/discovery run at
 run #28. Later runs may remain queued when multiple rapid staging commits are
 waiting for an available runner; the EOE execution above is the independent
 fallback verification for the latest code.
+
+
+## XOX detached execution
+
+The certified XOX MCP exec surface intentionally sanitizes environment
+variables and caps a synchronous exec. For the real shadow cycle, use the
+detached launcher:
+
+```bash
+python3 tools/gpu_shadow_launch_xox.py
+```
+
+The exact Tailnet allowlist should expose only that no-argument launcher and
+the read-only status command:
+
+```bash
+python3 tools/gpu_shadow_status_xox.py
+```
+
+The launcher never shell-sources an env file. It reads exactly:
+
+```text
+QWEN_SUPABASE_URL
+QWEN_SUPABASE_KEY
+```
+
+from the fixed XOX main-worktree file:
+
+```text
+/Users/xox/vdsp-engine/.env
+```
+
+and ignores every other key. The values are never printed or persisted. The
+detached worker receives a minimal environment containing only ordinary runtime
+variables plus those two credentials. The pipeline uses them only for GET-only
+discovery; before `gpu_autopilot.py` is launched, the existing
+`gpu_shadow_runner.py` scrubs Supabase and production-control credentials from
+the child environment.
+
+Detached state is written only under:
+
+```text
+/Users/xox/vdsp_shadow_runs/
+  launcher_status.json
+  cycle.log
+  last_cycle.json
+```
+
+A completed status may report `SHADOW_ADMITTED`, `SHADOW_REJECTED`,
+`SHADOW_ROLLBACK_OR_REGRESSION`, or another shadow-scoped outcome. None of
+these authorizes production mutation.
