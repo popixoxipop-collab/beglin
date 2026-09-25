@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import fcntl
 import json
 from pathlib import Path
 import tempfile
@@ -115,6 +116,95 @@ class ShadowPipelineTests(unittest.TestCase):
             self.assertIn("/executions", captured["kwargs"]["shadow_root"])
             saved = json.loads((root / "shadow" / "last_cycle.json").read_text())
             self.assertEqual(saved["selected_candidate_id"], "c1")
+
+
+    def test_same_evidence_is_executed_once_until_fingerprint_changes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, config = self.setup_fs(td)
+            row = ready("c1")
+            calls = {"run": 0}
+
+            def discover(model, limit):
+                return {
+                    "schema": "gpu-shadow-discovery-v1",
+                    "mode": "read_only",
+                    "production_write_allowed": False,
+                    "payload_sha256": "c" * 64,
+                    "ready": [dict(row)],
+                }
+
+            def fake_run(spec, **kwargs):
+                calls["run"] += 1
+                return {
+                    "shadow_status": "SHADOW_ADMITTED",
+                    "production_write_allowed": False,
+                    "result_sha256": "r" * 64,
+                }
+
+            first = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=fake_run,
+            )
+            second = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=fake_run,
+            )
+            self.assertEqual(first["status"], "SHADOW_CYCLE_COMPLETE")
+            self.assertEqual(second["status"], "NO_NEW_READY_CANDIDATE")
+            self.assertEqual(second["already_observed_candidate_ids"], ["c1"])
+            self.assertEqual(calls["run"], 1)
+
+            row["event_count"] = 99
+            third = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=fake_run,
+            )
+            self.assertEqual(third["status"], "SHADOW_CYCLE_COMPLETE")
+            self.assertEqual(calls["run"], 2)
+
+    def test_concurrent_cycle_lock_fails_before_discovery(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, config = self.setup_fs(td)
+            shadow = Path(config["shadow_root"])
+            shadow.mkdir(parents=True)
+            lock_path = shadow / ".cycle.lock"
+            handle = open(lock_path, "a+")
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            called = {"discover": 0}
+
+            def discover(model, limit):
+                called["discover"] += 1
+                return {}
+
+            try:
+                with self.assertRaises(gp.ShadowPipelineError):
+                    gp.run_cycle(config, discover_fn=discover)
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                handle.close()
+            self.assertEqual(called["discover"], 0)
+
+    def test_corrupt_history_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, config = self.setup_fs(td)
+            shadow = Path(config["shadow_root"])
+            shadow.mkdir(parents=True)
+            (shadow / "candidate_history.json").write_text(
+                json.dumps({"schema": "wrong", "candidates": {}})
+            )
+            with self.assertRaises(gp.ShadowPipelineError):
+                gp.run_cycle(
+                    config,
+                    discover_fn=lambda model, limit: {
+                        "schema": "gpu-shadow-discovery-v1",
+                        "mode": "read_only",
+                        "production_write_allowed": False,
+                        "ready": [ready("c1")],
+                    },
+                )
 
     def test_shadow_root_overlap_fails_before_discovery(self):
         with tempfile.TemporaryDirectory() as td:
