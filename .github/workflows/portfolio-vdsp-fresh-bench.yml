@@ -1,0 +1,85 @@
+name: portfolio-vdsp-fresh-bench
+
+on:
+  push:
+    branches:
+      - evidence/portfolio-vdsp-bench-20260925
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portfolio-vdsp-fresh-bench
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    runs-on: [self-hosted, macOS, macstudio]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Record source and hardware
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "SOURCE_SHA=$(git rev-parse HEAD)"
+          uname -a
+          sysctl -n machdep.cpu.brand_string || true
+          sysctl -n hw.memsize || true
+          sw_vers
+
+      - name: Build beglin from current source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build
+          test -x ./qwen_infer
+          shasum -a 256 ./qwen_infer
+
+      - name: Fetch pinned Qwen2.5-1.5B Q4_K_M GGUF
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$HOME/.cache/beglin-portfolio-evidence"
+          mkdir -p "$cache"
+          model="$cache/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+          url="https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/62a8d092b0a1047016f3edbd0fde387598727aa5/qwen2.5-1.5b-instruct-q4_k_m.gguf?download=true"
+          if [[ ! -s "$model" ]]; then
+            tmp="$model.part"
+            rm -f "$tmp"
+            curl -L --fail --retry 4 --retry-delay 3 --connect-timeout 30 -o "$tmp" "$url"
+            mv "$tmp" "$model"
+          fi
+          echo "MODEL=$model" >> "$GITHUB_ENV"
+          stat -f "MODEL_SIZE=%z" "$model"
+          shasum -a 256 "$model"
+
+      - name: Fresh baseline benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== BASELINE QWEN_W4A8=0 ==="
+          QWEN_GGUF="$MODEL" QWEN_W4A8=0 ./qwen_infer bench 48 2>&1 | tee /tmp/beglin-baseline-bench.log
+          QWEN_GGUF="$MODEL" QWEN_W4A8=0 ./qwen_infer greedy 32 > /tmp/beglin-baseline-greedy.txt 2>/tmp/beglin-baseline-greedy.err
+          cat /tmp/beglin-baseline-greedy.txt
+
+      - name: Fresh W4A8 benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== W4A8 QWEN_W4A8=1 ==="
+          QWEN_GGUF="$MODEL" QWEN_W4A8=1 ./qwen_infer bench 48 2>&1 | tee /tmp/beglin-w4a8-bench.log
+          QWEN_GGUF="$MODEL" QWEN_W4A8=1 ./qwen_infer greedy 32 > /tmp/beglin-w4a8-greedy.txt 2>/tmp/beglin-w4a8-greedy.err
+          cat /tmp/beglin-w4a8-greedy.txt
+
+      - name: Correctness gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          diff -u /tmp/beglin-baseline-greedy.txt /tmp/beglin-w4a8-greedy.txt
+          echo "GREEDY_32_EXACT_MATCH=PASS"
