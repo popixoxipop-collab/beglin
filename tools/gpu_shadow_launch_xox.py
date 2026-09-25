@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import uuid
 
 
 REQUIRED_KEYS = ("QWEN_SUPABASE_URL", "QWEN_SUPABASE_KEY")
@@ -152,15 +153,18 @@ def launch(
             )
 
     DEFAULT_SHADOW_ROOT.mkdir(parents=True, exist_ok=True)
+    launch_id = uuid.uuid4().hex
     _atomic_json(STATUS_FILE, {
         "schema": "gpu-shadow-xox-launch-v1",
         "status": "PREPARING",
+        "launch_id": launch_id,
         "production_write_allowed": False,
         "started_at": _now(),
         "credential_keys_loaded": sorted(REQUIRED_KEYS),
     })
 
     env = _safe_child_env(credentials)
+    env["GPU_SHADOW_LAUNCH_ID"] = launch_id
     log = open(LOG_FILE, "ab", buffering=0)
     worker = subprocess.Popen(
         [
@@ -180,6 +184,7 @@ def launch(
     return {
         "schema": "gpu-shadow-xox-launch-v1",
         "status": "LAUNCHED",
+        "launch_id": launch_id,
         "production_write_allowed": False,
         "worker_pid": worker.pid,
         "status_file": str(STATUS_FILE),
@@ -190,9 +195,11 @@ def launch(
 
 def worker(config_path: str, python_bin: str = sys.executable) -> int:
     pid = os.getpid()
+    launch_id = os.environ.get("GPU_SHADOW_LAUNCH_ID") or None
     _atomic_json(STATUS_FILE, {
         "schema": "gpu-shadow-xox-launch-v1",
         "status": "RUNNING",
+        "launch_id": launch_id,
         "production_write_allowed": False,
         "pid": pid,
         "started_at": _now(),
@@ -218,8 +225,22 @@ def worker(config_path: str, python_bin: str = sys.executable) -> int:
     if last_cycle.is_file():
         try:
             obj = json.loads(last_cycle.read_text())
+            relation = (
+                "CURRENT"
+                if launch_id and obj.get("launch_id") == launch_id
+                else (
+                    "LEGACY_UNLINKED"
+                    if not obj.get("launch_id")
+                    else "PREVIOUS"
+                )
+            )
             summary = {
+                "relation": relation,
                 "status": obj.get("status"),
+                "launch_id": obj.get("launch_id"),
+                "cycle_id": obj.get("cycle_id"),
+                "shadow_run_id": obj.get("shadow_run_id")
+                    or (obj.get("shadow_run") or {}).get("run_id"),
                 "selected_candidate_id": obj.get("selected_candidate_id"),
                 "ready_count": obj.get("ready_count"),
                 "shadow_status": (obj.get("shadow_run") or {}).get("shadow_status"),
@@ -230,6 +251,9 @@ def worker(config_path: str, python_bin: str = sys.executable) -> int:
     _atomic_json(STATUS_FILE, {
         "schema": "gpu-shadow-xox-launch-v1",
         "status": "COMPLETE" if proc.returncode == 0 else "FAILED",
+        "launch_id": launch_id,
+        "cycle_id": summary.get("cycle_id") if summary and summary.get("relation") == "CURRENT" else None,
+        "shadow_run_id": summary.get("shadow_run_id") if summary and summary.get("relation") == "CURRENT" else None,
         "production_write_allowed": False,
         "pid": pid,
         "returncode": int(proc.returncode),
