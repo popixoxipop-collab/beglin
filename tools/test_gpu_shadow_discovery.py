@@ -153,7 +153,7 @@ class ShadowDiscoveryTests(unittest.TestCase):
                 "ready": [],
             }
             gd._atomic_json(out, value)
-            text = open(out).read()
+            text = Path(out).read_text()
             self.assertNotIn("SUPABASE_KEY", text)
             self.assertIn('"production_write_allowed": false', text)
 
