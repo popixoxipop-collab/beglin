@@ -161,3 +161,38 @@ Agent D fixture verification covers:
 
 Live XOX reporter execution is not claimed until it is run through an approved
 workspace/argv path.
+
+
+## Focused Agent D test result
+
+Independent EOE fixture execution of the D branch contents:
+
+```text
+test_gpu_shadow_report.py       10/10 PASS
+test_gpu_shadow_pipeline.py     15/15 PASS
+test_gpu_shadow_launch_xox.py   10/10 PASS
+test_gpu_shadow_status_xox.py    4/4 PASS
+-----------------------------------------
+focused Agent D tests           39/39 PASS
+```
+
+The cycle top-level state now distinguishes:
+
+```text
+SHADOW_CYCLE_COMPLETE
+SHADOW_CYCLE_FAILED
+SHADOW_CYCLE_UNCLASSIFIED
+```
+
+The CLI returns nonzero for failed or unclassified terminals.
+
+The first isolated test run exposed and then fixed a macOS path-alias issue in
+the reporter output-root guard and a missing test import. Neither change touched
+production state.
+
+## Review status
+
+The implementation is fixture-verified and ready for A0 integration review.
+This conversation did not have a directly exposed `vdsp_gpu_precision`
+workspace in the connector schema, so no fresh live XOX shadow-root report is
+claimed here. That final read-only snapshot check remains an integration task.
