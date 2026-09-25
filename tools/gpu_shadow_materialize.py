@@ -102,6 +102,18 @@ def select_ready(discovery: dict, candidate_id: str | None = None) -> dict:
     return ready[0]
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _overlaps(a: Path, b: Path) -> bool:
+    return a == b or _is_within(a, b) or _is_within(b, a)
+
+
 def _manifest_entry(path: Path):
     lines = [
         line.strip()
@@ -146,9 +158,9 @@ def materialize(
 
     output_dir = Path(output_dir).expanduser().resolve(strict=False)
     cwd_path = Path(cwd).expanduser().resolve(strict=False)
-    if output_dir == cwd_path or cwd_path in output_dir.parents:
+    if _overlaps(output_dir, cwd_path):
         raise ShadowMaterializeError(
-            "shadow input output_dir must be outside the engine checkout/worktree"
+            "shadow input output_dir must not overlap the engine checkout/worktree"
         )
 
     local_manifest = map_path(source_manifest, path_mappings).resolve(strict=False)
