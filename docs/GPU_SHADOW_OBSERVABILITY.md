@@ -168,12 +168,9 @@ workspace/argv path.
 Independent EOE fixture execution of the D branch contents:
 
 ```text
-test_gpu_shadow_report.py       10/10 PASS
-test_gpu_shadow_pipeline.py     15/15 PASS
-test_gpu_shadow_launch_xox.py   10/10 PASS
-test_gpu_shadow_status_xox.py    4/4 PASS
------------------------------------------
-focused Agent D tests           39/39 PASS
+reporter-focused fixtures       13/13 PASS
+complete test_gpu_shadow*.py     72/72 PASS
+python compileall                PASS
 ```
 
 The cycle top-level state now distinguishes:
@@ -192,7 +189,7 @@ production state.
 
 ## Review status
 
-The implementation is fixture-verified and ready for A0 integration review.
+The implementation is fixture-verified (72/72 shadow fixture tests) and ready for A0 integration review.
 This conversation did not have a directly exposed `vdsp_gpu_precision`
 workspace in the connector schema, so no fresh live XOX shadow-root report is
 claimed here. That final read-only snapshot check remains an integration task.
