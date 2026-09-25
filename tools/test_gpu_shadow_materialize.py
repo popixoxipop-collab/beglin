@@ -105,6 +105,50 @@ class ShadowMaterializeTests(unittest.TestCase):
             )
             self.assertEqual(spec["prompt_len"], 2)
 
+
+    def test_checkpoint_identity_auto_binds_index_and_all_shards(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            shard_a = root / "model-00001-of-00002.safetensors"
+            shard_b = root / "model-00002-of-00002.safetensors"
+            shard_a.write_bytes(b"aaa")
+            shard_b.write_bytes(b"bbb")
+            index = root / "model.safetensors.index.json"
+            index.write_text(json.dumps({
+                "metadata": {"total_size": 6},
+                "weight_map": {
+                    "layer.a": shard_a.name,
+                    "layer.b": shard_b.name,
+                    "layer.c": shard_a.name,
+                },
+            }, sort_keys=True))
+
+            first, manifest = gm.checkpoint_identity_from_safetensors(str(index))
+            self.assertEqual(len(first), 64)
+            self.assertEqual(manifest["kind"], "safetensors-index")
+            self.assertEqual(len(manifest["shards"]), 2)
+            self.assertEqual(
+                {row["name"] for row in manifest["shards"]},
+                {shard_a.name, shard_b.name},
+            )
+
+            second, _ = gm.checkpoint_identity_from_safetensors(str(index))
+            self.assertEqual(first, second)
+
+            shard_b.write_bytes(b"changed")
+            third, _ = gm.checkpoint_identity_from_safetensors(str(index))
+            self.assertNotEqual(first, third)
+
+    def test_checkpoint_identity_rejects_index_path_escape(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            index = root / "model.safetensors.index.json"
+            index.write_text(json.dumps({
+                "weight_map": {"layer.a": "../outside.safetensors"},
+            }))
+            with self.assertRaises(gm.ShadowMaterializeError):
+                gm.checkpoint_identity_from_safetensors(str(index))
+
     def test_requires_candidate_id_when_multiple_ready(self):
         rows = [dict(READY), {**READY, "candidate_id": "candidate-2"}]
         with self.assertRaises(gm.ShadowMaterializeError):
@@ -126,6 +170,17 @@ class ShadowMaterializeTests(unittest.TestCase):
 
             binary = root / "qwen_infer_gpu"
             binary.write_bytes(b"gpu-binary")
+            checkpoint_dir = root / "checkpoint"
+            checkpoint_dir.mkdir()
+            shard = checkpoint_dir / "model-00001-of-00001.safetensors"
+            shard.write_bytes(b"checkpoint-shard")
+            checkpoint_index = checkpoint_dir / "model.safetensors.index.json"
+            checkpoint_index.write_text(json.dumps({
+                "weight_map": {"layer.weight": shard.name},
+            }))
+            expected_checkpoint_sha, _ = gm.checkpoint_identity_from_safetensors(
+                str(checkpoint_index)
+            )
             out = root / "shadow-inputs"
 
             got = gm.materialize(
@@ -137,9 +192,9 @@ class ShadowMaterializeTests(unittest.TestCase):
                 output_dir=str(out),
                 cwd=str(repo),
                 binary=str(binary),
-                checkpoint_sha256="d" * 64,
+                checkpoint_sha256="auto",
                 moe_base=str(root / "moe"),
-                safetensors=str(root / "model.safetensors.index.json"),
+                safetensors=str(checkpoint_index),
                 g6_repeats=3,
             )
 
@@ -150,6 +205,7 @@ class ShadowMaterializeTests(unittest.TestCase):
                 got["binary_sha256"],
                 hashlib.sha256(b"gpu-binary").hexdigest(),
             )
+            self.assertEqual(got["checkpoint_sha256"], expected_checkpoint_sha)
 
             spec = json.loads(Path(got["candidate_spec"]).read_text())
             self.assertFalse(spec["production_write_allowed"])
@@ -158,6 +214,11 @@ class ShadowMaterializeTests(unittest.TestCase):
             self.assertEqual(spec["n"], 6)
             self.assertEqual(spec["prompt_len"], 9)
             self.assertEqual(spec["reference"]["emitted_token"], 1224)
+            self.assertEqual(spec["checkpoint_sha256"], expected_checkpoint_sha)
+            self.assertEqual(
+                spec["source"]["checkpoint_identity"]["kind"],
+                "safetensors-index",
+            )
             g4 = Path(spec["g4_manifest"]).read_text()
             g6 = Path(spec["g6_manifest"]).read_text()
             expected = f"{token.resolve()} 10\n"
