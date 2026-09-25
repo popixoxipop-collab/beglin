@@ -1,0 +1,74 @@
+name: Agent E manual canary dry-run
+
+on:
+  push:
+    branches: [agent-e-manual-canary-20260926]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile
+        run: |
+          python -m py_compile             tools/manual_canary_contract.py             tools/manual_canary_controller.py             tools/test_manual_canary.py
+      - name: Static production-isolation guard
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          files = [
+              Path("tools/manual_canary_contract.py"),
+              Path("tools/manual_canary_controller.py"),
+          ]
+          forbidden_modules = {
+              "backend_adapters",
+              "gpu_runtime_control",
+              "subprocess",
+              "urllib",
+              "requests",
+              "supabase",
+          }
+          imported = set()
+          combined = ""
+          for path in files:
+              source = path.read_text()
+              combined += "\n" + source
+              tree = ast.parse(source, filename=str(path))
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      imported.update(alias.name.split(".")[0] for alias in node.names)
+                  elif isinstance(node, ast.ImportFrom) and node.module:
+                      imported.add(node.module.split(".")[0])
+          bad = sorted(imported & forbidden_modules)
+          if bad:
+              raise SystemExit("forbidden production/live imports: " + repr(bad))
+          if "QWEN_SUPABASE" in combined:
+              raise SystemExit("credential-bearing production env name found")
+          if "production_write_allowed" not in combined:
+              raise SystemExit("missing production_write_allowed guard")
+          print("production isolation static guard PASS")
+          PY
+      - name: Unit tests
+        env:
+          PYTHONPATH: tools
+        run: python tools/test_manual_canary.py
+      - name: Generate dry-run journal evidence
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/manual_canary_fixture_run.py --output agent-e-evidence
+      - name: Upload dry-run journal evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-e-manual-canary-evidence
+          path: agent-e-evidence
+          if-no-files-found: error
