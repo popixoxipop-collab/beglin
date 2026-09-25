@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import fcntl
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 from unittest.mock import patch
 
 import gpu_shadow_pipeline as gp
