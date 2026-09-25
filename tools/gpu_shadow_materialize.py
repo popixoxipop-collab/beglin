@@ -12,7 +12,7 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shlex
 
 
@@ -60,23 +60,34 @@ def parse_maps(values):
             raise ShadowMaterializeError(
                 f"path map must be FROM=TO, got {item!r}"
             )
-        source, dest = item.split("=", 1)
-        source = str(Path(source).expanduser())
-        dest = str(Path(dest).expanduser())
-        if not source or not dest:
-            raise ShadowMaterializeError("path map FROM and TO must be non-empty")
-        mappings.append((source.rstrip("/"), dest.rstrip("/")))
-    return sorted(mappings, key=lambda pair: len(pair[0]), reverse=True)
+        source_raw, dest_raw = item.split("=", 1)
+        source = PurePosixPath(source_raw)
+        if not source.is_absolute():
+            raise ShadowMaterializeError(
+                f"path-map source must be an absolute POSIX path: {source_raw!r}"
+            )
+        dest = Path(dest_raw).expanduser().resolve(strict=False)
+        mappings.append((source, dest))
+    return sorted(mappings, key=lambda pair: len(str(pair[0])), reverse=True)
 
 
 def map_path(path: str, mappings) -> Path:
-    value = str(Path(path).expanduser())
-    for source, dest in mappings:
-        if value == source:
-            return Path(dest)
-        prefix = source + "/"
-        if value.startswith(prefix):
-            return Path(dest + value[len(source):])
+    value = PurePosixPath(path)
+    if not value.is_absolute():
+        raise ShadowMaterializeError(
+            f"source path must be absolute before mapping: {path!r}"
+        )
+    for source, dest_root in mappings:
+        try:
+            rel = value.relative_to(source)
+        except ValueError:
+            continue
+        mapped = (dest_root / Path(*rel.parts)).resolve(strict=False)
+        if not (mapped == dest_root or _is_within(mapped, dest_root)):
+            raise ShadowMaterializeError(
+                f"mapped path escapes local mirror root {dest_root}: {path!r}"
+            )
+        return mapped
     raise ShadowMaterializeError(
         f"no explicit local path mapping for source path {path!r}"
     )
@@ -169,7 +180,10 @@ def materialize(
             f"mapped source manifest does not exist: {local_manifest}"
         )
     source_token, max_new_tokens = _manifest_entry(local_manifest)
-    local_token = map_path(source_token, path_mappings).resolve(strict=False)
+    source_token_path = PurePosixPath(source_token)
+    if not source_token_path.is_absolute():
+        source_token_path = PurePosixPath(source_manifest).parent / source_token_path
+    local_token = map_path(str(source_token_path), path_mappings).resolve(strict=False)
     if not local_token.is_file():
         raise ShadowMaterializeError(
             f"mapped raw token file does not exist: {local_token}"
