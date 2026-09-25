@@ -216,6 +216,70 @@ class GpuShadowReportTests(unittest.TestCase):
         report = gr.build_report(root, pid_alive_fn=lambda pid: False)
         self.assertIn("LEGACY_CONTEXT_UNVERIFIED", report["warnings"])
 
+
+    def test_manual_review_is_not_run(self):
+        td, root = self.setup_root()
+        self.addCleanup(td.cleanup)
+        write_json(root / "last_cycle.json", base_cycle(
+            status="MANUAL_REVIEW_REQUIRED",
+            shadow_run_id=None,
+            selected_candidate_id=None,
+            manual_review_candidate_ids=["candidate-1"],
+            dedupe_reason="retry_budget_exhausted",
+        ))
+        report = gr.build_report(root, pid_alive_fn=lambda pid: False)
+        self.assertEqual(report["gpu_validation"]["state"], "not_run")
+        self.assertEqual(report["evidence_level"], "not_run")
+        self.assertEqual(
+            report["cycle"]["dedupe_reason"],
+            "retry_budget_exhausted",
+        )
+
+    def test_running_dead_pid_is_stale_warning(self):
+        td, root = self.setup_root()
+        self.addCleanup(td.cleanup)
+        write_json(root / "launcher_status.json", base_launch(
+            status="RUNNING",
+            finished_at=None,
+        ))
+        write_json(root / "last_cycle.json", base_cycle(
+            status="NO_READY_CANDIDATE",
+            shadow_run_id=None,
+            selected_candidate_id=None,
+            ready_count=0,
+        ))
+        report = gr.build_report(root, pid_alive_fn=lambda pid: False)
+        self.assertIn(
+            "LAUNCHER_STATE_STALE_PROCESS_NOT_ALIVE",
+            report["warnings"],
+        )
+        self.assertNotEqual(report["evidence_level"], "real_gpu")
+
+    def test_rollback_required_stage_is_failed_not_passed(self):
+        td, root = self.setup_root()
+        self.addCleanup(td.cleanup)
+        write_json(root / "last_cycle.json", base_cycle())
+        write_json(
+            root / "executions/runs/run-1/shadow_result.json",
+            {
+                "run_id": "run-1",
+                "shadow_status": "SHADOW_ROLLBACK_OR_REGRESSION",
+                "production_write_allowed": False,
+                "child_payload": {
+                    "final_status": "ROLLBACK_REQUIRED",
+                    "g4_status": "PASS",
+                    "g6_status": "ROLLBACK_REQUIRED",
+                },
+            },
+        )
+        report = gr.build_report(root, pid_alive_fn=lambda pid: False)
+        self.assertEqual(report["gpu_validation"]["state"], "failed")
+        self.assertEqual(
+            report["gpu_validation"]["g6_status"],
+            "ROLLBACK_REQUIRED",
+        )
+        self.assertEqual(report["evidence_level"], "real_gpu")
+
     def test_secret_sentinels_are_not_copied_to_report(self):
         td, root = self.setup_root()
         self.addCleanup(td.cleanup)
