@@ -166,21 +166,24 @@ def launch(
     env = _safe_child_env(credentials)
     env["GPU_SHADOW_LAUNCH_ID"] = launch_id
     log = open(LOG_FILE, "ab", buffering=0)
-    worker = subprocess.Popen(
-        [
-            python_bin,
-            str(Path(__file__).resolve()),
-            "--worker",
-            "--config",
-            str(Path(config_path).resolve(strict=False)),
-        ],
-        cwd=str(REPO_ROOT),
-        env=env,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-        close_fds=True,
-    )
+    try:
+        worker = subprocess.Popen(
+            [
+                python_bin,
+                str(Path(__file__).resolve()),
+                "--worker",
+                "--config",
+                str(Path(config_path).resolve(strict=False)),
+            ],
+            cwd=str(REPO_ROOT),
+            env=env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
+        )
+    finally:
+        log.close()
     return {
         "schema": "gpu-shadow-xox-launch-v1",
         "status": "LAUNCHED",
