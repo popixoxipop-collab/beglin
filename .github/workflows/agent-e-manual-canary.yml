@@ -61,3 +61,14 @@ jobs:
         env:
           PYTHONPATH: tools
         run: python tools/test_manual_canary.py
+      - name: Generate dry-run journal evidence
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/manual_canary_fixture_run.py --output agent-e-evidence
+      - name: Upload dry-run journal evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-e-manual-canary-evidence
+          path: agent-e-evidence
+          if-no-files-found: error
