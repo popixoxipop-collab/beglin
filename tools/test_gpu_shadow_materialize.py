@@ -45,11 +45,65 @@ class ShadowMaterializeTests(unittest.TestCase):
             "/prod=/mirror/root",
             "/prod/discovery=/mirror/discovery",
         ])
-        self.assertEqual(got[0][0], "/prod/discovery")
+        self.assertEqual(str(got[0][0]), "/prod/discovery")
         self.assertEqual(
             gm.map_path("/prod/discovery/a.txt", got),
             Path("/mirror/discovery/a.txt"),
         )
+
+
+    def test_map_path_rejects_parent_escape(self):
+        with tempfile.TemporaryDirectory() as td:
+            mirror = Path(td) / "mirror"
+            mirror.mkdir()
+            maps = gm.parse_maps([f"/prod={mirror}"])
+            with self.assertRaises(gm.ShadowMaterializeError):
+                gm.map_path("/prod/../outside.txt", maps)
+
+    def test_map_path_rejects_symlink_escape(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            mirror = root / "mirror"
+            outside = root / "outside"
+            mirror.mkdir()
+            outside.mkdir()
+            (outside / "secret.txt").write_text("x")
+            (mirror / "link").symlink_to(outside, target_is_directory=True)
+            maps = gm.parse_maps([f"/prod={mirror}"])
+            with self.assertRaises(gm.ShadowMaterializeError):
+                gm.map_path("/prod/link/secret.txt", maps)
+
+    def test_relative_token_path_is_resolved_from_source_manifest_directory(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            repo = root / "repo"
+            repo.mkdir()
+            mirror = root / "mirror"
+            (mirror / "discovery" / "tokens").mkdir(parents=True)
+            token = mirror / "discovery" / "tokens" / "prompt.i32"
+            token.write_bytes(b"\0" * 8)
+            manifest = mirror / "discovery" / "manifest.txt"
+            manifest.write_text("tokens/prompt.i32 2\n")
+            binary = root / "bin"
+            binary.write_bytes(b"x")
+            got = gm.materialize(
+                discovery(),
+                candidate_id="candidate-1",
+                path_mappings=gm.parse_maps([f"/prod={mirror}"]),
+                output_dir=str(root / "shadow"),
+                cwd=str(repo),
+                binary=str(binary),
+                checkpoint_sha256="d" * 64,
+                moe_base=str(root / "moe"),
+                safetensors=str(root / "st"),
+                g6_repeats=1,
+            )
+            spec = json.loads(Path(got["candidate_spec"]).read_text())
+            self.assertEqual(
+                spec["source"]["mapped_raw_token_file"],
+                str(token.resolve()),
+            )
+            self.assertEqual(spec["prompt_len"], 2)
 
     def test_requires_candidate_id_when_multiple_ready(self):
         rows = [dict(READY), {**READY, "candidate_id": "candidate-2"}]
