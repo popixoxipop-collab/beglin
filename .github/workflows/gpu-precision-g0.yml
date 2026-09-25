@@ -4,7 +4,7 @@ on:
   push:
     branches: [gpu-precision-g1-g3, gpu-shadow-mode]
   pull_request:
-    branches: [gpu-precision-g0, main]
+    branches: [gpu-precision-g0, gpu-precision-g1-g3, main]
 
 jobs:
   control-plane:
