@@ -192,6 +192,21 @@ def validate_shadow_root(
     return root
 
 
+def validate_autopilot_path(autopilot: str, *, candidate_cwd: str) -> Path:
+    repo = _resolved(candidate_cwd)
+    expected = repo / "tools" / "gpu_autopilot.py"
+    if expected.is_symlink():
+        raise ShadowModeError("certified gpu_autopilot.py may not be a symlink")
+    if not expected.is_file():
+        raise ShadowModeError(f"certified gpu_autopilot.py is missing: {expected}")
+    actual = Path(autopilot).expanduser().resolve(strict=False)
+    if actual != expected:
+        raise ShadowModeError(
+            f"shadow mode may execute only {expected}; got {actual}"
+        )
+    return expected
+
+
 def build_child_env(base: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
     env = dict(os.environ if base is None else base)
     for key in MUTATION_ENV:
@@ -316,6 +331,9 @@ def run_shadow(
         candidate_cwd=str(spec["cwd"]),
         forbidden_roots=forbidden_roots,
     )
+    certified_autopilot = validate_autopilot_path(
+        autopilot, candidate_cwd=str(spec["cwd"])
+    )
     if run_id is None:
         run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + str(os.getpid())
     if not SAFE_RUN_ID.fullmatch(run_id):
@@ -329,7 +347,7 @@ def run_shadow(
     spec_copy = dict(spec)
     command = build_autopilot_command(
         spec_copy,
-        autopilot=autopilot,
+        autopilot=str(certified_autopilot),
         control_root=run_dir / "control",
         python_bin=python_bin,
     )
