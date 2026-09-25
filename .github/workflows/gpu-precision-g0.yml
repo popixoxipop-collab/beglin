@@ -31,6 +31,7 @@ jobs:
             tools/gpu_shadow_runner.py \
             tools/gpu_shadow_discovery.py \
             tools/gpu_shadow_materialize.py \
+            tools/gpu_shadow_pipeline.py \
             tools/test_d4_supabase_push.py \
             tools/test_autopilot_live_preflight.py \
             tools/test_backend_capabilities.py \
@@ -43,7 +44,8 @@ jobs:
             tools/test_autopilot_preflight_v3.py \
             tools/test_gpu_shadow_runner.py \
             tools/test_gpu_shadow_discovery.py \
-            tools/test_gpu_shadow_materialize.py
+            tools/test_gpu_shadow_materialize.py \
+            tools/test_gpu_shadow_pipeline.py
       - name: G0 safety tests
         run: |
           PYTHONPATH=. python tools/test_d4_supabase_push.py
@@ -69,3 +71,4 @@ jobs:
           PYTHONPATH=tools python tools/test_gpu_shadow_runner.py
           PYTHONPATH=tools python tools/test_gpu_shadow_discovery.py
           PYTHONPATH=tools python tools/test_gpu_shadow_materialize.py
+          PYTHONPATH=tools python tools/test_gpu_shadow_pipeline.py
