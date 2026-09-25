@@ -86,6 +86,14 @@ The materializer validates the mapping and refuses missing files. It derives the
 prompt length from the actual raw int32 token file size and hashes the actual
 GPU binary.
 
+For checkpoint identity, `"checkpoint_sha256": "auto"` is preferred. The
+materializer hashes the safetensors index bytes plus every distinct shard named
+by its `weight_map`, records each shard's size/SHA-256 in the generated spec,
+then SHA-256 hashes that canonical manifest to obtain the 64-hex
+`checkpoint_sha256`. This removes the previous manual placeholder without
+weakening artifact identity. A literal 64-hex value is still accepted for
+backward compatibility.
+
 ## Example config
 
 ```json
@@ -96,7 +104,7 @@ GPU binary.
   "cwd": "/Users/xox/vdsp-engine-gpu-precision",
   "autopilot": "/Users/xox/vdsp-engine-gpu-precision/tools/gpu_autopilot.py",
   "binary": "/Users/xox/vdsp-engine-gpu-precision/build-gpu-precision/qwen_infer_gpu",
-  "checkpoint_sha256": "<64-hex checkpoint identity>",
+  "checkpoint_sha256": "auto",
   "moe_base": "/Users/xox/vdsp_local_data/moe_base_deepseek",
   "safetensors": "/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json",
   "path_maps": [
