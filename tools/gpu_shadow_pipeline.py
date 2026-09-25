@@ -410,11 +410,19 @@ def _run_cycle_locked(
         launch_id=launch_id,
         cycle_id=cycle_id,
     )
+    shadow_terminal = str(run.get("shadow_status") or "").upper()
+    if shadow_terminal == "SHADOW_ERROR":
+        cycle_status = "SHADOW_CYCLE_FAILED"
+    elif shadow_terminal == "SHADOW_COMPLETED_UNCLASSIFIED":
+        cycle_status = "SHADOW_CYCLE_UNCLASSIFIED"
+    else:
+        cycle_status = "SHADOW_CYCLE_COMPLETE"
+
     result = {
         "schema": SCHEMA,
         "mode": "shadow",
         "production_write_allowed": False,
-        "status": "SHADOW_CYCLE_COMPLETE",
+        "status": cycle_status,
         "launch_id": launch_id,
         "cycle_id": cycle_id,
         "shadow_run_id": run.get("run_id"),
@@ -482,6 +490,11 @@ def main():
         }, sort_keys=True))
         return 2
     print(json.dumps(result, sort_keys=True))
+    if result.get("status") in {
+        "SHADOW_CYCLE_FAILED",
+        "SHADOW_CYCLE_UNCLASSIFIED",
+    }:
+        return 2
     return 0
 
 
