@@ -1,0 +1,50 @@
+name: Agent E manual canary dry-run
+
+on:
+  push:
+    branches: [agent-e-manual-canary-20260926]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile
+        run: |
+          python -m py_compile             tools/manual_canary_contract.py             tools/manual_canary_controller.py             tools/test_manual_canary.py
+      - name: Static production-isolation guard
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          files = [
+              Path("tools/manual_canary_contract.py"),
+              Path("tools/manual_canary_controller.py"),
+          ]
+          text = "\n".join(p.read_text() for p in files)
+          forbidden = [
+              "backend_adapters",
+              "gpu_runtime_control",
+              "subprocess",
+              "urllib",
+              "requests",
+              "supabase",
+              "QWEN_SUPABASE",
+          ]
+          found = [x for x in forbidden if x in text]
+          if found:
+              raise SystemExit("forbidden production/live dependency in dry-run layer: " + repr(found))
+          if "production_write_allowed" not in text:
+              raise SystemExit("missing production_write_allowed guard")
+          print("production isolation static guard PASS")
+          PY
+      - name: Unit tests
+        env:
+          PYTHONPATH: tools
+        run: python tools/test_manual_canary.py
