@@ -49,8 +49,12 @@ deferred.
 - Local path mappings are confined to their explicit mirror roots; `..` and
   symlink escapes are rejected.
 - A file lock allows only one shadow cycle at a time.
-- A durable candidate fingerprint ledger prevents re-running unchanged READY
-  evidence; the same candidate is reconsidered only when its evidence changes.
+- A durable candidate fingerprint ledger prevents re-running an unchanged
+  READY candidate under an unchanged execution context. The fingerprint binds
+  both production evidence and runtime identity (GPU binary SHA-256,
+  checkpoint identity, and the shadow/autopilot control-plane file hashes).
+  The same candidate is therefore revalidated whenever either its evidence or
+  certified runtime changes.
 - `ADMITTED` from the child is reported only as `SHADOW_ADMITTED`.
 - No automatic production expansion or promotion exists in this layer.
 - Source replay files must already exist in an explicit local read-only mirror;
@@ -139,9 +143,12 @@ SHADOW_CYCLE_COMPLETE
 SHADOW_PIPELINE_ERROR
 ```
 
-`NO_NEW_READY_CANDIDATE` means READY evidence exists but its exact candidate
-fingerprint was already observed in a prior cycle. This is intentional: shadow
-mode does not repeatedly burn GPU time on unchanged evidence.
+`NO_NEW_READY_CANDIDATE` means READY evidence exists but the exact
+candidate+runtime fingerprint was already observed in a prior cycle. This is
+intentional: shadow mode does not repeatedly burn GPU time on unchanged
+evidence under the same binary/checkpoint/control-plane identity. A binary,
+checkpoint, or control-plane change invalidates the prior verdict and forces a
+fresh shadow validation.
 
 Inside a completed cycle, the child result remains shadow-scoped:
 

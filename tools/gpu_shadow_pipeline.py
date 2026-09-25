@@ -28,6 +28,22 @@ import gpu_shadow_runner as runner
 SCHEMA = "gpu-shadow-pipeline-v1"
 HISTORY_SCHEMA = "gpu-shadow-history-v1"
 
+CONTROL_IDENTITY_FILES = (
+    "tools/gpu_autopilot.py",
+    "tools/gpu_shadow_runner.py",
+    "tools/gpu_shadow_materialize.py",
+    "tools/gpu_shadow_pipeline.py",
+    "tools/gpu_isolated_preflight.py",
+    "tools/precision_planner_v3.py",
+    "tools/gpu_restart_canary.py",
+    "tools/gpu_observer_control.py",
+    "tools/gpu_runtime_control.py",
+    "tools/autopilot_observer_v3.py",
+    "tools/precision_control_state.py",
+    "tools/backend_adapters.py",
+    "tools/precision_context.py",
+)
+
 
 class ShadowPipelineError(RuntimeError):
     pass
@@ -55,8 +71,80 @@ def _read_json(path: Path, default):
         return json.load(f)
 
 
-def _candidate_fingerprint(row: dict) -> str:
-    return discovery.sha256_json(row)
+def _sha256_file(path: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _runtime_identity(config: dict) -> dict:
+    cwd = Path(_require(config, "cwd")).expanduser().resolve(strict=False)
+    binary = Path(_require(config, "binary")).expanduser().resolve(strict=False)
+    autopilot = Path(_require(config, "autopilot")).expanduser().resolve(strict=False)
+    if not binary.is_file():
+        raise ShadowPipelineError(f"GPU binary does not exist: {binary}")
+    if not autopilot.is_file():
+        raise ShadowPipelineError(f"certified autopilot does not exist: {autopilot}")
+
+    checkpoint_input = str(_require(config, "checkpoint_sha256")).strip().lower()
+    if checkpoint_input == "auto":
+        checkpoint_sha256, checkpoint_manifest = (
+            materialize.checkpoint_identity_from_safetensors(
+                str(_require(config, "safetensors"))
+            )
+        )
+    else:
+        if len(checkpoint_input) != 64 or any(
+            ch not in "0123456789abcdef" for ch in checkpoint_input
+        ):
+            raise ShadowPipelineError(
+                'checkpoint_sha256 must be 64 lowercase hex chars or "auto"'
+            )
+        checkpoint_sha256 = checkpoint_input
+        checkpoint_manifest = {
+            "schema": "checkpoint-identity-v1",
+            "kind": "manual",
+            "sha256": checkpoint_sha256,
+        }
+
+    code_sha256 = {}
+    for rel in CONTROL_IDENTITY_FILES:
+        path = cwd / rel
+        if not path.is_file():
+            raise ShadowPipelineError(
+                f"control-plane identity file is missing: {path}"
+            )
+        code_sha256[rel] = _sha256_file(path)
+
+    return {
+        "schema": "gpu-shadow-runtime-identity-v1",
+        "model": str(config.get("model", "deepseek-v2-lite")),
+        "binary_sha256": _sha256_file(binary),
+        "checkpoint_sha256": checkpoint_sha256,
+        "checkpoint_identity": checkpoint_manifest,
+        "autopilot_sha256": _sha256_file(autopilot),
+        "control_plane_sha256": code_sha256,
+        "moe_base": str(
+            Path(_require(config, "moe_base")).expanduser().resolve(strict=False)
+        ),
+        "safetensors": str(
+            Path(_require(config, "safetensors")).expanduser().resolve(strict=False)
+        ),
+        "path_maps": list(config.get("path_maps", [])),
+        "g6_repeats": int(config.get("g6_repeats", 64)),
+        "timeout": int(config.get("timeout", 3600)),
+    }
+
+
+def _candidate_fingerprint(row: dict, runtime_identity: dict) -> str:
+    return discovery.sha256_json({
+        "candidate": row,
+        "runtime_identity_sha256": discovery.sha256_json(runtime_identity),
+    })
 
 
 def _load_history(path: Path) -> dict:
@@ -68,7 +156,15 @@ def _load_history(path: Path) -> dict:
     return value
 
 
-def _record_history(path: Path, history: dict, row: dict, run: dict) -> None:
+def _record_history(
+    path: Path,
+    history: dict,
+    row: dict,
+    run: dict,
+    *,
+    fingerprint: str,
+    runtime_identity_sha256: str,
+) -> None:
     candidate_id = str(row["candidate_id"])
     next_history = {
         "schema": HISTORY_SCHEMA,
@@ -76,7 +172,8 @@ def _record_history(path: Path, history: dict, row: dict, run: dict) -> None:
         "candidates": dict(history.get("candidates", {})),
     }
     next_history["candidates"][candidate_id] = {
-        "fingerprint": _candidate_fingerprint(row),
+        "fingerprint": fingerprint,
+        "runtime_identity_sha256": runtime_identity_sha256,
         "shadow_status": run.get("shadow_status"),
         "result_sha256": run.get("result_sha256"),
         "observed_at": _now(),
@@ -140,17 +237,6 @@ def _run_cycle_locked(
     history_path = shadow_root / "candidate_history.json"
     history = _load_history(history_path)
 
-    already_observed = []
-    eligible = []
-    for row in ready:
-        candidate_id = str(row.get("candidate_id"))
-        previous = history["candidates"].get(candidate_id)
-        fingerprint = _candidate_fingerprint(row)
-        if previous and previous.get("fingerprint") == fingerprint:
-            already_observed.append(candidate_id)
-        else:
-            eligible.append(row)
-
     if not ready:
         result = {
             "schema": SCHEMA,
@@ -168,6 +254,20 @@ def _run_cycle_locked(
         _atomic_json(shadow_root / "last_cycle.json", result)
         return result
 
+    runtime_identity = _runtime_identity(config)
+    runtime_identity_sha256 = discovery.sha256_json(runtime_identity)
+
+    already_observed = []
+    eligible = []
+    for row in ready:
+        candidate_id = str(row.get("candidate_id"))
+        previous = history["candidates"].get(candidate_id)
+        fingerprint = _candidate_fingerprint(row, runtime_identity)
+        if previous and previous.get("fingerprint") == fingerprint:
+            already_observed.append(candidate_id)
+        else:
+            eligible.append(row)
+
     if not eligible:
         result = {
             "schema": SCHEMA,
@@ -177,6 +277,7 @@ def _run_cycle_locked(
             "model": model,
             "ready_count": len(ready),
             "already_observed_candidate_ids": already_observed,
+            "runtime_identity_sha256": runtime_identity_sha256,
             "discovery_path": str(discovery_path),
             "history_path": str(history_path),
             "started_at": started_at,
@@ -214,7 +315,15 @@ def _run_cycle_locked(
         forbidden_roots=config.get("forbidden_roots", []),
     )
 
-    _record_history(history_path, history, selected, run)
+    selected_fingerprint = _candidate_fingerprint(selected, runtime_identity)
+    _record_history(
+        history_path,
+        history,
+        selected,
+        run,
+        fingerprint=selected_fingerprint,
+        runtime_identity_sha256=runtime_identity_sha256,
+    )
     result = {
         "schema": SCHEMA,
         "mode": "shadow",
@@ -224,6 +333,7 @@ def _run_cycle_locked(
         "selected_candidate_id": selected["candidate_id"],
         "deferred_candidate_ids": deferred,
         "already_observed_candidate_ids": already_observed,
+        "runtime_identity_sha256": runtime_identity_sha256,
         "ready_count": len(ready),
         "discovery_path": str(discovery_path),
         "candidate_spec": spec_result["candidate_spec"],

@@ -34,6 +34,12 @@ class ShadowPipelineTests(unittest.TestCase):
         root = Path(td)
         repo = root / "repo"
         repo.mkdir()
+        tools_dir = repo / "tools"
+        tools_dir.mkdir()
+        for rel in gp.CONTROL_IDENTITY_FILES:
+            path = repo / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"# identity fixture {rel}\n")
         mirror = root / "mirror"
         (mirror / "discovery").mkdir(parents=True)
         (mirror / "tokens").mkdir(parents=True)
@@ -118,7 +124,7 @@ class ShadowPipelineTests(unittest.TestCase):
             self.assertEqual(saved["selected_candidate_id"], "c1")
 
 
-    def test_same_evidence_is_executed_once_until_fingerprint_changes(self):
+    def test_same_evidence_is_executed_once_until_candidate_or_runtime_changes(self):
         with tempfile.TemporaryDirectory() as td:
             root, config = self.setup_fs(td)
             row = ready("c1")
@@ -155,14 +161,91 @@ class ShadowPipelineTests(unittest.TestCase):
             self.assertEqual(second["status"], "NO_NEW_READY_CANDIDATE")
             self.assertEqual(second["already_observed_candidate_ids"], ["c1"])
             self.assertEqual(calls["run"], 1)
+            self.assertEqual(
+                first["runtime_identity_sha256"],
+                second["runtime_identity_sha256"],
+            )
 
-            row["event_count"] = 99
+            # Same production evidence but a different certified runtime must
+            # be revalidated instead of reusing the old shadow verdict.
+            Path(config["binary"]).write_bytes(b"gpu-v2")
             third = gp.run_cycle(
                 config,
                 discover_fn=discover,
                 run_shadow_fn=fake_run,
             )
             self.assertEqual(third["status"], "SHADOW_CYCLE_COMPLETE")
+            self.assertNotEqual(
+                first["runtime_identity_sha256"],
+                third["runtime_identity_sha256"],
+            )
+            self.assertEqual(calls["run"], 2)
+
+            fourth = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=fake_run,
+            )
+            self.assertEqual(fourth["status"], "NO_NEW_READY_CANDIDATE")
+            self.assertEqual(calls["run"], 2)
+
+            row["event_count"] = 99
+            fifth = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=fake_run,
+            )
+            self.assertEqual(fifth["status"], "SHADOW_CYCLE_COMPLETE")
+            self.assertEqual(calls["run"], 3)
+
+
+    def test_control_plane_code_change_invalidates_dedupe(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, config = self.setup_fs(td)
+            row = ready("c1")
+            calls = {"run": 0}
+
+            def discover(model, limit):
+                return {
+                    "schema": "gpu-shadow-discovery-v1",
+                    "mode": "read_only",
+                    "production_write_allowed": False,
+                    "payload_sha256": "c" * 64,
+                    "ready": [dict(row)],
+                }
+
+            def fake_run(spec, **kwargs):
+                calls["run"] += 1
+                return {
+                    "shadow_status": "SHADOW_ADMITTED",
+                    "production_write_allowed": False,
+                    "result_sha256": str(calls["run"]) * 64,
+                }
+
+            first = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=fake_run,
+            )
+            second = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=fake_run,
+            )
+            self.assertEqual(second["status"], "NO_NEW_READY_CANDIDATE")
+
+            autopilot = Path(config["cwd"]) / "tools" / "gpu_autopilot.py"
+            autopilot.write_text("# changed certified autopilot\n")
+            third = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=fake_run,
+            )
+            self.assertEqual(third["status"], "SHADOW_CYCLE_COMPLETE")
+            self.assertNotEqual(
+                first["runtime_identity_sha256"],
+                third["runtime_identity_sha256"],
+            )
             self.assertEqual(calls["run"], 2)
 
     def test_concurrent_cycle_lock_fails_before_discovery(self):
