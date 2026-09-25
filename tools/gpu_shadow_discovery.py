@@ -36,8 +36,41 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _json_safe(value):
+    """Coerce valid-Python-but-invalid-JSON structures before serializing.
+
+    `promotion_writeback.target_safe_n()` returns per-event evidence keyed by
+    tuples (e.g. (3, 16)). That detail is embedded in each candidate row as
+    `safe_n_evidence`, which is then hashed here (`payload_sha256`) and by
+    `gpu_shadow_pipeline._candidate_fingerprint`, and written out by
+    `_atomic_json`. json.dumps rejects tuple keys outright, so every one of
+    those paths crashed on real production discovery data (the unit tests use
+    synthetic rows with string keys only and never reached it).
+
+    Keys that are already JSON-legal are passed through untouched, so hashes
+    and files produced from previously-working payloads are unchanged.
+    """
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            if not (isinstance(key, (str, int, float, bool)) or key is None):
+                key = json.dumps(
+                    list(key) if isinstance(key, tuple) else str(key),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                )
+            out[key] = _json_safe(item)
+        return out
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def canonical_json(value) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return json.dumps(
+        _json_safe(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
 
 
 def sha256_json(value) -> str:
@@ -209,7 +242,7 @@ def _atomic_json(path: str, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + f".tmp.{os.getpid()}")
     with open(tmp, "w") as f:
-        json.dump(value, f, indent=2, sort_keys=True)
+        json.dump(_json_safe(value), f, indent=2, sort_keys=True)
         f.write("\n")
         f.flush()
         os.fsync(f.fileno())
