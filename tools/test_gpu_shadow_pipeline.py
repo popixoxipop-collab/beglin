@@ -323,8 +323,8 @@ class ShadowPipelineTests(unittest.TestCase):
             second = gp.run_cycle(config, discover_fn=discover, run_shadow_fn=unclassified)
             third = gp.run_cycle(config, discover_fn=discover, run_shadow_fn=unclassified)
 
-            self.assertEqual(first["status"], "SHADOW_CYCLE_COMPLETE")
-            self.assertEqual(second["status"], "SHADOW_CYCLE_COMPLETE")
+            self.assertEqual(first["status"], "SHADOW_CYCLE_FAILED")
+            self.assertEqual(second["status"], "SHADOW_CYCLE_FAILED")
             self.assertEqual(third["status"], "MANUAL_REVIEW_REQUIRED")
             self.assertEqual(calls["run"], 2)
 
@@ -418,6 +418,32 @@ class ShadowPipelineTests(unittest.TestCase):
             self.assertEqual(saved["attempt_count"], 2)
             self.assertFalse(saved["reusable_terminal"])
             self.assertEqual(saved["shadow_status"], "SHADOW_ERROR")
+
+
+    def test_unclassified_shadow_terminal_is_not_complete(self):
+        with tempfile.TemporaryDirectory() as td:
+            _, config = self.setup_fs(td)
+            row = ready("c1")
+
+            def discover(model, limit):
+                return {
+                    "schema": "gpu-shadow-discovery-v1",
+                    "mode": "read_only",
+                    "production_write_allowed": False,
+                    "ready": [dict(row)],
+                }
+
+            got = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=lambda spec, **kwargs: {
+                    "run_id": "run-unclassified",
+                    "shadow_status": "SHADOW_COMPLETED_UNCLASSIFIED",
+                    "production_write_allowed": False,
+                    "result_sha256": "u" * 64,
+                },
+            )
+            self.assertEqual(got["status"], "SHADOW_CYCLE_UNCLASSIFIED")
 
     def test_runner_exception_records_failed_attempt_for_retry_accounting(self):
         with tempfile.TemporaryDirectory() as td:
