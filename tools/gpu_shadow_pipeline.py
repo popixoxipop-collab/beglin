@@ -41,7 +41,7 @@ def _atomic_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + f".tmp.{os.getpid()}")
     with open(tmp, "w") as f:
-        json.dump(value, f, indent=2, sort_keys=True)
+        json.dump(discovery._json_safe(value), f, indent=2, sort_keys=True)
         f.write("\n")
         f.flush()
         os.fsync(f.fileno())
@@ -278,7 +278,7 @@ def main():
             "error": str(exc),
         }, sort_keys=True))
         return 2
-    print(json.dumps(result, sort_keys=True))
+    print(json.dumps(discovery._json_safe(result), sort_keys=True))
     return 0
 
 
