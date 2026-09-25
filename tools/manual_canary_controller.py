@@ -10,11 +10,7 @@ import os
 from pathlib import Path
 from typing import Any, Mapping
 
-from manual_canary_contract import (
-    ManualCanaryContractError,
-    normalize_proposal,
-    validate_approval,
-)
+from manual_canary_contract import normalize_proposal, validate_approval
 
 
 class ManualCanaryControllerError(RuntimeError):
@@ -124,13 +120,18 @@ class DryRunAdapter:
         if self.fail_sync:
             raise ManualCanaryControllerError("injected dry-run synchronize failure")
 
-    def restore_baseline(self, *, policy: list[dict], policy_hash: str) -> dict:
+    def restore_baseline(self, *, policy: list[dict], policy_hash: str, txn_id: str) -> dict:
         if self.fail_restore:
             raise ManualCanaryControllerError("injected dry-run restore failure")
+        previous_epoch = int(self.epoch)
         self.policy = json.loads(json.dumps(policy))
         self.policy_hash = str(policy_hash)
         self.epoch += 1
-        return self.query()
+        return {
+            **self.query(),
+            "txn_id": str(txn_id),
+            "previous_epoch": previous_epoch,
+        }
 
 
 class ManualCanaryStore:
@@ -202,12 +203,7 @@ class ManualCanaryStore:
 
 
 class ManualCanaryController:
-    """Dry-run controller.
-
-    There is deliberately no constructor flag that enables production mutation.
-    The adapter is injected and the included DryRunAdapter changes only in-memory
-    state.
-    """
+    """Dry-run controller with strict state ordering and no production adapter."""
 
     def __init__(
         self,
@@ -233,7 +229,18 @@ class ManualCanaryController:
         if _sha256_json(self.candidate_policy) != self.proposal["candidate_policy_hash"]:
             raise ManualCanaryControllerError("candidate_policy_hash does not match candidate policy")
 
+    def _require_state(self, *allowed: str) -> dict:
+        state = self.store.state()
+        actual = None if state is None else state.get("state")
+        if actual not in allowed:
+            raise ManualCanaryControllerError(
+                f"invalid state transition: current={actual!r} required={allowed}"
+            )
+        return state
+
     def initialize(self) -> dict:
+        if self.store.state() is not None:
+            raise ManualCanaryControllerError("controller run is already initialized")
         return self.store.transition(
             "PROPOSED",
             proposal_id=self.proposal["proposal_id"],
@@ -244,12 +251,14 @@ class ManualCanaryController:
         )
 
     def verify_shadow_evidence(self, evidence: Mapping[str, Any]) -> dict:
+        self._require_state("PROPOSED")
         refs = {(r["kind"], r["run_id"], r["sha256"]) for r in self.proposal["evidence_refs"]}
+        rows = evidence.get("refs", [])
         supplied = {
             (str(r["kind"]), str(r["run_id"]), str(r["sha256"]).lower())
-            for r in evidence.get("refs", [])
+            for r in rows
         }
-        if refs != supplied:
+        if refs != supplied or len(rows) != len(refs):
             raise ManualCanaryControllerError("shadow evidence references do not match proposal")
         if evidence.get("production_write_allowed") is not False:
             raise ManualCanaryControllerError("shadow evidence must be production-write disabled")
@@ -262,12 +271,14 @@ class ManualCanaryController:
         )
 
     def await_approval(self) -> dict:
+        self._require_state("SHADOW_EVIDENCE_VERIFIED")
         return self.store.transition(
             "AWAITING_MANUAL_APPROVAL",
             proposal_id=self.proposal["proposal_id"],
         )
 
     def validate_manual_approval(self, approval: Mapping[str, Any], *, now: datetime) -> dict:
+        self._require_state("AWAITING_MANUAL_APPROVAL")
         _, normalized = validate_approval(
             proposal=self.proposal,
             approval=approval,
@@ -284,6 +295,7 @@ class ManualCanaryController:
         )
 
     def prepare_canary(self) -> dict:
+        self._require_state("APPROVAL_VALIDATED")
         if self.store.kill_requested():
             return self.store.transition("ISOLATED", reason="kill switch requested before canary")
         actual = self.adapter.query()
@@ -300,6 +312,7 @@ class ManualCanaryController:
         )
 
     def start_canary(self) -> dict:
+        self._require_state("PREPARING_CANARY")
         if self.store.kill_requested():
             return self.store.transition("ISOLATED", reason="kill switch requested before candidate apply")
         try:
@@ -311,6 +324,8 @@ class ManualCanaryController:
             return self.store.transition("ISOLATED", reason=f"candidate apply failed: {exc}")
         if applied["policy_hash"] != self.proposal["candidate_policy_hash"]:
             return self.store.transition("ISOLATED", reason="candidate self-report policy mismatch")
+        if int(applied["epoch"]) <= int(self.proposal["expected_epoch"]):
+            return self.store.transition("ISOLATED", reason="candidate epoch did not advance")
         return self.store.transition(
             "CANARY_RUNNING",
             candidate_epoch=applied["epoch"],
@@ -327,12 +342,15 @@ class ManualCanaryController:
         regression: bool,
         inconclusive: bool = False,
     ) -> dict:
+        self._require_state("CANARY_RUNNING")
         metrics = {
             "requests": int(requests),
             "tokens": int(tokens),
             "duration_ms": int(duration_ms),
             "memory_bytes": int(memory_bytes),
         }
+        if any(v < 0 for v in metrics.values()):
+            raise ManualCanaryControllerError("observation metrics must be non-negative")
         budget = self.proposal["budget"]
         exceeded = [
             name
@@ -367,11 +385,20 @@ class ManualCanaryController:
         )
 
     def rollback(self, *, txn_id: str) -> dict:
+        self._require_state("ROLLBACK_REQUIRED")
         if not txn_id:
             raise ManualCanaryControllerError("rollback requires txn_id")
+        before = self.adapter.query()
+        if before["policy_hash"] != self.proposal["candidate_policy_hash"]:
+            return self.store.transition(
+                "ISOLATED",
+                reason="rollback precondition is not the approved candidate policy",
+                txn_id=str(txn_id),
+            )
         self.store.transition(
             "ROLLBACK_PENDING",
             txn_id=str(txn_id),
+            candidate_epoch=before["epoch"],
             expected_baseline_policy_hash=self.proposal["baseline_policy_hash"],
         )
         try:
@@ -379,15 +406,19 @@ class ManualCanaryController:
             restored = self.adapter.restore_baseline(
                 policy=self.baseline_policy,
                 policy_hash=self.proposal["baseline_policy_hash"],
+                txn_id=str(txn_id),
             )
         except Exception as exc:
             return self.store.transition("ISOLATED", reason=f"rollback failed: {exc}", txn_id=str(txn_id))
-        if restored["policy_hash"] != self.proposal["baseline_policy_hash"]:
-            return self.store.transition(
-                "ISOLATED",
-                reason="rollback ACK policy mismatch",
-                txn_id=str(txn_id),
-            )
+
+        if restored.get("txn_id") != str(txn_id):
+            return self.store.transition("ISOLATED", reason="rollback ACK txn mismatch", txn_id=str(txn_id))
+        if int(restored.get("previous_epoch", -1)) != int(before["epoch"]):
+            return self.store.transition("ISOLATED", reason="rollback ACK previous_epoch mismatch", txn_id=str(txn_id))
+        if int(restored.get("epoch", -1)) <= int(before["epoch"]):
+            return self.store.transition("ISOLATED", reason="rollback ACK epoch did not advance", txn_id=str(txn_id))
+        if restored.get("policy_hash") != self.proposal["baseline_policy_hash"]:
+            return self.store.transition("ISOLATED", reason="rollback ACK policy mismatch", txn_id=str(txn_id))
         return self.store.transition(
             "ROLLBACK_VERIFIED",
             txn_id=str(txn_id),
@@ -401,11 +432,19 @@ class ManualCanaryController:
             raise ManualCanaryControllerError("no durable controller state")
         if state["state"] in TERMINAL:
             return state
+        if state["state"] in {
+            "PROPOSED",
+            "SHADOW_EVIDENCE_VERIFIED",
+            "AWAITING_MANUAL_APPROVAL",
+            "APPROVAL_VALIDATED",
+        }:
+            return state
+
         actual = self.adapter.query()
-        if actual["policy_hash"] == self.proposal["baseline_policy_hash"]:
+        if state["state"] == "ROLLBACK_PENDING" and actual["policy_hash"] == self.proposal["baseline_policy_hash"]:
             return self.store.transition(
                 "ROLLBACK_VERIFIED",
-                reason="restart reconciliation found exact baseline",
+                reason="restart reconciliation found exact baseline after pending rollback",
                 restored_epoch=actual["epoch"],
                 restored_policy_hash=actual["policy_hash"],
             )
@@ -414,6 +453,12 @@ class ManualCanaryController:
                 "ROLLBACK_REQUIRED",
                 reason="restart reconciliation found candidate still applied",
                 candidate_epoch=actual["epoch"],
+            )
+        if actual["policy_hash"] == self.proposal["baseline_policy_hash"]:
+            return self.store.transition(
+                "ISOLATED",
+                reason="baseline observed without a pending rollback ACK",
+                runtime_policy_hash=actual["policy_hash"],
             )
         return self.store.transition(
             "ISOLATED",
