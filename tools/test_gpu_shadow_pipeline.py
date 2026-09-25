@@ -323,8 +323,8 @@ class ShadowPipelineTests(unittest.TestCase):
             second = gp.run_cycle(config, discover_fn=discover, run_shadow_fn=unclassified)
             third = gp.run_cycle(config, discover_fn=discover, run_shadow_fn=unclassified)
 
-            self.assertEqual(first["status"], "SHADOW_CYCLE_FAILED")
-            self.assertEqual(second["status"], "SHADOW_CYCLE_FAILED")
+            self.assertEqual(first["status"], "SHADOW_CYCLE_UNCLASSIFIED")
+            self.assertEqual(second["status"], "SHADOW_CYCLE_UNCLASSIFIED")
             self.assertEqual(third["status"], "MANUAL_REVIEW_REQUIRED")
             self.assertEqual(calls["run"], 2)
 
@@ -404,8 +404,8 @@ class ShadowPipelineTests(unittest.TestCase):
                 run_shadow_fn=fail_run,
             )
 
-            self.assertEqual(first["status"], "SHADOW_CYCLE_COMPLETE")
-            self.assertEqual(second["status"], "SHADOW_CYCLE_COMPLETE")
+            self.assertEqual(first["status"], "SHADOW_CYCLE_FAILED")
+            self.assertEqual(second["status"], "SHADOW_CYCLE_FAILED")
             self.assertEqual(third["status"], "MANUAL_REVIEW_REQUIRED")
             self.assertEqual(third["manual_review_candidate_ids"], ["c1"])
             self.assertEqual(third["dedupe_reason"], "retry_budget_exhausted")
