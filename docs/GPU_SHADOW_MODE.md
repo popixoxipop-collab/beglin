@@ -44,6 +44,13 @@ deferred.
 - Discovery performs GET-only reads and does not log decisions back to Supabase.
 - Shadow output/control roots may not overlap the engine checkout or configured
   production/control roots in either direction.
+- The child entry point is pinned to the non-symlink
+  `<cwd>/tools/gpu_autopilot.py`; arbitrary scripts cannot be substituted.
+- Local path mappings are confined to their explicit mirror roots; `..` and
+  symlink escapes are rejected.
+- A file lock allows only one shadow cycle at a time.
+- A durable candidate fingerprint ledger prevents re-running unchanged READY
+  evidence; the same candidate is reconsidered only when its evidence changes.
 - `ADMITTED` from the child is reported only as `SHADOW_ADMITTED`.
 - No automatic production expansion or promotion exists in this layer.
 - Source replay files must already exist in an explicit local read-only mirror;
@@ -119,9 +126,14 @@ Expected top-level outcomes:
 
 ```text
 NO_READY_CANDIDATE
+NO_NEW_READY_CANDIDATE
 SHADOW_CYCLE_COMPLETE
 SHADOW_PIPELINE_ERROR
 ```
+
+`NO_NEW_READY_CANDIDATE` means READY evidence exists but its exact candidate
+fingerprint was already observed in a prior cycle. This is intentional: shadow
+mode does not repeatedly burn GPU time on unchanged evidence.
 
 Inside a completed cycle, the child result remains shadow-scoped:
 
@@ -163,3 +175,24 @@ Not part of this PR.
 A future production-writing controller must be a separate explicit change with
 its own review and enable switch. Passing shadow mode alone is not permission to
 turn on GPU auto-promotion.
+
+
+## Verification
+
+The latest shadow modules were independently materialized from the GitHub branch
+into the EOE sandbox and executed there (separate from GitHub Actions):
+
+```text
+python -m py_compile shadow modules/tests  PASS
+test_gpu_shadow_runner.py                 13/13 PASS
+test_gpu_shadow_discovery.py               6/6 PASS
+test_gpu_shadow_materialize.py             9/9 PASS
+test_gpu_shadow_pipeline.py                7/7 PASS
+------------------------------------------------
+shadow-focused tests                      35/35 PASS
+```
+
+GitHub Actions also recorded a successful earlier shadow/discovery run at
+run #28. Later runs may remain queued when multiple rapid staging commits are
+waiting for an available runner; the EOE execution above is the independent
+fallback verification for the latest code.
