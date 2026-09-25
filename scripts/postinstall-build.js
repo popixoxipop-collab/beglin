@@ -22,6 +22,35 @@ const BIN_DIR = path.join(ROOT, "bin");
 const BUILD_DIR = path.join(ROOT, ".build");
 const OUT_BINARY = path.join(BIN_DIR, "qwen_infer");
 
+const PLAIN_FILES = Object.freeze([
+  "bpe_tokenizer.c",
+  "gguf_cache.c",
+  "gguf_load.c",
+  "gguf_quants.c",
+  "gguf_transcode.c",
+  "gguf_write.c",
+  "gguf_write_quants.c",
+  "hf_config.c",
+  "safetensors_load.c",
+  "safetensors_quants.c",
+]);
+
+const KERNEL_FILES = Object.freeze([
+  "kleidiai/kai_common_sme_asm.S",
+  "kleidiai/kai_lhs_pack_f16pmrx2_f32_neon.c",
+  "kleidiai/kai_lhs_quant_pack_qsi8d32p_f32_neon.c",
+  "kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa.c",
+  "kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa_asm.S",
+  "kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa.c",
+  "kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa_asm.S",
+  "kleidiai/kai_rhs_pack_nxk_qsi4c32ps1s0scalef16_qsu4c32s16s0_neon.c",
+  "kleidiai/kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.c",
+]);
+
+function isSupportedPlatform(platform = process.platform, arch = process.arch) {
+  return platform === "darwin" && arch === "arm64";
+}
+
 function warnSkip(reason) {
   console.warn(`[beglin] skipping native build: ${reason}`);
   console.warn(
@@ -40,7 +69,7 @@ function run(cmd, args, opts = {}) {
 }
 
 function main() {
-  if (process.platform !== "darwin" || process.arch !== "arm64") {
+  if (!isSupportedPlatform()) {
     warnSkip(`unsupported platform ${process.platform}/${process.arch} (requires macOS arm64)`);
     return;
   }
@@ -59,16 +88,8 @@ function main() {
   console.log("[beglin] compiling qwen_infer.c (plain -- no SME/SVE arch flag)");
   run("clang", ["-O3", "-w", "-c", path.join(ROOT, "qwen_infer.c"), "-o", obj("qwen_infer.c")]);
 
-  const plainFiles = [
-    "gguf_cache.c",
-    "gguf_load.c",
-    "gguf_quants.c",
-    "gguf_transcode.c",
-    "hf_config.c",
-    "safetensors_load.c",
-    "safetensors_quants.c",
-  ];
-  console.log("[beglin] compiling GGUF/safetensors loader sources");
+  const plainFiles = PLAIN_FILES;
+  console.log("[beglin] compiling tokenizer/GGUF/safetensors sources");
   for (const f of plainFiles) {
     run("clang", ["-O3", "-w", "-c", path.join(ROOT, f), "-o", obj(f)]);
   }
@@ -85,17 +106,7 @@ function main() {
     obj("sme2_kai.c"),
   ]);
 
-  const kernelFiles = [
-    "kleidiai/kai_common_sme_asm.S",
-    "kleidiai/kai_lhs_pack_f16pmrx2_f32_neon.c",
-    "kleidiai/kai_lhs_quant_pack_qsi8d32p_f32_neon.c",
-    "kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa.c",
-    "kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa_asm.S",
-    "kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa.c",
-    "kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa_asm.S",
-    "kleidiai/kai_rhs_pack_nxk_qsi4c32ps1s0scalef16_qsu4c32s16s0_neon.c",
-    "kleidiai/kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.c",
-  ];
+  const kernelFiles = KERNEL_FILES;
   console.log("[beglin] compiling KleidiAI SME2 kernels");
   for (const f of kernelFiles) {
     run("clang", [
@@ -132,4 +143,13 @@ function main() {
   console.log(`[beglin] built ${OUT_BINARY} (caller-plain check: OK)`);
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  main,
+  isSupportedPlatform,
+  PLAIN_FILES,
+  KERNEL_FILES,
+};
