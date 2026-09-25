@@ -160,7 +160,7 @@ class ShadowMaterializeTests(unittest.TestCase):
             self.assertEqual(spec["reference"]["emitted_token"], 1224)
             g4 = Path(spec["g4_manifest"]).read_text()
             g6 = Path(spec["g6_manifest"]).read_text()
-            expected = f"{token} 10\n"
+            expected = f"{token.resolve()} 10\n"
             self.assertEqual(g4, expected)
             self.assertEqual(g6, expected * 3)
             self.assertEqual(
