@@ -1,0 +1,11 @@
+{
+  "schema": "beglin-package-base-repro-summary-v1",
+  "status": "EXPECTED_FAIL_REPRODUCED",
+  "base_sha": "a0b8ab2c90af70fa8095556033e605477ec186ae",
+  "package_version": "0.4.0",
+  "tarball_sha256": "a6ed6549f473cc965c7961f048a26c97494194ce3ad0d466363f3d29af72a10a",
+  "archive_has_bpe_tokenizer_h": false,
+  "install_exit_code": 1,
+  "observed_missing_header": true,
+  "failure_signature": "qwen_infer.c:41:10: fatal error: 'bpe_tokenizer.h' file not found"
+}

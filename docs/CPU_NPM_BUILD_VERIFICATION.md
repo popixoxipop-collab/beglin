@@ -64,3 +64,50 @@ being mistaken for a successful native install.
 
 The package version, license, production binaries, GPU code, and platform
 support policy are intentionally unchanged.
+
+
+## EOE verification — 2026-09-26
+
+Execution base and implementation:
+
+```text
+BASE_SHA            a0b8ab2c90af70fa8095556033e605477ec186ae
+implementation HEAD b5ef5c2193e77b492abe151b32718df6795d65f1
+host                EOE
+platform            darwin/arm64
+Node                v26.7.0
+clang               Apple clang 21.0.0
+```
+
+The base tarball failure was reproduced independently:
+
+```text
+archive_has_bpe_tokenizer_h=false
+npm install exit=1
+qwen_infer.c:41:10: fatal error: 'bpe_tokenizer.h' file not found
+```
+
+After the source-closure fix, two independent clean consumer installs both
+compiled and linked the native binary successfully. The tarball SHA-256 was
+identical in both runs:
+
+```text
+64fe22a544ff0159b904a449913331e22898400022df3d357c4a681e6d777176
+```
+
+The two native binaries had the same size (661656 bytes) but different SHA-256
+values. Therefore this verification proves clean build/link success but does
+**not** claim byte-for-byte reproducible native linking.
+
+Additional gates passed:
+
+```text
+npm run test:package-source-closure  PASS
+npm run test:package-failure-fixtures PASS (4 fixtures)
+npm run test:package                PASS
+npm run build                       PASS; caller-plain check OK
+npm test                            PASS
+git diff --check                    PASS
+```
+
+No npm publish or production binary replacement was performed.

@@ -1,0 +1,7 @@
+=== BASE REPRODUCTION ===
+base_sha=a0b8ab2c90af70fa8095556033e605477ec186ae
+tarball_sha256=a6ed6549f473cc965c7961f048a26c97494194ce3ad0d466363f3d29af72a10a
+archive_has_bpe_tokenizer_h=false
+install_exit_code=1
+failure=qwen_infer.c:41:10: fatal error: 'bpe_tokenizer.h' file not found
+result=EXPECTED_FAIL_REPRODUCED
