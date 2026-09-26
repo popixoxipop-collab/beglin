@@ -1,0 +1,548 @@
+{
+  "sbf_contract": "9",
+  "feature_id": "004-research-export",
+  "feature_uid": "a65536b2-e456-4284-bb8d-f75c23c722ac",
+  "source": {
+    "adapter": "python-fastapi",
+    "module": "research",
+    "provenance": "scan+openapi"
+  },
+  "operations": {
+    "getResearchComparison": {
+      "verb": "GET",
+      "path": "/api/v1/research/comparison",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "control_consistency": {
+            "properties": {
+              "distinct_binary_sha256": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "distinct_checkpoint_sha256": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "distinct_source_commits": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "same_binary_sha256": {
+                "type": "boolean"
+              },
+              "same_checkpoint_sha256": {
+                "type": "boolean"
+              },
+              "same_source_commit": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "same_source_commit",
+              "same_binary_sha256",
+              "same_checkpoint_sha256",
+              "distinct_source_commits",
+              "distinct_binary_sha256",
+              "distinct_checkpoint_sha256"
+            ],
+            "type": "object"
+          },
+          "entries": {
+            "items": {
+              "properties": {
+                "control": {
+                  "properties": {
+                    "binary_sha256": {
+                      "type": "string"
+                    },
+                    "checkpoint_sha256": {
+                      "type": "string"
+                    },
+                    "source_commit": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "source_commit",
+                    "binary_sha256",
+                    "checkpoint_sha256"
+                  ],
+                  "type": "object"
+                },
+                "decision_only": {
+                  "type": "boolean"
+                },
+                "event_id": {
+                  "type": "string"
+                },
+                "evidence_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "evidence_mode": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "experiment_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "notes": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "raw_matrix_sha256": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "real_gpu": {
+                  "type": "boolean"
+                },
+                "rollback_required": {
+                  "type": "boolean"
+                },
+                "sample_count": {
+                  "anyOf": [
+                    {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "source_kind": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "target": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "layer": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "n": {
+                          "maximum": 15,
+                          "minimum": 2,
+                          "type": "integer"
+                        },
+                        "role": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "role",
+                        "layer",
+                        "n"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "target_text": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "event_id",
+                "source_kind",
+                "phase",
+                "status",
+                "real_gpu",
+                "decision_only",
+                "rollback_required",
+                "control"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "generated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "entries",
+          "control_consistency"
+        ],
+        "type": "object"
+      },
+      "sourceSummary": "Get Research Comparison",
+      "sourceTags": [
+        "research"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        }
+      }
+    },
+    "getResearchExport": {
+      "verb": "GET",
+      "path": "/api/v1/research/export",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "comparison": {
+            "properties": {
+              "control_consistency": {
+                "properties": {
+                  "distinct_binary_sha256": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "distinct_checkpoint_sha256": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "distinct_source_commits": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "same_binary_sha256": {
+                    "type": "boolean"
+                  },
+                  "same_checkpoint_sha256": {
+                    "type": "boolean"
+                  },
+                  "same_source_commit": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "same_source_commit",
+                  "same_binary_sha256",
+                  "same_checkpoint_sha256",
+                  "distinct_source_commits",
+                  "distinct_binary_sha256",
+                  "distinct_checkpoint_sha256"
+                ],
+                "type": "object"
+              },
+              "entries": {
+                "items": {
+                  "properties": {
+                    "control": {
+                      "properties": {
+                        "binary_sha256": {
+                          "type": "string"
+                        },
+                        "checkpoint_sha256": {
+                          "type": "string"
+                        },
+                        "source_commit": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source_commit",
+                        "binary_sha256",
+                        "checkpoint_sha256"
+                      ],
+                      "type": "object"
+                    },
+                    "decision_only": {
+                      "type": "boolean"
+                    },
+                    "event_id": {
+                      "type": "string"
+                    },
+                    "evidence_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "evidence_mode": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "experiment_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "notes": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "phase": {
+                      "type": "string"
+                    },
+                    "raw_matrix_sha256": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "real_gpu": {
+                      "type": "boolean"
+                    },
+                    "rollback_required": {
+                      "type": "boolean"
+                    },
+                    "sample_count": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "source_kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "layer": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "n": {
+                              "maximum": 15,
+                              "minimum": 2,
+                              "type": "integer"
+                            },
+                            "role": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "role",
+                            "layer",
+                            "n"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "target_text": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "event_id",
+                    "source_kind",
+                    "phase",
+                    "status",
+                    "real_gpu",
+                    "decision_only",
+                    "rollback_required",
+                    "control"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "generated_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "generated_at",
+              "entries",
+              "control_consistency"
+            ],
+            "type": "object"
+          },
+          "coverage": {
+            "properties": {
+              "cells": {
+                "items": {
+                  "properties": {
+                    "cell_id": {
+                      "type": "string"
+                    },
+                    "evidence_id": {
+                      "type": "string"
+                    },
+                    "experiment_id": {
+                      "type": "string"
+                    },
+                    "fail_count": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "first_seen_at": {
+                      "type": "string"
+                    },
+                    "hit_count": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "last_seen_at": {
+                      "type": "string"
+                    },
+                    "pass_count": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "enum": [
+                        "EMPTY",
+                        "OBSERVED",
+                        "EXPERIMENTED",
+                        "PASS",
+                        "FAIL",
+                        "PROMOTED",
+                        "ROLLED_BACK"
+                      ],
+                      "type": "string"
+                    },
+                    "target_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "cell_id",
+                    "experiment_id",
+                    "target_key",
+                    "status",
+                    "hit_count",
+                    "pass_count",
+                    "fail_count",
+                    "first_seen_at",
+                    "last_seen_at",
+                    "evidence_id"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "filled_cells": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "mode": {
+                "enum": [
+                  "BY_REQUEST",
+                  "BY_LAYER",
+                  "BY_TARGET",
+                  "BY_EXPERIMENT"
+                ],
+                "type": "string"
+              },
+              "percentage": {
+                "maximum": 100,
+                "minimum": 0,
+           
