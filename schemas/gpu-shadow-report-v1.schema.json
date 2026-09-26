@@ -1,0 +1,364 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gpu-shadow-report-v1.schema.json",
+  "title": "GPU Shadow Observability Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "observed_at",
+    "production_write_allowed",
+    "source_freshness",
+    "evidence_level",
+    "launcher",
+    "cycle",
+    "identity",
+    "gpu_validation",
+    "artifacts",
+    "warnings",
+    "unknown_fields",
+    "report_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "gpu-shadow-report-v1"
+    },
+    "observed_at": {
+      "type": "string"
+    },
+    "production_write_allowed": {
+      "const": false
+    },
+    "source_freshness": {
+      "enum": [
+        "current",
+        "stale_previous_cycle",
+        "legacy_unlinked",
+        "unknown"
+      ]
+    },
+    "evidence_level": {
+      "enum": [
+        "real_gpu",
+        "not_run",
+        "legacy_unverified",
+        "shadow_terminal",
+        "unknown"
+      ]
+    },
+    "launcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "launch_id",
+        "pid",
+        "pid_alive",
+        "returncode",
+        "started_at",
+        "finished_at",
+        "duration_seconds"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "launch_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pid": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pid_alive": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "returncode": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finished_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration_seconds": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "cycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation_to_launcher",
+        "status",
+        "pipeline_state",
+        "launch_id",
+        "cycle_id",
+        "shadow_run_id",
+        "started_at",
+        "finished_at",
+        "duration_seconds",
+        "candidate_count",
+        "ready_count",
+        "selected_candidate",
+        "deferred_candidate_ids",
+        "dedupe_reason",
+        "manual_review_candidate_ids",
+        "retrying_candidate_ids"
+      ],
+      "properties": {
+        "relation_to_launcher": {
+          "enum": [
+            "current",
+            "previous",
+            "legacy_unlinked",
+            "unknown"
+          ]
+        },
+        "status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pipeline_state": {
+          "enum": [
+            "not_run",
+            "executed",
+            "failed",
+            "unknown"
+          ]
+        },
+        "launch_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cycle_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shadow_run_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finished_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration_seconds": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "candidate_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "ready_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "selected_candidate": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deferred_candidate_ids": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "dedupe_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "manual_review_candidate_ids": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "retrying_candidate_ids": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "validation_context_fingerprint",
+        "binary_sha256",
+        "checkpoint_sha256",
+        "checkpoint_manifest_ref",
+        "candidate_fingerprints"
+      ],
+      "properties": {
+        "validation_context_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "binary_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "checkpoint_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "checkpoint_manifest_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "candidate_fingerprints": {
+          "type": "object"
+        }
+      }
+    },
+    "gpu_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "shadow_status",
+        "final_status",
+        "g4_status",
+        "g6_status",
+        "rollback_status"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "passed",
+            "failed",
+            "not_run",
+            "unknown"
+          ]
+        },
+        "shadow_status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "final_status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "g4_status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "g6_status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rollback_status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "unknown_fields": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "report_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

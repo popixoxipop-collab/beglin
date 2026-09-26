@@ -18,6 +18,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import uuid
 from datetime import datetime, timezone
 
 import gpu_shadow_discovery as discovery
@@ -27,6 +28,12 @@ import gpu_shadow_runner as runner
 
 SCHEMA = "gpu-shadow-pipeline-v1"
 HISTORY_SCHEMA = "gpu-shadow-history-v1"
+REUSABLE_SHADOW_STATUSES = {
+    "SHADOW_ADMITTED",
+    "SHADOW_REJECTED",
+    "SHADOW_ROLLBACK_OR_REGRESSION",
+}
+DEFAULT_MAX_RETRY_ATTEMPTS = 2
 
 CONTROL_IDENTITY_FILES = (
     "tools/gpu_autopilot.py",
@@ -147,6 +154,15 @@ def _candidate_fingerprint(row: dict, runtime_identity: dict) -> str:
     })
 
 
+def _runtime_identity_summary(runtime_identity: dict) -> dict:
+    return {
+        "model": runtime_identity.get("model"),
+        "binary_sha256": runtime_identity.get("binary_sha256"),
+        "checkpoint_sha256": runtime_identity.get("checkpoint_sha256"),
+        "autopilot_sha256": runtime_identity.get("autopilot_sha256"),
+    }
+
+
 def _load_history(path: Path) -> dict:
     value = _read_json(path, {"schema": HISTORY_SCHEMA, "candidates": {}})
     if not isinstance(value, dict) or value.get("schema") != HISTORY_SCHEMA:
@@ -164,8 +180,14 @@ def _record_history(
     *,
     fingerprint: str,
     runtime_identity_sha256: str,
+    launch_id: str | None,
+    cycle_id: str,
 ) -> None:
     candidate_id = str(row["candidate_id"])
+    previous = history.get("candidates", {}).get(candidate_id) or {}
+    same_fingerprint = previous.get("fingerprint") == fingerprint
+    previous_attempts = int(previous.get("attempt_count") or 0) if same_fingerprint else 0
+    shadow_status = run.get("shadow_status")
     next_history = {
         "schema": HISTORY_SCHEMA,
         "updated_at": _now(),
@@ -174,8 +196,13 @@ def _record_history(
     next_history["candidates"][candidate_id] = {
         "fingerprint": fingerprint,
         "runtime_identity_sha256": runtime_identity_sha256,
-        "shadow_status": run.get("shadow_status"),
+        "shadow_status": shadow_status,
         "result_sha256": run.get("result_sha256"),
+        "attempt_count": previous_attempts + 1,
+        "reusable_terminal": shadow_status in REUSABLE_SHADOW_STATUSES,
+        "launch_id": launch_id,
+        "cycle_id": cycle_id,
+        "shadow_run_id": run.get("run_id"),
         "observed_at": _now(),
     }
     _atomic_json(path, next_history)
@@ -229,6 +256,11 @@ def _run_cycle_locked(
     autopilot = str(_require(config, "autopilot"))
 
     started_at = _now()
+    launch_id = os.environ.get("GPU_SHADOW_LAUNCH_ID") or None
+    cycle_id = uuid.uuid4().hex
+    max_retry_attempts = int(config.get("max_retry_attempts", DEFAULT_MAX_RETRY_ATTEMPTS))
+    if max_retry_attempts < 1 or max_retry_attempts > 10:
+        raise ShadowPipelineError("max_retry_attempts must be in [1,10]")
     discovered = discover_fn(model, limit)
     discovery_path = shadow_root / "discovery.json"
     _atomic_json(discovery_path, discovered)
@@ -243,6 +275,8 @@ def _run_cycle_locked(
             "mode": "shadow",
             "production_write_allowed": False,
             "status": "NO_READY_CANDIDATE",
+            "launch_id": launch_id,
+            "cycle_id": cycle_id,
             "model": model,
             "ready_count": 0,
             "already_observed_candidate_ids": [],
@@ -258,26 +292,57 @@ def _run_cycle_locked(
     runtime_identity_sha256 = discovery.sha256_json(runtime_identity)
 
     already_observed = []
+    retrying = []
+    manual_review = []
     eligible = []
+    fingerprints = {}
     for row in ready:
         candidate_id = str(row.get("candidate_id"))
-        previous = history["candidates"].get(candidate_id)
+        previous = history["candidates"].get(candidate_id) or {}
         fingerprint = _candidate_fingerprint(row, runtime_identity)
-        if previous and previous.get("fingerprint") == fingerprint:
+        fingerprints[candidate_id] = fingerprint
+        same = previous.get("fingerprint") == fingerprint
+        previous_status = previous.get("shadow_status")
+        previous_attempts = int(previous.get("attempt_count") or 0) if same else 0
+        reusable = (
+            same
+            and previous.get("reusable_terminal") is True
+            and previous_status in REUSABLE_SHADOW_STATUSES
+        )
+        if reusable:
             already_observed.append(candidate_id)
+        elif same and previous_attempts >= max_retry_attempts:
+            manual_review.append(candidate_id)
         else:
+            if same and previous_attempts:
+                retrying.append(candidate_id)
             eligible.append(row)
 
     if not eligible:
+        status = (
+            "MANUAL_REVIEW_REQUIRED"
+            if manual_review
+            else "NO_NEW_READY_CANDIDATE"
+        )
         result = {
             "schema": SCHEMA,
             "mode": "shadow",
             "production_write_allowed": False,
-            "status": "NO_NEW_READY_CANDIDATE",
+            "status": status,
+            "launch_id": launch_id,
+            "cycle_id": cycle_id,
             "model": model,
             "ready_count": len(ready),
             "already_observed_candidate_ids": already_observed,
+            "manual_review_candidate_ids": manual_review,
+            "retrying_candidate_ids": retrying,
             "runtime_identity_sha256": runtime_identity_sha256,
+            "runtime_identity": _runtime_identity_summary(runtime_identity),
+            "dedupe_reason": (
+                "reusable_terminal_same_candidate_and_runtime"
+                if already_observed and not manual_review
+                else "retry_budget_exhausted"
+            ),
             "discovery_path": str(discovery_path),
             "history_path": str(history_path),
             "started_at": started_at,
@@ -306,16 +371,35 @@ def _run_cycle_locked(
     )
 
     spec = materialize.load_json(spec_result["candidate_spec"])
-    run = run_shadow_fn(
-        spec,
-        shadow_root=str(shadow_root / "executions"),
-        autopilot=autopilot,
-        python_bin=str(config.get("python", os.environ.get("PYTHON", "python3"))),
-        timeout=int(config.get("timeout", 3600)),
-        forbidden_roots=config.get("forbidden_roots", []),
-    )
+    selected_fingerprint = fingerprints[str(selected["candidate_id"])]
+    try:
+        run = run_shadow_fn(
+            spec,
+            shadow_root=str(shadow_root / "executions"),
+            autopilot=autopilot,
+            python_bin=str(config.get("python", os.environ.get("PYTHON", "python3"))),
+            timeout=int(config.get("timeout", 3600)),
+            forbidden_roots=config.get("forbidden_roots", []),
+        )
+    except Exception as exc:
+        failed_run = {
+            "shadow_status": "SHADOW_ERROR",
+            "result_sha256": None,
+            "run_id": None,
+            "error_type": type(exc).__name__,
+        }
+        _record_history(
+            history_path,
+            history,
+            selected,
+            failed_run,
+            fingerprint=selected_fingerprint,
+            runtime_identity_sha256=runtime_identity_sha256,
+            launch_id=launch_id,
+            cycle_id=cycle_id,
+        )
+        raise
 
-    selected_fingerprint = _candidate_fingerprint(selected, runtime_identity)
     _record_history(
         history_path,
         history,
@@ -323,17 +407,33 @@ def _run_cycle_locked(
         run,
         fingerprint=selected_fingerprint,
         runtime_identity_sha256=runtime_identity_sha256,
+        launch_id=launch_id,
+        cycle_id=cycle_id,
     )
+    shadow_terminal = str(run.get("shadow_status") or "").upper()
+    if shadow_terminal == "SHADOW_ERROR":
+        cycle_status = "SHADOW_CYCLE_FAILED"
+    elif shadow_terminal == "SHADOW_COMPLETED_UNCLASSIFIED":
+        cycle_status = "SHADOW_CYCLE_UNCLASSIFIED"
+    else:
+        cycle_status = "SHADOW_CYCLE_COMPLETE"
+
     result = {
         "schema": SCHEMA,
         "mode": "shadow",
         "production_write_allowed": False,
-        "status": "SHADOW_CYCLE_COMPLETE",
+        "status": cycle_status,
+        "launch_id": launch_id,
+        "cycle_id": cycle_id,
+        "shadow_run_id": run.get("run_id"),
         "model": model,
         "selected_candidate_id": selected["candidate_id"],
         "deferred_candidate_ids": deferred,
         "already_observed_candidate_ids": already_observed,
+        "manual_review_candidate_ids": manual_review,
+        "retrying_candidate_ids": retrying,
         "runtime_identity_sha256": runtime_identity_sha256,
+        "runtime_identity": _runtime_identity_summary(runtime_identity),
         "ready_count": len(ready),
         "discovery_path": str(discovery_path),
         "candidate_spec": spec_result["candidate_spec"],
@@ -385,10 +485,16 @@ def main():
             "mode": "shadow",
             "production_write_allowed": False,
             "status": "SHADOW_PIPELINE_ERROR",
-            "error": str(exc),
+            "launch_id": os.environ.get("GPU_SHADOW_LAUNCH_ID") or None,
+            "error_type": type(exc).__name__,
         }, sort_keys=True))
         return 2
     print(json.dumps(result, sort_keys=True))
+    if result.get("status") in {
+        "SHADOW_CYCLE_FAILED",
+        "SHADOW_CYCLE_UNCLASSIFIED",
+    }:
+        return 2
     return 0
 
 
