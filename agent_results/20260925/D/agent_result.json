@@ -1,0 +1,231 @@
+{
+  "schema": "beglin-agent-result/1",
+  "session_id": "20260925-parallel",
+  "agent_id": "D",
+  "status": "VERIFIED",
+  "base_commit": "255ed8c1bddcbc100b6cb79f5bc11e62e0984913",
+  "agent_commit": "01f9e7661b72602324df71ec68a0199f365ae763",
+  "integration_commit": "db88d77ffe75547fba7a1f4e667ec708f74daa6e",
+  "observed_at": "2026-09-26T03:39:00.871092+00:00",
+  "started_at": "2026-09-25T15:12:22.513Z",
+  "finished_at": "2026-09-26T03:39:00.871092+00:00",
+  "host": "xox",
+  "platform": "macOS Apple Silicon / certified vdsp_gpu_precision worktree",
+  "model_revision": "deepseek-v2-lite",
+  "backend": "mlx_metal",
+  "architecture": null,
+  "binary_sha256": null,
+  "binary_build_source_commit": null,
+  "checkpoint_sha256": null,
+  "policy_hash": null,
+  "run_id": null,
+  "evidence_level": "unit",
+  "production_write_allowed": false,
+  "changed_files": [
+    "docs/GPU_SHADOW_OBSERVABILITY.md",
+    "schemas/gpu-shadow-report-v1.schema.json",
+    "tools/gpu_shadow_launch_xox.py",
+    "tools/gpu_shadow_pipeline.py",
+    "tools/gpu_shadow_report.py",
+    "tools/gpu_shadow_status_xox.py",
+    "tools/test_gpu_shadow_launch_xox.py",
+    "tools/test_gpu_shadow_pipeline.py",
+    "tools/test_gpu_shadow_report.py",
+    "tools/test_gpu_shadow_status_xox.py"
+  ],
+  "tests": [
+    {
+      "name": "python compileall D fixture tree",
+      "kind": "static",
+      "command": [
+        "python3",
+        "-m",
+        "compileall",
+        "-q",
+        "d-shadow-observability"
+      ],
+      "exit_code": 0,
+      "actual_count": null,
+      "status": "PASS",
+      "request_id": "209159e9-3b42-46e6-b26a-2be8f4fb014f"
+    },
+    {
+      "name": "complete shadow fixture suite",
+      "kind": "unit",
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "d-shadow-observability",
+        "-p",
+        "test_gpu_shadow*.py"
+      ],
+      "exit_code": 0,
+      "actual_count": 72,
+      "status": "PASS",
+      "request_id": "f93516a0-76cb-43c7-bd7f-198159ed046f"
+    },
+    {
+      "name": "integrated GPU suite after Agent D",
+      "kind": "unit",
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tools",
+        "-p",
+        "test_gpu_*.py"
+      ],
+      "exit_code": 0,
+      "actual_count": 151,
+      "status": "PASS",
+      "request_id": "8e1627f6-e77f-4af8-af0e-77671f0d0361"
+    },
+    {
+      "name": "manual canary regression suite after Agent D",
+      "kind": "unit",
+      "command": [
+        "python3",
+        "tools/test_manual_canary.py"
+      ],
+      "exit_code": 0,
+      "actual_count": 35,
+      "status": "PASS",
+      "request_id": "20e48ad7-e532-49cc-ba48-585833ae22d9"
+    },
+    {
+      "name": "integrated tree whitespace check",
+      "kind": "static",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "status": "PASS",
+      "request_id": "0de83747-51b7-4f5e-af08-089d8e74c829"
+    },
+    {
+      "name": "live XOX shadow reporter read-only verification",
+      "kind": "integration-evidence",
+      "command": [
+        "python3",
+        "tools/gpu_shadow_report.py",
+        "--shadow-root",
+        "/Users/xox/vdsp_shadow_runs"
+      ],
+      "exit_code": 0,
+      "actual_count": 2,
+      "status": "PASS",
+      "request_ids": [
+        "a4ee6086-eab7-4291-ac55-d47730a08e71",
+        "6eb217e2-a015-4950-b4f2-09fffca76c26"
+      ],
+      "result": {
+        "cycle_status": "NO_NEW_READY_CANDIDATE",
+        "pipeline_state": "not_run",
+        "gpu_validation_state": "not_run",
+        "evidence_level": "not_run",
+        "source_freshness": "legacy_unlinked",
+        "production_write_allowed": false,
+        "input_hashes_unchanged": true
+      }
+    }
+  ],
+  "real_runs": [
+    {
+      "kind": "live_read_only_shadow_observation",
+      "status": "COMPLETE",
+      "integration_head": "db88d77ffe75547fba7a1f4e667ec708f74daa6e",
+      "shadow_cycle_status": "NO_NEW_READY_CANDIDATE",
+      "pipeline_state": "not_run",
+      "gpu_validation_state": "not_run",
+      "source_freshness": "legacy_unlinked",
+      "production_write_allowed": false,
+      "new_gpu_run": false,
+      "source_artifact_hashes_identical_across_two_reporter_runs": true
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "https://github.com/popixoxipop-collab/beglin/pull/10",
+      "scope": "draft PR / review surface"
+    },
+    {
+      "path": "/Users/eoe/mcp-sandbox/tailnet-commander/d-shadow-observability",
+      "scope": "isolated EOE fixture materialization"
+    }
+  ],
+  "limitations": [
+    "The observed live shadow state predates Agent D launch_id/cycle_id linkage and is therefore correctly reported as legacy_unlinked / LEGACY_CONTEXT_UNVERIFIED.",
+    "No new GPU inference was forced for Agent D verification; the live state remained a deduped NO_NEW_READY_CANDIDATE observation.",
+    "Agent D does not claim new real-GPU model-quality evidence from the reporter run.",
+    "No production mutation, history deletion, Supabase write, canary enablement, or auto-promotion was performed."
+  ],
+  "blocked_by": [],
+  "reproduction_commands": [
+    [
+      "python3",
+      "-m",
+      "compileall",
+      "-q",
+      "d-shadow-observability"
+    ],
+    [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "d-shadow-observability",
+      "-p",
+      "test_gpu_shadow*.py"
+    ]
+  ],
+  "handoff": {
+    "completed": [
+      "launch_id -> cycle_id -> shadow_run_id linkage",
+      "current/previous/legacy cycle relation",
+      "terminal-aware dedupe with bounded retry and manual-review gate",
+      "explicit SHADOW_CYCLE_FAILED and SHADOW_CYCLE_UNCLASSIFIED states",
+      "read-only gpu_shadow_report.py and canonical schema",
+      "72/72 isolated shadow fixture tests PASS",
+      "conflict-resolved integration onto current XOX jsonsafe source",
+      "integrated GPU suite 151/151 PASS",
+      "manual canary regression suite 35/35 PASS",
+      "git diff --check PASS",
+      "live XOX reporter executed twice read-only with source artifact hashes unchanged",
+      "legacy dedupe state classified as not_run rather than fresh GPU PASS"
+    ],
+    "remaining": [
+      "A0/C may ingest this VERIFIED Agent D result into the global certification manifest.",
+      "A future naturally-triggered shadow cycle can exercise live launch_id/cycle_id linkage when new evidence arrives; do not force a rerun solely for D."
+    ],
+    "next_owner": "A0/C"
+  },
+  "review_squash_commit": "75e2a5d32427be8881e8711854eeaf810c31cb83",
+  "review_squash_branch": "agent-d-shadow-observability-squashed",
+  "review_squash_verified_diff": {
+    "commits": 1,
+    "files": 10,
+    "base": "255ed8c1bddcbc100b6cb79f5bc11e62e0984913"
+  },
+  "live_preflight_observed": {
+    "release": "g6-0.4.0-alpha.33",
+    "ok": 10,
+    "warn": 0,
+    "fail": 0,
+    "request_id": "c71a2dad-7d58-4748-83fe-c84dea7984da"
+  },
+  "current_certified_head_observed": "db88d77ffe75547fba7a1f4e667ec708f74daa6e",
+  "current_certified_parent_observed": "d9401d774691cfcc4b2f74b11f9098c96b22c59b",
+  "integration_policy_status": "VERIFIED_ON_ALPHA33",
+  "integration_source_parent": "067d4d8989b597785c756b1673bbf5a08564e61d",
+  "integration_candidate_commit": "bb76ecf07db3f4d3859424c397d056c2abdf4c57",
+  "integration_candidate_branch": "agent-d-shadow-observability-xox-rebased",
+  "verification_scope": "Agent D observability code integrated and regression-verified on certified XOX; live read-only reporter verified against existing legacy shadow state; no new GPU candidate validation claimed."
+}

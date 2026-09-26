@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import fcntl
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import gpu_shadow_pipeline as gp
 
@@ -247,6 +249,275 @@ class ShadowPipelineTests(unittest.TestCase):
                 third["runtime_identity_sha256"],
             )
             self.assertEqual(calls["run"], 2)
+
+
+    def test_failed_shadow_is_retried_then_manual_review_required(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, config = self.setup_fs(td)
+            row = ready("c1")
+            calls = {"run": 0}
+
+            def discover(model, limit):
+                return {
+                    "schema": "gpu-shadow-discovery-v1",
+                    "mode": "read_only",
+                    "production_write_allowed": False,
+                    "payload_sha256": "c" * 64,
+                    "ready": [dict(row)],
+                }
+
+            def fail_run(spec, **kwargs):
+                calls["run"] += 1
+                raise RuntimeError("simulated shadow failure")
+
+            for expected_attempt in (1, 2):
+                with self.assertRaises(RuntimeError):
+                    gp.run_cycle(
+                        config,
+                        discover_fn=discover,
+                        run_shadow_fn=fail_run,
+                    )
+                history = json.loads(
+                    (root / "shadow" / "candidate_history.json").read_text()
+                )
+                saved = history["candidates"]["c1"]
+                self.assertEqual(saved["shadow_status"], "SHADOW_ERROR")
+                self.assertFalse(saved["reusable_terminal"])
+                self.assertEqual(saved["attempt_count"], expected_attempt)
+
+            third = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=fail_run,
+            )
+            self.assertEqual(third["status"], "MANUAL_REVIEW_REQUIRED")
+            self.assertEqual(third["manual_review_candidate_ids"], ["c1"])
+            self.assertEqual(third["dedupe_reason"], "retry_budget_exhausted")
+            self.assertEqual(calls["run"], 2)
+
+    def test_unclassified_terminal_is_not_reused(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, config = self.setup_fs(td)
+            row = ready("c1")
+            calls = {"run": 0}
+
+            def discover(model, limit):
+                return {
+                    "schema": "gpu-shadow-discovery-v1",
+                    "mode": "read_only",
+                    "production_write_allowed": False,
+                    "payload_sha256": "c" * 64,
+                    "ready": [dict(row)],
+                }
+
+            def unclassified(spec, **kwargs):
+                calls["run"] += 1
+                return {
+                    "shadow_status": "SHADOW_COMPLETED_UNCLASSIFIED",
+                    "production_write_allowed": False,
+                    "result_sha256": str(calls["run"]) * 64,
+                    "run_id": "run-" + str(calls["run"]),
+                }
+
+            first = gp.run_cycle(config, discover_fn=discover, run_shadow_fn=unclassified)
+            second = gp.run_cycle(config, discover_fn=discover, run_shadow_fn=unclassified)
+            third = gp.run_cycle(config, discover_fn=discover, run_shadow_fn=unclassified)
+
+            self.assertEqual(first["status"], "SHADOW_CYCLE_UNCLASSIFIED")
+            self.assertEqual(second["status"], "SHADOW_CYCLE_UNCLASSIFIED")
+            self.assertEqual(third["status"], "MANUAL_REVIEW_REQUIRED")
+            self.assertEqual(calls["run"], 2)
+
+    def test_launch_cycle_and_shadow_run_ids_are_linked(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, config = self.setup_fs(td)
+
+            def fake_run(spec, **kwargs):
+                return {
+                    "shadow_status": "SHADOW_ADMITTED",
+                    "production_write_allowed": False,
+                    "result_sha256": "r" * 64,
+                    "run_id": "shadow-run-1",
+                }
+
+            with patch.dict(os.environ, {"GPU_SHADOW_LAUNCH_ID": "launch-1"}):
+                got = gp.run_cycle(
+                    config,
+                    discover_fn=lambda model, limit: {
+                        "schema": "gpu-shadow-discovery-v1",
+                        "mode": "read_only",
+                        "production_write_allowed": False,
+                        "payload_sha256": "c" * 64,
+                        "ready": [ready("c1")],
+                    },
+                    run_shadow_fn=fake_run,
+                )
+
+            self.assertEqual(got["launch_id"], "launch-1")
+            self.assertTrue(got["cycle_id"])
+            self.assertEqual(got["shadow_run_id"], "shadow-run-1")
+            history = json.loads(
+                (root / "shadow" / "candidate_history.json").read_text()
+            )["candidates"]["c1"]
+            self.assertEqual(history["launch_id"], "launch-1")
+            self.assertEqual(history["cycle_id"], got["cycle_id"])
+            self.assertEqual(history["shadow_run_id"], "shadow-run-1")
+
+
+    def test_shadow_error_is_retried_then_requires_manual_review(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, config = self.setup_fs(td)
+            config["max_retry_attempts"] = 2
+            row = ready("c1")
+            calls = {"run": 0}
+
+            def discover(model, limit):
+                return {
+                    "schema": "gpu-shadow-discovery-v1",
+                    "mode": "read_only",
+                    "production_write_allowed": False,
+                    "ready": [dict(row)],
+                }
+
+            def fail_run(spec, **kwargs):
+                calls["run"] += 1
+                return {
+                    "run_id": f"run-{calls['run']}",
+                    "shadow_status": "SHADOW_ERROR",
+                    "production_write_allowed": False,
+                    "result_sha256": str(calls["run"]) * 64,
+                }
+
+            first = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=fail_run,
+            )
+            second = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=fail_run,
+            )
+            third = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=fail_run,
+            )
+
+            self.assertEqual(first["status"], "SHADOW_CYCLE_FAILED")
+            self.assertEqual(second["status"], "SHADOW_CYCLE_FAILED")
+            self.assertEqual(third["status"], "MANUAL_REVIEW_REQUIRED")
+            self.assertEqual(third["manual_review_candidate_ids"], ["c1"])
+            self.assertEqual(third["dedupe_reason"], "retry_budget_exhausted")
+            self.assertEqual(calls["run"], 2)
+
+            history = json.loads(
+                (root / "shadow" / "candidate_history.json").read_text()
+            )
+            saved = history["candidates"]["c1"]
+            self.assertEqual(saved["attempt_count"], 2)
+            self.assertFalse(saved["reusable_terminal"])
+            self.assertEqual(saved["shadow_status"], "SHADOW_ERROR")
+
+
+    def test_unclassified_shadow_terminal_is_not_complete(self):
+        with tempfile.TemporaryDirectory() as td:
+            _, config = self.setup_fs(td)
+            row = ready("c1")
+
+            def discover(model, limit):
+                return {
+                    "schema": "gpu-shadow-discovery-v1",
+                    "mode": "read_only",
+                    "production_write_allowed": False,
+                    "ready": [dict(row)],
+                }
+
+            got = gp.run_cycle(
+                config,
+                discover_fn=discover,
+                run_shadow_fn=lambda spec, **kwargs: {
+                    "run_id": "run-unclassified",
+                    "shadow_status": "SHADOW_COMPLETED_UNCLASSIFIED",
+                    "production_write_allowed": False,
+                    "result_sha256": "u" * 64,
+                },
+            )
+            self.assertEqual(got["status"], "SHADOW_CYCLE_UNCLASSIFIED")
+
+    def test_runner_exception_records_failed_attempt_for_retry_accounting(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, config = self.setup_fs(td)
+            row = ready("c1")
+
+            def discover(model, limit):
+                return {
+                    "schema": "gpu-shadow-discovery-v1",
+                    "mode": "read_only",
+                    "production_write_allowed": False,
+                    "ready": [dict(row)],
+                }
+
+            def explode(*args, **kwargs):
+                raise RuntimeError("fixture boom")
+
+            with self.assertRaises(RuntimeError):
+                gp.run_cycle(
+                    config,
+                    discover_fn=discover,
+                    run_shadow_fn=explode,
+                )
+
+            history = json.loads(
+                (root / "shadow" / "candidate_history.json").read_text()
+            )
+            saved = history["candidates"]["c1"]
+            self.assertEqual(saved["attempt_count"], 1)
+            self.assertFalse(saved["reusable_terminal"])
+            self.assertEqual(saved["shadow_status"], "SHADOW_ERROR")
+            self.assertIsNone(saved["shadow_run_id"])
+
+    def test_launch_id_propagates_to_cycle_and_history(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, config = self.setup_fs(td)
+            row = ready("c1")
+
+            def discover(model, limit):
+                return {
+                    "schema": "gpu-shadow-discovery-v1",
+                    "mode": "read_only",
+                    "production_write_allowed": False,
+                    "ready": [dict(row)],
+                }
+
+            def pass_run(spec, **kwargs):
+                return {
+                    "run_id": "shadow-run-1",
+                    "shadow_status": "SHADOW_ADMITTED",
+                    "production_write_allowed": False,
+                    "result_sha256": "r" * 64,
+                }
+
+            with patch.dict(
+                "os.environ",
+                {"GPU_SHADOW_LAUNCH_ID": "launch-fixture-1"},
+                clear=False,
+            ):
+                got = gp.run_cycle(
+                    config,
+                    discover_fn=discover,
+                    run_shadow_fn=pass_run,
+                )
+
+            self.assertEqual(got["launch_id"], "launch-fixture-1")
+            self.assertTrue(got["cycle_id"])
+            self.assertEqual(got["shadow_run_id"], "shadow-run-1")
+            history = json.loads(
+                (root / "shadow" / "candidate_history.json").read_text()
+            )["candidates"]["c1"]
+            self.assertEqual(history["launch_id"], "launch-fixture-1")
+            self.assertEqual(history["cycle_id"], got["cycle_id"])
+            self.assertEqual(history["shadow_run_id"], "shadow-run-1")
 
     def test_concurrent_cycle_lock_fails_before_discovery(self):
         with tempfile.TemporaryDirectory() as td:
