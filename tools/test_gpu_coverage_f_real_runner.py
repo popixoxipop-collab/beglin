@@ -17,7 +17,7 @@ class RealRunnerContractTests(unittest.TestCase):
         self.assertEqual(rr._classify(0, None), "UNCLASSIFIED")
 
     def test_last_json(self):
-        got = rr._last_json("noise\\n{\\"status\\":\\"ADMITTED\\"}\\n")
+        got = rr._last_json('noise\n{"status":"ADMITTED"}\n')
         self.assertEqual(got["status"], "ADMITTED")
 
     def test_validate_rejects_unverified_checkpoint(self):
