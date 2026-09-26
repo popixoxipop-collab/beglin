@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from .evidence import (
     build_canary,
@@ -11,13 +11,18 @@ from .evidence import (
 )
 from .models import (
     CanaryView,
+    CoverageView,
     DashboardSummaryView,
     EvidenceView,
+    EventLogView,
     ExperimentCard,
+    LayerHeatmapView,
+    MetricsView,
     PolicyView,
     ProductionView,
     VariablesView,
 )
+from .projectors import coverage, event_log, heatmap, metrics
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
@@ -74,6 +79,50 @@ def get_canary() -> CanaryView:
 )
 def get_production() -> ProductionView:
     return build_production()
+
+
+@router.get(
+    "/events",
+    response_model=EventLogView,
+    operation_id="getEvents",
+)
+def get_events(
+    after_seq: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> EventLogView:
+    return event_log(after_seq=after_seq, limit=limit)
+
+
+@router.get(
+    "/heatmap",
+    response_model=LayerHeatmapView,
+    operation_id="getHeatmap",
+)
+def get_heatmap(
+    window: str = Query(default="CUMULATIVE"),
+) -> LayerHeatmapView:
+    allowed = {"REALTIME", "1M", "5M", "1H", "SESSION", "CUMULATIVE"}
+    if window not in allowed:
+        raise HTTPException(status_code=422, detail="unsupported heatmap window")
+    return heatmap(window=window)
+
+
+@router.get(
+    "/coverage",
+    response_model=CoverageView,
+    operation_id="getCoverage",
+)
+def get_coverage() -> CoverageView:
+    return coverage()
+
+
+@router.get(
+    "/metrics",
+    response_model=MetricsView,
+    operation_id="getMetrics",
+)
+def get_metrics() -> MetricsView:
+    return metrics()
 
 
 @router.get(
