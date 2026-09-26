@@ -891,6 +891,592 @@
         }
       }
     },
+    "getEvents": {
+      "verb": "GET",
+      "path": "/api/v1/events",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "cursor": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "properties": {
+                "event_id": {
+                  "type": "string"
+                },
+                "event_type": {
+                  "type": "string"
+                },
+                "evidence_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "experiment_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ingested_at": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "occurred_at": {
+                  "type": "string"
+                },
+                "seq": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "severity": {
+                  "default": "INFO",
+                  "enum": [
+                    "INFO",
+                    "WARN",
+                    "ERROR"
+                  ],
+                  "type": "string"
+                },
+                "target": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "layer": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "n": {
+                          "maximum": 15,
+                          "minimum": 2,
+                          "type": "integer"
+                        },
+                        "role": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "role",
+                        "layer",
+                        "n"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "seq",
+                "event_id",
+                "event_type",
+                "occurred_at",
+                "ingested_at",
+                "message"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cursor",
+          "entries"
+        ],
+        "type": "object"
+      },
+      "errorSchema": {
+        "properties": {
+          "detail": {
+            "items": {
+              "properties": {
+                "ctx": {
+                  "type": "object"
+                },
+                "input": {},
+                "loc": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "loc",
+                "msg",
+                "type"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "sourceParameters": [
+        {
+          "name": "after_seq",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        }
+      ],
+      "sourceSummary": "Get Events",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        },
+        "422": {
+          "description": "Validation Error",
+          "schemaFrom": "error"
+        }
+      }
+    },
+    "getHeatmap": {
+      "verb": "GET",
+      "path": "/api/v1/heatmap",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "cells": {
+            "items": {
+              "properties": {
+                "activation_ema": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "anomaly_count": {
+                  "default": 0,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "correction_hits": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "current_precision_n": {
+                  "maximum": 15,
+                  "minimum": 2,
+                  "type": "integer"
+                },
+                "evidence_ids": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "last_updated_at": {
+                  "type": "string"
+                },
+                "layer": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "live_state": {
+                  "enum": [
+                    "IDLE",
+                    "ACTIVE",
+                    "HOT",
+                    "PROMOTED",
+                    "REGRESSION",
+                    "ROLLBACK",
+                    "QUARANTINED"
+                  ],
+                  "type": "string"
+                },
+                "promotion_hits": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "role_group": {
+                  "type": "string"
+                },
+                "sample_count": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "layer",
+                "role_group",
+                "sample_count",
+                "promotion_hits",
+                "correction_hits",
+                "current_precision_n",
+                "last_updated_at",
+                "live_state"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "max_hit_count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source_kind": {
+            "enum": [
+              "evidence_aggregate",
+              "live_telemetry"
+            ],
+            "type": "string"
+          },
+          "window": {
+            "enum": [
+              "REALTIME",
+              "1M",
+              "5M",
+              "1H",
+              "SESSION",
+              "CUMULATIVE"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "window",
+          "cells",
+          "max_hit_count",
+          "source_kind"
+        ],
+        "type": "object"
+      },
+      "errorSchema": {
+        "properties": {
+          "detail": {
+            "items": {
+              "properties": {
+                "ctx": {
+                  "type": "object"
+                },
+                "input": {},
+                "loc": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "loc",
+                "msg",
+                "type"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "sourceParameters": [
+        {
+          "name": "window",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "default": "CUMULATIVE",
+            "type": "string"
+          }
+        }
+      ],
+      "sourceSummary": "Get Heatmap",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        },
+        "422": {
+          "description": "Validation Error",
+          "schemaFrom": "error"
+        }
+      }
+    },
+    "getCoverage": {
+      "verb": "GET",
+      "path": "/api/v1/coverage",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "cells": {
+            "items": {
+              "properties": {
+                "cell_id": {
+                  "type": "string"
+                },
+                "evidence_id": {
+                  "type": "string"
+                },
+                "experiment_id": {
+                  "type": "string"
+                },
+                "fail_count": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "first_seen_at": {
+                  "type": "string"
+                },
+                "hit_count": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "last_seen_at": {
+                  "type": "string"
+                },
+                "pass_count": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "status": {
+                  "enum": [
+                    "EMPTY",
+                    "OBSERVED",
+                    "EXPERIMENTED",
+                    "PASS",
+                    "FAIL",
+                    "PROMOTED",
+                    "ROLLED_BACK"
+                  ],
+                  "type": "string"
+                },
+                "target_key": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "cell_id",
+                "experiment_id",
+                "target_key",
+                "status",
+                "hit_count",
+                "pass_count",
+                "fail_count",
+                "first_seen_at",
+                "last_seen_at",
+                "evidence_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "filled_cells": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "BY_REQUEST",
+              "BY_LAYER",
+              "BY_TARGET",
+              "BY_EXPERIMENT"
+            ],
+            "type": "string"
+          },
+          "percentage": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "total_cells": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "total_cells",
+          "filled_cells",
+          "percentage",
+          "cells"
+        ],
+        "type": "object"
+      },
+      "sourceSummary": "Get Coverage",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        }
+      }
+    },
+    "getMetrics": {
+      "verb": "GET",
+      "path": "/api/v1/metrics",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "active_policy_summary": {
+            "type": "string"
+          },
+          "attribution_after": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attribution_before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "canary_status": {
+            "type": "string"
+          },
+          "corrected_hits": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "request_count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "resident_worker": {
+            "type": "boolean"
+          },
+          "rollback_ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "generated_at",
+          "request_count",
+          "corrected_hits",
+          "canary_status",
+          "rollback_ready",
+          "active_policy_summary",
+          "resident_worker"
+        ],
+        "type": "object"
+      },
+      "sourceSummary": "Get Metrics",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        }
+      }
+    },
     "getEvidence": {
       "verb": "GET",
       "path": "/api/v1/evidence/{evidence_id}",
@@ -1116,6 +1702,54 @@
     {
       "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
       "severity": "warn",
+      "subject": "getEvents",
+      "message": "operationId \"getEvents\" for GET /api/v1/events was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/events",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/events"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getHeatmap",
+      "message": "operationId \"getHeatmap\" for GET /api/v1/heatmap was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/heatmap",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/heatmap"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getCoverage",
+      "message": "operationId \"getCoverage\" for GET /api/v1/coverage was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/coverage",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/coverage"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getMetrics",
+      "message": "operationId \"getMetrics\" for GET /api/v1/metrics was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/metrics",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/metrics"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
       "subject": "getEvidence",
       "message": "operationId \"getEvidence\" for GET /api/v1/evidence/{evidence_id} was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
       "detail": {
@@ -1128,7 +1762,7 @@
   ],
   "completeness": {
     "status": "complete",
-    "operation_count": 7,
-    "endpoint_count": 7
+    "operation_count": 11,
+    "endpoint_count": 11
   }
 }
