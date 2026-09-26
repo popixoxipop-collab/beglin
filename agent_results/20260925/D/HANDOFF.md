@@ -212,3 +212,20 @@ Latest Tailnet observation before handoff:
 `g6-0.4.0-alpha.27`, preflight `10 OK / 0 WARN / 0 FAIL`.
 
 The current chat schema still does not directly expose `vdsp_gpu_precision`, so fresh live-XOX reporter verification remains an A0/new-schema integration step.
+
+## Latest certified XOX integration target
+
+```text
+HEAD   f9d99fa85eaa9f24e5a010478a73800b6c38e74f
+parent d9401d774691cfcc4b2f74b11f9098c96b22c59b
+```
+
+Tailnet alpha.27 currently has no exact allowlist entry for the D squash
+fetch/cherry-pick or live reporter command. No bypass was used.
+
+EOE access request:
+
+`BEGLIN_AGENT_D_ACCESS_REQUEST_20260926.md`
+
+D remains READY_FOR_REVIEW until A0 performs this exact integration and live
+read-only reporter verification.
