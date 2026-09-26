@@ -60,15 +60,18 @@ function main() {
   run("clang", ["-O3", "-w", "-c", path.join(ROOT, "qwen_infer.c"), "-o", obj("qwen_infer.c")]);
 
   const plainFiles = [
+    "bpe_tokenizer.c",
     "gguf_cache.c",
     "gguf_load.c",
     "gguf_quants.c",
     "gguf_transcode.c",
+    "gguf_write.c",
+    "gguf_write_quants.c",
     "hf_config.c",
     "safetensors_load.c",
     "safetensors_quants.c",
   ];
-  console.log("[beglin] compiling GGUF/safetensors loader sources");
+  console.log("[beglin] compiling tokenizer/GGUF/safetensors sources");
   for (const f of plainFiles) {
     run("clang", ["-O3", "-w", "-c", path.join(ROOT, f), "-o", obj(f)]);
   }
