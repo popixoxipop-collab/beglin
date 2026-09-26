@@ -1,0 +1,127 @@
+{
+  "schema": "beglin-agent-result/1",
+  "session_id": "20260925-parallel",
+  "agent_id": "D",
+  "status": "READY_FOR_REVIEW",
+  "base_commit": "255ed8c1bddcbc100b6cb79f5bc11e62e0984913",
+  "agent_commit": "01f9e7661b72602324df71ec68a0199f365ae763",
+  "integration_commit": null,
+  "observed_at": "2026-09-26T00:46:51.122Z",
+  "started_at": "2026-09-25T15:12:22.513Z",
+  "finished_at": "2026-09-26T00:46:51.122Z",
+  "host": "eoe",
+  "platform": "darwin",
+  "model_revision": "deepseek-v2-lite",
+  "backend": "mlx_metal",
+  "architecture": null,
+  "binary_sha256": null,
+  "binary_build_source_commit": null,
+  "checkpoint_sha256": null,
+  "policy_hash": null,
+  "run_id": null,
+  "evidence_level": "unit",
+  "production_write_allowed": false,
+  "changed_files": [
+    "docs/GPU_SHADOW_OBSERVABILITY.md",
+    "schemas/gpu-shadow-report-v1.schema.json",
+    "tools/gpu_shadow_launch_xox.py",
+    "tools/gpu_shadow_pipeline.py",
+    "tools/gpu_shadow_report.py",
+    "tools/gpu_shadow_status_xox.py",
+    "tools/test_gpu_shadow_launch_xox.py",
+    "tools/test_gpu_shadow_pipeline.py",
+    "tools/test_gpu_shadow_report.py",
+    "tools/test_gpu_shadow_status_xox.py"
+  ],
+  "tests": [
+    {
+      "name": "python compileall D fixture tree",
+      "kind": "static",
+      "command": [
+        "python3",
+        "-m",
+        "compileall",
+        "-q",
+        "d-shadow-observability"
+      ],
+      "exit_code": 0,
+      "actual_count": null,
+      "status": "PASS",
+      "request_id": "209159e9-3b42-46e6-b26a-2be8f4fb014f"
+    },
+    {
+      "name": "complete shadow fixture suite",
+      "kind": "unit",
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "d-shadow-observability",
+        "-p",
+        "test_gpu_shadow*.py"
+      ],
+      "exit_code": 0,
+      "actual_count": 72,
+      "status": "PASS",
+      "request_id": "f93516a0-76cb-43c7-bd7f-198159ed046f"
+    }
+  ],
+  "real_runs": [],
+  "artifacts": [
+    {
+      "path": "https://github.com/popixoxipop-collab/beglin/pull/10",
+      "scope": "draft PR / review surface"
+    },
+    {
+      "path": "/Users/eoe/mcp-sandbox/tailnet-commander/d-shadow-observability",
+      "scope": "isolated EOE fixture materialization"
+    }
+  ],
+  "limitations": [
+    "Current connector session does not directly expose vdsp_gpu_precision.",
+    "A gate-aware helper request was blocked by the security boundary; no bypass was used.",
+    "No fresh live XOX shadow-root reporter execution is claimed.",
+    "No production mutation, history deletion, Supabase write, canary enablement, or auto-promotion was performed."
+  ],
+  "blocked_by": [
+    "Approved direct read-only XOX shadow-root reporter path for live snapshot verification."
+  ],
+  "reproduction_commands": [
+    [
+      "python3",
+      "-m",
+      "compileall",
+      "-q",
+      "d-shadow-observability"
+    ],
+    [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "d-shadow-observability",
+      "-p",
+      "test_gpu_shadow*.py"
+    ]
+  ],
+  "handoff": {
+    "completed": [
+      "launch_id -> cycle_id -> shadow_run_id linkage",
+      "current/previous/legacy cycle relation",
+      "terminal-aware dedupe with bounded retry and manual-review gate",
+      "explicit SHADOW_CYCLE_FAILED and SHADOW_CYCLE_UNCLASSIFIED states",
+      "read-only gpu_shadow_report.py",
+      "canonical gpu-shadow-report-v1 schema",
+      "72/72 shadow fixture tests PASS"
+    ],
+    "remaining": [
+      "A0 rebase/cherry-pick onto current certified XOX source",
+      "full GPU suite on integration SHA",
+      "one approved read-only reporter snapshot against live XOX shadow root"
+    ],
+    "next_owner": "A0"
+  }
+}
