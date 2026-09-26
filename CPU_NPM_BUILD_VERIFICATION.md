@@ -40,8 +40,9 @@ recursively follows quoted local includes, and requires the complete closure to
 exist in `package.json#files`. It contains a negative fixture that removes
 `bpe_tokenizer.h` and proves the checker catches the historical regression.
 
-`scripts/test-package-cold-install.js` creates a real tarball, installs it into
-a new temporary consumer, rejects a native-build SKIP as success, checks a
+`scripts/test-package-link-failure.js` replaces clang with a fixture compiler that
+accepts compile steps but fails the final link, and requires that failure to propagate
+as a non-zero postinstall result.\n\n`scripts/test-package-cold-install.js` creates a real tarball, installs it into\na new temporary consumer, rejects a native-build SKIP as success, checks a
 non-empty installed `bin/qwen_infer`, loads the installed JS API, and records
 tarball/binary SHA-256. A no-clang fixture is explicitly classified as SKIP.
 
@@ -50,6 +51,7 @@ tarball/binary SHA-256. A no-clang fixture is explicitly classified as SKIP.
 ```bash
 npm test
 npm run test:package-cold
+npm run test:package
 ```
 
 The integration owner must rerun both commands on the final certified source
