@@ -219,6 +219,122 @@
         "title": "ControlledVariablesSnapshot",
         "type": "object"
       },
+      "CoverageCell": {
+        "properties": {
+          "cell_id": {
+            "title": "Cell Id",
+            "type": "string"
+          },
+          "evidence_id": {
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "experiment_id": {
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "fail_count": {
+            "minimum": 0.0,
+            "title": "Fail Count",
+            "type": "integer"
+          },
+          "first_seen_at": {
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "hit_count": {
+            "minimum": 0.0,
+            "title": "Hit Count",
+            "type": "integer"
+          },
+          "last_seen_at": {
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "pass_count": {
+            "minimum": 0.0,
+            "title": "Pass Count",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "EMPTY",
+              "OBSERVED",
+              "EXPERIMENTED",
+              "PASS",
+              "FAIL",
+              "PROMOTED",
+              "ROLLED_BACK"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_key": {
+            "title": "Target Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cell_id",
+          "experiment_id",
+          "target_key",
+          "status",
+          "hit_count",
+          "pass_count",
+          "fail_count",
+          "first_seen_at",
+          "last_seen_at",
+          "evidence_id"
+        ],
+        "title": "CoverageCell",
+        "type": "object"
+      },
+      "CoverageView": {
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/CoverageCell"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "filled_cells": {
+            "minimum": 0.0,
+            "title": "Filled Cells",
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "BY_REQUEST",
+              "BY_LAYER",
+              "BY_TARGET",
+              "BY_EXPERIMENT"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "percentage": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Percentage",
+            "type": "number"
+          },
+          "total_cells": {
+            "minimum": 0.0,
+            "title": "Total Cells",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "total_cells",
+          "filled_cells",
+          "percentage",
+          "cells"
+        ],
+        "title": "CoverageView",
+        "type": "object"
+      },
       "DashboardSummaryView": {
         "properties": {
           "active_policy": {
@@ -283,6 +399,109 @@
           "production_write_allowed"
         ],
         "title": "DashboardSummaryView",
+        "type": "object"
+      },
+      "EventLogEntry": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          },
+          "experiment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experiment Id"
+          },
+          "ingested_at": {
+            "title": "Ingested At",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "occurred_at": {
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "seq": {
+            "minimum": 1.0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "severity": {
+            "default": "INFO",
+            "enum": [
+              "INFO",
+              "WARN",
+              "ERROR"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "seq",
+          "event_id",
+          "event_type",
+          "occurred_at",
+          "ingested_at",
+          "message"
+        ],
+        "title": "EventLogEntry",
+        "type": "object"
+      },
+      "EventLogView": {
+        "properties": {
+          "cursor": {
+            "minimum": 0.0,
+            "title": "Cursor",
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/EventLogEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "cursor",
+          "entries"
+        ],
+        "title": "EventLogView",
         "type": "object"
       },
       "EvidenceRef": {
@@ -562,6 +781,209 @@
           "evidence_root_readable"
         ],
         "title": "HealthView",
+        "type": "object"
+      },
+      "HeatmapCell": {
+        "properties": {
+          "activation_ema": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activation Ema"
+          },
+          "anomaly_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Anomaly Count",
+            "type": "integer"
+          },
+          "correction_hits": {
+            "minimum": 0.0,
+            "title": "Correction Hits",
+            "type": "integer"
+          },
+          "current_precision_n": {
+            "maximum": 15.0,
+            "minimum": 2.0,
+            "title": "Current Precision N",
+            "type": "integer"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "last_updated_at": {
+            "title": "Last Updated At",
+            "type": "string"
+          },
+          "layer": {
+            "minimum": 0.0,
+            "title": "Layer",
+            "type": "integer"
+          },
+          "live_state": {
+            "enum": [
+              "IDLE",
+              "ACTIVE",
+              "HOT",
+              "PROMOTED",
+              "REGRESSION",
+              "ROLLBACK",
+              "QUARANTINED"
+            ],
+            "title": "Live State",
+            "type": "string"
+          },
+          "promotion_hits": {
+            "minimum": 0.0,
+            "title": "Promotion Hits",
+            "type": "integer"
+          },
+          "role_group": {
+            "title": "Role Group",
+            "type": "string"
+          },
+          "sample_count": {
+            "minimum": 0.0,
+            "title": "Sample Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "layer",
+          "role_group",
+          "sample_count",
+          "promotion_hits",
+          "correction_hits",
+          "current_precision_n",
+          "last_updated_at",
+          "live_state"
+        ],
+        "title": "HeatmapCell",
+        "type": "object"
+      },
+      "LayerHeatmapView": {
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/HeatmapCell"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "max_hit_count": {
+            "minimum": 0.0,
+            "title": "Max Hit Count",
+            "type": "integer"
+          },
+          "source_kind": {
+            "enum": [
+              "evidence_aggregate",
+              "live_telemetry"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "window": {
+            "enum": [
+              "REALTIME",
+              "1M",
+              "5M",
+              "1H",
+              "SESSION",
+              "CUMULATIVE"
+            ],
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "window",
+          "cells",
+          "max_hit_count",
+          "source_kind"
+        ],
+        "title": "LayerHeatmapView",
+        "type": "object"
+      },
+      "MetricsView": {
+        "properties": {
+          "active_policy_summary": {
+            "title": "Active Policy Summary",
+            "type": "string"
+          },
+          "attribution_after": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribution After"
+          },
+          "attribution_before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribution Before"
+          },
+          "canary_status": {
+            "title": "Canary Status",
+            "type": "string"
+          },
+          "corrected_hits": {
+            "minimum": 0.0,
+            "title": "Corrected Hits",
+            "type": "integer"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "request_count": {
+            "minimum": 0.0,
+            "title": "Request Count",
+            "type": "integer"
+          },
+          "resident_worker": {
+            "title": "Resident Worker",
+            "type": "boolean"
+          },
+          "rollback_ready": {
+            "title": "Rollback Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "generated_at",
+          "request_count",
+          "corrected_hits",
+          "canary_status",
+          "rollback_ready",
+          "active_policy_summary",
+          "resident_worker"
+        ],
+        "title": "MetricsView",
         "type": "object"
       },
       "PolicyView": {
@@ -888,7 +1310,7 @@
   "info": {
     "description": "Read-only contract-first dashboard API for Beglin quantization experiments.",
     "title": "beglin-experiment-dashboard",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -908,6 +1330,27 @@
           }
         },
         "summary": "Get Canary",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/coverage": {
+      "get": {
+        "operationId": "getCoverage",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Coverage",
         "tags": [
           "dashboard"
         ]
@@ -950,6 +1393,62 @@
           }
         },
         "summary": "Get Dashboard Variables",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "operationId": "getEvents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventLogView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Events",
         "tags": [
           "dashboard"
         ]
@@ -1022,6 +1521,70 @@
         ]
       }
     },
+    "/api/v1/heatmap": {
+      "get": {
+        "operationId": "getHeatmap",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "default": "CUMULATIVE",
+              "title": "Window",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerHeatmapView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Heatmap",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/metrics": {
+      "get": {
+        "operationId": "getMetrics",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Metrics",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
     "/api/v1/policy": {
       "get": {
         "operationId": "getPolicy",
@@ -1061,6 +1624,48 @@
         "summary": "Get Production",
         "tags": [
           "dashboard"
+        ]
+      }
+    },
+    "/api/v1/stream/events": {
+      "get": {
+        "operationId": "streamEvents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After Seq",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Events",
+        "tags": [
+          "stream"
         ]
       }
     },
