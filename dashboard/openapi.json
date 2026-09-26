@@ -1,0 +1,1086 @@
+{
+  "components": {
+    "schemas": {
+      "CanaryView": {
+        "properties": {
+          "attribution_after": {
+            "title": "Attribution After",
+            "type": "number"
+          },
+          "attribution_before": {
+            "title": "Attribution Before",
+            "type": "number"
+          },
+          "auto_expand": {
+            "title": "Auto Expand",
+            "type": "boolean"
+          },
+          "before_n": {
+            "title": "Before N",
+            "type": "integer"
+          },
+          "candidate_policy_hash": {
+            "title": "Candidate Policy Hash",
+            "type": "string"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/EvidenceRef"
+          },
+          "finished_at": {
+            "title": "Finished At",
+            "type": "string"
+          },
+          "post_requests": {
+            "title": "Post Requests",
+            "type": "integer"
+          },
+          "post_worker_id": {
+            "title": "Post Worker Id",
+            "type": "string"
+          },
+          "pre_requests": {
+            "title": "Pre Requests",
+            "type": "integer"
+          },
+          "pre_worker_id": {
+            "title": "Pre Worker Id",
+            "type": "string"
+          },
+          "rollback_required": {
+            "title": "Rollback Required",
+            "type": "boolean"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "signature_status": {
+            "title": "Signature Status",
+            "type": "string"
+          },
+          "signed": {
+            "title": "Signed",
+            "type": "boolean"
+          },
+          "target": {
+            "$ref": "#/components/schemas/TargetRef"
+          },
+          "target_replay_pass": {
+            "title": "Target Replay Pass",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "run_id",
+          "signed",
+          "signature_status",
+          "target",
+          "before_n",
+          "candidate_policy_hash",
+          "pre_worker_id",
+          "post_worker_id",
+          "pre_requests",
+          "post_requests",
+          "attribution_before",
+          "attribution_after",
+          "target_replay_pass",
+          "rollback_required",
+          "auto_expand",
+          "decision",
+          "finished_at",
+          "evidence"
+        ],
+        "title": "CanaryView",
+        "type": "object"
+      },
+      "ControlledVariablesSnapshot": {
+        "properties": {
+          "architecture": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architecture"
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
+          "baseline_precision_n": {
+            "default": 4,
+            "title": "Baseline Precision N",
+            "type": "integer"
+          },
+          "binary_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Binary Sha256",
+            "type": "string"
+          },
+          "checkpoint_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Checkpoint Sha256",
+            "type": "string"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "group_size": {
+            "default": 64,
+            "title": "Group Size",
+            "type": "integer"
+          },
+          "hardware_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hardware Id"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "prompt_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Set Id"
+          },
+          "quant_format": {
+            "default": "qNg64",
+            "title": "Quant Format",
+            "type": "string"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "source_commit": {
+            "title": "Source Commit",
+            "type": "string"
+          },
+          "source_tree": {
+            "title": "Source Tree",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_commit",
+          "source_tree",
+          "binary_sha256",
+          "checkpoint_sha256"
+        ],
+        "title": "ControlledVariablesSnapshot",
+        "type": "object"
+      },
+      "DashboardSummaryView": {
+        "properties": {
+          "active_policy": {
+            "items": {
+              "$ref": "#/components/schemas/TargetRef"
+            },
+            "title": "Active Policy",
+            "type": "array"
+          },
+          "binary_sha256": {
+            "title": "Binary Sha256",
+            "type": "string"
+          },
+          "canary_status": {
+            "title": "Canary Status",
+            "type": "string"
+          },
+          "certification_status": {
+            "title": "Certification Status",
+            "type": "string"
+          },
+          "checkpoint_sha256": {
+            "title": "Checkpoint Sha256",
+            "type": "string"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "known_runs": {
+            "title": "Known Runs",
+            "type": "integer"
+          },
+          "production_state": {
+            "title": "Production State",
+            "type": "string"
+          },
+          "production_write_allowed": {
+            "title": "Production Write Allowed",
+            "type": "boolean"
+          },
+          "resident_worker": {
+            "title": "Resident Worker",
+            "type": "boolean"
+          },
+          "source_commit": {
+            "title": "Source Commit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "certification_status",
+          "source_commit",
+          "binary_sha256",
+          "checkpoint_sha256",
+          "canary_status",
+          "production_state",
+          "resident_worker",
+          "active_policy",
+          "known_runs",
+          "production_write_allowed"
+        ],
+        "title": "DashboardSummaryView",
+        "type": "object"
+      },
+      "EvidenceRef": {
+        "properties": {
+          "evidence_id": {
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "immutable": {
+            "default": true,
+            "title": "Immutable",
+            "type": "boolean"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "source_host": {
+            "default": "eoe",
+            "title": "Source Host",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "kind",
+          "path",
+          "sha256"
+        ],
+        "title": "EvidenceRef",
+        "type": "object"
+      },
+      "EvidenceView": {
+        "properties": {
+          "content": {
+            "additionalProperties": true,
+            "title": "Content",
+            "type": "object"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/EvidenceRef"
+          },
+          "schema_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "evidence",
+          "content"
+        ],
+        "title": "EvidenceView",
+        "type": "object"
+      },
+      "ExperimentCard": {
+        "properties": {
+          "evidence_id": {
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "experiment_id": {
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "ordinal": {
+            "minimum": 1.0,
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "persistent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Persistent"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "resident_worker": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resident Worker"
+          },
+          "rollback_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollback Required"
+          },
+          "signed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/TargetRef"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experiment_id",
+          "ordinal",
+          "title",
+          "status",
+          "phase",
+          "target",
+          "evidence_id"
+        ],
+        "title": "ExperimentCard",
+        "type": "object"
+      },
+      "ExperimentalVariablesSnapshot": {
+        "properties": {
+          "after_n": {
+            "maximum": 15.0,
+            "minimum": 2.0,
+            "title": "After N",
+            "type": "integer"
+          },
+          "auto_expand": {
+            "title": "Auto Expand",
+            "type": "boolean"
+          },
+          "before_n": {
+            "maximum": 15.0,
+            "minimum": 2.0,
+            "title": "Before N",
+            "type": "integer"
+          },
+          "canary_mode": {
+            "title": "Canary Mode",
+            "type": "string"
+          },
+          "request_budget": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Budget"
+          },
+          "rollback_policy": {
+            "title": "Rollback Policy",
+            "type": "string"
+          },
+          "target_layer": {
+            "minimum": 0.0,
+            "title": "Target Layer",
+            "type": "integer"
+          },
+          "target_role": {
+            "title": "Target Role",
+            "type": "string"
+          },
+          "token_budget": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Budget"
+          }
+        },
+        "required": [
+          "target_role",
+          "target_layer",
+          "before_n",
+          "after_n",
+          "canary_mode",
+          "rollback_policy",
+          "auto_expand"
+        ],
+        "title": "ExperimentalVariablesSnapshot",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthView": {
+        "properties": {
+          "evidence_root_readable": {
+            "title": "Evidence Root Readable",
+            "type": "boolean"
+          },
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_root_readable"
+        ],
+        "title": "HealthView",
+        "type": "object"
+      },
+      "PolicyView": {
+        "properties": {
+          "active_targets": {
+            "items": {
+              "$ref": "#/components/schemas/TargetRef"
+            },
+            "title": "Active Targets",
+            "type": "array"
+          },
+          "binary_sha256": {
+            "title": "Binary Sha256",
+            "type": "string"
+          },
+          "checkpoint_sha256": {
+            "title": "Checkpoint Sha256",
+            "type": "string"
+          },
+          "observed_at": {
+            "title": "Observed At",
+            "type": "string"
+          },
+          "persistent": {
+            "title": "Persistent",
+            "type": "boolean"
+          },
+          "policy_hash": {
+            "title": "Policy Hash",
+            "type": "string"
+          },
+          "policy_path": {
+            "title": "Policy Path",
+            "type": "string"
+          },
+          "resident_worker": {
+            "title": "Resident Worker",
+            "type": "boolean"
+          },
+          "source_commit": {
+            "title": "Source Commit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observed_at",
+          "policy_path",
+          "policy_hash",
+          "active_targets",
+          "source_commit",
+          "binary_sha256",
+          "checkpoint_sha256",
+          "persistent",
+          "resident_worker"
+        ],
+        "title": "PolicyView",
+        "type": "object"
+      },
+      "ProductionView": {
+        "properties": {
+          "active_policy": {
+            "items": {
+              "$ref": "#/components/schemas/TargetRef"
+            },
+            "title": "Active Policy",
+            "type": "array"
+          },
+          "applied_at": {
+            "title": "Applied At",
+            "type": "string"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/EvidenceRef"
+          },
+          "live_sha256": {
+            "title": "Live Sha256",
+            "type": "string"
+          },
+          "postimage_sha256": {
+            "title": "Postimage Sha256",
+            "type": "string"
+          },
+          "preimage_sha256": {
+            "title": "Preimage Sha256",
+            "type": "string"
+          },
+          "production_path": {
+            "title": "Production Path",
+            "type": "string"
+          },
+          "production_write_allowed": {
+            "title": "Production Write Allowed",
+            "type": "boolean"
+          },
+          "resident_worker": {
+            "title": "Resident Worker",
+            "type": "boolean"
+          },
+          "restart_verification": {
+            "items": {
+              "$ref": "#/components/schemas/RestartVerification"
+            },
+            "title": "Restart Verification",
+            "type": "array"
+          },
+          "rollback": {
+            "$ref": "#/components/schemas/RollbackView"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "service_state": {
+            "title": "Service State",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "state",
+          "production_path",
+          "preimage_sha256",
+          "postimage_sha256",
+          "live_sha256",
+          "active_policy",
+          "restart_verification",
+          "production_write_allowed",
+          "resident_worker",
+          "service_state",
+          "decision",
+          "rollback",
+          "applied_at",
+          "evidence"
+        ],
+        "title": "ProductionView",
+        "type": "object"
+      },
+      "RestartVerification": {
+        "properties": {
+          "ack_sha256": {
+            "title": "Ack Sha256",
+            "type": "string"
+          },
+          "corrected_hits": {
+            "title": "Corrected Hits",
+            "type": "integer"
+          },
+          "elapsed_ms": {
+            "title": "Elapsed Ms",
+            "type": "integer"
+          },
+          "peak_rss_bytes": {
+            "title": "Peak Rss Bytes",
+            "type": "integer"
+          },
+          "pid": {
+            "title": "Pid",
+            "type": "integer"
+          },
+          "requests": {
+            "title": "Requests",
+            "type": "integer"
+          },
+          "tokens": {
+            "title": "Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid",
+          "requests",
+          "tokens",
+          "corrected_hits",
+          "elapsed_ms",
+          "peak_rss_bytes",
+          "ack_sha256"
+        ],
+        "title": "RestartVerification",
+        "type": "object"
+      },
+      "RollbackView": {
+        "properties": {
+          "exercised": {
+            "title": "Exercised",
+            "type": "boolean"
+          },
+          "live_sha256": {
+            "title": "Live Sha256",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "postimage_sha256": {
+            "title": "Postimage Sha256",
+            "type": "string"
+          },
+          "preimage_sha256": {
+            "title": "Preimage Sha256",
+            "type": "string"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ready",
+          "status",
+          "mode",
+          "preimage_sha256",
+          "postimage_sha256",
+          "live_sha256",
+          "exercised"
+        ],
+        "title": "RollbackView",
+        "type": "object"
+      },
+      "TargetRef": {
+        "properties": {
+          "layer": {
+            "minimum": 0.0,
+            "title": "Layer",
+            "type": "integer"
+          },
+          "n": {
+            "maximum": 15.0,
+            "minimum": 2.0,
+            "title": "N",
+            "type": "integer"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "layer",
+          "n"
+        ],
+        "title": "TargetRef",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VariablesView": {
+        "properties": {
+          "controlled": {
+            "$ref": "#/components/schemas/ControlledVariablesSnapshot"
+          },
+          "experimental": {
+            "$ref": "#/components/schemas/ExperimentalVariablesSnapshot"
+          },
+          "unsupported_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unsupported Fields",
+            "type": "array"
+          }
+        },
+        "required": [
+          "controlled",
+          "experimental",
+          "unsupported_fields"
+        ],
+        "title": "VariablesView",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Read-only contract-first dashboard API for Beglin quantization experiments.",
+    "title": "beglin-experiment-dashboard",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/canary": {
+      "get": {
+        "operationId": "getCanary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanaryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Canary",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/dashboard/summary": {
+      "get": {
+        "operationId": "getDashboardSummary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardSummaryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Dashboard Summary",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/dashboard/variables": {
+      "get": {
+        "operationId": "getDashboardVariables",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VariablesView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Dashboard Variables",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/evidence/{evidence_id}": {
+      "get": {
+        "operationId": "getEvidence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Evidence",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/experiments": {
+      "get": {
+        "operationId": "listExperiments",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExperimentCard"
+                  },
+                  "title": "Response Listexperiments",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Experiments",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/policy": {
+      "get": {
+        "operationId": "getPolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Policy",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/production": {
+      "get": {
+        "operationId": "getProduction",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Production",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    }
+  }
+}
