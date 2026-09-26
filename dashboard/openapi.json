@@ -919,6 +919,108 @@
         "title": "LayerHeatmapView",
         "type": "object"
       },
+      "LayerObservationIn": {
+        "properties": {
+          "activation_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activation Score"
+          },
+          "correction_hits": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Correction Hits",
+            "type": "integer"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "experiment_id": {
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "promotion_hits": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Promotion Hits",
+            "type": "integer"
+          },
+          "role_group": {
+            "title": "Role Group",
+            "type": "string"
+          },
+          "sample_count": {
+            "default": 1,
+            "minimum": 0.0,
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "source": {
+            "$ref": "#/components/schemas/TelemetrySource"
+          },
+          "status": {
+            "default": "ACTIVE",
+            "enum": [
+              "IDLE",
+              "ACTIVE",
+              "HOT",
+              "PROMOTED",
+              "REGRESSION",
+              "ROLLBACK",
+              "QUARANTINED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/TargetRef"
+          },
+          "weight_epoch": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight Epoch"
+          }
+        },
+        "required": [
+          "event_id",
+          "occurred_at",
+          "experiment_id",
+          "source",
+          "target",
+          "role_group"
+        ],
+        "title": "LayerObservationIn",
+        "type": "object"
+      },
       "MetricsView": {
         "properties": {
           "active_policy_summary": {
@@ -959,6 +1061,47 @@
           "generated_at": {
             "title": "Generated At",
             "type": "string"
+          },
+          "live_finite_logits": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Finite Logits"
+          },
+          "live_request_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Live Request Count",
+            "type": "integer"
+          },
+          "live_tok_per_s": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Tok Per S"
+          },
+          "live_ttft_mean_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Ttft Mean Ms"
           },
           "request_count": {
             "minimum": 0.0,
@@ -1129,6 +1272,128 @@
         "title": "ProductionView",
         "type": "object"
       },
+      "RequestCompletedIn": {
+        "properties": {
+          "correction_applied": {
+            "default": false,
+            "title": "Correction Applied",
+            "type": "boolean"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "experiment_id": {
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "finite_logits": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finite Logits"
+          },
+          "occurred_at": {
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "output_tokens": {
+            "minimum": 0.0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "source": {
+            "$ref": "#/components/schemas/TelemetrySource"
+          },
+          "success": {
+            "default": true,
+            "title": "Success",
+            "type": "boolean"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tok_per_s": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tok Per S"
+          },
+          "total_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Ms"
+          },
+          "ttft_ms": {
+            "minimum": 0.0,
+            "title": "Ttft Ms",
+            "type": "number"
+          },
+          "weight_epoch": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight Epoch"
+          }
+        },
+        "required": [
+          "event_id",
+          "occurred_at",
+          "experiment_id",
+          "source",
+          "request_id",
+          "ttft_ms",
+          "output_tokens"
+        ],
+        "title": "RequestCompletedIn",
+        "type": "object"
+      },
       "RestartVerification": {
         "properties": {
           "ack_sha256": {
@@ -1215,6 +1480,143 @@
         "title": "RollbackView",
         "type": "object"
       },
+      "RuntimeSummaryIn": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "experiment_id": {
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "finite_logits": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finite Logits"
+          },
+          "logits_checked": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logits Checked"
+          },
+          "occurred_at": {
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "requests": {
+            "minimum": 0.0,
+            "title": "Requests",
+            "type": "integer"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "source": {
+            "$ref": "#/components/schemas/TelemetrySource"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tok_per_s": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tok Per S"
+          },
+          "ttft_max_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttft Max Ms"
+          },
+          "ttft_mean_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttft Mean Ms"
+          },
+          "wall_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wall Ms"
+          },
+          "weight_epoch": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight Epoch"
+          }
+        },
+        "required": [
+          "event_id",
+          "occurred_at",
+          "experiment_id",
+          "source",
+          "requests"
+        ],
+        "title": "RuntimeSummaryIn",
+        "type": "object"
+      },
       "TargetRef": {
         "properties": {
           "layer": {
@@ -1239,6 +1641,88 @@
           "n"
         ],
         "title": "TargetRef",
+        "type": "object"
+      },
+      "TelemetryAck": {
+        "properties": {
+          "accepted": {
+            "default": true,
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "seq": {
+            "minimum": 1.0,
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "event_id",
+          "event_type"
+        ],
+        "title": "TelemetryAck",
+        "type": "object"
+      },
+      "TelemetrySource": {
+        "properties": {
+          "architecture": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architecture"
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
+          "binary_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Binary Sha256",
+            "type": "string"
+          },
+          "checkpoint_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Checkpoint Sha256",
+            "type": "string"
+          },
+          "source_commit": {
+            "minLength": 7,
+            "title": "Source Commit",
+            "type": "string"
+          },
+          "worker_instance_id": {
+            "title": "Worker Instance Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_commit",
+          "binary_sha256",
+          "checkpoint_sha256",
+          "worker_instance_id"
+        ],
+        "title": "TelemetrySource",
         "type": "object"
       },
       "ValidationError": {
@@ -1310,7 +1794,7 @@
   "info": {
     "description": "Read-only contract-first dashboard API for Beglin quantization experiments.",
     "title": "beglin-experiment-dashboard",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1666,6 +2150,183 @@
         "summary": "Stream Events",
         "tags": [
           "stream"
+        ]
+      }
+    },
+    "/api/v1/telemetry/layer-observation": {
+      "post": {
+        "operationId": "ingestLayerObservation",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Beglin-Telemetry-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Beglin-Telemetry-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerObservationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetryAck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest Layer Observation",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/api/v1/telemetry/request-completed": {
+      "post": {
+        "operationId": "ingestRequestCompleted",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Beglin-Telemetry-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Beglin-Telemetry-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestCompletedIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetryAck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest Request Completed",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/api/v1/telemetry/runtime-summary": {
+      "post": {
+        "operationId": "ingestRuntimeSummary",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Beglin-Telemetry-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Beglin-Telemetry-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeSummaryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetryAck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest Runtime Summary",
+        "tags": [
+          "telemetry"
         ]
       }
     },
