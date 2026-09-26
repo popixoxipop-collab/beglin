@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import csv
+import io
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
 from .journal import ensure_a0_seeded, list_events
 from .models import TargetRef
@@ -250,3 +252,39 @@ def get_research_comparison() -> ResearchComparisonView:
 )
 def get_research_export() -> ResearchExportView:
     return export_view()
+
+
+@router.get(
+    "/export.csv",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {
+                "text/csv": {
+                    "schema": {"type": "string"},
+                }
+            },
+            "description": "Canonical Beglin research comparison rows as UTF-8 CSV.",
+        }
+    },
+    operation_id="getResearchExportCsv",
+)
+def get_research_export_csv() -> Response:
+    view = export_view()
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(
+        buffer,
+        fieldnames=view.csv_columns,
+        extrasaction="raise",
+        lineterminator="\n",
+    )
+    writer.writeheader()
+    writer.writerows(view.csv_rows)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="beglin-research-export.csv"',
+            "X-Beglin-Export-Schema": view.schema_version,
+        },
+    )
