@@ -165,3 +165,79 @@ class EvidenceView(BaseModel):
 class HealthView(BaseModel):
     status: Literal["ok"] = "ok"
     evidence_root_readable: bool
+
+
+class EventLogEntry(BaseModel):
+    seq: int = Field(ge=1)
+    event_id: str
+    event_type: str
+    occurred_at: str
+    ingested_at: str
+    experiment_id: str | None = None
+    severity: Literal["INFO", "WARN", "ERROR"] = "INFO"
+    target: TargetRef | None = None
+    message: str
+    evidence_id: str | None = None
+
+
+class EventLogView(BaseModel):
+    cursor: int = Field(ge=0)
+    entries: list[EventLogEntry]
+
+
+class HeatmapCell(BaseModel):
+    layer: int = Field(ge=0)
+    role_group: str
+    sample_count: int = Field(ge=0)
+    promotion_hits: int = Field(ge=0)
+    correction_hits: int = Field(ge=0)
+    current_precision_n: int = Field(ge=2, le=15)
+    activation_ema: float | None = None
+    anomaly_count: int = Field(ge=0, default=0)
+    last_updated_at: str
+    live_state: Literal[
+        "IDLE", "ACTIVE", "HOT", "PROMOTED",
+        "REGRESSION", "ROLLBACK", "QUARANTINED"
+    ]
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class LayerHeatmapView(BaseModel):
+    generated_at: str
+    window: Literal["REALTIME", "1M", "5M", "1H", "SESSION", "CUMULATIVE"]
+    cells: list[HeatmapCell]
+    max_hit_count: int = Field(ge=0)
+    source_kind: Literal["evidence_aggregate", "live_telemetry"]
+
+
+class CoverageCell(BaseModel):
+    cell_id: str
+    experiment_id: str
+    target_key: str
+    status: Literal["EMPTY", "OBSERVED", "EXPERIMENTED", "PASS", "FAIL", "PROMOTED", "ROLLED_BACK"]
+    hit_count: int = Field(ge=0)
+    pass_count: int = Field(ge=0)
+    fail_count: int = Field(ge=0)
+    first_seen_at: str
+    last_seen_at: str
+    evidence_id: str
+
+
+class CoverageView(BaseModel):
+    mode: Literal["BY_REQUEST", "BY_LAYER", "BY_TARGET", "BY_EXPERIMENT"]
+    total_cells: int = Field(ge=0)
+    filled_cells: int = Field(ge=0)
+    percentage: float = Field(ge=0, le=100)
+    cells: list[CoverageCell]
+
+
+class MetricsView(BaseModel):
+    generated_at: str
+    request_count: int = Field(ge=0)
+    corrected_hits: int = Field(ge=0)
+    attribution_before: float | None = None
+    attribution_after: float | None = None
+    canary_status: str
+    rollback_ready: bool
+    active_policy_summary: str
+    resident_worker: bool
