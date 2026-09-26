@@ -1,0 +1,111 @@
+{
+  "sbf_contract": "9",
+  "feature_id": "002-dashboard-stream",
+  "feature_uid": "c1e64005-0344-42c5-a7e4-76326ad0a20d",
+  "source": {
+    "adapter": "python-fastapi",
+    "module": "stream",
+    "provenance": "scan+openapi"
+  },
+  "operations": {
+    "streamEvents": {
+      "verb": "GET",
+      "path": "/api/v1/stream/events",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {},
+      "errorSchema": {
+        "properties": {
+          "detail": {
+            "items": {
+              "properties": {
+                "ctx": {
+                  "type": "object"
+                },
+                "input": {},
+                "loc": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "loc",
+                "msg",
+                "type"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "sourceParameters": [
+        {
+          "name": "after_seq",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          }
+        }
+      ],
+      "sourceSummary": "Stream Events",
+      "sourceTags": [
+        "stream"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        },
+        "422": {
+          "description": "Validation Error",
+          "schemaFrom": "error"
+        }
+      }
+    }
+  },
+  "warnings": [
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "streamEvents",
+      "message": "operationId \"streamEvents\" for GET /api/v1/stream/events was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/stream/events",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/stream/events"
+      }
+    }
+  ],
+  "completeness": {
+    "status": "complete",
+    "operation_count": 1,
+    "endpoint_count": 1
+  }
+}

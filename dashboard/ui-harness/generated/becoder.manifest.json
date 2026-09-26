@@ -1,0 +1,22 @@
+{
+  "files": {
+    "index.html": "sha256:8f9e0cf03a4a0844e983ce628a39d1c48c68fbf782510d6f6aad4854e5f3dd08",
+    "package.json": "sha256:62f37cb7e310c32cecb0b383a81b49f0142bd3b1948fc514a8a16b28d36d8031",
+    "src/App.tsx": "sha256:24d481b8c08b5c7e9f31bd6685172c9b9503d4d21c73bd252c80d011122ccd91",
+    "src/bench-bridge.ts": "sha256:23360b5f9ab3a24fc27fdc9baa8dd0cf872600ef02758b0acdcdfb1af97a119d",
+    "src/bench.css": "sha256:76aeeb39064b558d15202dd97327d5418949b390a8d5bcabd66ee0999b061391",
+    "src/components/BlankPanel.tsx": "sha256:09052c52c458a6b8724b17f80e5c4667c3c55b8b0448b0e4ed23c5dfa70e4053",
+    "src/components/ExchangeLog.tsx": "sha256:51b1d3414ede0fe09ff6072c183bfede16e97d7ba53af6cf36bead58bb910a8f",
+    "src/components/FlowPanel.tsx": "sha256:51272e07df7ff6ee1c23561d80169aa7ff02a02b9ddedb6f126c9bd60f67e48b",
+    "src/components/OperationCard.tsx": "sha256:2937aeefb95d8bc4c1ad6531ddddbd75807a3738eeaa81b129a79098ceef3490",
+    "src/components/SchemaField.tsx": "sha256:3e55b42a43c85709649143b6e4d0d1c83eb53df4cade03bbe447bbeae073d6ad",
+    "src/main.tsx": "sha256:65871b3d69b39d43cce4bbf876ee60582fca8eb9fd88b70b5b2e043bb73141d6",
+    "src/types.ts": "sha256:f11fd528d0caf7955dd4cf7bfdd392009cb5624375ed21b1f860b002b6987b7d",
+    "src/useExchangeLog.ts": "sha256:78a34df6f497d6b61fc5406dc540cec22a304093df1f04e600cba5cced1aa2d7",
+    "tsconfig.json": "sha256:40a51261c545fbad2a6f3c72f9e8530a9cf21a9182c4ddbe450a31822ff04e9c",
+    "vite.config.ts": "sha256:54feffa90f195a8493abee682036bd390a3f6ae09e9ad3b7eb23d0da01b32b87",
+    "src/bench-plan.json": "sha256:c3a98c8747f25afc61baba1aad6b4127d1c8563c93b7eae4605e815aa809dd9b",
+    "src/bench-runtime-config.json": "sha256:aa945dccf99471f43c18ff5ff62bb3f08c89078045b153a3d669190007c7a36a",
+    "AGENT.md": "sha256:3bb0a74c3093cd317004572c7b29f6711a1f230880e66fcb1cc065cd988faf9d"
+  }
+}

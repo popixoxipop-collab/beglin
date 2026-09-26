@@ -1,0 +1,1768 @@
+{
+  "sbf_contract": "9",
+  "feature_id": "001-dashboard-observability",
+  "feature_uid": "421eeaae-ed09-4332-ac8c-b819621f7f32",
+  "source": {
+    "adapter": "python-fastapi",
+    "module": "dashboard",
+    "provenance": "scan+openapi"
+  },
+  "operations": {
+    "getDashboardSummary": {
+      "verb": "GET",
+      "path": "/api/v1/dashboard/summary",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "active_policy": {
+            "items": {
+              "properties": {
+                "layer": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "n": {
+                  "maximum": 15,
+                  "minimum": 2,
+                  "type": "integer"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "role",
+                "layer",
+                "n"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "binary_sha256": {
+            "type": "string"
+          },
+          "canary_status": {
+            "type": "string"
+          },
+          "certification_status": {
+            "type": "string"
+          },
+          "checkpoint_sha256": {
+            "type": "string"
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "known_runs": {
+            "type": "integer"
+          },
+          "production_state": {
+            "type": "string"
+          },
+          "production_write_allowed": {
+            "type": "boolean"
+          },
+          "resident_worker": {
+            "type": "boolean"
+          },
+          "source_commit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "certification_status",
+          "source_commit",
+          "binary_sha256",
+          "checkpoint_sha256",
+          "canary_status",
+          "production_state",
+          "resident_worker",
+          "active_policy",
+          "known_runs",
+          "production_write_allowed"
+        ],
+        "type": "object"
+      },
+      "sourceSummary": "Get Dashboard Summary",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        }
+      }
+    },
+    "getDashboardVariables": {
+      "verb": "GET",
+      "path": "/api/v1/dashboard/variables",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "controlled": {
+            "properties": {
+              "architecture": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "backend": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "baseline_precision_n": {
+                "default": 4,
+                "type": "integer"
+              },
+              "binary_sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "checkpoint_sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "dataset_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "group_size": {
+                "default": 64,
+                "type": "integer"
+              },
+              "hardware_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "model_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "prompt_set_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "quant_format": {
+                "default": "qNg64",
+                "type": "string"
+              },
+              "seed": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "source_commit": {
+                "type": "string"
+              },
+              "source_tree": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_commit",
+              "source_tree",
+              "binary_sha256",
+              "checkpoint_sha256"
+            ],
+            "type": "object"
+          },
+          "experimental": {
+            "properties": {
+              "after_n": {
+                "maximum": 15,
+                "minimum": 2,
+                "type": "integer"
+              },
+              "auto_expand": {
+                "type": "boolean"
+              },
+              "before_n": {
+                "maximum": 15,
+                "minimum": 2,
+                "type": "integer"
+              },
+              "canary_mode": {
+                "type": "string"
+              },
+              "request_budget": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rollback_policy": {
+                "type": "string"
+              },
+              "target_layer": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "target_role": {
+                "type": "string"
+              },
+              "token_budget": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "target_role",
+              "target_layer",
+              "before_n",
+              "after_n",
+              "canary_mode",
+              "rollback_policy",
+              "auto_expand"
+            ],
+            "type": "object"
+          },
+          "unsupported_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "controlled",
+          "experimental",
+          "unsupported_fields"
+        ],
+        "type": "object"
+      },
+      "sourceSummary": "Get Dashboard Variables",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        }
+      }
+    },
+    "listExperiments": {
+      "verb": "GET",
+      "path": "/api/v1/experiments",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "items": {
+          "properties": {
+            "evidence_id": {
+              "type": "string"
+            },
+            "experiment_id": {
+              "type": "string"
+            },
+            "ordinal": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "persistent": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "phase": {
+              "type": "string"
+            },
+            "resident_worker": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rollback_required": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "signed": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "target": {
+              "properties": {
+                "layer": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "n": {
+                  "maximum": 15,
+                  "minimum": 2,
+                  "type": "integer"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "role",
+                "layer",
+                "n"
+              ],
+              "type": "object"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "experiment_id",
+            "ordinal",
+            "title",
+            "status",
+            "phase",
+            "target",
+            "evidence_id"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "sourceSummary": "List Experiments",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        }
+      }
+    },
+    "getPolicy": {
+      "verb": "GET",
+      "path": "/api/v1/policy",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "active_targets": {
+            "items": {
+              "properties": {
+                "layer": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "n": {
+                  "maximum": 15,
+                  "minimum": 2,
+                  "type": "integer"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "role",
+                "layer",
+                "n"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "binary_sha256": {
+            "type": "string"
+          },
+          "checkpoint_sha256": {
+            "type": "string"
+          },
+          "observed_at": {
+            "type": "string"
+          },
+          "persistent": {
+            "type": "boolean"
+          },
+          "policy_hash": {
+            "type": "string"
+          },
+          "policy_path": {
+            "type": "string"
+          },
+          "resident_worker": {
+            "type": "boolean"
+          },
+          "source_commit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "observed_at",
+          "policy_path",
+          "policy_hash",
+          "active_targets",
+          "source_commit",
+          "binary_sha256",
+          "checkpoint_sha256",
+          "persistent",
+          "resident_worker"
+        ],
+        "type": "object"
+      },
+      "sourceSummary": "Get Policy",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        }
+      }
+    },
+    "getCanary": {
+      "verb": "GET",
+      "path": "/api/v1/canary",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "attribution_after": {
+            "type": "number"
+          },
+          "attribution_before": {
+            "type": "number"
+          },
+          "auto_expand": {
+            "type": "boolean"
+          },
+          "before_n": {
+            "type": "integer"
+          },
+          "candidate_policy_hash": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "evidence": {
+            "properties": {
+              "evidence_id": {
+                "type": "string"
+              },
+              "immutable": {
+                "default": true,
+                "type": "boolean"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "run_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "source_host": {
+                "default": "eoe",
+                "type": "string"
+              }
+            },
+            "required": [
+              "evidence_id",
+              "kind",
+              "path",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          "finished_at": {
+            "type": "string"
+          },
+          "post_requests": {
+            "type": "integer"
+          },
+          "post_worker_id": {
+            "type": "string"
+          },
+          "pre_requests": {
+            "type": "integer"
+          },
+          "pre_worker_id": {
+            "type": "string"
+          },
+          "rollback_required": {
+            "type": "boolean"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "signature_status": {
+            "type": "string"
+          },
+          "signed": {
+            "type": "boolean"
+          },
+          "target": {
+            "properties": {
+              "layer": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "n": {
+                "maximum": 15,
+                "minimum": 2,
+                "type": "integer"
+              },
+              "role": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "role",
+              "layer",
+              "n"
+            ],
+            "type": "object"
+          },
+          "target_replay_pass": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "run_id",
+          "signed",
+          "signature_status",
+          "target",
+          "before_n",
+          "candidate_policy_hash",
+          "pre_worker_id",
+          "post_worker_id",
+          "pre_requests",
+          "post_requests",
+          "attribution_before",
+          "attribution_after",
+          "target_replay_pass",
+          "rollback_required",
+          "auto_expand",
+          "decision",
+          "finished_at",
+          "evidence"
+        ],
+        "type": "object"
+      },
+      "sourceSummary": "Get Canary",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        }
+      }
+    },
+    "getProduction": {
+      "verb": "GET",
+      "path": "/api/v1/production",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "active_policy": {
+            "items": {
+              "properties": {
+                "layer": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "n": {
+                  "maximum": 15,
+                  "minimum": 2,
+                  "type": "integer"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "role",
+                "layer",
+                "n"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "applied_at": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "evidence": {
+            "properties": {
+              "evidence_id": {
+                "type": "string"
+              },
+              "immutable": {
+                "default": true,
+                "type": "boolean"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "run_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "source_host": {
+                "default": "eoe",
+                "type": "string"
+              }
+            },
+            "required": [
+              "evidence_id",
+              "kind",
+              "path",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          "live_sha256": {
+            "type": "string"
+          },
+          "postimage_sha256": {
+            "type": "string"
+          },
+          "preimage_sha256": {
+            "type": "string"
+          },
+          "production_path": {
+            "type": "string"
+          },
+          "production_write_allowed": {
+            "type": "boolean"
+          },
+          "resident_worker": {
+            "type": "boolean"
+          },
+          "restart_verification": {
+            "items": {
+              "properties": {
+                "ack_sha256": {
+                  "type": "string"
+                },
+                "corrected_hits": {
+                  "type": "integer"
+                },
+                "elapsed_ms": {
+                  "type": "integer"
+                },
+                "peak_rss_bytes": {
+                  "type": "integer"
+                },
+                "pid": {
+                  "type": "integer"
+                },
+                "requests": {
+                  "type": "integer"
+                },
+                "tokens": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "pid",
+                "requests",
+                "tokens",
+                "corrected_hits",
+                "elapsed_ms",
+                "peak_rss_bytes",
+                "ack_sha256"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "rollback": {
+            "properties": {
+              "exercised": {
+                "type": "boolean"
+              },
+              "live_sha256": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string"
+              },
+              "postimage_sha256": {
+                "type": "string"
+              },
+              "preimage_sha256": {
+                "type": "string"
+              },
+              "ready": {
+                "type": "boolean"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ready",
+              "status",
+              "mode",
+              "preimage_sha256",
+              "postimage_sha256",
+              "live_sha256",
+              "exercised"
+            ],
+            "type": "object"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "service_state": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "state",
+          "production_path",
+          "preimage_sha256",
+          "postimage_sha256",
+          "live_sha256",
+          "active_policy",
+          "restart_verification",
+          "production_write_allowed",
+          "resident_worker",
+          "service_state",
+          "decision",
+          "rollback",
+          "applied_at",
+          "evidence"
+        ],
+        "type": "object"
+      },
+      "sourceSummary": "Get Production",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        }
+      }
+    },
+    "getEvents": {
+      "verb": "GET",
+      "path": "/api/v1/events",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "cursor": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "properties": {
+                "event_id": {
+                  "type": "string"
+                },
+                "event_type": {
+                  "type": "string"
+                },
+                "evidence_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "experiment_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ingested_at": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "occurred_at": {
+                  "type": "string"
+                },
+                "seq": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "severity": {
+                  "default": "INFO",
+                  "enum": [
+                    "INFO",
+                    "WARN",
+                    "ERROR"
+                  ],
+                  "type": "string"
+                },
+                "target": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "layer": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "n": {
+                          "maximum": 15,
+                          "minimum": 2,
+                          "type": "integer"
+                        },
+                        "role": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "role",
+                        "layer",
+                        "n"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "seq",
+                "event_id",
+                "event_type",
+                "occurred_at",
+                "ingested_at",
+                "message"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cursor",
+          "entries"
+        ],
+        "type": "object"
+      },
+      "errorSchema": {
+        "properties": {
+          "detail": {
+            "items": {
+              "properties": {
+                "ctx": {
+                  "type": "object"
+                },
+                "input": {},
+                "loc": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "loc",
+                "msg",
+                "type"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "sourceParameters": [
+        {
+          "name": "after_seq",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        }
+      ],
+      "sourceSummary": "Get Events",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        },
+        "422": {
+          "description": "Validation Error",
+          "schemaFrom": "error"
+        }
+      }
+    },
+    "getHeatmap": {
+      "verb": "GET",
+      "path": "/api/v1/heatmap",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "cells": {
+            "items": {
+              "properties": {
+                "activation_ema": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "anomaly_count": {
+                  "default": 0,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "correction_hits": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "current_precision_n": {
+                  "maximum": 15,
+                  "minimum": 2,
+                  "type": "integer"
+                },
+                "evidence_ids": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "last_updated_at": {
+                  "type": "string"
+                },
+                "layer": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "live_state": {
+                  "enum": [
+                    "IDLE",
+                    "ACTIVE",
+                    "HOT",
+                    "PROMOTED",
+                    "REGRESSION",
+                    "ROLLBACK",
+                    "QUARANTINED"
+                  ],
+                  "type": "string"
+                },
+                "promotion_hits": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "role_group": {
+                  "type": "string"
+                },
+                "sample_count": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "layer",
+                "role_group",
+                "sample_count",
+                "promotion_hits",
+                "correction_hits",
+                "current_precision_n",
+                "last_updated_at",
+                "live_state"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "max_hit_count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source_kind": {
+            "enum": [
+              "evidence_aggregate",
+              "live_telemetry"
+            ],
+            "type": "string"
+          },
+          "window": {
+            "enum": [
+              "REALTIME",
+              "1M",
+              "5M",
+              "1H",
+              "SESSION",
+              "CUMULATIVE"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "window",
+          "cells",
+          "max_hit_count",
+          "source_kind"
+        ],
+        "type": "object"
+      },
+      "errorSchema": {
+        "properties": {
+          "detail": {
+            "items": {
+              "properties": {
+                "ctx": {
+                  "type": "object"
+                },
+                "input": {},
+                "loc": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "loc",
+                "msg",
+                "type"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "sourceParameters": [
+        {
+          "name": "window",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "default": "CUMULATIVE",
+            "type": "string"
+          }
+        }
+      ],
+      "sourceSummary": "Get Heatmap",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        },
+        "422": {
+          "description": "Validation Error",
+          "schemaFrom": "error"
+        }
+      }
+    },
+    "getCoverage": {
+      "verb": "GET",
+      "path": "/api/v1/coverage",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "cells": {
+            "items": {
+              "properties": {
+                "cell_id": {
+                  "type": "string"
+                },
+                "evidence_id": {
+                  "type": "string"
+                },
+                "experiment_id": {
+                  "type": "string"
+                },
+                "fail_count": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "first_seen_at": {
+                  "type": "string"
+                },
+                "hit_count": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "last_seen_at": {
+                  "type": "string"
+                },
+                "pass_count": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "status": {
+                  "enum": [
+                    "EMPTY",
+                    "OBSERVED",
+                    "EXPERIMENTED",
+                    "PASS",
+                    "FAIL",
+                    "PROMOTED",
+                    "ROLLED_BACK"
+                  ],
+                  "type": "string"
+                },
+                "target_key": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "cell_id",
+                "experiment_id",
+                "target_key",
+                "status",
+                "hit_count",
+                "pass_count",
+                "fail_count",
+                "first_seen_at",
+                "last_seen_at",
+                "evidence_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "filled_cells": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "BY_REQUEST",
+              "BY_LAYER",
+              "BY_TARGET",
+              "BY_EXPERIMENT"
+            ],
+            "type": "string"
+          },
+          "percentage": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "total_cells": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "total_cells",
+          "filled_cells",
+          "percentage",
+          "cells"
+        ],
+        "type": "object"
+      },
+      "sourceSummary": "Get Coverage",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        }
+      }
+    },
+    "getMetrics": {
+      "verb": "GET",
+      "path": "/api/v1/metrics",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "active_policy_summary": {
+            "type": "string"
+          },
+          "attribution_after": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attribution_before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "canary_status": {
+            "type": "string"
+          },
+          "corrected_hits": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "request_count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "resident_worker": {
+            "type": "boolean"
+          },
+          "rollback_ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "generated_at",
+          "request_count",
+          "corrected_hits",
+          "canary_status",
+          "rollback_ready",
+          "active_policy_summary",
+          "resident_worker"
+        ],
+        "type": "object"
+      },
+      "sourceSummary": "Get Metrics",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        }
+      }
+    },
+    "getEvidence": {
+      "verb": "GET",
+      "path": "/api/v1/evidence/{evidence_id}",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "evidence_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id"
+        ]
+      },
+      "body": false,
+      "provenance": "openapi",
+      "responseSchema": {
+        "properties": {
+          "content": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "evidence": {
+            "properties": {
+              "evidence_id": {
+                "type": "string"
+              },
+              "immutable": {
+                "default": true,
+                "type": "boolean"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "run_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "source_host": {
+                "default": "eoe",
+                "type": "string"
+              }
+            },
+            "required": [
+              "evidence_id",
+              "kind",
+              "path",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          "schema_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "evidence",
+          "content"
+        ],
+        "type": "object"
+      },
+      "errorSchema": {
+        "properties": {
+          "detail": {
+            "items": {
+              "properties": {
+                "ctx": {
+                  "type": "object"
+                },
+                "input": {},
+                "loc": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "loc",
+                "msg",
+                "type"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "sourceSummary": "Get Evidence",
+      "sourceTags": [
+        "dashboard"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        },
+        "422": {
+          "description": "Validation Error",
+          "schemaFrom": "error"
+        }
+      }
+    }
+  },
+  "warnings": [
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getDashboardSummary",
+      "message": "operationId \"getDashboardSummary\" for GET /api/v1/dashboard/summary was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/dashboard/summary",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/dashboard/summary"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getDashboardVariables",
+      "message": "operationId \"getDashboardVariables\" for GET /api/v1/dashboard/variables was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/dashboard/variables",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/dashboard/variables"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "listExperiments",
+      "message": "operationId \"listExperiments\" for GET /api/v1/experiments was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/experiments",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/experiments"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getPolicy",
+      "message": "operationId \"getPolicy\" for GET /api/v1/policy was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/policy",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/policy"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getCanary",
+      "message": "operationId \"getCanary\" for GET /api/v1/canary was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/canary",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/canary"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getProduction",
+      "message": "operationId \"getProduction\" for GET /api/v1/production was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/production",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/production"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getEvents",
+      "message": "operationId \"getEvents\" for GET /api/v1/events was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/events",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/events"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getHeatmap",
+      "message": "operationId \"getHeatmap\" for GET /api/v1/heatmap was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/heatmap",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/heatmap"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getCoverage",
+      "message": "operationId \"getCoverage\" for GET /api/v1/coverage was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/coverage",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/coverage"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getMetrics",
+      "message": "operationId \"getMetrics\" for GET /api/v1/metrics was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/metrics",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/metrics"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getEvidence",
+      "message": "operationId \"getEvidence\" for GET /api/v1/evidence/{evidence_id} was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/evidence/{evidence_id}",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/evidence/{evidence_id}"
+      }
+    }
+  ],
+  "completeness": {
+    "status": "complete",
+    "operation_count": 11,
+    "endpoint_count": 11
+  }
+}
