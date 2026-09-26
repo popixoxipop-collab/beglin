@@ -46,6 +46,9 @@ def main() -> int:
     result = {
         "schema": "gpu-shadow-xox-status-v1",
         "status": launch.get("status"),
+        "launch_id": launch.get("launch_id"),
+        "cycle_id": launch.get("cycle_id"),
+        "shadow_run_id": launch.get("shadow_run_id"),
         "production_write_allowed": False,
         "pid": launch.get("pid") or launch.get("worker_pid"),
         "pid_alive": _pid_alive(launch.get("pid") or launch.get("worker_pid")),
@@ -59,8 +62,24 @@ def main() -> int:
     if LAST.is_file():
         try:
             obj = json.loads(LAST.read_text())
+            cycle_launch_id = obj.get("launch_id")
+            launch_id = launch.get("launch_id")
+            relation = (
+                "CURRENT"
+                if launch_id and cycle_launch_id == launch_id
+                else (
+                    "LEGACY_UNLINKED"
+                    if not cycle_launch_id
+                    else "PREVIOUS"
+                )
+            )
             result["last_cycle"] = {
+                "relation": relation,
                 "status": obj.get("status"),
+                "launch_id": cycle_launch_id,
+                "cycle_id": obj.get("cycle_id"),
+                "shadow_run_id": obj.get("shadow_run_id")
+                    or (obj.get("shadow_run") or {}).get("run_id"),
                 "selected_candidate_id": obj.get("selected_candidate_id"),
                 "ready_count": obj.get("ready_count"),
                 "shadow_status": (obj.get("shadow_run") or {}).get("shadow_status"),
