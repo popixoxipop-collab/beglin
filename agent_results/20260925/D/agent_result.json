@@ -86,7 +86,8 @@
     "No production mutation, history deletion, Supabase write, canary enablement, or auto-promotion was performed."
   ],
   "blocked_by": [
-    "Approved direct read-only XOX shadow-root reporter path for live snapshot verification."
+    "Approved direct read-only XOX shadow-root reporter path for live snapshot verification.",
+    "Tailnet alpha.27 does not currently allowlist the D squash fetch/cherry-pick or live reporter argv."
   ],
   "reproduction_commands": [
     [
@@ -137,5 +138,9 @@
     "warn": 0,
     "fail": 0,
     "request_id": "407c8f24-696e-45f5-ac21-c73b1f3b79e4"
-  }
+  },
+  "current_certified_head_observed": "f9d99fa85eaa9f24e5a010478a73800b6c38e74f",
+  "current_certified_parent_observed": "d9401d774691cfcc4b2f74b11f9098c96b22c59b",
+  "integration_policy_status": "BLOCKED_EXACT_ALLOWLIST",
+  "access_request_path": "/Users/eoe/mcp-sandbox/tailnet-commander/BEGLIN_AGENT_D_ACCESS_REQUEST_20260926.md"
 }
