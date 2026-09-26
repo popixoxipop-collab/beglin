@@ -2451,6 +2451,27 @@
         ]
       }
     },
+    "/api/v1/research/export.csv": {
+      "get": {
+        "operationId": "getResearchExportCsv",
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Canonical Beglin research comparison rows as UTF-8 CSV."
+          }
+        },
+        "summary": "Get Research Export Csv",
+        "tags": [
+          "research"
+        ]
+      }
+    },
     "/api/v1/stream/events": {
       "get": {
         "operationId": "streamEvents",
