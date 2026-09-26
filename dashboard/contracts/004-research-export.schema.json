@@ -827,6 +827,30 @@
           "schemaFrom": "response"
         }
       }
+    },
+    "getResearchExportCsv": {
+      "verb": "GET",
+      "path": "/api/v1/research/export.csv",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "sourceSummary": "Get Research Export Csv",
+      "sourceTags": [
+        "research"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Canonical Beglin research comparison rows as UTF-8 CSV.",
+          "mediaTypes": [
+            "text/csv"
+          ]
+        }
+      }
     }
   },
   "warnings": [
@@ -853,11 +877,23 @@
         "scan_verb": "GET",
         "scan_path": "/api/v1/research/export"
       }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getResearchExportCsv",
+      "message": "operationId \"getResearchExportCsv\" for GET /api/v1/research/export.csv was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/research/export.csv",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/research/export.csv"
+      }
     }
   ],
   "completeness": {
     "status": "complete",
-    "operation_count": 2,
-    "endpoint_count": 2
+    "operation_count": 3,
+    "endpoint_count": 3
   }
 }
