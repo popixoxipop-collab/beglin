@@ -76,5 +76,32 @@ def main() -> None:
     )
 
 
+def test_csv_http() -> None:
+    import csv
+    import io
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    response = client.get("/api/v1/research/export.csv")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert response.headers["content-disposition"] == 'attachment; filename="beglin-research-export.csv"'
+    assert response.headers["x-beglin-export-schema"] == "beglin-research-export/1"
+
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+    view = export_view()
+    assert len(rows) == len(view.csv_rows)
+    assert rows[0]["event_id"] == str(view.csv_rows[0]["event_id"])
+    assert any(row["status"] == "NO_BAD_CANDIDATE_WITHIN_BUDGET" for row in rows)
+    assert any(
+        row["status"] == "REGRESSION_DETECTED"
+        and row["rollback_required"] == "True"
+        for row in rows
+    )
+    print("research CSV HTTP PASS", len(rows))
+
+
 if __name__ == "__main__":
     main()
+    test_csv_http()
