@@ -154,14 +154,19 @@ def _parse_manifest(path: Path):
             raise FixtureError("manifest max_new_tokens must be integer") from exc
         token = Path(raw).expanduser()
         if token.is_absolute():
-            marker = "/vdsp_p5_pre/"
-            s = str(token)
-            if marker not in s:
-                raise FixtureError(f"token path is outside mirror namespace: {token}")
-            token = MIRROR / s.split(marker, 1)[1]
+            resolved_direct = token.resolve(strict=False)
+            if _within(resolved_direct, MIRROR):
+                token = resolved_direct
+            else:
+                marker = "/vdsp_p5_pre/"
+                s = str(token)
+                if marker not in s:
+                    raise FixtureError(
+                        f"token path is outside mirror namespace: {token}"
+                    )
+                token = (MIRROR / s.split(marker, 1)[1]).resolve(strict=False)
         else:
-            token = path.parent / token
-        token = token.resolve(strict=False)
+            token = (path.parent / token).resolve(strict=False)
         if not _within(token, MIRROR) or not token.is_file():
             raise FixtureError(f"mapped token file is missing/outside mirror: {token}")
         size = token.stat().st_size
