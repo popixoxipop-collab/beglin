@@ -1,0 +1,39 @@
+{
+  "schema": "beglin-package-cold-install-evidence-v1",
+  "status": "PASS",
+  "base_sha": "a0b8ab2c90af70fa8095556033e605477ec186ae",
+  "implementation_head": "b5ef5c2193e77b492abe151b32718df6795d65f1",
+  "host": "eoe",
+  "platform": "darwin",
+  "arch": "arm64",
+  "node": "v26.7.0",
+  "clang": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+  "package_version": "0.4.0",
+  "tarball_sha256": "64fe22a544ff0159b904a449913331e22898400022df3d357c4a681e6d777176",
+  "repeated_clean_installs": [
+    {
+      "status": "PASS",
+      "binary_sha256": "84111fd4dd3f25b1f414f425b15111fc495dcf771a63a9959767fdff840af500",
+      "binary_size": 661656,
+      "build_log_contains_success_marker": true,
+      "require_check": "require-ok"
+    },
+    {
+      "status": "PASS",
+      "binary_sha256": "1af103b6c75a73e47f2ccb6c5a0ba7a155fef5734ea65e99795211a50254b0ab",
+      "binary_size": 661656,
+      "build_log_contains_success_marker": true,
+      "require_check": "require-ok"
+    }
+  ],
+  "package_suite_install": {
+    "status": "PASS",
+    "binary_sha256": "e761c90149a23ff0c922130d4c03de605b9e8b3a9ebf610de3bd7a61f43c7671",
+    "binary_size": 661656
+  },
+  "native_build": "PASS",
+  "smoke": "PASS",
+  "caller_plain_check": "PASS",
+  "binary_byte_reproducibility_claimed": false,
+  "note": "Repeated successful links produced equal-size binaries with different SHA-256 values; this work proves cold build/link success, not byte-for-byte binary reproducibility."
+}

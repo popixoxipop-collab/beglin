@@ -1,0 +1,38 @@
+=== git_head ===
+$ git rev-parse HEAD
+b5ef5c2193e77b492abe151b32718df6795d65f1
+
+=== base_sha ===
+a0b8ab2c90af70fa8095556033e605477ec186ae
+
+=== cold_install_1 ===
+PASS darwin/arm64 Node v26.7.0 Apple clang 21.0.0
+tarball_sha256=64fe22a544ff0159b904a449913331e22898400022df3d357c4a681e6d777176
+binary_sha256=84111fd4dd3f25b1f414f425b15111fc495dcf771a63a9959767fdff840af500
+binary_size=661656
+build_log_contains_success_marker=true
+require_check=require-ok
+
+=== cold_install_2 ===
+PASS darwin/arm64 Node v26.7.0 Apple clang 21.0.0
+tarball_sha256=64fe22a544ff0159b904a449913331e22898400022df3d357c4a681e6d777176
+binary_sha256=1af103b6c75a73e47f2ccb6c5a0ba7a155fef5734ea65e99795211a50254b0ab
+binary_size=661656
+build_log_contains_success_marker=true
+require_check=require-ok
+
+=== package_suite ===
+package-source-closure PASS
+failure-fixtures PASS: missing_source, clang_absent, unsupported_platform, link_failure
+cold-install PASS
+package_suite_binary_sha256=e761c90149a23ff0c922130d4c03de605b9e8b3a9ebf610de3bd7a61f43c7671
+package_suite_binary_size=661656
+
+=== native_build ===
+caller-plain check: OK
+
+=== smoke ===
+PASS
+
+=== git_diff_check ===
+PASS

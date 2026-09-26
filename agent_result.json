@@ -1,0 +1,205 @@
+{
+  "schema": "beglin-agent-result/1",
+  "session_id": "20260926",
+  "agent_id": "A",
+  "status": "VERIFIED",
+  "base_commit": "a0b8ab2c90af70fa8095556033e605477ec186ae",
+  "agent_commit": "b5ef5c2193e77b492abe151b32718df6795d65f1",
+  "integration_commit": null,
+  "observed_at": "2026-09-26T01:44:50Z",
+  "started_at": "2026-09-26T01:37:41Z",
+  "finished_at": "2026-09-26T01:44:50Z",
+  "host": "eoe",
+  "platform": "darwin/arm64",
+  "model_revision": null,
+  "backend": "cpu/npm-native-build",
+  "architecture": "Apple Silicon arm64",
+  "binary_sha256": null,
+  "binary_build_source_commit": "b5ef5c2193e77b492abe151b32718df6795d65f1",
+  "checkpoint_sha256": null,
+  "policy_hash": null,
+  "run_id": "agent-a-eoe-cold-install-20260926",
+  "evidence_level": "real_cpu",
+  "production_write_allowed": false,
+  "changed_files": [
+    "scripts/postinstall-build.js",
+    "package.json",
+    "scripts/test-package-source-closure.js",
+    "scripts/test-package-cold-install.js",
+    "scripts/test-package-failure-fixtures.js",
+    "docs/CPU_NPM_BUILD_VERIFICATION.md",
+    "evidence/agent-a/package-source-closure.json",
+    "evidence/agent-a/cold-install.json",
+    "evidence/agent-a/base-repro.json",
+    "evidence/agent-a/A_CPU_NPM_COLD_INSTALL_20260926.log",
+    "evidence/agent-a/A_CPU_NPM_BASE_REPRO_20260926.log",
+    "agent_result.json",
+    "HANDOFF.md"
+  ],
+  "tests": [
+    {
+      "name": "base tarball cold-install reproduction",
+      "kind": "real_cpu",
+      "command": "npm pack + npm install on detached BASE_SHA a0b8ab2",
+      "exit_code": 1,
+      "actual_count": 1,
+      "status": "EXPECTED_FAIL_REPRODUCED",
+      "log_path": "evidence/agent-a/A_CPU_NPM_BASE_REPRO_20260926.log",
+      "log_sha256": "e49e8f899b9f3b7c4f6647915c55d6d35b1e22fa04d8db3ac4174c173a8a2286"
+    },
+    {
+      "name": "package source closure",
+      "kind": "static",
+      "command": "npm run test:package-source-closure",
+      "exit_code": 0,
+      "actual_count": 1,
+      "status": "PASS",
+      "log_path": "evidence/agent-a/A_CPU_NPM_COLD_INSTALL_20260926.log",
+      "log_sha256": "ee7db6e2b32f22704e65b64a7b97dfe92938c26c5092a1f58517c823dfde13b7"
+    },
+    {
+      "name": "package failure fixtures",
+      "kind": "unit",
+      "command": "npm run test:package-failure-fixtures",
+      "exit_code": 0,
+      "actual_count": 4,
+      "status": "PASS",
+      "log_path": "evidence/agent-a/A_CPU_NPM_COLD_INSTALL_20260926.log",
+      "log_sha256": "ee7db6e2b32f22704e65b64a7b97dfe92938c26c5092a1f58517c823dfde13b7"
+    },
+    {
+      "name": "clean consumer cold installs",
+      "kind": "real_cpu",
+      "command": "npm run test:package-cold-install (twice)",
+      "exit_code": 0,
+      "actual_count": 2,
+      "status": "PASS",
+      "log_path": "evidence/agent-a/A_CPU_NPM_COLD_INSTALL_20260926.log",
+      "log_sha256": "ee7db6e2b32f22704e65b64a7b97dfe92938c26c5092a1f58517c823dfde13b7"
+    },
+    {
+      "name": "package verification suite",
+      "kind": "real_cpu",
+      "command": "npm run test:package",
+      "exit_code": 0,
+      "actual_count": 3,
+      "status": "PASS",
+      "log_path": "evidence/agent-a/A_CPU_NPM_COLD_INSTALL_20260926.log",
+      "log_sha256": "ee7db6e2b32f22704e65b64a7b97dfe92938c26c5092a1f58517c823dfde13b7"
+    },
+    {
+      "name": "native build and caller-plain gate",
+      "kind": "real_cpu",
+      "command": "npm run build",
+      "exit_code": 0,
+      "actual_count": 1,
+      "status": "PASS",
+      "log_path": "evidence/agent-a/A_CPU_NPM_COLD_INSTALL_20260926.log",
+      "log_sha256": "ee7db6e2b32f22704e65b64a7b97dfe92938c26c5092a1f58517c823dfde13b7"
+    },
+    {
+      "name": "npm smoke",
+      "kind": "real_cpu",
+      "command": "npm test",
+      "exit_code": 0,
+      "actual_count": 1,
+      "status": "PASS",
+      "log_path": "evidence/agent-a/A_CPU_NPM_COLD_INSTALL_20260926.log",
+      "log_sha256": "ee7db6e2b32f22704e65b64a7b97dfe92938c26c5092a1f58517c823dfde13b7"
+    }
+  ],
+  "real_runs": [
+    {
+      "name": "cold-install-1",
+      "platform": "darwin/arm64",
+      "node": "v26.7.0",
+      "clang": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+      "tarball_sha256": "64fe22a544ff0159b904a449913331e22898400022df3d357c4a681e6d777176",
+      "binary_sha256": "84111fd4dd3f25b1f414f425b15111fc495dcf771a63a9959767fdff840af500",
+      "binary_size": 661656,
+      "status": "PASS"
+    },
+    {
+      "name": "cold-install-2",
+      "platform": "darwin/arm64",
+      "node": "v26.7.0",
+      "clang": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+      "tarball_sha256": "64fe22a544ff0159b904a449913331e22898400022df3d357c4a681e6d777176",
+      "binary_sha256": "1af103b6c75a73e47f2ccb6c5a0ba7a155fef5734ea65e99795211a50254b0ab",
+      "binary_size": 661656,
+      "status": "PASS"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/agent-a/package-source-closure.json",
+      "size_bytes": 728,
+      "sha256": "eaeabfba762caa9073fb2ad75ff9c9b46ee5d47f62848b29e4e58604dc9d2670",
+      "source_commit": "b5ef5c2193e77b492abe151b32718df6795d65f1",
+      "run_id": "agent-a-eoe-cold-install-20260926",
+      "scope": "source/archive closure"
+    },
+    {
+      "path": "evidence/agent-a/cold-install.json",
+      "size_bytes": 1463,
+      "sha256": "0aa61b81270f8d8e763037ef284c8500afde4414ff779b0fc9f4d5c87f6e14f5",
+      "source_commit": "b5ef5c2193e77b492abe151b32718df6795d65f1",
+      "run_id": "agent-a-eoe-cold-install-20260926",
+      "scope": "real clean installs"
+    },
+    {
+      "path": "evidence/agent-a/base-repro.json",
+      "size_bytes": 464,
+      "sha256": "95c88a6d878f935792143886c1bf0df79c7cfaa61d97d1c0a4a4b91e135d0ae6",
+      "source_commit": "a0b8ab2c90af70fa8095556033e605477ec186ae",
+      "run_id": "agent-a-eoe-cold-install-20260926",
+      "scope": "base failure reproduction"
+    },
+    {
+      "path": "evidence/agent-a/A_CPU_NPM_COLD_INSTALL_20260926.log",
+      "size_bytes": 1147,
+      "sha256": "ee7db6e2b32f22704e65b64a7b97dfe92938c26c5092a1f58517c823dfde13b7",
+      "source_commit": "b5ef5c2193e77b492abe151b32718df6795d65f1",
+      "run_id": "agent-a-eoe-cold-install-20260926",
+      "scope": "verification log"
+    },
+    {
+      "path": "evidence/agent-a/A_CPU_NPM_BASE_REPRO_20260926.log",
+      "size_bytes": 316,
+      "sha256": "e49e8f899b9f3b7c4f6647915c55d6d35b1e22fa04d8db3ac4174c173a8a2286",
+      "source_commit": "a0b8ab2c90af70fa8095556033e605477ec186ae",
+      "run_id": "agent-a-eoe-cold-install-20260926",
+      "scope": "base reproduction log"
+    }
+  ],
+  "limitations": [
+    "No npm publish was performed.",
+    "No production binary was replaced.",
+    "No model inference benchmark or performance claim is made.",
+    "Repeated successful native links produced identical binary size but different SHA-256 values, so byte-for-byte binary reproducibility is not claimed."
+  ],
+  "blocked_by": [],
+  "reproduction_commands": [
+    "npm run test:package-source-closure",
+    "npm run test:package-failure-fixtures",
+    "npm run test:package-cold-install",
+    "npm run test:package",
+    "npm run build",
+    "npm test",
+    "git diff --check"
+  ],
+  "handoff": {
+    "completed": [
+      "Reproduced BASE_SHA cold-install failure caused by missing bpe_tokenizer.h in package archive.",
+      "Closed native build list over bpe_tokenizer.c, gguf_write.c, gguf_write_quants.c.",
+      "Closed npm files allowlist over required tokenizer/GGUF writer headers and unicode_cpt_flags.h.",
+      "Verified two independent clean tarball installs on EOE darwin/arm64.",
+      "Verified explicit failure fixtures and caller-plain native build gate."
+    ],
+    "remaining": [
+      "A0 should review/squash/integrate A branch into the chosen integration branch.",
+      "C may consume these source/tarball/build hashes in the certification manifest."
+    ],
+    "next_owner": "A0, then Agent C"
+  }
+}

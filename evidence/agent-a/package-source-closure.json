@@ -1,0 +1,29 @@
+{
+  "schema": "beglin-package-source-closure-evidence-v1",
+  "status": "PASS",
+  "base_sha": "a0b8ab2c90af70fa8095556033e605477ec186ae",
+  "implementation_head": "b5ef5c2193e77b492abe151b32718df6795d65f1",
+  "package_version": "0.4.0",
+  "build_sources_added": [
+    "bpe_tokenizer.c",
+    "gguf_write.c",
+    "gguf_write_quants.c"
+  ],
+  "archive_required": [
+    "bpe_tokenizer.c",
+    "bpe_tokenizer.h",
+    "unicode_cpt_flags.h",
+    "gguf_write.c",
+    "gguf_write.h",
+    "gguf_write_quants.c",
+    "gguf_write_quants.h"
+  ],
+  "archive_entry_count": 57,
+  "forbidden_archive_artifacts_checked": [
+    ".build/",
+    ".env",
+    "bin/qwen_infer"
+  ],
+  "command": "npm run test:package-source-closure",
+  "exit_code": 0
+}
