@@ -123,5 +123,19 @@
       "one approved read-only reporter snapshot against live XOX shadow root"
     ],
     "next_owner": "A0"
+  },
+  "review_squash_commit": "75e2a5d32427be8881e8711854eeaf810c31cb83",
+  "review_squash_branch": "agent-d-shadow-observability-squashed",
+  "review_squash_verified_diff": {
+    "commits": 1,
+    "files": 10,
+    "base": "255ed8c1bddcbc100b6cb79f5bc11e62e0984913"
+  },
+  "live_preflight_observed": {
+    "release": "g6-0.4.0-alpha.27",
+    "ok": 10,
+    "warn": 0,
+    "fail": 0,
+    "request_id": "407c8f24-696e-45f5-ac21-c73b1f3b79e4"
   }
 }
