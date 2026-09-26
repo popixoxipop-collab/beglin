@@ -1444,6 +1444,43 @@
           "generated_at": {
             "type": "string"
           },
+          "live_finite_logits": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "live_request_count": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "live_tok_per_s": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "live_ttft_mean_ms": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "request_count": {
             "minimum": 0,
             "type": "integer"
