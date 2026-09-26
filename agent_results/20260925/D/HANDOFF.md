@@ -1,231 +1,146 @@
 # Agent D Handoff — GPU Shadow Observability
 
+Status: **VERIFIED**  
 Date: 2026-09-26 KST  
-Status: READY_FOR_REVIEW  
-Draft PR: #10  
-Base: `255ed8c1bddcbc100b6cb79f5bc11e62e0984913`
+Draft review PR: **#10**  
+Production mutation: **OFF**
 
-## What Agent D changed
-
-Agent D did not touch production state. The branch changes only shadow observability/result-integrity behavior.
-
-### 1. Run identity linkage
-
-The shadow path now links:
+## Final integration
 
 ```text
-launch_id -> cycle_id -> shadow_run_id
+pre-D certified XOX HEAD
+067d4d8989b597785c756b1673bbf5a08564e61d
+
+conflict-resolved D integration unit
+bb76ecf07db3f4d3859424c397d056c2abdf4c57
+
+integrated XOX HEAD
+db88d77ffe75547fba7a1f4e667ec708f74daa6e
 ```
 
-The status/reporter layer can distinguish:
+The original staging squash conflicted only in
+`tools/gpu_shadow_pipeline.py` because certified XOX already had the real
+production `discovery._json_safe(...)` fix. The conflict was aborted without
+touching pre-existing dirty experiment files.
+
+The final merge preserves both:
 
 ```text
-CURRENT
-PREVIOUS
-LEGACY_UNLINKED
+discovery._json_safe(result)
++
+SHADOW_CYCLE_FAILED / SHADOW_CYCLE_UNCLASSIFIED => nonzero exit
 ```
 
-An old `last_cycle.json` is no longer treated as the current launch result merely because the launcher is RUNNING.
+That combination was fixture-tested before the conflict-resolved integration
+unit was applied.
 
-### 2. Terminal-aware dedupe
+## Tailnet
 
-Reuse remains context-aware and now also requires a reusable terminal result.
-
-Reusable:
+Final live release used for D integration:
 
 ```text
-SHADOW_ADMITTED
-SHADOW_REJECTED
-SHADOW_ROLLBACK_OR_REGRESSION
+g6-0.4.0-alpha.33
+preflight 10 OK / 0 WARN / 0 FAIL
 ```
 
-Not permanently reusable:
+Only narrow D fetch/cherry-pick/reporter argv were added. No generic production
+write path was opened.
+
+## D behavior
+
+- `launch_id -> cycle_id -> shadow_run_id`
+- CURRENT / PREVIOUS / LEGACY_UNLINKED result relation
+- terminal-aware context dedupe
+- bounded retry for SHADOW_ERROR/unclassified results
+- retry exhaustion -> MANUAL_REVIEW_REQUIRED
+- explicit SHADOW_CYCLE_COMPLETE / FAILED / UNCLASSIFIED
+- read-only `gpu_shadow_report.py`
+- `real_gpu` only with current linkage and explicit G4/G6 stage evidence
+
+## Integrated regression
+
+On `db88d77...`:
 
 ```text
-SHADOW_ERROR
-SHADOW_COMPLETED_UNCLASSIFIED
-runner exception
+test_gpu_*.py                151/151 PASS
+test_manual_canary.py          35/35 PASS
+git diff --check                    PASS
 ```
 
-Same-fingerprint non-reusable outcomes retry with a bounded budget. Default:
+Request IDs:
 
 ```text
-max_retry_attempts = 2
+GPU suite    8e1627f6-e77f-4af8-af0e-77671f0d0361
+canary suite 20e48ad7-e532-49cc-ba48-585833ae22d9
+diff check   0de83747-51b7-4f5e-af08-089d8e74c829
 ```
 
-Budget exhaustion becomes:
+## Live read-only reporter
+
+Executed twice against:
 
 ```text
-MANUAL_REVIEW_REQUIRED
+/Users/xox/vdsp_shadow_runs
 ```
 
-instead of infinite retry or silent permanent dedupe.
-
-### 3. Top-level cycle status
-
-Pipeline outcomes are now explicit:
+Observed:
 
 ```text
-SHADOW_CYCLE_COMPLETE
-SHADOW_CYCLE_FAILED
-SHADOW_CYCLE_UNCLASSIFIED
+cycle.status             NO_NEW_READY_CANDIDATE
+pipeline_state           not_run
+gpu_validation.state     not_run
+evidence_level           not_run
+source_freshness         legacy_unlinked
+ready_count              1
+candidate_count          100
+dedupe_reason            reusable_terminal_same_candidate_and_runtime
+production_write_allowed false
 ```
 
-Failed/unclassified CLI terminals return nonzero.
-
-### 4. Read-only reporter
-
-New:
+The state predates Agent D IDs, so these warnings are correct:
 
 ```text
-tools/gpu_shadow_report.py
-schemas/gpu-shadow-report-v1.schema.json
-docs/GPU_SHADOW_OBSERVABILITY.md
+LEGACY_CONTEXT_UNVERIFIED
+LEGACY_CYCLE_WITHOUT_LAUNCH_ID
 ```
 
-The reporter reads only known JSON state under an explicit shadow root and does not read credentials, environment variables, or complete worker logs.
+It is **not** relabeled as a new GPU PASS.
 
-It separates:
+The four observed source artifact hashes were identical across both reporter
+runs, proving the reporter did not mutate the observed state:
 
 ```text
-NO_READY / NO_NEW_READY / MANUAL_REVIEW  -> not_run
-executed without explicit G4/G6          -> unknown
-explicit G4/G6 failure                   -> failed
-explicit current G4+G6 pass              -> passed / real_gpu
-previous launch cycle                    -> stale_previous_cycle
-legacy unlinked cycle                    -> legacy_unverified
+launcher_status.json
+9478ba25576cb97579807409b174ac2a541dc61a843fce24287c5f12d80e9c5b
+
+last_cycle.json
+0a4cd2b456667a737c5c346a8f90b837461026cf7c8f6ea92adfe7be6c56d215
+
+candidate_history.json
+81942763c65759602bbf0d8c3f3f5733638109c65e2e4ec4e4995201dd963d4c
+
+discovery.json
+de353587b5bdbc9d02c97f9d12ad602b9eaee83d210bcf0132342677f65c3c67
 ```
 
-`exit 0`, `COMPLETE`, or `SHADOW_ADMITTED` alone are not classified as a fresh GPU PASS.
+## Scope of VERIFIED
 
-Reporter output paths are rejected when they resolve inside the observed shadow root.
+Verified:
+- D code integrated on certified XOX
+- complete GPU regression compatibility
+- live reporter classification
+- reporter read-only input invariance
+- production write remained false
 
-## Verification
+Not claimed:
+- a new GPU candidate run
+- new G4/G6 model-quality evidence
+- production canary
+- production promotion
 
-Latest Agent D branch was materialized into the isolated EOE directory:
+## Next owner
 
-```text
-/Users/eoe/mcp-sandbox/tailnet-commander/d-shadow-observability
-```
+A0/C can now ingest the Agent D result into the global certification manifest.
 
-Independent latest-head checks:
-
-```text
-python3 -m compileall -q d-shadow-observability
-PASS
-
-python3 -m unittest discover \
-  -s d-shadow-observability \
-  -p 'test_gpu_shadow*.py'
-
-72/72 PASS
-```
-
-Execution evidence:
-
-```text
-compileall request_id:
-209159e9-3b42-46e6-b26a-2be8f4fb014f
-
-72-test request_id:
-f93516a0-76cb-43c7-bd7f-198159ed046f
-```
-
-Earlier focused runs also isolated/fixed:
-- macOS `/var` vs `/private/var` output-root normalization
-- a missing test import
-
-No production state was changed during these tests.
-
-## Files owned by D
-
-```text
-docs/GPU_SHADOW_OBSERVABILITY.md
-schemas/gpu-shadow-report-v1.schema.json
-
-tools/gpu_shadow_launch_xox.py
-tools/gpu_shadow_pipeline.py
-tools/gpu_shadow_report.py
-tools/gpu_shadow_status_xox.py
-
-tools/test_gpu_shadow_launch_xox.py
-tools/test_gpu_shadow_pipeline.py
-tools/test_gpu_shadow_report.py
-tools/test_gpu_shadow_status_xox.py
-```
-
-## Important limitation
-
-This ChatGPT connector session does not directly expose `vdsp_gpu_precision`.
-
-A gate-aware helper attempt was blocked by the security boundary. No bypass was used.
-
-Therefore Agent D does **not** claim:
-- a fresh live-XOX reporter run,
-- new real-GPU evidence,
-- production verification.
-
-This branch is fixture-verified only.
-
-## A0 integration sequence
-
-1. Rebase/cherry-pick D-owned changes onto the current certified XOX integration source.
-2. Preserve unrelated dirty GPU experiment files.
-3. Run the complete GPU test suite on the integration SHA.
-4. Run `git diff --check`.
-5. Through an approved read-only XOX path, run the reporter against the real shadow root.
-6. Confirm the report labels the existing dedupe/no-run state as `not_run`, not GPU PASS.
-7. If/when new evidence produces a real G4/G6 run, confirm explicit stage status is required for `real_gpu`.
-8. Keep production mutation OFF.
-
-## Do not do
-
-Do not:
-- delete `candidate_history.json`,
-- force a deduped candidate to rerun,
-- widen production write access,
-- enable canary/auto-promotion,
-- merge PR #10 as a substitute for reconciling the newer certified XOX source.
-
-The canonical machine-readable result is:
-
-```text
-agent_results/20260925/D/agent_result.json
-```
-
-## A0 canonical integration unit
-
-Use:
-
-`75e2a5d32427be8881e8711854eeaf810c31cb83`
-
-Branch:
-
-`agent-d-shadow-observability-squashed`
-
-Verified compare from the D base:
-- 1 commit
-- 10 D-owned files
-- no delivery-only agent_result/HANDOFF files in the squash
-
-Latest Tailnet observation before handoff:
-`g6-0.4.0-alpha.27`, preflight `10 OK / 0 WARN / 0 FAIL`.
-
-The current chat schema still does not directly expose `vdsp_gpu_precision`, so fresh live-XOX reporter verification remains an A0/new-schema integration step.
-
-## Latest certified XOX integration target
-
-```text
-HEAD   f9d99fa85eaa9f24e5a010478a73800b6c38e74f
-parent d9401d774691cfcc4b2f74b11f9098c96b22c59b
-```
-
-Tailnet alpha.27 currently has no exact allowlist entry for the D squash
-fetch/cherry-pick or live reporter command. No bypass was used.
-
-EOE access request:
-
-`BEGLIN_AGENT_D_ACCESS_REQUEST_20260926.md`
-
-D remains READY_FOR_REVIEW until A0 performs this exact integration and live
-read-only reporter verification.
+Do not force a shadow rerun merely to create launch/cycle IDs. A future
+naturally-triggered cycle with new evidence will exercise those fields live.
