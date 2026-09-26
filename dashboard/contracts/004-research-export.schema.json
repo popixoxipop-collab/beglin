@@ -545,4 +545,319 @@
               "percentage": {
                 "maximum": 100,
                 "minimum": 0,
-           
+                "type": "number"
+              },
+              "total_cells": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "mode",
+              "total_cells",
+              "filled_cells",
+              "percentage",
+              "cells"
+            ],
+            "type": "object"
+          },
+          "csv_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "csv_rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "heatmap": {
+            "properties": {
+              "cells": {
+                "items": {
+                  "properties": {
+                    "activation_ema": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "anomaly_count": {
+                      "default": 0,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "correction_hits": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "current_precision_n": {
+                      "maximum": 15,
+                      "minimum": 2,
+                      "type": "integer"
+                    },
+                    "evidence_ids": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "last_updated_at": {
+                      "type": "string"
+                    },
+                    "layer": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "live_state": {
+                      "enum": [
+                        "IDLE",
+                        "ACTIVE",
+                        "HOT",
+                        "PROMOTED",
+                        "REGRESSION",
+                        "ROLLBACK",
+                        "QUARANTINED"
+                      ],
+                      "type": "string"
+                    },
+                    "promotion_hits": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "role_group": {
+                      "type": "string"
+                    },
+                    "sample_count": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "layer",
+                    "role_group",
+                    "sample_count",
+                    "promotion_hits",
+                    "correction_hits",
+                    "current_precision_n",
+                    "last_updated_at",
+                    "live_state"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "generated_at": {
+                "type": "string"
+              },
+              "max_hit_count": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "source_kind": {
+                "enum": [
+                  "evidence_aggregate",
+                  "live_telemetry"
+                ],
+                "type": "string"
+              },
+              "window": {
+                "enum": [
+                  "REALTIME",
+                  "1M",
+                  "5M",
+                  "1H",
+                  "SESSION",
+                  "CUMULATIVE"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "generated_at",
+              "window",
+              "cells",
+              "max_hit_count",
+              "source_kind"
+            ],
+            "type": "object"
+          },
+          "metrics": {
+            "properties": {
+              "active_policy_summary": {
+                "type": "string"
+              },
+              "attribution_after": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "attribution_before": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "canary_status": {
+                "type": "string"
+              },
+              "corrected_hits": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "generated_at": {
+                "type": "string"
+              },
+              "live_finite_logits": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "live_request_count": {
+                "default": 0,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "live_tok_per_s": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "live_ttft_mean_ms": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "request_count": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "resident_worker": {
+                "type": "boolean"
+              },
+              "rollback_ready": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "generated_at",
+              "request_count",
+              "corrected_hits",
+              "canary_status",
+              "rollback_ready",
+              "active_policy_summary",
+              "resident_worker"
+            ],
+            "type": "object"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "beglin-research-export/1",
+            "type": "string"
+          },
+          "svg_ready_heatmap": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "comparison",
+          "heatmap",
+          "coverage",
+          "metrics",
+          "csv_columns",
+          "csv_rows",
+          "svg_ready_heatmap",
+          "notes"
+        ],
+        "type": "object"
+      },
+      "sourceSummary": "Get Research Export",
+      "sourceTags": [
+        "research"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        }
+      }
+    }
+  },
+  "warnings": [
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getResearchComparison",
+      "message": "operationId \"getResearchComparison\" for GET /api/v1/research/comparison was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/research/comparison",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/research/comparison"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "getResearchExport",
+      "message": "operationId \"getResearchExport\" for GET /api/v1/research/export was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "GET",
+        "path": "/api/v1/research/export",
+        "scan_verb": "GET",
+        "scan_path": "/api/v1/research/export"
+      }
+    }
+  ],
+  "completeness": {
+    "status": "complete",
+    "operation_count": 2,
+    "endpoint_count": 2
+  }
+}
