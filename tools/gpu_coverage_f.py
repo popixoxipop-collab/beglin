@@ -272,6 +272,7 @@ def bounded_plan(
     *,
     base_sha: str | None,
     checkpoint_handoff: Mapping[str, Any] | None = None,
+    lease_handoff: Mapping[str, Any] | None = None,
     max_candidates: int = 3,
     max_prompts: int = 3,
     max_requests_per_run: int = 100,
@@ -307,6 +308,35 @@ def bounded_plan(
                 "B handoff present but not VERIFIED with a 64-hex checkpoint identity"
             )
 
+    lease_verified = False
+    lease_reason = "A0 XOX GPU lease handoff not supplied"
+    lease_id = None
+    if lease_handoff:
+        lease_state = str(
+            lease_handoff.get("state")
+            or lease_handoff.get("status")
+            or ""
+        ).upper()
+        lease_owner = str(
+            lease_handoff.get("owner")
+            or lease_handoff.get("requester")
+            or ""
+        )
+        lease_resource = str(lease_handoff.get("resource") or "")
+        lease_id = lease_handoff.get("lease_id")
+        lease_verified = (
+            lease_state in {"GRANTED", "ACTIVE"}
+            and lease_owner == "F"
+            and lease_resource == "xox_gpu_model_io"
+        )
+        if lease_verified:
+            lease_reason = "A0 XOX GPU lease VERIFIED"
+        else:
+            lease_reason = (
+                "lease handoff present but not GRANTED/ACTIVE for "
+                "owner=F resource=xox_gpu_model_io"
+            )
+
     cases = []
     for target in TARGET_SPECS:
         cases.append(
@@ -331,10 +361,24 @@ def bounded_plan(
         "base_sha": base_sha,
         "backend": DEFAULT_BACKEND,
         "architecture": DEFAULT_ARCH,
-        "real_gpu_ready": bool(b_verified),
-        "real_gpu_block_reason": None if b_verified else b_reason,
+        "real_gpu_ready": bool(b_verified and lease_verified and base_sha),
+        "real_gpu_block_reason": (
+            None
+            if (b_verified and lease_verified and base_sha)
+            else "; ".join(
+                reason
+                for condition, reason in (
+                    (b_verified, b_reason),
+                    (lease_verified, lease_reason),
+                    (bool(base_sha), "A0 certified BASE_SHA not supplied"),
+                )
+                if not condition
+            )
+        ),
         "checkpoint_sha256": checkpoint_sha,
         "checkpoint_manifest": checkpoint_manifest,
+        "gpu_lease_id": lease_id,
+        "gpu_lease_verified": lease_verified,
         "resource_contract": {
             "requires_xox_gpu_lease": True,
             "requires_b_io_handoff": True,
@@ -461,6 +505,7 @@ def main() -> int:
     plan = sub.add_parser("plan")
     plan.add_argument("--base-sha")
     plan.add_argument("--checkpoint-handoff")
+    plan.add_argument("--lease-handoff")
     plan.add_argument("--output", required=True)
 
     decision = sub.add_parser("decision")
@@ -475,7 +520,12 @@ def main() -> int:
     try:
         if args.cmd == "plan":
             handoff = _load_json(args.checkpoint_handoff) if args.checkpoint_handoff else None
-            value = bounded_plan(base_sha=args.base_sha, checkpoint_handoff=handoff)
+            lease = _load_json(args.lease_handoff) if args.lease_handoff else None
+            value = bounded_plan(
+                base_sha=args.base_sha,
+                checkpoint_handoff=handoff,
+                lease_handoff=lease,
+            )
             atomic_json(args.output, value)
         elif args.cmd == "decision":
             baseline = observation_from_json(_load_json(args.baseline))
