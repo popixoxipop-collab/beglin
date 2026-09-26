@@ -71,7 +71,9 @@
     "build": "node scripts/postinstall-build.js",
     "test": "node scripts/smoke-test.js && node scripts/test-package-source-closure.js",
     "test:package-closure": "node scripts/test-package-source-closure.js",
-    "test:package-cold": "node scripts/test-package-cold-install.js"
+    "test:package-cold": "node scripts/test-package-cold-install.js",
+    "test:package-link-failure": "node scripts/test-package-link-failure.js",
+    "test:package": "npm run test:package-closure && npm run test:package-link-failure && npm run test:package-cold"
   },
   "license": "AGPL-3.0-or-later",
   "repository": {
