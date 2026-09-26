@@ -97,6 +97,76 @@
         "title": "CanaryView",
         "type": "object"
       },
+      "ControlConsistency": {
+        "properties": {
+          "distinct_binary_sha256": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Distinct Binary Sha256",
+            "type": "array"
+          },
+          "distinct_checkpoint_sha256": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Distinct Checkpoint Sha256",
+            "type": "array"
+          },
+          "distinct_source_commits": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Distinct Source Commits",
+            "type": "array"
+          },
+          "same_binary_sha256": {
+            "title": "Same Binary Sha256",
+            "type": "boolean"
+          },
+          "same_checkpoint_sha256": {
+            "title": "Same Checkpoint Sha256",
+            "type": "boolean"
+          },
+          "same_source_commit": {
+            "title": "Same Source Commit",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "same_source_commit",
+          "same_binary_sha256",
+          "same_checkpoint_sha256",
+          "distinct_source_commits",
+          "distinct_binary_sha256",
+          "distinct_checkpoint_sha256"
+        ],
+        "title": "ControlConsistency",
+        "type": "object"
+      },
+      "ControlIdentity": {
+        "properties": {
+          "binary_sha256": {
+            "title": "Binary Sha256",
+            "type": "string"
+          },
+          "checkpoint_sha256": {
+            "title": "Checkpoint Sha256",
+            "type": "string"
+          },
+          "source_commit": {
+            "title": "Source Commit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_commit",
+          "binary_sha256",
+          "checkpoint_sha256"
+        ],
+        "title": "ControlIdentity",
+        "type": "object"
+      },
       "ControlledVariablesSnapshot": {
         "properties": {
           "architecture": {
@@ -1394,6 +1464,234 @@
         "title": "RequestCompletedIn",
         "type": "object"
       },
+      "ResearchComparisonEntry": {
+        "properties": {
+          "control": {
+            "$ref": "#/components/schemas/ControlIdentity"
+          },
+          "decision_only": {
+            "title": "Decision Only",
+            "type": "boolean"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          },
+          "evidence_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Mode"
+          },
+          "experiment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experiment Id"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "raw_matrix_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Matrix Sha256"
+          },
+          "real_gpu": {
+            "title": "Real Gpu",
+            "type": "boolean"
+          },
+          "rollback_required": {
+            "title": "Rollback Required",
+            "type": "boolean"
+          },
+          "sample_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Count"
+          },
+          "source_kind": {
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Text"
+          }
+        },
+        "required": [
+          "event_id",
+          "source_kind",
+          "phase",
+          "status",
+          "real_gpu",
+          "decision_only",
+          "rollback_required",
+          "control"
+        ],
+        "title": "ResearchComparisonEntry",
+        "type": "object"
+      },
+      "ResearchComparisonView": {
+        "properties": {
+          "control_consistency": {
+            "$ref": "#/components/schemas/ControlConsistency"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchComparisonEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "entries",
+          "control_consistency"
+        ],
+        "title": "ResearchComparisonView",
+        "type": "object"
+      },
+      "ResearchExportView": {
+        "properties": {
+          "comparison": {
+            "$ref": "#/components/schemas/ResearchComparisonView"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/CoverageView"
+          },
+          "csv_columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Csv Columns",
+            "type": "array"
+          },
+          "csv_rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Csv Rows",
+            "type": "array"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "heatmap": {
+            "$ref": "#/components/schemas/LayerHeatmapView"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/MetricsView"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "beglin-research-export/1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "svg_ready_heatmap": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Svg Ready Heatmap",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "comparison",
+          "heatmap",
+          "coverage",
+          "metrics",
+          "csv_columns",
+          "csv_rows",
+          "svg_ready_heatmap",
+          "notes"
+        ],
+        "title": "ResearchExportView",
+        "type": "object"
+      },
       "RestartVerification": {
         "properties": {
           "ack_sha256": {
@@ -2108,6 +2406,48 @@
         "summary": "Get Production",
         "tags": [
           "dashboard"
+        ]
+      }
+    },
+    "/api/v1/research/comparison": {
+      "get": {
+        "operationId": "getResearchComparison",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchComparisonView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Research Comparison",
+        "tags": [
+          "research"
+        ]
+      }
+    },
+    "/api/v1/research/export": {
+      "get": {
+        "operationId": "getResearchExport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchExportView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Research Export",
+        "tags": [
+          "research"
         ]
       }
     },
