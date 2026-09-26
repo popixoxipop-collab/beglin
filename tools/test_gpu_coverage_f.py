@@ -39,7 +39,7 @@ class GpuCoverageFTests(unittest.TestCase):
         kv = got["planned_targets"][0]
         self.assertEqual(kv["bad_candidate_budget"], [5, 6, 7])
 
-    def test_verified_b_handoff_enables_real_gpu_gate_only(self):
+    def test_verified_b_without_lease_stays_blocked(self):
         got = f.bounded_plan(
             base_sha="abc",
             checkpoint_handoff={
@@ -48,9 +48,45 @@ class GpuCoverageFTests(unittest.TestCase):
                 "manifest_path": "/scratch/checkpoint_identity.json",
             },
         )
+        self.assertFalse(got["real_gpu_ready"])
+        self.assertIn("GPU lease", got["real_gpu_block_reason"])
+
+    def test_verified_b_and_a0_lease_enable_real_gpu_gate(self):
+        got = f.bounded_plan(
+            base_sha="abc",
+            checkpoint_handoff={
+                "status": "VERIFIED",
+                "checkpoint_sha256": "a" * 64,
+                "manifest_path": "/scratch/checkpoint_identity.json",
+            },
+            lease_handoff={
+                "state": "GRANTED",
+                "owner": "F",
+                "resource": "xox_gpu_model_io",
+                "lease_id": "lease-1",
+            },
+        )
         self.assertTrue(got["real_gpu_ready"])
+        self.assertEqual(got["gpu_lease_id"], "lease-1")
         self.assertFalse(got["resource_contract"]["production_mutation_allowed"])
         self.assertFalse(got["resource_contract"]["shadow_history_mutation_allowed"])
+
+    def test_wrong_owner_or_resource_does_not_open_gate(self):
+        for lease in (
+            {"state": "GRANTED", "owner": "B", "resource": "xox_gpu_model_io"},
+            {"state": "ACTIVE", "owner": "F", "resource": "eoe_cpu_build"},
+            {"state": "REQUESTED", "owner": "F", "resource": "xox_gpu_model_io"},
+        ):
+            got = f.bounded_plan(
+                base_sha="abc",
+                checkpoint_handoff={
+                    "status": "VERIFIED",
+                    "checkpoint_sha256": "a" * 64,
+                    "manifest_path": "/scratch/checkpoint_identity.json",
+                },
+                lease_handoff=lease,
+            )
+            self.assertFalse(got["real_gpu_ready"])
 
     def test_budget_bounds_fail_closed(self):
         with self.assertRaises(f.CoverageError):
