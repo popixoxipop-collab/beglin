@@ -1,0 +1,50 @@
+name: Agent E trusted human signature
+
+on:
+  push:
+    branches: [agent-e-trusted-signature]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signature-and-intent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Require OpenSSH verifier
+        run: test -x /usr/bin/ssh-keygen
+      - name: Compile
+        run: |
+          python -m py_compile \
+            tools/manual_canary_contract.py \
+            tools/manual_canary_signature.py \
+            tools/manual_canary_production_intent.py \
+            tools/test_manual_canary_signature.py
+      - name: Static production bridge guard
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text=Path("tools/manual_canary_production_intent.py").read_text()
+          required=[
+            "execution_enabled",
+            "production_write_allowed",
+            "ProductionBridgeDisabled",
+            "execute_production_intent",
+          ]
+          for token in required:
+            if token not in text:
+              raise SystemExit("missing safety token: "+token)
+          for token in ("backend_adapters","gpu_runtime_control","supabase","QWEN_SUPABASE"):
+            if token in text:
+              raise SystemExit("live production dependency forbidden: "+token)
+          print("non-executable production bridge guard PASS")
+          PY
+      - name: Tests
+        env:
+          PYTHONPATH: tools
+        run: python tools/test_manual_canary_signature.py
