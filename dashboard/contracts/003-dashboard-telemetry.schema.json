@@ -1,0 +1,890 @@
+{
+  "sbf_contract": "9",
+  "feature_id": "003-dashboard-telemetry",
+  "feature_uid": "f977da59-6e2f-49cd-a0d2-030e3ce858d3",
+  "source": {
+    "adapter": "python-fastapi",
+    "module": "telemetry",
+    "provenance": "scan+openapi"
+  },
+  "operations": {
+    "ingestLayerObservation": {
+      "verb": "POST",
+      "path": "/api/v1/telemetry/layer-observation",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "requestBodySchema": {
+        "properties": {
+          "activation_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "correction_hits": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "experiment_id": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "promotion_hits": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "role_group": {
+            "type": "string"
+          },
+          "sample_count": {
+            "default": 1,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "properties": {
+              "architecture": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "backend": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "binary_sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "checkpoint_sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "source_commit": {
+                "minLength": 7,
+                "type": "string"
+              },
+              "worker_instance_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_commit",
+              "binary_sha256",
+              "checkpoint_sha256",
+              "worker_instance_id"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "default": "ACTIVE",
+            "enum": [
+              "IDLE",
+              "ACTIVE",
+              "HOT",
+              "PROMOTED",
+              "REGRESSION",
+              "ROLLBACK",
+              "QUARANTINED"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "properties": {
+              "layer": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "n": {
+                "maximum": 15,
+                "minimum": 2,
+                "type": "integer"
+              },
+              "role": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "role",
+              "layer",
+              "n"
+            ],
+            "type": "object"
+          },
+          "weight_epoch": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "event_id",
+          "occurred_at",
+          "experiment_id",
+          "source",
+          "target",
+          "role_group"
+        ],
+        "type": "object"
+      },
+      "requestBodyRequired": true,
+      "responseSchema": {
+        "properties": {
+          "accepted": {
+            "default": true,
+            "type": "boolean"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "seq": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "event_id",
+          "event_type"
+        ],
+        "type": "object"
+      },
+      "errorSchema": {
+        "properties": {
+          "detail": {
+            "items": {
+              "properties": {
+                "ctx": {
+                  "type": "object"
+                },
+                "input": {},
+                "loc": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "loc",
+                "msg",
+                "type"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "sourceParameters": [
+        {
+          "name": "X-Beglin-Telemetry-Token",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      ],
+      "sourceSummary": "Ingest Layer Observation",
+      "sourceTags": [
+        "telemetry"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        },
+        "422": {
+          "description": "Validation Error",
+          "schemaFrom": "error"
+        }
+      }
+    },
+    "ingestRequestCompleted": {
+      "verb": "POST",
+      "path": "/api/v1/telemetry/request-completed",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "requestBodySchema": {
+        "properties": {
+          "correction_applied": {
+            "default": false,
+            "type": "boolean"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "experiment_id": {
+            "type": "string"
+          },
+          "finite_logits": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "output_tokens": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "properties": {
+              "architecture": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "backend": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "binary_sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "checkpoint_sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "source_commit": {
+                "minLength": 7,
+                "type": "string"
+              },
+              "worker_instance_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_commit",
+              "binary_sha256",
+              "checkpoint_sha256",
+              "worker_instance_id"
+            ],
+            "type": "object"
+          },
+          "success": {
+            "default": true,
+            "type": "boolean"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "properties": {
+                  "layer": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "n": {
+                    "maximum": 15,
+                    "minimum": 2,
+                    "type": "integer"
+                  },
+                  "role": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "role",
+                  "layer",
+                  "n"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tok_per_s": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_ms": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ttft_ms": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "weight_epoch": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "event_id",
+          "occurred_at",
+          "experiment_id",
+          "source",
+          "request_id",
+          "ttft_ms",
+          "output_tokens"
+        ],
+        "type": "object"
+      },
+      "requestBodyRequired": true,
+      "responseSchema": {
+        "properties": {
+          "accepted": {
+            "default": true,
+            "type": "boolean"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "seq": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "event_id",
+          "event_type"
+        ],
+        "type": "object"
+      },
+      "errorSchema": {
+        "properties": {
+          "detail": {
+            "items": {
+              "properties": {
+                "ctx": {
+                  "type": "object"
+                },
+                "input": {},
+                "loc": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "loc",
+                "msg",
+                "type"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "sourceParameters": [
+        {
+          "name": "X-Beglin-Telemetry-Token",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      ],
+      "sourceSummary": "Ingest Request Completed",
+      "sourceTags": [
+        "telemetry"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        },
+        "422": {
+          "description": "Validation Error",
+          "schemaFrom": "error"
+        }
+      }
+    },
+    "ingestRuntimeSummary": {
+      "verb": "POST",
+      "path": "/api/v1/telemetry/runtime-summary",
+      "pathParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "body": false,
+      "provenance": "openapi",
+      "requestBodySchema": {
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "experiment_id": {
+            "type": "string"
+          },
+          "finite_logits": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "logits_checked": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "requests": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "properties": {
+              "architecture": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "backend": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "binary_sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "checkpoint_sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "source_commit": {
+                "minLength": 7,
+                "type": "string"
+              },
+              "worker_instance_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_commit",
+              "binary_sha256",
+              "checkpoint_sha256",
+              "worker_instance_id"
+            ],
+            "type": "object"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "properties": {
+                  "layer": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "n": {
+                    "maximum": 15,
+                    "minimum": 2,
+                    "type": "integer"
+                  },
+                  "role": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "role",
+                  "layer",
+                  "n"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tok_per_s": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ttft_max_ms": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ttft_mean_ms": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "wall_ms": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "weight_epoch": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "event_id",
+          "occurred_at",
+          "experiment_id",
+          "source",
+          "requests"
+        ],
+        "type": "object"
+      },
+      "requestBodyRequired": true,
+      "responseSchema": {
+        "properties": {
+          "accepted": {
+            "default": true,
+            "type": "boolean"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "seq": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "event_id",
+          "event_type"
+        ],
+        "type": "object"
+      },
+      "errorSchema": {
+        "properties": {
+          "detail": {
+            "items": {
+              "properties": {
+                "ctx": {
+                  "type": "object"
+                },
+                "input": {},
+                "loc": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "loc",
+                "msg",
+                "type"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "sourceParameters": [
+        {
+          "name": "X-Beglin-Telemetry-Token",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      ],
+      "sourceSummary": "Ingest Runtime Summary",
+      "sourceTags": [
+        "telemetry"
+      ],
+      "sourceResponses": {
+        "200": {
+          "description": "Successful Response",
+          "schemaFrom": "response"
+        },
+        "422": {
+          "description": "Validation Error",
+          "schemaFrom": "error"
+        }
+      }
+    }
+  },
+  "warnings": [
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "ingestLayerObservation",
+      "message": "operationId \"ingestLayerObservation\" for POST /api/v1/telemetry/layer-observation was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "POST",
+        "path": "/api/v1/telemetry/layer-observation",
+        "scan_verb": "POST",
+        "scan_path": "/api/v1/telemetry/layer-observation"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "ingestRequestCompleted",
+      "message": "operationId \"ingestRequestCompleted\" for POST /api/v1/telemetry/request-completed was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "POST",
+        "path": "/api/v1/telemetry/request-completed",
+        "scan_verb": "POST",
+        "scan_path": "/api/v1/telemetry/request-completed"
+      }
+    },
+    {
+      "code": "CONTRACT_OPENAPI_DERIVED_OPERATION_ID",
+      "severity": "warn",
+      "subject": "ingestRuntimeSummary",
+      "message": "operationId \"ingestRuntimeSummary\" for POST /api/v1/telemetry/runtime-summary was not source-pinned by the scanner -- adopted directly from the OpenAPI document instead",
+      "detail": {
+        "verb": "POST",
+        "path": "/api/v1/telemetry/runtime-summary",
+        "scan_verb": "POST",
+        "scan_path": "/api/v1/telemetry/runtime-summary"
+      }
+    }
+  ],
+  "completeness": {
+    "status": "complete",
+    "operation_count": 3,
+    "endpoint_count": 3
+  }
+}
