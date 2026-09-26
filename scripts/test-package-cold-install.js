@@ -51,8 +51,8 @@ function main() {
     return;
   }
 
-  const clang = run("clang", ["--version"]);
-  if (clang.status !== 0) {
+  const clang = spawnSync("clang", ["--version"], { encoding: "utf8" });
+  if (clang.error || clang.status !== 0) {
     die("clang unavailable on supported macOS arm64 test host");
   }
 
