@@ -1,0 +1,21 @@
+{
+  "schema": "beglin-certified-archive-metadata/1",
+  "source_commit": "330954b27f146b8a17db2cb353c3e620968bad5e",
+  "source_tree": "d77401fa1913125198da997712641820483f4a29",
+  "bundle_sha256": "c0591f4ad9a1d8193f2d7bc0d21420b29df9043942df64c6c15fdc0b6714a1b9",
+  "prerequisite_commit": "a0b8ab2c90af70fa8095556033e605477ec186ae",
+  "clean_fetchback": {
+    "status": "PASS",
+    "fetched_commit": "330954b27f146b8a17db2cb353c3e620968bad5e",
+    "fetched_tree": "d77401fa1913125198da997712641820483f4a29",
+    "git_fsck": "PASS"
+  },
+  "gpu_binary": {
+    "sha256": "6e6258d6d4e402033c303c8c4b622db5a088354a0de79e687eb0fad4190c4392",
+    "build_source_commit": "330954b27f146b8a17db2cb353c3e620968bad5e",
+    "clean_rebuild_matches_real_gpu_binary": true
+  },
+  "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+  "production_write_allowed": false,
+  "production_approval_ready": false
+}
