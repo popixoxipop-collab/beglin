@@ -176,6 +176,100 @@ class AgentFCoverageTests(unittest.TestCase):
             with self.assertRaises(f.CoverageError):
                 f.launch()
 
+    def test_terminal_status_exposes_sanitized_matrix_summary(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            matrix = root / "latest.json"
+            matrix.write_text(json.dumps({
+                "status": "PARTIAL_NO_KVA_BAD_CANDIDATE",
+                "run_id": "r1",
+                "source_head": "a" * 40,
+                "binary_sha256": "b" * 64,
+                "checkpoint_sha256": "c" * 64,
+                "process_launches": 9,
+                "production_write_allowed": False,
+                "kva_candidate_scan": [
+                    {
+                        "n": 5,
+                        "classification": "GOOD",
+                        "requests_completed": 12,
+                        "counts": {"corrected_hits": 12},
+                        "requested_policy_applied": True,
+                        "run_dir": "/private/path/not-for-summary",
+                    }
+                ],
+                "g5_kva_rollback": {
+                    "status": "NO_BAD_CANDIDATE_WITHIN_BUDGET",
+                },
+                "g6_kva": {
+                    "positive": {
+                        "result": {
+                            "status": "CANARY_PASS",
+                            "decision": "CANARY_PASS_NO_AUTO_EXPANSION",
+                            "rollback_required": False,
+                            "auto_expand": False,
+                        },
+                        "reused_hardware_run": False,
+                        "source_run": "kva_n7_slots4",
+                    },
+                },
+                "g6_shared_up": {
+                    "regression": {
+                        "result": {
+                            "status": "REGRESSION_DETECTED",
+                            "decision": "ROLLBACK_REQUIRED",
+                            "rollback_required": True,
+                            "auto_expand": False,
+                        },
+                        "reused_hardware_run": False,
+                        "source_run": "shared_up_n7_slots4",
+                        "real_bad_candidate": True,
+                    },
+                },
+                "batch_regression": {
+                    "slots1_equals_slots2": True,
+                    "slots2_equals_slots4": True,
+                },
+            }, sort_keys=True))
+            with patch.object(f, "LATEST_RESULT", matrix):
+                summary = f._latest_public_summary()
+            self.assertEqual(
+                summary["g5_kva_status"],
+                "NO_BAD_CANDIDATE_WITHIN_BUDGET",
+            )
+            self.assertEqual(
+                summary["g6_shared_up"]["regression"]["decision"],
+                "ROLLBACK_REQUIRED",
+            )
+            self.assertTrue(
+                summary["batch_regression"]["slots1_equals_slots2"]
+            )
+            self.assertEqual(len(summary["matrix_sha256"]), 64)
+            self.assertNotIn(
+                "run_dir",
+                summary["kva_candidate_scan"][0],
+            )
+
+    def test_terminal_status_attaches_public_summary(self):
+        with patch.object(
+            f,
+            "_load_status",
+            return_value={
+                "status": "COMPLETE",
+                "production_write_allowed": False,
+            },
+        ), patch.object(
+            f,
+            "_latest_public_summary",
+            return_value={"matrix_sha256": "d" * 64},
+        ):
+            got = f.status()
+        self.assertEqual(
+            got["coverage_summary"]["matrix_sha256"],
+            "d" * 64,
+        )
+        self.assertFalse(got["production_write_allowed"])
+
     def test_progress_enforces_process_launch_budget(self):
         with tempfile.TemporaryDirectory() as td:
             p = f.Progress("test-run", Path(td))

@@ -1371,6 +1371,89 @@ def worker(run_id: str) -> int:
         return 2
 
 
+def _public_case(case: dict | None) -> dict | None:
+    if not isinstance(case, dict):
+        return None
+    result = case.get("result")
+    if not isinstance(result, dict):
+        result = {}
+    return {
+        "status": result.get("status"),
+        "decision": result.get("decision"),
+        "rollback_required": result.get("rollback_required"),
+        "auto_expand": result.get("auto_expand"),
+        "reused_hardware_run": case.get("reused_hardware_run"),
+        "source_run": case.get("source_run"),
+        "real_bad_candidate": case.get("real_bad_candidate"),
+    }
+
+
+def _latest_public_summary() -> dict | None:
+    if not LATEST_RESULT.is_file():
+        return None
+    try:
+        obj = json.loads(LATEST_RESULT.read_text())
+    except Exception as exc:
+        return {
+            "status": "MATRIX_UNREADABLE",
+            "error": str(exc),
+        }
+    if not isinstance(obj, dict):
+        return {"status": "MATRIX_UNREADABLE"}
+    kva_scan = []
+    for row in obj.get("kva_candidate_scan") or []:
+        if not isinstance(row, dict):
+            continue
+        kva_scan.append({
+            "n": row.get("n"),
+            "classification": row.get("classification"),
+            "requests_completed": row.get("requests_completed"),
+            "counts": row.get("counts"),
+            "requested_policy_applied": row.get("requested_policy_applied"),
+        })
+    g6_kva = obj.get("g6_kva") if isinstance(obj.get("g6_kva"), dict) else {}
+    g6_shared = (
+        obj.get("g6_shared_up")
+        if isinstance(obj.get("g6_shared_up"), dict)
+        else {}
+    )
+    return {
+        "status": obj.get("status"),
+        "run_id": obj.get("run_id"),
+        "source_head": obj.get("source_head"),
+        "binary_sha256": obj.get("binary_sha256"),
+        "checkpoint_sha256": obj.get("checkpoint_sha256"),
+        "process_launches": obj.get("process_launches"),
+        "matrix_sha256": _sha256_file(LATEST_RESULT),
+        "kva_candidate_scan": kva_scan,
+        "g5_kva_status": (
+            obj.get("g5_kva_rollback", {}).get("status")
+            if isinstance(obj.get("g5_kva_rollback"), dict)
+            else None
+        ),
+        "g6_kva": {
+            name: _public_case(g6_kva.get(name))
+            for name in (
+                "positive",
+                "regression",
+                "budget_exceeded",
+                "inconclusive",
+            )
+        },
+        "g6_shared_up": {
+            name: _public_case(g6_shared.get(name))
+            for name in (
+                "positive",
+                "regression",
+                "budget_exceeded",
+                "inconclusive",
+            )
+        },
+        "batch_regression": obj.get("batch_regression"),
+        "production_write_allowed": obj.get("production_write_allowed"),
+    }
+
+
 def status() -> dict:
     value = _load_status()
     if value is None:
@@ -1382,6 +1465,8 @@ def status() -> dict:
     result = dict(value)
     if result.get("status") == "RUNNING":
         result["pid_alive"] = _pid_alive(result.get("pid"))
+    if result.get("status") in {"COMPLETE", "FAILED"}:
+        result["coverage_summary"] = _latest_public_summary()
     return result
 
 
