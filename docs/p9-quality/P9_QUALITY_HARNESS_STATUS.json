@@ -1,0 +1,39 @@
+{
+  "schema": "beglin-p9-quality-harness-status/1",
+  "observed_at": "2026-09-28",
+  "agent": "D",
+  "status": "P9_QUALITY_HARNESS_READY_PENDING_SELF_TEST",
+  "branch": "prod/p9-quality",
+  "baseline_commit": "a0b8ab2c90af70fa8095556033e605477ec186ae",
+  "owned_paths": [
+    "benchmarks/quality/**",
+    "configs/quality/**",
+    "docs/p9-quality/**"
+  ],
+  "implemented": [
+    "normalized reference/candidate artifact schema",
+    "strict control identity compatibility gate",
+    "deterministic prompt corpus renderer",
+    "perplexity NLL/logprob hook",
+    "external bounded quality-score hook",
+    "deterministic task-score hook",
+    "finite-logits checker",
+    "within-run deterministic output comparator",
+    "candidate-vs-reference output comparator",
+    "correction/promotion counters",
+    "activation mean-abs/RMS drift",
+    "router near-tie aggregation",
+    "long-context stability",
+    "P8 integration gate-aware matrix planner",
+    "P7 readiness probe",
+    "synthetic fail-closed self-test"
+  ],
+  "actual_physical_comparison_run": false,
+  "reason": "A0 P8 integration completion signal has not been supplied. Policy thresholds are intentionally unfrozen.",
+  "next": [
+    "run self-test on EOE",
+    "run P7 readiness probe against current physical summary",
+    "after A0 P8_INTEGRATION_PASS: bind runner adapter and execute reference + n4/n5/n6/n7 on identical controls",
+    "freeze numeric quality thresholds only after baseline evidence is observed"
+  ]
+}
