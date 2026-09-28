@@ -1,0 +1,45 @@
+{
+  "schema": "beglin-p8-integration/1",
+  "observed_at": "2026-09-28T12:02:02Z",
+  "status": "P8_INTEGRATION_PASS",
+  "scope": "P8 engine correctness handoff to P9; not production release approval",
+  "gates": {
+    "runtime": "P8_RUNTIME_VALID_8_OF_8",
+    "policy": "P8_POLICY_ATTRIBUTION_8_OF_8",
+    "evidence": "P8_EVIDENCE_INDEPENDENT_PASS"
+  },
+  "identity": {
+    "source_commit": "998cbe21124864e68a42022bd460d88f79dfa3c3",
+    "source_tree": "da82c53c8bdf40c136f1d10b8cc738cb1d412b7fdc710c3df6d3b85539f5b71e",
+    "binary_sha256": "d69a3f8f008a52cc6eeb6e74e56fd9ed39f7cbf8ba02e524e43d88939fd4cc41",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "model_id": "deepseek-v2-lite",
+    "hardware_id": "xox-apple-silicon",
+    "backend": "mlx_metal",
+    "seed": 0,
+    "runtime_config_hash": "5285874fc903ca4b75499f97648095107bc31b368ef7d63c9c869e3c901b2646"
+  },
+  "canonical_job": {
+    "job_id": "job_71077821324601b20057edb1aad42108",
+    "request_hash": "83d9f16930ba264ed70a3aa6f7c94f9b080305aff42d618a50a1cb006d940d41",
+    "state": "SUCCEEDED",
+    "exit_code": 0
+  },
+  "source_evidence": {
+    "engine_correctness_pass": {
+      "path": "beglin-dashboard/docs/P8_ENGINE_CORRECTNESS_PASS_2026-09-28.json",
+      "sha256": "39d3904b8c36b8c82d347d35c22d4a1c62f68c22d52df9f55cd38a6255350489"
+    },
+    "canonical_result": {
+      "path": "beglin-dashboard/docs/P8_CANONICAL_8CELL_FINAL_RESULT_2026-09-28.json",
+      "sha256": "0756cbea1dda1e3fff976400cb27b2ced4097ad45425126012b44cf6c4bffa70"
+    },
+    "independent_audit": {
+      "path": "beglin-dashboard/docs/P8_C_INDEPENDENT_INTEGRATION_AUDIT_2026-09-28.json",
+      "sha256": "411905280e2b76cf264a6fdaa7812455def17dec1345be0e460231b65aee74fc",
+      "status": "PASS"
+    }
+  },
+  "production_release_authorized": false,
+  "next_gate": "P9 quality execution adapter, physical quality evidence, and Policy Freeze"
+}

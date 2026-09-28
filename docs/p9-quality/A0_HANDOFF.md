@@ -1,6 +1,6 @@
 # Agent D → A0 Handoff: P9 Quality Harness
 
-Status: **P9_QUALITY_HARNESS_READY**
+Status: **P9_EXECUTION_PLAN_READY**
 
 Branch: `prod/p9-quality`
 Base: `a0b8ab2c90af70fa8095556033e605477ec186ae`
@@ -15,9 +15,12 @@ Only these paths are modified:
 
 No Agent A/B/C runtime or policy-binding source is modified. No merge/release action has been performed.
 
-## What A0 must provide after P8
+## P8 handoff received
 
-Agent D expects one P8 integration evidence JSON with:
+The required P8 integration evidence is now materialized as
+`docs/p9-quality/P8_INTEGRATION_GATE_2026-09-28.json`. It is hash-bound to the
+canonical P8 result, engine-correctness PASS record, and independent audit, and
+has this accepted shape:
 
 ```json
 {
@@ -42,7 +45,10 @@ Agent D expects one P8 integration evidence JSON with:
 }
 ```
 
-A0 must also name or bind the approved integrated execution adapter. Agent D will not infer an executable path or production policy.
+`docs/p9-quality/P9_EXECUTION_PLAN_2026-09-28.json` confirms the gate with no
+problems. A0 must still name or bind the approved integrated execution adapter
+and external quality evaluator. Agent D will not infer an executable path,
+quality score, or production policy.
 
 ## Required normalized output
 

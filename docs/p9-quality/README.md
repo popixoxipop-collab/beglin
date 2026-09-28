@@ -15,16 +15,16 @@ It does **not** modify engine runtime sources, policy-binding sources, A/B/C val
 
 ## Current phase
 
-Status: **P9_QUALITY_HARNESS_READY**
+Status: **P9_EXECUTION_PLAN_READY**
 
-Physical BF16/reference vs n=4/5/6/7 execution is deliberately blocked until A0 supplies a valid `beglin-p8-integration/1` evidence file with:
+The P8 gate is now satisfied by `P8_INTEGRATION_GATE_2026-09-28.json`, which is hash-bound to the canonical P8 result and independent audit. It supplies:
 
 - `P8_RUNTIME_VALID_8_OF_8`
 - `P8_POLICY_ATTRIBUTION_8_OF_8`
 - `P8_EVIDENCE_INDEPENDENT_PASS`
 - overall `P8_INTEGRATION_PASS`
 
-Even after that signal, the current matrix keeps `execution_adapter=null`; A0 or Agent D must bind the integrated runner explicitly. The harness never guesses a binary, checkpoint, policy, or command.
+The generated `P9_EXECUTION_PLAN_2026-09-28.json` is therefore ready, but the current matrix still keeps `execution_adapter=null`; A0 or Agent D must bind the integrated runner explicitly. The harness never guesses a binary, checkpoint, policy, external quality evaluator, or command.
 
 ## Measurements
 
@@ -95,8 +95,10 @@ EOE validation completed on 2026-09-28:
 - Python compile: PASS
 - synthetic quality self-test: PASS
 - no-P8 matrix planner: PASS / WAITING_P8_INTEGRATION
+- P8 compatibility gate: PASS / P8_INTEGRATION_PASS
+- post-P8 matrix planner: PASS / P9_EXECUTION_PLAN_READY
 - current P7 readiness probe: P7_INSUFFICIENT_FOR_P9
-- physical BF16/reference vs n=4/5/6/7 quality run: NOT RUN
+- physical BF16/reference vs n=4/5/6/7 quality run: NOT RUN / execution adapter unbound
 - numeric acceptance thresholds: UNFROZEN
 
 The current P7 physical run has six real activation cells and five performance cells, but it does not carry the complete token-level NLL/output/finite-logits/promotion/router/task/long-context evidence required by this harness. It is therefore evidence input, not a substitute for P9.

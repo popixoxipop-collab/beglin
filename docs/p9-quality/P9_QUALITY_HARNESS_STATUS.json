@@ -2,7 +2,7 @@
   "schema": "beglin-p9-quality-harness-status/1",
   "observed_at": "2026-09-28",
   "agent": "D",
-  "status": "P9_QUALITY_HARNESS_READY",
+  "status": "P9_EXECUTION_PLAN_READY",
   "branch": "prod/p9-quality",
   "baseline_commit": "a0b8ab2c90af70fa8095556033e605477ec186ae",
   "owned_paths": [
@@ -14,6 +14,8 @@
     "python_compile": "PASS",
     "synthetic_self_test": "PASS",
     "matrix_planner_without_p8": "PASS_WAITING_P8_INTEGRATION",
+    "p8_compatibility_gate": "PASS",
+    "matrix_planner_with_p8": "PASS_P9_EXECUTION_PLAN_READY",
     "p7_readiness_probe": "P7_INSUFFICIENT_FOR_P9",
     "control_mismatch_fail_closed": "PASS",
     "missing_metric_fail_closed": "PASS",
@@ -22,16 +24,18 @@
   "hashes": {
     "corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
     "matrix_hash": "8948fe1d73b3ae7231b6d4ab3dae78677bbabbe8ecd80de8bc28285a7143aeaf",
-    "no_p8_plan_hash": "1fb5e2c4e51dc7af38c90a8238b4618d97a2e5bcb4a93511ea257eaedbdc57d3"
+    "no_p8_plan_hash": "1fb5e2c4e51dc7af38c90a8238b4618d97a2e5bcb4a93511ea257eaedbdc57d3",
+    "p8_gate_sha256": "44708ff893826c35a73ebd1330027768c7d31a11cf4b47d076c4a8aa62b77fe2",
+    "post_p8_plan_hash": "46faec7e8fe12b9757dd0651215edff6d02f660b0a67bd3c3834867756726b77",
+    "post_p8_plan_file_sha256": "f2b84c83f9305b7dbd874fff35b0165c79c2a53f2d9431c4c6f8e1e247c9407f"
   },
   "actual_physical_comparison_run": false,
-  "execution_blocker": "A0 P8_INTEGRATION_PASS evidence plus explicit integrated execution adapter are required.",
+  "execution_blocker": "The P8_INTEGRATION_PASS gate is satisfied. An explicit integrated execution adapter and external quality evaluator remain required.",
   "policy_status": "UNFROZEN",
   "numeric_acceptance_rules_frozen": false,
   "merge_release_authority": false,
   "next": [
-    "wait for A0 P8 integration signal",
-    "bind only the A0-approved integrated runner adapter",
+    "bind only the A0-approved integrated runner adapter and external quality evaluator",
     "run one identical-control reference plus n4/n5/n6/n7 matrix",
     "measure all required metrics without filling missing data",
     "freeze numeric acceptance policy after baseline evidence review",
