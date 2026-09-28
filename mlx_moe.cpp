@@ -15,9 +15,11 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace mx = mlx::core;
@@ -85,6 +87,159 @@ static std::unordered_map<std::string, DTensor> g_dtensors;  // bits=16/32, dens
 static std::unordered_map<std::string, QNg64Tensor> g_qng64_tensors;  // n=7,9-15 (D-metal-4)
 static int g_bound_count = 0;
 
+static bool beglin_instrumentation_hex64(const char *s) {
+    if (!s || std::strlen(s) != 64) return false;
+    for (int i = 0; i < 64; i++) {
+        const char c = s[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+    }
+    return true;
+}
+
+static const char *beglin_instrumentation_role(const char *name, int *layer_out) {
+    int layer = -1;
+    if (!name || std::sscanf(name, "model.layers.%d.", &layer) != 1 || layer < 0) return nullptr;
+
+    char expected[192];
+    std::snprintf(expected, sizeof expected, "model.layers.%d.self_attn.kv_a_proj_with_mqa", layer);
+    if (std::strcmp(name, expected) == 0) { *layer_out = layer; return "kv_a_proj_with_mqa"; }
+    std::snprintf(expected, sizeof expected, "model.layers.%d.self_attn.kv_b_proj", layer);
+    if (std::strcmp(name, expected) == 0) { *layer_out = layer; return "kv_b_proj"; }
+    std::snprintf(expected, sizeof expected, "model.layers.%d.mlp.shared_experts.gate_proj", layer);
+    if (std::strcmp(name, expected) == 0) { *layer_out = layer; return "shared_gate_proj"; }
+    std::snprintf(expected, sizeof expected, "model.layers.%d.mlp.shared_experts.up_proj", layer);
+    if (std::strcmp(name, expected) == 0) { *layer_out = layer; return "shared_up_proj"; }
+    std::snprintf(expected, sizeof expected, "model.layers.%d.mlp.shared_experts.down_proj", layer);
+    if (std::strcmp(name, expected) == 0) { *layer_out = layer; return "shared_down_proj"; }
+    return nullptr;
+}
+
+enum BeglinBindingRepresentation {
+    BEGLIN_BINDING_NONE = 0,
+    BEGLIN_BINDING_NATIVE_QUANT = 1,
+    BEGLIN_BINDING_QNG64 = 2,
+    BEGLIN_BINDING_DENSE = 3,
+};
+
+static int beglin_binding_state(const char *name, int *bound_n, int *representation) {
+    if (bound_n) *bound_n = -1;
+    if (representation) *representation = BEGLIN_BINDING_NONE;
+    if (!name || !name[0]) return 0;
+
+    auto qng = g_qng64_tensors.find(name);
+    if (qng != g_qng64_tensors.end()) {
+        if (bound_n) *bound_n = qng->second.n;
+        if (representation) *representation = BEGLIN_BINDING_QNG64;
+        return 1;
+    }
+    auto quant = g_tensors.find(name);
+    if (quant != g_tensors.end()) {
+        if (bound_n) *bound_n = quant->second.bits;
+        if (representation) *representation = BEGLIN_BINDING_NATIVE_QUANT;
+        return 1;
+    }
+    auto dense = g_dtensors.find(name);
+    if (dense != g_dtensors.end()) {
+        if (bound_n) *bound_n = dense->second.bits;
+        if (representation) *representation = BEGLIN_BINDING_DENSE;
+        return 1;
+    }
+    return 0;
+}
+
+static int beglin_instrumentation_bound_n(const char *name) {
+    int bound_n = -1;
+    return beglin_binding_state(name, &bound_n, nullptr) ? bound_n : -1;
+}
+
+int mlx_gpu_get_binding_state(const char *name, int *bound_n, int *representation) {
+    return beglin_binding_state(name, bound_n, representation);
+}
+
+int mlx_gpu_assert_binding(const char *name, int requested_n, int *bound_n,
+                           int *representation) {
+    int observed_n = -1;
+    int observed_representation = BEGLIN_BINDING_NONE;
+    const int present = beglin_binding_state(
+        name, &observed_n, &observed_representation);
+    if (bound_n) *bound_n = observed_n;
+    if (representation) *representation = observed_representation;
+    if (!present) return 0;
+    return observed_n == requested_n ? 1 : 0;
+}
+
+static void beglin_emit_activation_summary_once(const char *name, const mx::array &x) {
+    const char *enabled = std::getenv("BEGLIN_INSTRUMENTATION_V2");
+    if (!enabled || std::strcmp(enabled, "1") != 0) return;
+
+    static bool config_error_reported = false;
+    const char *target_role = std::getenv("BEGLIN_INSTRUMENTATION_ROLE");
+    const char *target_layer_raw = std::getenv("BEGLIN_INSTRUMENTATION_LAYER");
+    const char *policy_hash = std::getenv("BEGLIN_INSTRUMENTATION_POLICY_HASH");
+    const char *weight_epoch_raw = std::getenv("BEGLIN_INSTRUMENTATION_WEIGHT_EPOCH");
+
+    char *layer_end = nullptr;
+    char *epoch_end = nullptr;
+    long target_layer = target_layer_raw ? std::strtol(target_layer_raw, &layer_end, 10) : -1;
+    long weight_epoch = weight_epoch_raw ? std::strtol(weight_epoch_raw, &epoch_end, 10) : -1;
+
+    const bool config_ok =
+        target_role && target_role[0] &&
+        target_layer_raw && layer_end && *layer_end == '\0' && target_layer >= 0 &&
+        beglin_instrumentation_hex64(policy_hash) &&
+        weight_epoch_raw && epoch_end && *epoch_end == '\0' && weight_epoch >= 0;
+
+    if (!config_ok) {
+        if (!config_error_reported) {
+            std::fprintf(stderr,
+                "BEGLIN_INSTRUMENTATION_V2_ERROR reason=missing_or_invalid_identity_env\n");
+            config_error_reported = true;
+        }
+        return;
+    }
+
+    int layer = -1;
+    const char *role = beglin_instrumentation_role(name, &layer);
+    if (!role || std::strcmp(role, target_role) != 0 || layer != target_layer) return;
+
+    int n = -1;
+    int representation = BEGLIN_BINDING_NONE;
+    if (!beglin_binding_state(name, &n, &representation)) return;
+    if (n < 2 || n > 32) return;
+
+    static std::unordered_set<std::string> emitted;
+    const std::string key = std::string(name) + "#n=" + std::to_string(n);
+    if (emitted.count(key)) return;
+
+    mx::eval(x);
+    size_t count = 1;
+    for (int dim : x.shape()) count *= (size_t)dim;
+    if (count == 0) return;
+
+    const float *values = x.data<float>();
+    double sum_abs = 0.0;
+    double sum_sq = 0.0;
+    for (size_t i = 0; i < count; i++) {
+        const double v = (double)values[i];
+        sum_abs += std::fabs(v);
+        sum_sq += v * v;
+    }
+    const double mean_abs = sum_abs / (double)count;
+    const double rms = std::sqrt(sum_sq / (double)count);
+
+    std::fprintf(stderr,
+        "BEGLIN_INSTRUMENTATION_V2 kind=activation role=%s layer=%d n=%d "
+        "sample_count=%zu policy_hash=%s weight_epoch=%ld mean_abs=%.9g rms=%.9g "
+        "binding_present=1 binding_representation=%d\n",
+        role, layer, n, count, policy_hash, weight_epoch, mean_abs, rms,
+        representation);
+    std::fprintf(stderr,
+        "BEGLIN_POLICY_BINDING_V1 role=%s layer=%d bound_n=%d representation=%d "
+        "policy_hash=%s weight_epoch=%ld applied=1\n",
+        role, layer, n, representation, policy_hash, weight_epoch);
+    emitted.insert(key);
+}
+
 static void noop_deleter(void *) {
     // Data is owned by qwen_infer.c's mmap of the AF blob (or, for
     // mlx_gpu_matvec_probe's transient x, by the caller's own stack/heap
@@ -147,8 +302,10 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
             // never takes effect for any caller that resolves by name. Found live: a
             // real-data guard test (Gate 7, qwen_infer.c) rebound a tensor to bits=16
             // and the mixed-precision check still read it back as quantized. A tensor
-            // must exist in exactly one of g_tensors/g_dtensors at a time.
+            // must exist in exactly one active representation map at a time. In
+            // particular, a prior custom-qNg64 bind must not shadow this dense rebind.
             g_tensors.erase(std::string(name));
+            g_qng64_tensors.erase(std::string(name));
             g_dtensors.insert_or_assign(std::string(name), DTensor{w, E, out, in, bits});
             g_bound_count++;
             return 1;
@@ -308,8 +465,11 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
         // fields with no default constructor, so operator[]'s implicit
         // default-then-assign doesn't compile.
         // D-gpu-7-fix: symmetric with the bits=16/32 branch's own erase above -- a name
-        // previously bound dense must not leave a stale g_dtensors entry either.
+        // previously bound through another representation must not leave a stale entry.
         g_dtensors.erase(std::string(name));
+        // G0/PR-A: resolve_ffn_role() checks qNg64 first. Without this erase,
+        // n=7/9..15 -> native n=2/3/4/5/6/8 silently keeps using the stale qNg64 binding.
+        g_qng64_tensors.erase(std::string(name));
         g_tensors.insert_or_assign(
             std::string(name),
             QTensor{w, scales, biases, E, out, in, ng, bits});
@@ -1646,6 +1806,7 @@ int mlx_gpu_qng64_gather_probe(const uint8_t *planes, long E, long out, long in,
 }
 
 static mx::array lazy_matvec_e0(const char *name, const mx::array &x) {
+    beglin_emit_activation_summary_once(name, x);
     // D-gpu-4: bits threaded from the tensor's own record. NOTE (D-gpu-5 scope): this
     // function does not yet check g_dtensors -- a shared/dense role promoted to
     // bits=16/32 would throw here (g_tensors.at() on a name that only exists in
