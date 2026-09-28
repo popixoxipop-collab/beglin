@@ -63,6 +63,13 @@ int mlx_gpu_get_role_binding_state(const char *role, int layer,
 int mlx_gpu_assert_role_binding(const char *role, int layer, int requested_n,
                                 int *bound_n, int *representation);
 
+// P8-B runtime correctness probe for the custom qNg64 single-expert path.
+// x is row-major {batch,in}; y receives row-major {batch,out}. Returns 0
+// on missing qNg64 binding, invalid arguments/shape, MLX evaluation failure,
+// or any custom-kernel failure.
+int mlx_gpu_qng64_batch_probe(const char *name, const float *x, int batch,
+                              float *y);
+
 // Reports how many previously-bound tensors got true zero-copy vs an
 // explicit-copy fallback, and total bytes copied (should be near 0 -- only
 // the F-10 stragglers with unaligned offsets fall back). Returns the total
