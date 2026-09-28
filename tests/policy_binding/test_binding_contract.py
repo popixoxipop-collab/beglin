@@ -18,7 +18,7 @@ def main() -> int:
     # Public C ABI: callers can ask the runtime map, not infer application
     # from a promotion/debug string.
     require(HDR, "int mlx_gpu_get_binding_state(")
-    require(HDR, "int mlx_gpu_assert_binding(")
+    require(HDR, "int mlx_gpu_assert_binding(")\n    require(HDR, "int mlx_gpu_get_role_binding_state(")\n    require(HDR, "int mlx_gpu_assert_role_binding(")
 
     # Canonical lookup order must match runtime dispatch priority.
     qng = CPP.index("auto qng = g_qng64_tensors.find(name);")
@@ -28,7 +28,7 @@ def main() -> int:
 
     # Missing bindings are explicit and mismatches fail closed.
     require(CPP, "if (!present) return 0;")
-    require(CPP, "return observed_n == requested_n ? 1 : 0;")
+    require(CPP, "return observed_n == requested_n ? 1 : 0;")\n    require(CPP, "beglin_role_tensor_name")\n    require(CPP, '"kv_a_proj_with_mqa"')\n    require(CPP, '"shared_up_proj"')
 
     # Instrumentation must be derived from the same binding-state helper.
     require(CPP, "if (!beglin_binding_state(name, &n, &representation)) return;")
