@@ -4,8 +4,11 @@
 #include <cstring>
 #include <vector>
 
+static std::vector<std::vector<unsigned char>> g_backing_storage;
+
 static int bind_and_expect(const char *name, int n, int expected_representation) {
-    std::vector<unsigned char> blob(1024, 0);
+    g_backing_storage.emplace_back(1024, 0);
+    std::vector<unsigned char> &blob = g_backing_storage.back();
     float scale = 1.0f;
     std::memcpy(blob.data() + 512, &scale, sizeof(scale));
 
