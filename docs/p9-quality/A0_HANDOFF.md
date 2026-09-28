@@ -58,7 +58,7 @@ Raw physical success is not a P9 quality PASS. EOE must still normalize all five
 
 ## Current prohibition
 
-`configs/quality/quality_policy_v1.json` remains `UNFROZEN`. `production_write_allowed=false`; no merge, production promotion, or go-live decision is authorized by the current state.
+`configs/quality/quality_policy_v1.json` is now `FROZEN`, hash-bound to the physical reference artifact and timestamped before any candidate log was inspected. `production_write_allowed=false`; candidate completion and an independent final audit are still required before any merge, production promotion, or go-live decision.
 
 ## Next exact action
 
@@ -72,4 +72,4 @@ n6.log
 n7.log
 ```
 
-Do not freeze numeric policy or authorize production from a RUNNING job.
+Do not modify the frozen numeric policy or authorize production from a RUNNING job.

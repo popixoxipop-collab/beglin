@@ -1,0 +1,12 @@
+{
+  "backend": "mlx_metal",
+  "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+  "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+  "hardware_id": "xox-apple-silicon",
+  "model_id": "deepseek-v2-lite",
+  "prompt_corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+  "runtime_config_hash": "ca2316c4ab43b9bd12466d0a5a6978376ebb297b0b9c81b5ed4a4ae03a0ca632",
+  "seed": 0,
+  "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+  "source_tree": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a"
+}

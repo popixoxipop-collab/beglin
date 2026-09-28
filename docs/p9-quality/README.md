@@ -90,7 +90,7 @@ python3 -m benchmarks.quality.evaluate \
   --policy configs/quality/quality_policy_v1.json
 ```
 
-Before Policy Freeze, `quality_policy_v1.json` is `UNFROZEN`, has no numeric acceptance rules, and therefore cannot emit `P9_QUALITY_PASS`.
+`quality_policy_v1.json` is now `FROZEN` against the physical reference artifact. The freeze occurred before any candidate log was inspected; missing metrics still fail closed and candidate results remain pending.
 
 ## P7 compatibility
 
@@ -110,6 +110,6 @@ EOE validation completed on 2026-09-29:
 - post-P8 matrix planner: PASS / P9_EXECUTION_ADAPTER_READY
 - current P7 readiness probe: P7_INSUFFICIENT_FOR_P9
 - physical reference vs n=4/5/6/7 quality run: RUNNING / XOX job `job_f640ce1213e392ed07d7d627482aa975`
-- numeric acceptance thresholds: UNFROZEN
+- numeric acceptance thresholds: FROZEN_BEFORE_CANDIDATE_OBSERVATION
 
 The current P7 physical run has six real activation cells and five performance cells, but it does not carry the complete token-level NLL/output/finite-logits/promotion/router/task/long-context evidence required by this harness. It is therefore evidence input, not a substitute for P9.

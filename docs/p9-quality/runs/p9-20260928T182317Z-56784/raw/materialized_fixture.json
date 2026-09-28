@@ -1,0 +1,56 @@
+{
+  "files": [
+    {
+      "context_tokens": 19,
+      "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/00-copy_alpha.i32",
+      "prompt_id": "copy_alpha",
+      "sha256": "ec03309564ec81c3be0853a69f9af8d70291476b8f9c2e7c2df1c42d50e279eb"
+    },
+    {
+      "context_tokens": 21,
+      "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/01-arith_17x19.i32",
+      "prompt_id": "arith_17x19",
+      "sha256": "5c245051533ec02d744a3e539751dd2137278d8b9c2018bfa3fcdb3b22049ee7"
+    },
+    {
+      "context_tokens": 18,
+      "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/02-constraint_words.i32",
+      "prompt_id": "constraint_words",
+      "sha256": "05445088a4c18d8796dfa9b7553fef127677e9b2fad3d68c89ef2b0346479400"
+    },
+    {
+      "context_tokens": 16,
+      "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/03-ppl_short_1.i32",
+      "prompt_id": "ppl_short_1",
+      "sha256": "e49324063d59910dd2e84f2e73ba7dc95c696f532af3982802e8191a7b31cdb8"
+    },
+    {
+      "context_tokens": 14,
+      "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/04-ppl_short_2.i32",
+      "prompt_id": "ppl_short_2",
+      "sha256": "861b66e1a9b7d48c446535d36389657cf943a1fda6f1f007a06aa06707e431c1"
+    },
+    {
+      "context_tokens": 16,
+      "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/05-ppl_short_3.i32",
+      "prompt_id": "ppl_short_3",
+      "sha256": "585c312a17fcb4eb6bd43293d7df7df8f1db6a58435c54b4f481955bf8d95449"
+    },
+    {
+      "context_tokens": 15033,
+      "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/06-long_retrieval.i32",
+      "prompt_id": "long_retrieval",
+      "sha256": "0bbc7a19c8e00840b015a89706e68e56f6eb2b85b6bea1ba04661f403a22efab"
+    },
+    {
+      "context_tokens": 25,
+      "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/07-short_reasoning.i32",
+      "prompt_id": "short_reasoning",
+      "sha256": "0bb5fb4072b7e80dfb50cf6d1f0adbba528caa8d071ee51545fdfd24d979057b"
+    }
+  ],
+  "fixture_id": "p9-deepseek-v2-lite-deterministic-v1",
+  "manifest": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/p9-prompts.manifest",
+  "manifest_sha256": "afdae02d0ae6d76242a86ef6a100fc05f74ea34ed0b4a89c6cac8b27f9dd1b4e",
+  "schema": "beglin-quality-materialized-fixture/1"
+}

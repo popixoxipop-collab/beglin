@@ -147,7 +147,15 @@ def main() -> None:
     assert metrics["candidate_quality_score"] == 0.94
 
     gate = classify_pair(pair, policy)
-    assert gate["status"] == "MEASURED_POLICY_NOT_FROZEN"
+    assert gate["status"] == "P9_QUALITY_FAIL"
+
+    passing_pair = deepcopy(pair)
+    passing_metrics = passing_pair["metrics"]
+    passing_metrics["candidate_quality_score"] = 0.95
+    passing_metrics["quality_score_delta"] = 0.0
+    passing_metrics["correction_count"] = 0
+    passing_metrics["promotion_count"] = 2
+    assert classify_pair(passing_pair, policy)["status"] == "P9_QUALITY_PASS"
 
     incomplete = make_run(corpus, kind="candidate", n=5, quality_missing=True)
     incomplete_pair = evaluate_pair(reference, incomplete, corpus)

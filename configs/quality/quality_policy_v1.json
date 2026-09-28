@@ -1,6 +1,6 @@
 {
   "schema": "beglin-quality-policy/1",
-  "policy_status": "UNFROZEN",
+  "policy_status": "FROZEN",
   "required_metrics": [
     "perplexity_ratio",
     "candidate_quality_score",
@@ -19,6 +19,102 @@
     "router_near_tie_delta",
     "long_context_stability.rate"
   ],
-  "rules": [],
-  "note": "Numeric acceptance thresholds are intentionally not frozen before P8 integration. Missing required metrics remain null and block P9 PASS."
+  "rules": [
+    {
+      "metric": "perplexity_ratio",
+      "op": "<=",
+      "value": 1.05
+    },
+    {
+      "metric": "candidate_quality_score",
+      "op": ">=",
+      "value": 0.95
+    },
+    {
+      "metric": "quality_score_delta",
+      "op": ">=",
+      "value": -0.05
+    },
+    {
+      "metric": "candidate_task_score.value",
+      "op": ">=",
+      "value": 0.2
+    },
+    {
+      "metric": "task_score_delta",
+      "op": ">=",
+      "value": 0.0
+    },
+    {
+      "metric": "reference_finite_logits.rate",
+      "op": "==",
+      "value": 1.0
+    },
+    {
+      "metric": "candidate_finite_logits.rate",
+      "op": "==",
+      "value": 1.0
+    },
+    {
+      "metric": "reference_determinism.rate",
+      "op": "==",
+      "value": 1.0
+    },
+    {
+      "metric": "candidate_determinism.rate",
+      "op": "==",
+      "value": 1.0
+    },
+    {
+      "metric": "reference_output_match.rate",
+      "op": ">=",
+      "value": 0.9375
+    },
+    {
+      "metric": "correction_count",
+      "op": "==",
+      "value": 0.0
+    },
+    {
+      "metric": "promotion_count",
+      "op": "<=",
+      "value": 2.0
+    },
+    {
+      "metric": "activation_drift.max_abs_rms_relative_delta",
+      "op": "<=",
+      "value": 0.1
+    },
+    {
+      "metric": "candidate_router_near_tie.rate",
+      "op": "<=",
+      "value": 0.8
+    },
+    {
+      "metric": "router_near_tie_delta",
+      "op": "<=",
+      "value": 0.05
+    },
+    {
+      "metric": "router_near_tie_delta",
+      "op": ">=",
+      "value": -0.05
+    },
+    {
+      "metric": "long_context_stability.rate",
+      "op": "==",
+      "value": 1.0
+    }
+  ],
+  "frozen_at": "2026-09-28T18:36:13Z",
+  "baseline_artifact": "docs/p9-quality/runs/p9-20260928T182317Z-56784/reference.json",
+  "baseline_artifact_hash": "841931ee1b17e6bca6ad07e97176558951048700addeee22fc8352e2a78f85f0",
+  "baseline": {
+    "perplexity": 322.6331031863081,
+    "task_score": 0.2,
+    "finite_logits_rate": 1.0,
+    "determinism_rate": 1.0,
+    "router_near_tie_rate": 0.7292537041995242
+  },
+  "note": "Frozen after observing only the physical reference artifact and before inspecting any candidate log. Missing required metrics remain null and block P9 PASS."
 }

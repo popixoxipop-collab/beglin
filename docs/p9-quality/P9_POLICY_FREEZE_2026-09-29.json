@@ -1,0 +1,39 @@
+{
+  "schema": "beglin-p9-policy-freeze/1",
+  "status": "P9_NUMERIC_POLICY_FROZEN",
+  "frozen_at_utc": "2026-09-28T18:36:13Z",
+  "candidate_evidence_observed_before_freeze": false,
+  "policy": {
+    "path": "configs/quality/quality_policy_v1.json",
+    "file_sha256": "6f5cdd742a3b7705fb6bb929fcdb59a1f11f8b2d444ae034dd2d230e7833bfc3",
+    "policy_hash": "9c299e140f738c6c57d6874856d73635a1de083a3dec37af37bef3b50d38cadd",
+    "required_metric_count": 16,
+    "rule_count": 17
+  },
+  "reference": {
+    "run_id": "p9-20260928T182317Z-56784-reference",
+    "artifact_path": "docs/p9-quality/runs/p9-20260928T182317Z-56784/reference.json",
+    "artifact_hash": "841931ee1b17e6bca6ad07e97176558951048700addeee22fc8352e2a78f85f0",
+    "file_sha256": "67ccaed88ddd8a2a0ca62b65ae1e33ad5942fbf74d690b381f6c36aa7dbdddf2",
+    "raw_log_sha256": "e2b0e746a2c8730e1e18f833f2baf982e6f268edd3d8e6827bc6dcc862181003",
+    "identity_sha256": "3e5c948d906acc8cd3cb04f6f9ef7dfc38346e6f1b93a35f102515ee5f2ed029",
+    "tokenizer_sha256": "41f3bf64213da8c012d8bd0871a58a1fdf70463e8f08f110ddbb1082f529f669",
+    "request_count": 16,
+    "finite_logits_rate": 1.0,
+    "determinism_rate": 1.0,
+    "perplexity": 322.6331031863081,
+    "task_score": 0.2,
+    "router_near_tie_rate": 0.7292537041995242
+  },
+  "threshold_rationale": {
+    "perplexity_ratio_max": "At most five percent regression against the physical reference.",
+    "token_agreement_min": "At least 0.95 bounded edit agreement and no more than one of sixteen exact-output mismatches.",
+    "task_score_min": "No regression from the observed 0.2 reference task score.",
+    "finite_and_deterministic": "Both reference and candidate must remain exactly 1.0.",
+    "activation_rms_relative_drift_max": "Ten percent cap across the two P8-attributed target cells.",
+    "router_near_tie": "Absolute rate at most 0.8 and candidate-minus-reference delta within plus or minus 0.05.",
+    "long_context_stability": "Exact 1.0 stability for the 15,033-token retrieval prompt."
+  },
+  "production_write_allowed": false,
+  "next_gate": "Complete n4, n5, n6, and n7 physical artifacts, evaluate against this immutable policy, then perform an independent final audit."
+}

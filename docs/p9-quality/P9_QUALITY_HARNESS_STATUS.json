@@ -55,8 +55,10 @@
   "physical_job_id": "job_f640ce1213e392ed07d7d627482aa975",
   "physical_run_id": "p9-20260928T182317Z-56784",
   "execution_blocker": null,
-  "policy_status": "UNFROZEN",
-  "numeric_acceptance_rules_frozen": false,
+  "policy_status": "FROZEN",
+  "numeric_acceptance_rules_frozen": true,
+  "policy_frozen_at_utc": "2026-09-28T18:36:13Z",
+  "policy_baseline_artifact_hash": "841931ee1b17e6bca6ad07e97176558951048700addeee22fc8352e2a78f85f0",
   "production_write_allowed": false,
   "merge_release_authority": false,
   "next": [
