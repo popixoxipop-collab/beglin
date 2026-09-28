@@ -75,7 +75,9 @@ add_library(qwen_infer_obj OBJECT
   hf_config.c
   safetensors_load.c
   safetensors_quants.c
+  bpe_tokenizer.c
   gguf_load.c gguf_quants.c gguf_transcode.c gguf_cache.c
+  gguf_write.c gguf_write_quants.c
 )
 target_compile_options(qwen_infer_obj PRIVATE -O3 -w)
 target_compile_definitions(qwen_infer_obj PRIVATE QWEN_GPU_MLX)   # pitfall 2

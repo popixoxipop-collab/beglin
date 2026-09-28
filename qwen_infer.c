@@ -16359,6 +16359,33 @@ static void moe_promotion_nq_validate_n(const char *context, const char *role_bu
         exit(1);
     }
 }
+
+// G0/PR-A: qNg64 promotion needs original safetensors as a weight source,
+// but that is a different responsibility from near-tie correction. Historically
+// g_moe_hi_st was populated only as a side effect of QWEN_MOE_NEARTIE_CORRECT=1,
+// which made a genuine correction-OFF preflight impossible. Open only the source
+// handle here; do not allocate correction shadow buffers or register a hi mirror.
+static void moe_promotion_source_ensure_open(const char *context) {
+    if (g_moe_hi_st) return;
+    const char *src = getenv("QWEN_MOE_PROMOTION_SAFETENSORS");
+    if (!src || !src[0]) {
+        // Backward compatibility for existing deployments using the correction-owned path.
+        src = getenv("QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS");
+    }
+    if (!src || !src[0]) {
+        fprintf(stderr,
+                "FATAL: %s requires QWEN_MOE_PROMOTION_SAFETENSORS=<path> "
+                "(or legacy QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS=<path>)\n",
+                context);
+        exit(1);
+    }
+    g_moe_hi_st = safetensors_open_multi(src);
+    if (!g_moe_hi_st) {
+        fprintf(stderr, "FATAL: %s could not open promotion safetensors '%s'\n", context, src);
+        exit(1);
+    }
+    fprintf(stderr, "[moe promotion source] opened '%s' for %s\n", src, context);
+}
 static void moe_promotion_nq_init(void) {
     const char *path = getenv("QWEN_MOE_PROMOTION_FILE_NQ");
     if (!path || !path[0]) return;
@@ -16369,12 +16396,7 @@ static void moe_promotion_nq_init(void) {
     // safetensors) once it returns -- by the time this function runs, g_st_moe is NULL again.
     // g_moe_hi_st is the SAME opened handle, kept alive in a separate global for exactly this
     // reuse. Re-swap here, same idiom as the mlx_moe.cpp GPU-binding call sites already use.
-    if (!g_moe_hi_st) {
-        fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ requires a real safetensors checkpoint "
-                        "already opened (QWEN_MOE_NEARTIE_CORRECT=1 + QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS=<path>, "
-                        "or another mechanism that populates g_moe_hi_st) -- none was open\n");
-        exit(1);
-    }
+    moe_promotion_source_ensure_open("QWEN_MOE_PROMOTION_FILE_NQ");
     SafetensorsMulti *saved_st_moe = g_st_moe;
     g_st_moe = g_moe_hi_st;
     FILE *f = fopen(path, "r");
@@ -16555,9 +16577,10 @@ static void moe_demotion_nq_maybe_apply(void) {
 //   resolve_ffn_role()/lazy_matvec_e0() look up BY NAME per call -- so the promoted tensor must
 //   bind under the same name production used, exactly the technique run_moe_gpu_mode()'s GATE7
 //   already uses for its own bits=16 promotion test.
-//   n=7 has no native MLX kernel on this build (confirmed via MLX's own quantized.h
-//   static_assert) -- mlx_gpu_bind_af() cleanly returns 0 for it; treated as an expected
-//   platform limit (log + skip), never a FATAL.
+//   n=7 is NOT categorically unsupported: D-metal-4 binds it through the custom qNg64
+//   Metal path in mlx_moe.cpp. Support is execution-mode/shape dependent and must be
+//   validated on the real batched path. Do not classify an n=7 runtime failure as
+//   UNSUPPORTED solely from this dispatcher.
 //   PREREQUISITE: like the CPU driver, needs g_moe_hi_st (the open bf16 checkpoint handle qNg64
 //   dequantizes from) -- but unlike the CPU driver, NEITHER GPU online-serving gate has any
 //   other code path that populates it, so this function opens it itself (idempotently), reusing
@@ -16570,26 +16593,14 @@ static void moe_promotion_nq_init_gpu(void) {
     const char *path = getenv("QWEN_MOE_PROMOTION_FILE_NQ");
     if (!path || !path[0]) return;
 
-    if (!g_moe_hi_st) {
-        const char *nt_on = getenv("QWEN_MOE_NEARTIE_CORRECT");
-        const char *nt_st = getenv("QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS");
-        if (!nt_on || !nt_on[0] || atoi(nt_on) == 0 || !nt_st || !nt_st[0]) {
-            fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ requires a real safetensors "
-                            "checkpoint (QWEN_MOE_NEARTIE_CORRECT=1 + "
-                            "QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS=<path>) -- neither GPU online "
-                            "gate opens one on its own\n");
-            exit(1);
-        }
-        moe_neartie_correct_load_attn_hi(nt_st);   // also populates g_moe_hi_st as a side effect
-        fprintf(stderr, "[moe promotion nq gpu] opened '%s' for qNg64 GPU promotion source\n", nt_st);
-    }
+    moe_promotion_source_ensure_open("QWEN_MOE_PROMOTION_FILE_NQ gpu");
 
     SafetensorsMulti *saved_st_moe = g_st_moe;
     g_st_moe = g_moe_hi_st;
     FILE *f = fopen(path, "r");
     if (!f) { fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: cannot open '%s'\n", path); exit(1); }
     char role_buf[64]; int layer, n;
-    int n_lines = 0, n_applied = 0, n_skipped_n7 = 0, n_bind_failed = 0;
+    int n_lines = 0, n_applied = 0, n_bind_failed = 0;
     while (fscanf(f, "%63s %d %d", role_buf, &layer, &n) == 3) {
         n_lines++;
         int role_i = moe_attrib_role_from_name(role_buf);
@@ -16608,7 +16619,29 @@ static void moe_promotion_nq_init_gpu(void) {
             fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s not valid at layer=%d\n", role_buf, layer);
             exit(1);
         }
+        if (!moe_qng64_n_supported(n)) {
+            // P8 Agent A: preserve the established fail-fast exit semantics, but emit a
+            // machine-readable classification before the existing validator FATALs. n=4 is
+            // structurally not qNg64: it uses the separate q4g64 representation/registrar.
+            // No new numeric exit-code convention is invented here.
+            fprintf(stderr,
+                    "BEGLIN_RUNTIME_UNSUPPORTED kind=quant_format role=%s layer=%d n=%d "
+                    "reason=qng64_width_not_supported required_format=%s\n",
+                    role_buf, layer, n, n == 4 ? "q4g64" : "none");
+        }
         moe_promotion_nq_validate_n("QWEN_MOE_PROMOTION_FILE_NQ", role_buf, layer, n);
+        // G0/PR-A: qNg64(n=8) is bit-plane encoded, while mlx_gpu_bind_af(bits=8)
+        // currently interprets its input as the separate signed-int8 q8g64 format.
+        // Until the bind API carries an explicit quant_format (or gains a dedicated n=8
+        // qNg64 path), accepting this would silently decode the wrong bytes.
+        if (n == 8) {
+            fprintf(stderr,
+                    "FATAL: QWEN_MOE_PROMOTION_FILE_NQ gpu: role=%s layer=%d qNg64(n=8) "
+                    "is not supported by the current MLX binding contract; bits=8 is q8g64 here\n",
+                    role_buf, layer);
+            exit(1);
+        }
+
 
         const char *st_pattern = NULL;
         int is_expert = (role == MOE_ATTRIB_EXPERT_GATE || role == MOE_ATTRIB_EXPERT_UP || role == MOE_ATTRIB_EXPERT_DOWN);
@@ -16676,15 +16709,9 @@ static void moe_promotion_nq_init_gpu(void) {
         int ok = mlx_gpu_bind_af(qnt->base, 0, qnt->name, qnt->E, qnt->out, qnt->in, qnt->ng,
                                   qnt->packed_off, qnt->scale_off, qnt->bias_off, qnt->bits);
         if (!ok) {
-            if (n == 7) {
-                fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d SKIP: n=7 has no native "
-                                "MLX kernel (expected platform limit) -- stays bits=%d on GPU\n", role_buf, layer, base_bits);
-                n_skipped_n7++;
-            } else {
-                fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d SKIP: mlx_gpu_bind_af "
-                                "failed for qNg64(n=%d) (unexpected)\n", role_buf, layer, n);
-                n_bind_failed++;
-            }
+            fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d FAIL: mlx_gpu_bind_af "
+                            "failed for qNg64(n=%d)\n", role_buf, layer, n);
+            n_bind_failed++;
             continue;
         }
         if (g_moe_promoted_nq_gpu[role][layer] != 0 && g_moe_promoted_nq_gpu[role][layer] != n)
@@ -16697,9 +16724,8 @@ static void moe_promotion_nq_init_gpu(void) {
     }
     fclose(f);
     g_st_moe = saved_st_moe;
-    fprintf(stderr, "[moe promotion nq gpu] '%s': %d lines, %d promoted, %d skipped (n=7 "
-                    "platform limit), %d bind failures, g_moe_naf now %d\n",
-            path, n_lines, n_applied, n_skipped_n7, n_bind_failed, g_moe_naf);
+    fprintf(stderr, "[moe promotion nq gpu] '%s': %d lines, %d promoted, %d bind failures, g_moe_naf now %d\n",
+            path, n_lines, n_applied, n_bind_failed, g_moe_naf);
 }
 #endif
 
