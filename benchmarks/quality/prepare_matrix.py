@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
-from .artifact import QualityArtifactError, sha256_json
-from .corpus import load_corpus
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from benchmarks.quality.artifact import QualityArtifactError, sha256_json
+    from benchmarks.quality.corpus import load_corpus
+else:
+    from .artifact import QualityArtifactError, sha256_json
+    from .corpus import load_corpus
 
 MATRIX_SCHEMA = "beglin-quality-matrix/1"
 P8_SCHEMA = "beglin-p8-integration/1"
