@@ -12,6 +12,7 @@ if __package__ in {None, ""}:
     from benchmarks.quality.corpus import load_corpus
     from benchmarks.quality.evaluate import classify_pair, load_policy
     from benchmarks.quality.execution_adapter import (
+        preflight as adapter_preflight,
         load_adapter,
         load_token_fixture,
         materialize_token_fixture,
@@ -26,6 +27,7 @@ else:
     from .corpus import load_corpus
     from .evaluate import classify_pair, load_policy
     from .execution_adapter import (
+        preflight as adapter_preflight,
         load_adapter,
         load_token_fixture,
         materialize_token_fixture,
@@ -194,11 +196,20 @@ def main() -> None:
         materialized = materialize_token_fixture(token_fixture, Path(temp) / "tokens")
         assert len(materialized["files"]) == 8
         after_p8 = build_plan(MATRIX_PATH, CORPUS_PATH, p8_path)
-        assert after_p8["status"] == "P9_READY_FOR_FIXTURE_REGISTRATION"
-        assert [row["code"] for row in after_p8["adapter_preflight"]["blockers"]] == [
+        assert after_p8["status"] == "P9_EXECUTION_ADAPTER_READY"
+        assert after_p8["adapter_preflight"]["blockers"] == []
+        assert after_p8["execution_allowed"] is True
+
+        unregistered_adapter = json.loads(ADAPTER_PATH.read_text(encoding="utf-8"))
+        unregistered_adapter["tailnet_registration"]["status"] = "UNREGISTERED"
+        unregistered_path = Path(temp) / "unregistered-adapter.json"
+        unregistered_path.write_text(json.dumps(unregistered_adapter) + "\n", encoding="utf-8")
+        unregistered = adapter_preflight(ROOT, unregistered_path, CORPUS_PATH)
+        assert unregistered["status"] == "P9_READY_FOR_FIXTURE_REGISTRATION"
+        assert [row["code"] for row in unregistered["blockers"]] == [
             "TAILNET_FIXTURE_UNREGISTERED"
         ]
-        assert after_p8["execution_allowed"] is False
+        assert unregistered["execution_allowed"] is False
 
         synthetic_lines = []
         for request_index in range(16):

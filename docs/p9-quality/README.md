@@ -17,7 +17,7 @@ The long-context and compact-KV changes are compile/runtime gated. Default and P
 
 ## Current phase
 
-Status: **P9_READY_FOR_FIXTURE_REGISTRATION**
+Status: **P9_PHYSICAL_JOB_RUNNING**
 
 The P8 gate is now satisfied by `P8_INTEGRATION_GATE_2026-09-28.json`, which is hash-bound to the canonical P8 result and independent audit. It supplies:
 
@@ -26,7 +26,7 @@ The P8 gate is now satisfied by `P8_INTEGRATION_GATE_2026-09-28.json`, which is 
 - `P8_EVIDENCE_INDEPENDENT_PASS`
 - overall `P8_INTEGRATION_PASS`
 
-`P9_EXECUTION_PLAN_2026-09-29.json` binds the explicit `p9-xox-mlx-metal-v1` adapter, pinned token fixture, deterministic reference evaluator, reference+n4+n5+n6+n7 mapping, and XOX runner. Adapter preflight passes every local gate and reports only `TAILNET_FIXTURE_UNREGISTERED`.
+`P9_EXECUTION_PLAN_2026-09-29.json` binds the explicit `p9-xox-mlx-metal-v1` adapter, pinned token fixture, deterministic reference evaluator, reference+n4+n5+n6+n7 mapping, and XOX runner. Adapter preflight now passes with no blockers. Registration evidence is frozen in `P9_TAILNET_REGISTRATION_EVIDENCE_2026-09-29.json`.
 
 The 15,033-token long prompt requires 15,045 positions including generation. The isolated P9 build provides 16,384 positions and uses full causal attention with a symmetric int8 K/V cache plus per-head/position float16 scales. This avoids the roughly 9 GiB float32 cache and same-slot batch replication that would exceed XOX's Metal memory budget. This cache format is a shared control across all five P9 cells and is not enabled in the default/P8 build.
 
@@ -107,9 +107,9 @@ EOE validation completed on 2026-09-29:
 - token fixture materialization and all eight byte hashes: PASS
 - no-P8 matrix planner: PASS / WAITING_P8_INTEGRATION
 - P8 compatibility gate: PASS / P8_INTEGRATION_PASS
-- post-P8 matrix planner: PASS / P9_READY_FOR_FIXTURE_REGISTRATION
+- post-P8 matrix planner: PASS / P9_EXECUTION_ADAPTER_READY
 - current P7 readiness probe: P7_INSUFFICIENT_FOR_P9
-- physical reference vs n=4/5/6/7 quality run: NOT RUN / exact Tailnet fixture unregistered
+- physical reference vs n=4/5/6/7 quality run: RUNNING / XOX job `job_f640ce1213e392ed07d7d627482aa975`
 - numeric acceptance thresholds: UNFROZEN
 
 The current P7 physical run has six real activation cells and five performance cells, but it does not carry the complete token-level NLL/output/finite-logits/promotion/router/task/long-context evidence required by this harness. It is therefore evidence input, not a substitute for P9.

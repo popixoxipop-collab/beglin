@@ -89,6 +89,12 @@
       "python3",
       "beglin_p9_quality_fixture.py"
     ],
-    "status": "UNREGISTERED"
+    "status": "REGISTERED",
+    "release_id": "g6-0.4.0-alpha.60",
+    "policy_version": "g5-fixtures-v15-p9-timeout-schema-alpha60",
+    "runner_sha256": "5e99120e1c2c8a5764b0f330a32543412974766757db75c87fae33d8e2155336",
+    "execution_timeout_ms": 129600000,
+    "registered_at": "2026-09-28T18:21:53Z",
+    "evidence": "docs/p9-quality/P9_TAILNET_REGISTRATION_EVIDENCE_2026-09-29.json"
   }
 }

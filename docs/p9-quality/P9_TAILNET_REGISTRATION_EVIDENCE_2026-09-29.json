@@ -1,0 +1,39 @@
+{
+  "schema": "beglin-p9-tailnet-registration/1",
+  "status": "P9_TAILNET_FIXTURE_REGISTERED",
+  "registered_at_utc": "2026-09-28T18:21:53Z",
+  "host": "xox",
+  "workspace": "sandbox",
+  "argv": [
+    "python3",
+    "beglin_p9_quality_fixture.py"
+  ],
+  "release": {
+    "release_id": "g6-0.4.0-alpha.60",
+    "release_manifest_sha256": "41c1c914471bc3cdeb3a6e243b21033c8f3296475f93770d976405c04e04b2ac",
+    "policy_version": "g5-fixtures-v15-p9-timeout-schema-alpha60",
+    "policy_sha256": "f56d24e0b43a9b7ce2086314a30e15a7c4c7ba60d5fe31e7cae2697f3fb7de57",
+    "server_sha256": "6e9c51de1f04569a011bf94fec850e8076a538bd75bf35c2ac65f90bf1979512",
+    "config_sha256": "5825df3e30d883481dc98440cb1baf0ada1907ad424d77236a50b15c8a000eac",
+    "runner_sha256": "5e99120e1c2c8a5764b0f330a32543412974766757db75c87fae33d8e2155336"
+  },
+  "live_preflight": {
+    "status": "PASS",
+    "checks_ok": 10,
+    "checks_warn": 0,
+    "checks_fail": 0,
+    "job_schema_max_ms": 129600000,
+    "evidence_sha256": "3c14be10467e5937cd74c9a0491c958a62d43a675e4ce3fb9e9420b9a6b0c8a5"
+  },
+  "first_physical_job": {
+    "job_id": "job_f640ce1213e392ed07d7d627482aa975",
+    "idempotency_key": "p9-quality-a0e9a034-alpha60-v1",
+    "request_hash": "582182ed520d9e0a9f8618c3a4a66b6ef370d7171ceb453652f3d2cb4f52ab1c",
+    "state_at_freeze": "RUNNING",
+    "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+    "run_id": "p9-20260928T182317Z-56784",
+    "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898"
+  },
+  "scope": "Exact SHA-pinned fixture only. Generic Python, shell, CMake, git, and package-manager job admission was not widened. The longer worker timeout is authorized only by the P9 policy branch."
+}

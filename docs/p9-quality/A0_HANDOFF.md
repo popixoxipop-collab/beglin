@@ -1,6 +1,6 @@
 # P9 A0 execution handoff
 
-Status: **P9_READY_FOR_FIXTURE_REGISTRATION**
+Status: **P9_PHYSICAL_JOB_RUNNING**
 
 Branch: `prod/p9-integration`
 Integration base: `727d950ef420320455b5071969efd49e3751e8c8`
@@ -24,7 +24,9 @@ P9 now has an explicit integrated adapter instead of a null placeholder:
 - physical runner: `beglin_p9_quality_fixture.py`
 - exact Tailnet argv: `["python3","beglin_p9_quality_fixture.py"]`
 
-The generated plan is `P9_EXECUTION_PLAN_2026-09-29.json`. Its only preflight blocker is exact fixture registration.
+The generated plan is `P9_EXECUTION_PLAN_2026-09-29.json`. Exact fixture registration is now frozen by `P9_TAILNET_REGISTRATION_EVIDENCE_2026-09-29.json`, and adapter preflight has no blockers.
+
+The first physical run is active as durable XOX job `job_f640ce1213e392ed07d7d627482aa975` with run ID `p9-20260928T182317Z-56784`. Build identity is already frozen; final raw metrics are pending.
 
 ## Long-context implementation
 
@@ -60,12 +62,14 @@ Raw physical success is not a P9 quality PASS. EOE must still normalize all five
 
 ## Next exact action
 
-Register only:
+Wait for the registered job to emit `P9_PHYSICAL_RAW_PASS`, then freeze and normalize the five logs:
 
 ```text
-host=xox
-workspace=sandbox
-["python3","beglin_p9_quality_fixture.py"]
+reference.log
+n4.log
+n5.log
+n6.log
+n7.log
 ```
 
-Do not widen generic Python, shell, CMake, git, or package-manager admission.
+Do not freeze numeric policy or authorize production from a RUNNING job.
