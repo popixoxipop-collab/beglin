@@ -1,0 +1,94 @@
+{
+  "schema": "beglin-quality-execution-adapter/1",
+  "adapter_id": "p9-xox-mlx-metal-v1",
+  "runner": "benchmarks.quality.execution_adapter",
+  "engine": {
+    "mode_env": "QWEN_MOE_GPU_CBATCH_ONLINE",
+    "p9_metrics_env": "BEGLIN_P9_QUALITY_METRICS",
+    "build": {
+      "target": "qwen_infer_gpu",
+      "cmake_options": {
+        "BEGLIN_P9_LONG_CONTEXT": true
+      },
+      "kv_cache": {
+        "format": "symmetric_int8_per_head_position",
+        "scale_dtype": "float16",
+        "attention": "full_causal",
+        "scope": "isolated_p9_long_context_build_only"
+      }
+    },
+    "runtime": {
+      "slots": 1,
+      "requests": 16,
+      "prefill_budget": 64,
+      "warmup": false,
+      "seed": 0,
+      "correction": false,
+      "router_near_tie_threshold": 0.001
+    }
+  },
+  "token_fixture": "configs/quality/p9_token_fixture_v1.json",
+  "reference": {
+    "precision": "safe_baseline",
+    "representation": "production_q4g64",
+    "promotion_lines": []
+  },
+  "candidates": [
+    {
+      "n": 4,
+      "representation": "production_q4g64",
+      "promotion_lines": []
+    },
+    {
+      "n": 5,
+      "representation": "qNg64",
+      "promotion_lines": [
+        "kv_a_proj_with_mqa 11 5",
+        "shared_up_proj 3 5"
+      ]
+    },
+    {
+      "n": 6,
+      "representation": "qNg64",
+      "promotion_lines": [
+        "kv_a_proj_with_mqa 11 6",
+        "shared_up_proj 3 6"
+      ]
+    },
+    {
+      "n": 7,
+      "representation": "qNg64",
+      "promotion_lines": [
+        "kv_a_proj_with_mqa 11 7",
+        "shared_up_proj 3 7"
+      ]
+    }
+  ],
+  "activation_targets": [
+    {
+      "role": "kv_a_proj_with_mqa",
+      "layer": 11,
+      "expert_id": null
+    },
+    {
+      "role": "shared_up_proj",
+      "layer": 3,
+      "expert_id": null
+    }
+  ],
+  "external_evaluator": {
+    "evaluator_id": "reference-token-agreement-v1",
+    "module": "benchmarks.quality.reference_evaluator",
+    "input": "output_token_ids",
+    "note": "Deterministic bounded edit agreement against the pinned safe-baseline output; task correctness remains a separate metric."
+  },
+  "tailnet_registration": {
+    "host": "xox",
+    "workspace": "sandbox",
+    "argv": [
+      "python3",
+      "beglin_p9_quality_fixture.py"
+    ],
+    "status": "UNREGISTERED"
+  }
+}

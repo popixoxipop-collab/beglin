@@ -3829,7 +3829,10 @@ static void moe_resolve_layer_tensors(void) {
 // _Static_assert(MOE_CBATCH_MAXPOS <= MOE_MAXPOS) below still holds at 32<=160) -- so this is a
 // cheap, single-sequence-only change (K/V flat array growth ~21MB for GPT-OSS's real KROW=512,
 // not a repeat of D-gptoss-2-note's memory finding).
-#define MOE_MAXPOS 160
+#ifndef BEGLIN_MOE_MAXPOS
+#define BEGLIN_MOE_MAXPOS 160
+#endif
+#define MOE_MAXPOS BEGLIN_MOE_MAXPOS
 // Phase 4 sub-part 1, Step 4 (Group B): the 4 K/V cache families, heap -- alloc_moe_buffers().
 // Converted atomically (not incrementally), not per-family: the cross-family memcpy sites
 // further below (moe_reverify_exact(), moe_cb4c_maybe_reverify(), the two prefill blocks) copy
@@ -4336,7 +4339,10 @@ static inline float *moe_bV_at(int l, int b, int hh) { return moe_bV_row(l,b) + 
 // 4B), comfortably within the M4's 17.18GB and the ~9GB free+inactive vm_stat showed
 // post-run -- see trackb_moe4a_results/RESULTS.md for the measurement. BSS-allocated (static),
 // so unused slot/position entries cost no RSS until actually written.
-#define MOE_CBATCH_MAXPOS 32
+#ifndef BEGLIN_MOE_CBATCH_MAXPOS
+#define BEGLIN_MOE_CBATCH_MAXPOS 32
+#endif
+#define MOE_CBATCH_MAXPOS BEGLIN_MOE_CBATCH_MAXPOS
 _Static_assert(MOE_CBATCH_MAXPOS <= MOE_MAXPOS,
     "moe_forward_token()/moe_mla_attention() (used by Tier1/Tier2 ragged re-verification, "
     "Phase MoE-4c) index g_moe_K/V[l][pos] and a stack scores[MOE_MAXPOS] array at pos values "
@@ -7972,14 +7978,30 @@ static void alloc_moe_buffers(void) {
     // MOE_CBATCH_MAXPOS/MOE_CB4C_LANES) are compile-time macros (R-10); trailing per-head dims
     // come from the config/derived globals. (long) on the first factor of every product forces
     // 64-bit arithmetic throughout -- these products would overflow int32 for large configs.
-    g_moe_K_flat  = malloc((long)MOE_MAXLAYERS*MOE_MAXPOS*MOE_KROW*sizeof(float));
-    g_moe_V_flat  = malloc((long)MOE_MAXLAYERS*MOE_MAXPOS*MOE_VROW*sizeof(float));
-    g_moe_bK_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_KROW*sizeof(float));
-    g_moe_bV_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_VROW*sizeof(float));
-    g_moe_cK_flat = malloc((long)MOE_MAXLAYERS*g_moe_cb_slots_cap*MOE_CBATCH_MAXPOS*MOE_KROW*sizeof(float));   // D-bench-4
-    g_moe_cV_flat = malloc((long)MOE_MAXLAYERS*g_moe_cb_slots_cap*MOE_CBATCH_MAXPOS*MOE_VROW*sizeof(float));   // D-bench-4
-    g_moe_sK_flat = malloc((long)MOE_MAXLAYERS*MOE_CB4C_LANES*MOE_CBATCH_MAXPOS*MOE_KROW*sizeof(float));
-    g_moe_sV_flat = malloc((long)MOE_MAXLAYERS*MOE_CB4C_LANES*MOE_CBATCH_MAXPOS*MOE_VROW*sizeof(float));
+    // P9's isolated GPU-only long-context build raises MOE_CBATCH_MAXPOS to 16,384. The
+    // eight CPU cache families below are never read by QWEN_MOE_GPU_CBATCH_ONLINE, but their
+    // historical compile-time dimensions would reserve hundreds of GB of virtual address
+    // space before MLX allocates the one real device-side cache. Avoid that non-semantic
+    // allocation only for the explicit P9+GPU mode; every existing/default path keeps the
+    // byte-identical allocation formulas.
+    const char *p9_alloc = getenv("BEGLIN_P9_QUALITY_METRICS");
+    const char *p9_gpu = getenv("QWEN_MOE_GPU_CBATCH_ONLINE");
+    int p9_gpu_only = p9_alloc && p9_alloc[0] && atoi(p9_alloc) != 0 && p9_gpu && p9_gpu[0];
+    if (p9_gpu_only) {
+        g_moe_K_flat = malloc(sizeof(float));  g_moe_V_flat = malloc(sizeof(float));
+        g_moe_bK_flat = malloc(sizeof(float)); g_moe_bV_flat = malloc(sizeof(float));
+        g_moe_cK_flat = malloc(sizeof(float)); g_moe_cV_flat = malloc(sizeof(float));
+        g_moe_sK_flat = malloc(sizeof(float)); g_moe_sV_flat = malloc(sizeof(float));
+    } else {
+        g_moe_K_flat  = malloc((long)MOE_MAXLAYERS*MOE_MAXPOS*MOE_KROW*sizeof(float));
+        g_moe_V_flat  = malloc((long)MOE_MAXLAYERS*MOE_MAXPOS*MOE_VROW*sizeof(float));
+        g_moe_bK_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_KROW*sizeof(float));
+        g_moe_bV_flat = malloc((long)MOE_MAXLAYERS*MOE_BATCH_MAX*MOE_VROW*sizeof(float));
+        g_moe_cK_flat = malloc((long)MOE_MAXLAYERS*g_moe_cb_slots_cap*MOE_CBATCH_MAXPOS*MOE_KROW*sizeof(float));   // D-bench-4
+        g_moe_cV_flat = malloc((long)MOE_MAXLAYERS*g_moe_cb_slots_cap*MOE_CBATCH_MAXPOS*MOE_VROW*sizeof(float));   // D-bench-4
+        g_moe_sK_flat = malloc((long)MOE_MAXLAYERS*MOE_CB4C_LANES*MOE_CBATCH_MAXPOS*MOE_KROW*sizeof(float));
+        g_moe_sV_flat = malloc((long)MOE_MAXLAYERS*MOE_CB4C_LANES*MOE_CBATCH_MAXPOS*MOE_VROW*sizeof(float));
+    }
 
     // Step 5 (Group C): per-token scalar FFN scratch, one malloc set PER FUNCTION (Rule 3 -- see
     // the declaration comment above moe_forward_token()). All malloc: every buffer is fully
@@ -14518,6 +14540,14 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     int sort_thr = sort_thr_env && sort_thr_env[0] ? atoi(sort_thr_env) : moe_gpu_sort_threshold(B + pfB, MOE_TOP_K);
     mlx_gpu_set_sort_threshold(sort_thr);
     fprintf(stderr, "[moe gpu cb online] sort_threshold=%d B=%d R=%d prefill_budget=%d\n", sort_thr, B, R, pfB);
+    const char *env_p9 = getenv("BEGLIN_P9_QUALITY_METRICS");
+    const char *env_p9_router = getenv("BEGLIN_P9_ROUTER_NEAR_TIE_THRESHOLD");
+    const char *env_p9_warmup = getenv("BEGLIN_P9_WARMUP");
+    int p9_on = env_p9 && env_p9[0] && atoi(env_p9) != 0;
+    float p9_router_threshold = env_p9_router && env_p9_router[0]
+                              ? strtof(env_p9_router, NULL) : 0.001f;
+    int p9_warmup_on = !p9_on || !env_p9_warmup || !env_p9_warmup[0]
+                     || atoi(env_p9_warmup) != 0;
 
     // Same real 8-prompt corpus every V5e/V5f/V5g gate uses -- duplicated verbatim (Rule 3).
     static const int prompt_len[MOE_CBATCH_N] = {4,5,6,7,8,5,6,4};
@@ -14559,12 +14589,22 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     static int    rq_slot_of[MOE_CB4B_RMAX], rq_admit_step[MOE_CB4B_RMAX];
     static int    rq_out[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS], rq_nout[MOE_CB4B_RMAX];
     static double rq_t_admit[MOE_CB4B_RMAX], rq_t_first[MOE_CB4B_RMAX];
+    static double rq_p9_nll[MOE_CB4B_RMAX];
+    static unsigned long long rq_p9_nll_count[MOE_CB4B_RMAX];
+    static int rq_p9_finite[MOE_CB4B_RMAX];
+    static unsigned long long rq_p9_router_near[MOE_CB4B_RMAX], rq_p9_router_decisions[MOE_CB4B_RMAX];
+    static double rq_p9_kva_mean_sum[MOE_CB4B_RMAX], rq_p9_kva_rms_square_sum[MOE_CB4B_RMAX];
+    static double rq_p9_shared_mean_sum[MOE_CB4B_RMAX], rq_p9_shared_rms_square_sum[MOE_CB4B_RMAX];
+    static unsigned long long rq_p9_activation_count[MOE_CB4B_RMAX];
     static int    mcb_active[MOE_BATCH_MAX], mcb_req[MOE_BATCH_MAX], mcb_tok[MOE_BATCH_MAX];
     static int    mcb_pos[MOE_BATCH_MAX], mcb_pref[MOE_BATCH_MAX], mcb_freed_before[MOE_BATCH_MAX];
 
     float *x_embed = (float *)malloc(sizeof(float) * (size_t)MOE_BATCH_MAX * MOE_HIDDEN);
     float *gpu_logits = (float *)malloc(sizeof(float) * (size_t)MOE_BATCH_MAX * MOE_VOCAB);
     int slot_arr[MOE_BATCH_MAX], spos_arr[MOE_BATCH_MAX], tok_arr[MOE_BATCH_MAX];
+    unsigned long long p9_step_router_near[MOE_BATCH_MAX], p9_step_router_decisions[MOE_BATCH_MAX];
+    float p9_step_kva_mean[MOE_BATCH_MAX], p9_step_kva_rms[MOE_BATCH_MAX];
+    float p9_step_shared_mean[MOE_BATCH_MAX], p9_step_shared_rms[MOE_BATCH_MAX];
 
     long steps_idle = 0, steps_with_idle_slot = 0, admitted_after_evict = 0;
     long queue_wait_events = 0, queue_wait_max_steps = 0, steps_pure_prefill = 0;
@@ -14580,7 +14620,13 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     // schedule for real, timed. Pass 1's own scatter writes overwrite every (slot,pos) coordinate
     // pass 0 touched, in the same order, before any decode ever reads them back -- same reasoning
     // as V5g's single-step warmup, just over a whole multi-step run instead of one step.
-    for (int pass = 0; pass < 2; pass++) {
+    int pass_count = p9_warmup_on ? 2 : 1;
+    for (int pass = 0; pass < pass_count; pass++) {
+        int measured_pass = !p9_warmup_on || pass == 1;
+        if (!mlx_gpu_p9_metrics_config(p9_on && measured_pass, p9_router_threshold, 11, 3, MOE_NL)) {
+            fprintf(stderr, "FATAL: [moe gpu cb online] invalid P9 metrics configuration\n");
+            exit(1);
+        }
         for (int r = 0; r < R; r++) rq_arrive[r] = 0;
         if (env_arrive && env_arrive[0]) {
             const char *p = env_arrive;
@@ -14596,6 +14642,11 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
             rq_plen[r] = mf_plen[sp]; rq_maxnew[r] = mf_maxnew[sp];
             rq_nout[r] = 0; rq_slot_of[r] = -1; rq_admit_step[r] = -1;
             rq_t_admit[r] = 0.0; rq_t_first[r] = 0.0;
+            rq_p9_nll[r] = 0.0; rq_p9_nll_count[r] = 0; rq_p9_finite[r] = 1;
+            rq_p9_router_near[r] = 0; rq_p9_router_decisions[r] = 0;
+            rq_p9_kva_mean_sum[r] = 0.0; rq_p9_kva_rms_square_sum[r] = 0.0;
+            rq_p9_shared_mean_sum[r] = 0.0; rq_p9_shared_rms_square_sum[r] = 0.0;
+            rq_p9_activation_count[r] = 0;
             moe_cb4b_admit_guard(rq_plen, rq_maxnew, r);
         }
         for (int s = 0; s < B; s++) { mcb_active[s] = 0; mcb_freed_before[s] = 0; }
@@ -14604,7 +14655,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
         step = 0; total_tok_processed = 0;
         steps_idle = 0; steps_with_idle_slot = 0; admitted_after_evict = 0;
         queue_wait_events = 0; queue_wait_max_steps = 0; steps_pure_prefill = 0;
-        if (pass == 1) t_run0 = nowt();
+        if (measured_pass) t_run0 = nowt();
 
         while (qhead < R || nact > 0) {
             while (qhead < R && rq_plen[qhead] < 0) qhead++;   // skip requests dropped by the guard
@@ -14682,13 +14733,57 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                                 "at step %d (pass %d)\n", step, pass);
                 exit(1);
             }
+            if (p9_on && measured_pass) {
+                int metric_rows = mlx_gpu_p9_metrics_read(
+                    MOE_BATCH_MAX, p9_step_router_near, p9_step_router_decisions,
+                    p9_step_kva_mean, p9_step_kva_rms,
+                    p9_step_shared_mean, p9_step_shared_rms);
+                if (metric_rows != A) {
+                    fprintf(stderr, "FATAL: [moe gpu cb online] P9 metrics row count %d != active rows %d\n",
+                            metric_rows, A);
+                    exit(1);
+                }
+                for (int m = 0; m < A; m++) {
+                    int r = mcb_req[slot_arr[m]];
+                    rq_p9_router_near[r] += p9_step_router_near[m];
+                    rq_p9_router_decisions[r] += p9_step_router_decisions[m];
+                    rq_p9_kva_mean_sum[r] += p9_step_kva_mean[m];
+                    rq_p9_kva_rms_square_sum[r] += (double)p9_step_kva_rms[m] * p9_step_kva_rms[m];
+                    rq_p9_shared_mean_sum[r] += p9_step_shared_mean[m];
+                    rq_p9_shared_rms_square_sum[r] += (double)p9_step_shared_rms[m] * p9_step_shared_rms[m];
+                    rq_p9_activation_count[r]++;
+                }
+
+                // Teacher-forced NLL uses each prompt position's logits to score the next
+                // pinned token. The online prefill graph already computes these logits; P9
+                // only adds a stable host-side logsumexp and never substitutes generated text.
+                for (int m = 0; m < A; m++) {
+                    int r = mcb_req[slot_arr[m]];
+                    float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
+                    int finite = 1;
+                    float max_logit = -INFINITY;
+                    for (int v = 0; v < MOE_VOCAB; v++) {
+                        if (!isfinite(lg[v])) finite = 0;
+                        if (lg[v] > max_logit) max_logit = lg[v];
+                    }
+                    if (!finite) rq_p9_finite[r] = 0;
+                    if (m >= ndec && spos_arr[m] < rq_plen[r] - 1 && finite) {
+                        double exp_sum = 0.0;
+                        for (int v = 0; v < MOE_VOCAB; v++)
+                            exp_sum += exp((double)lg[v] - max_logit);
+                        int target = mf_ids[r % MCN][spos_arr[m] + 1];
+                        rq_p9_nll[r] += log(exp_sum) + max_logit - lg[target];
+                        rq_p9_nll_count[r]++;
+                    }
+                }
+            }
             double temit = nowt();
 
             // 4. decode columns: emit + evict (EOS / stop_extra / maxnew / position cap).
             for (int m = 0; m < ndec; m++) {
                 int s = slot_arr[m], r = mcb_req[s];
                 float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
-                if (pass == 1 && check_on) {
+                if (measured_pass && check_on) {
                     for (int v = 0; v < MOE_VOCAB; v++) {
                         if (!isfinite(lg[v])) validation_finite_logits = 0;
                         validation_logits_checked++;
@@ -14706,7 +14801,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 int s = slot_arr[m], r = mcb_req[s];
                 if (spos_arr[m] != rq_plen[r] - 1) continue;
                 float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
-                if (pass == 1 && check_on) {
+                if (measured_pass && check_on) {
                     for (int v = 0; v < MOE_VOCAB; v++) {
                         if (!isfinite(lg[v])) validation_finite_logits = 0;
                         validation_logits_checked++;
@@ -14722,8 +14817,9 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
             total_tok_processed += A;
             step++;
         }
-        if (pass == 1) t_run1 = nowt();
-        if (pass == 0) fprintf(stderr, "[moe gpu cb online] warmup pass done (%d steps, untimed) -- now starting the real timed run\n", step);
+        if (measured_pass) t_run1 = nowt();
+        if (p9_warmup_on && pass == 0)
+            fprintf(stderr, "[moe gpu cb online] warmup pass done (%d steps, untimed) -- now starting the real timed run\n", step);
     }
 
     double ttft_max = 0.0, ttft_sum = 0.0; int ttft_n = 0;
@@ -14736,6 +14832,25 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 r, r % MCN, rq_slot_of[r], rq_arrive[r], rq_admit_step[r], ttft_ms, rq_nout[r]);
         for (int k = 0; k < rq_nout[r]; k++) fprintf(stderr, " %d", rq_out[r][k]);
         fprintf(stderr, "\n");
+        if (p9_on) {
+            if (rq_p9_activation_count[r] == 0) {
+                fprintf(stderr, "FATAL: [moe gpu cb online] P9 request %d has no activation evidence\n", r);
+                exit(1);
+            }
+            double count = (double)rq_p9_activation_count[r];
+            fprintf(stderr,
+                    "P9_QUALITY_REQUEST_V1 req=%d prompt=%d context_tokens=%d finite_logits=%d "
+                    "nll_sum=%.17g nll_count=%llu router_near=%llu router_decisions=%llu "
+                    "kva_mean_abs=%.17g kva_rms=%.17g shared_up_mean_abs=%.17g shared_up_rms=%.17g "
+                    "nout=%d tokens:",
+                    r, r % MCN, rq_plen[r], rq_p9_finite[r], rq_p9_nll[r], rq_p9_nll_count[r],
+                    rq_p9_router_near[r], rq_p9_router_decisions[r],
+                    rq_p9_kva_mean_sum[r] / count, sqrt(rq_p9_kva_rms_square_sum[r] / count),
+                    rq_p9_shared_mean_sum[r] / count, sqrt(rq_p9_shared_rms_square_sum[r] / count),
+                    rq_nout[r]);
+            for (int k = 0; k < rq_nout[r]; k++) fprintf(stderr, " %d", rq_out[r][k]);
+            fprintf(stderr, "\n");
+        }
     }
     if (check_on) {
         fprintf(stderr,

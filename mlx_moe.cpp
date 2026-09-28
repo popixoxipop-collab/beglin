@@ -16,10 +16,13 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <limits>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace mx = mlx::core;
@@ -704,7 +707,10 @@ static std::vector<float> g_mla_yarn_freqs_f32;
 // [layer][head][pos][dim], so the slice needed for one sdpa call (all heads,
 // positions 0..pos, one layer) is built by copying H independent contiguous
 // runs rather than reordering per-element.
-#define MLA_L0_MAXPOS 32
+#ifndef BEGLIN_MLA_MAXPOS
+#define BEGLIN_MLA_MAXPOS 32
+#endif
+#define MLA_L0_MAXPOS BEGLIN_MLA_MAXPOS
 #define MLA_MAXLAYERS 32
 static std::vector<float> g_mla_K;  // MLA_MAXLAYERS * H * MLA_L0_MAXPOS * q_head_dim
 static std::vector<float> g_mla_V;  // MLA_MAXLAYERS * H * MLA_L0_MAXPOS * v_hd
@@ -725,8 +731,19 @@ int mlx_gpu_mla_config(int n_heads, int q_head_dim, int qk_nope_hd, int qk_rope_
     int half = qk_rope_hd / 2;
     g_mla_yarn_freqs.assign(yarn_freqs_half, yarn_freqs_half + half);
     g_mla_yarn_freqs_f32.assign(g_mla_yarn_freqs.begin(), g_mla_yarn_freqs.end());
-    g_mla_K.assign((size_t)MLA_MAXLAYERS * n_heads * MLA_L0_MAXPOS * q_head_dim, 0.0f);
-    g_mla_V.assign((size_t)MLA_MAXLAYERS * n_heads * MLA_L0_MAXPOS * v_hd, 0.0f);
+    const char *p9_metrics = std::getenv("BEGLIN_P9_QUALITY_METRICS");
+    const char *p9_online = std::getenv("QWEN_MOE_GPU_CBATCH_ONLINE");
+    bool p9_gpu_only = p9_metrics && p9_metrics[0] && std::atoi(p9_metrics) != 0
+                    && p9_online && p9_online[0];
+    if (p9_gpu_only) {
+        // The P9 path exclusively uses g_fused_K/V below. At 16,384 positions these legacy
+        // eager-path host vectors would eagerly zero another ~10 GiB that is never read.
+        g_mla_K.clear();
+        g_mla_V.clear();
+    } else {
+        g_mla_K.assign((size_t)MLA_MAXLAYERS * n_heads * MLA_L0_MAXPOS * q_head_dim, 0.0f);
+        g_mla_V.assign((size_t)MLA_MAXLAYERS * n_heads * MLA_L0_MAXPOS * v_hd, 0.0f);
+    }
     return 1;
 }
 
@@ -1418,8 +1435,16 @@ static int g_fused_layers_done = 0;
 // per-token selection, confirmed via the probe's own shape printout before the fix).
 static std::vector<mx::array> g_fused_K;
 static std::vector<mx::array> g_fused_V;
+// The isolated P9 long-context binary can opt into symmetric int8 K/V storage with one
+// float16 scale per (slot, head, position). DeepSeek-V2-Lite's expanded MLA cache would
+// otherwise add about 9 GiB at 16,384 positions in float32, beyond XOX's Metal working-set
+// budget. Default/P8 builds do not define BEGLIN_P9_COMPACT_KV and retain the original cache.
+static std::vector<mx::array> g_fused_K_scale;
+static std::vector<mx::array> g_fused_V_scale;
 static bool g_fused_kv_inited = false;
 static int g_fused_kv_inited_B = 0;   // B the current g_fused_K/V were sized for
+static bool g_fused_kv_compact = false;
+static int g_p9_cache_layers = MLA_MAXLAYERS;
 static int g_fused_B = 1;             // current batch size; mlx_gpu_layer_step_lazy()'s
                                        // x_in_host is B*HIDDEN floats, one row per sequence
 
@@ -1462,20 +1487,37 @@ int mlx_gpu_set_sort_threshold(int threshold) {
 }
 
 static void ensure_fused_kv_init() {
-    if (g_fused_kv_inited && g_fused_kv_inited_B == g_fused_B) return;
+    bool compact = false;
+#ifdef BEGLIN_P9_COMPACT_KV
+    const char *p9_metrics = std::getenv("BEGLIN_P9_QUALITY_METRICS");
+    compact = p9_metrics && p9_metrics[0] && std::atoi(p9_metrics) != 0;
+#endif
+    if (g_fused_kv_inited && g_fused_kv_inited_B == g_fused_B &&
+        g_fused_kv_compact == compact) return;
     const int H = g_mla_n_heads, QHD = g_mla_q_head_dim, VHD = g_mla_v_hd, B = g_fused_B;
     g_fused_K.clear();
     g_fused_V.clear();
+    g_fused_K_scale.clear();
+    g_fused_V_scale.clear();
     std::vector<mx::array> all;
-    for (int l = 0; l < MLA_MAXLAYERS; l++) {
-        g_fused_K.push_back(mx::zeros({B, H, MLA_L0_MAXPOS, QHD}, mx::float32));
-        g_fused_V.push_back(mx::zeros({B, H, MLA_L0_MAXPOS, VHD}, mx::float32));
+    int cache_layers = compact ? g_p9_cache_layers : MLA_MAXLAYERS;
+    for (int l = 0; l < cache_layers; l++) {
+        mx::Dtype cache_dtype = compact ? mx::int8 : mx::float32;
+        g_fused_K.push_back(mx::zeros({B, H, MLA_L0_MAXPOS, QHD}, cache_dtype));
+        g_fused_V.push_back(mx::zeros({B, H, MLA_L0_MAXPOS, VHD}, cache_dtype));
         all.push_back(g_fused_K.back());
         all.push_back(g_fused_V.back());
+        if (compact) {
+            g_fused_K_scale.push_back(mx::zeros({B, H, MLA_L0_MAXPOS, 1}, mx::float16));
+            g_fused_V_scale.push_back(mx::zeros({B, H, MLA_L0_MAXPOS, 1}, mx::float16));
+            all.push_back(g_fused_K_scale.back());
+            all.push_back(g_fused_V_scale.back());
+        }
     }
     mx::eval(all);   // one-time materialization at first use, not part of the per-token cost
     g_fused_kv_inited = true;
     g_fused_kv_inited_B = B;
+    g_fused_kv_compact = compact;
 }
 
 // D-gpu-5-hotpath: resolves an FFN role name to either its quantized (QTensor) or
@@ -2159,6 +2201,10 @@ int mlx_gpu_forward_finalize(const float *w_finalnorm, float *logits_out) {
         std::vector<mx::array> all{logits};
         for (auto &a : g_fused_K) all.push_back(a);
         for (auto &a : g_fused_V) all.push_back(a);
+        if (g_fused_kv_compact) {
+            for (auto &a : g_fused_K_scale) all.push_back(a);
+            for (auto &a : g_fused_V_scale) all.push_back(a);
+        }
         mx::eval(all);
         const int VOCAB = (int)logits.shape().back();
         std::memcpy(logits_out, logits.data<float>(), sizeof(float) * (size_t)B * (size_t)VOCAB);
@@ -2236,6 +2282,63 @@ static mx::array *g_cbatch_x = nullptr;
 static int g_cbatch_A = 0;
 static int g_cbatch_layers_done = 0;
 
+// P9 quality instrumentation is deliberately isolated from BEGLIN_INSTRUMENTATION_V2. The
+// latter proves the bound WEIGHT representation; P9 needs live request activations and expert-
+// router selection-boundary margins. These arrays remain lazy and join finalize()'s existing
+// eval set, avoiding one synchronization per transformer layer.
+static bool g_p9_metrics_enabled = false;
+static float g_p9_router_threshold = 0.001f;
+static int g_p9_kv_a_layer = 11;
+static int g_p9_shared_up_layer = 3;
+static std::vector<mx::array> g_p9_router_scores;
+static std::optional<mx::array> g_p9_kv_a_activation;
+static std::optional<mx::array> g_p9_shared_up_activation;
+static int g_p9_last_A = 0;
+static std::vector<unsigned long long> g_p9_last_router_near;
+static std::vector<unsigned long long> g_p9_last_router_decisions;
+static std::vector<float> g_p9_last_kv_a_mean_abs, g_p9_last_kv_a_rms;
+static std::vector<float> g_p9_last_shared_up_mean_abs, g_p9_last_shared_up_rms;
+
+int mlx_gpu_p9_metrics_config(int enabled, float router_near_tie_threshold,
+                               int kv_a_layer, int shared_up_layer, int n_layers) {
+    if (n_layers < 1 || n_layers > MLA_MAXLAYERS) return 0;
+    if (enabled && (!std::isfinite(router_near_tie_threshold) || router_near_tie_threshold < 0.0f ||
+                    kv_a_layer < 0 || kv_a_layer >= MLA_MAXLAYERS ||
+                    shared_up_layer < 0 || shared_up_layer >= MLA_MAXLAYERS ||
+                    kv_a_layer >= n_layers || shared_up_layer >= n_layers)) return 0;
+    g_p9_metrics_enabled = enabled != 0;
+    g_p9_cache_layers = n_layers;
+    if (g_p9_metrics_enabled) {
+        g_p9_router_threshold = router_near_tie_threshold;
+        g_p9_kv_a_layer = kv_a_layer;
+        g_p9_shared_up_layer = shared_up_layer;
+    }
+    g_p9_router_scores.clear();
+    g_p9_kv_a_activation.reset();
+    g_p9_shared_up_activation.reset();
+    g_p9_last_A = 0;
+    return 1;
+}
+
+int mlx_gpu_p9_metrics_read(int cap,
+                            unsigned long long *router_near,
+                            unsigned long long *router_decisions,
+                            float *kv_a_mean_abs, float *kv_a_rms,
+                            float *shared_up_mean_abs, float *shared_up_rms) {
+    if (!g_p9_metrics_enabled || g_p9_last_A <= 0 || cap < g_p9_last_A ||
+        !router_near || !router_decisions || !kv_a_mean_abs || !kv_a_rms ||
+        !shared_up_mean_abs || !shared_up_rms) return 0;
+    for (int i = 0; i < g_p9_last_A; i++) {
+        router_near[i] = g_p9_last_router_near[i];
+        router_decisions[i] = g_p9_last_router_decisions[i];
+        kv_a_mean_abs[i] = g_p9_last_kv_a_mean_abs[i];
+        kv_a_rms[i] = g_p9_last_kv_a_rms[i];
+        shared_up_mean_abs[i] = g_p9_last_shared_up_mean_abs[i];
+        shared_up_rms[i] = g_p9_last_shared_up_rms[i];
+    }
+    return g_p9_last_A;
+}
+
 int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spos, int is_dense,
                                     const float *x_in_host, const float *w_inln,
                                     const float *w_postln, const float *w_kvaln,
@@ -2252,6 +2355,7 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
                                    // caller must have set g_fused_B=N_SLOTS via mlx_gpu_set_batch()
                                    // before the first step of a cbatch run (persists across steps,
                                    // unlike V5d's B which is fully rewritten every call in lockstep).
+        if ((size_t)l >= g_fused_K.size()) return 0;
         for (int i = 0; i < A; i++) {
             if (spos[i] < 0 || spos[i] >= MLA_L0_MAXPOS) return 0;
         }
@@ -2259,6 +2363,12 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
             delete g_cbatch_x;
             g_cbatch_x = new mx::array(wrap_host_f32(x_in_host, {A, HIDDEN}));
             g_cbatch_A = A; g_cbatch_layers_done = 0;
+            if (g_p9_metrics_enabled) {
+                g_p9_router_scores.clear();
+                g_p9_kv_a_activation.reset();
+                g_p9_shared_up_activation.reset();
+                g_p9_last_A = 0;
+            }
         }
         if (g_cbatch_A != A || g_cbatch_layers_done != l) return 0;
 
@@ -2278,6 +2388,8 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
 
         mx::array q = lazy_matvec_e0(nq, h);
         mx::array kv_ap = lazy_matvec_e0(nkva, h);
+        if (g_p9_metrics_enabled && l == g_p9_kv_a_layer)
+            g_p9_kv_a_activation = kv_ap;
         mx::array compressed_kv = mx::slice(kv_ap, {0, 0}, {A, KVLORA});
         mx::array k_pe_raw = mx::slice(kv_ap, {0, KVLORA}, {A, KVLORA + ROPE});
         mx::array normed_kv = mx::fast::rms_norm(compressed_kv, wrap_host_f32(w_kvaln, {KVLORA}),
@@ -2322,25 +2434,71 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
         // via probe_ragged_primitives.cpp Probe A.
         mx::array k_new_win = mx::reshape(k_new, {A, 1, H, 1, QHD});
         mx::array v_new_win = mx::reshape(v_new, {A, 1, H, 1, VHD});
-        g_fused_K[l] = mx::scatter(g_fused_K[l], {slot_arr, pos_arr}, k_new_win, {0, 2});
-        g_fused_V[l] = mx::scatter(g_fused_V[l], {slot_arr, pos_arr}, v_new_win, {0, 2});
-
-        // Gather THIS step's active columns' own persistent windows (mx::take by slot_arr) --
-        // each column reads its OWN slot's full {H,MLA_L0_MAXPOS,*} window, not the whole
-        // persistent N_SLOTS array. Per-column mask (row m true for j<=spos[m]) replaces
-        // V5d's single shared mask -- verified via Probe C.
-        mx::array k_win = mx::take(g_fused_K[l], slot_arr, 0);   // {A,H,MLA_L0_MAXPOS,QHD}
-        mx::array v_win = mx::take(g_fused_V[l], slot_arr, 0);   // {A,H,MLA_L0_MAXPOS,VHD}
-
-        std::vector<uint8_t> mask_bytes((size_t)A * MLA_L0_MAXPOS);
-        for (int m = 0; m < A; m++)
-            for (int j = 0; j < MLA_L0_MAXPOS; j++)
-                mask_bytes[(size_t)m * MLA_L0_MAXPOS + j] = (j <= spos[m]) ? 1 : 0;
-        mx::array mask_arr(mask_bytes.data(), {A, 1, 1, MLA_L0_MAXPOS}, mx::bool_);   // copying ctor
-
         mx::array q_full_r = mx::reshape(q_full, {A, H, 1, QHD});
-        mx::array attn = mx::fast::scaled_dot_product_attention(q_full_r, k_win, v_win,
-                                                                  (float)g_mla_attn_scale, "array", mask_arr);
+        std::optional<mx::array> attn_opt;
+        if (g_fused_kv_compact) {
+            // P9 is deliberately B=1. Avoid mx::take(...slot_arr...) here: with a 64-token
+            // prefill chunk that would materialize 64 copies of the same long K/V window.
+            // The manual matmul broadcasts one cache row across A queries and keeps only the
+            // A*H*1*window score tensor. K/V stay symmetric int8 with per-vector f16 scales.
+            if (g_fused_B != 1) return 0;
+            auto quantize = [](const mx::array &values) {
+                mx::array scale = mx::maximum(
+                    mx::max(mx::abs(values), std::vector<int>{4}, true), mx::array(1.0e-6f)) /
+                    127.0f;
+                mx::array codes = mx::astype(
+                    mx::clip(mx::round(values / scale), mx::array(-127.0f), mx::array(127.0f)),
+                    mx::int8);
+                return std::pair<mx::array, mx::array>{codes, mx::astype(scale, mx::float16)};
+            };
+            auto k_quantized = quantize(k_new_win);
+            auto v_quantized = quantize(v_new_win);
+            g_fused_K[l] = mx::scatter(g_fused_K[l], {slot_arr, pos_arr},
+                                       k_quantized.first, {0, 2});
+            g_fused_V[l] = mx::scatter(g_fused_V[l], {slot_arr, pos_arr},
+                                       v_quantized.first, {0, 2});
+            g_fused_K_scale[l] = mx::scatter(g_fused_K_scale[l], {slot_arr, pos_arr},
+                                             k_quantized.second, {0, 2});
+            g_fused_V_scale[l] = mx::scatter(g_fused_V_scale[l], {slot_arr, pos_arr},
+                                             v_quantized.second, {0, 2});
+
+            int window = 1;
+            for (int m = 0; m < A; m++) window = std::max(window, spos[m] + 1);
+            mx::array k_codes = mx::slice(g_fused_K[l], {0, 0, 0, 0}, {1, H, window, QHD});
+            mx::array v_codes = mx::slice(g_fused_V[l], {0, 0, 0, 0}, {1, H, window, VHD});
+            mx::array k_scale = mx::slice(g_fused_K_scale[l], {0, 0, 0, 0}, {1, H, window, 1});
+            mx::array v_scale = mx::slice(g_fused_V_scale[l], {0, 0, 0, 0}, {1, H, window, 1});
+            mx::array k_win = mx::astype(k_codes, mx::float16) * k_scale;
+            mx::array v_win = mx::astype(v_codes, mx::float16) * v_scale;
+            std::vector<uint8_t> mask_bytes((size_t)A * window);
+            for (int m = 0; m < A; m++)
+                for (int j = 0; j < window; j++)
+                    mask_bytes[(size_t)m * window + j] = (j <= spos[m]) ? 1 : 0;
+            mx::array mask_arr(mask_bytes.data(), {A, 1, 1, window}, mx::bool_);
+            mx::array scores = mx::matmul(mx::astype(q_full_r, mx::float16),
+                                           mx::swapaxes(k_win, -1, -2)) *
+                               (float)g_mla_attn_scale;
+            scores = mx::where(mask_arr, scores,
+                               mx::array(-std::numeric_limits<float>::infinity()));
+            mx::array probabilities = mx::softmax(scores, -1, /*precise=*/true);
+            attn_opt = mx::astype(mx::matmul(probabilities, v_win), mx::float32);
+        } else {
+            g_fused_K[l] = mx::scatter(g_fused_K[l], {slot_arr, pos_arr}, k_new_win, {0, 2});
+            g_fused_V[l] = mx::scatter(g_fused_V[l], {slot_arr, pos_arr}, v_new_win, {0, 2});
+
+            // Gather THIS step's active columns' own persistent windows (mx::take by slot_arr)
+            // and retain the verified default/P8 path byte-for-byte when P9 compact K/V is off.
+            mx::array k_win = mx::take(g_fused_K[l], slot_arr, 0);
+            mx::array v_win = mx::take(g_fused_V[l], slot_arr, 0);
+            std::vector<uint8_t> mask_bytes((size_t)A * MLA_L0_MAXPOS);
+            for (int m = 0; m < A; m++)
+                for (int j = 0; j < MLA_L0_MAXPOS; j++)
+                    mask_bytes[(size_t)m * MLA_L0_MAXPOS + j] = (j <= spos[m]) ? 1 : 0;
+            mx::array mask_arr(mask_bytes.data(), {A, 1, 1, MLA_L0_MAXPOS}, mx::bool_);
+            attn_opt = mx::fast::scaled_dot_product_attention(
+                q_full_r, k_win, v_win, (float)g_mla_attn_scale, "array", mask_arr);
+        }
+        mx::array attn = *attn_opt;
         mx::array attn_flat = mx::reshape(attn, {A, H * VHD});
         mx::array o = lazy_matvec_e0(no, attn_flat);
         mx::array x_mid = x + o;
@@ -2365,6 +2523,7 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
             mx::array w_gate_arr = wrap_host_f32(w_gate, {NE, HIDDEN});
             mx::array scores_raw = mx::matmul(h2, mx::transpose(w_gate_arr));       // {A,NE}
             mx::array scores = mx::softmax(scores_raw, std::vector<int>{-1}, /*precise=*/true);
+            if (g_p9_metrics_enabled) g_p9_router_scores.push_back(scores);
             mx::array order = mx::argsort(scores, -1);                              // {A,NE}, per-row
             mx::array top_idx_u = mx::slice(order, {0, NE - TOPK}, {A, NE});         // {A,TOPK}
             mx::array top_idx = mx::astype(top_idx_u, mx::int32);
@@ -2418,6 +2577,8 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
                 mx::array sgate = lazy_matvec_e0(nm, h2);
                 snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.up_proj", l);
                 mx::array sup = lazy_matvec_e0(nm, h2);
+                if (g_p9_metrics_enabled && l == g_p9_shared_up_layer)
+                    g_p9_shared_up_activation = sup;
                 mx::array sswiglu = lazy_silu(sgate) * sup;
                 snprintf(nm, sizeof nm, "model.layers.%d.mlp.shared_experts.down_proj", l);
                 mx::array sdown = lazy_matvec_e0(nm, sswiglu);
@@ -2449,15 +2610,85 @@ int mlx_gpu_cbatch_forward_finalize(const float *w_finalnorm, float *logits_out)
         std::vector<mx::array> all{logits};
         for (auto &a : g_fused_K) all.push_back(a);
         for (auto &a : g_fused_V) all.push_back(a);
+        if (g_fused_kv_compact) {
+            for (auto &a : g_fused_K_scale) all.push_back(a);
+            for (auto &a : g_fused_V_scale) all.push_back(a);
+        }
+        if (g_p9_metrics_enabled) {
+            for (auto &a : g_p9_router_scores) all.push_back(a);
+            if (g_p9_kv_a_activation) all.push_back(*g_p9_kv_a_activation);
+            if (g_p9_shared_up_activation) all.push_back(*g_p9_shared_up_activation);
+        }
         mx::eval(all);
         const int VOCAB = (int)logits.shape().back();
         std::memcpy(logits_out, logits.data<float>(), sizeof(float) * (size_t)A * (size_t)VOCAB);
+        if (g_p9_metrics_enabled) {
+            const int NE = g_layer_n_experts;
+            const int TOPK = g_layer_top_k;
+            g_p9_last_A = A;
+            g_p9_last_router_near.assign(A, 0);
+            g_p9_last_router_decisions.assign(A, 0);
+            g_p9_last_kv_a_mean_abs.assign(A, 0.0f);
+            g_p9_last_kv_a_rms.assign(A, 0.0f);
+            g_p9_last_shared_up_mean_abs.assign(A, 0.0f);
+            g_p9_last_shared_up_rms.assign(A, 0.0f);
+
+            // Near-tie means the probability gap at the expert selection boundary (TOPKth
+            // versus TOPK+1th) is within the pinned threshold. This is the expert-router
+            // metric P9 requires, distinct from the final-vocabulary near-tie subsystem.
+            std::vector<float> best((size_t)TOPK + 1);
+            for (auto &scores : g_p9_router_scores) {
+                const float *values = scores.data<float>();
+                for (int row = 0; row < A; row++) {
+                    std::fill(best.begin(), best.end(), -std::numeric_limits<float>::infinity());
+                    for (int expert = 0; expert < NE; expert++) {
+                        float value = values[(size_t)row * NE + expert];
+                        for (int rank = 0; rank <= TOPK; rank++) {
+                            if (value > best[rank]) {
+                                for (int move = TOPK; move > rank; move--) best[move] = best[move - 1];
+                                best[rank] = value;
+                                break;
+                            }
+                        }
+                    }
+                    float margin = best[TOPK - 1] - best[TOPK];
+                    if (margin <= g_p9_router_threshold) g_p9_last_router_near[row]++;
+                    g_p9_last_router_decisions[row]++;
+                }
+            }
+
+            auto summarize = [A](const mx::array &activation, int width,
+                                 std::vector<float> &mean_abs, std::vector<float> &rms) {
+                const float *values = activation.data<float>();
+                for (int row = 0; row < A; row++) {
+                    double abs_sum = 0.0, square_sum = 0.0;
+                    for (int column = 0; column < width; column++) {
+                        double value = values[(size_t)row * width + column];
+                        abs_sum += std::fabs(value);
+                        square_sum += value * value;
+                    }
+                    mean_abs[row] = (float)(abs_sum / width);
+                    rms[row] = (float)std::sqrt(square_sum / width);
+                }
+            };
+            if (!g_p9_kv_a_activation || !g_p9_shared_up_activation) {
+                throw std::runtime_error("P9 activation targets were not reached");
+            }
+            summarize(*g_p9_kv_a_activation, g_mla_kv_lora + g_mla_qk_rope,
+                      g_p9_last_kv_a_mean_abs, g_p9_last_kv_a_rms);
+            summarize(*g_p9_shared_up_activation, g_layer_im_dim * g_layer_n_shared,
+                      g_p9_last_shared_up_mean_abs, g_p9_last_shared_up_rms);
+        }
         delete g_cbatch_x; g_cbatch_x = nullptr;
         g_cbatch_A = 0; g_cbatch_layers_done = 0;
         return 1;
     } catch (...) {
         delete g_cbatch_x; g_cbatch_x = nullptr;
         g_cbatch_A = 0; g_cbatch_layers_done = 0;
+        g_p9_router_scores.clear();
+        g_p9_kv_a_activation.reset();
+        g_p9_shared_up_activation.reset();
+        g_p9_last_A = 0;
         return 0;
     }
 }

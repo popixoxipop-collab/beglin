@@ -1,0 +1,102 @@
+{
+  "adapter_preflight": {
+    "adapter_id": "p9-xox-mlx-metal-v1",
+    "adapter_sha256": "ae5c76075fc96dee548b020e3212441313550a6bf87e3b35cb589920aab31148",
+    "blockers": [
+      {
+        "argv": [
+          "python3",
+          "beglin_p9_quality_fixture.py"
+        ],
+        "code": "TAILNET_FIXTURE_UNREGISTERED",
+        "host": "xox",
+        "workspace": "sandbox"
+      }
+    ],
+    "configured_positions": 16384,
+    "corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+    "engine_markers": {
+      "BEGLIN_P9_COMPACT_KV": true,
+      "BEGLIN_P9_QUALITY_METRICS": true,
+      "P9_QUALITY_REQUEST_V1": true,
+      "mlx_gpu_p9_metrics_config": true,
+      "mlx_gpu_p9_metrics_read": true
+    },
+    "execution_allowed": false,
+    "preflight_sha256": "3d848f504ea9115b43a213ab4f23d87167524cdd4c09aa276f3053192c4d337d",
+    "prompt_count": 8,
+    "repetitions": 2,
+    "required_positions": 15045,
+    "schema": "beglin-quality-adapter-preflight/1",
+    "status": "P9_READY_FOR_FIXTURE_REGISTRATION",
+    "token_fixture_sha256": "b9676d1e02865bc3aa6fd36e6792e6d44681f182ba34e9bc49d7f9a75957fa95"
+  },
+  "cells": [
+    {
+      "kind": "reference",
+      "n": null,
+      "precision": "safe_baseline",
+      "repetitions_per_prompt": 2,
+      "variant_id": "reference"
+    },
+    {
+      "kind": "candidate",
+      "n": 4,
+      "precision": "n4",
+      "repetitions_per_prompt": 2,
+      "variant_id": "n4"
+    },
+    {
+      "kind": "candidate",
+      "n": 5,
+      "precision": "n5",
+      "repetitions_per_prompt": 2,
+      "variant_id": "n5"
+    },
+    {
+      "kind": "candidate",
+      "n": 6,
+      "precision": "n6",
+      "repetitions_per_prompt": 2,
+      "variant_id": "n6"
+    },
+    {
+      "kind": "candidate",
+      "n": 7,
+      "precision": "n7",
+      "repetitions_per_prompt": 2,
+      "variant_id": "n7"
+    }
+  ],
+  "corpus_path": "configs/quality/deterministic_corpus_v1.json",
+  "corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+  "execution_adapter": "configs/quality/p9_execution_adapter_v1.json",
+  "execution_allowed": false,
+  "identity": {
+    "backend": "mlx_metal",
+    "binary_sha256": "d69a3f8f008a52cc6eeb6e74e56fd9ed39f7cbf8ba02e524e43d88939fd4cc41",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "hardware_id": "xox-apple-silicon",
+    "model_id": "deepseek-v2-lite",
+    "runtime_config_hash": "5285874fc903ca4b75499f97648095107bc31b368ef7d63c9c869e3c901b2646",
+    "seed": 0,
+    "source_commit": "998cbe21124864e68a42022bd460d88f79dfa3c3",
+    "source_tree": "da82c53c8bdf40c136f1d10b8cc738cb1d412b7fdc710c3df6d3b85539f5b71e"
+  },
+  "matrix_hash": "5cabf82b3bcb8a39dcf836c4bb8c8314dc9d2cbf3cb04c56b8686ca6826709e1",
+  "matrix_path": "configs/quality/p9_quality_matrix_v1.json",
+  "notes": [
+    "Agent D does not execute physical comparisons before P8 integration passes.",
+    "The execution adapter is explicit and fail-closed on engine capabilities and Tailnet fixture registration.",
+    "All baseline/candidate cells must reuse the same control identity; precision policy is the experimental variable."
+  ],
+  "p8_gate": {
+    "problems": [],
+    "ready": true,
+    "status": "P8_INTEGRATION_PASS"
+  },
+  "plan_hash": "77a3a341e657954d65f9bd01d7841260874920ff28a9663a3d3c783ceb50a94a",
+  "prompt_count": 8,
+  "schema": "beglin-quality-execution-plan/1",
+  "status": "P9_READY_FOR_FIXTURE_REGISTRATION"
+}

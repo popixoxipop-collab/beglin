@@ -1,0 +1,66 @@
+{
+  "schema": "beglin-p9-quality-harness-status/1",
+  "observed_at": "2026-09-29",
+  "agent": "A0",
+  "status": "P9_READY_FOR_FIXTURE_REGISTRATION",
+  "branch": "prod/p9-integration",
+  "baseline_commit": "727d950ef420320455b5071969efd49e3751e8c8",
+  "owned_paths": [
+    "CMakeLists.txt",
+    "qwen_infer.c",
+    "mlx_moe.cpp",
+    "mlx_moe.h",
+    "beglin_p9_quality_fixture.py",
+    "benchmarks/quality/**",
+    "configs/quality/**",
+    "docs/p9-quality/**"
+  ],
+  "validation": {
+    "python_compile": "PASS",
+    "synthetic_self_test": "PASS",
+    "physical_log_normalization_self_test": "PASS",
+    "runner_static_self_test": "PASS",
+    "c_syntax_default_and_long_context": "PASS",
+    "cpp_syntax_default_and_compact_long_context": "PASS",
+    "p8_compatibility_gate": "PASS",
+    "matrix_planner_with_p8": "PASS_P9_READY_FOR_FIXTURE_REGISTRATION",
+    "token_fixture_materialization": "PASS_8_OF_8",
+    "control_mismatch_fail_closed": "PASS",
+    "missing_metric_fail_closed": "PASS",
+    "policy_freeze_guard": "PASS"
+  },
+  "hashes": {
+    "corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+    "matrix_hash": "5cabf82b3bcb8a39dcf836c4bb8c8314dc9d2cbf3cb04c56b8686ca6826709e1",
+    "adapter_sha256": "ae5c76075fc96dee548b020e3212441313550a6bf87e3b35cb589920aab31148",
+    "token_fixture_sha256": "b9676d1e02865bc3aa6fd36e6792e6d44681f182ba34e9bc49d7f9a75957fa95",
+    "adapter_preflight_sha256": "3d848f504ea9115b43a213ab4f23d87167524cdd4c09aa276f3053192c4d337d",
+    "post_p8_plan_hash": "77a3a341e657954d65f9bd01d7841260874920ff28a9663a3d3c783ceb50a94a",
+    "post_p8_plan_file_sha256": "c90e342fabeac75a16f0abb67f001de4ddb6b31306b18001b51f719eaec57b3e",
+    "runner_sha256": "5e99120e1c2c8a5764b0f330a32543412974766757db75c87fae33d8e2155336"
+  },
+  "adapter": {
+    "id": "p9-xox-mlx-metal-v1",
+    "required_positions": 15045,
+    "configured_positions": 16384,
+    "compact_kv": "symmetric_int8_per_head_position_with_float16_scale",
+    "full_causal_attention": true,
+    "tailnet_argv": [
+      "python3",
+      "beglin_p9_quality_fixture.py"
+    ]
+  },
+  "actual_physical_comparison_run": false,
+  "execution_blocker": "The exact XOX sandbox fixture argv is not yet registered in the Tailnet Commander admission policy.",
+  "policy_status": "UNFROZEN",
+  "numeric_acceptance_rules_frozen": false,
+  "production_write_allowed": false,
+  "merge_release_authority": false,
+  "next": [
+    "register only the pinned P9 fixture runner and exact argv",
+    "run one identical-control reference plus n4/n5/n6/n7 physical matrix",
+    "normalize all five artifacts and measure every required metric",
+    "freeze numeric acceptance policy only after baseline evidence review",
+    "complete independent final audit before any production decision"
+  ]
+}

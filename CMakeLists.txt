@@ -36,6 +36,14 @@ project(qwen_infer_gpu LANGUAGES C CXX ASM)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# P9 uses a pinned 15,033-token prompt. Keep the production/default binary at its
+# already-verified small cache bounds; the quality fixture opts into a separate
+# 16,384-position build explicitly with -DBEGLIN_P9_LONG_CONTEXT=ON.
+option(BEGLIN_P9_LONG_CONTEXT "Build the isolated P9 long-context quality binary" OFF)
+if(BEGLIN_P9_LONG_CONTEXT)
+  set(BEGLIN_P9_MAX_CONTEXT 16384)
+endif()
+
 # Locate the MLX CMake package inside a Python that actually has mlx installed,
 # unless the caller pins it explicitly. Two details that bite here: `mlx` is a
 # namespace package, so `mlx.__file__` is None and only `mlx.__path__` resolves;
@@ -81,6 +89,11 @@ add_library(qwen_infer_obj OBJECT
 )
 target_compile_options(qwen_infer_obj PRIVATE -O3 -w)
 target_compile_definitions(qwen_infer_obj PRIVATE QWEN_GPU_MLX)   # pitfall 2
+if(BEGLIN_P9_LONG_CONTEXT)
+  target_compile_definitions(qwen_infer_obj PRIVATE
+    BEGLIN_MOE_MAXPOS=${BEGLIN_P9_MAX_CONTEXT}
+    BEGLIN_MOE_CBATCH_MAXPOS=${BEGLIN_P9_MAX_CONTEXT})
+endif()
 
 # SME2 kernel wrapper: dispatches through function pointers, no SME/SVE code
 # of its own, but built with the arch flag so the dispatch targets resolve.
@@ -100,6 +113,11 @@ target_compile_options(kleidi_obj PRIVATE
 add_library(mlx_moe_obj OBJECT mlx_moe.cpp)
 target_compile_options(mlx_moe_obj PRIVATE -O3 -w)
 target_link_libraries(mlx_moe_obj PRIVATE mlx)
+if(BEGLIN_P9_LONG_CONTEXT)
+  target_compile_definitions(mlx_moe_obj PRIVATE
+    BEGLIN_MLA_MAXPOS=${BEGLIN_P9_MAX_CONTEXT}
+    BEGLIN_P9_COMPACT_KV=1)
+endif()
 
 add_executable(qwen_infer_gpu
   $<TARGET_OBJECTS:qwen_infer_obj>

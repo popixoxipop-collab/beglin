@@ -1,0 +1,24 @@
+{
+  "schema": "beglin-quality-policy/1",
+  "policy_status": "UNFROZEN",
+  "required_metrics": [
+    "perplexity_ratio",
+    "candidate_quality_score",
+    "quality_score_delta",
+    "candidate_task_score.value",
+    "task_score_delta",
+    "reference_finite_logits.rate",
+    "candidate_finite_logits.rate",
+    "reference_determinism.rate",
+    "candidate_determinism.rate",
+    "reference_output_match.rate",
+    "correction_count",
+    "promotion_count",
+    "activation_drift.max_abs_rms_relative_delta",
+    "candidate_router_near_tie.rate",
+    "router_near_tie_delta",
+    "long_context_stability.rate"
+  ],
+  "rules": [],
+  "note": "Numeric acceptance thresholds are intentionally not frozen before P8 integration. Missing required metrics remain null and block P9 PASS."
+}

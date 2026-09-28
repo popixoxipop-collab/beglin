@@ -264,6 +264,19 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
                                     const float *w_gate);
 int mlx_gpu_cbatch_forward_finalize(const float *w_finalnorm, float *logits_out);
 
+// P9-only measurement taps for the MLA ragged path. Configuration is explicit and defaults
+// off, so the existing P8/production execution graph is unchanged. When enabled, finalize()
+// evaluates the already-built router probability arrays and the two P8-pinned role outputs in
+// the same graph as logits, then exposes one aggregate per active row. `read` returns the row
+// count (or 0 when unavailable); every output array must have room for `cap` rows.
+int mlx_gpu_p9_metrics_config(int enabled, float router_near_tie_threshold,
+                               int kv_a_layer, int shared_up_layer, int n_layers);
+int mlx_gpu_p9_metrics_read(int cap,
+                            unsigned long long *router_near,
+                            unsigned long long *router_decisions,
+                            float *kv_a_mean_abs, float *kv_a_rms,
+                            float *shared_up_mean_abs, float *shared_up_rms);
+
 // V5j: GQA full multi-layer lazy forward -- the GQA-equivalent of
 // mlx_gpu_layer_step_lazy()/mlx_gpu_forward_finalize() above. A deliberately
 // separate pair of functions (not a runtime branch inside the MLA lazy

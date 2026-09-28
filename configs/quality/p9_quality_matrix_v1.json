@@ -1,0 +1,34 @@
+{
+  "schema": "beglin-quality-matrix/1",
+  "matrix_id": "p9-bf16-vs-n4-n7-v1",
+  "baseline": {
+    "precision": "safe_baseline",
+    "description": "A0-selected BF16/FP16 or previously certified safe baseline; never inferred by Agent D."
+  },
+  "candidates": [
+    {
+      "n": 4
+    },
+    {
+      "n": 5
+    },
+    {
+      "n": 6
+    },
+    {
+      "n": 7
+    }
+  ],
+  "repetitions_per_prompt": 2,
+  "execution_adapter": "configs/quality/p9_execution_adapter_v1.json",
+  "required_p8_evidence": {
+    "schema": "beglin-p8-integration/1",
+    "status": "P8_INTEGRATION_PASS",
+    "gates": {
+      "runtime": "P8_RUNTIME_VALID_8_OF_8",
+      "policy": "P8_POLICY_ATTRIBUTION_8_OF_8",
+      "evidence": "P8_EVIDENCE_INDEPENDENT_PASS"
+    }
+  },
+  "note": "A0가 P8 integration 후 p9-xox-mlx-metal-v1 adapter를 명시적으로 연결했다. Physical execution은 adapter preflight와 Tailnet fixture registration이 모두 PASS일 때만 허용한다."
+}

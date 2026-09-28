@@ -1,0 +1,70 @@
+{
+  "cells": [
+    {
+      "kind": "reference",
+      "n": null,
+      "precision": "safe_baseline",
+      "repetitions_per_prompt": 2,
+      "variant_id": "reference"
+    },
+    {
+      "kind": "candidate",
+      "n": 4,
+      "precision": "n4",
+      "repetitions_per_prompt": 2,
+      "variant_id": "n4"
+    },
+    {
+      "kind": "candidate",
+      "n": 5,
+      "precision": "n5",
+      "repetitions_per_prompt": 2,
+      "variant_id": "n5"
+    },
+    {
+      "kind": "candidate",
+      "n": 6,
+      "precision": "n6",
+      "repetitions_per_prompt": 2,
+      "variant_id": "n6"
+    },
+    {
+      "kind": "candidate",
+      "n": 7,
+      "precision": "n7",
+      "repetitions_per_prompt": 2,
+      "variant_id": "n7"
+    }
+  ],
+  "corpus_path": "configs/quality/deterministic_corpus_v1.json",
+  "corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+  "execution_adapter": null,
+  "execution_allowed": false,
+  "identity": {
+    "backend": "mlx_metal",
+    "binary_sha256": "d69a3f8f008a52cc6eeb6e74e56fd9ed39f7cbf8ba02e524e43d88939fd4cc41",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "hardware_id": "xox-apple-silicon",
+    "model_id": "deepseek-v2-lite",
+    "runtime_config_hash": "5285874fc903ca4b75499f97648095107bc31b368ef7d63c9c869e3c901b2646",
+    "seed": 0,
+    "source_commit": "998cbe21124864e68a42022bd460d88f79dfa3c3",
+    "source_tree": "da82c53c8bdf40c136f1d10b8cc738cb1d412b7fdc710c3df6d3b85539f5b71e"
+  },
+  "matrix_hash": "8948fe1d73b3ae7231b6d4ab3dae78677bbabbe8ecd80de8bc28285a7143aeaf",
+  "matrix_path": "configs/quality/p9_quality_matrix_v1.json",
+  "notes": [
+    "Agent D does not execute physical comparisons before P8 integration passes.",
+    "A null execution_adapter is intentional before A0 wires the integrated runner.",
+    "All baseline/candidate cells must reuse the same control identity; precision policy is the experimental variable."
+  ],
+  "p8_gate": {
+    "problems": [],
+    "ready": true,
+    "status": "P8_INTEGRATION_PASS"
+  },
+  "plan_hash": "46faec7e8fe12b9757dd0651215edff6d02f660b0a67bd3c3834867756726b77",
+  "prompt_count": 8,
+  "schema": "beglin-quality-execution-plan/1",
+  "status": "P9_EXECUTION_PLAN_READY"
+}
