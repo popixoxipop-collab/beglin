@@ -1,0 +1,11 @@
+[moe gpu cb online] QWEN_MOE_GPU_CBATCH_ONLINE=1 -- V5h GPU online admission scheduler gate
+[moe gpu cb online] af blob 9814343680 bytes, f32 blob 14137344 bytes, 27 layers resolved
+[moe gpu cb online] bound 269/269 tensors to MLX
+[engine] safetensors_load: /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json: 5291 tensors across 4 shards
+[moe promotion source] opened '/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json' for QWEN_MOE_PROMOTION_FILE_NQ gpu
+[gguf_transcode] qNg64(n=7): 1/1179648 codes saturated to an extreme value
+[moe promotion nq gpu] role=kv_a_proj_with_mqa layer=11 PROMOTED to qNg64(n=7) on GPU -- permanent, no restart within this process (base_bits was 4)
+[moe promotion nq gpu] '/Users/xox/vdsp_shadow_runs/beglin_p7_instrumented/p7-20260927T155716Z-2576/kva-l11_n7_slots4.promotion.txt': 1 lines, 1 promoted, 0 bind failures, g_moe_naf now 270
+[moe gpu cb online] sort_threshold=0 B=4 R=12 prefill_budget=16
+BEGLIN_INSTRUMENTATION_V2 kind=activation role=kv_a_proj_with_mqa layer=11 n=7 sample_count=32768 policy_hash=af4bf3264503dc5134adf87332a71f03a83180265ad487900908256e60e1435a weight_epoch=1 mean_abs=0.345896677 rms=0.978154826
+FATAL: [moe gpu cb online] mlx_gpu_cbatch_layer_step_lazy failed at layer 11 step 0 (pass 0)
