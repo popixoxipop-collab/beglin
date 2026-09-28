@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -9,6 +10,34 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 BUILD = HERE / ".build"
+
+EXPECTED_SHA256 = {
+    ROOT / "mlx_moe.cpp": "67e3c191cf7dbaead40050b6c8d09ab4318b6fa794351fe0976061a4fa6f762f",
+    ROOT / "mlx_moe.h": "753a1eab8542123fda8ad6834e890b88e4a4fdc894f59fac9e1d7cead95a71a6",
+    HERE / "binding_runtime_probe.cpp": "4edab64bdb2b86b686c70f5c73870480098361aa6e870d4289e6e40b58917d35",
+    HERE / "CMakeLists.txt": "49c4fa4c41936432a49a4339839ce9d5936ed82fc15232c9129a793933c36b67",
+}
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def verify_inputs() -> tuple[bool, dict[str, dict[str, str]]]:
+    details: dict[str, dict[str, str]] = {}
+    ok = True
+    for path, expected in EXPECTED_SHA256.items():
+        observed = sha256_file(path) if path.is_file() else "MISSING"
+        details[str(path.relative_to(ROOT))] = {
+            "expected": expected,
+            "observed": observed,
+        }
+        ok = ok and observed == expected
+    return ok, details
 
 
 def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
@@ -23,6 +52,15 @@ def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def main() -> int:
+    inputs_ok, input_hashes = verify_inputs()
+    if not inputs_ok:
+        print(json.dumps({
+            "status": "BLOCKED",
+            "reason": "SOURCE_SHA_MISMATCH",
+            "inputs": input_hashes,
+        }, sort_keys=True))
+        return 2
+
     mlx_cmake_dir = os.environ.get("MLX_CMAKE_DIR")
     if not mlx_cmake_dir:
         candidates = [
@@ -70,6 +108,7 @@ def main() -> int:
         "exit_code": probe.returncode,
         "stdout": probe.stdout,
         "stderr": probe.stderr,
+        "inputs": input_hashes,
     }
     print(json.dumps(payload, sort_keys=True))
     return probe.returncode
