@@ -13,9 +13,9 @@ ROOT = HERE.parents[1]
 BUILD = HERE / ".build"
 
 EXPECTED_SHA256 = {
-    ROOT / "mlx_moe.cpp": "67e3c191cf7dbaead40050b6c8d09ab4318b6fa794351fe0976061a4fa6f762f",
-    ROOT / "mlx_moe.h": "753a1eab8542123fda8ad6834e890b88e4a4fdc894f59fac9e1d7cead95a71a6",
-    HERE / "binding_runtime_probe.cpp": "9d11ab9d1456588a354edb803e4769b03bd9634a975036714e84a587b156bf2a",
+    ROOT / "mlx_moe.cpp": "730a2d77d6e5e2bfba54ffbfda73554a6f1391748a49c7ee7f58705afc015e3b",
+    ROOT / "mlx_moe.h": "a319427c3246e103e5abd6af4a31ed9537f13703c0c5543562f021a803c5a416",
+    HERE / "binding_runtime_probe.cpp": "ab78c875796b2062e2419f19d72198ffddb97b9357fe7c2d416f4035e9e6399f",
     HERE / "CMakeLists.txt": "49c4fa4c41936432a49a4339839ce9d5936ed82fc15232c9129a793933c36b67",
 }
 
