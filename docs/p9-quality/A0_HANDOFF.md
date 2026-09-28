@@ -2,7 +2,7 @@
 
 Status: **P9_QUALITY_HARNESS_READY**
 
-Branch: `prod/p9-quality`  
+Branch: `prod/p9-quality`
 Base: `a0b8ab2c90af70fa8095556033e605477ec186ae`
 
 ## Ownership respected
