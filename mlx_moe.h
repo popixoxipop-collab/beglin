@@ -35,6 +35,19 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
                      long E, long out, long in, long ng,
                      long packed_off, long scale_off, long bias_off, int bits);
 
+// P8-B: canonical runtime binding truth. These APIs inspect the actual MLX
+// representation maps used by dispatch, rather than promotion/debug text.
+// representation: 0=none, 1=native MLX quantized, 2=custom qNg64, 3=dense.
+// mlx_gpu_get_binding_state returns 1 iff the tensor name is currently bound
+// and writes its actual precision to bound_n. mlx_gpu_assert_binding returns
+// 1 only when the actual bound precision equals requested_n; a missing tensor
+// or mismatch returns 0 and still reports the observed state to the caller.
+// This is the fail-closed interface the P8 orchestrator/evidence layer should
+// use to distinguish real policy application from a missing promotion log.
+int mlx_gpu_get_binding_state(const char *name, int *bound_n, int *representation);
+int mlx_gpu_assert_binding(const char *name, int requested_n, int *bound_n,
+                           int *representation);
+
 // Reports how many previously-bound tensors got true zero-copy vs an
 // explicit-copy fallback, and total bytes copied (should be near 0 -- only
 // the F-10 stragglers with unaligned offsets fall back). Returns the total
