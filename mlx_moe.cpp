@@ -1618,6 +1618,7 @@ static mx::fast::CustomKernelFunction &qng64_gemv_kernel() {
         std::string source = R"(
             uint p = thread_position_in_grid.x;
             uint row = thread_position_in_grid.y;
+            uint z = thread_position_in_grid.z;
             if (p >= 64) return;
             int bias_code = 1 << (n - 1);
             float partial = 0.0f;
@@ -1634,7 +1635,7 @@ static mx::fast::CustomKernelFunction &qng64_gemv_kernel() {
                 int code = u - bias_code;
                 float scale = scales[row * ng + g];
                 float decoded = (float)code * scale;
-                partial += decoded * x[g * 64 + p];
+                partial += decoded * x[z * (ng * 64u) + g * 64 + p];
             }
             threadgroup float shared_sums[2];
             uint simd_lane = p % 32;
@@ -1643,7 +1644,8 @@ static mx::fast::CustomKernelFunction &qng64_gemv_kernel() {
             if (simd_lane == 0) shared_sums[simd_group] = simd_partial;
             threadgroup_barrier(mem_flags::mem_threadgroup);
             if (p == 0) {
-                out[row] = shared_sums[0] + shared_sums[1];
+                out[z * (uint)out_dim + row] =
+                    shared_sums[0] + shared_sums[1];
             }
         )";
         g_qng64_gemv_kernel = mx::fast::metal_kernel(
@@ -1656,31 +1658,54 @@ static mx::fast::CustomKernelFunction &qng64_gemv_kernel() {
 // attention-role call sites below, q/kv_a/kv_b/o_proj, never route across experts). The full
 // per-token/per-expert routed MoE path is explicitly NOT covered -- see QNg64Tensor's own
 // COST/EXIT comment.
-// D-metal-4: x arrives shaped {B, in} (B=1 for this call path -- lazy_matvec_e0's own single-
-// expert scope -- confirmed by direct shape debugging: real shape [1, 2048] observed for a
-// real DeepSeek kv_a_proj_with_mqa call, not the flat {in} this function's first draft assumed).
-// The kernel's own memory-layout read (`x[g*64+p]`) is byte-identical either way (a size-1
-// leading dim doesn't change the underlying buffer), but the OUTPUT shape must match what
-// mx::quantized_matmul's own bits=4/8 path returns ({B, out}) for downstream code (whatever
-// consumes lazy_matvec_e0's return value next) to reshape/concatenate correctly -- returning a
-// bare {out} 1D array here was the actual bug ("[slice] Invalid number of indices or strides
-// for array with dimension 1", a real caught exception, not guessed at) since the CALLER
-// expected {B, out} and got {out} instead.
+// P8-B batch correctness: x is a strict {B,in} matrix. Earlier code preserved the
+// leading dimension only in the OUTPUT shape but still indexed x as if B==1, launched
+// grid.z=1, and returned {1,out}. That happened to work for decode/B=1 and failed for
+// cbatch/prefill B>1 (the canonical kv_a/L11 n=7 failure). The custom kernel now treats
+// z as the batch row, indexes x at z*in, writes out at z*out, launches grid.z=B, and
+// returns exactly {B,out}, matching the native MLX quantized_matmul path.
 static mx::array qng64_gemv_e0(const char *name, const mx::array &x) {
     QNg64Tensor &t = g_qng64_tensors.at(name);
+    if (x.ndim() != 2 || x.shape(1) != t.in) {
+        throw std::runtime_error("qng64_gemv_e0 expects x shaped {B,in}");
+    }
+    const int B = x.shape(0);
+    if (B <= 0) {
+        throw std::runtime_error("qng64_gemv_e0 requires B>0");
+    }
+
     mx::array planes_e = mx::take(t.planes, 0, 0);
     mx::array scales_e = mx::take(t.scales, 0, 0);
     auto &kernel = qng64_gemv_kernel();
     std::vector<mx::array> inputs = {planes_e, scales_e, x};
-    std::vector<mx::Shape> output_shapes = {{1, (int)t.out}};
+    std::vector<mx::Shape> output_shapes = {{B, (int)t.out}};
     std::vector<mx::Dtype> output_dtypes = {mx::float32};
     std::vector<std::pair<std::string, mx::fast::TemplateArg>> template_args = {
-        {"n", t.n}, {"ng", (int)t.ng}
+        {"n", t.n}, {"ng", (int)t.ng}, {"out_dim", (int)t.out}
     };
     auto outputs = kernel(inputs, output_shapes, output_dtypes,
-                           {64, (int)t.out, 1}, {64, 1, 1},
+                           {64, (int)t.out, B}, {64, 1, 1},
                            template_args, std::nullopt, false, {});
     return outputs[0];
+}
+
+int mlx_gpu_qng64_batch_probe(const char *name, const float *x, int batch,
+                              float *y) {
+    if (!name || !x || !y || batch <= 0) return 0;
+    auto it = g_qng64_tensors.find(name);
+    if (it == g_qng64_tensors.end()) return 0;
+    QNg64Tensor &t = it->second;
+    try {
+        mx::array xin((void *)x, {batch, (int)t.in}, mx::float32, noop_deleter);
+        mx::array yout = qng64_gemv_e0(name, xin);
+        mx::eval(yout);
+        std::memcpy(
+            y, yout.data<float>(),
+            sizeof(float) * (size_t)batch * (size_t)t.out);
+        return 1;
+    } catch (...) {
+        return 0;
+    }
 }
 
 // D-metal-7: routed-FFN counterpart to qng64_gemv_e0() above -- same decode logic, extended
