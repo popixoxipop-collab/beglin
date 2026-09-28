@@ -1,0 +1,48 @@
+{
+  "schema": "beglin-p8-agent-a-failure-matrix/1",
+  "p7_run_id": "p7-20260927T155716Z-2576",
+  "cells": [
+    {
+      "target": "kv_a_proj_with_mqa/L11",
+      "n": 4,
+      "p7_state": "FAILED_RUNTIME",
+      "agent_a_classification": "STRUCTURAL_UNSUPPORTED",
+      "reason": "qNg64 excludes n=4; q4g64 is a different representation/registrar",
+      "runtime_crash_bug": false,
+      "owner": "A",
+      "action": "emit machine-readable unsupported marker; preserve fail-fast"
+    },
+    {
+      "target": "shared_up_proj/L3",
+      "n": 4,
+      "p7_state": "FAILED_RUNTIME",
+      "agent_a_classification": "STRUCTURAL_UNSUPPORTED",
+      "reason": "qNg64 excludes n=4; q4g64 is a different representation/registrar",
+      "runtime_crash_bug": false,
+      "owner": "A",
+      "action": "emit machine-readable unsupported marker; preserve fail-fast"
+    },
+    {
+      "target": "kv_a_proj_with_mqa/L11",
+      "n": 7,
+      "p7_state": "FAILED_RUNTIME",
+      "agent_a_classification": "CROSS_LANE_MLX_RUNTIME_BUG",
+      "reason": "promotion and n=7 activation succeed; first cbatch layer step fails at L11 step0",
+      "runtime_crash_bug": true,
+      "owner": "B",
+      "agent_a_read_only_diagnosis": {
+        "mlx_function": "qng64_gemv_e0",
+        "current_assumption": "single-row output {1,out}",
+        "cbatch_input": "A>1 batched {A,in}",
+        "failure_mechanism": "custom qNg64 attention GEMV returns a single-row shape into a batched MLA cbatch graph; downstream layer step throws and returns 0",
+        "required_b_fix": "make qng64_gemv_e0 batch-aware (batch-indexed x and output {B,out}) and revalidate B=1/multi-request/prefill"
+      }
+    }
+  ],
+  "agent_a_owned_source_changed": [
+    "qwen_infer.c"
+  ],
+  "agent_b_source_changed": [],
+  "merge_performed": false,
+  "release_performed": false
+}
