@@ -1,0 +1,80 @@
+{
+  "schema": "beglin-p8-agent-a-remote-submission/1",
+  "status": "PARTIAL_BLOCKED_BY_AGENT_B",
+  "remote_branch": "prod/p8-runtime-correctness",
+  "remote_base": "a0b8ab2c90af70fa8095556033e605477ec186ae",
+  "local_main_at_analysis": "bc5f3d058d9e819bd088f42452b6ded0e12f3060",
+  "local_agent_a_head": "b5adfeb49302affbb9912c0bdd62e68e6300009d",
+  "normalization_proof": {
+    "remote_main_qwen_blob": "7997db425c9b4baaa19c544687d468c826e80a14",
+    "local_main_qwen_blob": "7997db425c9b4baaa19c544687d468c826e80a14",
+    "remote_main_cmake_blob": "11e3580dedfb1820c8b99acd881fcd0d30694f06",
+    "local_main_cmake_blob": "11e3580dedfb1820c8b99acd881fcd0d30694f06",
+    "owned_file_diff_between_remote_and_local_main": 0,
+    "conclusion": "Agent A patch can be applied to remote main without importing the two local-only main commits."
+  },
+  "ownership": {
+    "modified_source": [
+      "qwen_infer.c",
+      "CMakeLists.txt"
+    ],
+    "evidence_namespace": "submissions/p8-agent-a/**",
+    "forbidden_modified": [
+      "mlx_moe.cpp",
+      "mlx_moe.h",
+      "dashboard/app/**",
+      "serving/**"
+    ],
+    "ownership_clean": true
+  },
+  "p7_failed_runtime_closure": {
+    "kv_a_proj_with_mqa/L11/n4": {
+      "classification": "STRUCTURAL_UNSUPPORTED",
+      "required_format": "q4g64",
+      "runtime_bug": false,
+      "verified_new_binary": true
+    },
+    "shared_up_proj/L3/n4": {
+      "classification": "STRUCTURAL_UNSUPPORTED",
+      "required_format": "q4g64",
+      "runtime_bug": false,
+      "verified_new_binary": true
+    },
+    "kv_a_proj_with_mqa/L11/n7": {
+      "classification": "CROSS_LANE_MLX_RUNTIME_BUG",
+      "runtime_bug": true,
+      "owner": "B",
+      "promotion_succeeded": true,
+      "activation_succeeded": true,
+      "failure": "mlx_gpu_cbatch_layer_step_lazy failed at layer 11 step 0 (pass 0)"
+    }
+  },
+  "build": {
+    "target": "qwen_infer_gpu",
+    "mlx_version": "0.32.2",
+    "configure": "PASS",
+    "compile": "PASS",
+    "link": "PASS",
+    "tokenizer_and_gguf_objects_linked": true
+  },
+  "tests": {
+    "n4_machine_readable_marker": "PASS",
+    "failure_taxonomy": "PASS",
+    "git_diff_check": "PASS",
+    "b_patch_apply_check": "PASS",
+    "b_source_gate_before_fix": "FAIL_EXPECTED"
+  },
+  "integration": {
+    "merge_performed": false,
+    "release_performed": false,
+    "a0_action": [
+      "Freeze integration baseline.",
+      "Apply submissions/p8-agent-a/AGENT_A_REMOTE_MAIN.patch.",
+      "Verify patch applies cleanly to a0b8ab2-derived integration tree.",
+      "Integrate B after its immutable evidence is complete.",
+      "Run canonical 8-cell sweep.",
+      "Classify n=4 as explicit UNSUPPORTED, not FAILED_RUNTIME.",
+      "Require runtime crash 0 for supported cells."
+    ]
+  }
+}
