@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
-from .artifact import QualityArtifactError, load_run_artifact, sha256_json
-from .corpus import load_corpus
-from .metrics import evaluate_pair, required_metric_paths
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from benchmarks.quality.artifact import QualityArtifactError, load_run_artifact, sha256_json
+    from benchmarks.quality.corpus import load_corpus
+    from benchmarks.quality.metrics import evaluate_pair, required_metric_paths
+else:
+    from .artifact import QualityArtifactError, load_run_artifact, sha256_json
+    from .corpus import load_corpus
+    from .metrics import evaluate_pair, required_metric_paths
 
 EVALUATION_SCHEMA = "beglin-quality-evaluation/1"
 POLICY_SCHEMA = "beglin-quality-policy/1"
