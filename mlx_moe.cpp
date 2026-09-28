@@ -156,6 +156,48 @@ int mlx_gpu_assert_binding(const char *name, int requested_n, int *bound_n,
     return observed_n == requested_n ? 1 : 0;
 }
 
+static int beglin_role_tensor_name(const char *role, int layer,
+                                   char *out, size_t out_size) {
+    if (!role || !role[0] || layer < 0 || !out || out_size == 0) return 0;
+
+    const char *suffix = nullptr;
+    if (std::strcmp(role, "q_proj") == 0) suffix = "self_attn.q_proj";
+    else if (std::strcmp(role, "kv_a_proj_with_mqa") == 0) suffix = "self_attn.kv_a_proj_with_mqa";
+    else if (std::strcmp(role, "kv_b_proj") == 0) suffix = "self_attn.kv_b_proj";
+    else if (std::strcmp(role, "o_proj") == 0) suffix = "self_attn.o_proj";
+    else if (std::strcmp(role, "shared_gate_proj") == 0) suffix = "mlp.shared_experts.gate_proj";
+    else if (std::strcmp(role, "shared_up_proj") == 0) suffix = "mlp.shared_experts.up_proj";
+    else if (std::strcmp(role, "shared_down_proj") == 0) suffix = "mlp.shared_experts.down_proj";
+    else return 0;
+
+    const int written = std::snprintf(
+        out, out_size, "model.layers.%d.%s", layer, suffix);
+    return written > 0 && (size_t)written < out_size;
+}
+
+int mlx_gpu_get_role_binding_state(const char *role, int layer,
+                                   int *bound_n, int *representation) {
+    char name[192];
+    if (!beglin_role_tensor_name(role, layer, name, sizeof name)) {
+        if (bound_n) *bound_n = -1;
+        if (representation) *representation = MLX_GPU_BINDING_NONE;
+        return 0;
+    }
+    return beglin_binding_state(name, bound_n, representation);
+}
+
+int mlx_gpu_assert_role_binding(const char *role, int layer, int requested_n,
+                                int *bound_n, int *representation) {
+    char name[192];
+    if (!beglin_role_tensor_name(role, layer, name, sizeof name)) {
+        if (bound_n) *bound_n = -1;
+        if (representation) *representation = MLX_GPU_BINDING_NONE;
+        return 0;
+    }
+    return mlx_gpu_assert_binding(
+        name, requested_n, bound_n, representation);
+}
+
 static void beglin_emit_activation_summary_once(const char *name, const mx::array &x) {
     const char *enabled = std::getenv("BEGLIN_INSTRUMENTATION_V2");
     if (!enabled || std::strcmp(enabled, "1") != 0) return;
