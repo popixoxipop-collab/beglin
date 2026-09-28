@@ -114,34 +114,27 @@ static const char *beglin_instrumentation_role(const char *name, int *layer_out)
     return nullptr;
 }
 
-enum BeglinBindingRepresentation {
-    BEGLIN_BINDING_NONE = 0,
-    BEGLIN_BINDING_NATIVE_QUANT = 1,
-    BEGLIN_BINDING_QNG64 = 2,
-    BEGLIN_BINDING_DENSE = 3,
-};
-
 static int beglin_binding_state(const char *name, int *bound_n, int *representation) {
     if (bound_n) *bound_n = -1;
-    if (representation) *representation = BEGLIN_BINDING_NONE;
+    if (representation) *representation = MLX_GPU_BINDING_NONE;
     if (!name || !name[0]) return 0;
 
     auto qng = g_qng64_tensors.find(name);
     if (qng != g_qng64_tensors.end()) {
         if (bound_n) *bound_n = qng->second.n;
-        if (representation) *representation = BEGLIN_BINDING_QNG64;
+        if (representation) *representation = MLX_GPU_BINDING_QNG64;
         return 1;
     }
     auto quant = g_tensors.find(name);
     if (quant != g_tensors.end()) {
         if (bound_n) *bound_n = quant->second.bits;
-        if (representation) *representation = BEGLIN_BINDING_NATIVE_QUANT;
+        if (representation) *representation = MLX_GPU_BINDING_NATIVE_QUANT;
         return 1;
     }
     auto dense = g_dtensors.find(name);
     if (dense != g_dtensors.end()) {
         if (bound_n) *bound_n = dense->second.bits;
-        if (representation) *representation = BEGLIN_BINDING_DENSE;
+        if (representation) *representation = MLX_GPU_BINDING_DENSE;
         return 1;
     }
     return 0;
@@ -154,7 +147,7 @@ int mlx_gpu_get_binding_state(const char *name, int *bound_n, int *representatio
 int mlx_gpu_assert_binding(const char *name, int requested_n, int *bound_n,
                            int *representation) {
     int observed_n = -1;
-    int observed_representation = BEGLIN_BINDING_NONE;
+    int observed_representation = MLX_GPU_BINDING_NONE;
     const int present = beglin_binding_state(
         name, &observed_n, &observed_representation);
     if (bound_n) *bound_n = observed_n;
@@ -198,7 +191,7 @@ static void beglin_emit_activation_summary_once(const char *name, const mx::arra
     if (!role || std::strcmp(role, target_role) != 0 || layer != target_layer) return;
 
     int n = -1;
-    int representation = BEGLIN_BINDING_NONE;
+    int representation = MLX_GPU_BINDING_NONE;
     if (!beglin_binding_state(name, &n, &representation)) return;
     if (n < 2 || n > 32) return;
 
