@@ -147,11 +147,6 @@ static int beglin_binding_state(const char *name, int *bound_n, int *representat
     return 0;
 }
 
-static int beglin_instrumentation_bound_n(const char *name) {
-    int bound_n = -1;
-    return beglin_binding_state(name, &bound_n, nullptr) ? bound_n : -1;
-}
-
 int mlx_gpu_get_binding_state(const char *name, int *bound_n, int *representation) {
     return beglin_binding_state(name, bound_n, representation);
 }
