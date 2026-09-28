@@ -1,0 +1,108 @@
+{
+  "schema": "beglin-p8-agent-c-b-interim-audit/1",
+  "observed_at": "2026-09-28",
+  "agent": "C",
+  "audited_branch": "prod/p8-policy-binding",
+  "audited_head": "7d931750ff4e36a782e805b210ed57ba128675dd",
+  "base": "a0b8ab2c90af70fa8095556033e605477ec186ae",
+  "branch_relation": {
+    "ahead": 20,
+    "behind": 0
+  },
+  "ownership": {
+    "result": "PASS",
+    "changed_files": [
+      "mlx_moe.cpp",
+      "mlx_moe.h",
+      "tests/policy_binding/CMakeLists.txt",
+      "tests/policy_binding/binding_runtime_probe.cpp",
+      "tests/policy_binding/run_binding_probe.py",
+      "tests/policy_binding/test_binding_contract.py"
+    ],
+    "out_of_lane_files": []
+  },
+  "static_findings": {
+    "canonical_binding_truth": {
+      "result": "PRESENT",
+      "behavior": [
+        "g_qng64_tensors has highest lookup priority",
+        "g_tensors next",
+        "g_dtensors last",
+        "missing binding returns 0 / bound_n=-1 / representation=NONE",
+        "exact requested_n mismatch fails closed while exposing observed state"
+      ]
+    },
+    "role_layer_api": {
+      "result": "PRESENT",
+      "roles": [
+        "q_proj",
+        "kv_a_proj_with_mqa",
+        "kv_b_proj",
+        "o_proj",
+        "shared_gate_proj",
+        "shared_up_proj",
+        "shared_down_proj"
+      ],
+      "canonical_tensor_name_construction": true
+    },
+    "instrumentation_truth": {
+      "result": "PRESENT",
+      "note": "Activation instrumentation now calls canonical beglin_binding_state and emits BEGLIN_POLICY_BINDING_V1 with observed bound_n/representation."
+    },
+    "synthetic_runtime_probe": {
+      "result": "PRESENT",
+      "matrix": [
+        "kv_a_proj_with_mqa/L11 n=4/5/6/7",
+        "shared_up_proj/L3 n=4/5/6/7"
+      ],
+      "checks": [
+        "get_binding_state exact n",
+        "assert_binding exact/mismatch",
+        "role/layer get/assert",
+        "rebind stale-map rejection",
+        "missing binding fail-closed",
+        "source SHA pinning"
+      ]
+    }
+  },
+  "c_blockers": [
+    {
+      "id": "C-B1",
+      "severity": "BLOCKING_FOR_FINAL_C_GATE",
+      "finding": "The 8-of-8 probe is synthetic: it calls mlx_gpu_bind_af on tiny synthetic buffers. It does not yet prove that the canonical P8 model-loading/runtime path binds the requested n under the real checkpoint and inference workload.",
+      "required": "Final B evidence must include canonical 8-cell actual-bound-state output from the integration workload, not only the synthetic probe."
+    },
+    {
+      "id": "C-B2",
+      "severity": "BLOCKING_FOR_FINAL_C_GATE",
+      "finding": "No immutable P8-B final evidence file is present on the branch, despite the probe being capable of printing P8_POLICY_ATTRIBUTION_8_OF_8.",
+      "required": "Publish immutable branch/evidence with source/binary/checkpoint/policy identities and raw command result."
+    },
+    {
+      "id": "C-B3",
+      "severity": "BLOCKING_FOR_P8_INTEGRATION",
+      "finding": "B does not and should not prove finite logits or post-binding runtime correctness; those require the integrated A+B canonical run.",
+      "required": "A0 must run canonical 8-cell after B then A integration and C must audit that result."
+    },
+    {
+      "id": "C-B4",
+      "severity": "IMPORTANT",
+      "finding": "B's API can explain the P7 attribution false-negative, but a changed classifier alone is insufficient. A0 should require actual runtime API output showing requested_n == bound_n on each supported cell.",
+      "required": "Capture actual bound_n/representation per canonical cell."
+    }
+  ],
+  "positive_assessment": [
+    "Ownership boundary is clean.",
+    "The proposed runtime truth source is the actual MLX dispatch binding maps rather than promotion/debug text.",
+    "Lookup priority matches runtime representation priority.",
+    "Mismatch/missing/rebind behavior is explicitly fail-closed.",
+    "Role/layer canonicalization is centralized in the MLX backend.",
+    "The branch directly addresses Agent C baseline finding C-F2 at the API design level."
+  ],
+  "current_verdict": "IMPLEMENTATION_PLAUSIBLE_NOT_GATE_READY",
+  "constraints": {
+    "branch_not_modified_by_agent_c": true,
+    "tests_not_executed_by_agent_c": true,
+    "reason_tests_not_executed": "No isolated A0-visible B execution workspace is exposed to this conversation; switching the dirty XOX main worktree is forbidden."
+  }
+}
