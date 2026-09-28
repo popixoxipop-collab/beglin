@@ -1,5 +1,6 @@
 #include "mlx_moe.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -9,6 +10,64 @@ static std::vector<std::vector<unsigned char>> g_backing_storage;
 
 static int expected_representation(int n) {
     return n == 7 ? MLX_GPU_BINDING_QNG64 : MLX_GPU_BINDING_NATIVE_QUANT;
+}
+
+static int bind_qng64_constant_one(const char *name) {
+    constexpr int n = 7;
+    constexpr long packed_off = 0;
+    constexpr long scale_off = 512;
+    constexpr long bias_off = 768;
+
+    g_backing_storage.emplace_back(1024, 0);
+    std::vector<unsigned char> &blob = g_backing_storage.back();
+
+    // qNg64 stores n bit-planes, 8 bytes/plane for one 64-element group.
+    // code = bias(64) + 1 = 65 => plane 0 and plane 6 are all ones.
+    for (int byte = 0; byte < 8; byte++) {
+        blob[0 * 8 + byte] = 0xFF;
+        blob[6 * 8 + byte] = 0xFF;
+    }
+    float scale = 1.0f;
+    std::memcpy(blob.data() + scale_off, &scale, sizeof(scale));
+
+    return mlx_gpu_bind_af(
+        blob.data(), (long)blob.size(), name,
+        1, 1, 64, 1,
+        packed_off, scale_off, bias_off, n);
+}
+
+static int probe_qng64_batch(int batch) {
+    const char *name = "p8b.synthetic.qng64.batch";
+    if (!bind_qng64_constant_one(name)) {
+        std::fprintf(stderr, "qng64 batch bind failed B=%d\n", batch);
+        return 0;
+    }
+
+    std::vector<float> x((size_t)batch * 64);
+    for (int b = 0; b < batch; b++) {
+        const float row_value = (float)(b + 1);
+        for (int p = 0; p < 64; p++) {
+            x[(size_t)b * 64 + p] = row_value;
+        }
+    }
+    std::vector<float> y((size_t)batch, 0.0f);
+    if (!mlx_gpu_qng64_batch_probe(name, x.data(), batch, y.data())) {
+        std::fprintf(stderr, "qng64 batch runtime probe failed B=%d\n", batch);
+        return 0;
+    }
+
+    for (int b = 0; b < batch; b++) {
+        const float expected = 64.0f * (float)(b + 1);
+        if (std::fabs(y[(size_t)b] - expected) > 1e-4f) {
+            std::fprintf(
+                stderr,
+                "qng64 batch mismatch B=%d row=%d got=%.9g expected=%.9g\n",
+                batch, b, y[(size_t)b], expected);
+            return 0;
+        }
+    }
+    std::printf("P8_B_QNG64_BATCH_PASS B=%d\n", batch);
+    return 1;
 }
 
 static int bind_and_expect(const char *name, int n, int expected_rep) {
@@ -135,6 +194,10 @@ int main() {
         },
     };
 
+    if (!probe_qng64_batch(1)) return 1;
+    if (!probe_qng64_batch(2)) return 1;
+    if (!probe_qng64_batch(4)) return 1;
+
     int passed = 0;
     for (const Cell &cell : cells) {
         for (int n : {4, 5, 6, 7}) {
@@ -170,6 +233,7 @@ int main() {
         "P8_POLICY_ATTRIBUTION_8_OF_8 "
         "kv_a_L11=4/4 shared_up_L3=4/4 "
         "n4=PASS n5=PASS n6=PASS n7=PASS "
+        "qng64_batch_B1=PASS qng64_batch_B2=PASS qng64_batch_B4=PASS "
         "role_api=PASS rebind=PASS mismatch=PASS");
     return 0;
 }
