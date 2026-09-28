@@ -43,6 +43,20 @@ def main() -> int:
     require(CPP, "BEGLIN_POLICY_BINDING_V1")
     require(CPP, "binding_present=1 binding_representation=%d")
 
+    # qNg64 single-expert GEMV must batch on grid.z and index input/output
+    # with the same z row used by the native MLX matmul path.
+    qng_start = CPP.index("static mx::array qng64_gemv_e0")
+    qng_end = CPP.index("// D-metal-7: routed-FFN counterpart", qng_start)
+    qng = CPP[qng_start:qng_end]
+    require(qng, "const int B = x.shape(0);")
+    require(qng, "std::vector<mx::Shape> output_shapes = {{B, (int)t.out}};")
+    require(qng, '{"out_dim", (int)t.out}')
+    require(qng, "{64, (int)t.out, B}")
+    require(CPP, "uint z = thread_position_in_grid.z;")
+    require(CPP, "x[z * (ng * 64u) + g * 64 + p]")
+    require(CPP, "out[z * (uint)out_dim + row]")
+    require(HDR, "int mlx_gpu_qng64_batch_probe(")
+
     # Rebinding must erase competing representation maps before insertion.
     require(CPP, "g_tensors.erase(std::string(name));")
     require(CPP, "g_dtensors.erase(std::string(name));")
@@ -51,7 +65,7 @@ def main() -> int:
     print(
         "P8-B binding contract PASS "
         "abi=PASS role_api=PASS lookup_priority=PASS fail_closed=PASS "
-        "instrumentation_truth=PASS exclusive_maps=PASS"
+        "instrumentation_truth=PASS qng64_batch_source=PASS exclusive_maps=PASS"
     )
     return 0
 
