@@ -1,0 +1,6 @@
+[moe gpu cb online] QWEN_MOE_GPU_CBATCH_ONLINE=1 -- V5h GPU online admission scheduler gate
+[moe gpu cb online] af blob 9814343680 bytes, f32 blob 14137344 bytes, 27 layers resolved
+[moe gpu cb online] bound 269/269 tensors to MLX
+[engine] safetensors_load: /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json: 5291 tensors across 4 shards
+[moe promotion source] opened '/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json' for QWEN_MOE_PROMOTION_FILE_NQ gpu
+FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=kv_a_proj_with_mqa layer=11 n=4 not in {2,3,5,6,7,8..15} -- the only bit-widths the qNg64 bit-plane decoder actually supports (n=4 uses a DIFFERENT format+registrar, q4g64, not this path; n=8 here is qNg64's OWN symmetric+error-feedback encoding, numerically different from the pre-existing q8g64 format despite the same bit width -- see gguf_transcode.h)
