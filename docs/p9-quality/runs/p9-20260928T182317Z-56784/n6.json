@@ -1,0 +1,763 @@
+{
+  "artifact_hash": "374923a6b43ceddbe47c2d924b2acfbcd9ec4825e6217dfeed2830a81c14e1ed",
+  "identity": {
+    "backend": "mlx_metal",
+    "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "hardware_id": "xox-apple-silicon",
+    "model_id": "deepseek-v2-lite",
+    "policy_hash": "7b758cae4be730c6ee245e70ff6f68f1a69ca11e0d75014fe1670e5430448e62",
+    "prompt_corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+    "runtime_config_hash": "ca2316c4ab43b9bd12466d0a5a6978376ebb297b0b9c81b5ed4a4ae03a0ca632",
+    "seed": 0,
+    "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+    "source_tree": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a"
+  },
+  "requests": [
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6601680836507252,
+          "rms": 1.445863832426825,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.18962600188595907,
+          "rms": 0.2591214358696813,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 19,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 102.49488056347965,
+      "nll_token_count": 18,
+      "output_text": " The text provided, \"ALPHA-1\u6a21\u5757\"",
+      "output_token_ids": [
+        429,
+        2432,
+        4286,
+        11,
+        440,
+        84765,
+        12,
+        16,
+        45874,
+        1
+      ],
+      "promotions": 2,
+      "prompt_id": "copy_alpha",
+      "quality_score": 1.0,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n6:copy_alpha:0",
+      "router": {
+        "decision_count": 728,
+        "near_tie_count": 203,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6383154363586352,
+          "rms": 1.4813011495219892,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.17782679945230484,
+          "rms": 0.24555640951234206,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 21,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 85.38490249769887,
+      "nll_token_count": 20,
+      "output_text": " 17 * 1",
+      "output_token_ids": [
+        207,
+        16,
+        22,
+        575,
+        207,
+        16
+      ],
+      "promotions": 0,
+      "prompt_id": "arith_17x19",
+      "quality_score": 1.0,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n6:arith_17x19:0",
+      "router": {
+        "decision_count": 676,
+        "near_tie_count": 187,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6869959831237793,
+          "rms": 1.4827754830941133,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.1887557703641153,
+          "rms": 0.258873133723843,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 18,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 84.30158329117508,
+      "nll_token_count": 17,
+      "output_text": " In the realm of quantum mechanics, alpha and beta particles are crucial for",
+      "output_token_ids": [
+        685,
+        254,
+        26210,
+        280,
+        8633,
+        26473,
+        11,
+        23689,
+        285,
+        21459,
+        11415,
+        418,
+        14222,
+        327
+      ],
+      "promotions": 0,
+      "prompt_id": "constraint_words",
+      "quality_score": 0.4285714285714286,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n6:constraint_words:0",
+      "router": {
+        "decision_count": 806,
+        "near_tie_count": 217,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6341875253812127,
+          "rms": 1.483450885671729,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.18163353593453116,
+          "rms": 0.25323834961922614,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 16,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 73.70777313818357,
+      "nll_token_count": 15,
+      "output_text": "\nAs the fog rolled in, the",
+      "output_token_ids": [
+        185,
+        2124,
+        254,
+        27464,
+        19178,
+        279,
+        11,
+        254
+      ],
+      "promotions": 0,
+      "prompt_id": "ppl_short_1",
+      "quality_score": 0.125,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n6:ppl_short_1:0",
+      "router": {
+        "decision_count": 598,
+        "near_tie_count": 161,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.608278153198106,
+          "rms": 1.4523554471242848,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.17632165551185608,
+          "rms": 0.24804927358723258,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 14,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 90.79946149921429,
+      "nll_token_count": 13,
+      "output_text": "\n\nThe deterministic benchmark is a tool",
+      "output_token_ids": [
+        185,
+        185,
+        549,
+        35182,
+        23875,
+        317,
+        245,
+        5278
+      ],
+      "promotions": 0,
+      "prompt_id": "ppl_short_2",
+      "quality_score": 1.0,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n6:ppl_short_2:0",
+      "router": {
+        "decision_count": 546,
+        "near_tie_count": 168,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6374870765468349,
+          "rms": 1.4530875984571776,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.18007241254267486,
+          "rms": 0.24846679697056784,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 16,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 83.72268906882411,
+      "nll_token_count": 15,
+      "output_text": "\n\n## 1. Introduction\n",
+      "output_token_ids": [
+        185,
+        185,
+        1679,
+        207,
+        16,
+        13,
+        30153,
+        185
+      ],
+      "promotions": 0,
+      "prompt_id": "ppl_short_3",
+      "quality_score": 1.0,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n6:ppl_short_3:0",
+      "router": {
+        "decision_count": 598,
+        "near_tie_count": 165,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.602200787006319,
+          "rms": 1.2004584726835625,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.22382617692892237,
+          "rms": 0.30147134957389343,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 15033,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 1322.0593864720436,
+      "nll_token_count": 15032,
+      "output_text": " MEMORY_KEY=ORBIT-7319",
+      "output_token_ids": [
+        47224,
+        17254,
+        62,
+        14107,
+        28,
+        1698,
+        22780,
+        12,
+        22,
+        18,
+        16,
+        24
+      ],
+      "promotions": 0,
+      "prompt_id": "long_retrieval",
+      "quality_score": 1.0,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n6:long_retrieval:0",
+      "router": {
+        "decision_count": 391144,
+        "near_tie_count": 291912,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.652991110278714,
+          "rms": 1.48634482864339,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.1781185572185824,
+          "rms": 0.24422982969898227,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 25,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 102.00377103435764,
+      "nll_token_count": 24,
+      "output_text": " To solve this problem, you can",
+      "output_token_ids": [
+        2158,
+        8708,
+        437,
+        2066,
+        11,
+        340,
+        481
+      ],
+      "promotions": 0,
+      "prompt_id": "short_reasoning",
+      "quality_score": 1.0,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n6:short_reasoning:0",
+      "router": {
+        "decision_count": 806,
+        "near_tie_count": 228,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6601680836507252,
+          "rms": 1.445863832426825,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.18962600188595907,
+          "rms": 0.2591214358696813,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 19,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 102.49488056347965,
+      "nll_token_count": 18,
+      "output_text": " The text provided, \"ALPHA-1\u6a21\u5757\"",
+      "output_token_ids": [
+        429,
+        2432,
+        4286,
+        11,
+        440,
+        84765,
+        12,
+        16,
+        45874,
+        1
+      ],
+      "promotions": 0,
+      "prompt_id": "copy_alpha",
+      "quality_score": 1.0,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n6:copy_alpha:1",
+      "router": {
+        "decision_count": 728,
+        "near_tie_count": 203,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6383154363586352,
+          "rms": 1.4813011495219892,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.17782679945230484,
+          "rms": 0.24555640951234206,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 21,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 85.38490249769887,
+      "nll_token_count": 20,
+      "output_text": " 17 * 1",
+      "output_token_ids": [
+        207,
+        16,
+        22,
+        575,
+        207,
+        16
+      ],
+      "promotions": 0,
+      "prompt_id": "arith_17x19",
+      "quality_score": 1.0,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n6:arith_17x19:1",
+      "router": {
+        "decision_count": 676,
+        "near_tie_count": 187,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6869959831237793,
+          "rms": 1.4827754830941133,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.1887557703641153,
+          "rms": 0.258873133723843,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 18,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 84.30158329117508,
+      "nll_token_count": 17,
+      "output_text": " In the realm of quantum mechanics, alpha and beta particles are crucial for",
+      "output_token_ids": [
+        685,
+        254,
+        26210,
+        280,
+        8633,
+        26473,
+        11,
+        23689,
+        285,
+        21459,
+        11415,
+        418,
+        14222,
+        327
+      ],
+      "promotions": 0,
+      "prompt_id": "constraint_words",
+      "quality_score": 0.4285714285714286,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n6:constraint_words:1",
+      "router": {
+        "decision_count": 806,
+        "near_tie_count": 217,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6341875253812127,
+          "rms": 1.483450885671729,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.18163353593453116,
+          "rms": 0.25323834961922614,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 16,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 73.70777313818357,
+      "nll_token_count": 15,
+      "output_text": "\nAs the fog rolled in, the",
+      "output_token_ids": [
+        185,
+        2124,
+        254,
+        27464,
+        19178,
+        279,
+        11,
+        254
+      ],
+      "promotions": 0,
+      "prompt_id": "ppl_short_1",
+      "quality_score": 0.125,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n6:ppl_short_1:1",
+      "router": {
+        "decision_count": 598,
+        "near_tie_count": 161,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.608278153198106,
+          "rms": 1.4523554471242848,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.17632165551185608,
+          "rms": 0.24804927358723258,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 14,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 90.79946149921429,
+      "nll_token_count": 13,
+      "output_text": "\n\nThe deterministic benchmark is a tool",
+      "output_token_ids": [
+        185,
+        185,
+        549,
+        35182,
+        23875,
+        317,
+        245,
+        5278
+      ],
+      "promotions": 0,
+      "prompt_id": "ppl_short_2",
+      "quality_score": 1.0,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n6:ppl_short_2:1",
+      "router": {
+        "decision_count": 546,
+        "near_tie_count": 168,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6374870765468349,
+          "rms": 1.4530875984571776,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.18007241254267486,
+          "rms": 0.24846679697056784,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 16,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 83.72268906882411,
+      "nll_token_count": 15,
+      "output_text": "\n\n## 1. Introduction\n",
+      "output_token_ids": [
+        185,
+        185,
+        1679,
+        207,
+        16,
+        13,
+        30153,
+        185
+      ],
+      "promotions": 0,
+      "prompt_id": "ppl_short_3",
+      "quality_score": 1.0,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n6:ppl_short_3:1",
+      "router": {
+        "decision_count": 598,
+        "near_tie_count": 165,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.602200787006319,
+          "rms": 1.2004584726835625,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.22382617692892237,
+          "rms": 0.30147134957389343,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 15033,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 1322.0593864720436,
+      "nll_token_count": 15032,
+      "output_text": " MEMORY_KEY=ORBIT-7319",
+      "output_token_ids": [
+        47224,
+        17254,
+        62,
+        14107,
+        28,
+        1698,
+        22780,
+        12,
+        22,
+        18,
+        16,
+        24
+      ],
+      "promotions": 0,
+      "prompt_id": "long_retrieval",
+      "quality_score": 1.0,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n6:long_retrieval:1",
+      "router": {
+        "decision_count": 391144,
+        "near_tie_count": 291912,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.652991110278714,
+          "rms": 1.48634482864339,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.1781185572185824,
+          "rms": 0.24422982969898227,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 25,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 102.00377103435764,
+      "nll_token_count": 24,
+      "output_text": " To solve this problem, you can",
+      "output_token_ids": [
+        2158,
+        8708,
+        437,
+        2066,
+        11,
+        340,
+        481
+      ],
+      "promotions": 0,
+      "prompt_id": "short_reasoning",
+      "quality_score": 1.0,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n6:short_reasoning:1",
+      "router": {
+        "decision_count": 806,
+        "near_tie_count": 228,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    }
+  ],
+  "run_id": "p9-20260928T182317Z-56784-n6",
+  "schema": "beglin-quality-run/1",
+  "variant": {
+    "kind": "candidate",
+    "n": 6,
+    "precision": "n6"
+  }
+}

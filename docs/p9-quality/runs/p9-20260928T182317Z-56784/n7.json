@@ -1,0 +1,763 @@
+{
+  "artifact_hash": "1eb4938469335feed7ee07d3d58557aa709cd5b8e124e55ae498e38829d3b5a1",
+  "identity": {
+    "backend": "mlx_metal",
+    "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "hardware_id": "xox-apple-silicon",
+    "model_id": "deepseek-v2-lite",
+    "policy_hash": "4099e8368f1f192286f82d525d8093e6b3fbb437eed4eb629fe838707b09358b",
+    "prompt_corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+    "runtime_config_hash": "ca2316c4ab43b9bd12466d0a5a6978376ebb297b0b9c81b5ed4a4ae03a0ca632",
+    "seed": 0,
+    "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+    "source_tree": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a"
+  },
+  "requests": [
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6599583540643964,
+          "rms": 1.4478338267166022,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.18945881405047008,
+          "rms": 0.2589962875545414,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 19,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 102.264155993878,
+      "nll_token_count": 18,
+      "output_text": " The text provided, \"ALPHA-1\u6a21\u5757\"",
+      "output_token_ids": [
+        429,
+        2432,
+        4286,
+        11,
+        440,
+        84765,
+        12,
+        16,
+        45874,
+        1
+      ],
+      "promotions": 2,
+      "prompt_id": "copy_alpha",
+      "quality_score": 1.0,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n7:copy_alpha:0",
+      "router": {
+        "decision_count": 728,
+        "near_tie_count": 200,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6366920671783961,
+          "rms": 1.4841973234960248,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.1776696156996947,
+          "rms": 0.24534592345982573,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 21,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 86.25925255215999,
+      "nll_token_count": 20,
+      "output_text": " 17 * 1",
+      "output_token_ids": [
+        207,
+        16,
+        22,
+        575,
+        207,
+        16
+      ],
+      "promotions": 0,
+      "prompt_id": "arith_17x19",
+      "quality_score": 1.0,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n7:arith_17x19:0",
+      "router": {
+        "decision_count": 676,
+        "near_tie_count": 189,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6869791746139526,
+          "rms": 1.484962793218953,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.1886803195361168,
+          "rms": 0.25880296903698236,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 18,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 83.99945314864357,
+      "nll_token_count": 17,
+      "output_text": " In the realm of quantum mechanics, alpha and beta particles are crucial for",
+      "output_token_ids": [
+        685,
+        254,
+        26210,
+        280,
+        8633,
+        26473,
+        11,
+        23689,
+        285,
+        21459,
+        11415,
+        418,
+        14222,
+        327
+      ],
+      "promotions": 0,
+      "prompt_id": "constraint_words",
+      "quality_score": 0.4285714285714286,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n7:constraint_words:0",
+      "router": {
+        "decision_count": 806,
+        "near_tie_count": 216,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6340668097786282,
+          "rms": 1.4898798407612424,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.18436780507149902,
+          "rms": 0.25756881182397734,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 16,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 73.87115402127542,
+      "nll_token_count": 15,
+      "output_text": "\n\nThe old observatory stood above",
+      "output_token_ids": [
+        185,
+        185,
+        549,
+        1712,
+        3157,
+        5775,
+        6626,
+        2330
+      ],
+      "promotions": 0,
+      "prompt_id": "ppl_short_1",
+      "quality_score": 1.0,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n7:ppl_short_1:0",
+      "router": {
+        "decision_count": 598,
+        "near_tie_count": 160,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6065698031868253,
+          "rms": 1.4529409821963606,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.17622333694071995,
+          "rms": 0.2479416187628426,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 14,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 90.71285073006273,
+      "nll_token_count": 13,
+      "output_text": "\n\nThe deterministic benchmark is a tool",
+      "output_token_ids": [
+        185,
+        185,
+        549,
+        35182,
+        23875,
+        317,
+        245,
+        5278
+      ],
+      "promotions": 0,
+      "prompt_id": "ppl_short_2",
+      "quality_score": 1.0,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n7:ppl_short_2:0",
+      "router": {
+        "decision_count": 546,
+        "near_tie_count": 172,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6348682959442553,
+          "rms": 1.454669815047675,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.17997409468111786,
+          "rms": 0.2483517695167007,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 16,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 84.87184981786208,
+      "nll_token_count": 15,
+      "output_text": "\n\n## 1. Introduction\n",
+      "output_token_ids": [
+        185,
+        185,
+        1679,
+        207,
+        16,
+        13,
+        30153,
+        185
+      ],
+      "promotions": 0,
+      "prompt_id": "ppl_short_3",
+      "quality_score": 1.0,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n7:ppl_short_3:0",
+      "router": {
+        "decision_count": 598,
+        "near_tie_count": 159,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6004522456734287,
+          "rms": 1.2014780993967393,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.2237371223151874,
+          "rms": 0.3012616253024313,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 15033,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 1226.132204742951,
+      "nll_token_count": 15032,
+      "output_text": " MEMORY_KEY=ORBIT-7319",
+      "output_token_ids": [
+        47224,
+        17254,
+        62,
+        14107,
+        28,
+        1698,
+        22780,
+        12,
+        22,
+        18,
+        16,
+        24
+      ],
+      "promotions": 0,
+      "prompt_id": "long_retrieval",
+      "quality_score": 1.0,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n7:long_retrieval:0",
+      "router": {
+        "decision_count": 391144,
+        "near_tie_count": 290818,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6513501521079771,
+          "rms": 1.4881917686320918,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.1779673546552658,
+          "rms": 0.24406550646943498,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 25,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 102.6826762581311,
+      "nll_token_count": 24,
+      "output_text": " To solve this problem, you can",
+      "output_token_ids": [
+        2158,
+        8708,
+        437,
+        2066,
+        11,
+        340,
+        481
+      ],
+      "promotions": 0,
+      "prompt_id": "short_reasoning",
+      "quality_score": 1.0,
+      "repetition": 0,
+      "request_id": "p9-20260928T182317Z-56784-n7:short_reasoning:0",
+      "router": {
+        "decision_count": 806,
+        "near_tie_count": 231,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6599583540643964,
+          "rms": 1.4478338267166022,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.18945881405047008,
+          "rms": 0.2589962875545414,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 19,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 102.264155993878,
+      "nll_token_count": 18,
+      "output_text": " The text provided, \"ALPHA-1\u6a21\u5757\"",
+      "output_token_ids": [
+        429,
+        2432,
+        4286,
+        11,
+        440,
+        84765,
+        12,
+        16,
+        45874,
+        1
+      ],
+      "promotions": 0,
+      "prompt_id": "copy_alpha",
+      "quality_score": 1.0,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n7:copy_alpha:1",
+      "router": {
+        "decision_count": 728,
+        "near_tie_count": 200,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6366920671783961,
+          "rms": 1.4841973234960248,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.1776696156996947,
+          "rms": 0.24534592345982573,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 21,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 86.25925255215999,
+      "nll_token_count": 20,
+      "output_text": " 17 * 1",
+      "output_token_ids": [
+        207,
+        16,
+        22,
+        575,
+        207,
+        16
+      ],
+      "promotions": 0,
+      "prompt_id": "arith_17x19",
+      "quality_score": 1.0,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n7:arith_17x19:1",
+      "router": {
+        "decision_count": 676,
+        "near_tie_count": 189,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6869791746139526,
+          "rms": 1.484962793218953,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.1886803195361168,
+          "rms": 0.25880296903698236,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 18,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 83.99945314864357,
+      "nll_token_count": 17,
+      "output_text": " In the realm of quantum mechanics, alpha and beta particles are crucial for",
+      "output_token_ids": [
+        685,
+        254,
+        26210,
+        280,
+        8633,
+        26473,
+        11,
+        23689,
+        285,
+        21459,
+        11415,
+        418,
+        14222,
+        327
+      ],
+      "promotions": 0,
+      "prompt_id": "constraint_words",
+      "quality_score": 0.4285714285714286,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n7:constraint_words:1",
+      "router": {
+        "decision_count": 806,
+        "near_tie_count": 216,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6340668097786282,
+          "rms": 1.4898798407612424,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.18436780507149902,
+          "rms": 0.25756881182397734,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 16,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 73.87115402127542,
+      "nll_token_count": 15,
+      "output_text": "\n\nThe old observatory stood above",
+      "output_token_ids": [
+        185,
+        185,
+        549,
+        1712,
+        3157,
+        5775,
+        6626,
+        2330
+      ],
+      "promotions": 0,
+      "prompt_id": "ppl_short_1",
+      "quality_score": 1.0,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n7:ppl_short_1:1",
+      "router": {
+        "decision_count": 598,
+        "near_tie_count": 160,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6065698031868253,
+          "rms": 1.4529409821963606,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.17622333694071995,
+          "rms": 0.2479416187628426,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 14,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 90.71285073006273,
+      "nll_token_count": 13,
+      "output_text": "\n\nThe deterministic benchmark is a tool",
+      "output_token_ids": [
+        185,
+        185,
+        549,
+        35182,
+        23875,
+        317,
+        245,
+        5278
+      ],
+      "promotions": 0,
+      "prompt_id": "ppl_short_2",
+      "quality_score": 1.0,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n7:ppl_short_2:1",
+      "router": {
+        "decision_count": 546,
+        "near_tie_count": 172,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6348682959442553,
+          "rms": 1.454669815047675,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.17997409468111786,
+          "rms": 0.2483517695167007,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 16,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 84.87184981786208,
+      "nll_token_count": 15,
+      "output_text": "\n\n## 1. Introduction\n",
+      "output_token_ids": [
+        185,
+        185,
+        1679,
+        207,
+        16,
+        13,
+        30153,
+        185
+      ],
+      "promotions": 0,
+      "prompt_id": "ppl_short_3",
+      "quality_score": 1.0,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n7:ppl_short_3:1",
+      "router": {
+        "decision_count": 598,
+        "near_tie_count": 159,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6004522456734287,
+          "rms": 1.2014780993967393,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.2237371223151874,
+          "rms": 0.3012616253024313,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 15033,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 1226.132204742951,
+      "nll_token_count": 15032,
+      "output_text": " MEMORY_KEY=ORBIT-7319",
+      "output_token_ids": [
+        47224,
+        17254,
+        62,
+        14107,
+        28,
+        1698,
+        22780,
+        12,
+        22,
+        18,
+        16,
+        24
+      ],
+      "promotions": 0,
+      "prompt_id": "long_retrieval",
+      "quality_score": 1.0,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n7:long_retrieval:1",
+      "router": {
+        "decision_count": 391144,
+        "near_tie_count": 290818,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    },
+    {
+      "activation_summaries": [
+        {
+          "expert_id": null,
+          "layer": 11,
+          "mean_abs": 0.6513501521079771,
+          "rms": 1.4881917686320918,
+          "role": "kv_a_proj_with_mqa"
+        },
+        {
+          "expert_id": null,
+          "layer": 3,
+          "mean_abs": 0.1779673546552658,
+          "rms": 0.24406550646943498,
+          "role": "shared_up_proj"
+        }
+      ],
+      "context_tokens": 25,
+      "corrections": 0,
+      "finite_logits": true,
+      "nll_sum": 102.6826762581311,
+      "nll_token_count": 24,
+      "output_text": " To solve this problem, you can",
+      "output_token_ids": [
+        2158,
+        8708,
+        437,
+        2066,
+        11,
+        340,
+        481
+      ],
+      "promotions": 0,
+      "prompt_id": "short_reasoning",
+      "quality_score": 1.0,
+      "repetition": 1,
+      "request_id": "p9-20260928T182317Z-56784-n7:short_reasoning:1",
+      "router": {
+        "decision_count": 806,
+        "near_tie_count": 231,
+        "near_tie_rate": null
+      },
+      "token_logprobs": null
+    }
+  ],
+  "run_id": "p9-20260928T182317Z-56784-n7",
+  "schema": "beglin-quality-run/1",
+  "variant": {
+    "kind": "candidate",
+    "n": 7,
+    "precision": "n7"
+  }
+}

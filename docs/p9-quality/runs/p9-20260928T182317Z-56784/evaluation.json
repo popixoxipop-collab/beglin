@@ -1,0 +1,1086 @@
+{
+  "comparisons": [
+    {
+      "candidate_artifact_hash": "4334d0ea52bbe241bf6c0ce887ac02db969d8f1166e04cb7b88c465630480314",
+      "candidate_path": "docs/p9-quality/runs/p9-20260928T182317Z-56784/n4.json",
+      "gate": {
+        "missing_required_metrics": [],
+        "rule_results": [
+          {
+            "metric": "perplexity_ratio",
+            "observed": 1.0,
+            "op": "<=",
+            "passed": true,
+            "value": 1.05
+          },
+          {
+            "metric": "candidate_quality_score",
+            "observed": 1.0,
+            "op": ">=",
+            "passed": true,
+            "value": 0.95
+          },
+          {
+            "metric": "quality_score_delta",
+            "observed": 0.0,
+            "op": ">=",
+            "passed": true,
+            "value": -0.05
+          },
+          {
+            "metric": "candidate_task_score.value",
+            "observed": 0.2,
+            "op": ">=",
+            "passed": true,
+            "value": 0.2
+          },
+          {
+            "metric": "task_score_delta",
+            "observed": 0.0,
+            "op": ">=",
+            "passed": true,
+            "value": 0.0
+          },
+          {
+            "metric": "reference_finite_logits.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "candidate_finite_logits.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "reference_determinism.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "candidate_determinism.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "reference_output_match.rate",
+            "observed": 1.0,
+            "op": ">=",
+            "passed": true,
+            "value": 0.9375
+          },
+          {
+            "metric": "correction_count",
+            "observed": 0.0,
+            "op": "==",
+            "passed": true,
+            "value": 0.0
+          },
+          {
+            "metric": "promotion_count",
+            "observed": 0.0,
+            "op": "<=",
+            "passed": true,
+            "value": 2.0
+          },
+          {
+            "metric": "activation_drift.max_abs_rms_relative_delta",
+            "observed": 0.0,
+            "op": "<=",
+            "passed": true,
+            "value": 0.1
+          },
+          {
+            "metric": "candidate_router_near_tie.rate",
+            "observed": 0.7292537041995242,
+            "op": "<=",
+            "passed": true,
+            "value": 0.8
+          },
+          {
+            "metric": "router_near_tie_delta",
+            "observed": 0.0,
+            "op": "<=",
+            "passed": true,
+            "value": 0.05
+          },
+          {
+            "metric": "router_near_tie_delta",
+            "observed": 0.0,
+            "op": ">=",
+            "passed": true,
+            "value": -0.05
+          },
+          {
+            "metric": "long_context_stability.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          }
+        ],
+        "status": "P9_QUALITY_PASS"
+      },
+      "pair": {
+        "candidate_n": 4,
+        "candidate_run_id": "p9-20260928T182317Z-56784-n4",
+        "identity": {
+          "candidate": {
+            "backend": "mlx_metal",
+            "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+            "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+            "hardware_id": "xox-apple-silicon",
+            "model_id": "deepseek-v2-lite",
+            "prompt_corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+            "runtime_config_hash": "ca2316c4ab43b9bd12466d0a5a6978376ebb297b0b9c81b5ed4a4ae03a0ca632",
+            "seed": 0,
+            "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+            "source_tree": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a"
+          },
+          "compatible": true,
+          "differing_fields": [],
+          "reference": {
+            "backend": "mlx_metal",
+            "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+            "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+            "hardware_id": "xox-apple-silicon",
+            "model_id": "deepseek-v2-lite",
+            "prompt_corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+            "runtime_config_hash": "ca2316c4ab43b9bd12466d0a5a6978376ebb297b0b9c81b5ed4a4ae03a0ca632",
+            "seed": 0,
+            "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+            "source_tree": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a"
+          }
+        },
+        "metrics": {
+          "activation_drift": {
+            "cell_count": 2,
+            "cells": [
+              {
+                "expert_id": null,
+                "layer": 11,
+                "mean_abs_relative_delta": 0.0,
+                "rms_relative_delta": 0.0,
+                "role": "kv_a_proj_with_mqa"
+              },
+              {
+                "expert_id": null,
+                "layer": 3,
+                "mean_abs_relative_delta": 0.0,
+                "rms_relative_delta": 0.0,
+                "role": "shared_up_proj"
+              }
+            ],
+            "max_abs_mean_abs_relative_delta": 0.0,
+            "max_abs_rms_relative_delta": 0.0
+          },
+          "candidate_determinism": {
+            "comparable_prompts": 8,
+            "incomplete_prompts": [],
+            "matching_prompts": 8,
+            "rate": 1.0
+          },
+          "candidate_finite_logits": {
+            "known_requests": 16,
+            "rate": 1.0,
+            "total_requests": 16
+          },
+          "candidate_perplexity": {
+            "coverage": 1.0,
+            "nll_sum": 248.39017828833875,
+            "token_count": 43,
+            "value": 322.6331031863081
+          },
+          "candidate_quality_score": 1.0,
+          "candidate_router_near_tie": {
+            "decision_count": 791804,
+            "near_tie_count": 577426,
+            "observed_requests": 16,
+            "rate": 0.7292537041995242,
+            "total_requests": 16
+          },
+          "candidate_task_score": {
+            "expected_prompts": 5,
+            "scored_prompts": 5,
+            "value": 0.2
+          },
+          "correction_count": 0,
+          "finite_logits": {
+            "known_requests": 16,
+            "rate": 1.0,
+            "total_requests": 16
+          },
+          "long_context_stability": {
+            "covered_prompts": 1,
+            "expected_prompts": 1,
+            "rate": 1.0,
+            "stable_prompts": 1
+          },
+          "perplexity_ratio": 1.0,
+          "promotion_count": 0,
+          "quality_score_delta": 0.0,
+          "reference_determinism": {
+            "comparable_prompts": 8,
+            "incomplete_prompts": [],
+            "matching_prompts": 8,
+            "rate": 1.0
+          },
+          "reference_finite_logits": {
+            "known_requests": 16,
+            "rate": 1.0,
+            "total_requests": 16
+          },
+          "reference_output_match": {
+            "comparable_requests": 16,
+            "matching_requests": 16,
+            "rate": 1.0
+          },
+          "reference_perplexity": {
+            "coverage": 1.0,
+            "nll_sum": 248.39017828833875,
+            "token_count": 43,
+            "value": 322.6331031863081
+          },
+          "reference_quality_score": 1.0,
+          "reference_router_near_tie": {
+            "decision_count": 791804,
+            "near_tie_count": 577426,
+            "observed_requests": 16,
+            "rate": 0.7292537041995242,
+            "total_requests": 16
+          },
+          "reference_task_score": {
+            "expected_prompts": 5,
+            "scored_prompts": 5,
+            "value": 0.2
+          },
+          "router_near_tie_delta": 0.0,
+          "task_score_delta": 0.0
+        },
+        "reference_run_id": "p9-20260928T182317Z-56784-reference",
+        "status": "MEASURED"
+      }
+    },
+    {
+      "candidate_artifact_hash": "5ae95b5bdf0026bdf71b3a7de1581e556d451560a0546649a767454020561240",
+      "candidate_path": "docs/p9-quality/runs/p9-20260928T182317Z-56784/n5.json",
+      "gate": {
+        "missing_required_metrics": [],
+        "rule_results": [
+          {
+            "metric": "perplexity_ratio",
+            "observed": 1.0112292893424013,
+            "op": "<=",
+            "passed": true,
+            "value": 1.05
+          },
+          {
+            "metric": "candidate_quality_score",
+            "observed": 0.8035714285714286,
+            "op": ">=",
+            "passed": false,
+            "value": 0.95
+          },
+          {
+            "metric": "quality_score_delta",
+            "observed": -0.1964285714285714,
+            "op": ">=",
+            "passed": false,
+            "value": -0.05
+          },
+          {
+            "metric": "candidate_task_score.value",
+            "observed": 0.2,
+            "op": ">=",
+            "passed": true,
+            "value": 0.2
+          },
+          {
+            "metric": "task_score_delta",
+            "observed": 0.0,
+            "op": ">=",
+            "passed": true,
+            "value": 0.0
+          },
+          {
+            "metric": "reference_finite_logits.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "candidate_finite_logits.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "reference_determinism.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "candidate_determinism.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "reference_output_match.rate",
+            "observed": 0.75,
+            "op": ">=",
+            "passed": false,
+            "value": 0.9375
+          },
+          {
+            "metric": "correction_count",
+            "observed": 0.0,
+            "op": "==",
+            "passed": true,
+            "value": 0.0
+          },
+          {
+            "metric": "promotion_count",
+            "observed": 2.0,
+            "op": "<=",
+            "passed": true,
+            "value": 2.0
+          },
+          {
+            "metric": "activation_drift.max_abs_rms_relative_delta",
+            "observed": 0.0021652404588922954,
+            "op": "<=",
+            "passed": true,
+            "value": 0.1
+          },
+          {
+            "metric": "candidate_router_near_tie.rate",
+            "observed": 0.7392182913953453,
+            "op": "<=",
+            "passed": true,
+            "value": 0.8
+          },
+          {
+            "metric": "router_near_tie_delta",
+            "observed": 0.009964587195821162,
+            "op": "<=",
+            "passed": true,
+            "value": 0.05
+          },
+          {
+            "metric": "router_near_tie_delta",
+            "observed": 0.009964587195821162,
+            "op": ">=",
+            "passed": true,
+            "value": -0.05
+          },
+          {
+            "metric": "long_context_stability.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          }
+        ],
+        "status": "P9_QUALITY_FAIL"
+      },
+      "pair": {
+        "candidate_n": 5,
+        "candidate_run_id": "p9-20260928T182317Z-56784-n5",
+        "identity": {
+          "candidate": {
+            "backend": "mlx_metal",
+            "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+            "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+            "hardware_id": "xox-apple-silicon",
+            "model_id": "deepseek-v2-lite",
+            "prompt_corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+            "runtime_config_hash": "ca2316c4ab43b9bd12466d0a5a6978376ebb297b0b9c81b5ed4a4ae03a0ca632",
+            "seed": 0,
+            "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+            "source_tree": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a"
+          },
+          "compatible": true,
+          "differing_fields": [],
+          "reference": {
+            "backend": "mlx_metal",
+            "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+            "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+            "hardware_id": "xox-apple-silicon",
+            "model_id": "deepseek-v2-lite",
+            "prompt_corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+            "runtime_config_hash": "ca2316c4ab43b9bd12466d0a5a6978376ebb297b0b9c81b5ed4a4ae03a0ca632",
+            "seed": 0,
+            "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+            "source_tree": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a"
+          }
+        },
+        "metrics": {
+          "activation_drift": {
+            "cell_count": 2,
+            "cells": [
+              {
+                "expert_id": null,
+                "layer": 11,
+                "mean_abs_relative_delta": 0.0010585960441449758,
+                "rms_relative_delta": -0.00035637251703084786,
+                "role": "kv_a_proj_with_mqa"
+              },
+              {
+                "expert_id": null,
+                "layer": 3,
+                "mean_abs_relative_delta": 0.0018567246724600845,
+                "rms_relative_delta": 0.0021652404588922954,
+                "role": "shared_up_proj"
+              }
+            ],
+            "max_abs_mean_abs_relative_delta": 0.0018567246724600845,
+            "max_abs_rms_relative_delta": 0.0021652404588922954
+          },
+          "candidate_determinism": {
+            "comparable_prompts": 8,
+            "incomplete_prompts": [],
+            "matching_prompts": 8,
+            "rate": 1.0
+          },
+          "candidate_finite_logits": {
+            "known_requests": 16,
+            "rate": 1.0,
+            "total_requests": 16
+          },
+          "candidate_perplexity": {
+            "coverage": 1.0,
+            "nll_sum": 248.8703467721614,
+            "token_count": 43,
+            "value": 326.256043653424
+          },
+          "candidate_quality_score": 0.8035714285714286,
+          "candidate_router_near_tie": {
+            "decision_count": 791804,
+            "near_tie_count": 585316,
+            "observed_requests": 16,
+            "rate": 0.7392182913953453,
+            "total_requests": 16
+          },
+          "candidate_task_score": {
+            "expected_prompts": 5,
+            "scored_prompts": 5,
+            "value": 0.2
+          },
+          "correction_count": 0,
+          "finite_logits": {
+            "known_requests": 16,
+            "rate": 1.0,
+            "total_requests": 16
+          },
+          "long_context_stability": {
+            "covered_prompts": 1,
+            "expected_prompts": 1,
+            "rate": 1.0,
+            "stable_prompts": 1
+          },
+          "perplexity_ratio": 1.0112292893424013,
+          "promotion_count": 2,
+          "quality_score_delta": -0.1964285714285714,
+          "reference_determinism": {
+            "comparable_prompts": 8,
+            "incomplete_prompts": [],
+            "matching_prompts": 8,
+            "rate": 1.0
+          },
+          "reference_finite_logits": {
+            "known_requests": 16,
+            "rate": 1.0,
+            "total_requests": 16
+          },
+          "reference_output_match": {
+            "comparable_requests": 16,
+            "matching_requests": 12,
+            "rate": 0.75
+          },
+          "reference_perplexity": {
+            "coverage": 1.0,
+            "nll_sum": 248.39017828833875,
+            "token_count": 43,
+            "value": 322.6331031863081
+          },
+          "reference_quality_score": 1.0,
+          "reference_router_near_tie": {
+            "decision_count": 791804,
+            "near_tie_count": 577426,
+            "observed_requests": 16,
+            "rate": 0.7292537041995242,
+            "total_requests": 16
+          },
+          "reference_task_score": {
+            "expected_prompts": 5,
+            "scored_prompts": 5,
+            "value": 0.2
+          },
+          "router_near_tie_delta": 0.009964587195821162,
+          "task_score_delta": 0.0
+        },
+        "reference_run_id": "p9-20260928T182317Z-56784-reference",
+        "status": "MEASURED"
+      }
+    },
+    {
+      "candidate_artifact_hash": "374923a6b43ceddbe47c2d924b2acfbcd9ec4825e6217dfeed2830a81c14e1ed",
+      "candidate_path": "docs/p9-quality/runs/p9-20260928T182317Z-56784/n6.json",
+      "gate": {
+        "missing_required_metrics": [],
+        "rule_results": [
+          {
+            "metric": "perplexity_ratio",
+            "observed": 0.9962800853420782,
+            "op": "<=",
+            "passed": true,
+            "value": 1.05
+          },
+          {
+            "metric": "candidate_quality_score",
+            "observed": 0.8191964285714286,
+            "op": ">=",
+            "passed": false,
+            "value": 0.95
+          },
+          {
+            "metric": "quality_score_delta",
+            "observed": -0.1808035714285714,
+            "op": ">=",
+            "passed": false,
+            "value": -0.05
+          },
+          {
+            "metric": "candidate_task_score.value",
+            "observed": 0.2,
+            "op": ">=",
+            "passed": true,
+            "value": 0.2
+          },
+          {
+            "metric": "task_score_delta",
+            "observed": 0.0,
+            "op": ">=",
+            "passed": true,
+            "value": 0.0
+          },
+          {
+            "metric": "reference_finite_logits.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "candidate_finite_logits.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "reference_determinism.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "candidate_determinism.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "reference_output_match.rate",
+            "observed": 0.75,
+            "op": ">=",
+            "passed": false,
+            "value": 0.9375
+          },
+          {
+            "metric": "correction_count",
+            "observed": 0.0,
+            "op": "==",
+            "passed": true,
+            "value": 0.0
+          },
+          {
+            "metric": "promotion_count",
+            "observed": 2.0,
+            "op": "<=",
+            "passed": true,
+            "value": 2.0
+          },
+          {
+            "metric": "activation_drift.max_abs_rms_relative_delta",
+            "observed": 0.0010322513579843174,
+            "op": "<=",
+            "passed": true,
+            "value": 0.1
+          },
+          {
+            "metric": "candidate_router_near_tie.rate",
+            "observed": 0.740690878045577,
+            "op": "<=",
+            "passed": true,
+            "value": 0.8
+          },
+          {
+            "metric": "router_near_tie_delta",
+            "observed": 0.011437173846052806,
+            "op": "<=",
+            "passed": true,
+            "value": 0.05
+          },
+          {
+            "metric": "router_near_tie_delta",
+            "observed": 0.011437173846052806,
+            "op": ">=",
+            "passed": true,
+            "value": -0.05
+          },
+          {
+            "metric": "long_context_stability.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          }
+        ],
+        "status": "P9_QUALITY_FAIL"
+      },
+      "pair": {
+        "candidate_n": 6,
+        "candidate_run_id": "p9-20260928T182317Z-56784-n6",
+        "identity": {
+          "candidate": {
+            "backend": "mlx_metal",
+            "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+            "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+            "hardware_id": "xox-apple-silicon",
+            "model_id": "deepseek-v2-lite",
+            "prompt_corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+            "runtime_config_hash": "ca2316c4ab43b9bd12466d0a5a6978376ebb297b0b9c81b5ed4a4ae03a0ca632",
+            "seed": 0,
+            "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+            "source_tree": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a"
+          },
+          "compatible": true,
+          "differing_fields": [],
+          "reference": {
+            "backend": "mlx_metal",
+            "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+            "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+            "hardware_id": "xox-apple-silicon",
+            "model_id": "deepseek-v2-lite",
+            "prompt_corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+            "runtime_config_hash": "ca2316c4ab43b9bd12466d0a5a6978376ebb297b0b9c81b5ed4a4ae03a0ca632",
+            "seed": 0,
+            "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+            "source_tree": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a"
+          }
+        },
+        "metrics": {
+          "activation_drift": {
+            "cell_count": 2,
+            "cells": [
+              {
+                "expert_id": null,
+                "layer": 11,
+                "mean_abs_relative_delta": -0.006976790686331759,
+                "rms_relative_delta": -2.135978426711197e-05,
+                "role": "kv_a_proj_with_mqa"
+              },
+              {
+                "expert_id": null,
+                "layer": 3,
+                "mean_abs_relative_delta": -0.0012879254061398118,
+                "rms_relative_delta": -0.0010322513579843174,
+                "role": "shared_up_proj"
+              }
+            ],
+            "max_abs_mean_abs_relative_delta": 0.006976790686331759,
+            "max_abs_rms_relative_delta": 0.0010322513579843174
+          },
+          "candidate_determinism": {
+            "comparable_prompts": 8,
+            "incomplete_prompts": [],
+            "matching_prompts": 8,
+            "rate": 1.0
+          },
+          "candidate_finite_logits": {
+            "known_requests": 16,
+            "rate": 1.0,
+            "total_requests": 16
+          },
+          "candidate_perplexity": {
+            "coverage": 1.0,
+            "nll_sum": 248.22992370622197,
+            "token_count": 43,
+            "value": 321.4329355766346
+          },
+          "candidate_quality_score": 0.8191964285714286,
+          "candidate_router_near_tie": {
+            "decision_count": 791804,
+            "near_tie_count": 586482,
+            "observed_requests": 16,
+            "rate": 0.740690878045577,
+            "total_requests": 16
+          },
+          "candidate_task_score": {
+            "expected_prompts": 5,
+            "scored_prompts": 5,
+            "value": 0.2
+          },
+          "correction_count": 0,
+          "finite_logits": {
+            "known_requests": 16,
+            "rate": 1.0,
+            "total_requests": 16
+          },
+          "long_context_stability": {
+            "covered_prompts": 1,
+            "expected_prompts": 1,
+            "rate": 1.0,
+            "stable_prompts": 1
+          },
+          "perplexity_ratio": 0.9962800853420782,
+          "promotion_count": 2,
+          "quality_score_delta": -0.1808035714285714,
+          "reference_determinism": {
+            "comparable_prompts": 8,
+            "incomplete_prompts": [],
+            "matching_prompts": 8,
+            "rate": 1.0
+          },
+          "reference_finite_logits": {
+            "known_requests": 16,
+            "rate": 1.0,
+            "total_requests": 16
+          },
+          "reference_output_match": {
+            "comparable_requests": 16,
+            "matching_requests": 12,
+            "rate": 0.75
+          },
+          "reference_perplexity": {
+            "coverage": 1.0,
+            "nll_sum": 248.39017828833875,
+            "token_count": 43,
+            "value": 322.6331031863081
+          },
+          "reference_quality_score": 1.0,
+          "reference_router_near_tie": {
+            "decision_count": 791804,
+            "near_tie_count": 577426,
+            "observed_requests": 16,
+            "rate": 0.7292537041995242,
+            "total_requests": 16
+          },
+          "reference_task_score": {
+            "expected_prompts": 5,
+            "scored_prompts": 5,
+            "value": 0.2
+          },
+          "router_near_tie_delta": 0.011437173846052806,
+          "task_score_delta": 0.0
+        },
+        "reference_run_id": "p9-20260928T182317Z-56784-reference",
+        "status": "MEASURED"
+      }
+    },
+    {
+      "candidate_artifact_hash": "1eb4938469335feed7ee07d3d58557aa709cd5b8e124e55ae498e38829d3b5a1",
+      "candidate_path": "docs/p9-quality/runs/p9-20260928T182317Z-56784/n7.json",
+      "gate": {
+        "missing_required_metrics": [],
+        "rule_results": [
+          {
+            "metric": "perplexity_ratio",
+            "observed": 1.0250928248531823,
+            "op": "<=",
+            "passed": true,
+            "value": 1.05
+          },
+          {
+            "metric": "candidate_quality_score",
+            "observed": 0.9285714285714286,
+            "op": ">=",
+            "passed": false,
+            "value": 0.95
+          },
+          {
+            "metric": "quality_score_delta",
+            "observed": -0.0714285714285714,
+            "op": ">=",
+            "passed": false,
+            "value": -0.05
+          },
+          {
+            "metric": "candidate_task_score.value",
+            "observed": 0.2,
+            "op": ">=",
+            "passed": true,
+            "value": 0.2
+          },
+          {
+            "metric": "task_score_delta",
+            "observed": 0.0,
+            "op": ">=",
+            "passed": true,
+            "value": 0.0
+          },
+          {
+            "metric": "reference_finite_logits.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "candidate_finite_logits.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "reference_determinism.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "candidate_determinism.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          },
+          {
+            "metric": "reference_output_match.rate",
+            "observed": 0.875,
+            "op": ">=",
+            "passed": false,
+            "value": 0.9375
+          },
+          {
+            "metric": "correction_count",
+            "observed": 0.0,
+            "op": "==",
+            "passed": true,
+            "value": 0.0
+          },
+          {
+            "metric": "promotion_count",
+            "observed": 2.0,
+            "op": "<=",
+            "passed": true,
+            "value": 2.0
+          },
+          {
+            "metric": "activation_drift.max_abs_rms_relative_delta",
+            "observed": 0.00159077154150382,
+            "op": "<=",
+            "passed": true,
+            "value": 0.1
+          },
+          {
+            "metric": "candidate_router_near_tie.rate",
+            "observed": 0.7379225161782461,
+            "op": "<=",
+            "passed": true,
+            "value": 0.8
+          },
+          {
+            "metric": "router_near_tie_delta",
+            "observed": 0.008668811978721935,
+            "op": "<=",
+            "passed": true,
+            "value": 0.05
+          },
+          {
+            "metric": "router_near_tie_delta",
+            "observed": 0.008668811978721935,
+            "op": ">=",
+            "passed": true,
+            "value": -0.05
+          },
+          {
+            "metric": "long_context_stability.rate",
+            "observed": 1.0,
+            "op": "==",
+            "passed": true,
+            "value": 1.0
+          }
+        ],
+        "status": "P9_QUALITY_FAIL"
+      },
+      "pair": {
+        "candidate_n": 7,
+        "candidate_run_id": "p9-20260928T182317Z-56784-n7",
+        "identity": {
+          "candidate": {
+            "backend": "mlx_metal",
+            "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+            "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+            "hardware_id": "xox-apple-silicon",
+            "model_id": "deepseek-v2-lite",
+            "prompt_corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+            "runtime_config_hash": "ca2316c4ab43b9bd12466d0a5a6978376ebb297b0b9c81b5ed4a4ae03a0ca632",
+            "seed": 0,
+            "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+            "source_tree": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a"
+          },
+          "compatible": true,
+          "differing_fields": [],
+          "reference": {
+            "backend": "mlx_metal",
+            "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+            "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+            "hardware_id": "xox-apple-silicon",
+            "model_id": "deepseek-v2-lite",
+            "prompt_corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+            "runtime_config_hash": "ca2316c4ab43b9bd12466d0a5a6978376ebb297b0b9c81b5ed4a4ae03a0ca632",
+            "seed": 0,
+            "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+            "source_tree": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a"
+          }
+        },
+        "metrics": {
+          "activation_drift": {
+            "cell_count": 2,
+            "cells": [
+              {
+                "expert_id": null,
+                "layer": 11,
+                "mean_abs_relative_delta": -0.008855402896050248,
+                "rms_relative_delta": 0.00159077154150382,
+                "role": "kv_a_proj_with_mqa"
+              },
+              {
+                "expert_id": null,
+                "layer": 3,
+                "mean_abs_relative_delta": -2.1294351163791157e-05,
+                "rms_relative_delta": 0.0005823613109844808,
+                "role": "shared_up_proj"
+              }
+            ],
+            "max_abs_mean_abs_relative_delta": 0.008855402896050248,
+            "max_abs_rms_relative_delta": 0.00159077154150382
+          },
+          "candidate_determinism": {
+            "comparable_prompts": 8,
+            "incomplete_prompts": [],
+            "matching_prompts": 8,
+            "rate": 1.0
+          },
+          "candidate_finite_logits": {
+            "known_requests": 16,
+            "rate": 1.0,
+            "total_requests": 16
+          },
+          "candidate_perplexity": {
+            "coverage": 1.0,
+            "nll_sum": 249.45585456920023,
+            "token_count": 43,
+            "value": 330.72887913640085
+          },
+          "candidate_quality_score": 0.9285714285714286,
+          "candidate_router_near_tie": {
+            "decision_count": 791804,
+            "near_tie_count": 584290,
+            "observed_requests": 16,
+            "rate": 0.7379225161782461,
+            "total_requests": 16
+          },
+          "candidate_task_score": {
+            "expected_prompts": 5,
+            "scored_prompts": 5,
+            "value": 0.2
+          },
+          "correction_count": 0,
+          "finite_logits": {
+            "known_requests": 16,
+            "rate": 1.0,
+            "total_requests": 16
+          },
+          "long_context_stability": {
+            "covered_prompts": 1,
+            "expected_prompts": 1,
+            "rate": 1.0,
+            "stable_prompts": 1
+          },
+          "perplexity_ratio": 1.0250928248531823,
+          "promotion_count": 2,
+          "quality_score_delta": -0.0714285714285714,
+          "reference_determinism": {
+            "comparable_prompts": 8,
+            "incomplete_prompts": [],
+            "matching_prompts": 8,
+            "rate": 1.0
+          },
+          "reference_finite_logits": {
+            "known_requests": 16,
+            "rate": 1.0,
+            "total_requests": 16
+          },
+          "reference_output_match": {
+            "comparable_requests": 16,
+            "matching_requests": 14,
+            "rate": 0.875
+          },
+          "reference_perplexity": {
+            "coverage": 1.0,
+            "nll_sum": 248.39017828833875,
+            "token_count": 43,
+            "value": 322.6331031863081
+          },
+          "reference_quality_score": 1.0,
+          "reference_router_near_tie": {
+            "decision_count": 791804,
+            "near_tie_count": 577426,
+            "observed_requests": 16,
+            "rate": 0.7292537041995242,
+            "total_requests": 16
+          },
+          "reference_task_score": {
+            "expected_prompts": 5,
+            "scored_prompts": 5,
+            "value": 0.2
+          },
+          "router_near_tie_delta": 0.008668811978721935,
+          "task_score_delta": 0.0
+        },
+        "reference_run_id": "p9-20260928T182317Z-56784-reference",
+        "status": "MEASURED"
+      }
+    }
+  ],
+  "corpus_path": "configs/quality/deterministic_corpus_v1.json",
+  "corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+  "evaluation_hash": "ceb40a9c18a92231f484d9b528aaeca124218ff48d40ab76d9a52f466f954938",
+  "policy_hash": "9c299e140f738c6c57d6874856d73635a1de083a3dec37af37bef3b50d38cadd",
+  "policy_path": "configs/quality/quality_policy_v1.json",
+  "policy_status": "FROZEN",
+  "reference_artifact_hash": "841931ee1b17e6bca6ad07e97176558951048700addeee22fc8352e2a78f85f0",
+  "reference_path": "docs/p9-quality/runs/p9-20260928T182317Z-56784/reference.json",
+  "schema": "beglin-quality-evaluation/1",
+  "status": "P9_QUALITY_FAIL"
+}

@@ -1,0 +1,46 @@
+[moe gpu cb online] QWEN_MOE_GPU_CBATCH_ONLINE=1 -- V5h GPU online admission scheduler gate
+[moe gpu cb online] af blob 9814343680 bytes, f32 blob 14137344 bytes, 27 layers resolved
+[moe gpu cb online] bound 269/269 tensors to MLX
+[engine] safetensors_load: /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json: 5291 tensors across 4 shards
+[moe promotion source] opened '/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json' for QWEN_MOE_PROMOTION_FILE_NQ gpu
+[moe promotion nq gpu] role=kv_a_proj_with_mqa layer=11 PROMOTED to qNg64(n=5) on GPU -- permanent, no restart within this process (base_bits was 4)
+[gguf_transcode] qNg64(n=5): 3/5767168 codes saturated to an extreme value
+[moe promotion nq gpu] role=shared_up_proj layer=3 PROMOTED to qNg64(n=5) on GPU -- permanent, no restart within this process (base_bits was 4)
+[moe promotion nq gpu] '/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/n5.promotion.txt': 2 lines, 2 promoted, 0 bind failures, g_moe_naf now 271
+[moe gpu cb online] sort_threshold=0 B=1 R=16 prefill_budget=64
+[moe gpu cb online] loaded 8-entry prompt manifest from '/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/p9-prompts.manifest'
+[moe gpu cb online] req 0 prompt 0 slot 0 arrive 0 admit_step 0 ttft_ms 3414.39 nout 10 tokens: 429 2432 4286 11 440 84765 12 16 45874 1
+P9_QUALITY_REQUEST_V1 req=0 prompt=0 context_tokens=19 finite_logits=1 nll_sum=101.57374286605244 nll_count=18 router_near=179 router_decisions=728 kva_mean_abs=0.66613857235227314 kva_rms=1.4453266094445973 shared_up_mean_abs=0.18971779676420347 shared_up_rms=0.25929049378700114 nout=10 tokens: 429 2432 4286 11 440 84765 12 16 45874 1
+[moe gpu cb online] req 1 prompt 1 slot 0 arrive 0 admit_step 10 ttft_ms 90.18 nout 6 tokens: 207 16 22 575 207 16
+P9_QUALITY_REQUEST_V1 req=1 prompt=1 context_tokens=21 finite_logits=1 nll_sum=86.24056101011756 nll_count=20 router_near=184 router_decisions=676 kva_mean_abs=0.64418869522901678 kva_rms=1.4796939504323614 shared_up_mean_abs=0.17795901287060517 shared_up_rms=0.24565175933242164 nout=6 tokens: 207 16 22 575 207 16
+[moe gpu cb online] req 2 prompt 2 slot 0 arrive 0 admit_step 16 ttft_ms 81.92 nout 14 tokens: 685 254 26210 280 8633 26473 11 23689 285 21459 11415 418 14222 327
+P9_QUALITY_REQUEST_V1 req=2 prompt=2 context_tokens=18 finite_logits=1 nll_sum=84.273738530084415 nll_count=17 router_near=232 router_decisions=806 kva_mean_abs=0.69105309536380155 kva_rms=1.4822133745801951 shared_up_mean_abs=0.18900370261361521 shared_up_rms=0.25917127578729021 nout=14 tokens: 685 254 26210 280 8633 26473 11 23689 285 21459 11415 418 14222 327
+[moe gpu cb online] req 3 prompt 3 slot 0 arrive 0 admit_step 30 ttft_ms 76.52 nout 8 tokens: 185 185 549 1712 3157 5775 6626 2330
+P9_QUALITY_REQUEST_V1 req=3 prompt=3 context_tokens=16 finite_logits=1 nll_sum=73.047694844831426 nll_count=15 router_near=168 router_decisions=598 kva_mean_abs=0.64094261501146399 kva_rms=1.4907367794344144 shared_up_mean_abs=0.1847032412238743 shared_up_rms=0.25800965468747622 nout=8 tokens: 185 185 549 1712 3157 5775 6626 2330
+[moe gpu cb online] req 4 prompt 4 slot 0 arrive 0 admit_step 38 ttft_ms 69.79 nout 8 tokens: 185 185 549 35182 23875 317 245 5278
+P9_QUALITY_REQUEST_V1 req=4 prompt=4 context_tokens=14 finite_logits=1 nll_sum=90.363699318448738 nll_count=13 router_near=153 router_decisions=546 kva_mean_abs=0.6159362771681377 kva_rms=1.4515008237007154 shared_up_mean_abs=0.17663618141696566 shared_up_rms=0.2485185947714639 nout=8 tokens: 185 185 549 35182 23875 317 245 5278
+[moe gpu cb online] req 5 prompt 5 slot 0 arrive 0 admit_step 46 ttft_ms 75.24 nout 8 tokens: 185 185 1679 207 16 13 30153 185
+P9_QUALITY_REQUEST_V1 req=5 prompt=5 context_tokens=16 finite_logits=1 nll_sum=85.458952608881248 nll_count=15 router_near=147 router_decisions=598 kva_mean_abs=0.64348176769588306 kva_rms=1.4515761375453617 shared_up_mean_abs=0.18033682328203451 shared_up_rms=0.24880754431005167 nout=8 tokens: 185 185 1679 207 16 13 30153 185
+[moe gpu cb online] req 6 prompt 6 slot 0 arrive 0 admit_step 54 ttft_ms 146575.18 nout 12 tokens: 47224 17254 62 14107 28 1698 22780 12 22 18 16 24
+P9_QUALITY_REQUEST_V1 req=6 prompt=6 context_tokens=15033 finite_logits=1 nll_sum=1441.6371946010559 nll_count=15032 router_near=291370 router_decisions=391144 kva_mean_abs=0.60308569238952769 kva_rms=1.1947873426286197 shared_up_mean_abs=0.22409546644196837 shared_up_rms=0.3016653462717615 nout=12 tokens: 47224 17254 62 14107 28 1698 22780 12 22 18 16 24
+[moe gpu cb online] req 7 prompt 7 slot 0 arrive 0 admit_step 300 ttft_ms 99.79 nout 7 tokens: 4462 6 82 245 12974 3418 327
+P9_QUALITY_REQUEST_V1 req=7 prompt=7 context_tokens=25 finite_logits=1 nll_sum=103.62049616485103 nll_count=24 router_near=225 router_decisions=806 kva_mean_abs=0.65723272100571661 kva_rms=1.4859547627935132 shared_up_mean_abs=0.17843971810033243 shared_up_rms=0.24448236930510148 nout=7 tokens: 4462 6 82 245 12974 3418 327
+[moe gpu cb online] req 8 prompt 0 slot 0 arrive 0 admit_step 307 ttft_ms 83.92 nout 10 tokens: 429 2432 4286 11 440 84765 12 16 45874 1
+P9_QUALITY_REQUEST_V1 req=8 prompt=0 context_tokens=19 finite_logits=1 nll_sum=101.57374286605244 nll_count=18 router_near=179 router_decisions=728 kva_mean_abs=0.66613857235227314 kva_rms=1.4453266094445973 shared_up_mean_abs=0.18971779676420347 shared_up_rms=0.25929049378700114 nout=10 tokens: 429 2432 4286 11 440 84765 12 16 45874 1
+[moe gpu cb online] req 9 prompt 1 slot 0 arrive 0 admit_step 317 ttft_ms 89.72 nout 6 tokens: 207 16 22 575 207 16
+P9_QUALITY_REQUEST_V1 req=9 prompt=1 context_tokens=21 finite_logits=1 nll_sum=86.24056101011756 nll_count=20 router_near=184 router_decisions=676 kva_mean_abs=0.64418869522901678 kva_rms=1.4796939504323614 shared_up_mean_abs=0.17795901287060517 shared_up_rms=0.24565175933242164 nout=6 tokens: 207 16 22 575 207 16
+[moe gpu cb online] req 10 prompt 2 slot 0 arrive 0 admit_step 323 ttft_ms 83.12 nout 14 tokens: 685 254 26210 280 8633 26473 11 23689 285 21459 11415 418 14222 327
+P9_QUALITY_REQUEST_V1 req=10 prompt=2 context_tokens=18 finite_logits=1 nll_sum=84.273738530084415 nll_count=17 router_near=232 router_decisions=806 kva_mean_abs=0.69105309536380155 kva_rms=1.4822133745801951 shared_up_mean_abs=0.18900370261361521 shared_up_rms=0.25917127578729021 nout=14 tokens: 685 254 26210 280 8633 26473 11 23689 285 21459 11415 418 14222 327
+[moe gpu cb online] req 11 prompt 3 slot 0 arrive 0 admit_step 337 ttft_ms 82.36 nout 8 tokens: 185 185 549 1712 3157 5775 6626 2330
+P9_QUALITY_REQUEST_V1 req=11 prompt=3 context_tokens=16 finite_logits=1 nll_sum=73.047694844831426 nll_count=15 router_near=168 router_decisions=598 kva_mean_abs=0.64094261501146399 kva_rms=1.4907367794344144 shared_up_mean_abs=0.1847032412238743 shared_up_rms=0.25800965468747622 nout=8 tokens: 185 185 549 1712 3157 5775 6626 2330
+[moe gpu cb online] req 12 prompt 4 slot 0 arrive 0 admit_step 345 ttft_ms 70.64 nout 8 tokens: 185 185 549 35182 23875 317 245 5278
+P9_QUALITY_REQUEST_V1 req=12 prompt=4 context_tokens=14 finite_logits=1 nll_sum=90.363699318448738 nll_count=13 router_near=153 router_decisions=546 kva_mean_abs=0.6159362771681377 kva_rms=1.4515008237007154 shared_up_mean_abs=0.17663618141696566 shared_up_rms=0.2485185947714639 nout=8 tokens: 185 185 549 35182 23875 317 245 5278
+[moe gpu cb online] req 13 prompt 5 slot 0 arrive 0 admit_step 353 ttft_ms 74.54 nout 8 tokens: 185 185 1679 207 16 13 30153 185
+P9_QUALITY_REQUEST_V1 req=13 prompt=5 context_tokens=16 finite_logits=1 nll_sum=85.458952608881248 nll_count=15 router_near=147 router_decisions=598 kva_mean_abs=0.64348176769588306 kva_rms=1.4515761375453617 shared_up_mean_abs=0.18033682328203451 shared_up_rms=0.24880754431005167 nout=8 tokens: 185 185 1679 207 16 13 30153 185
+[moe gpu cb online] req 14 prompt 6 slot 0 arrive 0 admit_step 361 ttft_ms 141696.55 nout 12 tokens: 47224 17254 62 14107 28 1698 22780 12 22 18 16 24
+P9_QUALITY_REQUEST_V1 req=14 prompt=6 context_tokens=15033 finite_logits=1 nll_sum=1441.6371946010559 nll_count=15032 router_near=291370 router_decisions=391144 kva_mean_abs=0.60308569238952769 kva_rms=1.1947873426286197 shared_up_mean_abs=0.22409546644196837 shared_up_rms=0.3016653462717615 nout=12 tokens: 47224 17254 62 14107 28 1698 22780 12 22 18 16 24
+[moe gpu cb online] req 15 prompt 7 slot 0 arrive 0 admit_step 607 ttft_ms 102.24 nout 7 tokens: 4462 6 82 245 12974 3418 327
+P9_QUALITY_REQUEST_V1 req=15 prompt=7 context_tokens=25 finite_logits=1 nll_sum=103.62049616485103 nll_count=24 router_near=225 router_decisions=806 kva_mean_abs=0.65723272100571661 kva_rms=1.4859547627935132 shared_up_mean_abs=0.17843971810033243 shared_up_rms=0.24448236930510148 nout=7 tokens: 4462 6 82 245 12974 3418 327
+GPU_VALIDATION_V1 backend=mlx_metal arch=deepseek-v2-lite correction=off finite_logits=1 logits_checked=14950400 requests=16
+[moe gpu cb online] steps=614 steps_idle=0 steps_with_idle_slot=0 admitted_after_evict=15 queue_wait_events=15 queue_wait_max_steps=607 steps_pure_prefill=468 ttft_max_ms=146575.18 ttft_mean_ms=18297.88 wall_ms=297730.86 tok/s=102.287
+RESULT: MoE GPU V5h online cbatch gate complete, B=1 R=16

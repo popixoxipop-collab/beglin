@@ -1,0 +1,264 @@
+{
+  "audit_sha256": "481746339b5e87c28c9084301797284b7887c70dc397f9f6e701bab5e7d91074",
+  "candidates": [
+    {
+      "failed_rules": [],
+      "n": 4,
+      "perplexity_ratio": 1.0,
+      "quality_score": 1.0,
+      "reference_output_match": 1.0,
+      "status": "P9_QUALITY_PASS"
+    },
+    {
+      "failed_rules": [
+        "candidate_quality_score",
+        "quality_score_delta",
+        "reference_output_match.rate"
+      ],
+      "n": 5,
+      "perplexity_ratio": 1.0112292893424013,
+      "quality_score": 0.8035714285714286,
+      "reference_output_match": 0.75,
+      "status": "P9_QUALITY_FAIL"
+    },
+    {
+      "failed_rules": [
+        "candidate_quality_score",
+        "quality_score_delta",
+        "reference_output_match.rate"
+      ],
+      "n": 6,
+      "perplexity_ratio": 0.9962800853420782,
+      "quality_score": 0.8191964285714286,
+      "reference_output_match": 0.75,
+      "status": "P9_QUALITY_FAIL"
+    },
+    {
+      "failed_rules": [
+        "candidate_quality_score",
+        "quality_score_delta",
+        "reference_output_match.rate"
+      ],
+      "n": 7,
+      "perplexity_ratio": 1.0250928248531823,
+      "quality_score": 0.9285714285714286,
+      "reference_output_match": 0.875,
+      "status": "P9_QUALITY_FAIL"
+    }
+  ],
+  "checks": {
+    "artifact_n4_hash": true,
+    "artifact_n4_identity": true,
+    "artifact_n4_requests": true,
+    "artifact_n4_schema": true,
+    "artifact_n4_variant": true,
+    "artifact_n5_hash": true,
+    "artifact_n5_identity": true,
+    "artifact_n5_requests": true,
+    "artifact_n5_schema": true,
+    "artifact_n5_variant": true,
+    "artifact_n6_hash": true,
+    "artifact_n6_identity": true,
+    "artifact_n6_requests": true,
+    "artifact_n6_schema": true,
+    "artifact_n6_variant": true,
+    "artifact_n7_hash": true,
+    "artifact_n7_identity": true,
+    "artifact_n7_requests": true,
+    "artifact_n7_schema": true,
+    "artifact_n7_variant": true,
+    "artifact_reference_hash": true,
+    "artifact_reference_identity": true,
+    "artifact_reference_requests": true,
+    "artifact_reference_schema": true,
+    "artifact_reference_variant": true,
+    "binary_sha": true,
+    "branch": true,
+    "checkpoint_sha": true,
+    "corpus_hash": true,
+    "evaluation_candidate_set": true,
+    "evaluation_corpus": true,
+    "evaluation_hash": true,
+    "evaluation_policy": true,
+    "evaluation_reference": true,
+    "evaluation_schema": true,
+    "freeze_reference_file": true,
+    "freeze_reference_hash": true,
+    "freeze_reference_raw": true,
+    "job_finished": true,
+    "job_id": true,
+    "job_request_hash": true,
+    "job_succeeded": true,
+    "job_termination": true,
+    "latest_byte_identity": true,
+    "metal_backend": true,
+    "model_identity": true,
+    "n4_candidate_hash": true,
+    "n4_gate_status": true,
+    "n4_identity_compatible": true,
+    "n4_metrics_recomputed": true,
+    "n4_missing_metrics": true,
+    "n4_pair_measured": true,
+    "n4_rule_results": true,
+    "n5_candidate_hash": true,
+    "n5_gate_status": true,
+    "n5_identity_compatible": true,
+    "n5_metrics_recomputed": true,
+    "n5_missing_metrics": true,
+    "n5_pair_measured": true,
+    "n5_rule_results": true,
+    "n6_candidate_hash": true,
+    "n6_gate_status": true,
+    "n6_identity_compatible": true,
+    "n6_metrics_recomputed": true,
+    "n6_missing_metrics": true,
+    "n6_pair_measured": true,
+    "n6_rule_results": true,
+    "n7_candidate_hash": true,
+    "n7_gate_status": true,
+    "n7_identity_compatible": true,
+    "n7_metrics_recomputed": true,
+    "n7_missing_metrics": true,
+    "n7_pair_measured": true,
+    "n7_rule_results": true,
+    "observed_matrix_outcome": true,
+    "overall_status": true,
+    "physical_n4": true,
+    "physical_n5": true,
+    "physical_n6": true,
+    "physical_n7": true,
+    "physical_raw_status": true,
+    "physical_reference": true,
+    "physical_result_hash": true,
+    "physical_schema": true,
+    "physical_variant_set": true,
+    "policy_baseline": true,
+    "policy_file_hash": true,
+    "policy_frozen": true,
+    "policy_hash": true,
+    "policy_observation_order_asserted": true,
+    "policy_schema": true,
+    "production_write_denied": true,
+    "registered_argv": true,
+    "registration_status": true,
+    "runner_sha_pinned": true,
+    "source_commit": true
+  },
+  "conclusion": {
+    "eligible_candidate_ns": [
+      4
+    ],
+    "evidence_integrity": "P9_EVIDENCE_INDEPENDENT_PASS",
+    "p9_quality": "P9_QUALITY_FAIL",
+    "physical_execution": "P9_PHYSICAL_RAW_PASS",
+    "policy_modified_after_freeze": false,
+    "production_mutation_performed": false,
+    "production_release_authorized": false,
+    "rejected_candidate_ns": [
+      5,
+      6,
+      7
+    ]
+  },
+  "control_identity": {
+    "backend": "mlx_metal",
+    "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "hardware_id": "xox-apple-silicon",
+    "model_id": "deepseek-v2-lite",
+    "prompt_corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+    "runtime_config_hash": "ca2316c4ab43b9bd12466d0a5a6978376ebb297b0b9c81b5ed4a4ae03a0ca632",
+    "seed": 0,
+    "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+    "source_tree": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a"
+  },
+  "failures": [],
+  "inputs": {
+    "evaluation_claimed_hash": "ceb40a9c18a92231f484d9b528aaeca124218ff48d40ab76d9a52f466f954938",
+    "evaluation_sha256": "37681b0603d14a680423233ed708140d451bd123e676df12372a3182d2559e9c",
+    "job_metadata_sha256": "b1ab7969f20ec3ef797d3f368f842092632732a37105ad9cdc41b8d616083cc6",
+    "physical_result_claimed_hash": "86153165cfe82a2e1ce0a37ff49d60f338a9c1a80b3080f32b00dec2e04c9c06",
+    "physical_result_sha256": "430c507e061f561880eac2267a0ad2df07680fafcbf6d05f735ad4209819e4d3",
+    "policy_freeze_sha256": "3e88511ec662670ee5312b66c38e340ffe6cd2c63317c8e19e4501044608a386",
+    "policy_hash": "9c299e140f738c6c57d6874856d73635a1de083a3dec37af37bef3b50d38cadd",
+    "policy_sha256": "6f5cdd742a3b7705fb6bb929fcdb59a1f11f8b2d444ae034dd2d230e7833bfc3",
+    "registration_sha256": "00dcc9600d8d88c4b615700d3644b868403d34222a46d8f889b067bff16b86da",
+    "run_dir": "docs/p9-quality/runs/p9-20260928T182317Z-56784"
+  },
+  "normalized_artifacts": [
+    {
+      "artifact_hash": "841931ee1b17e6bca6ad07e97176558951048700addeee22fc8352e2a78f85f0",
+      "file_sha256": "67ccaed88ddd8a2a0ca62b65ae1e33ad5942fbf74d690b381f6c36aa7dbdddf2",
+      "identity_compatible": true,
+      "variant": "reference"
+    },
+    {
+      "artifact_hash": "4334d0ea52bbe241bf6c0ce887ac02db969d8f1166e04cb7b88c465630480314",
+      "file_sha256": "1b882c976ae8ee5d529dc889ef54a01afcc9324c77382f52e0876f4e13d4b143",
+      "identity_compatible": true,
+      "variant": "n4"
+    },
+    {
+      "artifact_hash": "5ae95b5bdf0026bdf71b3a7de1581e556d451560a0546649a767454020561240",
+      "file_sha256": "bcff0ff668ae9d4983a604f959c4b2daae64c4555650629fc67c3e12cd241b25",
+      "identity_compatible": true,
+      "variant": "n5"
+    },
+    {
+      "artifact_hash": "374923a6b43ceddbe47c2d924b2acfbcd9ec4825e6217dfeed2830a81c14e1ed",
+      "file_sha256": "faec2869126a1e1127e53446e8eb029a82236183c5f47462faaeb4c086bc48f1",
+      "identity_compatible": true,
+      "variant": "n6"
+    },
+    {
+      "artifact_hash": "1eb4938469335feed7ee07d3d58557aa709cd5b8e124e55ae498e38829d3b5a1",
+      "file_sha256": "4e5372cbbe1f9d4e9c2640bd08826743ff2d055f5dd8c886fa7cbeae309d4c5f",
+      "identity_compatible": true,
+      "variant": "n7"
+    }
+  ],
+  "observed_at_utc": "2026-09-28T18:51:06Z",
+  "raw_runs": [
+    {
+      "log_sha256": "e2b0e746a2c8730e1e18f833f2baf982e6f268edd3d8e6827bc6dcc862181003",
+      "request_count": 16,
+      "status": "PASS",
+      "variant": "reference"
+    },
+    {
+      "log_sha256": "908fadefc68b2d5632ac1860adb81736e1381a54f287db93f8059dc8044e817c",
+      "request_count": 16,
+      "status": "PASS",
+      "variant": "n4"
+    },
+    {
+      "log_sha256": "14c20b26f4914b7b212f097b842401f4ae009a0389b886470c1fbef6f6d57b76",
+      "request_count": 16,
+      "status": "PASS",
+      "variant": "n5"
+    },
+    {
+      "log_sha256": "bf64e5530e0b199ce6a1a04fc7669c46c0e37c81cec0a71ea564939443723626",
+      "request_count": 16,
+      "status": "PASS",
+      "variant": "n6"
+    },
+    {
+      "log_sha256": "b001b65e2d901f3c2440e76294d7205d650ea3bbd38eca4c48224f1b9905c9a2",
+      "request_count": 16,
+      "status": "PASS",
+      "variant": "n7"
+    }
+  ],
+  "schema": "beglin-p9-independent-final-audit/1",
+  "status": "P9_EVIDENCE_INDEPENDENT_PASS",
+  "tailnet_job": {
+    "elapsed_ms": 1546873,
+    "ended_at": "2026-09-28T18:49:04Z",
+    "exit_code": 0,
+    "job_id": "job_f640ce1213e392ed07d7d627482aa975",
+    "request_hash": "582182ed520d9e0a9f8618c3a4a66b6ef370d7171ceb453652f3d2cb4f52ab1c",
+    "started_at": "2026-09-28T18:23:16Z",
+    "state": "SUCCEEDED"
+  }
+}

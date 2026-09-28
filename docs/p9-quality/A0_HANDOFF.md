@@ -1,6 +1,6 @@
 # P9 A0 execution handoff
 
-Status: **P9_PHYSICAL_JOB_RUNNING**
+Status: **P9_QUALITY_FAIL / P9_EVIDENCE_INDEPENDENT_PASS**
 
 Branch: `prod/p9-integration`
 Integration base: `727d950ef420320455b5071969efd49e3751e8c8`
@@ -26,7 +26,7 @@ P9 now has an explicit integrated adapter instead of a null placeholder:
 
 The generated plan is `P9_EXECUTION_PLAN_2026-09-29.json`. Exact fixture registration is now frozen by `P9_TAILNET_REGISTRATION_EVIDENCE_2026-09-29.json`, and adapter preflight has no blockers.
 
-The first physical run is active as durable XOX job `job_f640ce1213e392ed07d7d627482aa975` with run ID `p9-20260928T182317Z-56784`. Build identity is already frozen; final raw metrics are pending.
+The first physical run completed as durable XOX job `job_f640ce1213e392ed07d7d627482aa975` with run ID `p9-20260928T182317Z-56784`. The job state is `SUCCEEDED`, the runner result is `P9_PHYSICAL_RAW_PASS`, and all five logs contain 16 complete requests with finite logits.
 
 ## Long-context implementation
 
@@ -54,22 +54,19 @@ The runner must produce one raw log for each of reference, n4, n5, n6, and n7. E
 - expert-router selection-boundary near-tie counts,
 - long-context output evidence.
 
-Raw physical success is not a P9 quality PASS. EOE must still normalize all five artifacts, evaluate the complete metric set, freeze numeric policy only after observing the reference, and perform an independent final audit.
+Raw physical success is not a P9 quality PASS. EOE normalized all five artifacts, evaluated the complete metric set against the pre-candidate frozen policy, and completed the independent final audit.
 
 ## Current prohibition
 
-`configs/quality/quality_policy_v1.json` is now `FROZEN`, hash-bound to the physical reference artifact and timestamped before any candidate log was inspected. `production_write_allowed=false`; candidate completion and an independent final audit are still required before any merge, production promotion, or go-live decision.
+`configs/quality/quality_policy_v1.json` remains `FROZEN`, hash-bound to the physical reference artifact and timestamped before any candidate log was inspected. The complete result is n4 PASS, n5 FAIL, n6 FAIL, and n7 FAIL. Independent evidence audit passes, but the overall gate is `P9_QUALITY_FAIL`; `production_write_allowed=false` and no production promotion or go-live is authorized.
+
+## Final evidence
+
+- physical result SHA-256: `430c507e061f561880eac2267a0ad2df07680fafcbf6d05f735ad4209819e4d3`
+- evaluation hash: `ceb40a9c18a92231f484d9b528aaeca124218ff48d40ab76d9a52f466f954938`
+- independent audit SHA-256: `481746339b5e87c28c9084301797284b7887c70dc397f9f6e701bab5e7d91074`
+- audit file SHA-256: `1c2de16bf274f728d6711d943b30a5a357d7f210af464d02279b37abd752ffbc`
 
 ## Next exact action
 
-Wait for the registered job to emit `P9_PHYSICAL_RAW_PASS`, then freeze and normalize the five logs:
-
-```text
-reference.log
-n4.log
-n5.log
-n6.log
-n7.log
-```
-
-Do not modify the frozen numeric policy or authorize production from a RUNNING job.
+Keep the frozen policy and this failed matrix immutable. Do not promote n5, n6, or n7. A later engineering iteration may investigate their output drift and submit a new versioned candidate run; it must not overwrite this evidence or reinterpret n4's isolated PASS as approval of the full matrix.

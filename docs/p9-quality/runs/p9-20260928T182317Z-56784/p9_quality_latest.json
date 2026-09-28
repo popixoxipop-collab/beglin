@@ -1,0 +1,417 @@
+{
+  "adapter_preflight": {
+    "adapter_id": "p9-xox-mlx-metal-v1",
+    "adapter_sha256": "ae5c76075fc96dee548b020e3212441313550a6bf87e3b35cb589920aab31148",
+    "blockers": [
+      {
+        "argv": [
+          "python3",
+          "beglin_p9_quality_fixture.py"
+        ],
+        "code": "TAILNET_FIXTURE_UNREGISTERED",
+        "host": "xox",
+        "workspace": "sandbox"
+      }
+    ],
+    "configured_positions": 16384,
+    "corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+    "engine_markers": {
+      "BEGLIN_P9_COMPACT_KV": true,
+      "BEGLIN_P9_QUALITY_METRICS": true,
+      "P9_QUALITY_REQUEST_V1": true,
+      "mlx_gpu_p9_metrics_config": true,
+      "mlx_gpu_p9_metrics_read": true
+    },
+    "execution_allowed": false,
+    "preflight_sha256": "3d848f504ea9115b43a213ab4f23d87167524cdd4c09aa276f3053192c4d337d",
+    "prompt_count": 8,
+    "repetitions": 2,
+    "required_positions": 15045,
+    "schema": "beglin-quality-adapter-preflight/1",
+    "status": "P9_READY_FOR_FIXTURE_REGISTRATION",
+    "token_fixture_sha256": "b9676d1e02865bc3aa6fd36e6792e6d44681f182ba34e9bc49d7f9a75957fa95"
+  },
+  "branch": "prod/p9-integration",
+  "checkpoint_identity_source": "/Users/xox/vdsp_shadow_runs/checkpoint_identity/status.json",
+  "compact_cache_projection": {
+    "format": "symmetric_int8_per_head_position",
+    "heads": 16,
+    "key_width": 192,
+    "layers": 27,
+    "model_config": "/Users/xox/vdsp_local_data/moe_base_deepseek/weights_moe/arch_config_moe.txt",
+    "model_config_sha256": "43f205631553478b204f761d5894aaeec67100ed276aca762a24c62e63a91c50",
+    "positions": 16384,
+    "projected_bytes": 2293235712,
+    "projected_float32_bytes": 9059696640,
+    "reduction_ratio": 0.253125,
+    "scale_dtype": "float16",
+    "value_width": 128
+  },
+  "finished_at": "2026-09-28T18:49:04.324040+00:00",
+  "identity": {
+    "backend": "mlx_metal",
+    "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "hardware_id": "xox-apple-silicon",
+    "model_id": "deepseek-v2-lite",
+    "prompt_corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+    "runtime_config_hash": "ca2316c4ab43b9bd12466d0a5a6978376ebb297b0b9c81b5ed4a4ae03a0ca632",
+    "seed": 0,
+    "source_commit": "a0e9a0348c18b85e66b6446914da9d1a7be72bd3",
+    "source_tree": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a"
+  },
+  "materialized_fixture": {
+    "files": [
+      {
+        "context_tokens": 19,
+        "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/00-copy_alpha.i32",
+        "prompt_id": "copy_alpha",
+        "sha256": "ec03309564ec81c3be0853a69f9af8d70291476b8f9c2e7c2df1c42d50e279eb"
+      },
+      {
+        "context_tokens": 21,
+        "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/01-arith_17x19.i32",
+        "prompt_id": "arith_17x19",
+        "sha256": "5c245051533ec02d744a3e539751dd2137278d8b9c2018bfa3fcdb3b22049ee7"
+      },
+      {
+        "context_tokens": 18,
+        "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/02-constraint_words.i32",
+        "prompt_id": "constraint_words",
+        "sha256": "05445088a4c18d8796dfa9b7553fef127677e9b2fad3d68c89ef2b0346479400"
+      },
+      {
+        "context_tokens": 16,
+        "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/03-ppl_short_1.i32",
+        "prompt_id": "ppl_short_1",
+        "sha256": "e49324063d59910dd2e84f2e73ba7dc95c696f532af3982802e8191a7b31cdb8"
+      },
+      {
+        "context_tokens": 14,
+        "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/04-ppl_short_2.i32",
+        "prompt_id": "ppl_short_2",
+        "sha256": "861b66e1a9b7d48c446535d36389657cf943a1fda6f1f007a06aa06707e431c1"
+      },
+      {
+        "context_tokens": 16,
+        "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/05-ppl_short_3.i32",
+        "prompt_id": "ppl_short_3",
+        "sha256": "585c312a17fcb4eb6bd43293d7df7df8f1db6a58435c54b4f481955bf8d95449"
+      },
+      {
+        "context_tokens": 15033,
+        "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/06-long_retrieval.i32",
+        "prompt_id": "long_retrieval",
+        "sha256": "0bbc7a19c8e00840b015a89706e68e56f6eb2b85b6bea1ba04661f403a22efab"
+      },
+      {
+        "context_tokens": 25,
+        "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/07-short_reasoning.i32",
+        "prompt_id": "short_reasoning",
+        "sha256": "0bb5fb4072b7e80dfb50cf6d1f0adbba528caa8d071ee51545fdfd24d979057b"
+      }
+    ],
+    "fixture_id": "p9-deepseek-v2-lite-deterministic-v1",
+    "manifest": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/tokens/p9-prompts.manifest",
+    "manifest_sha256": "afdae02d0ae6d76242a86ef6a100fc05f74ea34ed0b4a89c6cac8b27f9dd1b4e",
+    "schema": "beglin-quality-materialized-fixture/1"
+  },
+  "note": "Raw physical evidence only; EOE normalization, Policy Freeze, and P9 final audit remain required.",
+  "production_write_allowed": false,
+  "result_sha256": "86153165cfe82a2e1ce0a37ff49d60f338a9c1a80b3080f32b00dec2e04c9c06",
+  "run_id": "p9-20260928T182317Z-56784",
+  "runner_id": "xox-p9-quality-v1",
+  "runner_sha256": "5e99120e1c2c8a5764b0f330a32543412974766757db75c87fae33d8e2155336",
+  "runs": [
+    {
+      "exit_code": 0,
+      "finite_logits": true,
+      "log_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/reference.log",
+      "log_sha256": "e2b0e746a2c8730e1e18f833f2baf982e6f268edd3d8e6827bc6dcc862181003",
+      "logits_checked": 14950400,
+      "metrics_complete": true,
+      "parse_error": null,
+      "parsed_request_count": 16,
+      "policy": {
+        "precision": "safe_baseline",
+        "promotion_lines": [],
+        "representation": "production_q4g64"
+      },
+      "policy_hash": "5f39be0f0aff19f3b8cb80829acf677746937e83ba7ac5b1af664d6940559ada",
+      "promotion_path": null,
+      "request_count": 16,
+      "status": "PASS",
+      "variant": "reference"
+    },
+    {
+      "exit_code": 0,
+      "finite_logits": true,
+      "log_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/n4.log",
+      "log_sha256": "908fadefc68b2d5632ac1860adb81736e1381a54f287db93f8059dc8044e817c",
+      "logits_checked": 14950400,
+      "metrics_complete": true,
+      "parse_error": null,
+      "parsed_request_count": 16,
+      "policy": {
+        "n": 4,
+        "promotion_lines": [],
+        "representation": "production_q4g64"
+      },
+      "policy_hash": "2a16e484d9e6c77b1f220429daf9dfc7eb2e7655d6c9c0a965a7a9ef84a3f158",
+      "promotion_path": null,
+      "request_count": 16,
+      "status": "PASS",
+      "variant": "n4"
+    },
+    {
+      "exit_code": 0,
+      "finite_logits": true,
+      "log_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/n5.log",
+      "log_sha256": "14c20b26f4914b7b212f097b842401f4ae009a0389b886470c1fbef6f6d57b76",
+      "logits_checked": 14950400,
+      "metrics_complete": true,
+      "parse_error": null,
+      "parsed_request_count": 16,
+      "policy": {
+        "n": 5,
+        "promotion_lines": [
+          "kv_a_proj_with_mqa 11 5",
+          "shared_up_proj 3 5"
+        ],
+        "representation": "qNg64"
+      },
+      "policy_hash": "162e56630106e0a3e60574f12f128be2ab6bcf04ded9e368578d50bb1c349014",
+      "promotion_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/n5.promotion.txt",
+      "request_count": 16,
+      "status": "PASS",
+      "variant": "n5"
+    },
+    {
+      "exit_code": 0,
+      "finite_logits": true,
+      "log_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/n6.log",
+      "log_sha256": "bf64e5530e0b199ce6a1a04fc7669c46c0e37c81cec0a71ea564939443723626",
+      "logits_checked": 14950400,
+      "metrics_complete": true,
+      "parse_error": null,
+      "parsed_request_count": 16,
+      "policy": {
+        "n": 6,
+        "promotion_lines": [
+          "kv_a_proj_with_mqa 11 6",
+          "shared_up_proj 3 6"
+        ],
+        "representation": "qNg64"
+      },
+      "policy_hash": "5fe2e45c748d98863e5edf5040afe44e8ea636bba1c4f582bcb9aed4dc3957fe",
+      "promotion_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/n6.promotion.txt",
+      "request_count": 16,
+      "status": "PASS",
+      "variant": "n6"
+    },
+    {
+      "exit_code": 0,
+      "finite_logits": true,
+      "log_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/n7.log",
+      "log_sha256": "b001b65e2d901f3c2440e76294d7205d650ea3bbd38eca4c48224f1b9905c9a2",
+      "logits_checked": 14950400,
+      "metrics_complete": true,
+      "parse_error": null,
+      "parsed_request_count": 16,
+      "policy": {
+        "n": 7,
+        "promotion_lines": [
+          "kv_a_proj_with_mqa 11 7",
+          "shared_up_proj 3 7"
+        ],
+        "representation": "qNg64"
+      },
+      "policy_hash": "c53dc439dc2b84995798cc50c3c15ef5b178e8d146c4d757775d14e85500ade9",
+      "promotion_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_quality_runs/p9-20260928T182317Z-56784/n7.promotion.txt",
+      "request_count": 16,
+      "status": "PASS",
+      "variant": "n7"
+    }
+  ],
+  "schema": "beglin-p9-physical-quality-run/1",
+  "source_manifest": [
+    {
+      "path": "beglin_p9_quality_fixture.py",
+      "sha256": "5e99120e1c2c8a5764b0f330a32543412974766757db75c87fae33d8e2155336",
+      "size_bytes": 17212
+    },
+    {
+      "path": "CMakeLists.txt",
+      "sha256": "d7ee2e11aa799476bbde59a309655ac5e7b2414e5e71d8d5f76a71a627afc95e",
+      "size_bytes": 5847
+    },
+    {
+      "path": "qwen_infer.c",
+      "sha256": "dfbc62d96dcb62cc46d0f7ad611fe8b58cb89f50057ae2c5dc456adc7dc91601",
+      "size_bytes": 1240954
+    },
+    {
+      "path": "hf_config.c",
+      "sha256": "78f8c7928bcbe5fc60170a78a143e395bcde18942440d583e1c2a1ea94342b4a",
+      "size_bytes": 13078
+    },
+    {
+      "path": "safetensors_load.c",
+      "sha256": "b074019f4d0fdb5ce94df48a9b8a4b9dbd197edd35dfbf98e4ef505041094da2",
+      "size_bytes": 19533
+    },
+    {
+      "path": "safetensors_quants.c",
+      "sha256": "297c764f22f25b36a491d4215cc5e6beec47651fdb3928a4582dcabb9c659fee",
+      "size_bytes": 2274
+    },
+    {
+      "path": "gguf_load.c",
+      "sha256": "783e8d9f9e33e6f970ed2080a05203cf05d0efec573b0fdc00e2741fb13fbcce",
+      "size_bytes": 15777
+    },
+    {
+      "path": "gguf_quants.c",
+      "sha256": "00491fc9ebf2afa2a3446f8c12119a50d11612d0571997104b72bbc7e89b6c8a",
+      "size_bytes": 16591
+    },
+    {
+      "path": "gguf_transcode.c",
+      "sha256": "7371cc352226e912dbf42762e5e63a70e91acb5c90691d90e32401e18af7ec5f",
+      "size_bytes": 8199
+    },
+    {
+      "path": "gguf_cache.c",
+      "sha256": "eca03b4e3a3030978fd80bafee8d77c42d38db50b47d2204e5c3282edfd25957",
+      "size_bytes": 10528
+    },
+    {
+      "path": "bpe_tokenizer.c",
+      "sha256": "6e74351dadfb694b0d63752b692536087ecaee72368501168f58c1baf34db125",
+      "size_bytes": 38204
+    },
+    {
+      "path": "bpe_tokenizer.h",
+      "sha256": "d5561bfbe0bf40fefb5e2e7b5c58b1bd9f525576ec991219f8a67877e9574f58",
+      "size_bytes": 4710
+    },
+    {
+      "path": "gguf_write.c",
+      "sha256": "25be559aed622cd5021bfc082a5b236d293a8df6e52498c8c0ac2549b66d0554",
+      "size_bytes": 11032
+    },
+    {
+      "path": "gguf_write.h",
+      "sha256": "7bfee2136e827943489473bd9e1ee5cbe0b4e1467b7021d2755d3e1fb65eaa52",
+      "size_bytes": 5156
+    },
+    {
+      "path": "gguf_write_quants.c",
+      "sha256": "6823ffd52162e4042b8dc05758d8709c8224e75a2a5ed65d4ccfd3eb85bfacb4",
+      "size_bytes": 17127
+    },
+    {
+      "path": "gguf_write_quants.h",
+      "sha256": "fc28c1f9e238900627b9c9c0327565bb0e3e9e8d77c31a8ed8211dfd7aecf518",
+      "size_bytes": 3988
+    },
+    {
+      "path": "sme2_kai.c",
+      "sha256": "29ffaed06236733325a19f8608930b4d79a0047f9d208f41201ab50fb155b96f",
+      "size_bytes": 19530
+    },
+    {
+      "path": "mlx_moe.cpp",
+      "sha256": "41f8f6d9c640791ca855884d2c60751e6bcaca1b257280ddbfbff18f4bb7b058",
+      "size_bytes": 184393
+    },
+    {
+      "path": "mlx_moe.h",
+      "sha256": "3fefc41fae6b37f34f17f9000107636ce21edb7c0aa515e334690f55b78b17ca",
+      "size_bytes": 20931
+    },
+    {
+      "path": "benchmarks/quality/execution_adapter.py",
+      "sha256": "d04e76542f1e22bfd80844d1d799bf8bc14c89528c85a5dc67b3a52fa725c9ed",
+      "size_bytes": 22263
+    },
+    {
+      "path": "benchmarks/quality/reference_evaluator.py",
+      "sha256": "88488ce0fef403c23eca09b0c1042034d0b3ebf1e10b531fb4661dc91864f7ac",
+      "size_bytes": 2383
+    },
+    {
+      "path": "configs/quality/p9_execution_adapter_v1.json",
+      "sha256": "765cbb08bef8be6c4f1044aded4a1002ace6d7d4142a5ce7720e4d76a58d7c2b",
+      "size_bytes": 2281
+    },
+    {
+      "path": "configs/quality/p9_token_fixture_v1.json",
+      "sha256": "990e931ea84c5e018449eae4f20a1e075c2c345adbc2dd7ac839092bcfb28260",
+      "size_bytes": 3720
+    },
+    {
+      "path": "configs/quality/deterministic_corpus_v1.json",
+      "sha256": "a8a98c351e76675a38947d1220b95850c488ebcd2b9f1221093aeb311c4d513d",
+      "size_bytes": 2934
+    },
+    {
+      "path": "kleidiai/kai_common_sme_asm.S",
+      "sha256": "89537cbb0adcb6202da495ae3ab01fca5160ca31ff424ede20645984cfef21b4",
+      "size_bytes": 2068
+    },
+    {
+      "path": "kleidiai/kai_lhs_pack_f16pmrx2_f32_neon.c",
+      "sha256": "d451b7bf3b8fb198e33426e8d594760d76f5e44e257f5464d3a5c771747fff34",
+      "size_bytes": 7330
+    },
+    {
+      "path": "kleidiai/kai_lhs_quant_pack_qsi8d32p_f32.c",
+      "sha256": "c1a6893a12460576c86fe4a305373eddb62561f408c1061e93babcafc89618cc",
+      "size_bytes": 4178
+    },
+    {
+      "path": "kleidiai/kai_lhs_quant_pack_qsi8d32p_f32_neon.c",
+      "sha256": "fecf148aabd23bc3c5964d168fcbd27eb0facfa3a6d14d57ff60f4bf4a31695a",
+      "size_bytes": 4069
+    },
+    {
+      "path": "kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa.c",
+      "sha256": "043bae3eb6cc4e6eecc193d107ef294704a748e33cc6142365807602558f1fbb",
+      "size_bytes": 7942
+    },
+    {
+      "path": "kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa_asm.S",
+      "sha256": "a8617f0f2e2bed3f708450bbde338339379baee7028b4bc50de6128b4fc9bdb5",
+      "size_bytes": 5974
+    },
+    {
+      "path": "kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa.c",
+      "sha256": "dd1acb41dd762251899d30bf95989c3292c295aa51e5cd3015b6d7bfe0db9d4d",
+      "size_bytes": 13898
+    },
+    {
+      "path": "kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa_asm.S",
+      "sha256": "8a25f5c386c98fa130da161b27596c2c7d1a18bb49010b848d64f963b6fe812a",
+      "size_bytes": 8022
+    },
+    {
+      "path": "kleidiai/kai_rhs_pack_nxk_qsi4c32p_qsu4c32s1s0.c",
+      "sha256": "2bd83a880dc1d9200965e411aa62ae3db2d30fe57cc20b64e06f1fec64c49d49",
+      "size_bytes": 10752
+    },
+    {
+      "path": "kleidiai/kai_rhs_pack_nxk_qsi4c32ps1s0scalef16_qsu4c32s16s0_neon.c",
+      "sha256": "78ee4cd8497ab48a6aeb95cc1cf712eed02234845810e1b81ce35d8b8ee36c7f",
+      "size_bytes": 20766
+    },
+    {
+      "path": "kleidiai/kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.c",
+      "sha256": "5dd777ed861ca1940a6c3693107ca4185b0a56d54ab2ac5aaa4a644fe507a0fc",
+      "size_bytes": 17086
+    }
+  ],
+  "source_manifest_sha256": "f186d0b5325f746f58d0540d4dc23003887aac134d8f2f79494f5b0967cf736a",
+  "started_at": "2026-09-28T18:23:17.094366+00:00",
+  "status": "P9_PHYSICAL_RAW_PASS"
+}

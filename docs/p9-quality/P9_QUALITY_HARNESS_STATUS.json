@@ -2,7 +2,7 @@
   "schema": "beglin-p9-quality-harness-status/1",
   "observed_at": "2026-09-29",
   "agent": "A0",
-  "status": "P9_PHYSICAL_JOB_RUNNING",
+  "status": "P9_QUALITY_FAIL",
   "branch": "prod/p9-integration",
   "baseline_commit": "727d950ef420320455b5071969efd49e3751e8c8",
   "owned_paths": [
@@ -28,7 +28,11 @@
     "token_fixture_materialization": "PASS_8_OF_8",
     "control_mismatch_fail_closed": "PASS",
     "missing_metric_fail_closed": "PASS",
-    "policy_freeze_guard": "PASS"
+    "policy_freeze_guard": "PASS",
+    "physical_raw_matrix": "PASS_5_OF_5",
+    "normalized_artifacts": "PASS_5_OF_5",
+    "metric_recomputation": "PASS_4_OF_4",
+    "independent_final_audit": "P9_EVIDENCE_INDEPENDENT_PASS"
   },
   "hashes": {
     "corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
@@ -38,7 +42,13 @@
     "adapter_preflight_sha256": "40608e7525d989a9e2c5cbe85491fe8a97158925b79e12014e7c7562def6abd8",
     "post_p8_plan_hash": "be100c388fb66efd0ee86362dbd8d72b5f20b23224b4fabe2baa77fe3ce0106b",
     "post_p8_plan_file_sha256": "6b0ce342dec75b96c76dbc6bc135626af93b38f255ced1eab1f5fd2c237c1acb",
-    "runner_sha256": "5e99120e1c2c8a5764b0f330a32543412974766757db75c87fae33d8e2155336"
+    "runner_sha256": "5e99120e1c2c8a5764b0f330a32543412974766757db75c87fae33d8e2155336",
+    "physical_result_sha256": "430c507e061f561880eac2267a0ad2df07680fafcbf6d05f735ad4209819e4d3",
+    "physical_result_hash": "86153165cfe82a2e1ce0a37ff49d60f338a9c1a80b3080f32b00dec2e04c9c06",
+    "evaluation_file_sha256": "37681b0603d14a680423233ed708140d451bd123e676df12372a3182d2559e9c",
+    "evaluation_hash": "ceb40a9c18a92231f484d9b528aaeca124218ff48d40ab76d9a52f466f954938",
+    "independent_audit_file_sha256": "1c2de16bf274f728d6711d943b30a5a357d7f210af464d02279b37abd752ffbc",
+    "independent_audit_hash": "481746339b5e87c28c9084301797284b7887c70dc397f9f6e701bab5e7d91074"
   },
   "adapter": {
     "id": "p9-xox-mlx-metal-v1",
@@ -51,9 +61,26 @@
       "beglin_p9_quality_fixture.py"
     ]
   },
-  "actual_physical_comparison_run": "RUNNING",
+  "actual_physical_comparison_run": "P9_PHYSICAL_RAW_PASS",
   "physical_job_id": "job_f640ce1213e392ed07d7d627482aa975",
   "physical_run_id": "p9-20260928T182317Z-56784",
+  "physical_job_state": "SUCCEEDED",
+  "physical_job_exit_code": 0,
+  "quality_outcome": {
+    "overall": "P9_QUALITY_FAIL",
+    "n4": "P9_QUALITY_PASS",
+    "n5": "P9_QUALITY_FAIL",
+    "n6": "P9_QUALITY_FAIL",
+    "n7": "P9_QUALITY_FAIL",
+    "eligible_candidate_ns": [
+      4
+    ],
+    "rejected_candidate_ns": [
+      5,
+      6,
+      7
+    ]
+  },
   "execution_blocker": null,
   "policy_status": "FROZEN",
   "numeric_acceptance_rules_frozen": true,
@@ -62,9 +89,9 @@
   "production_write_allowed": false,
   "merge_release_authority": false,
   "next": [
-    "wait for the active identical-control reference plus n4/n5/n6/n7 physical matrix",
-    "normalize all five artifacts and measure every required metric",
-    "freeze numeric acceptance policy only after baseline evidence review",
-    "complete independent final audit before any production decision"
+    "preserve this frozen failed matrix and its independent audit",
+    "do not promote n5, n6, or n7",
+    "investigate candidate output drift only in a new versioned engineering iteration",
+    "require a new complete physical matrix and independent audit before any production decision"
   ]
 }

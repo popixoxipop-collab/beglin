@@ -17,7 +17,7 @@ The long-context and compact-KV changes are compile/runtime gated. Default and P
 
 ## Current phase
 
-Status: **P9_PHYSICAL_JOB_RUNNING**
+Status: **P9_QUALITY_FAIL**
 
 The P8 gate is now satisfied by `P8_INTEGRATION_GATE_2026-09-28.json`, which is hash-bound to the canonical P8 result and independent audit. It supplies:
 
@@ -26,7 +26,9 @@ The P8 gate is now satisfied by `P8_INTEGRATION_GATE_2026-09-28.json`, which is 
 - `P8_EVIDENCE_INDEPENDENT_PASS`
 - overall `P8_INTEGRATION_PASS`
 
-`P9_EXECUTION_PLAN_2026-09-29.json` binds the explicit `p9-xox-mlx-metal-v1` adapter, pinned token fixture, deterministic reference evaluator, reference+n4+n5+n6+n7 mapping, and XOX runner. Adapter preflight now passes with no blockers. Registration evidence is frozen in `P9_TAILNET_REGISTRATION_EVIDENCE_2026-09-29.json`.
+`P9_EXECUTION_PLAN_2026-09-29.json` binds the explicit `p9-xox-mlx-metal-v1` adapter, pinned token fixture, deterministic reference evaluator, reference+n4+n5+n6+n7 mapping, and XOX runner. Adapter preflight passed with no blockers. Registration evidence is frozen in `P9_TAILNET_REGISTRATION_EVIDENCE_2026-09-29.json`.
+
+The registered XOX job completed successfully and produced five structurally valid physical logs. The frozen quality policy independently classifies n4 as PASS and n5/n6/n7 as FAIL. `P9_C_INDEPENDENT_FINAL_AUDIT_2026-09-29.json` verifies the raw-log hashes, physical-result hash, normalized artifact hashes, control identity, all recomputed metrics, and all 17 policy rules. Evidence integrity passes, but the P9 quality matrix does not; production release is not authorized.
 
 The 15,033-token long prompt requires 15,045 positions including generation. The isolated P9 build provides 16,384 positions and uses full causal attention with a symmetric int8 K/V cache plus per-head/position float16 scales. This avoids the roughly 9 GiB float32 cache and same-slot batch replication that would exceed XOX's Metal memory budget. This cache format is a shared control across all five P9 cells and is not enabled in the default/P8 build.
 
@@ -88,9 +90,28 @@ python3 -m benchmarks.quality.evaluate \
   --candidate n4.json --candidate n5.json --candidate n6.json --candidate n7.json \
   --corpus configs/quality/deterministic_corpus_v1.json \
   --policy configs/quality/quality_policy_v1.json
+
+python3 -m benchmarks.quality.final_audit \
+  docs/p9-quality/runs/p9-20260928T182317Z-56784 \
+  --corpus configs/quality/deterministic_corpus_v1.json \
+  --policy configs/quality/quality_policy_v1.json \
+  --policy-freeze docs/p9-quality/P9_POLICY_FREEZE_2026-09-29.json \
+  --registration docs/p9-quality/P9_TAILNET_REGISTRATION_EVIDENCE_2026-09-29.json \
+  --observed-at 2026-09-28T18:51:06Z
 ```
 
-`quality_policy_v1.json` is now `FROZEN` against the physical reference artifact. The freeze occurred before any candidate log was inspected; missing metrics still fail closed and candidate results remain pending.
+`quality_policy_v1.json` is `FROZEN` against the physical reference artifact. The freeze occurred before any candidate log was inspected, and the numeric rules were not changed after seeing candidate results. Missing metrics still fail closed.
+
+## Final outcome
+
+| Cell | Gate | Perplexity ratio | Quality score | Exact output match |
+|---|---:|---:|---:|---:|
+| n4 | PASS | 1.000000 | 1.000000 | 1.000 |
+| n5 | FAIL | 1.011229 | 0.803571 | 0.750 |
+| n6 | FAIL | 0.996280 | 0.819196 | 0.750 |
+| n7 | FAIL | 1.025093 | 0.928571 | 0.875 |
+
+n5, n6, and n7 each fail the frozen candidate-quality, quality-delta, and exact-output-match rules. They still pass the finite-logits, determinism, perplexity, task-score, promotion-count, activation-drift, router-near-tie, and long-context-stability rules. n4 is the only P9-eligible cell in this run; that isolated PASS does not turn the failed full matrix into a production release approval.
 
 ## P7 compatibility
 
@@ -109,7 +130,10 @@ EOE validation completed on 2026-09-29:
 - P8 compatibility gate: PASS / P8_INTEGRATION_PASS
 - post-P8 matrix planner: PASS / P9_EXECUTION_ADAPTER_READY
 - current P7 readiness probe: P7_INSUFFICIENT_FOR_P9
-- physical reference vs n=4/5/6/7 quality run: RUNNING / XOX job `job_f640ce1213e392ed07d7d627482aa975`
+- physical reference vs n=4/5/6/7 quality run: PASS_5_OF_5_RAW / XOX job `job_f640ce1213e392ed07d7d627482aa975`
 - numeric acceptance thresholds: FROZEN_BEFORE_CANDIDATE_OBSERVATION
+- normalized quality matrix: P9_QUALITY_FAIL / n4 PASS, n5+n6+n7 FAIL
+- independent final audit: P9_EVIDENCE_INDEPENDENT_PASS
+- production release authorization: DENIED
 
 The current P7 physical run has six real activation cells and five performance cells, but it does not carry the complete token-level NLL/output/finite-logits/promotion/router/task/long-context evidence required by this harness. It is therefore evidence input, not a substitute for P9.
