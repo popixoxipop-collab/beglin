@@ -1,0 +1,307 @@
+{
+  "schema": "beglin-p8-agent-c-independent-baseline-audit/1",
+  "observed_at": "2026-09-28",
+  "agent": "C",
+  "role": "independent evidence auditor",
+  "status": "BASELINE_AUDIT_PASS_AWAITING_AGENT_A_B_RESULTS",
+  "constraints_observed": {
+    "modified_agent_a_files": false,
+    "modified_agent_b_files": false,
+    "merge_performed": false,
+    "release_performed": false,
+    "writes_limited_to_audit_reports": true
+  },
+  "authoritative_inputs": {
+    "active_descriptor": {
+      "path": "beglin-dashboard/docs/ACTIVE_PHYSICAL_SWEEP.json",
+      "sha256": "e7d6b75d6cac5f4256b774332ee9365a312ae3ee82d98b0ea2cb6230e21bd99c"
+    },
+    "raw_sweep": {
+      "path": "beglin-dashboard/docs/P7_XOX_INSTRUMENTED_SWEEP_RAW_2026-09-27.json",
+      "sha256": "ff747940d04f45db45b3fcc3cee12bf59f18dfb8ec98c01fdd252d98c07336ff"
+    },
+    "public_summary": {
+      "path": "beglin-dashboard/docs/P7_XOX_INSTRUMENTED_SWEEP_PUBLIC_SUMMARY_2026-09-27.json",
+      "sha256": "63b7131080c2c3095eb032f07f328fb8d4ceb4796512d19f98ff2ff87e6c129a"
+    },
+    "final_certification": {
+      "path": "beglin-dashboard/docs/P7_FINAL_CERTIFICATION_2026-09-28.json",
+      "sha256": "0b69cc2f0914c705b5abd0b08174322e21096b33d26297b82322080774798cf0"
+    },
+    "active_report_evidence": {
+      "path": "beglin-dashboard/docs/P7_ACTIVE_REPORT_EVIDENCE_2026-09-27.json",
+      "sha256": "1a26a8dd7a42da9e99d42762fb70b6c72a6063ef5c7e704125928926a8dbaeaa"
+    },
+    "original_tailnet_job": {
+      "job_id": "job_60ceca6c048312368a891bdae5ce337c",
+      "state": "SUCCEEDED",
+      "exit_code": 0,
+      "request_hash": "928ceb743c21275b9a36c3b759b1df2fe9548829fbd3215b9c106bf34dad132f",
+      "worker_version": "g5-posix-worker-0.1"
+    }
+  },
+  "control_identity": {
+    "source_commit": "bc5f3d058d9e819bd088f42452b6ded0e12f3060",
+    "source_commit_matches_observed_xox_head": true,
+    "source_tree": "b7b6e589b5d93fb820bbfb0af06e1d2b1f3bf52d90814b288f3537e2e3cfa66e",
+    "binary_sha256": "9b4c54d48587c18007076e16ff702d02fac0fac8d5d12000fa5936df489f4f79",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "mlx_moe_sha256_expected": "7a2f69fe96e7df12aae532a9c9642d825a1f6a96e2ba9b5d7838f82ea99a9712",
+    "mlx_moe_sha256_observed_directly": "7a2f69fe96e7df12aae532a9c9642d825a1f6a96e2ba9b5d7838f82ea99a9712",
+    "model_id": "deepseek-v2-lite",
+    "backend": "mlx_metal",
+    "hardware_id": "xox-apple-silicon",
+    "prompt_set_id": "qwen-gpu-online-embedded-corpus-v1",
+    "seed": 0
+  },
+  "audit_start_source_fingerprint": {
+    "qwen_infer_c_sha256": "4599edae10d7a093a08b0bb2e0681c368a227cb66ce29300210499b92ecdf414",
+    "cmakelists_sha256": "9c0c53cc4cc0acc854de541b6486363dfb43324fd283cebb23ebeda570f6e1d8",
+    "mlx_moe_cpp_sha256": "7a2f69fe96e7df12aae532a9c9642d825a1f6a96e2ba9b5d7838f82ea99a9712",
+    "mlx_moe_h_sha256": "2cf88a47b4383d12610a99e3e9d1661d981ab1f31bfb6abb4e85dd58d0299725",
+    "note": "These are read-only fingerprints observed at Agent C audit start and are intended for A/B before/after comparison."
+  },
+  "independent_recalculation": {
+    "cells": 8,
+    "all_terminal": true,
+    "terminal_counts": {
+      "FAILED_RUNTIME": 3,
+      "FAILED_EVIDENCE": 5
+    },
+    "nonzero_returncode_cells": [
+      "kv_a_proj_with_mqa/L11/n4",
+      "kv_a_proj_with_mqa/L11/n7",
+      "shared_up_proj/L3/n4"
+    ],
+    "requested_policy_applied_true_count": 0,
+    "activation_bearing_cells": 6,
+    "performance_bearing_cells": 5,
+    "activation_n_mismatch_count": 0,
+    "activation_policy_hash_mismatch_count": 0,
+    "activation_role_mismatch_count": 0,
+    "activation_layer_mismatch_count": 0,
+    "all_counts_corrected_hits_zero": true,
+    "all_counts_orig_hits_zero": true,
+    "production_control_unchanged": true,
+    "production_write_allowed": false,
+    "result_sha256": "c461729bb4527978d9037eb156fdcb427e4a8c4e5814f23536c90509cda596b1"
+  },
+  "cells": [
+    {
+      "key": "kv_a_proj_with_mqa/L11/n4",
+      "returncode": 1,
+      "terminal_state": "FAILED_RUNTIME",
+      "classification": "UNSUPPORTED_OR_RUNTIME_ERROR",
+      "requested_policy_applied": false,
+      "requests_completed": 0,
+      "activation_present": false,
+      "performance_present": false,
+      "log_sha256": "6e249caa86c2d2eb14a3125a418053f71a361d0842f2b5441651931df1a59d32"
+    },
+    {
+      "key": "kv_a_proj_with_mqa/L11/n5",
+      "returncode": 0,
+      "terminal_state": "FAILED_EVIDENCE",
+      "classification": "POLICY_NOT_APPLIED",
+      "requested_policy_applied": false,
+      "requests_completed": 12,
+      "activation_present": true,
+      "actual_activation_n": 5,
+      "activation_policy_hash_matches_cell_policy_hash": true,
+      "activation_role_layer_match": true,
+      "sample_count": 32768,
+      "mean_abs": 0.345896677,
+      "rms": 0.978154826,
+      "tok_per_s": 175.232,
+      "ttft_mean_ms": 54.97,
+      "log_sha256": "52d95841fe81a3d09932d75b508fe85edcef47f7a693d043581a721e988eb1dc"
+    },
+    {
+      "key": "kv_a_proj_with_mqa/L11/n6",
+      "returncode": 0,
+      "terminal_state": "FAILED_EVIDENCE",
+      "classification": "POLICY_NOT_APPLIED",
+      "requested_policy_applied": false,
+      "requests_completed": 12,
+      "activation_present": true,
+      "actual_activation_n": 6,
+      "activation_policy_hash_matches_cell_policy_hash": true,
+      "activation_role_layer_match": true,
+      "sample_count": 32768,
+      "mean_abs": 0.345896677,
+      "rms": 0.978154826,
+      "tok_per_s": 175.624,
+      "ttft_mean_ms": 54.86,
+      "log_sha256": "0dad6c99d55833a9ab566cad9b8f3e2dfad8578e951aa897216cddcf966ebfd1"
+    },
+    {
+      "key": "kv_a_proj_with_mqa/L11/n7",
+      "returncode": 1,
+      "terminal_state": "FAILED_RUNTIME",
+      "classification": "UNSUPPORTED_OR_RUNTIME_ERROR",
+      "requested_policy_applied": false,
+      "requests_completed": 0,
+      "activation_present": true,
+      "actual_activation_n": 7,
+      "activation_policy_hash_matches_cell_policy_hash": true,
+      "activation_role_layer_match": true,
+      "sample_count": 32768,
+      "mean_abs": 0.345896677,
+      "rms": 0.978154826,
+      "performance_present": false,
+      "log_sha256": "0dd3d8de45139187e3af64fa22f1c85cb745538ee4129748d74de914514a45db"
+    },
+    {
+      "key": "shared_up_proj/L3/n4",
+      "returncode": 1,
+      "terminal_state": "FAILED_RUNTIME",
+      "classification": "UNSUPPORTED_OR_RUNTIME_ERROR",
+      "requested_policy_applied": false,
+      "requests_completed": 0,
+      "activation_present": false,
+      "performance_present": false,
+      "log_sha256": "7c7737e8f46a5bedc89577d9db3c6c93899879ad503d49549374928d783ca283"
+    },
+    {
+      "key": "shared_up_proj/L3/n5",
+      "returncode": 0,
+      "terminal_state": "FAILED_EVIDENCE",
+      "classification": "POLICY_NOT_APPLIED",
+      "requested_policy_applied": false,
+      "requests_completed": 12,
+      "activation_present": true,
+      "actual_activation_n": 5,
+      "activation_policy_hash_matches_cell_policy_hash": true,
+      "activation_role_layer_match": true,
+      "sample_count": 32768,
+      "mean_abs": 0.29305122,
+      "rms": 0.412701973,
+      "tok_per_s": 169.355,
+      "ttft_mean_ms": 55.93,
+      "log_sha256": "dc62fdd4e04689fe17b9aa6e65cb34d5ab073569191da5fc09a010ade33562cf"
+    },
+    {
+      "key": "shared_up_proj/L3/n6",
+      "returncode": 0,
+      "terminal_state": "FAILED_EVIDENCE",
+      "classification": "POLICY_NOT_APPLIED",
+      "requested_policy_applied": false,
+      "requests_completed": 12,
+      "activation_present": true,
+      "actual_activation_n": 6,
+      "activation_policy_hash_matches_cell_policy_hash": true,
+      "activation_role_layer_match": true,
+      "sample_count": 32768,
+      "mean_abs": 0.29305122,
+      "rms": 0.412701973,
+      "tok_per_s": 169.717,
+      "ttft_mean_ms": 55.95,
+      "log_sha256": "5f9bbb08d97f61e1ad9b3a26b874c66872daf9b86f43bb7ab3802e8ffb9026e5"
+    },
+    {
+      "key": "shared_up_proj/L3/n7",
+      "returncode": 0,
+      "terminal_state": "FAILED_EVIDENCE",
+      "classification": "POLICY_NOT_APPLIED",
+      "requested_policy_applied": false,
+      "requests_completed": 12,
+      "activation_present": true,
+      "actual_activation_n": 7,
+      "activation_policy_hash_matches_cell_policy_hash": true,
+      "activation_role_layer_match": true,
+      "sample_count": 32768,
+      "mean_abs": 0.29305122,
+      "rms": 0.412701973,
+      "tok_per_s": 166.186,
+      "ttft_mean_ms": 55.71,
+      "log_sha256": "05a4aca8554ae4dda144e4f43e9eaf0dc3a00ba0f64cf7f76bdcb596ab8e339c"
+    }
+  ],
+  "public_summary_consistency": {
+    "run_id_match": true,
+    "result_sha256_match": true,
+    "binary_sha256_match": true,
+    "checkpoint_sha256_match": true,
+    "source_commit_match": true,
+    "mlx_moe_sha256_match": true,
+    "terminal_counts_match": true,
+    "run_count_match": true,
+    "per_cell_terminal_state_match": true,
+    "per_cell_classification_match": true,
+    "expected_normalization_difference": "experiment IDs are lowercased in the public summary"
+  },
+  "corroboration_not_primary": {
+    "project_certifier": {
+      "result": "PASS",
+      "linked_activation_event_count": 6,
+      "linked_v2_event_type": "layer.activation_summary",
+      "verified_activation_event_ids": [
+        "p7-recovery2:c461729bb4527978:kv_a_proj_with_mqa:L11:n5:activation",
+        "p7-recovery2:c461729bb4527978:kv_a_proj_with_mqa:L11:n6:activation",
+        "p7-recovery2:c461729bb4527978:kv_a_proj_with_mqa:L11:n7:activation",
+        "p7-recovery2:c461729bb4527978:shared_up_proj:L3:n5:activation",
+        "p7-recovery2:c461729bb4527978:shared_up_proj:L3:n6:activation",
+        "p7-recovery2:c461729bb4527978:shared_up_proj:L3:n7:activation"
+      ],
+      "problems": []
+    }
+  },
+  "independent_findings": [
+    {
+      "id": "C-F1",
+      "severity": "BLOCKING_FOR_P8",
+      "finding": "Two n=4 cells fail before any activation/request evidence is produced, and kv_a/L11 n=7 fails after a valid n=7 activation is already observed.",
+      "owner_hint": "Agent A",
+      "required_resolution": "Classify n=4 as explicit unsupported or fix the runtime path; isolate and fix the post-binding kv_a/L11 n=7 runtime failure."
+    },
+    {
+      "id": "C-F2",
+      "severity": "BLOCKING_FOR_P8",
+      "finding": "All five returncode=0 / 12-request cells are classified POLICY_NOT_APPLIED even though their activation evidence exactly matches requested role/layer/n and the cell policy_hash.",
+      "owner_hint": "Agent B",
+      "required_resolution": "Replace/repair the policy-applied attribution rule and prove requested policy vs actual bound precision without relying only on promotion text logs."
+    },
+    {
+      "id": "C-F3",
+      "severity": "IMPORTANT",
+      "finding": "kv_a/L11 n=7 has a real n=7 activation binding before the runtime failure.",
+      "owner_hint": "Agent A + Agent B boundary",
+      "required_resolution": "Do not classify this as a pure binding failure; preserve the distinction between successful binding and later runtime failure."
+    },
+    {
+      "id": "C-F4",
+      "severity": "INFORMATIONAL",
+      "finding": "All six activation-bearing cells have exact n/role/layer/policy-hash agreement; no attribution mismatch was found in the activation record itself.",
+      "owner_hint": "A0",
+      "required_resolution": "Use this as baseline evidence when comparing Agent B's new attribution output; do not use it alone to relabel P7 terminal states."
+    }
+  ],
+  "limitations": [
+    "The alpha.53 exec policy denied direct sqlite3 read-only access to dashboard.db, so journal rows were not independently queried with sqlite3.",
+    "The six journal event IDs were corroborated by the existing certifier output, not treated as the primary independent evidence source.",
+    "The binary and checkpoint hashes were independently observed in the original Tailnet job stdout and cross-checked against raw/public summaries; their underlying files were not directly re-hashed through this workspace boundary.",
+    "source_tree is a project-specific 64-hex build identity and was cross-checked across job/raw/public evidence, not recomputed from every build input in this baseline pass."
+  ],
+  "p8_agent_c_acceptance_for_future_ab_result": {
+    "must_have": [
+      "immutable source commit/tree/binary/checkpoint identities",
+      "8 explicit cell terminal states",
+      "8 requested role/layer/n tuples",
+      "8 actual bound precision outcomes or explicit unsupported",
+      "finite-logits result for every runtime-valid cell",
+      "no silent fallback",
+      "policy hash and weight epoch attribution",
+      "activation/instrumentation identity consistency where supported",
+      "production_write_allowed=false"
+    ],
+    "reject_if": [
+      "FAILED_RUNTIME row disappears without replacement evidence",
+      "POLICY_NOT_APPLIED is changed to PASS only by changing classifier text",
+      "requested n is inferred without actual bound-state evidence",
+      "binary/checkpoint/source identity differs without new control group",
+      "negative evidence is deleted or omitted",
+      "A/B modifies Agent C audit reports or A0 shared release state"
+    ]
+  },
+  "next": "Wait for Agent A runtime evidence and Agent B policy-binding evidence, then perform read-only before/after re-audit and emit P8_C_INDEPENDENT_INTEGRATION_AUDIT."
+}
