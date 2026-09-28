@@ -1,6 +1,6 @@
 # P9 Quality Harness
 
-Owner: Agent D  
+Owner: Agent D
 Branch: `prod/p9-quality`
 
 ## Scope
