@@ -1,0 +1,47 @@
+--- a/mlx_moe.cpp
++++ b/mlx_moe.cpp
+@@ -1536,6 +1536,7 @@
+         std::string source = R"(
+             uint p = thread_position_in_grid.x;
+             uint row = thread_position_in_grid.y;
++            uint z = thread_position_in_grid.z;
+             if (p >= 64) return;
+             int bias_code = 1 << (n - 1);
+             float partial = 0.0f;
+@@ -1552,7 +1553,7 @@
+                 int code = u - bias_code;
+                 float scale = scales[row * ng + g];
+                 float decoded = (float)code * scale;
+-                partial += decoded * x[g * 64 + p];
++                partial += decoded * x[z * (ng * 64u) + g * 64 + p];
+             }
+             threadgroup float shared_sums[2];
+             uint simd_lane = p % 32;
+@@ -1561,7 +1562,7 @@
+             if (simd_lane == 0) shared_sums[simd_group] = simd_partial;
+             threadgroup_barrier(mem_flags::mem_threadgroup);
+             if (p == 0) {
+-                out[row] = shared_sums[0] + shared_sums[1];
++                out[z * (uint)out_dim + row] = shared_sums[0] + shared_sums[1];
+             }
+         )";
+         g_qng64_gemv_kernel = mx::fast::metal_kernel(
+@@ -1590,13 +1591,15 @@
+     mx::array scales_e = mx::take(t.scales, 0, 0);
+     auto &kernel = qng64_gemv_kernel();
+     std::vector<mx::array> inputs = {planes_e, scales_e, x};
+-    std::vector<mx::Shape> output_shapes = {{1, (int)t.out}};
++    const auto &x_shape = x.shape();
++    const int batch = x_shape.size() >= 2 ? (int)x_shape[0] : 1;
++    std::vector<mx::Shape> output_shapes = {{batch, (int)t.out}};
+     std::vector<mx::Dtype> output_dtypes = {mx::float32};
+     std::vector<std::pair<std::string, mx::fast::TemplateArg>> template_args = {
+-        {"n", t.n}, {"ng", (int)t.ng}
++        {"n", t.n}, {"ng", (int)t.ng}, {"out_dim", (int)t.out}
+     };
+     auto outputs = kernel(inputs, output_shapes, output_dtypes,
+-                           {64, (int)t.out, 1}, {64, 1, 1},
++                           {64, (int)t.out, batch}, {64, 1, 1},
+                            template_args, std::nullopt, false, {});
+     return outputs[0];
+ }
