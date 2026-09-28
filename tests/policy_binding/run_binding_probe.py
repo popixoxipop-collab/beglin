@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -52,6 +53,10 @@ def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--self-test", action="store_true")
+    args = ap.parse_args()
+
     inputs_ok, input_hashes = verify_inputs()
     if not inputs_ok:
         print(json.dumps({
@@ -71,6 +76,15 @@ def main() -> int:
     if not mlx_cmake_dir:
         print(json.dumps({"status": "BLOCKED", "reason": "MLX_CMAKE_DIR_NOT_FOUND"}))
         return 2
+
+    if args.self_test:
+        print(json.dumps({
+            "status": "PASS",
+            "mode": "self-test",
+            "mlx_cmake_dir": mlx_cmake_dir,
+            "inputs": input_hashes,
+        }, sort_keys=True))
+        return 0
 
     configure = run([
         "cmake",
