@@ -1,0 +1,95 @@
+{
+  "schema": "beglin-p9-single-target-ablation-plan/1",
+  "ablation_id": "p9.1-xox-single-target-boundary-v1",
+  "purpose": "Causally separate the two simultaneously promoted P9 targets without changing the frozen P9 result.",
+  "source_evidence": {
+    "run_id": "p9-20260928T182317Z-56784",
+    "evaluation_hash": "ceb40a9c18a92231f484d9b528aaeca124218ff48d40ab76d9a52f466f954938",
+    "audit_hash": "481746339b5e87c28c9084301797284b7887c70dc397f9f6e701bab5e7d91074"
+  },
+  "diagnostic_prompts": [
+    "constraint_words",
+    "ppl_short_1",
+    "short_reasoning"
+  ],
+  "repetitions": 2,
+  "expected_requests_per_cell": 6,
+  "reference": {
+    "cell_id": "reference",
+    "promotion_lines": []
+  },
+  "cells": [
+    {
+      "cell_id": "kv_l11_n5",
+      "target": {
+        "role": "kv_a_proj_with_mqa",
+        "layer": 11
+      },
+      "n": 5,
+      "promotion_lines": [
+        "kv_a_proj_with_mqa 11 5"
+      ]
+    },
+    {
+      "cell_id": "kv_l11_n6",
+      "target": {
+        "role": "kv_a_proj_with_mqa",
+        "layer": 11
+      },
+      "n": 6,
+      "promotion_lines": [
+        "kv_a_proj_with_mqa 11 6"
+      ]
+    },
+    {
+      "cell_id": "kv_l11_n7",
+      "target": {
+        "role": "kv_a_proj_with_mqa",
+        "layer": 11
+      },
+      "n": 7,
+      "promotion_lines": [
+        "kv_a_proj_with_mqa 11 7"
+      ]
+    },
+    {
+      "cell_id": "shared_l3_n5",
+      "target": {
+        "role": "shared_up_proj",
+        "layer": 3
+      },
+      "n": 5,
+      "promotion_lines": [
+        "shared_up_proj 3 5"
+      ]
+    },
+    {
+      "cell_id": "shared_l3_n6",
+      "target": {
+        "role": "shared_up_proj",
+        "layer": 3
+      },
+      "n": 6,
+      "promotion_lines": [
+        "shared_up_proj 3 6"
+      ]
+    },
+    {
+      "cell_id": "shared_l3_n7",
+      "target": {
+        "role": "shared_up_proj",
+        "layer": 3
+      },
+      "n": 7,
+      "promotion_lines": [
+        "shared_up_proj 3 7"
+      ]
+    }
+  ],
+  "interpretation": {
+    "reference_match": "No token-selection boundary crossing was observed for that isolated target and n on the diagnostic corpus.",
+    "reference_mismatch": "That isolated target and n causally crosses at least one observed greedy token-selection boundary.",
+    "non_monotonicity": "Each n is classified independently; results must not be treated as a monotonic precision threshold."
+  },
+  "production_write_allowed": false
+}
