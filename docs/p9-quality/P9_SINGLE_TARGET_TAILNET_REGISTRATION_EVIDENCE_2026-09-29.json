@@ -1,0 +1,60 @@
+{
+  "admission": {
+    "argv": [
+      "python3",
+      "beglin_p9_single_target_ablation_fixture.py"
+    ],
+    "expected_fixture_sha256": "749abcc325bc4d10f41ade3be242b8de3b7119fd3795ea074a3f35283f0e22d3",
+    "host": "xox",
+    "idempotency_key": "p9-single-target-a3c51817-alpha62-v1",
+    "policy_version": "g5-fixtures-v17-p9-single-target-alpha62",
+    "requested_execution_timeout_ms": 3600000,
+    "workspace": "sandbox"
+  },
+  "live_release": {
+    "health": "live",
+    "package_version": "0.4.0-alpha.62",
+    "policy_sha256": "d1c35a5f9b6fb8f1fb4fe0309019ada17f686cfed753183a9d54dbea8b3a59fa",
+    "preflight_required_checks": {
+      "fail": 0,
+      "ok": 10,
+      "warn": 0
+    },
+    "readiness": "ready",
+    "release_id": "g6-0.4.0-alpha.62",
+    "release_manifest_sha256": "e488e8d8aea977841dbdfee999b74b3db866a0e8f1e620de403b9f96b3ab0502",
+    "rollback_release_id": "g6-0.4.0-alpha.61"
+  },
+  "live_negative_probe": {
+    "argv": [
+      "python3",
+      "beglin_p9_single_target_ablation_fixture.py",
+      "--self-test"
+    ],
+    "error_code": "INVALID_ARGUMENT",
+    "message": "P9 single-target ablation fixture accepts no additional arguments",
+    "observed_at_utc": "2026-09-28T19:33:47.224Z",
+    "ok": false
+  },
+  "observed_at_utc": "2026-09-28T19:22:04.051Z",
+  "safety": {
+    "additional_arguments_allowed": false,
+    "arbitrary_python_allowed": false,
+    "production_write_allowed": false,
+    "registered_host": "xox",
+    "registered_workspace": "sandbox"
+  },
+  "schema": "beglin-p9-single-target-tailnet-registration-evidence/1",
+  "status": "P9_SINGLE_TARGET_FIXTURE_REGISTERED",
+  "tailnet_job": {
+    "created_at": "2026-09-28T19:21:09Z",
+    "elapsed_ms": 21818,
+    "exit_code": 0,
+    "job_id": "job_a760be0f9dc67ef5b971a326a1dd1449",
+    "request_hash": "603a39bd510216bf484f55a3f579627aa5ff0b6b3d4daabf5765a9891a2e0e13",
+    "state": "SUCCEEDED",
+    "termination_reason": "exit_code",
+    "updated_at": "2026-09-28T19:21:31Z"
+  },
+  "timeout_note": "The live policy permits this exact fixture up to 129600000 ms. The current connector schema exposed a 3600000 ms client maximum, and the diagnostic run completed within that narrower request."
+}

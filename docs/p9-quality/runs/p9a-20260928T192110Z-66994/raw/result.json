@@ -1,0 +1,557 @@
+{
+  "ablation_plan": {
+    "ablation_id": "p9.1-xox-single-target-boundary-v1",
+    "cells": [
+      {
+        "cell_id": "kv_l11_n5",
+        "n": 5,
+        "promotion_lines": [
+          "kv_a_proj_with_mqa 11 5"
+        ],
+        "target": {
+          "layer": 11,
+          "role": "kv_a_proj_with_mqa"
+        }
+      },
+      {
+        "cell_id": "kv_l11_n6",
+        "n": 6,
+        "promotion_lines": [
+          "kv_a_proj_with_mqa 11 6"
+        ],
+        "target": {
+          "layer": 11,
+          "role": "kv_a_proj_with_mqa"
+        }
+      },
+      {
+        "cell_id": "kv_l11_n7",
+        "n": 7,
+        "promotion_lines": [
+          "kv_a_proj_with_mqa 11 7"
+        ],
+        "target": {
+          "layer": 11,
+          "role": "kv_a_proj_with_mqa"
+        }
+      },
+      {
+        "cell_id": "shared_l3_n5",
+        "n": 5,
+        "promotion_lines": [
+          "shared_up_proj 3 5"
+        ],
+        "target": {
+          "layer": 3,
+          "role": "shared_up_proj"
+        }
+      },
+      {
+        "cell_id": "shared_l3_n6",
+        "n": 6,
+        "promotion_lines": [
+          "shared_up_proj 3 6"
+        ],
+        "target": {
+          "layer": 3,
+          "role": "shared_up_proj"
+        }
+      },
+      {
+        "cell_id": "shared_l3_n7",
+        "n": 7,
+        "promotion_lines": [
+          "shared_up_proj 3 7"
+        ],
+        "target": {
+          "layer": 3,
+          "role": "shared_up_proj"
+        }
+      }
+    ],
+    "diagnostic_prompts": [
+      "constraint_words",
+      "ppl_short_1",
+      "short_reasoning"
+    ],
+    "expected_requests_per_cell": 6,
+    "interpretation": {
+      "non_monotonicity": "Each n is classified independently; results must not be treated as a monotonic precision threshold.",
+      "reference_match": "No token-selection boundary crossing was observed for that isolated target and n on the diagnostic corpus.",
+      "reference_mismatch": "That isolated target and n causally crosses at least one observed greedy token-selection boundary."
+    },
+    "production_write_allowed": false,
+    "purpose": "Causally separate the two simultaneously promoted P9 targets without changing the frozen P9 result.",
+    "reference": {
+      "cell_id": "reference",
+      "promotion_lines": []
+    },
+    "repetitions": 2,
+    "schema": "beglin-p9-single-target-ablation-plan/1",
+    "source_evidence": {
+      "audit_hash": "481746339b5e87c28c9084301797284b7887c70dc397f9f6e701bab5e7d91074",
+      "evaluation_hash": "ceb40a9c18a92231f484d9b528aaeca124218ff48d40ab76d9a52f466f954938",
+      "run_id": "p9-20260928T182317Z-56784"
+    }
+  },
+  "ablation_plan_sha256": "edb06370dbdf0ae6f1f61cb4ae7f82d320a8507a3504b2f118eb576455e8427c",
+  "branch": "prod/p9-integration",
+  "checkpoint_identity_source": "/Users/xox/vdsp_shadow_runs/checkpoint_identity/status.json",
+  "compact_cache_projection": {
+    "format": "symmetric_int8_per_head_position",
+    "heads": 16,
+    "key_width": 192,
+    "layers": 27,
+    "model_config": "/Users/xox/vdsp_local_data/moe_base_deepseek/weights_moe/arch_config_moe.txt",
+    "model_config_sha256": "43f205631553478b204f761d5894aaeec67100ed276aca762a24c62e63a91c50",
+    "positions": 16384,
+    "projected_bytes": 2293235712,
+    "projected_float32_bytes": 9059696640,
+    "reduction_ratio": 0.253125,
+    "scale_dtype": "float16",
+    "value_width": 128
+  },
+  "engine_preflight": {
+    "adapter_id": "p9-xox-mlx-metal-v1",
+    "adapter_sha256": "f61f94107a460c0c1c191795ff59a28ada46814ba8373ed4bacad759e7ef8482",
+    "blockers": [],
+    "configured_positions": 16384,
+    "corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
+    "engine_markers": {
+      "BEGLIN_P9_COMPACT_KV": true,
+      "BEGLIN_P9_QUALITY_METRICS": true,
+      "P9_QUALITY_REQUEST_V1": true,
+      "mlx_gpu_p9_metrics_config": true,
+      "mlx_gpu_p9_metrics_read": true
+    },
+    "execution_allowed": true,
+    "preflight_sha256": "40608e7525d989a9e2c5cbe85491fe8a97158925b79e12014e7c7562def6abd8",
+    "prompt_count": 8,
+    "repetitions": 2,
+    "required_positions": 15045,
+    "schema": "beglin-quality-adapter-preflight/1",
+    "status": "P9_EXECUTION_ADAPTER_READY",
+    "token_fixture_sha256": "b9676d1e02865bc3aa6fd36e6792e6d44681f182ba34e9bc49d7f9a75957fa95"
+  },
+  "finished_at": "2026-09-28T19:21:31.789667+00:00",
+  "identity": {
+    "backend": "mlx_metal",
+    "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "diagnostic_corpus_sha256": "351d9a30e726bba4b1455590d913d2f2395aa81057f5bb020525ca056528dd13",
+    "hardware_id": "xox-apple-silicon",
+    "model_id": "deepseek-v2-lite",
+    "runtime_config_hash": "03ac5b7ecba0ef272de3afb092e717f05b6c91e253fbc5cb30a2aebd99df0828",
+    "seed": 0,
+    "source_commit": "a3c518176d2ddb173f88922a97f8ca2bcd4218d4",
+    "source_tree": "b5dda094d405a4efd1ca914a22548c038a69649708974917cac56c4ada60d718"
+  },
+  "materialized_fixture": {
+    "diagnostic_prompts": [
+      "constraint_words",
+      "ppl_short_1",
+      "short_reasoning"
+    ],
+    "expected_requests": 6,
+    "files": [
+      {
+        "context_tokens": 18,
+        "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/tokens/02-constraint_words.i32",
+        "prompt_id": "constraint_words",
+        "sha256": "05445088a4c18d8796dfa9b7553fef127677e9b2fad3d68c89ef2b0346479400"
+      },
+      {
+        "context_tokens": 16,
+        "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/tokens/03-ppl_short_1.i32",
+        "prompt_id": "ppl_short_1",
+        "sha256": "e49324063d59910dd2e84f2e73ba7dc95c696f532af3982802e8191a7b31cdb8"
+      },
+      {
+        "context_tokens": 25,
+        "path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/tokens/07-short_reasoning.i32",
+        "prompt_id": "short_reasoning",
+        "sha256": "0bb5fb4072b7e80dfb50cf6d1f0adbba528caa8d071ee51545fdfd24d979057b"
+      }
+    ],
+    "fixture_id": "p9-deepseek-v2-lite-deterministic-v1",
+    "full_materialization_sha256": "45d8f36fcc1dc960c5313fa8ed093b62bddbc2f01f3859e869b897cbc25037e1",
+    "manifest": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/p9-ablation-prompts.manifest",
+    "manifest_sha256": "e795c19dac94906593ec95f5300c86886f3a932723470a5f98f3e53fa62b0890",
+    "repetitions": 2,
+    "schema": "beglin-p9-single-target-materialized-fixture/1"
+  },
+  "note": "Targeted causal diagnosis only; no production release authority.",
+  "production_write_allowed": false,
+  "result_sha256": "65a79a88fe9a89e7f3d6cdd773323561407d8145f011dc12394f10e210b15fb4",
+  "run_id": "p9a-20260928T192110Z-66994",
+  "runner_id": "xox-p9.1-single-target-ablation-v1",
+  "runner_sha256": "749abcc325bc4d10f41ade3be242b8de3b7119fd3795ea074a3f35283f0e22d3",
+  "runs": [
+    {
+      "cell_id": "reference",
+      "exit_code": 0,
+      "finite_logits": true,
+      "log_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/reference.log",
+      "log_sha256": "1c347570350331543d4f8f005a362d580bf7c2a71a750fee10130739fdd78345",
+      "logits_checked": 5939200,
+      "metrics_complete": true,
+      "parse_error": null,
+      "parsed_request_count": 6,
+      "policy": {
+        "cell_id": "reference",
+        "promotion_lines": []
+      },
+      "policy_hash": "54eb873961595440ffc79c53b1277f40333df7b082539974ad72440e4c14e3cf",
+      "promotion_path": null,
+      "request_count": 6,
+      "status": "PASS"
+    },
+    {
+      "cell_id": "kv_l11_n5",
+      "exit_code": 0,
+      "finite_logits": true,
+      "log_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/kv_l11_n5.log",
+      "log_sha256": "dca1a8d99c8859e13bef15fc5b83f8cacdca1389534af7e7beded5c6004de59a",
+      "logits_checked": 5939200,
+      "metrics_complete": true,
+      "parse_error": null,
+      "parsed_request_count": 6,
+      "policy": {
+        "cell_id": "kv_l11_n5",
+        "n": 5,
+        "promotion_lines": [
+          "kv_a_proj_with_mqa 11 5"
+        ],
+        "target": {
+          "layer": 11,
+          "role": "kv_a_proj_with_mqa"
+        }
+      },
+      "policy_hash": "9291b3a553cb906bf140d4d3bce05e120462f5363483ed8642a6ecb0a6a46712",
+      "promotion_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/kv_l11_n5.promotion.txt",
+      "request_count": 6,
+      "status": "PASS"
+    },
+    {
+      "cell_id": "kv_l11_n6",
+      "exit_code": 0,
+      "finite_logits": true,
+      "log_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/kv_l11_n6.log",
+      "log_sha256": "22238b743fb4e83bc342383a55efa203cad0ea6b06fafdb6f70fe8b50b0cd020",
+      "logits_checked": 5939200,
+      "metrics_complete": true,
+      "parse_error": null,
+      "parsed_request_count": 6,
+      "policy": {
+        "cell_id": "kv_l11_n6",
+        "n": 6,
+        "promotion_lines": [
+          "kv_a_proj_with_mqa 11 6"
+        ],
+        "target": {
+          "layer": 11,
+          "role": "kv_a_proj_with_mqa"
+        }
+      },
+      "policy_hash": "4e6556a1301631d62c2dd7f5cac2a481e4674d0d52088b93fcd1b77d03ea90ab",
+      "promotion_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/kv_l11_n6.promotion.txt",
+      "request_count": 6,
+      "status": "PASS"
+    },
+    {
+      "cell_id": "kv_l11_n7",
+      "exit_code": 0,
+      "finite_logits": true,
+      "log_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/kv_l11_n7.log",
+      "log_sha256": "4f78edf1e64202055493377ec5e98c20226492b98a403b68ff528ef53e30ab88",
+      "logits_checked": 5939200,
+      "metrics_complete": true,
+      "parse_error": null,
+      "parsed_request_count": 6,
+      "policy": {
+        "cell_id": "kv_l11_n7",
+        "n": 7,
+        "promotion_lines": [
+          "kv_a_proj_with_mqa 11 7"
+        ],
+        "target": {
+          "layer": 11,
+          "role": "kv_a_proj_with_mqa"
+        }
+      },
+      "policy_hash": "e06f077c7d7675f03d763eee0ef6c8b045271f160c8f0a5e2e01c5e034dda0e3",
+      "promotion_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/kv_l11_n7.promotion.txt",
+      "request_count": 6,
+      "status": "PASS"
+    },
+    {
+      "cell_id": "shared_l3_n5",
+      "exit_code": 0,
+      "finite_logits": true,
+      "log_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/shared_l3_n5.log",
+      "log_sha256": "752d1eb4b825b2e6460c341593a47710724104fc013d5d66ce727a0240bef418",
+      "logits_checked": 5939200,
+      "metrics_complete": true,
+      "parse_error": null,
+      "parsed_request_count": 6,
+      "policy": {
+        "cell_id": "shared_l3_n5",
+        "n": 5,
+        "promotion_lines": [
+          "shared_up_proj 3 5"
+        ],
+        "target": {
+          "layer": 3,
+          "role": "shared_up_proj"
+        }
+      },
+      "policy_hash": "e2e91e14182246f1507e886d354d57275449a69ac735634f4ce52ae0ee5cc4a6",
+      "promotion_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/shared_l3_n5.promotion.txt",
+      "request_count": 6,
+      "status": "PASS"
+    },
+    {
+      "cell_id": "shared_l3_n6",
+      "exit_code": 0,
+      "finite_logits": true,
+      "log_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/shared_l3_n6.log",
+      "log_sha256": "ba0b9b9e22d9452fb50fd74e930cbae30844a0e5f498b12c87d15acb40612619",
+      "logits_checked": 5939200,
+      "metrics_complete": true,
+      "parse_error": null,
+      "parsed_request_count": 6,
+      "policy": {
+        "cell_id": "shared_l3_n6",
+        "n": 6,
+        "promotion_lines": [
+          "shared_up_proj 3 6"
+        ],
+        "target": {
+          "layer": 3,
+          "role": "shared_up_proj"
+        }
+      },
+      "policy_hash": "7e692244251bcc9d33e5c5df62cdcb1861145106cb7d48d619327333e0715b21",
+      "promotion_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/shared_l3_n6.promotion.txt",
+      "request_count": 6,
+      "status": "PASS"
+    },
+    {
+      "cell_id": "shared_l3_n7",
+      "exit_code": 0,
+      "finite_logits": true,
+      "log_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/shared_l3_n7.log",
+      "log_sha256": "f69dff95eb9e1fdf30e15f7b8fa08af4f2ce360260f2c377f4cc0d01e73c96e5",
+      "logits_checked": 5939200,
+      "metrics_complete": true,
+      "parse_error": null,
+      "parsed_request_count": 6,
+      "policy": {
+        "cell_id": "shared_l3_n7",
+        "n": 7,
+        "promotion_lines": [
+          "shared_up_proj 3 7"
+        ],
+        "target": {
+          "layer": 3,
+          "role": "shared_up_proj"
+        }
+      },
+      "policy_hash": "a0a9c787437866a478ddf3cec9d9cde25a5d8925d9448be799d0b14730da456f",
+      "promotion_path": "/Users/xox/mcp-sandbox/tailnet-commander/p9_single_target_ablation_runs/p9a-20260928T192110Z-66994/shared_l3_n7.promotion.txt",
+      "request_count": 6,
+      "status": "PASS"
+    }
+  ],
+  "schema": "beglin-p9-single-target-physical-run/1",
+  "source_manifest": [
+    {
+      "path": "CMakeLists.txt",
+      "sha256": "d7ee2e11aa799476bbde59a309655ac5e7b2414e5e71d8d5f76a71a627afc95e",
+      "size_bytes": 5847
+    },
+    {
+      "path": "beglin_p9_quality_fixture.py",
+      "sha256": "5e99120e1c2c8a5764b0f330a32543412974766757db75c87fae33d8e2155336",
+      "size_bytes": 17212
+    },
+    {
+      "path": "beglin_p9_single_target_ablation_fixture.py",
+      "sha256": "749abcc325bc4d10f41ade3be242b8de3b7119fd3795ea074a3f35283f0e22d3",
+      "size_bytes": 12911
+    },
+    {
+      "path": "benchmarks/quality/execution_adapter.py",
+      "sha256": "d04e76542f1e22bfd80844d1d799bf8bc14c89528c85a5dc67b3a52fa725c9ed",
+      "size_bytes": 22263
+    },
+    {
+      "path": "benchmarks/quality/reference_evaluator.py",
+      "sha256": "88488ce0fef403c23eca09b0c1042034d0b3ebf1e10b531fb4661dc91864f7ac",
+      "size_bytes": 2383
+    },
+    {
+      "path": "bpe_tokenizer.c",
+      "sha256": "6e74351dadfb694b0d63752b692536087ecaee72368501168f58c1baf34db125",
+      "size_bytes": 38204
+    },
+    {
+      "path": "bpe_tokenizer.h",
+      "sha256": "d5561bfbe0bf40fefb5e2e7b5c58b1bd9f525576ec991219f8a67877e9574f58",
+      "size_bytes": 4710
+    },
+    {
+      "path": "configs/quality/deterministic_corpus_v1.json",
+      "sha256": "a8a98c351e76675a38947d1220b95850c488ebcd2b9f1221093aeb311c4d513d",
+      "size_bytes": 2934
+    },
+    {
+      "path": "configs/quality/p9_execution_adapter_v1.json",
+      "sha256": "f3d6299288415a18a89f7526a2063ea02f76d9963224e46534c2ebfeca0d08ea",
+      "size_bytes": 2642
+    },
+    {
+      "path": "configs/quality/p9_single_target_ablation_v1.json",
+      "sha256": "edb06370dbdf0ae6f1f61cb4ae7f82d320a8507a3504b2f118eb576455e8427c",
+      "size_bytes": 2416
+    },
+    {
+      "path": "configs/quality/p9_token_fixture_v1.json",
+      "sha256": "990e931ea84c5e018449eae4f20a1e075c2c345adbc2dd7ac839092bcfb28260",
+      "size_bytes": 3720
+    },
+    {
+      "path": "gguf_cache.c",
+      "sha256": "eca03b4e3a3030978fd80bafee8d77c42d38db50b47d2204e5c3282edfd25957",
+      "size_bytes": 10528
+    },
+    {
+      "path": "gguf_load.c",
+      "sha256": "783e8d9f9e33e6f970ed2080a05203cf05d0efec573b0fdc00e2741fb13fbcce",
+      "size_bytes": 15777
+    },
+    {
+      "path": "gguf_quants.c",
+      "sha256": "00491fc9ebf2afa2a3446f8c12119a50d11612d0571997104b72bbc7e89b6c8a",
+      "size_bytes": 16591
+    },
+    {
+      "path": "gguf_transcode.c",
+      "sha256": "7371cc352226e912dbf42762e5e63a70e91acb5c90691d90e32401e18af7ec5f",
+      "size_bytes": 8199
+    },
+    {
+      "path": "gguf_write.c",
+      "sha256": "25be559aed622cd5021bfc082a5b236d293a8df6e52498c8c0ac2549b66d0554",
+      "size_bytes": 11032
+    },
+    {
+      "path": "gguf_write.h",
+      "sha256": "7bfee2136e827943489473bd9e1ee5cbe0b4e1467b7021d2755d3e1fb65eaa52",
+      "size_bytes": 5156
+    },
+    {
+      "path": "gguf_write_quants.c",
+      "sha256": "6823ffd52162e4042b8dc05758d8709c8224e75a2a5ed65d4ccfd3eb85bfacb4",
+      "size_bytes": 17127
+    },
+    {
+      "path": "gguf_write_quants.h",
+      "sha256": "fc28c1f9e238900627b9c9c0327565bb0e3e9e8d77c31a8ed8211dfd7aecf518",
+      "size_bytes": 3988
+    },
+    {
+      "path": "hf_config.c",
+      "sha256": "78f8c7928bcbe5fc60170a78a143e395bcde18942440d583e1c2a1ea94342b4a",
+      "size_bytes": 13078
+    },
+    {
+      "path": "kleidiai/kai_common_sme_asm.S",
+      "sha256": "89537cbb0adcb6202da495ae3ab01fca5160ca31ff424ede20645984cfef21b4",
+      "size_bytes": 2068
+    },
+    {
+      "path": "kleidiai/kai_lhs_pack_f16pmrx2_f32_neon.c",
+      "sha256": "d451b7bf3b8fb198e33426e8d594760d76f5e44e257f5464d3a5c771747fff34",
+      "size_bytes": 7330
+    },
+    {
+      "path": "kleidiai/kai_lhs_quant_pack_qsi8d32p_f32.c",
+      "sha256": "c1a6893a12460576c86fe4a305373eddb62561f408c1061e93babcafc89618cc",
+      "size_bytes": 4178
+    },
+    {
+      "path": "kleidiai/kai_lhs_quant_pack_qsi8d32p_f32_neon.c",
+      "sha256": "fecf148aabd23bc3c5964d168fcbd27eb0facfa3a6d14d57ff60f4bf4a31695a",
+      "size_bytes": 4069
+    },
+    {
+      "path": "kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa.c",
+      "sha256": "043bae3eb6cc4e6eecc193d107ef294704a748e33cc6142365807602558f1fbb",
+      "size_bytes": 7942
+    },
+    {
+      "path": "kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa_asm.S",
+      "sha256": "a8617f0f2e2bed3f708450bbde338339379baee7028b4bc50de6128b4fc9bdb5",
+      "size_bytes": 5974
+    },
+    {
+      "path": "kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa.c",
+      "sha256": "dd1acb41dd762251899d30bf95989c3292c295aa51e5cd3015b6d7bfe0db9d4d",
+      "size_bytes": 13898
+    },
+    {
+      "path": "kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa_asm.S",
+      "sha256": "8a25f5c386c98fa130da161b27596c2c7d1a18bb49010b848d64f963b6fe812a",
+      "size_bytes": 8022
+    },
+    {
+      "path": "kleidiai/kai_rhs_pack_nxk_qsi4c32p_qsu4c32s1s0.c",
+      "sha256": "2bd83a880dc1d9200965e411aa62ae3db2d30fe57cc20b64e06f1fec64c49d49",
+      "size_bytes": 10752
+    },
+    {
+      "path": "kleidiai/kai_rhs_pack_nxk_qsi4c32ps1s0scalef16_qsu4c32s16s0_neon.c",
+      "sha256": "78ee4cd8497ab48a6aeb95cc1cf712eed02234845810e1b81ce35d8b8ee36c7f",
+      "size_bytes": 20766
+    },
+    {
+      "path": "kleidiai/kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.c",
+      "sha256": "5dd777ed861ca1940a6c3693107ca4185b0a56d54ab2ac5aaa4a644fe507a0fc",
+      "size_bytes": 17086
+    },
+    {
+      "path": "mlx_moe.cpp",
+      "sha256": "41f8f6d9c640791ca855884d2c60751e6bcaca1b257280ddbfbff18f4bb7b058",
+      "size_bytes": 184393
+    },
+    {
+      "path": "mlx_moe.h",
+      "sha256": "3fefc41fae6b37f34f17f9000107636ce21edb7c0aa515e334690f55b78b17ca",
+      "size_bytes": 20931
+    },
+    {
+      "path": "qwen_infer.c",
+      "sha256": "dfbc62d96dcb62cc46d0f7ad611fe8b58cb89f50057ae2c5dc456adc7dc91601",
+      "size_bytes": 1240954
+    },
+    {
+      "path": "safetensors_load.c",
+      "sha256": "b074019f4d0fdb5ce94df48a9b8a4b9dbd197edd35dfbf98e4ef505041094da2",
+      "size_bytes": 19533
+    },
+    {
+      "path": "safetensors_quants.c",
+      "sha256": "297c764f22f25b36a491d4215cc5e6beec47651fdb3928a4582dcabb9c659fee",
+      "size_bytes": 2274
+    },
+    {
+      "path": "sme2_kai.c",
+      "sha256": "29ffaed06236733325a19f8608930b4d79a0047f9d208f41201ab50fb155b96f",
+      "size_bytes": 19530
+    }
+  ],
+  "source_manifest_sha256": "b5dda094d405a4efd1ca914a22548c038a69649708974917cac56c4ada60d718",
+  "started_at": "2026-09-28T19:21:10.049151+00:00",
+  "status": "P9_SINGLE_TARGET_RAW_PASS"
+}

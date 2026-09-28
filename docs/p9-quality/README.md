@@ -11,6 +11,7 @@ The integrated P9 lane now contains:
 - `configs/quality/**`
 - `docs/p9-quality/**`
 - the isolated `beglin_p9_quality_fixture.py` physical runner,
+- the diagnostic-only `beglin_p9_single_target_ablation_fixture.py` runner,
 - P9-only long-context build and measurement taps in `CMakeLists.txt`, `qwen_infer.c`, and `mlx_moe.*`.
 
 The long-context and compact-KV changes are compile/runtime gated. Default and P8 binaries keep their existing cache bounds and execution path. No serving configuration, release manifest, or production policy is changed.
@@ -29,6 +30,8 @@ The P8 gate is now satisfied by `P8_INTEGRATION_GATE_2026-09-28.json`, which is 
 `P9_EXECUTION_PLAN_2026-09-29.json` binds the explicit `p9-xox-mlx-metal-v1` adapter, pinned token fixture, deterministic reference evaluator, reference+n4+n5+n6+n7 mapping, and XOX runner. Adapter preflight passed with no blockers. Registration evidence is frozen in `P9_TAILNET_REGISTRATION_EVIDENCE_2026-09-29.json`.
 
 The registered XOX job completed successfully and produced five structurally valid physical logs. The frozen quality policy independently classifies n4 as PASS and n5/n6/n7 as FAIL. `P9_C_INDEPENDENT_FINAL_AUDIT_2026-09-29.json` verifies the raw-log hashes, physical-result hash, normalized artifact hashes, control identity, all recomputed metrics, and all 17 policy rules. Evidence integrity passes, but the P9 quality matrix does not; production release is not authorized.
+
+The follow-up single-target run `p9a-20260928T192110Z-66994` completed through the exact alpha.62 fixture. Reference plus six isolated cells all passed with finite, deterministic outputs. `P9_SINGLE_TARGET_INDEPENDENT_AUDIT_2026-09-29.json` independently passed 225 checks. The result attributes the drift to both promoted targets: KV/L11 changes `constraint_words` at n5/6/7 and `ppl_short_1` at n6/7, while shared/L3 changes `short_reasoning` at n5 and `constraint_words` at n6/7. Their composition also shows downstream interaction and one n7 cancellation. See `P9_SINGLE_TARGET_BOUNDARY_REPORT_2026-09-29.md`.
 
 The 15,033-token long prompt requires 15,045 positions including generation. The isolated P9 build provides 16,384 positions and uses full causal attention with a symmetric int8 K/V cache plus per-head/position float16 scales. This avoids the roughly 9 GiB float32 cache and same-slot batch replication that would exceed XOX's Metal memory budget. This cache format is a shared control across all five P9 cells and is not enabled in the default/P8 build.
 
@@ -98,6 +101,17 @@ python3 -m benchmarks.quality.final_audit \
   --policy-freeze docs/p9-quality/P9_POLICY_FREEZE_2026-09-29.json \
   --registration docs/p9-quality/P9_TAILNET_REGISTRATION_EVIDENCE_2026-09-29.json \
   --observed-at 2026-09-28T18:51:06Z
+
+python3 -m benchmarks.quality.single_target_ablation self-test
+
+python3 -m benchmarks.quality.single_target_ablation_audit \
+  --run-dir docs/p9-quality/runs/p9a-20260928T192110Z-66994 \
+  --combined-dir docs/p9-quality/runs/p9-20260928T182317Z-56784 \
+  --plan configs/quality/p9_single_target_ablation_v1.json \
+  --runner beglin_p9_single_target_ablation_fixture.py \
+  --source-audit docs/p9-quality/P9_C_INDEPENDENT_FINAL_AUDIT_2026-09-29.json \
+  --registration docs/p9-quality/P9_SINGLE_TARGET_TAILNET_REGISTRATION_EVIDENCE_2026-09-29.json \
+  --observed-at 2026-09-28T19:30:43Z
 ```
 
 `quality_policy_v1.json` is `FROZEN` against the physical reference artifact. The freeze occurred before any candidate log was inspected, and the numeric rules were not changed after seeing candidate results. Missing metrics still fail closed.
@@ -112,6 +126,8 @@ python3 -m benchmarks.quality.final_audit \
 | n7 | FAIL | 1.025093 | 0.928571 | 0.875 |
 
 n5, n6, and n7 each fail the frozen candidate-quality, quality-delta, and exact-output-match rules. They still pass the finite-logits, determinism, perplexity, task-score, promotion-count, activation-drift, router-near-tie, and long-context-stability rules. n4 is the only P9-eligible cell in this run; that isolated PASS does not turn the failed full matrix into a production release approval.
+
+The follow-up ablation establishes that the mismatch is not attributable to only one layer. Both `kv_a_proj_with_mqa/L11` and `shared_up_proj/L3` independently cross observed greedy-token boundaries. The pair can amplify, select one target's continuation, or cancel an isolated change, so no monotonic n-threshold is claimed.
 
 ## P7 compatibility
 
@@ -134,6 +150,10 @@ EOE validation completed on 2026-09-29:
 - numeric acceptance thresholds: FROZEN_BEFORE_CANDIDATE_OBSERVATION
 - normalized quality matrix: P9_QUALITY_FAIL / n4 PASS, n5+n6+n7 FAIL
 - independent final audit: P9_EVIDENCE_INDEPENDENT_PASS
+- alpha.62 single-target fixture registration: PASS / exact XOX sandbox SHA pin
+- single-target physical run: P9_SINGLE_TARGET_RAW_PASS / XOX job `job_a760be0f9dc67ef5b971a326a1dd1449`
+- single-target independent audit: P9_SINGLE_TARGET_EVIDENCE_INDEPENDENT_PASS / 225 checks
+- single-target boundary: both promoted targets causal; nonlinear composition observed
 - production release authorization: DENIED
 
 The current P7 physical run has six real activation cells and five performance cells, but it does not carry the complete token-level NLL/output/finite-logits/promotion/router/task/long-context evidence required by this harness. It is therefore evidence input, not a substitute for P9.

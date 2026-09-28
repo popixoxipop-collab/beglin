@@ -1,0 +1,242 @@
+{
+  "artifact_hash": "e4418f697e5c7725ad29f356cccb2d06129642a00854bac329f4949ac7520ca4",
+  "cell": {
+    "cell_id": "kv_l11_n6",
+    "kind": "single_target_candidate",
+    "n": 6,
+    "policy_hash": "4e6556a1301631d62c2dd7f5cac2a481e4674d0d52088b93fcd1b77d03ea90ab",
+    "promotion_lines": [
+      "kv_a_proj_with_mqa 11 6"
+    ],
+    "target": {
+      "layer": 11,
+      "role": "kv_a_proj_with_mqa"
+    }
+  },
+  "identity": {
+    "backend": "mlx_metal",
+    "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "diagnostic_corpus_sha256": "351d9a30e726bba4b1455590d913d2f2395aa81057f5bb020525ca056528dd13",
+    "hardware_id": "xox-apple-silicon",
+    "model_id": "deepseek-v2-lite",
+    "runtime_config_hash": "03ac5b7ecba0ef272de3afb092e717f05b6c91e253fbc5cb30a2aebd99df0828",
+    "seed": 0,
+    "source_commit": "a3c518176d2ddb173f88922a97f8ca2bcd4218d4",
+    "source_tree": "b5dda094d405a4efd1ca914a22548c038a69649708974917cac56c4ada60d718"
+  },
+  "plan_sha256": "edb06370dbdf0ae6f1f61cb4ae7f82d320a8507a3504b2f118eb576455e8427c",
+  "raw_log_sha256": "22238b743fb4e83bc342383a55efa203cad0ea6b06fafdb6f70fe8b50b0cd020",
+  "requests": [
+    {
+      "activation": {
+        "kv_a_proj_with_mqa_l11": {
+          "mean_abs": 0.6855182186249764,
+          "rms": 1.482689295252753
+        },
+        "shared_up_proj_l3": {
+          "mean_abs": 0.189758968449408,
+          "rms": 0.2598878592737368
+        }
+      },
+      "context_tokens": 18,
+      "finite_logits": true,
+      "nll_sum": 84.62030718041879,
+      "nll_token_count": 17,
+      "output_text": " In the realm of quantum mechanics, alpha and beta particles play crucial roles",
+      "output_token_ids": [
+        685,
+        254,
+        26210,
+        280,
+        8633,
+        26473,
+        11,
+        23689,
+        285,
+        21459,
+        11415,
+        1538,
+        14222,
+        16330
+      ],
+      "prompt_id": "constraint_words",
+      "reference_agreement": 0.4285714285714286,
+      "repetition": 0,
+      "request_id": "p9a-20260928T192110Z-66994:constraint_words:0",
+      "router_decision_count": 806,
+      "router_near_tie_count": 221
+    },
+    {
+      "activation": {
+        "kv_a_proj_with_mqa_l11": {
+          "mean_abs": 0.6332802740128144,
+          "rms": 1.4814386436299531
+        },
+        "shared_up_proj_l3": {
+          "mean_abs": 0.18175166327020395,
+          "rms": 0.2533448724001821
+        }
+      },
+      "context_tokens": 16,
+      "finite_logits": true,
+      "nll_sum": 73.85264203200025,
+      "nll_token_count": 15,
+      "output_text": "\nAs the fog rolled in, the",
+      "output_token_ids": [
+        185,
+        2124,
+        254,
+        27464,
+        19178,
+        279,
+        11,
+        254
+      ],
+      "prompt_id": "ppl_short_1",
+      "reference_agreement": 0.125,
+      "repetition": 0,
+      "request_id": "p9a-20260928T192110Z-66994:ppl_short_1:0",
+      "router_decision_count": 598,
+      "router_near_tie_count": 163
+    },
+    {
+      "activation": {
+        "kv_a_proj_with_mqa_l11": {
+          "mean_abs": 0.6520868337923481,
+          "rms": 1.4847909192911395
+        },
+        "shared_up_proj_l3": {
+          "mean_abs": 0.17808274924755096,
+          "rms": 0.2441289390173012
+        }
+      },
+      "context_tokens": 25,
+      "finite_logits": true,
+      "nll_sum": 102.82074531803656,
+      "nll_token_count": 24,
+      "output_text": " To solve this problem, you can",
+      "output_token_ids": [
+        2158,
+        8708,
+        437,
+        2066,
+        11,
+        340,
+        481
+      ],
+      "prompt_id": "short_reasoning",
+      "reference_agreement": 1.0,
+      "repetition": 0,
+      "request_id": "p9a-20260928T192110Z-66994:short_reasoning:0",
+      "router_decision_count": 806,
+      "router_near_tie_count": 233
+    },
+    {
+      "activation": {
+        "kv_a_proj_with_mqa_l11": {
+          "mean_abs": 0.6855182186249764,
+          "rms": 1.482689295252753
+        },
+        "shared_up_proj_l3": {
+          "mean_abs": 0.189758968449408,
+          "rms": 0.2598878592737368
+        }
+      },
+      "context_tokens": 18,
+      "finite_logits": true,
+      "nll_sum": 84.62030718041879,
+      "nll_token_count": 17,
+      "output_text": " In the realm of quantum mechanics, alpha and beta particles play crucial roles",
+      "output_token_ids": [
+        685,
+        254,
+        26210,
+        280,
+        8633,
+        26473,
+        11,
+        23689,
+        285,
+        21459,
+        11415,
+        1538,
+        14222,
+        16330
+      ],
+      "prompt_id": "constraint_words",
+      "reference_agreement": 0.4285714285714286,
+      "repetition": 1,
+      "request_id": "p9a-20260928T192110Z-66994:constraint_words:1",
+      "router_decision_count": 806,
+      "router_near_tie_count": 221
+    },
+    {
+      "activation": {
+        "kv_a_proj_with_mqa_l11": {
+          "mean_abs": 0.6332802740128144,
+          "rms": 1.4814386436299531
+        },
+        "shared_up_proj_l3": {
+          "mean_abs": 0.18175166327020395,
+          "rms": 0.2533448724001821
+        }
+      },
+      "context_tokens": 16,
+      "finite_logits": true,
+      "nll_sum": 73.85264203200025,
+      "nll_token_count": 15,
+      "output_text": "\nAs the fog rolled in, the",
+      "output_token_ids": [
+        185,
+        2124,
+        254,
+        27464,
+        19178,
+        279,
+        11,
+        254
+      ],
+      "prompt_id": "ppl_short_1",
+      "reference_agreement": 0.125,
+      "repetition": 1,
+      "request_id": "p9a-20260928T192110Z-66994:ppl_short_1:1",
+      "router_decision_count": 598,
+      "router_near_tie_count": 163
+    },
+    {
+      "activation": {
+        "kv_a_proj_with_mqa_l11": {
+          "mean_abs": 0.6520868337923481,
+          "rms": 1.4847909192911395
+        },
+        "shared_up_proj_l3": {
+          "mean_abs": 0.17808274924755096,
+          "rms": 0.2441289390173012
+        }
+      },
+      "context_tokens": 25,
+      "finite_logits": true,
+      "nll_sum": 102.82074531803656,
+      "nll_token_count": 24,
+      "output_text": " To solve this problem, you can",
+      "output_token_ids": [
+        2158,
+        8708,
+        437,
+        2066,
+        11,
+        340,
+        481
+      ],
+      "prompt_id": "short_reasoning",
+      "reference_agreement": 1.0,
+      "repetition": 1,
+      "request_id": "p9a-20260928T192110Z-66994:short_reasoning:1",
+      "router_decision_count": 806,
+      "router_near_tie_count": 233
+    }
+  ],
+  "run_id": "p9a-20260928T192110Z-66994",
+  "schema": "beglin-p9-single-target-artifact/1"
+}

@@ -11,6 +11,7 @@
     "mlx_moe.cpp",
     "mlx_moe.h",
     "beglin_p9_quality_fixture.py",
+    "beglin_p9_single_target_ablation_fixture.py",
     "benchmarks/quality/**",
     "configs/quality/**",
     "docs/p9-quality/**"
@@ -32,7 +33,12 @@
     "physical_raw_matrix": "PASS_5_OF_5",
     "normalized_artifacts": "PASS_5_OF_5",
     "metric_recomputation": "PASS_4_OF_4",
-    "independent_final_audit": "P9_EVIDENCE_INDEPENDENT_PASS"
+    "independent_final_audit": "P9_EVIDENCE_INDEPENDENT_PASS",
+    "single_target_tailnet_fixture_registration": "PASS_ALPHA62_EXACT_SHA_PINNED",
+    "single_target_physical_raw": "PASS_7_OF_7",
+    "single_target_normalized_artifacts": "PASS_7_OF_7",
+    "single_target_independent_audit": "P9_SINGLE_TARGET_EVIDENCE_INDEPENDENT_PASS_225_OF_225",
+    "single_target_boundary_characterization": "BOTH_TARGETS_CAUSAL_WITH_NONLINEAR_INTERACTION"
   },
   "hashes": {
     "corpus_sha256": "dbf4102851e2e01d1c02e5e73bccc5882df8f9f2b1e9f3e245eb60f4b5d8f32f",
@@ -48,7 +54,15 @@
     "evaluation_file_sha256": "37681b0603d14a680423233ed708140d451bd123e676df12372a3182d2559e9c",
     "evaluation_hash": "ceb40a9c18a92231f484d9b528aaeca124218ff48d40ab76d9a52f466f954938",
     "independent_audit_file_sha256": "1c2de16bf274f728d6711d943b30a5a357d7f210af464d02279b37abd752ffbc",
-    "independent_audit_hash": "481746339b5e87c28c9084301797284b7887c70dc397f9f6e701bab5e7d91074"
+    "independent_audit_hash": "481746339b5e87c28c9084301797284b7887c70dc397f9f6e701bab5e7d91074",
+    "single_target_plan_sha256": "edb06370dbdf0ae6f1f61cb4ae7f82d320a8507a3504b2f118eb576455e8427c",
+    "single_target_runner_sha256": "749abcc325bc4d10f41ade3be242b8de3b7119fd3795ea074a3f35283f0e22d3",
+    "single_target_raw_result_file_sha256": "0bdcca94681f737155d2becfe6006184a96f8e01e51858653c1181efe025a348",
+    "single_target_raw_result_hash": "65a79a88fe9a89e7f3d6cdd773323561407d8145f011dc12394f10e210b15fb4",
+    "single_target_analysis_file_sha256": "293e76eb7329e41f12944546ac5dc9466dd2782037d119cabd542fbf1a40beb4",
+    "single_target_analysis_hash": "e76d79a44fff9c24c21b385f85e8a6dac28ce96802669b2551e42d3f1f0b2ff9",
+    "single_target_audit_file_sha256": "0439142bbab1546c8b0340f04e2463ea863ad68a0e1eced33dac56cd2d6ce17d",
+    "single_target_audit_hash": "30e7dd91f58fb50a6af508e21f166bad09f22fca21c732bdda00c6dc7212c9c5"
   },
   "adapter": {
     "id": "p9-xox-mlx-metal-v1",
@@ -66,6 +80,57 @@
   "physical_run_id": "p9-20260928T182317Z-56784",
   "physical_job_state": "SUCCEEDED",
   "physical_job_exit_code": 0,
+  "single_target_physical_job_id": "job_a760be0f9dc67ef5b971a326a1dd1449",
+  "single_target_physical_run_id": "p9a-20260928T192110Z-66994",
+  "single_target_physical_job_state": "SUCCEEDED",
+  "single_target_physical_job_exit_code": 0,
+  "single_target_boundary_outcome": {
+    "status": "P9_SINGLE_TARGET_EVIDENCE_INDEPENDENT_PASS",
+    "all_finite_logits": true,
+    "all_deterministic": true,
+    "nonlinear_interaction_observed": true,
+    "kv_a_proj_with_mqa_l11": {
+      "matching_ns": [],
+      "divergent_ns": [
+        5,
+        6,
+        7
+      ],
+      "changed_prompt_ids_by_n": {
+        "5": [
+          "constraint_words"
+        ],
+        "6": [
+          "constraint_words",
+          "ppl_short_1"
+        ],
+        "7": [
+          "constraint_words",
+          "ppl_short_1"
+        ]
+      }
+    },
+    "shared_up_proj_l3": {
+      "matching_ns": [],
+      "divergent_ns": [
+        5,
+        6,
+        7
+      ],
+      "changed_prompt_ids_by_n": {
+        "5": [
+          "short_reasoning"
+        ],
+        "6": [
+          "constraint_words"
+        ],
+        "7": [
+          "constraint_words"
+        ]
+      }
+    },
+    "production_release_authorized": false
+  },
   "quality_outcome": {
     "overall": "P9_QUALITY_FAIL",
     "n4": "P9_QUALITY_PASS",
@@ -90,8 +155,9 @@
   "merge_release_authority": false,
   "next": [
     "preserve this frozen failed matrix and its independent audit",
+    "preserve the versioned single-target boundary evidence and independent audit",
     "do not promote n5, n6, or n7",
-    "investigate candidate output drift only in a new versioned engineering iteration",
+    "change precision assignment or add a targeted mitigation only in a new versioned engineering iteration",
     "require a new complete physical matrix and independent audit before any production decision"
   ]
 }

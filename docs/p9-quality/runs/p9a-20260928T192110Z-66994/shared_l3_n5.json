@@ -1,0 +1,242 @@
+{
+  "artifact_hash": "c0b3716f3151d34a0b0cc9ee11a145e8a2725480797a9b6ac4fd6468a1613f35",
+  "cell": {
+    "cell_id": "shared_l3_n5",
+    "kind": "single_target_candidate",
+    "n": 5,
+    "policy_hash": "e2e91e14182246f1507e886d354d57275449a69ac735634f4ce52ae0ee5cc4a6",
+    "promotion_lines": [
+      "shared_up_proj 3 5"
+    ],
+    "target": {
+      "layer": 3,
+      "role": "shared_up_proj"
+    }
+  },
+  "identity": {
+    "backend": "mlx_metal",
+    "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "diagnostic_corpus_sha256": "351d9a30e726bba4b1455590d913d2f2395aa81057f5bb020525ca056528dd13",
+    "hardware_id": "xox-apple-silicon",
+    "model_id": "deepseek-v2-lite",
+    "runtime_config_hash": "03ac5b7ecba0ef272de3afb092e717f05b6c91e253fbc5cb30a2aebd99df0828",
+    "seed": 0,
+    "source_commit": "a3c518176d2ddb173f88922a97f8ca2bcd4218d4",
+    "source_tree": "b5dda094d405a4efd1ca914a22548c038a69649708974917cac56c4ada60d718"
+  },
+  "plan_sha256": "edb06370dbdf0ae6f1f61cb4ae7f82d320a8507a3504b2f118eb576455e8427c",
+  "raw_log_sha256": "752d1eb4b825b2e6460c341593a47710724104fc013d5d66ce727a0240bef418",
+  "requests": [
+    {
+      "activation": {
+        "kv_a_proj_with_mqa_l11": {
+          "mean_abs": 0.6871942257688891,
+          "rms": 1.469539852921931
+        },
+        "shared_up_proj_l3": {
+          "mean_abs": 0.18801599692913792,
+          "rms": 0.2575304811725328
+        }
+      },
+      "context_tokens": 18,
+      "finite_logits": true,
+      "nll_sum": 84.61445141490357,
+      "nll_token_count": 17,
+      "output_text": " In the world of science, alpha and beta are like two little friends",
+      "output_token_ids": [
+        685,
+        254,
+        1843,
+        280,
+        8204,
+        11,
+        23689,
+        285,
+        21459,
+        418,
+        837,
+        984,
+        1585,
+        3997
+      ],
+      "prompt_id": "constraint_words",
+      "reference_agreement": 1.0,
+      "repetition": 0,
+      "request_id": "p9a-20260928T192110Z-66994:constraint_words:0",
+      "router_decision_count": 806,
+      "router_near_tie_count": 212
+    },
+    {
+      "activation": {
+        "kv_a_proj_with_mqa_l11": {
+          "mean_abs": 0.6411462341961653,
+          "rms": 1.4899957903230605
+        },
+        "shared_up_proj_l3": {
+          "mean_abs": 0.1847032412238743,
+          "rms": 0.2580096546874762
+        }
+      },
+      "context_tokens": 16,
+      "finite_logits": true,
+      "nll_sum": 72.6355738607975,
+      "nll_token_count": 15,
+      "output_text": "\n\nThe old observatory stood above",
+      "output_token_ids": [
+        185,
+        185,
+        549,
+        1712,
+        3157,
+        5775,
+        6626,
+        2330
+      ],
+      "prompt_id": "ppl_short_1",
+      "reference_agreement": 1.0,
+      "repetition": 0,
+      "request_id": "p9a-20260928T192110Z-66994:ppl_short_1:0",
+      "router_decision_count": 598,
+      "router_near_tie_count": 165
+    },
+    {
+      "activation": {
+        "kv_a_proj_with_mqa_l11": {
+          "mean_abs": 0.6579856266898494,
+          "rms": 1.4901008888620035
+        },
+        "shared_up_proj_l3": {
+          "mean_abs": 0.17843971810033243,
+          "rms": 0.24448236930510148
+        }
+      },
+      "context_tokens": 25,
+      "finite_logits": true,
+      "nll_sum": 103.14128460337143,
+      "nll_token_count": 24,
+      "output_text": " Here's a Python solution:",
+      "output_token_ids": [
+        4462,
+        6,
+        82,
+        245,
+        12974,
+        3418,
+        25
+      ],
+      "prompt_id": "short_reasoning",
+      "reference_agreement": 0.0,
+      "repetition": 0,
+      "request_id": "p9a-20260928T192110Z-66994:short_reasoning:0",
+      "router_decision_count": 806,
+      "router_near_tie_count": 229
+    },
+    {
+      "activation": {
+        "kv_a_proj_with_mqa_l11": {
+          "mean_abs": 0.6871942257688891,
+          "rms": 1.469539852921931
+        },
+        "shared_up_proj_l3": {
+          "mean_abs": 0.18801599692913792,
+          "rms": 0.2575304811725328
+        }
+      },
+      "context_tokens": 18,
+      "finite_logits": true,
+      "nll_sum": 84.61445141490357,
+      "nll_token_count": 17,
+      "output_text": " In the world of science, alpha and beta are like two little friends",
+      "output_token_ids": [
+        685,
+        254,
+        1843,
+        280,
+        8204,
+        11,
+        23689,
+        285,
+        21459,
+        418,
+        837,
+        984,
+        1585,
+        3997
+      ],
+      "prompt_id": "constraint_words",
+      "reference_agreement": 1.0,
+      "repetition": 1,
+      "request_id": "p9a-20260928T192110Z-66994:constraint_words:1",
+      "router_decision_count": 806,
+      "router_near_tie_count": 212
+    },
+    {
+      "activation": {
+        "kv_a_proj_with_mqa_l11": {
+          "mean_abs": 0.6411462341961653,
+          "rms": 1.4899957903230605
+        },
+        "shared_up_proj_l3": {
+          "mean_abs": 0.1847032412238743,
+          "rms": 0.2580096546874762
+        }
+      },
+      "context_tokens": 16,
+      "finite_logits": true,
+      "nll_sum": 72.6355738607975,
+      "nll_token_count": 15,
+      "output_text": "\n\nThe old observatory stood above",
+      "output_token_ids": [
+        185,
+        185,
+        549,
+        1712,
+        3157,
+        5775,
+        6626,
+        2330
+      ],
+      "prompt_id": "ppl_short_1",
+      "reference_agreement": 1.0,
+      "repetition": 1,
+      "request_id": "p9a-20260928T192110Z-66994:ppl_short_1:1",
+      "router_decision_count": 598,
+      "router_near_tie_count": 165
+    },
+    {
+      "activation": {
+        "kv_a_proj_with_mqa_l11": {
+          "mean_abs": 0.6579856266898494,
+          "rms": 1.4901008888620035
+        },
+        "shared_up_proj_l3": {
+          "mean_abs": 0.17843971810033243,
+          "rms": 0.24448236930510148
+        }
+      },
+      "context_tokens": 25,
+      "finite_logits": true,
+      "nll_sum": 103.14128460337143,
+      "nll_token_count": 24,
+      "output_text": " Here's a Python solution:",
+      "output_token_ids": [
+        4462,
+        6,
+        82,
+        245,
+        12974,
+        3418,
+        25
+      ],
+      "prompt_id": "short_reasoning",
+      "reference_agreement": 0.0,
+      "repetition": 1,
+      "request_id": "p9a-20260928T192110Z-66994:short_reasoning:1",
+      "router_decision_count": 806,
+      "router_near_tie_count": 229
+    }
+  ],
+  "run_id": "p9a-20260928T192110Z-66994",
+  "schema": "beglin-p9-single-target-artifact/1"
+}

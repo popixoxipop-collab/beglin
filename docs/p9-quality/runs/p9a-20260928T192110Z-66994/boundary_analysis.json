@@ -1,0 +1,589 @@
+{
+  "all_deterministic": true,
+  "all_finite_logits": true,
+  "analysis_hash": "e76d79a44fff9c24c21b385f85e8a6dac28ce96802669b2551e42d3f1f0b2ff9",
+  "cells": [
+    {
+      "artifact_hash": "3088c2680cf3c769a4d198a72eb2cdd896c8da8bc8670a6481e011d400b0de11",
+      "cell_id": "kv_l11_n5",
+      "changed": [
+        {
+          "candidate_output": " In the realm of quantum mechanics, alpha and beta particles play crucial roles",
+          "candidate_token_id": 26210,
+          "first_difference_token_index": 2,
+          "prompt_id": "constraint_words",
+          "reference_output": " In the world of science, alpha and beta are like two little friends",
+          "reference_token_id": 1843,
+          "repetition": 0
+        },
+        {
+          "candidate_output": " In the realm of quantum mechanics, alpha and beta particles play crucial roles",
+          "candidate_token_id": 26210,
+          "first_difference_token_index": 2,
+          "prompt_id": "constraint_words",
+          "reference_output": " In the world of science, alpha and beta are like two little friends",
+          "reference_token_id": 1843,
+          "repetition": 1
+        }
+      ],
+      "deterministic": true,
+      "exact_match_rate": 0.6666666666666666,
+      "exact_matches": 4,
+      "finite_logits": true,
+      "n": 5,
+      "target": {
+        "layer": 11,
+        "role": "kv_a_proj_with_mqa"
+      },
+      "total_requests": 6
+    },
+    {
+      "artifact_hash": "e4418f697e5c7725ad29f356cccb2d06129642a00854bac329f4949ac7520ca4",
+      "cell_id": "kv_l11_n6",
+      "changed": [
+        {
+          "candidate_output": " In the realm of quantum mechanics, alpha and beta particles play crucial roles",
+          "candidate_token_id": 26210,
+          "first_difference_token_index": 2,
+          "prompt_id": "constraint_words",
+          "reference_output": " In the world of science, alpha and beta are like two little friends",
+          "reference_token_id": 1843,
+          "repetition": 0
+        },
+        {
+          "candidate_output": " In the realm of quantum mechanics, alpha and beta particles play crucial roles",
+          "candidate_token_id": 26210,
+          "first_difference_token_index": 2,
+          "prompt_id": "constraint_words",
+          "reference_output": " In the world of science, alpha and beta are like two little friends",
+          "reference_token_id": 1843,
+          "repetition": 1
+        },
+        {
+          "candidate_output": "\nAs the fog rolled in, the",
+          "candidate_token_id": 2124,
+          "first_difference_token_index": 1,
+          "prompt_id": "ppl_short_1",
+          "reference_output": "\n\nThe old observatory stood above",
+          "reference_token_id": 185,
+          "repetition": 0
+        },
+        {
+          "candidate_output": "\nAs the fog rolled in, the",
+          "candidate_token_id": 2124,
+          "first_difference_token_index": 1,
+          "prompt_id": "ppl_short_1",
+          "reference_output": "\n\nThe old observatory stood above",
+          "reference_token_id": 185,
+          "repetition": 1
+        }
+      ],
+      "deterministic": true,
+      "exact_match_rate": 0.3333333333333333,
+      "exact_matches": 2,
+      "finite_logits": true,
+      "n": 6,
+      "target": {
+        "layer": 11,
+        "role": "kv_a_proj_with_mqa"
+      },
+      "total_requests": 6
+    },
+    {
+      "artifact_hash": "5c52c19a1fe7750ff8ac2f613047cc5b61ce3eaa788f1d0c971e06479bb7d8aa",
+      "cell_id": "kv_l11_n7",
+      "changed": [
+        {
+          "candidate_output": " In the realm of quantum mechanics, alpha and beta particles play crucial roles",
+          "candidate_token_id": 26210,
+          "first_difference_token_index": 2,
+          "prompt_id": "constraint_words",
+          "reference_output": " In the world of science, alpha and beta are like two little friends",
+          "reference_token_id": 1843,
+          "repetition": 0
+        },
+        {
+          "candidate_output": " In the realm of quantum mechanics, alpha and beta particles play crucial roles",
+          "candidate_token_id": 26210,
+          "first_difference_token_index": 2,
+          "prompt_id": "constraint_words",
+          "reference_output": " In the world of science, alpha and beta are like two little friends",
+          "reference_token_id": 1843,
+          "repetition": 1
+        },
+        {
+          "candidate_output": "\nAs the fog rolled in, the",
+          "candidate_token_id": 2124,
+          "first_difference_token_index": 1,
+          "prompt_id": "ppl_short_1",
+          "reference_output": "\n\nThe old observatory stood above",
+          "reference_token_id": 185,
+          "repetition": 0
+        },
+        {
+          "candidate_output": "\nAs the fog rolled in, the",
+          "candidate_token_id": 2124,
+          "first_difference_token_index": 1,
+          "prompt_id": "ppl_short_1",
+          "reference_output": "\n\nThe old observatory stood above",
+          "reference_token_id": 185,
+          "repetition": 1
+        }
+      ],
+      "deterministic": true,
+      "exact_match_rate": 0.3333333333333333,
+      "exact_matches": 2,
+      "finite_logits": true,
+      "n": 7,
+      "target": {
+        "layer": 11,
+        "role": "kv_a_proj_with_mqa"
+      },
+      "total_requests": 6
+    },
+    {
+      "artifact_hash": "c0b3716f3151d34a0b0cc9ee11a145e8a2725480797a9b6ac4fd6468a1613f35",
+      "cell_id": "shared_l3_n5",
+      "changed": [
+        {
+          "candidate_output": " Here's a Python solution:",
+          "candidate_token_id": 4462,
+          "first_difference_token_index": 0,
+          "prompt_id": "short_reasoning",
+          "reference_output": " To solve this problem, you can",
+          "reference_token_id": 2158,
+          "repetition": 0
+        },
+        {
+          "candidate_output": " Here's a Python solution:",
+          "candidate_token_id": 4462,
+          "first_difference_token_index": 0,
+          "prompt_id": "short_reasoning",
+          "reference_output": " To solve this problem, you can",
+          "reference_token_id": 2158,
+          "repetition": 1
+        }
+      ],
+      "deterministic": true,
+      "exact_match_rate": 0.6666666666666666,
+      "exact_matches": 4,
+      "finite_logits": true,
+      "n": 5,
+      "target": {
+        "layer": 3,
+        "role": "shared_up_proj"
+      },
+      "total_requests": 6
+    },
+    {
+      "artifact_hash": "227c1fe49c1a7339e16d54a9559289fce4d3cb1a8cf7e8fc8d5e85f5e693506e",
+      "cell_id": "shared_l3_n6",
+      "changed": [
+        {
+          "candidate_output": " In the realm of quantum mechanics, alpha and beta particles are crucial for",
+          "candidate_token_id": 26210,
+          "first_difference_token_index": 2,
+          "prompt_id": "constraint_words",
+          "reference_output": " In the world of science, alpha and beta are like two little friends",
+          "reference_token_id": 1843,
+          "repetition": 0
+        },
+        {
+          "candidate_output": " In the realm of quantum mechanics, alpha and beta particles are crucial for",
+          "candidate_token_id": 26210,
+          "first_difference_token_index": 2,
+          "prompt_id": "constraint_words",
+          "reference_output": " In the world of science, alpha and beta are like two little friends",
+          "reference_token_id": 1843,
+          "repetition": 1
+        }
+      ],
+      "deterministic": true,
+      "exact_match_rate": 0.6666666666666666,
+      "exact_matches": 4,
+      "finite_logits": true,
+      "n": 6,
+      "target": {
+        "layer": 3,
+        "role": "shared_up_proj"
+      },
+      "total_requests": 6
+    },
+    {
+      "artifact_hash": "6a2533c719804f107430518046c3bbbc3f7903aa80bb6ad6d0e90bb8062a3f0b",
+      "cell_id": "shared_l3_n7",
+      "changed": [
+        {
+          "candidate_output": " In the realm of quantum mechanics, alpha and beta particles are crucial for",
+          "candidate_token_id": 26210,
+          "first_difference_token_index": 2,
+          "prompt_id": "constraint_words",
+          "reference_output": " In the world of science, alpha and beta are like two little friends",
+          "reference_token_id": 1843,
+          "repetition": 0
+        },
+        {
+          "candidate_output": " In the realm of quantum mechanics, alpha and beta particles are crucial for",
+          "candidate_token_id": 26210,
+          "first_difference_token_index": 2,
+          "prompt_id": "constraint_words",
+          "reference_output": " In the world of science, alpha and beta are like two little friends",
+          "reference_token_id": 1843,
+          "repetition": 1
+        }
+      ],
+      "deterministic": true,
+      "exact_match_rate": 0.6666666666666666,
+      "exact_matches": 4,
+      "finite_logits": true,
+      "n": 7,
+      "target": {
+        "layer": 3,
+        "role": "shared_up_proj"
+      },
+      "total_requests": 6
+    }
+  ],
+  "combined_artifact_hashes": {
+    "n5": "5ae95b5bdf0026bdf71b3a7de1581e556d451560a0546649a767454020561240",
+    "n6": "374923a6b43ceddbe47c2d924b2acfbcd9ec4825e6217dfeed2830a81c14e1ed",
+    "n7": "1eb4938469335feed7ee07d3d58557aa709cd5b8e124e55ae498e38829d3b5a1"
+  },
+  "combined_attribution": [
+    {
+      "causal_class": "kv_a_proj_with_mqa_l11_with_interaction",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 2,
+      "kv_first_difference_token_index": 2,
+      "kv_only_changed": true,
+      "n": 5,
+      "prompt_id": "constraint_words",
+      "repetition": 0,
+      "shared_first_difference_token_index": null,
+      "shared_only_changed": false
+    },
+    {
+      "causal_class": "kv_a_proj_with_mqa_l11_with_interaction",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 2,
+      "kv_first_difference_token_index": 2,
+      "kv_only_changed": true,
+      "n": 5,
+      "prompt_id": "constraint_words",
+      "repetition": 1,
+      "shared_first_difference_token_index": null,
+      "shared_only_changed": false
+    },
+    {
+      "causal_class": "stable_all",
+      "combined_changed": false,
+      "combined_first_difference_token_index": null,
+      "kv_first_difference_token_index": null,
+      "kv_only_changed": false,
+      "n": 5,
+      "prompt_id": "ppl_short_1",
+      "repetition": 0,
+      "shared_first_difference_token_index": null,
+      "shared_only_changed": false
+    },
+    {
+      "causal_class": "stable_all",
+      "combined_changed": false,
+      "combined_first_difference_token_index": null,
+      "kv_first_difference_token_index": null,
+      "kv_only_changed": false,
+      "n": 5,
+      "prompt_id": "ppl_short_1",
+      "repetition": 1,
+      "shared_first_difference_token_index": null,
+      "shared_only_changed": false
+    },
+    {
+      "causal_class": "shared_up_proj_l3_with_interaction",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 0,
+      "kv_first_difference_token_index": null,
+      "kv_only_changed": false,
+      "n": 5,
+      "prompt_id": "short_reasoning",
+      "repetition": 0,
+      "shared_first_difference_token_index": 0,
+      "shared_only_changed": true
+    },
+    {
+      "causal_class": "shared_up_proj_l3_with_interaction",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 0,
+      "kv_first_difference_token_index": null,
+      "kv_only_changed": false,
+      "n": 5,
+      "prompt_id": "short_reasoning",
+      "repetition": 1,
+      "shared_first_difference_token_index": 0,
+      "shared_only_changed": true
+    },
+    {
+      "causal_class": "both_or_interaction",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 2,
+      "kv_first_difference_token_index": 2,
+      "kv_only_changed": true,
+      "n": 6,
+      "prompt_id": "constraint_words",
+      "repetition": 0,
+      "shared_first_difference_token_index": 2,
+      "shared_only_changed": true
+    },
+    {
+      "causal_class": "both_or_interaction",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 2,
+      "kv_first_difference_token_index": 2,
+      "kv_only_changed": true,
+      "n": 6,
+      "prompt_id": "constraint_words",
+      "repetition": 1,
+      "shared_first_difference_token_index": 2,
+      "shared_only_changed": true
+    },
+    {
+      "causal_class": "kv_a_proj_with_mqa_l11",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 1,
+      "kv_first_difference_token_index": 1,
+      "kv_only_changed": true,
+      "n": 6,
+      "prompt_id": "ppl_short_1",
+      "repetition": 0,
+      "shared_first_difference_token_index": null,
+      "shared_only_changed": false
+    },
+    {
+      "causal_class": "kv_a_proj_with_mqa_l11",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 1,
+      "kv_first_difference_token_index": 1,
+      "kv_only_changed": true,
+      "n": 6,
+      "prompt_id": "ppl_short_1",
+      "repetition": 1,
+      "shared_first_difference_token_index": null,
+      "shared_only_changed": false
+    },
+    {
+      "causal_class": "stable_all",
+      "combined_changed": false,
+      "combined_first_difference_token_index": null,
+      "kv_first_difference_token_index": null,
+      "kv_only_changed": false,
+      "n": 6,
+      "prompt_id": "short_reasoning",
+      "repetition": 0,
+      "shared_first_difference_token_index": null,
+      "shared_only_changed": false
+    },
+    {
+      "causal_class": "stable_all",
+      "combined_changed": false,
+      "combined_first_difference_token_index": null,
+      "kv_first_difference_token_index": null,
+      "kv_only_changed": false,
+      "n": 6,
+      "prompt_id": "short_reasoning",
+      "repetition": 1,
+      "shared_first_difference_token_index": null,
+      "shared_only_changed": false
+    },
+    {
+      "causal_class": "both_or_interaction",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 2,
+      "kv_first_difference_token_index": 2,
+      "kv_only_changed": true,
+      "n": 7,
+      "prompt_id": "constraint_words",
+      "repetition": 0,
+      "shared_first_difference_token_index": 2,
+      "shared_only_changed": true
+    },
+    {
+      "causal_class": "both_or_interaction",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 2,
+      "kv_first_difference_token_index": 2,
+      "kv_only_changed": true,
+      "n": 7,
+      "prompt_id": "constraint_words",
+      "repetition": 1,
+      "shared_first_difference_token_index": 2,
+      "shared_only_changed": true
+    },
+    {
+      "causal_class": "isolated_change_cancelled_in_combination",
+      "combined_changed": false,
+      "combined_first_difference_token_index": null,
+      "kv_first_difference_token_index": 1,
+      "kv_only_changed": true,
+      "n": 7,
+      "prompt_id": "ppl_short_1",
+      "repetition": 0,
+      "shared_first_difference_token_index": null,
+      "shared_only_changed": false
+    },
+    {
+      "causal_class": "isolated_change_cancelled_in_combination",
+      "combined_changed": false,
+      "combined_first_difference_token_index": null,
+      "kv_first_difference_token_index": 1,
+      "kv_only_changed": true,
+      "n": 7,
+      "prompt_id": "ppl_short_1",
+      "repetition": 1,
+      "shared_first_difference_token_index": null,
+      "shared_only_changed": false
+    },
+    {
+      "causal_class": "stable_all",
+      "combined_changed": false,
+      "combined_first_difference_token_index": null,
+      "kv_first_difference_token_index": null,
+      "kv_only_changed": false,
+      "n": 7,
+      "prompt_id": "short_reasoning",
+      "repetition": 0,
+      "shared_first_difference_token_index": null,
+      "shared_only_changed": false
+    },
+    {
+      "causal_class": "stable_all",
+      "combined_changed": false,
+      "combined_first_difference_token_index": null,
+      "kv_first_difference_token_index": null,
+      "kv_only_changed": false,
+      "n": 7,
+      "prompt_id": "short_reasoning",
+      "repetition": 1,
+      "shared_first_difference_token_index": null,
+      "shared_only_changed": false
+    }
+  ],
+  "control_identity": {
+    "backend": "mlx_metal",
+    "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "diagnostic_corpus_sha256": "351d9a30e726bba4b1455590d913d2f2395aa81057f5bb020525ca056528dd13",
+    "hardware_id": "xox-apple-silicon",
+    "model_id": "deepseek-v2-lite",
+    "runtime_config_hash": "03ac5b7ecba0ef272de3afb092e717f05b6c91e253fbc5cb30a2aebd99df0828",
+    "seed": 0,
+    "source_commit": "a3c518176d2ddb173f88922a97f8ca2bcd4218d4",
+    "source_tree": "b5dda094d405a4efd1ca914a22548c038a69649708974917cac56c4ada60d718"
+  },
+  "plan_sha256": "edb06370dbdf0ae6f1f61cb4ae7f82d320a8507a3504b2f118eb576455e8427c",
+  "production_write_allowed": false,
+  "reference_artifact_hash": "cd7c05483fcd46dfb415e8bbb2d9ff30fa0707df40e6ea36b8e02e4822b7dbeb",
+  "schema": "beglin-p9-single-target-boundary-analysis/1",
+  "status": "P9_SINGLE_TARGET_BOUNDARY_INTERACTION_FOUND",
+  "target_boundaries": [
+    {
+      "changed_prompt_ids_by_n": {
+        "5": [
+          "constraint_words"
+        ],
+        "6": [
+          "constraint_words",
+          "ppl_short_1"
+        ],
+        "7": [
+          "constraint_words",
+          "ppl_short_1"
+        ]
+      },
+      "divergent_ns": [
+        5,
+        6,
+        7
+      ],
+      "matching_ns": [],
+      "monotonic_threshold_claimed": false,
+      "target": {
+        "layer": 11,
+        "role": "kv_a_proj_with_mqa"
+      }
+    },
+    {
+      "changed_prompt_ids_by_n": {
+        "5": [
+          "short_reasoning"
+        ],
+        "6": [
+          "constraint_words"
+        ],
+        "7": [
+          "constraint_words"
+        ]
+      },
+      "divergent_ns": [
+        5,
+        6,
+        7
+      ],
+      "matching_ns": [],
+      "monotonic_threshold_claimed": false,
+      "target": {
+        "layer": 3,
+        "role": "shared_up_proj"
+      }
+    }
+  ],
+  "unresolved_combined_changes": [
+    {
+      "causal_class": "both_or_interaction",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 2,
+      "kv_first_difference_token_index": 2,
+      "kv_only_changed": true,
+      "n": 6,
+      "prompt_id": "constraint_words",
+      "repetition": 0,
+      "shared_first_difference_token_index": 2,
+      "shared_only_changed": true
+    },
+    {
+      "causal_class": "both_or_interaction",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 2,
+      "kv_first_difference_token_index": 2,
+      "kv_only_changed": true,
+      "n": 6,
+      "prompt_id": "constraint_words",
+      "repetition": 1,
+      "shared_first_difference_token_index": 2,
+      "shared_only_changed": true
+    },
+    {
+      "causal_class": "both_or_interaction",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 2,
+      "kv_first_difference_token_index": 2,
+      "kv_only_changed": true,
+      "n": 7,
+      "prompt_id": "constraint_words",
+      "repetition": 0,
+      "shared_first_difference_token_index": 2,
+      "shared_only_changed": true
+    },
+    {
+      "causal_class": "both_or_interaction",
+      "combined_changed": true,
+      "combined_first_difference_token_index": 2,
+      "kv_first_difference_token_index": 2,
+      "kv_only_changed": true,
+      "n": 7,
+      "prompt_id": "constraint_words",
+      "repetition": 1,
+      "shared_first_difference_token_index": 2,
+      "shared_only_changed": true
+    }
+  ]
+}

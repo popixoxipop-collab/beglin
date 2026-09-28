@@ -1,0 +1,1419 @@
+{
+  "audit_sha256": "30e7dd91f58fb50a6af508e21f166bad09f22fca21c732bdda00c6dc7212c9c5",
+  "checks": [
+    {
+      "detail": "beglin-p9-single-target-physical-run/1",
+      "id": "raw_schema",
+      "status": "PASS"
+    },
+    {
+      "detail": "P9_SINGLE_TARGET_RAW_PASS",
+      "id": "raw_status",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "raw_result_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "raw_production_denied",
+      "status": "PASS"
+    },
+    {
+      "detail": "749abcc325bc4d10f41ade3be242b8de3b7119fd3795ea074a3f35283f0e22d3",
+      "id": "runner_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "plan_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "plan_embedded",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "identity_file",
+      "status": "PASS"
+    },
+    {
+      "detail": "mlx_metal",
+      "id": "metal_backend",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "job_succeeded",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "job_exact_argv",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "job_confirmed",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "registration_status",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "registration_fixture_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "registration_job",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "registration_live_negative_probe",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_audit_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_audit_status",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_audit_link",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_evaluation_link",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_p9_failed",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_production_denied",
+      "status": "PASS"
+    },
+    {
+      "detail": [
+        "kv_l11_n5",
+        "kv_l11_n6",
+        "kv_l11_n7",
+        "reference",
+        "shared_l3_n5",
+        "shared_l3_n6",
+        "shared_l3_n7"
+      ],
+      "id": "raw_cell_set",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_raw_pass",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_raw_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_raw_shape",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_no_promotion",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_artifact_schema",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_artifact_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_artifact_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_artifact_plan_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_artifact_identity",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_artifact_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_request_keys",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_parsed_raw_count",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_constraint_words_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_constraint_words_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_ppl_short_1_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_ppl_short_1_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_short_reasoning_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_short_reasoning_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_finite",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "reference_deterministic",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_raw_pass",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_raw_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_raw_shape",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_promotion_file",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_artifact_schema",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_artifact_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_artifact_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_artifact_plan_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_artifact_identity",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_artifact_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_request_keys",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_parsed_raw_count",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_constraint_words_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_constraint_words_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_ppl_short_1_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_ppl_short_1_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_short_reasoning_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_short_reasoning_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_finite",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n5_deterministic",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_raw_pass",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_raw_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_raw_shape",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_promotion_file",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_artifact_schema",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_artifact_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_artifact_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_artifact_plan_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_artifact_identity",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_artifact_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_request_keys",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_parsed_raw_count",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_constraint_words_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_constraint_words_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_ppl_short_1_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_ppl_short_1_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_short_reasoning_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_short_reasoning_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_finite",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n6_deterministic",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_raw_pass",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_raw_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_raw_shape",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_promotion_file",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_artifact_schema",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_artifact_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_artifact_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_artifact_plan_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_artifact_identity",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_artifact_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_request_keys",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_parsed_raw_count",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_constraint_words_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_constraint_words_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_ppl_short_1_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_ppl_short_1_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_short_reasoning_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_short_reasoning_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_finite",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "kv_l11_n7_deterministic",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_raw_pass",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_raw_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_raw_shape",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_promotion_file",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_artifact_schema",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_artifact_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_artifact_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_artifact_plan_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_artifact_identity",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_artifact_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_request_keys",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_parsed_raw_count",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_constraint_words_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_constraint_words_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_ppl_short_1_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_ppl_short_1_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_short_reasoning_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_short_reasoning_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_finite",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n5_deterministic",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_raw_pass",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_raw_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_raw_shape",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_promotion_file",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_artifact_schema",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_artifact_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_artifact_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_artifact_plan_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_artifact_identity",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_artifact_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_request_keys",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_parsed_raw_count",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_constraint_words_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_constraint_words_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_ppl_short_1_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_ppl_short_1_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_short_reasoning_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_short_reasoning_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_finite",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n6_deterministic",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_raw_pass",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_raw_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_raw_shape",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_promotion_file",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_artifact_schema",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_artifact_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_artifact_log_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_artifact_plan_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_artifact_identity",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_artifact_policy",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_request_keys",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_parsed_raw_count",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_constraint_words_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_constraint_words_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_ppl_short_1_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_ppl_short_1_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_short_reasoning_r0_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_short_reasoning_r1_raw_match",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_finite",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "shared_l3_n7_deterministic",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_reference_artifact_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_reference_audit_artifact",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_reference_audit_file",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_n5_artifact_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_n5_audit_artifact",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_n5_audit_file",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_n6_artifact_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_n6_audit_artifact",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_n6_audit_file",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_n7_artifact_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_n7_audit_artifact",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "source_n7_audit_file",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "cross_run_reference_constraint_words_r0",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "cross_run_reference_ppl_short_1_r0",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "cross_run_reference_short_reasoning_r0",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "cross_run_reference_constraint_words_r1",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "cross_run_reference_ppl_short_1_r1",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "cross_run_reference_short_reasoning_r1",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n5_constraint_words_r0",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n5_constraint_words_r1",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n5_ppl_short_1_r0",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n5_ppl_short_1_r1",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n5_short_reasoning_r0",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n5_short_reasoning_r1",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n6_constraint_words_r0",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n6_constraint_words_r1",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n6_ppl_short_1_r0",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n6_ppl_short_1_r1",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n6_short_reasoning_r0",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n6_short_reasoning_r1",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n7_constraint_words_r0",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n7_constraint_words_r1",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n7_ppl_short_1_r0",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n7_ppl_short_1_r1",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n7_short_reasoning_r0",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "factorial_deterministic_n7_short_reasoning_r1",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_schema",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_hash",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_production_denied",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_finite",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_deterministic",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_boundaries",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_kv_l11_n5_exact",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_kv_l11_n5_changed_prompts",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_kv_l11_n6_exact",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_kv_l11_n6_changed_prompts",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_kv_l11_n7_exact",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_kv_l11_n7_changed_prompts",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_shared_l3_n5_exact",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_shared_l3_n5_changed_prompts",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_shared_l3_n6_exact",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_shared_l3_n6_changed_prompts",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_shared_l3_n7_exact",
+      "status": "PASS"
+    },
+    {
+      "detail": null,
+      "id": "analysis_shared_l3_n7_changed_prompts",
+      "status": "PASS"
+    },
+    {
+      "detail": "P9_SINGLE_TARGET_BOUNDARY_INTERACTION_FOUND",
+      "id": "analysis_status",
+      "status": "PASS"
+    }
+  ],
+  "conclusion": {
+    "all_deterministic": true,
+    "all_finite_logits": true,
+    "evidence_integrity": "P9_SINGLE_TARGET_EVIDENCE_INDEPENDENT_PASS",
+    "nonlinear_interaction_observed": true,
+    "physical_execution": "P9_SINGLE_TARGET_RAW_PASS",
+    "production_mutation_performed": false,
+    "production_release_authorized": false,
+    "single_target_boundaries_characterized": true,
+    "source_p9_quality_status": "P9_QUALITY_FAIL"
+  },
+  "control_identity": {
+    "backend": "mlx_metal",
+    "binary_sha256": "30584018a157bc4fbaf73b121d0ab03fe2676393a8a509fbedb5331576256103",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "diagnostic_corpus_sha256": "351d9a30e726bba4b1455590d913d2f2395aa81057f5bb020525ca056528dd13",
+    "hardware_id": "xox-apple-silicon",
+    "model_id": "deepseek-v2-lite",
+    "runtime_config_hash": "03ac5b7ecba0ef272de3afb092e717f05b6c91e253fbc5cb30a2aebd99df0828",
+    "seed": 0,
+    "source_commit": "a3c518176d2ddb173f88922a97f8ca2bcd4218d4",
+    "source_tree": "b5dda094d405a4efd1ca914a22548c038a69649708974917cac56c4ada60d718"
+  },
+  "factorial_findings": [
+    {
+      "combined_changed": true,
+      "combined_exact_source": "interaction_distinct",
+      "effect_class": "kv_a_proj_with_mqa_l11_causal",
+      "first_difference_token_index": {
+        "combined": 2,
+        "kv": 2,
+        "shared": null
+      },
+      "kv_changed": true,
+      "n": 5,
+      "outputs": {
+        "combined": " In the realm of quantum mechanics, alpha and beta particles are crucial for",
+        "kv_only": " In the realm of quantum mechanics, alpha and beta particles play crucial roles",
+        "reference": " In the world of science, alpha and beta are like two little friends",
+        "shared_only": " In the world of science, alpha and beta are like two little friends"
+      },
+      "prompt_id": "constraint_words",
+      "shared_changed": false
+    },
+    {
+      "combined_changed": true,
+      "combined_exact_source": "interaction_distinct",
+      "effect_class": "shared_up_proj_l3_causal",
+      "first_difference_token_index": {
+        "combined": 0,
+        "kv": null,
+        "shared": 0
+      },
+      "kv_changed": false,
+      "n": 5,
+      "outputs": {
+        "combined": " Here's a Python solution for",
+        "kv_only": " To solve this problem, you can",
+        "reference": " To solve this problem, you can",
+        "shared_only": " Here's a Python solution:"
+      },
+      "prompt_id": "short_reasoning",
+      "shared_changed": true
+    },
+    {
+      "combined_changed": true,
+      "combined_exact_source": "shared_only",
+      "effect_class": "both_independently_causal",
+      "first_difference_token_index": {
+        "combined": 2,
+        "kv": 2,
+        "shared": 2
+      },
+      "kv_changed": true,
+      "n": 6,
+      "outputs": {
+        "combined": " In the realm of quantum mechanics, alpha and beta particles are crucial for",
+        "kv_only": " In the realm of quantum mechanics, alpha and beta particles play crucial roles",
+        "reference": " In the world of science, alpha and beta are like two little friends",
+        "shared_only": " In the realm of quantum mechanics, alpha and beta particles are crucial for"
+      },
+      "prompt_id": "constraint_words",
+      "shared_changed": true
+    },
+    {
+      "combined_changed": true,
+      "combined_exact_source": "kv_only",
+      "effect_class": "kv_a_proj_with_mqa_l11_causal",
+      "first_difference_token_index": {
+        "combined": 1,
+        "kv": 1,
+        "shared": null
+      },
+      "kv_changed": true,
+      "n": 6,
+      "outputs": {
+        "combined": "\nAs the fog rolled in, the",
+        "kv_only": "\nAs the fog rolled in, the",
+        "reference": "\n\nThe old observatory stood above",
+        "shared_only": "\n\nThe old observatory stood above"
+      },
+      "prompt_id": "ppl_short_1",
+      "shared_changed": false
+    },
+    {
+      "combined_changed": true,
+      "combined_exact_source": "shared_only",
+      "effect_class": "both_independently_causal",
+      "first_difference_token_index": {
+        "combined": 2,
+        "kv": 2,
+        "shared": 2
+      },
+      "kv_changed": true,
+      "n": 7,
+      "outputs": {
+        "combined": " In the realm of quantum mechanics, alpha and beta particles are crucial for",
+        "kv_only": " In the realm of quantum mechanics, alpha and beta particles play crucial roles",
+        "reference": " In the world of science, alpha and beta are like two little friends",
+        "shared_only": " In the realm of quantum mechanics, alpha and beta particles are crucial for"
+      },
+      "prompt_id": "constraint_words",
+      "shared_changed": true
+    },
+    {
+      "combined_changed": false,
+      "combined_exact_source": "reference+shared_only",
+      "effect_class": "kv_change_cancelled_in_combination",
+      "first_difference_token_index": {
+        "combined": null,
+        "kv": 1,
+        "shared": null
+      },
+      "kv_changed": true,
+      "n": 7,
+      "outputs": {
+        "combined": "\n\nThe old observatory stood above",
+        "kv_only": "\nAs the fog rolled in, the",
+        "reference": "\n\nThe old observatory stood above",
+        "shared_only": "\n\nThe old observatory stood above"
+      },
+      "prompt_id": "ppl_short_1",
+      "shared_changed": false
+    }
+  ],
+  "failures": [],
+  "inputs": {
+    "analysis_claimed_hash": "e76d79a44fff9c24c21b385f85e8a6dac28ce96802669b2551e42d3f1f0b2ff9",
+    "analysis_sha256": "293e76eb7329e41f12944546ac5dc9466dd2782037d119cabd542fbf1a40beb4",
+    "job_metadata_sha256": "353a650458d34099a088a81f6a1fec73c1d69f2aafcff1490ecac3a25eb84446",
+    "plan_sha256": "edb06370dbdf0ae6f1f61cb4ae7f82d320a8507a3504b2f118eb576455e8427c",
+    "raw_result_claimed_hash": "65a79a88fe9a89e7f3d6cdd773323561407d8145f011dc12394f10e210b15fb4",
+    "raw_result_sha256": "0bdcca94681f737155d2becfe6006184a96f8e01e51858653c1181efe025a348",
+    "registration_sha256": "6ac404657f9940646b6371ee2cf099fd4c71067594bbe74aa8881ff158aa9953",
+    "run_dir": "docs/p9-quality/runs/p9a-20260928T192110Z-66994",
+    "runner_sha256": "749abcc325bc4d10f41ade3be242b8de3b7119fd3795ea074a3f35283f0e22d3",
+    "source_audit_claimed_hash": "481746339b5e87c28c9084301797284b7887c70dc397f9f6e701bab5e7d91074",
+    "source_audit_sha256": "1c2de16bf274f728d6711d943b30a5a357d7f210af464d02279b37abd752ffbc"
+  },
+  "normalized_artifacts": [
+    {
+      "artifact_hash": "cd7c05483fcd46dfb415e8bbb2d9ff30fa0707df40e6ea36b8e02e4822b7dbeb",
+      "cell_id": "reference",
+      "deterministic": true,
+      "file_sha256": "f989ca71d362ebf1096f0441775249e01a3c35494993677fcd8341e071e87897",
+      "finite_logits": true,
+      "raw_log_sha256": "1c347570350331543d4f8f005a362d580bf7c2a71a750fee10130739fdd78345"
+    },
+    {
+      "artifact_hash": "3088c2680cf3c769a4d198a72eb2cdd896c8da8bc8670a6481e011d400b0de11",
+      "cell_id": "kv_l11_n5",
+      "deterministic": true,
+      "file_sha256": "fc727f571826ef99e31f2a4c3badb503d62d8b86d86c7979308bb07f8f8e3b0b",
+      "finite_logits": true,
+      "raw_log_sha256": "dca1a8d99c8859e13bef15fc5b83f8cacdca1389534af7e7beded5c6004de59a"
+    },
+    {
+      "artifact_hash": "e4418f697e5c7725ad29f356cccb2d06129642a00854bac329f4949ac7520ca4",
+      "cell_id": "kv_l11_n6",
+      "deterministic": true,
+      "file_sha256": "db5cb86183ce3154f542c39d1308992c71f1b96750c210e06677bd4b52eb1c7e",
+      "finite_logits": true,
+      "raw_log_sha256": "22238b743fb4e83bc342383a55efa203cad0ea6b06fafdb6f70fe8b50b0cd020"
+    },
+    {
+      "artifact_hash": "5c52c19a1fe7750ff8ac2f613047cc5b61ce3eaa788f1d0c971e06479bb7d8aa",
+      "cell_id": "kv_l11_n7",
+      "deterministic": true,
+      "file_sha256": "ec4c117c2b9803fdde737e97d614bd4ff8a965ed3196b3969a25cd60f4f677ea",
+      "finite_logits": true,
+      "raw_log_sha256": "4f78edf1e64202055493377ec5e98c20226492b98a403b68ff528ef53e30ab88"
+    },
+    {
+      "artifact_hash": "c0b3716f3151d34a0b0cc9ee11a145e8a2725480797a9b6ac4fd6468a1613f35",
+      "cell_id": "shared_l3_n5",
+      "deterministic": true,
+      "file_sha256": "c2e4893c328a77b1d1a3abd4c5cfe552366a0361ae72b89e305570dd9177d372",
+      "finite_logits": true,
+      "raw_log_sha256": "752d1eb4b825b2e6460c341593a47710724104fc013d5d66ce727a0240bef418"
+    },
+    {
+      "artifact_hash": "227c1fe49c1a7339e16d54a9559289fce4d3cb1a8cf7e8fc8d5e85f5e693506e",
+      "cell_id": "shared_l3_n6",
+      "deterministic": true,
+      "file_sha256": "164a3ee82cc9b981e458364aa88f48573208c5b905114e74e1f888b0dda93991",
+      "finite_logits": true,
+      "raw_log_sha256": "ba0b9b9e22d9452fb50fd74e930cbae30844a0e5f498b12c87d15acb40612619"
+    },
+    {
+      "artifact_hash": "6a2533c719804f107430518046c3bbbc3f7903aa80bb6ad6d0e90bb8062a3f0b",
+      "cell_id": "shared_l3_n7",
+      "deterministic": true,
+      "file_sha256": "fe2d5ae52e988358e51df69cbfb909ffccc5584957f72644af3bb9977f4f4ea8",
+      "finite_logits": true,
+      "raw_log_sha256": "f69dff95eb9e1fdf30e15f7b8fa08af4f2ce360260f2c377f4cc0d01e73c96e5"
+    }
+  ],
+  "observed_at_utc": "2026-09-28T19:30:43Z",
+  "schema": "beglin-p9-single-target-independent-audit/1",
+  "status": "P9_SINGLE_TARGET_EVIDENCE_INDEPENDENT_PASS",
+  "tailnet_job": {
+    "created_at": "2026-09-28T19:21:09Z",
+    "elapsed_ms": 21818,
+    "ended_at": "2026-09-28T19:21:31Z",
+    "exit_code": 0,
+    "job_id": "job_a760be0f9dc67ef5b971a326a1dd1449",
+    "request_hash": "603a39bd510216bf484f55a3f579627aa5ff0b6b3d4daabf5765a9891a2e0e13",
+    "state": "SUCCEEDED"
+  },
+  "target_boundaries": [
+    {
+      "changed_prompt_ids_by_n": {
+        "5": [
+          "constraint_words"
+        ],
+        "6": [
+          "constraint_words",
+          "ppl_short_1"
+        ],
+        "7": [
+          "constraint_words",
+          "ppl_short_1"
+        ]
+      },
+      "divergent_ns": [
+        5,
+        6,
+        7
+      ],
+      "matching_ns": [],
+      "monotonic_threshold_claimed": false,
+      "target": {
+        "layer": 11,
+        "role": "kv_a_proj_with_mqa"
+      }
+    },
+    {
+      "changed_prompt_ids_by_n": {
+        "5": [
+          "short_reasoning"
+        ],
+        "6": [
+          "constraint_words"
+        ],
+        "7": [
+          "constraint_words"
+        ]
+      },
+      "divergent_ns": [
+        5,
+        6,
+        7
+      ],
+      "matching_ns": [],
+      "monotonic_threshold_claimed": false,
+      "target": {
+        "layer": 3,
+        "role": "shared_up_proj"
+      }
+    }
+  ]
+}
