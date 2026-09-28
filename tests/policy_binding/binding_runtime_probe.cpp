@@ -72,6 +72,6 @@ int main() {
     if (mlx_gpu_get_binding_state("p8b.synthetic.missing", &bound_n, &rep)) return 1;
     if (bound_n != -1 || rep != MLX_GPU_BINDING_NONE) return 1;
 
-    std::puts("P8-B runtime binding probe PASS n5=PASS n6=PASS n7=PASS rebind=PASS mismatch=PASS");
+    std::puts("P8-B runtime binding probe PASS n5=PASS n6=PASS n7=PASS role_api=PASS rebind=PASS mismatch=PASS");
     return 0;
 }
