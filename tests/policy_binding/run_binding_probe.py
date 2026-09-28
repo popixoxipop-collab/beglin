@@ -15,7 +15,7 @@ BUILD = HERE / ".build"
 EXPECTED_SHA256 = {
     ROOT / "mlx_moe.cpp": "67e3c191cf7dbaead40050b6c8d09ab4318b6fa794351fe0976061a4fa6f762f",
     ROOT / "mlx_moe.h": "753a1eab8542123fda8ad6834e890b88e4a4fdc894f59fac9e1d7cead95a71a6",
-    HERE / "binding_runtime_probe.cpp": "4edab64bdb2b86b686c70f5c73870480098361aa6e870d4289e6e40b58917d35",
+    HERE / "binding_runtime_probe.cpp": "7888e193d83b449c7b9ce6f7eaeed1129dc0fa6efb268ab8f6e242c56062f161",
     HERE / "CMakeLists.txt": "49c4fa4c41936432a49a4339839ce9d5936ed82fc15232c9129a793933c36b67",
 }
 
