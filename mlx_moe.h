@@ -35,6 +35,41 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
                      long E, long out, long in, long ng,
                      long packed_off, long scale_off, long bias_off, int bits);
 
+// P8-B: canonical runtime binding truth. These APIs inspect the actual MLX
+// representation maps used by dispatch, rather than promotion/debug text.
+enum mlx_gpu_binding_representation {
+    MLX_GPU_BINDING_NONE = 0,
+    MLX_GPU_BINDING_NATIVE_QUANT = 1,
+    MLX_GPU_BINDING_QNG64 = 2,
+    MLX_GPU_BINDING_DENSE = 3,
+};
+// mlx_gpu_get_binding_state returns 1 iff the tensor name is currently bound
+// and writes its actual precision to bound_n. mlx_gpu_assert_binding returns
+// 1 only when the actual bound precision equals requested_n; a missing tensor
+// or mismatch returns 0 and still reports the observed state to the caller.
+// This is the fail-closed interface the P8 orchestrator/evidence layer should
+// use to distinguish real policy application from a missing promotion log.
+int mlx_gpu_get_binding_state(const char *name, int *bound_n, int *representation);
+int mlx_gpu_assert_binding(const char *name, int requested_n, int *bound_n,
+                           int *representation);
+
+// Role/layer wrapper for policy/orchestration code. This keeps canonical
+// tensor-name construction inside the MLX backend rather than duplicating it
+// in runners. Supported roles are the same stable projection names used by
+// the P8/P11 policy schema (currently kv_a/kv_b/shared gate/up/down plus q/o).
+// Returns 0 for an unknown role, invalid layer, missing binding, or n mismatch.
+int mlx_gpu_get_role_binding_state(const char *role, int layer,
+                                   int *bound_n, int *representation);
+int mlx_gpu_assert_role_binding(const char *role, int layer, int requested_n,
+                                int *bound_n, int *representation);
+
+// P8-B runtime correctness probe for the custom qNg64 single-expert path.
+// x is row-major {batch,in}; y receives row-major {batch,out}. Returns 0
+// on missing qNg64 binding, invalid arguments/shape, MLX evaluation failure,
+// or any custom-kernel failure.
+int mlx_gpu_qng64_batch_probe(const char *name, const float *x, int batch,
+                              float *y);
+
 // Reports how many previously-bound tensors got true zero-copy vs an
 // explicit-copy fallback, and total bytes copied (should be near 0 -- only
 // the F-10 stragglers with unaligned offsets fall back). Returns the total
