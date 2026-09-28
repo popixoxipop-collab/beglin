@@ -53,6 +53,16 @@ int mlx_gpu_get_binding_state(const char *name, int *bound_n, int *representatio
 int mlx_gpu_assert_binding(const char *name, int requested_n, int *bound_n,
                            int *representation);
 
+// Role/layer wrapper for policy/orchestration code. This keeps canonical
+// tensor-name construction inside the MLX backend rather than duplicating it
+// in runners. Supported roles are the same stable projection names used by
+// the P8/P11 policy schema (currently kv_a/kv_b/shared gate/up/down plus q/o).
+// Returns 0 for an unknown role, invalid layer, missing binding, or n mismatch.
+int mlx_gpu_get_role_binding_state(const char *role, int layer,
+                                   int *bound_n, int *representation);
+int mlx_gpu_assert_role_binding(const char *role, int layer, int requested_n,
+                                int *bound_n, int *representation);
+
 // Reports how many previously-bound tensors got true zero-copy vs an
 // explicit-copy fallback, and total bytes copied (should be near 0 -- only
 // the F-10 stragglers with unaligned offsets fall back). Returns the total
