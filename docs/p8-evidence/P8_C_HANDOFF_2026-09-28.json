@@ -1,0 +1,43 @@
+{
+  "schema": "beglin-p8-agent-c-handoff/1",
+  "observed_at": "2026-09-28",
+  "agent": "C",
+  "role": "independent evidence auditor",
+  "branch": "prod/p8-evidence-attribution",
+  "base_ref": "a0b8ab2c90af70fa8095556033e605477ec186ae",
+  "status": "BASELINE_SUBMITTED_WAITING_FOR_A_AND_B_FINAL_EVIDENCE",
+  "modified_scope": [
+    "docs/p8-evidence/P8_C_INDEPENDENT_BASELINE_AUDIT_2026-09-28.json",
+    "docs/p8-evidence/P8_C_INDEPENDENT_BASELINE_AUDIT_2026-09-28.md",
+    "docs/p8-evidence/P8_C_HANDOFF_2026-09-28.json"
+  ],
+  "raw_audit_basis": [
+    "Tailnet job_status/job_output for job_60ceca6c048312368a891bdae5ce337c",
+    "read-only parse of P7 raw/public summaries",
+    "direct read_file SHA of XOX mlx_moe.cpp",
+    "direct read_file SHA fingerprints of qwen_infer.c/CMakeLists.txt/mlx_moe.cpp/mlx_moe.h",
+    "project certifier rerun as secondary corroboration"
+  ],
+  "immutable_evidence_paths": [
+    "docs/p8-evidence/P8_C_INDEPENDENT_BASELINE_AUDIT_2026-09-28.json",
+    "docs/p8-evidence/P8_C_INDEPENDENT_BASELINE_AUDIT_2026-09-28.md"
+  ],
+  "interface_assumptions": [
+    "Agent A must supply explicit runtime outcome for all 8 canonical cells or explicit unsupported state.",
+    "Agent B must supply actual bound precision evidence, not only a classifier label or promotion text log.",
+    "Any new A/B binary/checkpoint/source identity must create a new comparable control group.",
+    "finite-logits evidence is required for every runtime-valid cell.",
+    "silent fallback and missing attribution are P8 blockers."
+  ],
+  "blockers_for_final_c_gate": [
+    "Agent A final immutable evidence not yet A0-visible.",
+    "Agent B final immutable P8_POLICY_ATTRIBUTION_8_OF_8 evidence not yet A0-visible.",
+    "Canonical post-integration 8-cell result does not yet exist."
+  ],
+  "constraints": {
+    "agent_a_files_modified": false,
+    "agent_b_files_modified": false,
+    "merge_performed": false,
+    "release_performed": false
+  }
+}
