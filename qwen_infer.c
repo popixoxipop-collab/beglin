@@ -14568,6 +14568,8 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
 
     long steps_idle = 0, steps_with_idle_slot = 0, admitted_after_evict = 0;
     long queue_wait_events = 0, queue_wait_max_steps = 0, steps_pure_prefill = 0;
+    int validation_finite_logits = 1;
+    unsigned long long validation_logits_checked = 0;
     int step = 0, total_tok_processed = 0;
     double t_run0 = 0.0, t_run1 = 0.0;
 
@@ -14686,6 +14688,12 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
             for (int m = 0; m < ndec; m++) {
                 int s = slot_arr[m], r = mcb_req[s];
                 float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
+                if (pass == 1 && check_on) {
+                    for (int v = 0; v < MOE_VOCAB; v++) {
+                        if (!isfinite(lg[v])) validation_finite_logits = 0;
+                        validation_logits_checked++;
+                    }
+                }
                 int am = 0; float bm = lg[0];
                 for (int v = 1; v < MOE_VOCAB; v++) if (lg[v] > bm) { bm = lg[v]; am = v; }
                 rq_out[r][rq_nout[r]++] = am; mcb_pos[s]++;
@@ -14698,6 +14706,12 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 int s = slot_arr[m], r = mcb_req[s];
                 if (spos_arr[m] != rq_plen[r] - 1) continue;
                 float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
+                if (pass == 1 && check_on) {
+                    for (int v = 0; v < MOE_VOCAB; v++) {
+                        if (!isfinite(lg[v])) validation_finite_logits = 0;
+                        validation_logits_checked++;
+                    }
+                }
                 int am = 0; float bm = lg[0];
                 for (int v = 1; v < MOE_VOCAB; v++) if (lg[v] > bm) { bm = lg[v]; am = v; }
                 rq_out[r][rq_nout[r]++] = am; rq_t_first[r] = temit;
@@ -14722,6 +14736,12 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 r, r % MCN, rq_slot_of[r], rq_arrive[r], rq_admit_step[r], ttft_ms, rq_nout[r]);
         for (int k = 0; k < rq_nout[r]; k++) fprintf(stderr, " %d", rq_out[r][k]);
         fprintf(stderr, "\n");
+    }
+    if (check_on) {
+        fprintf(stderr,
+                "GPU_VALIDATION_V1 backend=mlx_metal arch=deepseek-v2-lite correction=off "
+                "finite_logits=%d logits_checked=%llu requests=%d\n",
+                validation_finite_logits, validation_logits_checked, R);
     }
     double ms_wall = (t_run1 - t_run0) * 1000.0;
     double toksec = (double)total_tok_processed / (ms_wall / 1e3);
