@@ -1,0 +1,122 @@
+{
+  "schema": "beglin-quality-corpus/1",
+  "corpus_id": "p9-deterministic-v1",
+  "entries": [
+    {
+      "id": "copy_alpha",
+      "prompt": "Return exactly this text and nothing else: ALPHA-17",
+      "tags": [
+        "determinism",
+        "task"
+      ],
+      "use_for_perplexity": false,
+      "task": {
+        "type": "exact_match",
+        "expected": "ALPHA-17",
+        "normalization": "strip"
+      }
+    },
+    {
+      "id": "arith_17x19",
+      "prompt": "Compute 17 * 19. Return only the integer.",
+      "tags": [
+        "reasoning",
+        "task"
+      ],
+      "use_for_perplexity": false,
+      "task": {
+        "type": "numeric_tolerance",
+        "expected": 323,
+        "tolerance": 0,
+        "normalization": "strip"
+      }
+    },
+    {
+      "id": "constraint_words",
+      "prompt": "Write one short sentence containing both words alpha and beta.",
+      "tags": [
+        "instruction",
+        "task"
+      ],
+      "use_for_perplexity": false,
+      "task": {
+        "type": "contains_all",
+        "expected_substrings": [
+          "alpha",
+          "beta"
+        ],
+        "normalization": "strip_casefold"
+      }
+    },
+    {
+      "id": "ppl_short_1",
+      "prompt": "The old observatory stood above the harbor while the evening fog moved inland.",
+      "tags": [
+        "perplexity"
+      ],
+      "use_for_perplexity": true,
+      "task": {
+        "type": "none"
+      }
+    },
+    {
+      "id": "ppl_short_2",
+      "prompt": "A deterministic benchmark should preserve inputs, identities, and measured evidence.",
+      "tags": [
+        "perplexity"
+      ],
+      "use_for_perplexity": true,
+      "task": {
+        "type": "none"
+      }
+    },
+    {
+      "id": "ppl_short_3",
+      "prompt": "Quantization changes numerical representation, so quality must be measured rather than assumed.",
+      "tags": [
+        "perplexity"
+      ],
+      "use_for_perplexity": true,
+      "task": {
+        "type": "none"
+      }
+    },
+    {
+      "id": "long_retrieval",
+      "context_builder": {
+        "kind": "sandwich_repeat",
+        "prefix": "MEMORY_KEY=ORBIT-7319. ",
+        "unit": "neutral-filler-token",
+        "repeat": 2500,
+        "suffix": " What is MEMORY_KEY? Return only the value."
+      },
+      "tags": [
+        "long_context",
+        "retrieval",
+        "task"
+      ],
+      "min_context_tokens": 2048,
+      "use_for_perplexity": false,
+      "task": {
+        "type": "exact_match",
+        "expected": "ORBIT-7319",
+        "normalization": "strip"
+      }
+    },
+    {
+      "id": "short_reasoning",
+      "prompt": "There are 10 components. Three are disabled. Return only the number still enabled.",
+      "tags": [
+        "reasoning",
+        "task"
+      ],
+      "use_for_perplexity": false,
+      "task": {
+        "type": "numeric_tolerance",
+        "expected": 7,
+        "tolerance": 0,
+        "normalization": "strip"
+      }
+    }
+  ]
+}
