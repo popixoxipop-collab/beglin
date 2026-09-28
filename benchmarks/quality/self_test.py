@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 from copy import deepcopy
 from pathlib import Path
 
-from .artifact import compare_identity, validate_run_artifact
-from .corpus import load_corpus
-from .evaluate import classify_pair, load_policy
-from .metrics import evaluate_pair, metric_completeness
-from .prepare_matrix import build_plan
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from benchmarks.quality.artifact import compare_identity, validate_run_artifact
+    from benchmarks.quality.corpus import load_corpus
+    from benchmarks.quality.evaluate import classify_pair, load_policy
+    from benchmarks.quality.metrics import evaluate_pair, metric_completeness
+    from benchmarks.quality.prepare_matrix import build_plan
+else:
+    from .artifact import compare_identity, validate_run_artifact
+    from .corpus import load_corpus
+    from .evaluate import classify_pair, load_policy
+    from .metrics import evaluate_pair, metric_completeness
+    from .prepare_matrix import build_plan
 
 ROOT = Path(__file__).resolve().parents[2]
 CORPUS_PATH = ROOT / "configs" / "quality" / "deterministic_corpus_v1.json"
