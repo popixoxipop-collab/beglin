@@ -33,13 +33,13 @@ The normalized run contract supports:
 1. perplexity from token log-probabilities or explicit NLL sums,
 2. external bounded quality score,
 3. deterministic task score from the pinned prompt corpus,
-4. finite-logits rate,
-5. within-run deterministic output rate,
+4. reference + candidate finite-logits rates,
+5. reference + candidate within-run deterministic output rates,
 6. exact candidate-vs-reference output match,
 7. correction count,
 8. promotion count,
 9. per-role/layer/expert activation mean-abs/RMS drift,
-10. expert/router near-tie rate,
+10. reference/candidate expert-router near-tie rates plus candidate-minus-reference delta,
 11. long-context stability against the same reference run.
 
 Missing evidence stays `null`. A required metric that is null makes the candidate `INCOMPLETE_MISSING_METRICS`; it is never silently removed from the PASS decision.
@@ -86,3 +86,17 @@ Before Policy Freeze, `quality_policy_v1.json` is `UNFROZEN`, has no numeric acc
 ## P7 compatibility
 
 `p7_readiness.py` can inspect the current physical P7 summary. It is intentionally expected to return `P7_INSUFFICIENT_FOR_P9`: P7 proves real activation instrumentation but does not contain the full token-level NLL/output/task/router/long-context evidence required by P9.
+
+
+## Current validation
+
+EOE validation completed on 2026-09-28:
+
+- Python compile: PASS
+- synthetic quality self-test: PASS
+- no-P8 matrix planner: PASS / WAITING_P8_INTEGRATION
+- current P7 readiness probe: P7_INSUFFICIENT_FOR_P9
+- physical BF16/reference vs n=4/5/6/7 quality run: NOT RUN
+- numeric acceptance thresholds: UNFROZEN
+
+The current P7 physical run has six real activation cells and five performance cells, but it does not carry the complete token-level NLL/output/finite-logits/promotion/router/task/long-context evidence required by this harness. It is therefore evidence input, not a substitute for P9.

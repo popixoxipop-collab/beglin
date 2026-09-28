@@ -363,6 +363,14 @@ def evaluate_pair(
     if ref_quality is not None and cand_quality is not None:
         quality_delta = cand_quality - ref_quality
 
+    reference_finite = finite_logits(reference)
+    candidate_finite = finite_logits(candidate)
+    reference_router = router_near_tie(reference)
+    candidate_router = router_near_tie(candidate)
+    router_near_tie_delta = None
+    if reference_router["rate"] is not None and candidate_router["rate"] is not None:
+        router_near_tie_delta = candidate_router["rate"] - reference_router["rate"]
+
     metrics = {
         "reference_perplexity": reference_ppl,
         "candidate_perplexity": candidate_ppl,
@@ -373,15 +381,18 @@ def evaluate_pair(
         "reference_task_score": ref_task,
         "candidate_task_score": cand_task,
         "task_score_delta": task_delta,
-        "finite_logits": finite_logits(candidate),
+        "finite_logits": candidate_finite,
+        "reference_finite_logits": reference_finite,
+        "candidate_finite_logits": candidate_finite,
         "reference_determinism": within_run_determinism(reference),
         "candidate_determinism": within_run_determinism(candidate),
         "reference_output_match": reference_match(reference, candidate),
         "correction_count": count_metric(candidate, "corrections"),
         "promotion_count": count_metric(candidate, "promotions"),
         "activation_drift": activation_drift(reference, candidate),
-        "reference_router_near_tie": router_near_tie(reference),
-        "candidate_router_near_tie": router_near_tie(candidate),
+        "reference_router_near_tie": reference_router,
+        "candidate_router_near_tie": candidate_router,
+        "router_near_tie_delta": router_near_tie_delta,
         "long_context_stability": long_context_stability(reference, candidate, corpus),
     }
     return {
@@ -401,13 +412,16 @@ def required_metric_paths() -> list[str]:
         "quality_score_delta",
         "candidate_task_score.value",
         "task_score_delta",
-        "finite_logits.rate",
+        "reference_finite_logits.rate",
+        "candidate_finite_logits.rate",
+        "reference_determinism.rate",
         "candidate_determinism.rate",
         "reference_output_match.rate",
         "correction_count",
         "promotion_count",
         "activation_drift.max_abs_rms_relative_delta",
         "candidate_router_near_tie.rate",
+        "router_near_tie_delta",
         "long_context_stability.rate",
     ]
 

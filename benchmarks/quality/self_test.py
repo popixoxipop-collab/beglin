@@ -111,6 +111,9 @@ def main() -> None:
 
     metrics = pair["metrics"]
     assert metrics["finite_logits"]["rate"] == 1.0
+    assert metrics["reference_finite_logits"]["rate"] == 1.0
+    assert metrics["candidate_finite_logits"]["rate"] == 1.0
+    assert metrics["reference_determinism"]["rate"] == 1.0
     assert metrics["candidate_determinism"]["rate"] == 1.0
     assert metrics["reference_output_match"]["rate"] == 1.0
     assert metrics["candidate_task_score"]["value"] == 1.0
@@ -118,6 +121,7 @@ def main() -> None:
     assert metrics["correction_count"] == len(candidate["requests"])
     assert metrics["promotion_count"] == len(candidate["requests"])
     assert metrics["candidate_router_near_tie"]["rate"] == 0.02
+    assert abs(metrics["router_near_tie_delta"] - 0.01) < 1e-12
     assert abs(metrics["activation_drift"]["max_abs_rms_relative_delta"] - 0.01) < 1e-12
     assert metrics["perplexity_ratio"] is not None
     assert metrics["candidate_quality_score"] == 0.94

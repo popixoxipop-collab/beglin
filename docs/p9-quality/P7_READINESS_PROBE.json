@@ -1,0 +1,37 @@
+{
+  "schema": "beglin-p9-readiness-probe/1",
+  "status": "P7_INSUFFICIENT_FOR_P9",
+  "observed_at": "2026-09-28",
+  "source_path": "beglin-dashboard/docs/P7_XOX_INSTRUMENTED_SWEEP_PUBLIC_SUMMARY_2026-09-27.json",
+  "source_sha256": "63b7131080c2c3095eb032f07f328fb8d4ceb4796512d19f98ff2ff87e6c129a",
+  "physical_run_id": "p7-20260927T155716Z-2576",
+  "runner_id": "xox-gpu-sweep-v2-instrumented",
+  "matrix_cells": 8,
+  "activation_cells": 6,
+  "performance_cells": 5,
+  "capabilities": {
+    "activation_mean_abs_rms": true,
+    "correction_count": true,
+    "deterministic_output": false,
+    "exact_output_tokens": false,
+    "finite_logits": false,
+    "long_context_stability": false,
+    "perplexity": false,
+    "promotion_count": false,
+    "quality_score": false,
+    "router_near_tie": false,
+    "task_score": false
+  },
+  "missing_for_full_p9": [
+    "deterministic_output",
+    "exact_output_tokens",
+    "finite_logits",
+    "long_context_stability",
+    "perplexity",
+    "promotion_count",
+    "quality_score",
+    "router_near_tie",
+    "task_score"
+  ],
+  "conclusion": "P7 is valid physical instrumentation evidence, but it cannot substitute for a P9 reference-vs-n4/n5/n6/n7 quality run. Missing metrics remain unobserved."
+}
