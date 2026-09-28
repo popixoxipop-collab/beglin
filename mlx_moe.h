@@ -37,7 +37,12 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
 
 // P8-B: canonical runtime binding truth. These APIs inspect the actual MLX
 // representation maps used by dispatch, rather than promotion/debug text.
-// representation: 0=none, 1=native MLX quantized, 2=custom qNg64, 3=dense.
+enum mlx_gpu_binding_representation {
+    MLX_GPU_BINDING_NONE = 0,
+    MLX_GPU_BINDING_NATIVE_QUANT = 1,
+    MLX_GPU_BINDING_QNG64 = 2,
+    MLX_GPU_BINDING_DENSE = 3,
+};
 // mlx_gpu_get_binding_state returns 1 iff the tensor name is currently bound
 // and writes its actual precision to bound_n. mlx_gpu_assert_binding returns
 // 1 only when the actual bound precision equals requested_n; a missing tensor
