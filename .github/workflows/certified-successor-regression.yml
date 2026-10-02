@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - agent-e-absent-baseline-20261002
+      - agent-e-preimage-materializer-20261002
     paths:
       - ".github/workflows/certified-successor-regression.yml"
   workflow_dispatch:
@@ -35,7 +36,9 @@ jobs:
             tools/manual_canary_contract.py \
             tools/manual_canary_controller.py \
             tools/manual_canary_signature.py \
-            tools/manual_canary_production_intent.py
+            tools/manual_canary_production_intent.py \
+            tools/manual_canary_proposal_materializer.py \
+            tools/test_manual_canary_proposal_materializer.py
       - name: Precision v3 tests
         env:
           PYTHONPATH: tools
@@ -55,6 +58,7 @@ jobs:
           PYTHONPATH: tools
         run: |
           python tools/test_manual_canary.py
+          python tools/test_manual_canary_proposal_materializer.py
           python tools/test_checkpoint_identity.py
           python tools/test_agent_f_gpu_coverage_xox.py
       - name: Signature, evidence, and observer v3 regressions
