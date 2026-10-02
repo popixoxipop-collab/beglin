@@ -20,6 +20,20 @@ jobs:
       - name: Compile precision control plane
         run: |
           python -m py_compile             tools/precision_context.py             tools/backend_adapters.py             tools/autopilot_full.py             tools/autopilot_live_preflight.py             tools/autopilot_real_sweep.py             tools/attribution_provenance.py
+      - name: Generate conservative G0 inventories
+        run: |
+          python tools/backend_capabilities.py --output /tmp/g0_capabilities.json
+          python tools/g0_build_manifest.py --output /tmp/g0_build_manifest.json --runtime-note "CI contract check; no GPU runtime assertion"
+          python tools/g0_baseline_inventory.py
+          python - <<'PY'
+          import json
+          cap = json.load(open("/tmp/g0_capabilities.json"))
+          build = json.load(open("/tmp/g0_build_manifest.json"))
+          assert cap["schema_version"] == "precision-capability-g0-v1"
+          assert cap["capability"]["status"] == "IMPLEMENTED_UNVERIFIED"
+          assert build["schema_version"] == "precision-build-manifest-g0-v1"
+          assert "runtime_verification" in build
+          PY
       - name: Precision context unit tests
         run: python tools/test_precision_context.py
       - name: Backend admission unit tests
