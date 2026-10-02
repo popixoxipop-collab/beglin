@@ -98,6 +98,26 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(mc.ManualCanaryContractError):
             mc.normalize_proposal(p)
 
+    def test_single_target_allows_explicit_absent_baseline(self):
+        p = base_proposal(
+            baseline_policy_hash=mc.sha256_json([]),
+            candidate_policy_hash=mc.sha256_json(CANDIDATE),
+            single_target={
+                "role": "shared_down_proj",
+                "layer": 4,
+                "before_n": None,
+                "after_n": 6,
+            },
+        )
+        got = mc.normalize_proposal(p)
+        self.assertIsNone(got["single_target"]["before_n"])
+
+    def test_single_target_missing_before_n_is_rejected(self):
+        p = base_proposal()
+        del p["single_target"]["before_n"]
+        with self.assertRaises(mc.ManualCanaryContractError):
+            mc.normalize_proposal(p)
+
     def test_both_g4_and_g6_evidence_are_required(self):
         p = base_proposal()
         p["evidence_refs"] = p["evidence_refs"][:1]
@@ -214,6 +234,32 @@ class ControllerTests(unittest.TestCase):
                 store=self.store, adapter=self.adapter, proposal=p,
                 baseline_policy=BASELINE, candidate_policy=candidate,
             )
+
+    def test_absent_baseline_can_add_exactly_one_target(self):
+        p = base_proposal(
+            baseline_policy_hash=mc.sha256_json([]),
+            candidate_policy_hash=mc.sha256_json(CANDIDATE),
+            single_target={
+                "role": "shared_down_proj",
+                "layer": 4,
+                "before_n": None,
+                "after_n": 6,
+            },
+            expected_epoch=0,
+        )
+        controller = ctl.ManualCanaryController(
+            store=self.store,
+            adapter=ctl.DryRunAdapter(
+                policy=[],
+                epoch=0,
+                policy_hash=mc.sha256_json([]),
+            ),
+            proposal=p,
+            baseline_policy=[],
+            candidate_policy=CANDIDATE,
+        )
+        state = controller.initialize()
+        self.assertEqual(state["target"]["before_n"], None)
 
     def test_baseline_epoch_drift_is_rejected(self):
         self.approve()
