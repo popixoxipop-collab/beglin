@@ -77,7 +77,10 @@ class ArtifactContractTests(unittest.TestCase):
             "a26f9a8ab93493a1aad8da643d00c1d998aa60cd",
         )
 
-    def test_launchd_process_type_is_interactive(self):\n        self.assertEqual(ps.LAUNCHD_PROCESS_TYPE, "Interactive")\n\n    def test_request_limits_inherit_reviewed_supervisor(self):
+    def test_launchd_process_type_is_interactive(self):
+        self.assertEqual(ps.LAUNCHD_PROCESS_TYPE, "Interactive")
+
+    def test_request_limits_inherit_reviewed_supervisor(self):
         self.assertEqual(base.MAX_BATCH_REQUESTS, 12)
         self.assertEqual(base.MAX_NEW_TOKENS, 256)
 
