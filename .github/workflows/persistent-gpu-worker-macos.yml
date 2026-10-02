@@ -24,7 +24,7 @@ jobs:
       - name: Source contract
         run: python3 tools/test_persistent_gpu_worker_source.py
       - name: Install MLX
-        run: python3 -m pip install mlx
+        run: python3 -m pip install 'mlx==0.32.0' 'mlx-metal==0.32.0'
       - name: Build
         shell: bash
         run: |
