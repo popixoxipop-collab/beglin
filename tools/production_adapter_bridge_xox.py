@@ -215,6 +215,7 @@ def run(plan: dict) -> dict:
 
     sys.path.insert(0, str(REPO / "tools"))
     import gpu_runtime_control as grc
+    import precision_context as pc
 
     started_ns = time.monotonic_ns()
     proc = subprocess.Popen(
@@ -258,7 +259,7 @@ def run(plan: dict) -> dict:
         "requested_policy_applied": (
             ack.get("status") == "PROMOTION_APPLIED"
             and ack.get("active_policy_hash") == plan["candidate_policy_hash"]
-            and ack.get("active_policy") == mc.normalize_policy(plan["candidate_policy"])
+            and ack.get("active_policy") == pc.normalize_policy(plan["candidate_policy"])
         ),
         "ack_status": ack.get("status"),
         "ack_sha256": ack.get("ack_sha256"),
