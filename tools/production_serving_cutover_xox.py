@@ -13,6 +13,7 @@ Safety properties:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -104,7 +105,7 @@ def verify_github_approval(path: Path = APPROVAL_PATH) -> dict:
     resolved = path.expanduser().resolve(strict=True)
     if not resolved.is_file():
         raise CutoverExecutionError("cutover approval is not a regular file")
-    actual_sha = routing.hashlib.sha256(resolved.read_bytes()).hexdigest()
+    actual_sha = hashlib.sha256(resolved.read_bytes()).hexdigest()
     if actual_sha != EXPECTED_APPROVAL_SHA:
         raise CutoverExecutionError(
             f"approval file SHA mismatch: expected={EXPECTED_APPROVAL_SHA} actual={actual_sha}"
