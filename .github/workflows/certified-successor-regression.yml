@@ -7,6 +7,7 @@ on:
       - agent-e-preimage-materializer-20261002
       - agent-e-signing-prep-xox-20261002
       - production-adapter-bridge-shadow-20261002
+      - production-routing-cutover-gate-20261002
     paths:
       - ".github/workflows/certified-successor-regression.yml"
       - "tools/manual_canary_*.py"
@@ -14,6 +15,8 @@ on:
       - "docs/MANUAL_CANARY*.md"
       - "tools/production_adapter_bridge*.py"
       - "tools/test_production_adapter_bridge*.py"
+      - "tools/production_routing_cutover*.py"
+      - "tools/test_production_routing_cutover*.py"
       - "attestations/BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json"
   workflow_dispatch:
 
@@ -49,8 +52,10 @@ jobs:
             tools/manual_canary_baseline_preimage_xox.py \
             tools/production_adapter_bridge.py \
             tools/production_adapter_bridge_xox.py \
+            tools/production_routing_cutover.py \
             tools/test_manual_canary_proposal_materializer.py \
-            tools/test_production_adapter_bridge.py
+            tools/test_production_adapter_bridge.py \
+            tools/test_production_routing_cutover.py
       - name: Precision v3 tests
         env:
           PYTHONPATH: tools
@@ -72,6 +77,7 @@ jobs:
           python tools/test_manual_canary.py
           python tools/test_manual_canary_proposal_materializer.py
           python tools/test_production_adapter_bridge.py
+          python tools/test_production_routing_cutover.py
           python tools/test_checkpoint_identity.py
           python tools/test_agent_f_gpu_coverage_xox.py
       - name: Signature, evidence, and observer v3 regressions
