@@ -70,9 +70,15 @@ def _require_single_target_preimage(
     before = _policy_map(baseline_policy)
     after = _policy_map(candidate_policy)
     key = (str(target["role"]), int(target["layer"]))
-    before_n = int(target["before_n"])
+    raw_before = target.get("before_n")
+    before_n = None if raw_before is None else int(raw_before)
     after_n = int(target["after_n"])
-    if before.get(key) != before_n:
+    if before_n is None:
+        if key in before:
+            raise ManualCanaryControllerError(
+                f"baseline preimage mismatch for {key}: expected absent target actual n={before.get(key)}"
+            )
+    elif before.get(key) != before_n:
         raise ManualCanaryControllerError(
             f"baseline preimage mismatch for {key}: expected n={before_n} actual={before.get(key)}"
         )
