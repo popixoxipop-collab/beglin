@@ -9,6 +9,7 @@ on:
       - production-adapter-bridge-shadow-20261002
       - production-routing-cutover-gate-20261002
       - production-serving-supervisor-20261002
+      - persistent-gpu-serving-20261003
     paths:
       - ".github/workflows/certified-successor-regression.yml"
       - "tools/manual_canary_*.py"
@@ -27,6 +28,8 @@ on:
       - "tools/test_production_serving_cutover_xox*.py"
       - "attestations/BEGLIN_PRODUCTION_CUTOVER_APPROVAL_2026-10-02.json"
       - "attestations/BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json"
+      - "qwen_infer.c"
+      - "tools/test_persistent_gpu_worker_source.py"
   workflow_dispatch:
 
 permissions:
@@ -93,6 +96,7 @@ jobs:
           python tools/test_production_routing_cutover.py
           python tools/test_production_serving_supervisor.py
           python tools/test_production_serving_cutover_xox.py
+          python tools/test_persistent_gpu_worker_source.py
           python tools/test_checkpoint_identity.py
           python tools/test_agent_f_gpu_coverage_xox.py
       - name: Signature, evidence, and observer v3 regressions
