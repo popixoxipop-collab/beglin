@@ -1,0 +1,56 @@
+name: Certified precision regression
+
+on:
+  push:
+    branches:
+      - certified-regression-20261002
+    paths:
+      - ".github/workflows/certified-precision-regression.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile precision runtime modules
+        run: |
+          python -m py_compile \
+            tools/precision_context.py \
+            tools/backend_adapters.py \
+            tools/precision_transactions.py \
+            tools/precision_planner_v3.py \
+            tools/autopilot_preflight_v3.py \
+            tools/precision_evidence_v3.py \
+            tools/gpu_runtime_control.py
+      - name: Precision v3 tests
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/test_precision_evidence_v3.py
+          python tools/test_precision_planner_v3.py
+          python tools/test_precision_control_state.py
+          python tools/test_precision_transactions.py
+          python tools/test_autopilot_preflight_v3.py
+          python tools/test_mlx_runtime_adapter.py
+      - name: GPU unit and guard suite
+        env:
+          PYTHONPATH: tools
+        run: |
+          python -m unittest discover -s tools -p 'test_gpu_*.py'
+      - name: Manual canary and identity regressions
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/test_manual_canary.py
+          python tools/test_checkpoint_identity.py
+          python tools/test_agent_f_gpu_coverage_xox.py
+      - name: Diff check
+        run: git diff --check HEAD^ HEAD
