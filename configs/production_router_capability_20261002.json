@@ -1,0 +1,19 @@
+{
+  "schema": "beglin-serving-router-capability/1",
+  "status": "ABSENT",
+  "router_id": "",
+  "implementation_verified": false,
+  "atomic_cas": false,
+  "health_observation": false,
+  "rollback": false,
+  "request_drain": false,
+  "route_store_kind": "",
+  "observed_at": "2026-10-02T13:41:22Z",
+  "evidence": {
+    "repository_tree_scan": "no production ingress/router/supervisor implementation found",
+    "engine_mode": "continuous-batch inference engine with worker-local precision control",
+    "isolated_canary_result": "bridge-20261002T132351Z",
+    "xox_shadow_route_drill_result_sha256": "bdec0d27481854804dd6720b81374ad25ef15e89301434739b9244c98980b337"
+  },
+  "production_routing_cutover_allowed": false
+}
