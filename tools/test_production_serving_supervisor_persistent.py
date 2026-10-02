@@ -78,7 +78,7 @@ class ArtifactContractTests(unittest.TestCase):
         )
 
     def test_request_limits_inherit_reviewed_supervisor(self):
-        self.assertEqual(base.MAX_BATCH_REQUESTS, 18)
+        self.assertEqual(base.MAX_BATCH_REQUESTS, 12)
         self.assertEqual(base.MAX_NEW_TOKENS, 256)
 
     def test_reference_mapping_matches_certified_routes(self):
