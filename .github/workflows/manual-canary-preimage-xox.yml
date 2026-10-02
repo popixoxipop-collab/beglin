@@ -1,0 +1,54 @@
+name: Manual canary preimage XOX
+
+on:
+  push:
+    branches:
+      - agent-e-preimage-capture-20261002
+    paths:
+      - ".github/workflows/manual-canary-preimage-xox.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify XOX runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+      - name: Capture certified baseline preimage
+        shell: bash
+        env:
+          PYTHONPATH: tools
+        run: |
+          set -euo pipefail
+          python3 tools/manual_canary_preimage_xox.py
+      - name: Verify sanitized result
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("/Users/xox/mcp-sandbox/tailnet-commander/beglin_manual_canary_preimage/status.json")
+          v=json.loads(p.read_text())
+          assert v["status"] == "CAPTURED_REVIEW_REQUIRED", v
+          assert v["production_write_allowed"] is False, v
+          assert v["runtime_preimage"]["active_policy"] == [], v
+          assert v["runtime_preimage"]["weight_epoch"] == 0, v
+          assert v["target"]["before_n"] is None, v
+          print(json.dumps(v, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-manual-canary-preimage-20261002
+          path: /Users/xox/mcp-sandbox/tailnet-commander/beglin_manual_canary_preimage/status.json
+          if-no-files-found: error
+          retention-days: 30
