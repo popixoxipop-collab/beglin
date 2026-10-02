@@ -14503,6 +14503,13 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     const char *gate_env = getenv("QWEN_MOE_GPU_CBATCH_ONLINE");
     if (!gate_env || !gate_env[0]) return 0;
 
+    const char *persistent_dir = getenv("QWEN_MOE_GPU_PERSISTENT_DIR");
+    int persistent_on = persistent_dir && persistent_dir[0];
+    int persistent_warmed = 0;
+    if (persistent_on)
+        fprintf(stderr, "[moe gpu cb persistent] queue='%s' -- model/MLX bindings stay resident across request batches\n",
+                persistent_dir);
+
     fprintf(stderr, "[moe gpu cb online] QWEN_MOE_GPU_CBATCH_ONLINE=1 -- V5h GPU online admission scheduler gate\n");
     if (!mlx_gpu_available()) {
         fprintf(stderr, "FATAL: QWEN_MOE_GPU_CBATCH_ONLINE set but MLX/Metal unavailable\n");
@@ -14600,13 +14607,14 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     int validation_finite = 1; long validation_logits_checked = 0;
 
     int B          = env_slots  && env_slots[0]  ? atoi(env_slots)  : 4;
-    int R          = env_reqs   && env_reqs[0]   ? atoi(env_reqs)   : 12;
+    int R_config   = env_reqs   && env_reqs[0]   ? atoi(env_reqs)   : 12;
+    int R          = R_config;
     int pfB        = env_budget && env_budget[0] ? atoi(env_budget) : 16;
     int stop_extra = env_stopextra && env_stopextra[0] ? atoi(env_stopextra) : -1;
     int check_on   = env_check  && env_check[0]  && atoi(env_check) != 0;
 
     if (B < 1 || B > MOE_BATCH_MAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS=%d out of [1,%d]\n", B, MOE_BATCH_MAX); exit(1); }
-    if (R < 1 || R > MOE_CB4B_RMAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_REQS=%d out of [1,%d]\n", R, MOE_CB4B_RMAX); exit(1); }
+    if (R_config < 1 || R_config > MOE_CB4B_RMAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_REQS=%d out of [1,%d]\n", R_config, MOE_CB4B_RMAX); exit(1); }
 
     if (!mlx_gpu_mla_config(MOE_N_HEADS, MOE_Q_HEAD_DIM, MOE_QK_NOPE_HD, MOE_QK_ROPE_HD,
                             MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
@@ -14642,8 +14650,53 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     // instead of a shared table, no hoisting to file scope needed.
     static int mf_plen[MOE_CB4B_RMAX], mf_maxnew[MOE_CB4B_RMAX];
     static int mf_ids[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS];
+
+    for (;;) {
     int mf_n;
+    char persistent_request_id[128] = {0};
+    char persistent_manifest_path[1024] = {0};
+    char persistent_response_path[1200] = {0};
     const char *manifest_path = getenv("QWEN_MOE_CB_PROMPT_MANIFEST");
+
+    if (persistent_on) {
+        char request_path[1200], stop_path[1200];
+        snprintf(request_path, sizeof request_path, "%s/request.ready", persistent_dir);
+        snprintf(stop_path, sizeof stop_path, "%s/stop", persistent_dir);
+        for (;;) {
+            if (access(stop_path, F_OK) == 0) {
+                fprintf(stderr, "[moe gpu cb persistent] stop marker observed; shutting down cleanly\n");
+                goto persistent_shutdown;
+            }
+            FILE *rf = fopen(request_path, "r");
+            if (rf) {
+                int got = fscanf(rf, "%127s %1023s", persistent_request_id, persistent_manifest_path);
+                fclose(rf);
+                if (got != 2) {
+                    fprintf(stderr, "FATAL: [moe gpu cb persistent] malformed request.ready\n");
+                    exit(1);
+                }
+                size_t plen = strlen(persistent_dir);
+                if (strncmp(persistent_manifest_path, persistent_dir, plen) != 0 ||
+                    persistent_manifest_path[plen] != '/') {
+                    fprintf(stderr, "FATAL: [moe gpu cb persistent] manifest escapes queue root: %s\n",
+                            persistent_manifest_path);
+                    exit(1);
+                }
+                if (unlink(request_path) != 0) {
+                    perror("[moe gpu cb persistent] unlink request.ready");
+                    exit(1);
+                }
+                manifest_path = persistent_manifest_path;
+                snprintf(persistent_response_path, sizeof persistent_response_path,
+                         "%s/response.%s.json", persistent_dir, persistent_request_id);
+                fprintf(stderr, "[moe gpu cb persistent] accepted request=%s manifest=%s warmed=%d\n",
+                        persistent_request_id, manifest_path, persistent_warmed);
+                break;
+            }
+            struct timespec idle_ts = {0, 10 * 1000 * 1000};
+            nanosleep(&idle_ts, NULL);
+        }
+    }
     if (manifest_path && manifest_path[0]) {
         mf_n = moe_cbatch_load_manifest(manifest_path, mf_plen, mf_maxnew, mf_ids, MOE_CB4B_RMAX);
         fprintf(stderr, "[moe gpu cb online] loaded %d-entry prompt manifest from '%s'\n", mf_n, manifest_path);
@@ -14657,6 +14710,14 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
         mf_n = MOE_CBATCH_N;
     }
     const int MCN = mf_n;
+    R = persistent_on ? mf_n : R_config;
+    if (R < 1 || R > MOE_CB4B_RMAX) {
+        fprintf(stderr, "FATAL: [moe gpu cb persistent] request batch R=%d out of [1,%d]\n",
+                R, MOE_CB4B_RMAX);
+        exit(1);
+    }
+    validation_finite = 1;
+    validation_logits_checked = 0;
 
     static int    rq_plen[MOE_CB4B_RMAX], rq_maxnew[MOE_CB4B_RMAX], rq_arrive[MOE_CB4B_RMAX];
     static int    rq_slot_of[MOE_CB4B_RMAX], rq_admit_step[MOE_CB4B_RMAX];
@@ -14681,7 +14742,8 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     // schedule for real, timed. Pass 1's own scatter writes overwrite every (slot,pos) coordinate
     // pass 0 touched, in the same order, before any decode ever reads them back -- same reasoning
     // as V5g's single-step warmup, just over a whole multi-step run instead of one step.
-    for (int pass = 0; pass < 2; pass++) {
+    int pass_begin = (persistent_on && persistent_warmed) ? 1 : 0;
+    for (int pass = pass_begin; pass < 2; pass++) {
         for (int r = 0; r < R; r++) rq_arrive[r] = 0;
         if (env_arrive && env_arrive[0]) {
             const char *p = env_arrive;
@@ -14868,7 +14930,57 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 correction_on ? "on" : "off", validation_finite,
                 validation_logits_checked, R);
     }
+    if (persistent_on) {
+        char tmp_response[1280];
+        snprintf(tmp_response, sizeof tmp_response, "%s.tmp.%d", persistent_response_path, (int)getpid());
+        FILE *pf = fopen(tmp_response, "w");
+        if (!pf) {
+            perror("[moe gpu cb persistent] response open");
+            exit(1);
+        }
+        fprintf(pf,
+                "{\"schema\":\"beglin-gpu-persistent-response-v1\","
+                "\"status\":\"OK\",\"request_id\":\"%s\","
+                "\"requests\":%d,\"duration_ms\":%.3f,"
+                "\"finite_logits\":%s,\"weight_epoch\":%llu,"
+                "\"responses\":[",
+                persistent_request_id, R, ms_wall,
+                validation_finite ? "true" : "false",
+                (unsigned long long)g_moe_gpu_weight_epoch);
+        for (int r = 0; r < R; r++) {
+            if (r) fputc(',', pf);
+            fprintf(pf, "{\"request_index\":%d,\"generated_tokens\":[", r);
+            for (int k = 0; k < rq_nout[r]; k++) {
+                if (k) fputc(',', pf);
+                fprintf(pf, "%d", rq_out[r][k]);
+            }
+            fprintf(pf, "]}");
+        }
+        fprintf(pf, "]}\n");
+        fflush(pf);
+        if (fsync(fileno(pf)) != 0) {
+            perror("[moe gpu cb persistent] response fsync");
+            fclose(pf);
+            exit(1);
+        }
+        fclose(pf);
+        if (rename(tmp_response, persistent_response_path) != 0) {
+            perror("[moe gpu cb persistent] response rename");
+            exit(1);
+        }
+        fprintf(stderr,
+                "[moe gpu cb persistent] published request=%s response=%s wall_ms=%.2f requests=%d\n",
+                persistent_request_id, persistent_response_path, ms_wall, R);
+        persistent_warmed = 1;
+        free(x_embed); free(gpu_logits);
+        continue;
+    }
     free(x_embed); free(gpu_logits);
+    break;
+    }
+    return 1;
+
+persistent_shutdown:
     return 1;
 }
 
