@@ -1,0 +1,765 @@
+#!/usr/bin/env python3
+"""Persistent-worker Beglin localhost serving supervisor.
+
+This is a successor to production_serving_supervisor.py.  It keeps TWO native
+MLX workers resident at once:
+- baseline q4g64 route
+- approved shared_up_proj/L3 qNg64(n=6) candidate route
+
+The C workers own model/MLX state for their full lifetime and exchange batches
+with this supervisor through the atomic request/result protocol implemented by
+QWEN_MOE_GPU_PERSISTENT_DIR.  Route changes therefore only change which warm
+PID receives the next admitted HTTP batch; they do not reload the model.
+
+The previous spawn-per-admission supervisor remains available for rollback.
+"""
+from __future__ import annotations
+
+import argparse
+from http import HTTPStatus
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+import time
+import uuid
+from typing import Any
+
+import production_serving_supervisor as base
+
+
+PERSISTENT_BINARY = Path("/Users/xox/vdsp_serving/persistent-stage/qwen_infer_gpu")
+PERSISTENT_PROBE = Path("/Users/xox/vdsp_serving/persistent-stage/probe.json")
+EXPECTED_PERSISTENT_BINARY_SHA = "3be6d59b77e554f5abee86851f4d901b7e2d9750ae6257a1538eebb64693d59e"
+EXPECTED_PERSISTENT_SOURCE_SHA = "a26f9a8ab93493a1aad8da643d00c1d998aa60cd"
+DEFAULT_PERSISTENT_ROOT = Path("/Users/xox/vdsp_serving/persistent-workers")
+WORKER_READY_TIMEOUT_SECONDS = 120
+REQUEST_TIMEOUT_SECONDS = 60
+POLL_SECONDS = 0.01
+
+
+class PersistentSupervisorError(base.SupervisorError):
+    pass
+
+
+def verify_persistent_artifact() -> dict:
+    if not PERSISTENT_BINARY.is_file():
+        raise PersistentSupervisorError(f"persistent binary missing: {PERSISTENT_BINARY}")
+    binary_sha = base._sha256_file(PERSISTENT_BINARY)
+    if binary_sha != EXPECTED_PERSISTENT_BINARY_SHA:
+        raise PersistentSupervisorError(
+            f"persistent binary SHA mismatch: expected={EXPECTED_PERSISTENT_BINARY_SHA} actual={binary_sha}"
+        )
+    if not PERSISTENT_PROBE.is_file():
+        raise PersistentSupervisorError(f"persistent probe evidence missing: {PERSISTENT_PROBE}")
+    probe = json.loads(PERSISTENT_PROBE.read_text())
+    if probe.get("status") != "PASS":
+        raise PersistentSupervisorError("persistent GPU probe status is not PASS")
+    if probe.get("binary_sha256") != EXPECTED_PERSISTENT_BINARY_SHA:
+        raise PersistentSupervisorError("persistent probe binary identity mismatch")
+    if probe.get("source_head") != EXPECTED_PERSISTENT_SOURCE_SHA:
+        raise PersistentSupervisorError("persistent probe source identity mismatch")
+    if probe.get("same_process_for_both_requests") is not True:
+        raise PersistentSupervisorError("persistent probe did not prove same-process reuse")
+    if int(probe.get("warm", {}).get("reference_hits", 0)) != 12:
+        raise PersistentSupervisorError("persistent warm probe reference coverage mismatch")
+    checkpoint = json.loads(base.CHECKPOINT_EVIDENCE.read_text())
+    if checkpoint.get("status") != "VERIFIED":
+        raise PersistentSupervisorError("checkpoint evidence is not VERIFIED")
+    if checkpoint.get("checkpoint_sha256") != base.EXPECTED_CHECKPOINT_SHA:
+        raise PersistentSupervisorError("checkpoint identity mismatch")
+    return {
+        "binary_sha256": binary_sha,
+        "source_head": EXPECTED_PERSISTENT_SOURCE_SHA,
+        "probe": probe,
+    }
+
+
+def _read_runtime_ack(path: Path) -> dict:
+    tools = str(base.REPO / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import gpu_runtime_control as grc
+    return grc.read_runtime_ack(path)
+
+
+def parse_persistent_result(text: str, *, request_id: str, expected_requests: int) -> dict:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        raise PersistentSupervisorError("persistent worker returned an empty result")
+    head = lines[0].split()
+    if len(head) != 5 or head[0] != "BEGLIN_GPU_PERSISTENT_RESULT_V1":
+        raise PersistentSupervisorError("invalid persistent response header")
+    if head[1] != request_id:
+        raise PersistentSupervisorError("persistent response request id mismatch")
+    try:
+        count = int(head[2])
+        finite_logits = int(head[3]) == 1
+        engine_wall_ms = float(head[4])
+    except ValueError as exc:
+        raise PersistentSupervisorError("invalid persistent response header values") from exc
+    if count != expected_requests:
+        raise PersistentSupervisorError(
+            f"persistent response count mismatch: expected={expected_requests} actual={count}"
+        )
+    responses: list[list[int] | None] = [None] * count
+    saw_end = False
+    for line in lines[1:]:
+        if line == "END":
+            saw_end = True
+            break
+        parts = line.split()
+        if len(parts) < 3 or parts[0] != "REQ":
+            raise PersistentSupervisorError("invalid persistent response row")
+        try:
+            idx = int(parts[1]); n = int(parts[2]); tokens = [int(v) for v in parts[3:]]
+        except ValueError as exc:
+            raise PersistentSupervisorError("invalid persistent response token row") from exc
+        if idx < 0 or idx >= count or responses[idx] is not None:
+            raise PersistentSupervisorError("persistent response request index is invalid or duplicated")
+        if len(tokens) != n:
+            raise PersistentSupervisorError("persistent response token count mismatch")
+        responses[idx] = tokens
+    if not saw_end or any(row is None for row in responses):
+        raise PersistentSupervisorError("persistent response is incomplete")
+    return {
+        "finite_logits": finite_logits,
+        "engine_wall_ms": engine_wall_ms,
+        "responses": responses,
+    }
+
+
+class PersistentRouteWorker:
+    def __init__(self, *, route: dict, root: Path):
+        self.route = base.routing.normalize_route(route)
+        self.root = Path(root)
+        self.queue_dir = self.root / "queue"
+        self.requests_dir = self.root / "requests"
+        self.promotion_path = self.root / "promotion_nq.txt"
+        self.ack_path = self.root / "applied_ack.json"
+        self.txn_path = self.root / "txn.cmd"
+        self.log_path = self.root / "worker.log"
+        self.proc: subprocess.Popen | None = None
+        self.log_handle = None
+        self.ack: dict | None = None
+        self.lock = threading.Lock()
+
+    @property
+    def route_id(self) -> str:
+        return str(self.route["route_id"])
+
+    def _prepare_files(self) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.queue_dir.mkdir(parents=True, exist_ok=True)
+        self.requests_dir.mkdir(parents=True, exist_ok=True)
+        for stale in ("request.txt", "request.processing", "shutdown"):
+            try:
+                (self.queue_dir / stale).unlink()
+            except FileNotFoundError:
+                pass
+        self.promotion_path.write_text(base._route_policy_line(self.route))
+        try:
+            self.ack_path.unlink()
+        except FileNotFoundError:
+            pass
+        try:
+            self.txn_path.unlink()
+        except FileNotFoundError:
+            pass
+
+    def _env(self) -> dict[str, str]:
+        env = base._minimal_env()
+        env.update({
+            "QWEN_MOE_GPU_CBATCH_ONLINE": "1",
+            "QWEN_MOE_BASE": str(base.MOE_BASE),
+            "QWEN_MOE_NEARTIE_CORRECT": "0",
+            "QWEN_MOE_CB_SLOTS": "4",
+            "QWEN_MOE_CB_REQS": "12",
+            "QWEN_MOE_GPU_VALIDATION_REPORT": "1",
+            "QWEN_MOE_GPU_APPLIED_ACK": str(self.ack_path),
+            "QWEN_MOE_GPU_TXN_FILE": str(self.txn_path),
+            "QWEN_MOE_PROMOTION_FILE_NQ": str(self.promotion_path),
+            "QWEN_MOE_PROMOTION_SAFETENSORS": str(base.SAFETENSORS),
+            "QWEN_MOE_GPU_PERSISTENT_DIR": str(self.queue_dir),
+        })
+        return env
+
+    def start(self) -> dict:
+        if self.proc is not None and self.proc.poll() is None:
+            return self.health()
+        self._prepare_files()
+        self.log_handle = self.log_path.open("w")
+        self.proc = subprocess.Popen(
+            [str(PERSISTENT_BINARY)],
+            cwd=base.REPO,
+            env=self._env(),
+            text=True,
+            stdout=self.log_handle,
+            stderr=subprocess.STDOUT,
+        )
+        deadline = time.time() + WORKER_READY_TIMEOUT_SECONDS
+        while time.time() < deadline:
+            if self.proc.poll() is not None:
+                self.log_handle.flush()
+                tail = self.log_path.read_text(errors="ignore")[-8000:]
+                raise PersistentSupervisorError(
+                    f"persistent worker {self.route_id} exited during startup rc={self.proc.returncode}: {tail}"
+                )
+            if self.log_path.exists() and "persistent admission enabled" in self.log_path.read_text(errors="ignore"):
+                if self.ack_path.is_file():
+                    ack = _read_runtime_ack(self.ack_path)
+                    if ack["active_policy_hash"] != self.route["policy_hash"]:
+                        raise PersistentSupervisorError(
+                            f"persistent worker {self.route_id} policy hash mismatch"
+                        )
+                    self.ack = ack
+                    return self.health()
+            time.sleep(0.05)
+        self.stop(force=True)
+        raise PersistentSupervisorError(f"persistent worker {self.route_id} did not become ready")
+
+    def is_alive(self) -> bool:
+        return self.proc is not None and self.proc.poll() is None
+
+    def _rss_bytes(self) -> int:
+        if not self.is_alive():
+            return 0
+        try:
+            out = subprocess.check_output(
+                ["/bin/ps", "-o", "rss=", "-p", str(self.proc.pid)],
+                text=True,
+                timeout=5,
+            ).strip()
+            return int(out) * 1024 if out else 0
+        except Exception:
+            return 0
+
+    def health(self) -> dict:
+        return {
+            "route_id": self.route_id,
+            "alive": self.is_alive(),
+            "pid": int(self.proc.pid) if self.is_alive() else None,
+            "policy_hash": self.route["policy_hash"],
+            "weight_epoch": int(self.ack["weight_epoch"]) if self.ack else None,
+            "ack_sha256": self.ack.get("ack_sha256") if self.ack else None,
+            "rss_bytes": self._rss_bytes(),
+        }
+
+    def submit(self, parsed: list[tuple[list[int], int]]) -> dict:
+        if not parsed:
+            raise PersistentSupervisorError("persistent batch cannot be empty")
+        with self.lock:
+            if not self.is_alive():
+                raise PersistentSupervisorError(f"persistent worker {self.route_id} is not alive")
+            request_id = uuid.uuid4().hex
+            request_root = self.requests_dir / request_id
+            request_root.mkdir(parents=True, exist_ok=False)
+            manifest = request_root / "manifest.txt"
+            result_path = request_root / "result.txt"
+            lines = []
+            for idx, (tokens, max_new) in enumerate(parsed):
+                raw = request_root / f"req-{idx}.i32"
+                base._write_i32(raw, tokens)
+                lines.append(f"{raw} {max_new}\n")
+            manifest.write_text("".join(lines))
+            request_tmp = self.queue_dir / f"request.txt.tmp.{request_id}"
+            request_ready = self.queue_dir / "request.txt"
+            request_processing = self.queue_dir / "request.processing"
+            if request_ready.exists() or request_processing.exists():
+                shutil.rmtree(request_root, ignore_errors=True)
+                raise PersistentSupervisorError(f"persistent queue {self.route_id} is busy")
+            request_tmp.write_text(
+                f"BEGLIN_GPU_PERSISTENT_REQUEST_V1 {request_id} {manifest} {result_path}\n"
+            )
+            started = time.monotonic()
+            os.replace(request_tmp, request_ready)
+            deadline = time.time() + REQUEST_TIMEOUT_SECONDS
+            try:
+                while time.time() < deadline:
+                    if not self.is_alive():
+                        raise PersistentSupervisorError(
+                            f"persistent worker {self.route_id} died while serving request"
+                        )
+                    if result_path.is_file():
+                        roundtrip_ms = (time.monotonic() - started) * 1000.0
+                        parsed_result = parse_persistent_result(
+                            result_path.read_text(),
+                            request_id=request_id,
+                            expected_requests=len(parsed),
+                        )
+                        parsed_result["roundtrip_ms"] = roundtrip_ms
+                        return parsed_result
+                    time.sleep(POLL_SECONDS)
+                raise PersistentSupervisorError(
+                    f"persistent worker {self.route_id} request timed out"
+                )
+            finally:
+                try:
+                    request_tmp.unlink()
+                except FileNotFoundError:
+                    pass
+                if result_path.exists():
+                    shutil.rmtree(request_root, ignore_errors=True)
+
+    def stop(self, *, force: bool = False) -> None:
+        proc = self.proc
+        if proc is None:
+            return
+        if proc.poll() is None and not force:
+            try:
+                (self.queue_dir / "shutdown").write_text("")
+                proc.wait(timeout=15)
+            except Exception:
+                force = True
+        if proc.poll() is None and force:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+        if self.log_handle is not None:
+            try:
+                self.log_handle.close()
+            except Exception:
+                pass
+        self.proc = None
+        self.log_handle = None
+
+
+class PersistentWorkerPool:
+    def __init__(self, root: Path = DEFAULT_PERSISTENT_ROOT):
+        self.root = Path(root)
+        self.workers = {
+            base.baseline_route()["route_id"]: PersistentRouteWorker(
+                route=base.baseline_route(), root=self.root / "baseline"
+            ),
+            base.candidate_route()["route_id"]: PersistentRouteWorker(
+                route=base.candidate_route(), root=self.root / "candidate"
+            ),
+        }
+        self.prewarm_evidence: dict[str, Any] = {}
+
+    def get(self, route: dict) -> PersistentRouteWorker:
+        rid = str(route["route_id"])
+        worker = self.workers.get(rid)
+        if worker is None:
+            raise PersistentSupervisorError(f"route is not backed by a persistent worker: {rid}")
+        if route["policy_hash"] != worker.route["policy_hash"]:
+            raise PersistentSupervisorError("route policy differs from persistent worker policy")
+        return worker
+
+    @staticmethod
+    def _reference_token(route: dict) -> int:
+        return 3268 if route.get("n") is None else 1224
+
+    def _prewarm(self, worker: PersistentRouteWorker) -> dict:
+        prompt = base._read_first_certified_prompt()
+        batch = [(prompt, 10) for _ in range(12)]
+        result = worker.submit(batch)
+        if not result["finite_logits"]:
+            raise PersistentSupervisorError(f"prewarm non-finite logits for {worker.route_id}")
+        expected = self._reference_token(worker.route)
+        hits = sum(
+            len(tokens) > 8 and tokens[8] == expected
+            for tokens in result["responses"]
+        )
+        if hits != 12:
+            raise PersistentSupervisorError(
+                f"prewarm reference mismatch for {worker.route_id}: {hits}/12"
+            )
+        return {
+            "route_id": worker.route_id,
+            "reference_token": expected,
+            "reference_hits": hits,
+            "engine_wall_ms": result["engine_wall_ms"],
+            "roundtrip_ms": result["roundtrip_ms"],
+            "pid": worker.health()["pid"],
+        }
+
+    def start_all(self) -> dict:
+        verify_persistent_artifact()
+        started = []
+        try:
+            for worker in self.workers.values():
+                worker.start()
+                started.append(worker)
+            for worker in self.workers.values():
+                self.prewarm_evidence[worker.route_id] = self._prewarm(worker)
+            return self.health()
+        except Exception:
+            for worker in reversed(started):
+                worker.stop(force=True)
+            raise
+
+    def health(self) -> dict:
+        rows = {rid: worker.health() for rid, worker in self.workers.items()}
+        return {
+            "all_alive": all(row["alive"] for row in rows.values()),
+            "workers": rows,
+            "combined_rss_bytes": sum(int(row["rss_bytes"] or 0) for row in rows.values()),
+            "prewarm": self.prewarm_evidence,
+        }
+
+    def stop_all(self) -> None:
+        for worker in self.workers.values():
+            worker.stop()
+
+
+class PersistentEngineExecutor:
+    def __init__(self, route_manifest: str | Path, pool: PersistentWorkerPool):
+        self.route_manifest = Path(route_manifest)
+        self.store = base.routing.AtomicRouteManifestStore(self.route_manifest)
+        self.pool = pool
+        self.gpu_lock = threading.BoundedSemaphore(1)
+
+    def read_route_snapshot(self) -> dict:
+        manifest = self.store.read()
+        route = base.routing.normalize_route(manifest["active_route"])
+        base._route_policy_line(route)
+        worker = self.pool.get(route)
+        if not worker.is_alive():
+            raise PersistentSupervisorError(f"active persistent worker is down: {route['route_id']}")
+        return {
+            "generation": int(manifest["generation"]),
+            "manifest_sha256": str(manifest["manifest_sha256"]),
+            "route": route,
+        }
+
+    def generate_batch(self, requests: list[dict]) -> dict:
+        if not isinstance(requests, list) or not requests:
+            raise PersistentSupervisorError("requests must be a non-empty list")
+        if len(requests) > base.MAX_BATCH_REQUESTS:
+            raise PersistentSupervisorError("batch exceeds supervisor request limit")
+        parsed = [base._validate_request(row) for row in requests]
+        snapshot = self.read_route_snapshot()
+        if not self.gpu_lock.acquire(blocking=False):
+            raise PersistentSupervisorError("GPU worker is busy")
+        started = time.monotonic()
+        try:
+            worker = self.pool.get(snapshot["route"])
+            result = worker.submit(parsed)
+            if not result["finite_logits"]:
+                raise PersistentSupervisorError("persistent worker reported non-finite logits")
+            h = worker.health()
+            return {
+                "schema": "beglin-supervisor-persistent-batch-response-v1",
+                "status": "OK",
+                "route_generation": snapshot["generation"],
+                "route_manifest_sha256": snapshot["manifest_sha256"],
+                "route": snapshot["route"],
+                "worker_instance_id": f"pid-{h['pid']}",
+                "worker_ack_sha256": h["ack_sha256"],
+                "worker_epoch": h["weight_epoch"],
+                "finite_logits": True,
+                "duration_ms": max(1, int((time.monotonic() - started) * 1000)),
+                "engine_wall_ms": result["engine_wall_ms"],
+                "peak_child_rss_bytes": h["rss_bytes"],
+                "responses": [
+                    {"request_index": idx, "generated_tokens": tokens}
+                    for idx, tokens in enumerate(result["responses"])
+                ],
+                "persistent_worker": True,
+                "production_write_allowed": False,
+                "auto_promotion_enabled": False,
+            }
+        finally:
+            self.gpu_lock.release()
+
+
+class PersistentHTTPServer(base.SupervisorHTTPServer):
+    def __init__(self, server_address, handler_cls, executor: PersistentEngineExecutor, pool: PersistentWorkerPool):
+        super().__init__(server_address, handler_cls, executor)
+        self.pool = pool
+
+
+class PersistentHandler(base.Handler):
+    server_version = "BeglinPersistentSupervisor/1"
+
+    def do_GET(self) -> None:
+        if self.path != "/healthz":
+            return super().do_GET()
+        try:
+            snap = self.server.executor.read_route_snapshot()
+            pool = self.server.pool.health()
+            status = HTTPStatus.OK if pool["all_alive"] else HTTPStatus.SERVICE_UNAVAILABLE
+            self._send(status, {
+                "schema": "beglin-supervisor-persistent-health-v1",
+                "status": "ok" if pool["all_alive"] else "degraded",
+                "router_id": "beglin-local-http-persistent-supervisor-v1",
+                "listen_host": self.server.server_address[0],
+                "listen_port": self.server.server_address[1],
+                "route_generation": snap["generation"],
+                "active_route": snap["route"],
+                "route_manifest_sha256": snap["manifest_sha256"],
+                "workers": pool["workers"],
+                "combined_worker_rss_bytes": pool["combined_rss_bytes"],
+                "prewarm": pool["prewarm"],
+                "uptime_seconds": int(time.time() - self.server.started_at),
+                "persistent_workers": True,
+                "external_network_exposed": False,
+                "production_write_allowed": False,
+                "auto_promotion_enabled": False,
+            })
+        except Exception as exc:
+            self._send(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": type(exc).__name__, "message": str(exc)},
+            )
+
+
+def make_server(
+    *,
+    route_manifest: str | Path,
+    persistent_root: str | Path = DEFAULT_PERSISTENT_ROOT,
+    host: str = "127.0.0.1",
+    port: int = base.DEFAULT_PORT,
+) -> PersistentHTTPServer:
+    if host != "127.0.0.1":
+        raise PersistentSupervisorError("persistent supervisor refuses non-loopback binding")
+    verify_persistent_artifact()
+    manifest = Path(route_manifest)
+    base.ensure_route_manifest(manifest)
+    pool = PersistentWorkerPool(Path(persistent_root))
+    pool.start_all()
+    try:
+        executor = PersistentEngineExecutor(manifest, pool)
+        return PersistentHTTPServer((host, int(port)), PersistentHandler, executor, pool)
+    except Exception:
+        pool.stop_all()
+        raise
+
+
+def _batch_reference_probe(port: int) -> dict:
+    tokens = base._read_first_certified_prompt()
+    result = base._post_json(
+        port,
+        "/v1/batch_generate",
+        {"requests": [{"prompt_tokens": tokens, "max_new_tokens": 10} for _ in range(12)]},
+    )
+    values = [
+        row["generated_tokens"][8] if len(row["generated_tokens"]) > 8 else None
+        for row in result["responses"]
+    ]
+    expected = 3268 if result["route"].get("n") is None else 1224
+    hits = sum(value == expected for value in values)
+    return {
+        "schema": "beglin-persistent-supervisor-batch-reference-probe-v1",
+        "status": "PASS" if hits == 12 and result["finite_logits"] else "FAIL",
+        "route_generation": result["route_generation"],
+        "route_id": result["route"]["route_id"],
+        "policy_hash": result["route"]["policy_hash"],
+        "expected_reference_token": expected,
+        "reference_hits": hits,
+        "requests": len(result["responses"]),
+        "finite_logits": result["finite_logits"],
+        "duration_ms": result["duration_ms"],
+        "engine_wall_ms": result["engine_wall_ms"],
+        "worker_instance_id": result["worker_instance_id"],
+        "persistent_worker": True,
+    }
+
+
+def self_test() -> dict:
+    verify_persistent_artifact()
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="beglin-persistent-supervisor-selftest-") as td:
+        root = Path(td)
+        route_path = root / "active-route.json"
+        store = base.routing.AtomicRouteManifestStore(route_path)
+        initial = store.initialize(base.baseline_route())
+        server = make_server(
+            route_manifest=route_path,
+            persistent_root=root / "workers",
+            port=0,
+        )
+        port = int(server.server_address[1])
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            baseline = _batch_reference_probe(port)
+            if baseline["status"] != "PASS" or baseline["expected_reference_token"] != 3268:
+                raise PersistentSupervisorError("persistent baseline self-test failed")
+            switched = store.compare_and_swap(
+                expected_generation=int(initial["generation"]),
+                expected_route_id=base.baseline_route()["route_id"],
+                new_route=base.candidate_route(),
+                reason="persistent supervisor self-test candidate",
+                authorization_digest="a" * 64,
+            )
+            candidate = _batch_reference_probe(port)
+            if candidate["status"] != "PASS" or candidate["expected_reference_token"] != 1224:
+                raise PersistentSupervisorError("persistent candidate self-test failed")
+            rolled = store.compare_and_swap(
+                expected_generation=int(switched["generation"]),
+                expected_route_id=base.candidate_route()["route_id"],
+                new_route=base.baseline_route(),
+                reason="persistent supervisor self-test rollback",
+                authorization_digest="b" * 64,
+            )
+            restored = _batch_reference_probe(port)
+            if restored["status"] != "PASS" or restored["expected_reference_token"] != 3268:
+                raise PersistentSupervisorError("persistent rollback self-test failed")
+            health = base._get_json(port, "/healthz")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+            server.pool.stop_all()
+        out = {
+            "schema": "beglin-persistent-serving-supervisor-selftest-v1",
+            "status": "PASS",
+            "route_generation_path": [
+                int(initial["generation"]),
+                int(switched["generation"]),
+                int(rolled["generation"]),
+            ],
+            "baseline": baseline,
+            "candidate": candidate,
+            "rollback": restored,
+            "health": health,
+            "external_network_exposed": False,
+            "production_write_allowed": False,
+            "auto_promotion_enabled": False,
+        }
+        out["result_sha256"] = base.routing.sha256_json(out)
+        return out
+
+
+def install_user_launchd(
+    *,
+    script_path: Path,
+    route_manifest: Path,
+    port: int,
+) -> dict:
+    state_root = route_manifest.parent
+    state_root.mkdir(parents=True, exist_ok=True)
+    base.ensure_route_manifest(route_manifest)
+    logs = state_root / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    label = "com.beglin.production-supervisor"
+    plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    plist.parent.mkdir(parents=True, exist_ok=True)
+    program = str(Path(sys.executable).resolve())
+    script = str(script_path.resolve(strict=True))
+    route = str(route_manifest.resolve())
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>{label}</string>
+<key>ProgramArguments</key><array>
+<string>{program}</string>
+<string>{script}</string>
+<string>--serve</string>
+<string>--route-manifest</string><string>{route}</string>
+<string>--port</string><string>{int(port)}</string>
+</array>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><true/>
+<key>ProcessType</key><string>Background</string>
+<key>StandardOutPath</key><string>{logs / "supervisor.stdout.log"}</string>
+<key>StandardErrorPath</key><string>{logs / "supervisor.stderr.log"}</string>
+</dict></plist>
+"""
+    tmp = plist.with_name(plist.name + f".tmp.{os.getpid()}")
+    tmp.write_text(xml)
+    os.replace(tmp, plist)
+    uid = os.getuid()
+    domain = f"gui/{uid}"
+    subprocess.run(
+        ["/bin/launchctl", "bootout", domain, str(plist)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    proc = subprocess.run(
+        ["/bin/launchctl", "bootstrap", domain, str(plist)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise PersistentSupervisorError(f"launchctl bootstrap failed: {proc.stderr.strip()}")
+    return {
+        "schema": "beglin-persistent-supervisor-launchd-install-v1",
+        "status": "INSTALLED",
+        "label": label,
+        "plist": str(plist),
+        "python": program,
+        "script": script,
+        "route_manifest": route,
+        "listen_host": "127.0.0.1",
+        "listen_port": int(port),
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    mode = ap.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--serve", action="store_true")
+    mode.add_argument("--self-test", action="store_true")
+    mode.add_argument("--install-user-launchd", action="store_true")
+    mode.add_argument("--probe-health", action="store_true")
+    mode.add_argument("--probe-batch-reference", action="store_true")
+    ap.add_argument("--route-manifest", default=str(base.DEFAULT_ROUTE_MANIFEST))
+    ap.add_argument("--port", type=int, default=base.DEFAULT_PORT)
+    args = ap.parse_args()
+
+    if args.self_test:
+        print(json.dumps(self_test(), indent=2, sort_keys=True))
+        return 0
+    if args.probe_health:
+        print(json.dumps(base._get_json(args.port, "/healthz"), indent=2, sort_keys=True))
+        return 0
+    if args.probe_batch_reference:
+        result = _batch_reference_probe(args.port)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if result["status"] == "PASS" else 2
+    if args.install_user_launchd:
+        result = install_user_launchd(
+            script_path=Path(__file__),
+            route_manifest=Path(args.route_manifest),
+            port=args.port,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+
+    server = make_server(
+        route_manifest=args.route_manifest,
+        host="127.0.0.1",
+        port=args.port,
+    )
+    stop_once = threading.Event()
+    def request_shutdown(signum, frame):
+        if stop_once.is_set():
+            return
+        stop_once.set()
+        threading.Thread(target=server.shutdown, daemon=True).start()
+    signal.signal(signal.SIGTERM, request_shutdown)
+    signal.signal(signal.SIGINT, request_shutdown)
+    print(json.dumps({
+        "schema": "beglin-persistent-serving-supervisor-start-v1",
+        "status": "SERVING",
+        "listen_host": "127.0.0.1",
+        "listen_port": int(server.server_address[1]),
+        "workers": server.pool.health(),
+        "external_network_exposed": False,
+        "production_write_allowed": False,
+        "auto_promotion_enabled": False,
+    }, sort_keys=True), flush=True)
+    try:
+        server.serve_forever(poll_interval=0.25)
+    finally:
+        server.server_close()
+        server.pool.stop_all()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
