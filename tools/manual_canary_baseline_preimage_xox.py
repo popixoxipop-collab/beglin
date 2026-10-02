@@ -18,6 +18,7 @@ import re
 import resource
 import shlex
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -42,6 +43,9 @@ BASELINE_POLICY_HASH = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f1116
 REQUESTS = 12
 SLOTS = 4
 TIMEOUT_SECONDS = 180
+
+sys.path.insert(0, str(REPO / "tools"))
+import gpu_runtime_control as grc
 
 REQUEST_RE = re.compile(
     r"\[moe gpu cb online\] req (\d+) .*? tokens:\s*([^\n\r]*)"
@@ -189,13 +193,16 @@ def capture() -> dict:
         if not ack_path.is_file():
             raise BaselineCaptureError("baseline runtime ACK is missing")
 
-        ack = json.loads(ack_path.read_text())
+        ack = grc.read_runtime_ack(ack_path)
         if ack.get("status") != "STARTUP_STATE":
             raise BaselineCaptureError(f"unexpected baseline ACK status: {ack.get('status')!r}")
         if ack.get("active_policy") != []:
             raise BaselineCaptureError("baseline active policy is not empty")
         if ack.get("active_policy_hash") != BASELINE_POLICY_HASH:
-            raise BaselineCaptureError("baseline policy hash mismatch")
+            raise BaselineCaptureError(
+                "baseline policy hash mismatch after runtime ACK normalization: "
+                f"expected={BASELINE_POLICY_HASH} actual={ack.get('active_policy_hash')}"
+            )
         if _stable_hash([]) != BASELINE_POLICY_HASH:
             raise BaselineCaptureError("local canonical empty-policy hash mismatch")
         if int(ack.get("weight_epoch", -1)) != 0:
