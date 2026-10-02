@@ -14688,7 +14688,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
         }
         mf_n = MOE_CBATCH_N;
     }
-    const int MCN = mf_n;
+    int MCN = mf_n;
 
     static int    rq_plen[MOE_CB4B_RMAX], rq_maxnew[MOE_CB4B_RMAX], rq_arrive[MOE_CB4B_RMAX];
     static int    rq_slot_of[MOE_CB4B_RMAX], rq_admit_step[MOE_CB4B_RMAX];
@@ -14710,10 +14710,12 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
             fprintf(stderr, "FATAL: QWEN_MOE_GPU_PERSIST_GENERATION_FILE requires QWEN_MOE_CB_PROMPT_MANIFEST\n");
             exit(1);
         }
-        if (R != 1 || MCN != 1) {
+        R = mf_n;
+        MCN = mf_n;
+        if (R < 1 || R > MOE_CB4B_RMAX) {
             fprintf(stderr,
-                    "FATAL: persistent GPU worker currently requires QWEN_MOE_CB_REQS=1 and exactly one manifest entry "
-                    "(got R=%d MCN=%d)\n", R, MCN);
+                    "FATAL: persistent GPU worker manifest request count %d out of [1,%d]\n",
+                    R, MOE_CB4B_RMAX);
             exit(1);
         }
         persist_generation = moe_gpu_persist_read_generation(persist_gen_path);
@@ -14943,13 +14945,15 @@ persistent_cycle:
             moe_gpu_persist_wait_generation(persist_gen_path, persist_generation);
         int reloaded = moe_cbatch_load_manifest(
             manifest_path, mf_plen, mf_maxnew, mf_ids, MOE_CB4B_RMAX);
-        if (reloaded != 1) {
+        if (reloaded < 1 || reloaded > MOE_CB4B_RMAX) {
             fprintf(stderr,
-                    "FATAL: persistent GPU worker requires exactly one manifest entry per generation "
-                    "(generation=%lld entries=%d)\n",
-                    next_generation, reloaded);
+                    "FATAL: persistent GPU worker generation=%lld request count %d out of [1,%d]\n",
+                    next_generation, reloaded, MOE_CB4B_RMAX);
             exit(1);
         }
+        mf_n = reloaded;
+        MCN = reloaded;
+        R = reloaded;
         persist_generation = next_generation;
         persist_cycles_completed++;
         validation_finite = 1;
