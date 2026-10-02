@@ -13,6 +13,7 @@ Safety properties:
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 from pathlib import Path
@@ -26,6 +27,7 @@ import production_serving_supervisor as supervisor
 
 
 ROUTE_MANIFEST = Path("/Users/xox/vdsp_serving/active-route.json")
+ADMISSION_LOCK = Path("/Users/xox/vdsp_serving/admission.lock")
 APPROVAL_PATH = Path(
     "/Users/xox/mcp-sandbox/tailnet-commander/"
     "BEGLIN_PRODUCTION_CUTOVER_APPROVAL_2026-10-02.json"
@@ -214,19 +216,22 @@ def execute() -> dict:
         cutover_plan=plan,
     )
     store = routing.AtomicRouteManifestStore(ROUTE_MANIFEST)
-    before = store.read()
-    if before["active_route"] != plan["baseline_route"]:
-        raise CutoverExecutionError(
-            "active route is not the exact approved baseline"
-        )
-
+    ADMISSION_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    admission = ADMISSION_LOCK.open("a+")
     switched = None
     try:
+        fcntl.flock(admission.fileno(), fcntl.LOCK_EX)
+        before = store.read()
+        if before["active_route"] != plan["baseline_route"]:
+            raise CutoverExecutionError(
+                "active route is not the exact approved baseline"
+            )
         switched = routing.execute_cutover(
             store=store,
             cutover_plan=plan,
             approval=approval,
         )
+        fcntl.flock(admission.fileno(), fcntl.LOCK_UN)
         prompt = supervisor._read_first_certified_prompt()
         response = supervisor._post_json(
             PORT,
@@ -247,12 +252,16 @@ def execute() -> dict:
             metrics=metrics,
         )
         if health["status"] != "CUTOVER_HEALTH_PASS_REVIEW_REQUIRED":
-            rolled = routing.rollback(
-                store=store,
-                cutover_plan=plan,
-                cutover_result=switched,
-                reason="candidate health failed",
-            )
+            fcntl.flock(admission.fileno(), fcntl.LOCK_EX)
+            try:
+                rolled = routing.rollback(
+                    store=store,
+                    cutover_plan=plan,
+                    cutover_result=switched,
+                    reason="candidate health failed",
+                )
+            finally:
+                fcntl.flock(admission.fileno(), fcntl.LOCK_UN)
             return {
                 "schema": "beglin-production-serving-cutover-execution/1",
                 "status": "ROLLED_BACK_AFTER_HEALTH_FAILURE",
@@ -289,20 +298,30 @@ def execute() -> dict:
             "probe": detail,
         }
         result["result_sha256"] = routing.sha256_json(result)
+        admission.close()
         return result
     except Exception:
+        try:
+            fcntl.flock(admission.fileno(), fcntl.LOCK_UN)
+        except Exception:
+            pass
         if switched is not None:
             try:
                 current = store.read()
                 if current["active_route"] == plan["candidate_route"]:
-                    routing.rollback(
-                        store=store,
-                        cutover_plan=plan,
-                        cutover_result=switched,
-                        reason="exception during cutover health verification",
-                    )
+                    fcntl.flock(admission.fileno(), fcntl.LOCK_EX)
+                    try:
+                        routing.rollback(
+                            store=store,
+                            cutover_plan=plan,
+                            cutover_result=switched,
+                            reason="exception during cutover health verification",
+                        )
+                    finally:
+                        fcntl.flock(admission.fileno(), fcntl.LOCK_UN)
             except Exception:
                 pass
+        admission.close()
         raise
 
 
