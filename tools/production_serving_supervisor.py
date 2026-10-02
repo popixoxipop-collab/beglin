@@ -294,6 +294,7 @@ class EngineExecutor:
                         "QWEN_MOE_NEARTIE_CORRECT": "0",
                         "QWEN_MOE_CB_PROMPT_MANIFEST": str(manifest_path),
                         "QWEN_MOE_CB_SLOTS": str(min(4, len(parsed))),
+                        "QWEN_MOE_CB_REQS": str(len(parsed)),
                         "QWEN_MOE_GPU_VALIDATION_REPORT": "1",
                         "QWEN_MOE_GPU_APPLIED_ACK": str(ack_path),
                         "QWEN_MOE_GPU_TXN_FILE": str(txn_path),
