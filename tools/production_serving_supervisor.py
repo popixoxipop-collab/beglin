@@ -714,6 +714,8 @@ def main() -> int:
     mode.add_argument("--serve", action="store_true")
     mode.add_argument("--self-test", action="store_true")
     mode.add_argument("--install-user-launchd", action="store_true")
+    mode.add_argument("--probe-health", action="store_true")
+    mode.add_argument("--probe-reference", action="store_true")
     ap.add_argument(
         "--route-manifest",
         default=str(DEFAULT_ROUTE_MANIFEST),
@@ -723,6 +725,29 @@ def main() -> int:
 
     if args.self_test:
         print(json.dumps(self_test(), indent=2, sort_keys=True))
+        return 0
+    if args.probe_health:
+        print(json.dumps(_get_json(args.port, "/healthz"), indent=2, sort_keys=True))
+        return 0
+    if args.probe_reference:
+        tokens = _read_first_certified_prompt()
+        result = _post_json(
+            args.port,
+            "/v1/generate",
+            {"prompt_tokens": tokens, "max_new_tokens": 10},
+        )
+        generated = result["responses"][0]["generated_tokens"]
+        print(json.dumps({
+            "schema": "beglin-supervisor-reference-probe-v1",
+            "status": "PASS",
+            "route_generation": result["route_generation"],
+            "route_id": result["route"]["route_id"],
+            "policy_hash": result["route"]["policy_hash"],
+            "reference_token_at_gen_idx_8": generated[8] if len(generated) > 8 else None,
+            "finite_logits": result["finite_logits"],
+            "duration_ms": result["duration_ms"],
+            "worker_instance_id": result["worker_instance_id"],
+        }, indent=2, sort_keys=True))
         return 0
     if args.install_user_launchd:
         result = install_user_launchd(
