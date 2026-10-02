@@ -13926,35 +13926,6 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
     float *gpu_logits = (float *)malloc(sizeof(float) * (size_t)MOE_BATCH_MAX * MOE_VOCAB);
     int slot_arr[MOE_BATCH_MAX], spos_arr[MOE_BATCH_MAX], tok_arr[MOE_BATCH_MAX];
 
-    const char *persist_gen_path = getenv("QWEN_MOE_GPU_PERSIST_GENERATION_FILE");
-    int persistent_worker = persist_gen_path && persist_gen_path[0];
-    long long persist_generation = 0;
-    int persist_cycles_completed = 0;
-    if (persistent_worker) {
-        if (!manifest_path || !manifest_path[0]) {
-            fprintf(stderr, "FATAL: QWEN_MOE_GPU_PERSIST_GENERATION_FILE requires QWEN_MOE_CB_PROMPT_MANIFEST\n");
-            exit(1);
-        }
-        if (R != 1 || MCN != 1) {
-            fprintf(stderr,
-                    "FATAL: persistent GPU worker currently requires QWEN_MOE_CB_REQS=1 and exactly one manifest entry "
-                    "(got R=%d MCN=%d)\n", R, MCN);
-            exit(1);
-        }
-        persist_generation = moe_gpu_persist_read_generation(persist_gen_path);
-        if (persist_generation <= 0) {
-            fprintf(stderr,
-                    "FATAL: persistent GPU worker generation file '%s' must contain an integer > 0 before startup\n",
-                    persist_gen_path);
-            exit(1);
-        }
-        fprintf(stderr,
-                "GPU_PERSIST_READY_V1 generation=%lld pid=%d policy_epoch=%llu\n",
-                persist_generation, (int)getpid(),
-                (unsigned long long)g_moe_gpu_weight_epoch);
-        fflush(stderr);
-    }
-
     long steps_idle = 0, steps_with_idle_slot = 0, admitted_after_evict = 0;
     long queue_wait_events = 0, queue_wait_max_steps = 0, steps_pure_prefill = 0;
     int step = 0, total_tok_processed = 0;
@@ -14729,6 +14700,35 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     float *x_embed = (float *)malloc(sizeof(float) * (size_t)MOE_BATCH_MAX * MOE_HIDDEN);
     float *gpu_logits = (float *)malloc(sizeof(float) * (size_t)MOE_BATCH_MAX * MOE_VOCAB);
     int slot_arr[MOE_BATCH_MAX], spos_arr[MOE_BATCH_MAX], tok_arr[MOE_BATCH_MAX];
+
+    const char *persist_gen_path = getenv("QWEN_MOE_GPU_PERSIST_GENERATION_FILE");
+    int persistent_worker = persist_gen_path && persist_gen_path[0];
+    long long persist_generation = 0;
+    int persist_cycles_completed = 0;
+    if (persistent_worker) {
+        if (!manifest_path || !manifest_path[0]) {
+            fprintf(stderr, "FATAL: QWEN_MOE_GPU_PERSIST_GENERATION_FILE requires QWEN_MOE_CB_PROMPT_MANIFEST\n");
+            exit(1);
+        }
+        if (R != 1 || MCN != 1) {
+            fprintf(stderr,
+                    "FATAL: persistent GPU worker currently requires QWEN_MOE_CB_REQS=1 and exactly one manifest entry "
+                    "(got R=%d MCN=%d)\n", R, MCN);
+            exit(1);
+        }
+        persist_generation = moe_gpu_persist_read_generation(persist_gen_path);
+        if (persist_generation <= 0) {
+            fprintf(stderr,
+                    "FATAL: persistent GPU worker generation file '%s' must contain an integer > 0 before startup\n",
+                    persist_gen_path);
+            exit(1);
+        }
+        fprintf(stderr,
+                "GPU_PERSIST_READY_V1 generation=%lld pid=%d policy_epoch=%llu\n",
+                persist_generation, (int)getpid(),
+                (unsigned long long)g_moe_gpu_weight_epoch);
+        fflush(stderr);
+    }
 
     long steps_idle = 0, steps_with_idle_slot = 0, admitted_after_evict = 0;
     long queue_wait_events = 0, queue_wait_max_steps = 0, steps_pure_prefill = 0;
