@@ -6,11 +6,15 @@ on:
       - agent-e-absent-baseline-20261002
       - agent-e-preimage-materializer-20261002
       - agent-e-signing-prep-xox-20261002
+      - production-adapter-bridge-shadow-20261002
     paths:
       - ".github/workflows/certified-successor-regression.yml"
       - "tools/manual_canary_*.py"
       - "tools/test_manual_canary*.py"
       - "docs/MANUAL_CANARY*.md"
+      - "tools/production_adapter_bridge*.py"
+      - "tools/test_production_adapter_bridge*.py"
+      - "attestations/BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json"
   workflow_dispatch:
 
 permissions:
@@ -43,7 +47,10 @@ jobs:
             tools/manual_canary_production_intent.py \
             tools/manual_canary_proposal_materializer.py \
             tools/manual_canary_baseline_preimage_xox.py \
-            tools/test_manual_canary_proposal_materializer.py
+            tools/production_adapter_bridge.py \
+            tools/production_adapter_bridge_xox.py \
+            tools/test_manual_canary_proposal_materializer.py \
+            tools/test_production_adapter_bridge.py
       - name: Precision v3 tests
         env:
           PYTHONPATH: tools
@@ -64,6 +71,7 @@ jobs:
         run: |
           python tools/test_manual_canary.py
           python tools/test_manual_canary_proposal_materializer.py
+          python tools/test_production_adapter_bridge.py
           python tools/test_checkpoint_identity.py
           python tools/test_agent_f_gpu_coverage_xox.py
       - name: Signature, evidence, and observer v3 regressions
