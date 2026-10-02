@@ -1,19 +1,37 @@
 {
   "schema": "beglin-serving-router-capability/1",
-  "status": "ABSENT",
-  "router_id": "",
-  "implementation_verified": false,
-  "atomic_cas": false,
-  "health_observation": false,
-  "rollback": false,
-  "request_drain": false,
-  "route_store_kind": "",
-  "observed_at": "2026-10-02T13:41:22Z",
-  "evidence": {
-    "repository_tree_scan": "no production ingress/router/supervisor implementation found",
-    "engine_mode": "continuous-batch inference engine with worker-local precision control",
-    "isolated_canary_result": "bridge-20261002T132351Z",
-    "xox_shadow_route_drill_result_sha256": "bdec0d27481854804dd6720b81374ad25ef15e89301434739b9244c98980b337"
+  "status": "VERIFIED",
+  "router_id": "beglin-local-http-supervisor-v1",
+  "implementation_verified": true,
+  "atomic_cas": true,
+  "health_observation": true,
+  "rollback": true,
+  "request_drain": true,
+  "route_store_kind": "atomic-json-manifest",
+  "observed_at": "2026-10-02T14:11:14Z",
+  "listen_host": "127.0.0.1",
+  "listen_port": 18765,
+  "route_manifest": "/Users/xox/vdsp_serving/active-route.json",
+  "request_contract": "prompt_tokens-v1",
+  "external_network_exposed": false,
+  "automatic_cutover_allowed": false,
+  "launchd": {
+    "label": "com.beglin.production-supervisor",
+    "plist": "/Users/xox/Library/LaunchAgents/com.beglin.production-supervisor.plist",
+    "status": "INSTALLED"
   },
-  "production_routing_cutover_allowed": false
+  "evidence": {
+    "supervisor_selftest_sha256": "c6775c6b7ab26392aed52f970d4019a68d38f58643beb604b55868b9643e54b1",
+    "health_probe_request_id": "78232bc0-5fb3-4c57-92ef-33e6731ac79d",
+    "batch_probe_request_id": "5a58d324-a423-4efe-a078-631ea24a082b",
+    "baseline_reference_token": 3268,
+    "baseline_reference_hits": "12/12",
+    "baseline_duration_ms": 27394,
+    "baseline_peak_rss_bytes": 6270205952,
+    "finite_logits": true,
+    "route_generation": 1,
+    "route_manifest_sha256": "c0770188936191fc84ffae56f354a0802a4a3dac8d2d7b7a741b7fc0a7e1d55f"
+  },
+  "production_routing_cutover_allowed": false,
+  "note": "Router capability is verified, but actual candidate cutover still requires a separate exact cutover approval bound to the cutover-plan SHA and route IDs."
 }
