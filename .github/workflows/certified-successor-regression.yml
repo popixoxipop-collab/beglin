@@ -7,6 +7,9 @@ on:
       - agent-e-preimage-materializer-20261002
     paths:
       - ".github/workflows/certified-successor-regression.yml"
+      - "tools/manual_canary_*.py"
+      - "tools/test_manual_canary*.py"
+      - "docs/MANUAL_CANARY*.md"
   workflow_dispatch:
 
 permissions:
