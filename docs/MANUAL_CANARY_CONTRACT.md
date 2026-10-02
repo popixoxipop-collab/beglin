@@ -24,12 +24,18 @@ A proposal binds:
 - binary SHA-256
 - checkpoint SHA-256
 - exact baseline and candidate policy hashes
-- one role/layer delta with exact before/after n
+- one role/layer delta with exact before/after state
 - both G4 A/B/R and G6 restart-canary evidence hashes/run IDs
 - request/token/duration/memory budgets
 - expected epoch
 - restart instance identity
 - kill-switch scope and rollback plan
+
+`single_target.before_n` must be present. It may be `null` only when the
+target role/layer is absent from the exact baseline promotion policy (for
+example, a base-representation -> qNg64 promotion). A numeric `before_n`
+retains the existing n->n transition semantics. Missing `before_n` is rejected,
+and `null` is never interpreted as qNg64 n=4.
 
 A dry-run approval binds the normalized proposal digest, issuer, nonce,
 issued/expiry times and `DRY_RUN_TEST_ONLY` signature status. Self-approval,
