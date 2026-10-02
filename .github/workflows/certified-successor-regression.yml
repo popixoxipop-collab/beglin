@@ -17,6 +17,9 @@ on:
       - "tools/test_production_adapter_bridge*.py"
       - "tools/production_routing_cutover*.py"
       - "tools/test_production_routing_cutover*.py"
+      - "configs/production_router_capability_20261002.json"
+      - ".github/workflows/production-routing-cutover-gate.yml"
+      - "docs/PRODUCTION_ROUTING_CUTOVER_GATE.md"
       - "attestations/BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json"
   workflow_dispatch:
 
