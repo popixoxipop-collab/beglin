@@ -1,0 +1,58 @@
+name: Persistent GPU Worker XOX
+
+on:
+  push:
+    branches:
+      - persistent-gpu-worker-20261002
+    paths:
+      - "qwen_infer.c"
+      - "tools/test_persistent_gpu_worker_xox.py"
+      - ".github/workflows/persistent-gpu-worker-xox.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  xox:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 30
+    steps:
+      - name: Require EOE runner and execute isolated XOX build
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "EOE.local"
+          test "$(id -un)" = "eoe"
+
+          TARGET=""
+          for candidate in xox XOX.local; do
+            if remote_host="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$candidate" hostname 2>/dev/null)"; then
+              if [ "$remote_host" = "XOX.local" ]; then
+                TARGET="$candidate"
+                break
+              fi
+            fi
+          done
+          test -n "$TARGET"
+
+          ssh -o BatchMode=yes "$TARGET" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT=/Users/xox/mcp-sandbox/tailnet-commander/beglin-persistent-worker
+          BRANCH=persistent-gpu-worker-20261002
+          if [ ! -d "$ROOT/.git" ]; then
+            git clone --branch "$BRANCH" --single-branch               https://github.com/popixoxipop-collab/beglin.git "$ROOT"
+          else
+            git -C "$ROOT" fetch origin "$BRANCH"
+            git -C "$ROOT" checkout -B "$BRANCH" "origin/$BRANCH"
+            git -C "$ROOT" reset --hard "origin/$BRANCH"
+            git -C "$ROOT" clean -fd
+          fi
+
+          MLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          cmake -S "$ROOT" -B "$ROOT/build-gpu-persistent"             -DCMAKE_BUILD_TYPE=Release             -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$ROOT/build-gpu-persistent" --target qwen_infer_gpu -j 6
+
+          /usr/bin/shasum -a 256 "$ROOT/build-gpu-persistent/qwen_infer_gpu"
+          cd "$ROOT"
+          python3 tools/test_persistent_gpu_worker_xox.py             | tee /Users/xox/mcp-sandbox/tailnet-commander/BEGLIN_PERSISTENT_GPU_WORKER_XOX_2026-10-02.json
+          REMOTE
