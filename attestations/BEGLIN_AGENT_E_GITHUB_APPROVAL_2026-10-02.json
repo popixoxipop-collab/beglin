@@ -1,0 +1,19 @@
+{
+  "schema": "beglin-agent-e-github-public-approval/1",
+  "status": "APPROVED_FOR_NON_EXECUTABLE_INTENT_SEALING",
+  "approver": {
+    "github_login": "popixoxipop-collab",
+    "github_user_id": 261965176
+  },
+  "proposal_digest": "726ae550c7519307e771d1f9fb23157a7f75338921082f7a64282be56c9cbc15",
+  "measured_capture_sha256": "caec06441a9fab41fd0f98cb8fc027931671903b001e28561e94d4dd82d4ab2f",
+  "private_approval_commit": "7dc3398c87ffbe8e9bf2496c6d16e762ea787094",
+  "private_verification_run_id": "37010332740",
+  "guards": {
+    "production_write_allowed": false,
+    "execution_enabled": false,
+    "auto_promotion_enabled": false,
+    "production_bridge_reviewed": false
+  },
+  "note": "Public seal exposes only hashes/guard state. Detailed runtime preimage remains in the private approval record."
+}
