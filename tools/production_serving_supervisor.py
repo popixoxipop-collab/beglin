@@ -950,6 +950,8 @@ def main() -> int:
     mode.add_argument("--probe-mlx-build-version", action="store_true")
     mode.add_argument("--install-persistent-test-binary", action="store_true")
     mode.add_argument("--persistent-worker-self-test", action="store_true")
+    mode.add_argument("--persistent-baseline-self-test", action="store_true")
+    mode.add_argument("--persistent-candidate-self-test", action="store_true")
     mode.add_argument("--probe-reference", action="store_true")
     mode.add_argument("--probe-batch-reference", action="store_true")
     ap.add_argument(
@@ -979,6 +981,22 @@ def main() -> int:
         return 0
     if args.persistent_worker_self_test:
         print(json.dumps(persistent_worker_self_test(), indent=2, sort_keys=True))
+        return 0
+    if args.persistent_baseline_self_test:
+        result=_persistent_variant(candidate=False, expected_token=3268)
+        result["schema"]="beglin-persistent-baseline-selftest-v1"
+        result["status"]="PASS"
+        result["binary_sha256"]=_sha256_file(PERSISTENT_TEST_BINARY)
+        result["live_serving_route_touched"]=False
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    if args.persistent_candidate_self_test:
+        result=_persistent_variant(candidate=True, expected_token=1224)
+        result["schema"]="beglin-persistent-candidate-selftest-v1"
+        result["status"]="PASS"
+        result["binary_sha256"]=_sha256_file(PERSISTENT_TEST_BINARY)
+        result["live_serving_route_touched"]=False
+        print(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if args.probe_mlx_build_version:
         py = Path("/Users/xox/.venv-vllm-metal/bin/python3")
