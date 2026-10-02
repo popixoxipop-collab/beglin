@@ -26,6 +26,7 @@ from pathlib import Path
 import platform
 import re
 import resource
+import shutil
 import signal
 import struct
 import subprocess
@@ -67,6 +68,8 @@ MAX_BATCH_REQUESTS = 12
 MAX_PROMPT_TOKENS = 4096
 MAX_NEW_TOKENS = 256
 WORKER_TIMEOUT_SECONDS = 90
+PREWARM_READY_TIMEOUT_SECONDS = 45
+PREWARM_SINGLE_ENABLED = True
 MAX_BODY_BYTES = 2 * 1024 * 1024
 
 REQUEST_RE = re.compile(
@@ -241,6 +244,253 @@ def _parse_generated(output: str) -> dict[int, list[int]]:
             int(value) for value in match.group(2).split()
         ]
     return generated
+
+
+class PrewarmedWorker:
+    """One certified native worker preloaded for one exact route and one request."""
+
+    def __init__(self, route: dict, state_root: Path):
+        self.route = routing.normalize_route(route)
+        self.state_root = state_root
+        self.root = Path(tempfile.mkdtemp(prefix="worker-", dir=str(state_root)))
+        self.manifest_path = self.root / "manifest.fifo"
+        self.promo_path = self.root / "promotion_nq.txt"
+        self.ack_path = self.root / "applied_ack.json"
+        self.txn_path = self.root / "txn.cmd"
+        self.log_path = self.root / "worker.log"
+        self.log_handle = None
+        self.proc = None
+        self.ready_at_ns = None
+        self._start()
+
+    def _start(self) -> None:
+        os.mkfifo(self.manifest_path, 0o600)
+        self.promo_path.write_text(_route_policy_line(self.route))
+        env = _minimal_env()
+        env.update(
+            {
+                "QWEN_MOE_GPU_CBATCH_ONLINE": "1",
+                "QWEN_MOE_BASE": str(MOE_BASE),
+                "QWEN_MOE_NEARTIE_CORRECT": "0",
+                "QWEN_MOE_CB_PROMPT_MANIFEST": str(self.manifest_path),
+                "QWEN_MOE_CB_SLOTS": "1",
+                "QWEN_MOE_CB_REQS": "1",
+                "QWEN_MOE_GPU_VALIDATION_REPORT": "1",
+                "QWEN_MOE_GPU_APPLIED_ACK": str(self.ack_path),
+                "QWEN_MOE_GPU_TXN_FILE": str(self.txn_path),
+                "QWEN_MOE_PROMOTION_FILE_NQ": str(self.promo_path),
+                "QWEN_MOE_PROMOTION_SAFETENSORS": str(SAFETENSORS),
+            }
+        )
+        self.log_handle = self.log_path.open("w")
+        self.proc = subprocess.Popen(
+            [str(BINARY)],
+            cwd=REPO,
+            env=env,
+            text=True,
+            stdout=self.log_handle,
+            stderr=subprocess.STDOUT,
+        )
+        deadline = time.monotonic() + PREWARM_READY_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            if self.proc.poll() is not None:
+                self.log_handle.flush()
+                raise SupervisorError(
+                    "prewarmed worker exited before readiness: "
+                    f"route={self.route['route_id']} rc={self.proc.returncode}"
+                )
+            if self.ack_path.is_file():
+                sys.path.insert(0, str(REPO / "tools"))
+                import gpu_runtime_control as grc
+                ack = grc.read_runtime_ack(self.ack_path)
+                if ack["active_policy_hash"] != self.route["policy_hash"]:
+                    raise SupervisorError(
+                        "prewarmed worker policy hash mismatch: "
+                        f"route={self.route['route_id']}"
+                    )
+                self.ready_at_ns = time.monotonic_ns()
+                return
+            time.sleep(0.05)
+        self.terminate()
+        raise SupervisorError(
+            f"prewarmed worker readiness timeout: route={self.route['route_id']}"
+        )
+
+    @property
+    def pid(self) -> int:
+        if self.proc is None:
+            return -1
+        return int(self.proc.pid)
+
+    def execute(self, tokens: list[int], max_new: int) -> dict:
+        if self.proc is None or self.proc.poll() is not None:
+            raise SupervisorError("prewarmed worker is not alive")
+        raw = self.root / "request.i32"
+        _write_i32(raw, tokens)
+        started_ns = time.monotonic_ns()
+        with self.manifest_path.open("w") as handle:
+            handle.write(f"{raw} {int(max_new)}\n")
+            handle.flush()
+        try:
+            self.proc.wait(timeout=WORKER_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            self.terminate()
+            raise SupervisorError(
+                f"prewarmed engine timed out and was stopped: pid={self.pid}"
+            )
+        self.log_handle.flush()
+        self.log_handle.close()
+        output = self.log_path.read_text()
+        if self.proc.returncode != 0:
+            raise SupervisorError(
+                f"prewarmed engine failed rc={self.proc.returncode}"
+            )
+        sys.path.insert(0, str(REPO / "tools"))
+        import gpu_runtime_control as grc
+        ack = grc.read_runtime_ack(self.ack_path)
+        if ack["active_policy_hash"] != self.route["policy_hash"]:
+            raise SupervisorError("prewarmed worker ACK policy drift")
+        generated = _parse_generated(output)
+        if 0 not in generated:
+            raise SupervisorError("prewarmed worker returned no request 0")
+        validation = VALIDATION_RE.search(output)
+        if (
+            validation is None
+            or validation.group("finite") != "1"
+            or int(validation.group("requests")) < 1
+        ):
+            raise SupervisorError("prewarmed worker validation report failed")
+        usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+        return {
+            "generated_tokens": generated[0],
+            "worker_instance_id": f"pid-{self.pid}",
+            "worker_ack_sha256": ack["ack_sha256"],
+            "worker_epoch": int(ack["weight_epoch"]),
+            "duration_ms": max(
+                1, (time.monotonic_ns() - started_ns) // 1_000_000
+            ),
+            "peak_child_rss_bytes": int(usage.ru_maxrss),
+            "finite_logits": True,
+            "prewarmed": True,
+        }
+
+    def terminate(self) -> None:
+        if self.proc is not None and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait(timeout=5)
+        if self.log_handle is not None and not self.log_handle.closed:
+            self.log_handle.close()
+        shutil.rmtree(self.root, ignore_errors=True)
+
+
+class PrewarmPool:
+    """Keeps one ready worker for baseline and one for candidate."""
+
+    def __init__(self, state_root: Path):
+        self.state_root = state_root
+        self.state_root.mkdir(parents=True, exist_ok=True)
+        self.lock = threading.RLock()
+        self.workers: dict[str, PrewarmedWorker] = {}
+        self.warming: set[str] = set()
+
+    def _route_key(self, route: dict) -> str:
+        return routing.normalize_route(route)["policy_hash"]
+
+    def warm(self, route: dict) -> PrewarmedWorker:
+        key = self._route_key(route)
+        with self.lock:
+            worker = self.workers.get(key)
+            if worker is not None and worker.proc.poll() is None:
+                return worker
+            self.warming.add(key)
+        try:
+            worker = PrewarmedWorker(route, self.state_root)
+        finally:
+            with self.lock:
+                self.warming.discard(key)
+        with self.lock:
+            old = self.workers.pop(key, None)
+            if old is not None:
+                old.terminate()
+            self.workers[key] = worker
+        return worker
+
+    def warm_known_routes(self) -> None:
+        # Sequential startup avoids two ~6 GiB workers loading MLX simultaneously.
+        self.warm(baseline_route())
+        self.warm(candidate_route())
+
+    def take(self, route: dict) -> PrewarmedWorker | None:
+        key = self._route_key(route)
+        with self.lock:
+            worker = self.workers.pop(key, None)
+        if worker is not None and worker.proc.poll() is None:
+            return worker
+        if worker is not None:
+            worker.terminate()
+        return None
+
+    def replenish_async(self, route: dict) -> None:
+        key = self._route_key(route)
+        with self.lock:
+            if key in self.workers or key in self.warming:
+                return
+            self.warming.add(key)
+
+        def _run():
+            try:
+                worker = PrewarmedWorker(route, self.state_root)
+                with self.lock:
+                    old = self.workers.pop(key, None)
+                    if old is not None:
+                        old.terminate()
+                    self.workers[key] = worker
+            except Exception as exc:
+                sys.stderr.write(
+                    json.dumps(
+                        {
+                            "kind": "prewarm_replenish_error",
+                            "route_id": route.get("route_id"),
+                            "error": type(exc).__name__,
+                            "message": str(exc),
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+            finally:
+                with self.lock:
+                    self.warming.discard(key)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def status(self) -> dict:
+        with self.lock:
+            ready = {
+                key: {
+                    "route_id": worker.route["route_id"],
+                    "pid": worker.pid,
+                    "alive": worker.proc.poll() is None,
+                }
+                for key, worker in self.workers.items()
+            }
+            warming = sorted(self.warming)
+        return {
+            "enabled": PREWARM_SINGLE_ENABLED,
+            "ready": ready,
+            "warming": warming,
+        }
+
+    def close(self) -> None:
+        with self.lock:
+            workers = list(self.workers.values())
+            self.workers.clear()
+        for worker in workers:
+            worker.terminate()
 
 
 class EngineExecutor:
