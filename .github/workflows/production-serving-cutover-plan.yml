@@ -1,0 +1,62 @@
+name: Production Serving Cutover Plan
+
+on:
+  push:
+    branches:
+      - production-serving-supervisor-20261002
+    paths:
+      - "configs/production_cutover_input_20261002.json"
+      - "configs/production_router_capability_20261002.json"
+      - "tools/production_routing_cutover.py"
+      - ".github/workflows/production-serving-cutover-plan.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build exact production cutover plan
+        env:
+          PYTHONPATH: tools
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import production_routing_cutover as c
+
+          inp=json.loads(Path("configs/production_cutover_input_20261002.json").read_text())
+          cap=json.loads(Path("configs/production_router_capability_20261002.json").read_text())
+          plan=c.build_cutover_plan(
+              bridge_status=inp["bridge_evidence"],
+              baseline_route=inp["baseline_route"],
+              candidate_route=inp["candidate_route"],
+              router_capability=cap,
+          )
+          assert plan["status"] == "READY_FOR_EXPLICIT_CUTOVER_APPROVAL"
+          assert plan["router_verified"] is True
+          assert plan["automatic_cutover_allowed"] is False
+          assert plan["production_routing_switch_allowed"] is False
+          Path("BEGLIN_PRODUCTION_CUTOVER_PLAN_2026-10-02.json").write_text(
+              json.dumps(plan,indent=2,sort_keys=True)+"\n"
+          )
+          print(json.dumps({
+              "status":plan["status"],
+              "plan_sha256":plan["plan_sha256"],
+              "baseline_route_id":plan["rollback_route_id"],
+              "candidate_route_id":plan["candidate_route_id"],
+              "router_id":plan["router_capability"]["router_id"],
+          },sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-production-cutover-plan
+          path: BEGLIN_PRODUCTION_CUTOVER_PLAN_2026-10-02.json
+          if-no-files-found: error
+          retention-days: 90
