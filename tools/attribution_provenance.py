@@ -68,3 +68,60 @@ def fetch_latest(model, role, layer, limit=20):
 def fetch_best(model, role, layer):
     rows = fetch_latest(model, role, layer, limit=1)
     return rows[0] if rows else None
+PROVENANCE_TABLE_V3 = "moe_attribution_provenance_v3"
+
+
+def fetch_latest_v3(role, layer, *, context_id, limit=20):
+    """Return provenance from the exact v3 execution context.
+
+    The v3 table intentionally stores context_id instead of duplicating model/backend
+    fields. Replay manifest details live on the validation run, so this direct lookup
+    is suitable for attribution identity only; callers that need a replay manifest
+    must fail closed until that join is implemented.
+    """
+    if not context_id:
+        raise ProvenanceStoreUnavailable("v3 provenance requires context_id")
+    url, key = _credentials()
+    params = {
+        "context_id": f"eq.{context_id}",
+        "role": f"eq.{role}",
+        "layer": f"eq.{int(layer)}",
+        "select": (
+            "id,run_id,context_id,req,pos,role,layer,orig_argmax,"
+            "corrected_argmax,margin,effective_attribution_check,"
+            "attribution_hit,source_record_id,observed_at"
+        ),
+        "order": "observed_at.desc,id.desc",
+        "limit": str(int(limit)),
+    }
+    qs = urllib.parse.urlencode(params, safe=".,")
+    req = urllib.request.Request(
+        f"{url}/rest/v1/{PROVENANCE_TABLE_V3}?{qs}",
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            rows = json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(errors="replace")
+        if exc.code in (404, 400):
+            raise ProvenanceStoreUnavailable(
+                f"v3 attribution provenance unavailable: HTTP {exc.code}: {body[:300]}"
+            ) from exc
+        raise RuntimeError(
+            f"v3 provenance lookup failed: HTTP {exc.code}: {body[:500]}"
+        ) from exc
+    return [
+        r for r in rows
+        if r.get("context_id") == context_id
+        and r.get("orig_argmax") is not None
+        and r.get("corrected_argmax") is not None
+    ]
+
+
+def fetch_best_v3(role, layer, *, context_id):
+    rows = fetch_latest_v3(role, layer, context_id=context_id, limit=1)
+    return rows[0] if rows else None
