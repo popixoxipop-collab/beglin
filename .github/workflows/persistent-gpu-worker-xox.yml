@@ -1,0 +1,141 @@
+name: Persistent GPU Worker XOX
+
+on:
+  push:
+    branches:
+      - gpu-persistent-admission-20261003
+    paths:
+      - "qwen_infer.c"
+      - ".github/workflows/persistent-gpu-worker-xox.yml"
+      - "tools/test_persistent_gpu_worker_source.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  xox-real-gpu:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify XOX
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+
+      - name: Build separate persistent candidate binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build-persistent
+          cmake -S . -B build-persistent             -DCMAKE_BUILD_TYPE=Release             -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          cmake --build build-persistent --target qwen_infer_gpu -j4
+          /usr/bin/shasum -a 256 build-persistent/qwen_infer_gpu | tee /tmp/persistent-binary.sha256
+
+      - name: Persistent two-request real-GPU smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/beglin-persistent-smoke"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+          SOURCE_MANIFEST="/Users/xox/vdsp-engine-gpu-precision/g5_drill_manifest.txt"
+          test -f "$SOURCE_MANIFEST"
+          read -r RAW MAXNEW < <(awk 'NF && $1 !~ /^#/ {print $1, $2; exit}' "$SOURCE_MANIFEST")
+          test -f "$RAW"
+          test -n "$MAXNEW"
+
+          MANIFEST="$ROOT/request.manifest"
+          : > "$MANIFEST"
+          for i in $(seq 1 12); do printf '%s %s\n' "$RAW" "$MAXNEW" >> "$MANIFEST"; done
+
+          PROMO="$ROOT/promotion_nq.txt"
+          printf 'shared_up_proj 3 6\n' > "$PROMO"
+          CONTROL="$ROOT/control.txt"
+          ACK="$ROOT/applied_ack.json"
+          LOG="$ROOT/worker.log"
+          RESP1="$ROOT/response-1.json"
+          RESP2="$ROOT/response-2.json"
+
+          env -i             PATH="$PATH" HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME"             QWEN_MOE_GPU_CBATCH_ONLINE=1             QWEN_MOE_BASE=/Users/xox/vdsp_local_data/moe_base_deepseek             QWEN_MOE_NEARTIE_CORRECT=0             QWEN_MOE_CB_SLOTS=4             QWEN_MOE_GPU_VALIDATION_REPORT=1             QWEN_MOE_GPU_APPLIED_ACK="$ACK"             QWEN_MOE_GPU_TXN_FILE="$ROOT/txn.cmd"             QWEN_MOE_PROMOTION_FILE_NQ="$PROMO"             QWEN_MOE_PROMOTION_SAFETENSORS=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json             QWEN_MOE_GPU_PERSIST_CONTROL="$CONTROL"             ./build-persistent/qwen_infer_gpu >"$LOG" 2>&1 &
+          WPID=$!
+          trap 'kill "$WPID" 2>/dev/null || true' EXIT
+
+          for i in $(seq 1 180); do
+            [ -s "$ACK" ] && break
+            sleep 1
+          done
+          test -s "$ACK"
+
+          printf '1 %s %s\n' "$MANIFEST" "$RESP1" > "$CONTROL.tmp"
+          mv "$CONTROL.tmp" "$CONTROL"
+          for i in $(seq 1 180); do
+            [ -s "$RESP1" ] && break
+            sleep 1
+          done
+          test -s "$RESP1"
+
+          printf '2 %s %s\n' "$MANIFEST" "$RESP2" > "$CONTROL.tmp"
+          mv "$CONTROL.tmp" "$CONTROL"
+          for i in $(seq 1 180); do
+            [ -s "$RESP2" ] && break
+            sleep 1
+          done
+          test -s "$RESP2"
+
+          printf '3 QUIT -\n' > "$CONTROL.tmp"
+          mv "$CONTROL.tmp" "$CONTROL"
+          wait "$WPID"
+          trap - EXIT
+
+          ROOT="$ROOT" python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path(os.environ["ROOT"])
+          r1=json.loads((root/"response-1.json").read_text())
+          r2=json.loads((root/"response-2.json").read_text())
+          for idx,r in enumerate((r1,r2),1):
+              assert r["schema"]=="beglin-gpu-persistent-response-v1"
+              assert r["status"]=="OK"
+              assert r["requests"]==12
+              assert r["finite_logits"] is True
+              assert len(r["responses"])==12
+              vals=[]
+              for row in r["responses"]:
+                  toks=row["generated_tokens"]
+                  assert len(toks)>8
+                  vals.append(toks[8])
+              assert vals==[1224]*12,(idx,vals)
+          result={
+              "schema":"beglin-persistent-gpu-worker-xox/1",
+              "status":"PASS",
+              "requests_per_batch":12,
+              "first_duration_ms":r1["duration_ms"],
+              "warm_duration_ms":r2["duration_ms"],
+              "warm_speedup":r1["duration_ms"]/r2["duration_ms"],
+              "first_weight_epoch":r1["weight_epoch"],
+              "warm_weight_epoch":r2["weight_epoch"],
+              "reference_token":1224,
+              "reference_hits":"12/12 both batches",
+              "binary_sha256":Path("/tmp/persistent-binary.sha256").read_text().split()[0],
+              "source_commit":os.environ["GITHUB_SHA"],
+              "worker_log_sha256":hashlib.sha256((root/"worker.log").read_bytes()).hexdigest(),
+          }
+          (root/"result.json").write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(result,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-persistent-gpu-worker-xox
+          path: |
+            ${{ runner.temp }}/beglin-persistent-smoke/result.json
+            ${{ runner.temp }}/beglin-persistent-smoke/response-1.json
+            ${{ runner.temp }}/beglin-persistent-smoke/response-2.json
+            ${{ runner.temp }}/beglin-persistent-smoke/applied_ack.json
+          if-no-files-found: error
+          retention-days: 30
