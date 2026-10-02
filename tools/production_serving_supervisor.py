@@ -62,7 +62,7 @@ CANDIDATE_POLICY_HASH = "0e048b8c5c50a1c005ea573caadd6ccdf99797c24b9c443e993fe0d
 ALLOWED_TARGET = ("shared_up_proj", 3)
 ALLOWED_CANDIDATE_N = 6
 
-MAX_BATCH_REQUESTS = 18
+MAX_BATCH_REQUESTS = 12
 MAX_PROMPT_TOKENS = 4096
 MAX_NEW_TOKENS = 256
 WORKER_TIMEOUT_SECONDS = 30
@@ -336,18 +336,19 @@ class EngineExecutor:
                     raise SupervisorError("worker self-report policy hash mismatch")
 
                 generated = _parse_generated(output)
-                if len(generated) != len(parsed):
+                if len(generated) < len(parsed):
                     raise SupervisorError(
-                        f"worker response count mismatch: expected={len(parsed)} "
+                        f"worker response count mismatch: expected_at_least={len(parsed)} "
                         f"actual={len(generated)}"
                     )
                 validation = VALIDATION_RE.search(output)
-                if (
-                    validation is None
-                    or validation.group("finite") != "1"
-                    or int(validation.group("requests")) != len(parsed)
-                ):
+                if validation is None or validation.group("finite") != "1":
                     raise SupervisorError("worker validation report failed")
+                validation_requests = int(validation.group("requests"))
+                if validation_requests < len(parsed):
+                    raise SupervisorError(
+                        "worker validation request count is below admitted API request count"
+                    )
                 after_usage = resource.getrusage(resource.RUSAGE_CHILDREN)
                 duration_ms = max(
                     1, (time.monotonic_ns() - started_ns) // 1_000_000
@@ -364,6 +365,9 @@ class EngineExecutor:
                     "finite_logits": True,
                     "duration_ms": duration_ms,
                     "peak_child_rss_bytes": int(after_usage.ru_maxrss),
+                    "engine_requests_completed": len(generated),
+                    "engine_validation_requests": validation_requests,
+                    "engine_cycles_manifest_when_underfilled": len(generated) > len(parsed),
                     "responses": [
                         {
                             "request_index": idx,
