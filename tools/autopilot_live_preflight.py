@@ -30,12 +30,15 @@ from pathlib import Path
 
 import autopilot_guarded as guarded
 import autopilot_observer as observer
+import backend_adapters as backend_adapters
+import precision_context as precision_context
 import quant_search_n as qsn
 import promotion_writeback as pwb
 
 DEFAULT_REPORT = "/private/tmp/qng64_ctl/autopilot_p5_preflight.json"
 EVIDENCE_SOURCE = "qng64_live_preflight"
 EVIDENCE_TABLE = "moe_live_preflight_results"
+EVIDENCE_TABLE_V3 = "moe_live_preflight_results_v3"
 
 
 class EvidenceStoreUnavailable(RuntimeError):
@@ -131,6 +134,54 @@ def fetch_latest_evidence(model, role, layer, n, promotion_preimage_sha256):
             f"P5 evidence lookup failed: HTTP {exc.code}: {body[:500]}"
         ) from exc
     return rows[0] if rows else None
+def fetch_latest_evidence_v3(context, role, layer, n, preimage_policy_sha256):
+    """Return evidence only from the exact backend/device/build context."""
+    context_id = precision_context.context_id(context)
+    backend = context["execution"]["backend"]
+    url, key = _rest_credentials()
+    params = {
+        "context_id": f"eq.{context_id}",
+        "backend": f"eq.{backend}",
+        "role": f"eq.{role}",
+        "layer": f"eq.{int(layer)}",
+        "n": f"eq.{int(n)}",
+        "preimage_policy_sha256": f"eq.{preimage_policy_sha256}",
+        "select": (
+            "id,tested_at,run_id,context_id,backend,role,layer,n,req,pos,"
+            "orig_token,corrected_token,emitted_token,correction_enabled,"
+            "correction_required,pass,status,reason,preimage_policy_sha256,"
+            "candidate_policy_sha256,evidence_path,evidence_sha256"
+        ),
+        "order": "tested_at.desc",
+        "limit": "1",
+    }
+    qs = urllib.parse.urlencode(params, safe=".,")
+    req = urllib.request.Request(
+        f"{url}/rest/v1/{EVIDENCE_TABLE_V3}?{qs}",
+        headers=_rest_headers(key),
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            rows = json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(errors="replace")
+        if exc.code in (404, 400):
+            raise EvidenceStoreUnavailable(
+                f"P5 v3 evidence table unavailable: HTTP {exc.code}: {body[:300]}"
+            ) from exc
+        raise RuntimeError(
+            f"P5 v3 evidence lookup failed: HTTP {exc.code}: {body[:500]}"
+        ) from exc
+    if not rows:
+        return None
+    row = rows[0]
+    try:
+        backend_adapters.get_backend_adapter(backend).validate_evidence(row, context)
+    except (precision_context.ContextMismatch, ValueError, KeyError) as exc:
+        raise RuntimeError(f"P5 v3 evidence row failed context validation: {exc}") from exc
+    return row
+
+
 
 
 def _engine_commit():
@@ -262,12 +313,16 @@ def _parse_emitted_tokens(output):
 
 def classify_candidate(output, pos, prompt_len, corrected):
     flip_re = re.compile(
-        rf"REAL FLIP orig=(\d+) corrected=(\d+)"
+        r"correct req=(\d+) pos=(\d+) REAL FLIP orig=(\d+) corrected=(\d+)"
     )
     flips = [
-        (int(a), int(b)) for a, b in flip_re.findall(output)
+        (int(req), int(fpos), int(a), int(b))
+        for req, fpos, a, b in flip_re.findall(output)
     ]
-    exact_flip = any(b == int(corrected) for _, b in flips)
+    target_flips = [
+        (a, b) for req, fpos, a, b in flips if req == 0 and fpos == int(pos)
+    ]
+    exact_flip = any(b == int(corrected) for _, b in target_flips)
 
     gen_idx = int(pos) - (int(prompt_len) - 1)
     tokens = _parse_emitted_tokens(output)
@@ -281,7 +336,7 @@ def classify_candidate(output, pos, prompt_len, corrected):
         "pass": passed,
         "emitted_token": emitted,
         "gen_idx": gen_idx,
-        "real_flips": flips,
+        "real_flips": target_flips,
         "reason": (
             "base promotion emitted corrected token without correction"
             if passed else
@@ -296,24 +351,26 @@ def classify_candidate(output, pos, prompt_len, corrected):
 
 def _run_engine(host, cwd, bin_path, moe_base, manifest, combo,
                 promotion_file, safetensors_index, model, corpus,
-                events_log, max_pos, timeout):
+                events_log, max_pos, timeout, correction_enabled=True):
     env = {
         "QWEN_MOE_BASE": moe_base,
         "QWEN_MOE_CBATCH": "1",
         "QWEN_MOE_CB_ONLINE": "1",
         "QWEN_MOE_CB_PROMPT_MANIFEST": manifest,
         "QWEN_MOE_CB_REQS": "1",
-        "QWEN_MOE_NEARTIE_CORRECT": "1",
+        "QWEN_MOE_NEARTIE_CORRECT": "1" if correction_enabled else "0",
         "QWEN_MOE_NEARTIE_LOG": "1",
         "QWEN_MOE_NEARTIE_MODEL": model,
         "QWEN_MOE_NEARTIE_CORPUS": corpus,
         "QWEN_MOE_NEARTIE_EVENTS_LOG": events_log,
-        "QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS": safetensors_index,
-        "QWEN_MOE_ATTRIB": "1",
-        "QWEN_MOE_NEARTIE_HI_COMBOS": combo,
-        "QWEN_MOE_ATTRIB_MAX_POS": str(max_pos),
+        "QWEN_MOE_PROMOTION_SAFETENSORS": safetensors_index,
+        "QWEN_MOE_ATTRIB": "1" if correction_enabled else "0",
         "QWEN_MOE_PROMOTION_FILE_NQ": promotion_file,
     }
+    if correction_enabled:
+        env["QWEN_MOE_NEARTIE_CORRECT_SAFETENSORS"] = safetensors_index
+        env["QWEN_MOE_NEARTIE_HI_COMBOS"] = combo
+        env["QWEN_MOE_ATTRIB_MAX_POS"] = str(max_pos)
     envs = " ".join(
         f"{k}={shlex.quote(str(v))}" for k, v in env.items()
     )
@@ -330,9 +387,8 @@ def _run_engine(host, cwd, bin_path, moe_base, manifest, combo,
 
 
 def _baseline_ok(output, orig, corrected, pos):
-    marker = f"REAL FLIP orig={orig} corrected={corrected}"
-    target = f"correct req=0 pos={pos}"
-    return marker in output and target in output
+    marker = f"correct req=0 pos={pos} REAL FLIP orig={orig} corrected={corrected}"
+    return marker in output
 
 
 def run_preflight(plan_path, log_host, events_log, bin_path, cwd, moe_base,
@@ -419,7 +475,7 @@ def run_preflight(plan_path, log_host, events_log, bin_path, cwd, moe_base,
         rc1, out1 = _run_engine(
             host, cwd, bin_path, moe_base, iso, combo, candidate_file,
             safetensors_index, plan["model"], attr.get("corpus") or "p5-preflight",
-            candidate_log, max(pos, 19), timeout,
+            candidate_log, max(pos, 19), timeout, correction_enabled=False,
         )
         verdict = classify_candidate(out1, pos, plen, corrected)
         verdict.update({
@@ -429,6 +485,7 @@ def run_preflight(plan_path, log_host, events_log, bin_path, cwd, moe_base,
             "candidate_rc": rc1, "isolated_manifest": iso,
             "baseline_log": baseline_log,
             "candidate_log": candidate_log,
+            "correction_enabled": False,
         })
         results.append(verdict)
         evidence_status = "passed" if rc1 == 0 and verdict["pass"] else "failed"
