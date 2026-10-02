@@ -27,6 +27,8 @@ import platform
 import re
 import resource
 import signal
+import shutil
+import tarfile
 import struct
 import subprocess
 import sys
@@ -53,6 +55,20 @@ CHECKPOINT_EVIDENCE = Path(
 DEFAULT_STATE_ROOT = Path("/Users/xox/vdsp_serving")
 DEFAULT_ROUTE_MANIFEST = DEFAULT_STATE_ROOT / "active-route.json"
 DEFAULT_PORT = 18765
+
+PERSISTENT_TEST_ROOT = Path("/Users/xox/vdsp_serving/persistent")
+PERSISTENT_TEST_BINARY = PERSISTENT_TEST_ROOT / "qwen_infer_gpu"
+PERSISTENT_ARTIFACT_RUN_ID = 37025197232
+PERSISTENT_ARTIFACT_NAME = "beglin-persistent-gpu-worker-arm64"
+PERSISTENT_EXPECTED_BINARY_SHA = "a47e01dcf1c5f4fc8cb9c94eab82abaecf5f9f35d5f55d49af28284565b7931e"
+PERSISTENT_MLX_LIB = Path("/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/lib")
+PERSISTENT_MARKER_RE = re.compile(
+    r"GPU_PERSIST_RESULT_V1 generation=(\\d+) requests=(\\d+) "
+    r"finite_logits=(\\d+) wall_ms=([0-9.]+) weight_epoch=(\\d+)"
+)
+PERSISTENT_REQ_RE = re.compile(
+    r"\\[moe gpu cb online\\] req (\\d+) .*? tokens:\\s*([^\\n\\r]*)"
+)
 
 EXPECTED_HEAD = "330954b27f146b8a17db2cb353c3e620968bad5e"
 EXPECTED_BINARY_SHA = "6e6258d6d4e402033c303c8c4b622db5a088354a0de79e687eb0fad4190c4392"
@@ -489,6 +505,221 @@ def ensure_route_manifest(path: Path) -> dict:
     return store.initialize(baseline_route())
 
 
+
+def install_persistent_test_binary() -> dict:
+    """Download one fixed GitHub Actions artifact and install it under vdsp_serving."""
+    gh = shutil.which("gh")
+    if not gh:
+        raise SupervisorError("GitHub CLI 'gh' is unavailable")
+    PERSISTENT_TEST_ROOT.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="beglin-persistent-artifact-") as td:
+        root=Path(td)
+        proc=subprocess.run(
+            [
+                gh, "run", "download", str(PERSISTENT_ARTIFACT_RUN_ID),
+                "-R", "popixoxipop-collab/beglin",
+                "-n", PERSISTENT_ARTIFACT_NAME,
+                "-D", str(root),
+            ],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            check=False, timeout=120,
+        )
+        if proc.returncode != 0:
+            raise SupervisorError(
+                "persistent artifact download failed: " + proc.stderr.strip()
+            )
+        tar_path=root/"beglin-persistent-gpu-worker-arm64.tar.gz"
+        sha_path=root/"persistent_binary.sha256"
+        if not tar_path.is_file() or not sha_path.is_file():
+            raise SupervisorError("persistent artifact payload is incomplete")
+        with tarfile.open(tar_path, "r:gz") as tf:
+            member=tf.getmember("qwen_infer_gpu")
+            src=tf.extractfile(member)
+            if src is None:
+                raise SupervisorError("persistent artifact binary is missing")
+            tmp=PERSISTENT_TEST_BINARY.with_name(
+                PERSISTENT_TEST_BINARY.name + f".tmp.{os.getpid()}"
+            )
+            with open(tmp,"wb") as out:
+                shutil.copyfileobj(src,out)
+                out.flush(); os.fsync(out.fileno())
+            os.chmod(tmp,0o755)
+            actual=_sha256_file(tmp)
+            if actual != PERSISTENT_EXPECTED_BINARY_SHA:
+                tmp.unlink(missing_ok=True)
+                raise SupervisorError(
+                    f"persistent binary SHA mismatch: expected={PERSISTENT_EXPECTED_BINARY_SHA} actual={actual}"
+                )
+            os.replace(tmp,PERSISTENT_TEST_BINARY)
+        return {
+            "schema":"beglin-persistent-artifact-install-v1",
+            "status":"INSTALLED",
+            "workflow_run_id":PERSISTENT_ARTIFACT_RUN_ID,
+            "artifact_name":PERSISTENT_ARTIFACT_NAME,
+            "binary_path":str(PERSISTENT_TEST_BINARY),
+            "binary_sha256":_sha256_file(PERSISTENT_TEST_BINARY),
+            "mlx_lib":str(PERSISTENT_MLX_LIB),
+        }
+
+
+def _persistent_atomic_text(path: Path, value: str) -> None:
+    tmp=path.with_name(path.name+f".tmp.{os.getpid()}")
+    tmp.write_text(value)
+    os.replace(tmp,path)
+
+
+def _persistent_read_cycle(proc: subprocess.Popen, generation: int, timeout: float=120.0) -> dict:
+    deadline=time.monotonic()+timeout
+    lines=[]
+    while time.monotonic()<deadline:
+        line=proc.stdout.readline()
+        if line == "":
+            if proc.poll() is not None:
+                raise SupervisorError(
+                    f"persistent worker exited rc={proc.returncode} before generation={generation}"
+                )
+            time.sleep(0.01)
+            continue
+        lines.append(line)
+        match=PERSISTENT_MARKER_RE.search(line)
+        if match and int(match.group(1)) == generation:
+            reqs=PERSISTENT_REQ_RE.findall("".join(lines))
+            count=int(match.group(2))
+            request_tokens={
+                int(req_id): [int(x) for x in token_text.split()]
+                for req_id,token_text in reqs[-count:]
+            }
+            if len(request_tokens) != count:
+                raise SupervisorError(
+                    f"persistent generation {generation}: expected {count} token rows, got {len(request_tokens)}"
+                )
+            return {
+                "generation":generation,
+                "requests":count,
+                "finite_logits":match.group(3)=="1",
+                "engine_wall_ms":float(match.group(4)),
+                "weight_epoch":int(match.group(5)),
+                "request_tokens":request_tokens,
+            }
+    raise SupervisorError(f"persistent worker timed out waiting for generation={generation}")
+
+
+def _persistent_variant(*, candidate: bool, expected_token: int) -> dict:
+    if not PERSISTENT_TEST_BINARY.is_file():
+        raise SupervisorError("persistent test binary is not installed")
+    if _sha256_file(PERSISTENT_TEST_BINARY) != PERSISTENT_EXPECTED_BINARY_SHA:
+        raise SupervisorError("persistent test binary identity changed")
+    prompt=_read_first_certified_prompt()
+    with tempfile.TemporaryDirectory(prefix="beglin-persistent-xox-") as td:
+        root=Path(td)
+        raw=root/"prompt.i32"
+        _write_i32(raw,prompt)
+        manifest=root/"manifest.txt"
+        generation=root/"generation.txt"
+        ack=root/"ack.json"
+        txn=root/"txn.cmd"
+        promo=root/"promotion_nq.txt"
+        manifest.write_text(f"{raw} 10\\n")
+        generation.write_text("1\\n")
+        promo.write_text("shared_up_proj 3 6\\n" if candidate else "")
+
+        env=_minimal_env()
+        env.update({
+            "DYLD_LIBRARY_PATH":str(PERSISTENT_MLX_LIB),
+            "QWEN_MOE_GPU_CBATCH_ONLINE":"1",
+            "QWEN_MOE_BASE":str(MOE_BASE),
+            "QWEN_MOE_NEARTIE_CORRECT":"0",
+            "QWEN_MOE_CB_PROMPT_MANIFEST":str(manifest),
+            "QWEN_MOE_CB_SLOTS":"4",
+            "QWEN_MOE_CB_REQS":"1",
+            "QWEN_MOE_GPU_VALIDATION_REPORT":"1",
+            "QWEN_MOE_GPU_APPLIED_ACK":str(ack),
+            "QWEN_MOE_GPU_TXN_FILE":str(txn),
+            "QWEN_MOE_GPU_PERSIST_GENERATION_FILE":str(generation),
+            "QWEN_MOE_PROMOTION_SAFETENSORS":str(SAFETENSORS),
+        })
+        if candidate:
+            env["QWEN_MOE_PROMOTION_FILE_NQ"]=str(promo)
+
+        started=time.monotonic()
+        proc=subprocess.Popen(
+            [str(PERSISTENT_TEST_BINARY)],
+            cwd=REPO,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        pid=int(proc.pid)
+        try:
+            first=_persistent_read_cycle(proc,1)
+            first_end=time.monotonic()
+            first_tokens=first["request_tokens"][0]
+            if len(first_tokens)<=8 or first_tokens[8] != expected_token:
+                raise SupervisorError(f"persistent generation1 token mismatch: {first_tokens}")
+
+            manifest.write_text("".join(f"{raw} 10\\n" for _ in range(4)))
+            _persistent_atomic_text(generation,"2\\n")
+            second_start=time.monotonic()
+            second=_persistent_read_cycle(proc,2)
+            second_end=time.monotonic()
+            if int(proc.pid) != pid or second["requests"] != 4:
+                raise SupervisorError("persistent generation2 PID/request-count mismatch")
+            for req_id,tokens in second["request_tokens"].items():
+                if len(tokens)<=8 or tokens[8] != expected_token:
+                    raise SupervisorError(
+                        f"persistent generation2 req={req_id} token mismatch: {tokens}"
+                    )
+
+            manifest.write_text(f"{raw} 10\\n")
+            _persistent_atomic_text(generation,"3\\n")
+            third_start=time.monotonic()
+            third=_persistent_read_cycle(proc,3)
+            third_end=time.monotonic()
+            third_tokens=third["request_tokens"][0]
+            if int(proc.pid) != pid or len(third_tokens)<=8 or third_tokens[8] != expected_token:
+                raise SupervisorError("persistent generation3 identity/token mismatch")
+
+            return {
+                "candidate":candidate,
+                "pid":pid,
+                "same_pid":True,
+                "expected_token":expected_token,
+                "generation1":first,
+                "generation2":second,
+                "generation3":third,
+                "startup_to_generation1_ms":round((first_end-started)*1000,3),
+                "generation2_end_to_end_ms":round((second_end-second_start)*1000,3),
+                "generation3_end_to_end_ms":round((third_end-third_start)*1000,3),
+            }
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill(); proc.wait(timeout=10)
+
+
+def persistent_worker_self_test() -> dict:
+    baseline=_persistent_variant(candidate=False,expected_token=3268)
+    candidate=_persistent_variant(candidate=True,expected_token=1224)
+    out={
+        "schema":"beglin-persistent-worker-selftest-v1",
+        "status":"PASS",
+        "binary_path":str(PERSISTENT_TEST_BINARY),
+        "binary_sha256":_sha256_file(PERSISTENT_TEST_BINARY),
+        "baseline":baseline,
+        "candidate":candidate,
+        "same_pid_across_generations":baseline["same_pid"] and candidate["same_pid"],
+        "live_serving_route_touched":False,
+        "production_write_allowed":False,
+        "auto_promotion_enabled":False,
+    }
+    out["result_sha256"]=routing.sha256_json(out)
+    return out
+
+
 def make_server(
     *,
     route_manifest: str | Path,
@@ -717,6 +948,8 @@ def main() -> int:
     mode.add_argument("--probe-health", action="store_true")
     mode.add_argument("--probe-mlx-version", action="store_true")
     mode.add_argument("--probe-mlx-build-version", action="store_true")
+    mode.add_argument("--install-persistent-test-binary", action="store_true")
+    mode.add_argument("--persistent-worker-self-test", action="store_true")
     mode.add_argument("--probe-reference", action="store_true")
     mode.add_argument("--probe-batch-reference", action="store_true")
     ap.add_argument(
@@ -740,6 +973,12 @@ def main() -> int:
             "python": platform.python_version(),
             "machine": platform.machine(),
         }, indent=2, sort_keys=True))
+        return 0
+    if args.install_persistent_test_binary:
+        print(json.dumps(install_persistent_test_binary(), indent=2, sort_keys=True))
+        return 0
+    if args.persistent_worker_self_test:
+        print(json.dumps(persistent_worker_self_test(), indent=2, sort_keys=True))
         return 0
     if args.probe_mlx_build_version:
         py = Path("/Users/xox/.venv-vllm-metal/bin/python3")
