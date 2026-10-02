@@ -1,0 +1,54 @@
+{
+  "schema": "beglin-production-routing-cutover-input/1",
+  "bridge_evidence": {
+    "schema": "beglin-production-adapter-bridge-execution/1",
+    "plan": {
+      "plan_sha256": "d26bcc0273a887f4341581536e41dcb4398c319138107d12c9061aa3d07bc1dc"
+    },
+    "result": {
+      "schema": "mlx-isolated-restart-canary-result-v1",
+      "source_commit": "330954b27f146b8a17db2cb353c3e620968bad5e",
+      "binary_sha256": "6e6258d6d4e402033c303c8c4b622db5a088354a0de79e687eb0fad4190c4392",
+      "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+      "candidate_policy_hash": "0e048b8c5c50a1c005ea573caadd6ccdf99797c24b9c443e993fe0d7b0b27141",
+      "requested_policy_applied": true,
+      "finite_logits": true,
+      "reference_token_match": true,
+      "candidate_worker_exited": true,
+      "baseline_worker_mutated": false,
+      "production_routing_switched": false,
+      "result_sha256": "37227ea66f6dc5766e879eca383e41494860bd7d5496334de5bc8ecd90f3202e"
+    },
+    "verdict": {
+      "schema": "beglin-production-adapter-bridge-verdict/1",
+      "status": "CANARY_PASS_REVIEW_REQUIRED",
+      "decision": "NO_AUTO_PROMOTION",
+      "production_routing_switch_allowed": false,
+      "verdict_sha256": "1cc814c61e886befd30d1b9549d47ab4a53186a16d4f81ce82f609e9ccf8a1ea"
+    }
+  },
+  "baseline_route": {
+    "route_id": "beglin-baseline-q4g64",
+    "worker_instance_id": "spawn-per-admission",
+    "endpoint": "local-supervisor://baseline",
+    "source_commit": "330954b27f146b8a17db2cb353c3e620968bad5e",
+    "binary_sha256": "6e6258d6d4e402033c303c8c4b622db5a088354a0de79e687eb0fad4190c4392",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "policy_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "role": "shared_up_proj",
+    "layer": 3,
+    "n": null
+  },
+  "candidate_route": {
+    "route_id": "beglin-candidate-shared-up-l3-n6",
+    "worker_instance_id": "spawn-per-admission",
+    "endpoint": "local-supervisor://candidate",
+    "source_commit": "330954b27f146b8a17db2cb353c3e620968bad5e",
+    "binary_sha256": "6e6258d6d4e402033c303c8c4b622db5a088354a0de79e687eb0fad4190c4392",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "policy_hash": "0e048b8c5c50a1c005ea573caadd6ccdf99797c24b9c443e993fe0d7b0b27141",
+    "role": "shared_up_proj",
+    "layer": 3,
+    "n": 6
+  }
+}
