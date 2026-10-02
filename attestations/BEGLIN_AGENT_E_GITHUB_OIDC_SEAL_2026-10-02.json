@@ -1,0 +1,25 @@
+{
+  "approval_file_sha256": "54be8b73c69db7e42f2407bdcef2ced6a817e34a4177817f6e5edcbc942c7dc2",
+  "approval_path": "github_account_plus_github_oidc",
+  "auto_promotion_enabled": false,
+  "execution_enabled": false,
+  "github": {
+    "actor": "popixoxipop-collab",
+    "actor_id": "261965176",
+    "ref": "refs/heads/agent-e-github-approval-seal-20261002",
+    "repository": "popixoxipop-collab/beglin",
+    "run_attempt": "1",
+    "run_id": "37010516604",
+    "sha": "163d7ecd0edaca36bfb68f69a75bbbd711e02ad5",
+    "workflow": "Agent E GitHub Approval Attestation"
+  },
+  "measured_capture_sha256": "caec06441a9fab41fd0f98cb8fc027931671903b001e28561e94d4dd82d4ab2f",
+  "private_approval_commit": "7dc3398c87ffbe8e9bf2496c6d16e762ea787094",
+  "private_verification_run_id": "37010332740",
+  "production_bridge_reviewed": false,
+  "production_write_allowed": false,
+  "proposal_digest": "726ae550c7519307e771d1f9fb23157a7f75338921082f7a64282be56c9cbc15",
+  "schema": "beglin-agent-e-github-oidc-seal/1",
+  "ssh_detached_signature_used": false,
+  "status": "VERIFIED_GITHUB_OIDC_ATTESTATION_SUBJECT"
+}
