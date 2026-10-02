@@ -1,0 +1,32 @@
+name: Precision v3 G0-G1
+
+on:
+  pull_request:
+    paths:
+      - "tools/**"
+      - "supabase_migration_precision_context_v3.sql"
+      - ".github/workflows/precision-v3-g0-g1.yml"
+  workflow_dispatch:
+
+jobs:
+  g1-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile precision control plane
+        run: |
+          python -m py_compile             tools/precision_context.py             tools/backend_adapters.py             tools/autopilot_full.py             tools/autopilot_live_preflight.py             tools/autopilot_real_sweep.py             tools/attribution_provenance.py
+      - name: Precision context unit tests
+        run: python tools/test_precision_context.py
+      - name: Backend admission unit tests
+        run: python tools/test_backend_admission.py
+      - name: G1 precision-context tests
+        run: python tools/test_g1_precision_context.py
+      - name: G1 autopilot integration tests
+        run: python tools/test_g1_backend_context.py
+      - name: Precision schema static tests
+        run: python tools/test_precision_context_schema.py
