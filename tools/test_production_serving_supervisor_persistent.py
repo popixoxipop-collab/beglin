@@ -80,6 +80,9 @@ class ArtifactContractTests(unittest.TestCase):
     def test_launchd_process_type_is_interactive(self):
         self.assertEqual(ps.LAUNCHD_PROCESS_TYPE, "Interactive")
 
+    def test_executor_has_shutdown_contract_for_base_server(self):
+        self.assertTrue(callable(getattr(ps.PersistentEngineExecutor, "shutdown", None)))
+
     def test_request_limits_inherit_reviewed_supervisor(self):
         self.assertEqual(base.MAX_BATCH_REQUESTS, 12)
         self.assertEqual(base.MAX_NEW_TOKENS, 256)
