@@ -175,13 +175,15 @@ def assert_evidence_compatible(evidence, context, *, preimage_policy=None):
     expected_backend = context["execution"]["backend"]
     got_context_id = evidence.get("context_id")
     got_backend = evidence.get("backend")
-    if got_context_id != expected_context_id:
-        raise ContextMismatch(
-            f"context mismatch: evidence={got_context_id!r}, expected={expected_context_id!r}"
-        )
+    # Classify cross-backend evidence first. This makes admission diagnostics
+    # stable even though the backend is also part of the context hash.
     if got_backend != expected_backend:
         raise ContextMismatch(
             f"backend mismatch: evidence={got_backend!r}, expected={expected_backend!r}"
+        )
+    if got_context_id != expected_context_id:
+        raise ContextMismatch(
+            f"context mismatch: evidence={got_context_id!r}, expected={expected_context_id!r}"
         )
     if preimage_policy is not None:
         expected_preimage = policy_hash(preimage_policy)
