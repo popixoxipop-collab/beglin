@@ -29,6 +29,10 @@ on:
       - "attestations/BEGLIN_PRODUCTION_CUTOVER_APPROVAL_2026-10-02.json"
       - "attestations/BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json"
       - "qwen_infer.c"
+      - "tools/test_production_serving_supervisor_persistent*.py"
+      - "tools/production_serving_supervisor_persistent*.py"
+      - "tools/test_persistent_gpu_worker*.py"
+      - "tools/persistent_gpu_worker*.py"
   workflow_dispatch:
 
 permissions:
@@ -66,11 +70,15 @@ jobs:
             tools/production_routing_cutover.py \
             tools/production_serving_supervisor.py \
             tools/production_serving_cutover_xox.py \
+            tools/persistent_gpu_worker.py \
+            tools/production_serving_supervisor_persistent.py \
             tools/test_manual_canary_proposal_materializer.py \
             tools/test_production_adapter_bridge.py \
             tools/test_production_routing_cutover.py \
             tools/test_production_serving_supervisor.py \
-            tools/test_production_serving_cutover_xox.py
+            tools/test_production_serving_cutover_xox.py \
+            tools/test_persistent_gpu_worker.py \
+            tools/test_production_serving_supervisor_persistent.py
       - name: Precision v3 tests
         env:
           PYTHONPATH: tools
@@ -95,6 +103,8 @@ jobs:
           python tools/test_production_routing_cutover.py
           python tools/test_production_serving_supervisor.py
           python tools/test_production_serving_cutover_xox.py
+          python tools/test_persistent_gpu_worker.py
+          python tools/test_production_serving_supervisor_persistent.py
           python tools/test_checkpoint_identity.py
           python tools/test_agent_f_gpu_coverage_xox.py
       - name: Signature, evidence, and observer v3 regressions
