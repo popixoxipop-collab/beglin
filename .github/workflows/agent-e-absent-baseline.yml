@@ -1,0 +1,35 @@
+name: Agent E absent baseline contract
+
+on:
+  push:
+    branches: [agent-e-absent-baseline-20261002]
+  pull_request:
+    branches: [certified/gpu-20260926-330954b27f14]
+
+jobs:
+  contract-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile Agent E contract
+        run: |
+          python -m py_compile \
+            tools/manual_canary_contract.py \
+            tools/manual_canary_controller.py \
+            tools/manual_canary_signature.py \
+            tools/manual_canary_production_intent.py \
+            tools/test_manual_canary.py \
+            tools/test_manual_canary_signature.py
+      - name: Manual canary contract tests
+        run: PYTHONPATH=tools python tools/test_manual_canary.py
+      - name: Trusted signature and production-intent tests
+        run: PYTHONPATH=tools python tools/test_manual_canary_signature.py
+      - name: GPU guard regression
+        run: PYTHONPATH=tools python -m unittest discover -s tools -p 'test_gpu_*.py'
+      - name: Patch whitespace check
+        run: git diff --check 330954b27f146b8a17db2cb353c3e620968bad5e...HEAD
