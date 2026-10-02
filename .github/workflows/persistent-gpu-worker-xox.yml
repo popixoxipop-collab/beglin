@@ -1,0 +1,82 @@
+name: Persistent GPU Worker Build on XOX
+
+on:
+  push:
+    branches:
+      - persistent-gpu-serving-20261002
+    paths:
+      - "qwen_infer.c"
+      - ".github/workflows/persistent-gpu-worker-xox.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-xox:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build persistent GPU worker on XOX
+        shell: bash
+        env:
+          BRANCH: persistent-gpu-serving-20261002
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "EOE.local"
+          test "$(id -un)" = "eoe"
+
+          TARGET=""
+          for candidate in xox XOX.local; do
+            if remote_host="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$candidate" hostname 2>/dev/null)"; then
+              if [ "$remote_host" = "XOX.local" ]; then
+                TARGET="$candidate"
+                break
+              fi
+            fi
+          done
+          test -n "$TARGET"
+
+          ssh -o BatchMode=yes "$TARGET" bash -s -- "$BRANCH" "$COMMIT_SHA" <<'EOS'
+          set -euo pipefail
+          BRANCH="$1"
+          COMMIT_SHA="$2"
+          SRC="/Users/xox/vdsp-engine-gpu-precision"
+          WT="/Users/xox/vdsp-engine-persistent-serving"
+          BUILD="$WT/build-gpu-persistent"
+          MLX="/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake"
+
+          cd "$SRC"
+          git fetch origin "$BRANCH"
+          if [ -e "$WT/.git" ] || [ -f "$WT/.git" ]; then
+            git -C "$WT" reset --hard "$COMMIT_SHA"
+          else
+            rm -rf "$WT"
+            git worktree add --detach "$WT" "$COMMIT_SHA"
+          fi
+          test "$(git -C "$WT" rev-parse HEAD)" = "$COMMIT_SHA"
+
+          cmake -S "$WT" -B "$BUILD"             -DCMAKE_BUILD_TYPE=Release             -DMLX_CMAKE_DIR="$MLX"
+          cmake --build "$BUILD" -j 4 --target qwen_infer_gpu
+
+          BIN="$BUILD/qwen_infer_gpu"
+          test -x "$BIN"
+          BIN_SHA="$(shasum -a 256 "$BIN" | awk '{print $1}')"
+          SRC_SHA="$(shasum -a 256 "$WT/qwen_infer.c" | awk '{print $1}')"
+
+          cat > "$WT/PERSISTENT_GPU_BUILD_2026-10-02.json" <<EOF
+          {
+            "schema": "beglin-persistent-gpu-build/1",
+            "status": "BUILT",
+            "source_commit": "$COMMIT_SHA",
+            "qwen_infer_c_sha256": "$SRC_SHA",
+            "binary_path": "$BIN",
+            "binary_sha256": "$BIN_SHA",
+            "build_type": "Release",
+            "mlx_cmake_dir": "$MLX",
+            "production_binary_replaced": false
+          }
+          EOF
+          cat "$WT/PERSISTENT_GPU_BUILD_2026-10-02.json"
+          EOS
