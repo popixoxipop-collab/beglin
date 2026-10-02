@@ -39,7 +39,8 @@ EXPECTED_PERSISTENT_SOURCE_SHA = "a26f9a8ab93493a1aad8da643d00c1d998aa60cd"
 DEFAULT_PERSISTENT_ROOT = Path("/Users/xox/vdsp_serving/persistent-workers")
 WORKER_READY_TIMEOUT_SECONDS = 120
 REQUEST_TIMEOUT_SECONDS = 60
-POLL_SECONDS = 0.01\nLAUNCHD_PROCESS_TYPE = "Interactive"
+POLL_SECONDS = 0.01
+LAUNCHD_PROCESS_TYPE = "Interactive"
 
 
 class PersistentSupervisorError(base.SupervisorError):
