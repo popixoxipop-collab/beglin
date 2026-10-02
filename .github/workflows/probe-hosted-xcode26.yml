@@ -1,0 +1,22 @@
+name: Probe Hosted Xcode26
+
+on:
+  push:
+    branches: [persistent-gpu-worker-20261002]
+    paths:
+      - ".github/workflows/probe-hosted-xcode26.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-15
+    steps:
+      - name: Probe Xcode installs
+        run: |
+          set -euo pipefail
+          uname -m
+          sw_vers
+          ls -1 /Applications | grep '^Xcode' || true
+          xcodebuild -version
