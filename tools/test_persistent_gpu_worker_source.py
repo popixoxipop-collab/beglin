@@ -52,10 +52,10 @@ class PersistentGpuSourceContract(unittest.TestCase):
     def test_response_carries_runtime_evidence(self):
         for token in [
             "beglin-gpu-persistent-response-v1",
-            "\\"duration_ms\\"",
-            "\\"finite_logits\\"",
-            "\\"weight_epoch\\"",
-            "\\"generated_tokens\\"",
+            '\\"duration_ms\\"',
+            '\\"finite_logits\\"',
+            '\\"weight_epoch\\"',
+            '\\"generated_tokens\\"',
         ]:
             self.assertIn(token, self.text)
 
