@@ -175,16 +175,27 @@ def capture() -> dict:
         )
 
         started_ns = time.monotonic_ns()
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             [str(BINARY)],
             cwd=REPO,
             env=env,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            timeout=TIMEOUT_SECONDS,
-            check=False,
         )
+        worker_pid = int(proc.pid)
+        try:
+            worker_output, _ = proc.communicate(timeout=TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            try:
+                worker_output, _ = proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                worker_output, _ = proc.communicate(timeout=10)
+            raise BaselineCaptureError(
+                f"baseline worker timed out and was stopped: pid={worker_pid}"
+            )
         finished_ns = time.monotonic_ns()
         usage = resource.getrusage(resource.RUSAGE_CHILDREN)
 
@@ -211,14 +222,14 @@ def capture() -> dict:
             raise BaselineCaptureError("baseline ACK SHA is missing")
 
         requests: dict[int, list[int]] = {}
-        for match in REQUEST_RE.finditer(proc.stdout):
+        for match in REQUEST_RE.finditer(worker_output):
             requests[int(match.group(1))] = [int(x) for x in match.group(2).split()]
         if len(requests) != REQUESTS:
             raise BaselineCaptureError(
                 f"request count mismatch: expected={REQUESTS} actual={len(requests)}"
             )
 
-        validation = VALIDATION_RE.search(proc.stdout)
+        validation = VALIDATION_RE.search(worker_output)
         if validation is None:
             raise BaselineCaptureError("GPU validation report is missing")
         if validation.group("finite") != "1":
@@ -250,7 +261,7 @@ def capture() -> dict:
             "active_policy_hash": str(ack["active_policy_hash"]),
             "weight_epoch": 0,
             "ack_sha256": str(ack["ack_sha256"]),
-            "worker_instance_id": f"pid-{proc.pid}",
+            "worker_instance_id": f"pid-{worker_pid}",
             "worker_exit_code": int(proc.returncode),
             "requests": len(requests),
             "tokens": sum(len(tokens) for tokens in requests.values()),
@@ -262,7 +273,7 @@ def capture() -> dict:
             "replay_manifest_sha256": _sha256_file(manifest),
             "source_manifest_sha256": _sha256_file(SOURCE_MANIFEST),
             "raw_token_sha256": _sha256_file(raw),
-            "worker_log_sha256": hashlib.sha256(proc.stdout.encode()).hexdigest(),
+            "worker_log_sha256": hashlib.sha256(worker_output.encode()).hexdigest(),
             "runner_hostname": subprocess.check_output(["hostname"], text=True).strip(),
             "runner_arch": platform.machine(),
             "rss_source": "resource.getrusage(RUSAGE_CHILDREN).ru_maxrss on Darwin",
