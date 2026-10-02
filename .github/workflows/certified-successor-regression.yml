@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - agent-e-absent-baseline-20261002
+      - agent-e-preimage-capture-20261002
     paths:
       - ".github/workflows/certified-successor-regression.yml"
   workflow_dispatch:
@@ -35,7 +36,9 @@ jobs:
             tools/manual_canary_contract.py \
             tools/manual_canary_controller.py \
             tools/manual_canary_signature.py \
-            tools/manual_canary_production_intent.py
+            tools/manual_canary_production_intent.py \
+            tools/manual_canary_preimage_xox.py \
+            tools/test_manual_canary_preimage_xox.py
       - name: Precision v3 tests
         env:
           PYTHONPATH: tools
@@ -65,5 +68,6 @@ jobs:
           python tools/test_manual_canary_evidence_xox.py
           python tools/test_autopilot_observer_v3.py
           python tools/test_backend_capabilities.py
+          python tools/test_manual_canary_preimage_xox.py
       - name: Full successor diff check
         run: git diff --check 330954b27f146b8a17db2cb353c3e620968bad5e...HEAD
