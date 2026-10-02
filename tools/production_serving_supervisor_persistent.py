@@ -39,7 +39,7 @@ EXPECTED_PERSISTENT_SOURCE_SHA = "a26f9a8ab93493a1aad8da643d00c1d998aa60cd"
 DEFAULT_PERSISTENT_ROOT = Path("/Users/xox/vdsp_serving/persistent-workers")
 WORKER_READY_TIMEOUT_SECONDS = 120
 REQUEST_TIMEOUT_SECONDS = 60
-POLL_SECONDS = 0.01
+POLL_SECONDS = 0.01\nLAUNCHD_PROCESS_TYPE = "Interactive"
 
 
 class PersistentSupervisorError(base.SupervisorError):
@@ -661,7 +661,7 @@ def install_user_launchd(
 </array>
 <key>RunAtLoad</key><true/>
 <key>KeepAlive</key><true/>
-<key>ProcessType</key><string>Background</string>
+<key>ProcessType</key><string>{LAUNCHD_PROCESS_TYPE}</string>
 <key>StandardOutPath</key><string>{logs / "supervisor.stdout.log"}</string>
 <key>StandardErrorPath</key><string>{logs / "supervisor.stderr.log"}</string>
 </dict></plist>
