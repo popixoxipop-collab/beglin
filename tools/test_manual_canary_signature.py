@@ -121,6 +121,25 @@ class SignatureTests(unittest.TestCase):
             with self.assertRaises(ms.HumanSignatureError):
                 ms._validate_allowed_signers(link)
 
+    def test_signature_payload_supports_absent_baseline_target(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            p=proposal(
+                baseline_policy_hash=mc.sha256_json([]),
+                candidate_policy_hash=mc.sha256_json(CANDIDATE),
+                single_target={"role":"shared_up_proj","layer":3,"before_n":None,"after_n":6},
+                expected_epoch=0,
+                restart_instance_id="worker-base",
+            )
+            m=metadata()
+            key,allowed=create_signer(root)
+            sig=sign(root,key,ms.signing_payload(p,m))
+            got=ms.verify_human_signature(
+                proposal=p,approval_metadata=m,signature_text=sig,
+                allowed_signers_path=allowed,now=NOW
+            )
+            self.assertEqual(got["status"],"VERIFIED")
+
 
 class IntentTests(unittest.TestCase):
     def verified(self,p=None):
@@ -170,6 +189,55 @@ class IntentTests(unittest.TestCase):
         candidate=CANDIDATE+[{"role":"shared_down_proj","layer":4,"n":6}]
         with self.assertRaises(mpi.ProductionIntentError):
             mpi.seal_production_intent(proposal=p,verified_signature=self.verified(p),runtime_preimage=self.runtime(),candidate_policy=candidate)
+
+    def test_seal_allows_target_absent_from_runtime_baseline(self):
+        candidate=[{"role":"shared_up_proj","layer":3,"n":6}]
+        p=proposal(
+            baseline_policy_hash=mc.sha256_json([]),
+            candidate_policy_hash=mc.sha256_json(candidate),
+            single_target={"role":"shared_up_proj","layer":3,"before_n":None,"after_n":6},
+            expected_epoch=0,
+            restart_instance_id="worker-base",
+        )
+        runtime={
+            "active_policy":[],
+            "active_policy_hash":mc.sha256_json([]),
+            "weight_epoch":0,
+            "ack_sha256":h("f"),
+            "worker_instance_id":"worker-base",
+        }
+        got=mpi.seal_production_intent(
+            proposal=p,
+            verified_signature=self.verified(p),
+            runtime_preimage=runtime,
+            candidate_policy=candidate,
+        )
+        self.assertIsNone(got["target"]["before_n"])
+        self.assertFalse(got["execution_enabled"])
+
+    def test_absent_baseline_rejects_existing_runtime_target(self):
+        candidate=[{"role":"shared_up_proj","layer":3,"n":6}]
+        p=proposal(
+            baseline_policy_hash=mc.sha256_json([]),
+            candidate_policy_hash=mc.sha256_json(candidate),
+            single_target={"role":"shared_up_proj","layer":3,"before_n":None,"after_n":6},
+            expected_epoch=0,
+            restart_instance_id="worker-base",
+        )
+        bad_runtime={
+            "active_policy":[{"role":"shared_up_proj","layer":3,"n":5}],
+            "active_policy_hash":mc.sha256_json([{"role":"shared_up_proj","layer":3,"n":5}]),
+            "weight_epoch":0,
+            "ack_sha256":h("f"),
+            "worker_instance_id":"worker-base",
+        }
+        with self.assertRaises(mpi.ProductionIntentError):
+            mpi.seal_production_intent(
+                proposal=p,
+                verified_signature=self.verified(p),
+                runtime_preimage=bad_runtime,
+                candidate_policy=candidate,
+            )
 
     def test_execute_is_unconditionally_disabled(self):
         with self.assertRaises(mpi.ProductionBridgeDisabled):
