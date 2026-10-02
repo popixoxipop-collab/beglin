@@ -716,6 +716,7 @@ def main() -> int:
     mode.add_argument("--install-user-launchd", action="store_true")
     mode.add_argument("--probe-health", action="store_true")
     mode.add_argument("--probe-mlx-version", action="store_true")
+    mode.add_argument("--probe-mlx-build-version", action="store_true")
     mode.add_argument("--probe-reference", action="store_true")
     mode.add_argument("--probe-batch-reference", action="store_true")
     ap.add_argument(
@@ -738,6 +739,22 @@ def main() -> int:
             "mlx": importlib.metadata.version("mlx"),
             "python": platform.python_version(),
             "machine": platform.machine(),
+        }, indent=2, sort_keys=True))
+        return 0
+    if args.probe_mlx_build_version:
+        py = Path("/Users/xox/.venv-vllm-metal/bin/python3")
+        proc = subprocess.run(
+            [str(py), "-c", "import importlib.metadata,sys; print(importlib.metadata.version(\"mlx\")); print(sys.version)"],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=30,
+        )
+        if proc.returncode != 0:
+            raise SupervisorError(f"build-venv MLX probe failed: {proc.stderr.strip()}")
+        lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+        print(json.dumps({
+            "schema": "beglin-mlx-build-version-probe-v1",
+            "python_path": str(py),
+            "mlx": lines[0] if lines else None,
+            "python": lines[1] if len(lines) > 1 else None,
         }, indent=2, sort_keys=True))
         return 0
     if args.probe_reference:
