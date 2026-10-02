@@ -68,3 +68,28 @@ production_write_allowed = false
 This layer therefore proves approval integrity and runtime-context binding
 without creating a production mutation path. A real adapter bridge remains a
 separate review/deployment.
+
+
+## Launch-time proposal materialization
+
+The trusted signature must never bind guessed runtime values. Use
+`manual_canary_proposal_materializer.py` only after a baseline canary worker has
+produced an ACK and its observation metrics are available.
+
+The materializer requires:
+
+- exact `active_policy` + `active_policy_hash`
+- exact `weight_epoch`
+- exact `ack_sha256`
+- exact live `worker_instance_id`
+- the complete candidate policy
+- observed request/token/duration/memory metrics
+- optional measured physical memory for a 90% hard cap
+
+It recomputes the baseline/candidate canonical hashes, derives `before_n`
+(including explicit `null` when the target is absent from baseline), verifies
+that exactly one role/layer changes, and derives conservative budget headroom
+from observed metrics. The output status is `READY_FOR_HUMAN_SIGNATURE`.
+
+A historical worker PID/ACK must not be reused as the launch-time preimage.
+The private signing key remains external. Production execution remains disabled.
