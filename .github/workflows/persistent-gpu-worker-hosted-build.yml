@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install XOX-matched MLX 0.26.5
+      - name: Install XOX build MLX 0.32.0
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
@@ -46,7 +46,9 @@ jobs:
           print(os.path.join(list(mlx.__path__)[0], "share", "cmake"))
           PY
           )"
-          cmake -S . -B build-gpu-persistent             -DCMAKE_BUILD_TYPE=Release             -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"             -DCMAKE_BUILD_RPATH=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/lib
+          cmake -S . -B build-gpu-persistent \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
           cmake --build build-gpu-persistent --target qwen_infer_gpu -j 3
           file build-gpu-persistent/qwen_infer_gpu
           /usr/bin/shasum -a 256 build-gpu-persistent/qwen_infer_gpu             | tee persistent_binary.sha256
