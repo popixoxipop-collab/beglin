@@ -1,0 +1,56 @@
+{
+  "schema": "beglin-persistent-serving-interactive-live/1",
+  "status": "LIVE_VERIFIED",
+  "observed_at": "2026-10-02T19:03:58Z",
+  "code": {
+    "source_branch": "persistent-serving-interactive-launchd-20261003",
+    "source_commit": "11b0003685810f928b2979467369ba23fd05cd75",
+    "regression_run_id": 37050836901,
+    "regression_job_id": 110983533154,
+    "tests_passed": 343,
+    "diff_check": "PASS",
+    "persistent_supervisor_sha256": "9e21a9d956d2c45c3eed42d160f7152e950aa88e4b8637cdb414ddfe3aeb4a64"
+  },
+  "runtime": {
+    "launchd_label": "com.beglin.production-supervisor",
+    "process_type": "Interactive",
+    "listen_host": "127.0.0.1",
+    "listen_port": 18765,
+    "active_route_id": "beglin-candidate-shared-up-l3-n6",
+    "route_generation": 6,
+    "route_manifest_sha256": "c2bf7eed2788e115af0c0cb3316fceb061000013b2bfcf57710f66d291ff4221",
+    "native_binary_sha256": "3be6d59b77e554f5abee86851f4d901b7e2d9750ae6257a1538eebb64693d59e",
+    "native_source_commit": "a26f9a8ab93493a1aad8da643d00c1d998aa60cd",
+    "baseline_pid": 50313,
+    "candidate_pid": 50435,
+    "combined_worker_rss_bytes": 5522898944,
+    "same_candidate_pid_reused": true,
+    "reference_token": 1224,
+    "finite_logits": true,
+    "single_request_duration_ms_samples": [
+      1183,
+      203,
+      204
+    ],
+    "batch_duration_ms_samples": [
+      1206,
+      1197
+    ],
+    "batch_engine_wall_ms_samples": [
+      1179.542,
+      1179.853
+    ],
+    "external_network_exposed": false,
+    "auto_promotion_enabled": false,
+    "production_write_allowed": false
+  },
+  "evidence": {
+    "cutover_path": "/Users/xox/mcp-sandbox/tailnet-commander/BEGLIN_PERSISTENT_DIRECT_CUTOVER_2026-10-03.json",
+    "cutover_sha256": "302df6fec6d6af431eece55fea31b23c57c43c578c858f49714a767fdd26c957",
+    "live_verify_path": "/Users/xox/mcp-sandbox/tailnet-commander/BEGLIN_PERSISTENT_LIVE_VERIFY_2026-10-03.json",
+    "live_verify_sha256": "4014e15d20997bd8ddb8d96c284f04693afb52102d66a48e389c69e10005cae1",
+    "fallback_plist_backup_sha256": "d14cc44afec8dc7c9b72c9553c66166dbdf5e21ce63d1402ba7efc2ec9230589",
+    "selftest_status": "PASS",
+    "selftest_result_sha256": "d521e06dfc53d4c7887926a462b54fc62cef35ef420735474ed4571ecf84bc95"
+  }
+}
