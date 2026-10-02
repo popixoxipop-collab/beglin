@@ -35,3 +35,21 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/clang -std=c11 -DQWEN_GPU_MLX -fsyntax-only -Wno-everything qwen_infer.c
+
+  full-build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MLX
+        run: python3 -m pip install --user mlx
+      - name: Build qwen_infer_gpu
+        run: |
+          set -euo pipefail
+          MLX_CMAKE_DIR="$(python3 - <<'PY'
+          import mlx, os
+          print(os.path.join(list(mlx.__path__)[0], "share", "cmake"))
+          PY
+          )"
+          cmake -S . -B build-persistent-ci             -DCMAKE_BUILD_TYPE=Release             -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build build-persistent-ci --target qwen_infer_gpu -j 2
+          ./build-persistent-ci/qwen_infer_gpu 2>&1 | head -20 || true
