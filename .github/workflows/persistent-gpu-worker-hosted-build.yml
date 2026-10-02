@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-26
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install "mlx==0.26.5"
+          python -m pip install "mlx==0.32.0"
           python - <<'PY'
           import mlx, os
           print(os.path.join(list(mlx.__path__)[0], "share", "cmake"))
