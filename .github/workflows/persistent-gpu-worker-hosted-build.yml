@@ -24,12 +24,16 @@ jobs:
           test "$(uname -m)" = "arm64"
           sw_vers
 
-      - name: Install MLX
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install XOX-matched MLX
         run: |
           set -euo pipefail
-          python3 -m pip install --upgrade pip
-          python3 -m pip install mlx
-          python3 - <<'PY'
+          python -m pip install --upgrade pip
+          python -m pip install "mlx==0.32.0"
+          python - <<'PY'
           import mlx, os
           print(os.path.join(list(mlx.__path__)[0], "share", "cmake"))
           PY
@@ -37,7 +41,7 @@ jobs:
       - name: Build persistent qwen_infer_gpu
         run: |
           set -euo pipefail
-          MLX_CMAKE_DIR="$(python3 - <<'PY'
+          MLX_CMAKE_DIR="$(python - <<'PY'
           import mlx, os
           print(os.path.join(list(mlx.__path__)[0], "share", "cmake"))
           PY
