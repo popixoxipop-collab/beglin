@@ -89,7 +89,11 @@ def seal_production_intent(
     after = _policy_map(candidate_policy)
     target = p["single_target"]
     key = (target["role"], int(target["layer"]))
-    if before.get(key) != int(target["before_n"]):
+    raw_before = target.get("before_n")
+    if raw_before is None:
+        if key in before:
+            raise ProductionIntentError("runtime before_n mismatch: expected target absent from baseline policy")
+    elif before.get(key) != int(raw_before):
         raise ProductionIntentError("runtime before_n mismatch")
     if after.get(key) != int(target["after_n"]):
         raise ProductionIntentError("candidate after_n mismatch")
