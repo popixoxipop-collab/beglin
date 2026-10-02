@@ -45,11 +45,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install MLX
-        run: python3 -m pip install --user mlx
+        run: |
+          python3 -m venv .venv-mlx
+          .venv-mlx/bin/python -m pip install --upgrade pip
+          .venv-mlx/bin/python -m pip install mlx
       - name: Build qwen_infer_gpu
         run: |
           set -euo pipefail
-          MLX_CMAKE_DIR="$(python3 - <<'PY'
+          MLX_CMAKE_DIR="$(.venv-mlx/bin/python - <<'PY'
           import mlx, os
           print(os.path.join(list(mlx.__path__)[0], "share", "cmake"))
           PY
