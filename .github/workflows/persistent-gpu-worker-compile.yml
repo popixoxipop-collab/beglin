@@ -1,0 +1,42 @@
+name: Persistent GPU Worker Compile
+
+on:
+  push:
+    branches:
+      - persistent-gpu-worker-20261002
+    paths:
+      - "qwen_infer.c"
+      - "CMakeLists.txt"
+      - ".github/workflows/persistent-gpu-worker-compile.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install MLX
+        run: python -m pip install --upgrade pip mlx
+      - name: Configure
+        shell: bash
+        run: |
+          set -euo pipefail
+          MLX_CMAKE_DIR="$(python - <<'PY'
+          import mlx, os
+          print(os.path.join(list(mlx.__path__)[0], "share", "cmake"))
+          PY
+          )"
+          echo "MLX_CMAKE_DIR=$MLX_CMAKE_DIR"
+          cmake -S . -B build-persistent-ci \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+      - name: Build qwen_infer_gpu
+        run: cmake --build build-persistent-ci --target qwen_infer_gpu -j 3
+      - name: Binary identity
+        run: shasum -a 256 build-persistent-ci/qwen_infer_gpu
