@@ -64,16 +64,19 @@ def _positive_int(name: str, value: Any) -> int:
 class TargetDelta:
     role: str
     layer: int
-    before_n: int
+    before_n: int | None
     after_n: int
 
     @classmethod
     def from_value(cls, value: Mapping[str, Any]) -> "TargetDelta":
+        if "before_n" not in value:
+            raise ManualCanaryContractError("single_target.before_n must be present (use null for no baseline promotion)")
+        raw_before = value["before_n"]
         try:
             target = cls(
                 role=str(value["role"]),
                 layer=int(value["layer"]),
-                before_n=int(value["before_n"]),
+                before_n=None if raw_before is None else int(raw_before),
                 after_n=int(value["after_n"]),
             )
         except (KeyError, TypeError, ValueError) as exc:
@@ -82,9 +85,11 @@ class TargetDelta:
             raise ManualCanaryContractError("target role must be non-empty")
         if target.layer < 0:
             raise ManualCanaryContractError("target layer must be non-negative")
-        if target.before_n <= 0 or target.after_n <= 0:
-            raise ManualCanaryContractError("target n values must be positive")
-        if target.before_n == target.after_n:
+        if target.before_n is not None and target.before_n <= 0:
+            raise ManualCanaryContractError("target before_n must be positive or null")
+        if target.after_n <= 0:
+            raise ManualCanaryContractError("target after_n must be positive")
+        if target.before_n is not None and target.before_n == target.after_n:
             raise ManualCanaryContractError("target before_n and after_n must differ")
         return target
 
