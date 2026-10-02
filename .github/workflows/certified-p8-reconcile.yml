@@ -1,0 +1,69 @@
+name: Certified P8 reconciliation regression
+
+on:
+  push:
+    branches:
+      - certified-p8-reconcile-20261002
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile precision runtime modules
+        run: |
+          python -m py_compile \
+            tools/precision_context.py \
+            tools/backend_adapters.py \
+            tools/precision_transactions.py \
+            tools/precision_planner_v3.py \
+            tools/autopilot_preflight_v3.py \
+            tools/precision_evidence_v3.py \
+            tools/gpu_runtime_control.py \
+            tests/policy_binding/test_binding_contract.py \
+            tests/policy_binding/run_binding_probe.py
+      - name: Precision v3 tests
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/test_precision_evidence_v3.py
+          python tools/test_precision_planner_v3.py
+          python tools/test_precision_control_state.py
+          python tools/test_precision_transactions.py
+          python tools/test_autopilot_preflight_v3.py
+          python tools/test_mlx_runtime_adapter.py
+      - name: GPU unit and guard suite
+        env:
+          PYTHONPATH: tools
+        run: |
+          python -m unittest discover -s tools -p 'test_gpu_*.py'
+      - name: Manual canary and identity regressions
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/test_manual_canary.py
+          python tools/test_checkpoint_identity.py
+          python tools/test_agent_f_gpu_coverage_xox.py
+      - name: Signature, evidence, and observer v3 regressions
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/test_manual_canary_signature.py
+          python tools/test_manual_canary_evidence_xox.py
+          python tools/test_autopilot_observer_v3.py
+          python tools/test_backend_capabilities.py
+      - name: P8 reconciled binding contract
+        run: |
+          python tests/policy_binding/test_binding_contract.py
+      - name: Diff check
+        run: git diff --check HEAD^ HEAD
