@@ -716,6 +716,7 @@ def main() -> int:
     mode.add_argument("--install-user-launchd", action="store_true")
     mode.add_argument("--probe-health", action="store_true")
     mode.add_argument("--probe-reference", action="store_true")
+    mode.add_argument("--probe-batch-reference", action="store_true")
     ap.add_argument(
         "--route-manifest",
         default=str(DEFAULT_ROUTE_MANIFEST),
@@ -749,6 +750,42 @@ def main() -> int:
             "worker_instance_id": result["worker_instance_id"],
         }, indent=2, sort_keys=True))
         return 0
+    if args.probe_batch_reference:
+        tokens = _read_first_certified_prompt()
+        result = _post_json(
+            args.port,
+            "/v1/batch_generate",
+            {
+                "requests": [
+                    {"prompt_tokens": tokens, "max_new_tokens": 10}
+                    for _ in range(12)
+                ]
+            },
+        )
+        values = []
+        for row in result["responses"]:
+            generated = row["generated_tokens"]
+            values.append(generated[8] if len(generated) > 8 else None)
+        route_n = result["route"].get("n")
+        expected = 3268 if route_n is None else 1224
+        matched = sum(value == expected for value in values)
+        status = "PASS" if matched == 12 and result["finite_logits"] else "FAIL"
+        print(json.dumps({
+            "schema": "beglin-supervisor-batch-reference-probe-v1",
+            "status": status,
+            "route_generation": result["route_generation"],
+            "route_id": result["route"]["route_id"],
+            "policy_hash": result["route"]["policy_hash"],
+            "route_n": route_n,
+            "expected_reference_token": expected,
+            "reference_hits": matched,
+            "requests": len(result["responses"]),
+            "finite_logits": result["finite_logits"],
+            "duration_ms": result["duration_ms"],
+            "peak_child_rss_bytes": result["peak_child_rss_bytes"],
+            "worker_instance_id": result["worker_instance_id"],
+        }, indent=2, sort_keys=True))
+        return 0 if status == "PASS" else 2
     if args.install_user_launchd:
         result = install_user_launchd(
             script_path=Path(__file__),
