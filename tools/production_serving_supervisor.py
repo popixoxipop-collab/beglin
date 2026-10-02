@@ -34,6 +34,7 @@ import tempfile
 import threading
 import time
 from typing import Any
+from urllib import error as urlerror
 from urllib import request as urlrequest
 
 import production_routing_cutover as routing
@@ -507,8 +508,14 @@ def _post_json(port: int, path: str, value: dict) -> dict:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlrequest.urlopen(req, timeout=WORKER_TIMEOUT_SECONDS + 5) as resp:
-        return json.loads(resp.read())
+    try:
+        with urlrequest.urlopen(req, timeout=WORKER_TIMEOUT_SECONDS + 5) as resp:
+            return json.loads(resp.read())
+    except urlerror.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise SupervisorError(
+            f"HTTP self-test request failed status={exc.code} body={body}"
+        ) from exc
 
 
 def _get_json(port: int, path: str) -> dict:
