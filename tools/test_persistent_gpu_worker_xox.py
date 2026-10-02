@@ -11,8 +11,9 @@ import tempfile
 import time
 
 
-REPO = Path("/Users/xox/mcp-sandbox/tailnet-commander/beglin-persistent-worker")
-BINARY = REPO / "build-gpu-persistent/qwen_infer_gpu"
+REPO = Path("/Users/xox/vdsp-engine-gpu-precision")
+BINARY = Path("/Users/xox/vdsp_serving/bin/qwen_infer_gpu_persistent")
+MLX_LIB = Path("/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/lib")
 MOE_BASE = Path("/Users/xox/vdsp_local_data/moe_base_deepseek")
 SAFETENSORS = Path(
     "/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/"
@@ -115,11 +116,13 @@ def run_variant(name: str, *, candidate: bool, expected_token: int) -> dict:
             "QWEN_MOE_CB_PROMPT_MANIFEST":str(manifest),
             "QWEN_MOE_CB_SLOTS":"1",
             "QWEN_MOE_CB_REQS":"1",
+            "QWEN_MOE_CB_REQS":"1",
             "QWEN_MOE_GPU_VALIDATION_REPORT":"1",
             "QWEN_MOE_GPU_APPLIED_ACK":str(ack),
             "QWEN_MOE_GPU_TXN_FILE":str(txn),
             "QWEN_MOE_GPU_PERSIST_GENERATION_FILE":str(gen),
             "QWEN_MOE_PROMOTION_SAFETENSORS":str(SAFETENSORS),
+            "DYLD_LIBRARY_PATH":str(MLX_LIB),
         })
         if candidate:
             env["QWEN_MOE_PROMOTION_FILE_NQ"]=str(promo)
