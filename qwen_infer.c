@@ -14596,6 +14596,8 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     const char *env_check     = getenv("QWEN_MOE_GPU_CB_CHECK");
     const char *env_validation = getenv("QWEN_MOE_GPU_VALIDATION_REPORT");
     const char *env_correction = getenv("QWEN_MOE_NEARTIE_CORRECT");
+    const char *env_persistent = getenv("QWEN_MOE_GPU_PERSIST_STDIN");
+    int persistent = env_persistent && env_persistent[0] && atoi(env_persistent) != 0;
     int validation_on = env_validation && env_validation[0] && atoi(env_validation) != 0;
     int validation_finite = 1; long validation_logits_checked = 0;
 
@@ -14606,7 +14608,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     int check_on   = env_check  && env_check[0]  && atoi(env_check) != 0;
 
     if (B < 1 || B > MOE_BATCH_MAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS=%d out of [1,%d]\n", B, MOE_BATCH_MAX); exit(1); }
-    if (R < 1 || R > MOE_CB4B_RMAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_REQS=%d out of [1,%d]\n", R, MOE_CB4B_RMAX); exit(1); }
+    if (!persistent && (R < 1 || R > MOE_CB4B_RMAX)) { fprintf(stderr, "FATAL: QWEN_MOE_CB_REQS=%d out of [1,%d]\n", R, MOE_CB4B_RMAX); exit(1); }
 
     if (!mlx_gpu_mla_config(MOE_N_HEADS, MOE_Q_HEAD_DIM, MOE_QK_NOPE_HD, MOE_QK_ROPE_HD,
                             MOE_V_HD, MOE_KV_LORA_RANK, g_moe_rope_mscale, g_moe_attn_scale,
@@ -14642,8 +14644,53 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     // instead of a shared table, no hoisting to file scope needed.
     static int mf_plen[MOE_CB4B_RMAX], mf_maxnew[MOE_CB4B_RMAX];
     static int mf_ids[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS];
+    static int    rq_plen[MOE_CB4B_RMAX], rq_maxnew[MOE_CB4B_RMAX], rq_arrive[MOE_CB4B_RMAX];
+    static int    rq_slot_of[MOE_CB4B_RMAX], rq_admit_step[MOE_CB4B_RMAX];
+    static int    rq_out[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS], rq_nout[MOE_CB4B_RMAX];
+    static double rq_t_admit[MOE_CB4B_RMAX], rq_t_first[MOE_CB4B_RMAX];
+    static int    mcb_active[MOE_BATCH_MAX], mcb_req[MOE_BATCH_MAX], mcb_tok[MOE_BATCH_MAX];
+    static int    mcb_pos[MOE_BATCH_MAX], mcb_pref[MOE_BATCH_MAX], mcb_freed_before[MOE_BATCH_MAX];
+
+    float *x_embed = (float *)malloc(sizeof(float) * (size_t)MOE_BATCH_MAX * MOE_HIDDEN);
+    float *gpu_logits = (float *)malloc(sizeof(float) * (size_t)MOE_BATCH_MAX * MOE_VOCAB);
+    int slot_arr[MOE_BATCH_MAX], spos_arr[MOE_BATCH_MAX], tok_arr[MOE_BATCH_MAX];
+    if (!x_embed || !gpu_logits) {
+        fprintf(stderr, "FATAL: [moe gpu cb online] persistent scratch allocation failed\n");
+        exit(1);
+    }
+
+    long steps_idle = 0, steps_with_idle_slot = 0, admitted_after_evict = 0;
+    long queue_wait_events = 0, queue_wait_max_steps = 0, steps_pure_prefill = 0;
+    int step = 0, total_tok_processed = 0;
+    double t_run0 = 0.0, t_run1 = 0.0;
+    int persistent_batch_index = 0;
+    char persistent_request_id[96] = {0};
+    char persistent_manifest[1024] = {0};
+
+persistent_next_batch:
+    validation_finite = 1;
+    validation_logits_checked = 0;
+
     int mf_n;
     const char *manifest_path = getenv("QWEN_MOE_CB_PROMPT_MANIFEST");
+    if (persistent) {
+        char line[1200];
+        if (!fgets(line, sizeof line, stdin)) goto persistent_done;
+        if (!strncmp(line, "QUIT", 4) &&
+            (line[4] == '\0' || line[4] == '\n' || line[4] == '\r' ||
+             line[4] == ' ' || line[4] == '\t')) goto persistent_done;
+        char extra[2];
+        int got = sscanf(line, "%95s %1023s %1s",
+                         persistent_request_id, persistent_manifest, extra);
+        if (got != 2) {
+            fprintf(stdout,
+                    "PERSIST_RESPONSE {\"schema\":\"beglin-gpu-persistent-response-v1\","
+                    "\"status\":\"INVALID_REQUEST\"}\n");
+            fflush(stdout);
+            goto persistent_next_batch;
+        }
+        manifest_path = persistent_manifest;
+    }
     if (manifest_path && manifest_path[0]) {
         mf_n = moe_cbatch_load_manifest(manifest_path, mf_plen, mf_maxnew, mf_ids, MOE_CB4B_RMAX);
         fprintf(stderr, "[moe gpu cb online] loaded %d-entry prompt manifest from '%s'\n", mf_n, manifest_path);
@@ -14656,23 +14703,13 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
         }
         mf_n = MOE_CBATCH_N;
     }
+    if (persistent) R = mf_n;
+    if (R < 1 || R > MOE_CB4B_RMAX) {
+        fprintf(stderr, "FATAL: [moe gpu cb online] request count R=%d out of [1,%d]\n",
+                R, MOE_CB4B_RMAX);
+        exit(1);
+    }
     const int MCN = mf_n;
-
-    static int    rq_plen[MOE_CB4B_RMAX], rq_maxnew[MOE_CB4B_RMAX], rq_arrive[MOE_CB4B_RMAX];
-    static int    rq_slot_of[MOE_CB4B_RMAX], rq_admit_step[MOE_CB4B_RMAX];
-    static int    rq_out[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS], rq_nout[MOE_CB4B_RMAX];
-    static double rq_t_admit[MOE_CB4B_RMAX], rq_t_first[MOE_CB4B_RMAX];
-    static int    mcb_active[MOE_BATCH_MAX], mcb_req[MOE_BATCH_MAX], mcb_tok[MOE_BATCH_MAX];
-    static int    mcb_pos[MOE_BATCH_MAX], mcb_pref[MOE_BATCH_MAX], mcb_freed_before[MOE_BATCH_MAX];
-
-    float *x_embed = (float *)malloc(sizeof(float) * (size_t)MOE_BATCH_MAX * MOE_HIDDEN);
-    float *gpu_logits = (float *)malloc(sizeof(float) * (size_t)MOE_BATCH_MAX * MOE_VOCAB);
-    int slot_arr[MOE_BATCH_MAX], spos_arr[MOE_BATCH_MAX], tok_arr[MOE_BATCH_MAX];
-
-    long steps_idle = 0, steps_with_idle_slot = 0, admitted_after_evict = 0;
-    long queue_wait_events = 0, queue_wait_max_steps = 0, steps_pure_prefill = 0;
-    int step = 0, total_tok_processed = 0;
-    double t_run0 = 0.0, t_run1 = 0.0;
 
     // Two-pass warmup (V5g's own finding, generalized): the whole simulation is deterministic
     // given the same B/R/arrival/budget config (nothing here depends on wall-clock time, only on
@@ -14681,7 +14718,8 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     // schedule for real, timed. Pass 1's own scatter writes overwrite every (slot,pos) coordinate
     // pass 0 touched, in the same order, before any decode ever reads them back -- same reasoning
     // as V5g's single-step warmup, just over a whole multi-step run instead of one step.
-    for (int pass = 0; pass < 2; pass++) {
+    int pass_begin = (persistent && persistent_batch_index > 0) ? 1 : 0;
+    for (int pass = pass_begin; pass < 2; pass++) {
         for (int r = 0; r < R; r++) rq_arrive[r] = 0;
         if (env_arrive && env_arrive[0]) {
             const char *p = env_arrive;
@@ -14868,6 +14906,30 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 correction_on ? "on" : "off", validation_finite,
                 validation_logits_checked, R);
     }
+
+    if (persistent) {
+        fprintf(stdout,
+                "PERSIST_RESPONSE {\"schema\":\"beglin-gpu-persistent-response-v1\","
+                "\"status\":\"OK\",\"request_id\":\"%s\","
+                "\"batch_index\":%d,\"requests\":[",
+                persistent_request_id, persistent_batch_index);
+        for (int r = 0; r < R; r++) {
+            fprintf(stdout, "%s[", r ? "," : "");
+            for (int k = 0; k < rq_nout[r]; k++)
+                fprintf(stdout, "%s%d", k ? "," : "", rq_out[r][k]);
+            fprintf(stdout, "]");
+        }
+        fprintf(stdout,
+                "],\"wall_ms\":%.3f,\"finite_logits\":%s,"
+                "\"weight_epoch\":%llu}\n",
+                ms_wall, validation_finite ? "true" : "false",
+                (unsigned long long)g_moe_gpu_weight_epoch);
+        fflush(stdout);
+        persistent_batch_index++;
+        goto persistent_next_batch;
+    }
+
+persistent_done:
     free(x_embed); free(gpu_logits);
     return 1;
 }
