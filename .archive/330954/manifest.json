@@ -1,0 +1,146 @@
+{
+  "base64_size": 322756,
+  "bundle": "c0-330954.bundle",
+  "bundle_sha256": "c0591f4ad9a1d8193f2d7bc0d21420b29df9043942df64c6c15fdc0b6714a1b9",
+  "bundle_size": 242067,
+  "chunk_count": 27,
+  "chunk_size": 12000,
+  "chunks": [
+    {
+      "name": "chunk-0000.b64",
+      "sha256": "9057dd7cb1424f29b80d109c191a2d9b6f113d70efce12b6245cf1598b5892b2",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0001.b64",
+      "sha256": "d6d088880c45daf66efba8dba5d10b4d599c1c33fdde26ac4a246fec424ed7c2",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0002.b64",
+      "sha256": "7ae53f3e012c9c474598cfa9a50ff3854581c1a38a2aa09353acf072406a3736",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0003.b64",
+      "sha256": "2ba5fde0832da3a9a92b4c34232cc450b845919f4b9fe60185b8eb0208a4bc21",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0004.b64",
+      "sha256": "df8577eeffdc81495021948e98f25b7a8cf3d0ae8d4ad6a39c017ab52764af42",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0005.b64",
+      "sha256": "c342b3526368a057cd7e04b605a365739b08a22ab0a67fab9d11b7f02c60d8fc",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0006.b64",
+      "sha256": "d93c0578e2b7637a24536bb471aa74a2cd6f7001a3281af4379023860fe4f1d6",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0007.b64",
+      "sha256": "86cc125261364383dc78c479b1b0020503356c108d2663bb48663f20723119b6",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0008.b64",
+      "sha256": "cc2059fa81d81a764486cfade45628d2cf1fe43ef88d2474022beba31d3f5fc5",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0009.b64",
+      "sha256": "6be52eca2561140ca8c43b5d2d33152af3608e522b42f4c3639e1f55d45de7cc",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0010.b64",
+      "sha256": "405bddb757b4ddcf854665915d16d3a691751da225490181296246f8eccdf5b8",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0011.b64",
+      "sha256": "3c8c427f9a8c339a9a84ab98e9c781a951a3f0dcc1d1652556086a316898c41a",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0012.b64",
+      "sha256": "a3b27bf568cd4f930ba7bf1f1d133003722a7368d8ec59e5aa789cad0cd0721a",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0013.b64",
+      "sha256": "ab75b62283a0c32a4882b28c0366feca7508431b542c71f690a5d45c96ce6d9e",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0014.b64",
+      "sha256": "023b7ca64bdd7c3de2fed50a04689a0b63c27f97edccc7ca1842b98a57b6f672",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0015.b64",
+      "sha256": "f6046df2f974922e8fd967d9f84657a353b1ba88cbc63d1293de634d9d8fcf03",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0016.b64",
+      "sha256": "9c54bf715a40a4d9448b57c8bef1e7049dd6bfb6dd087ded83df77945bf07fc4",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0017.b64",
+      "sha256": "eb16955275c2c5f8e5ec00e521d002569bfc468357da5f3a905ddc0a8196c064",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0018.b64",
+      "sha256": "d2d002d32706f8cbe7d4aeff40e95192d9524faaa2ed518a3b238406dfc46f1f",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0019.b64",
+      "sha256": "4f81ef2e2c456a3f0d0bf25e3e6d52c364786f78cd08739f992bcbb40a9a6d39",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0020.b64",
+      "sha256": "1fcae408fb2f4781854adb5d86d810c7d74bb26e7f498a032fcfe32dd7f80427",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0021.b64",
+      "sha256": "499a904217774a0fda3ed54f6da89cbaa8049fedeefabc0fa8272e7f0088dc00",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0022.b64",
+      "sha256": "b1c3e24a30b100b23ecd5a2434f4fa842b92e735e5baf2cc9efb8c9fd4580911",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0023.b64",
+      "sha256": "672c86f504d9d7a93378d03d1c4be3a4339378da64b5e1546019a239ce43487a",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0024.b64",
+      "sha256": "7f1c87c2b4531e12efed2b5f638538a06837bbfdaf09953e1e2bfbcb82ef4e3e",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0025.b64",
+      "sha256": "b849447a45905bae048a7cd24bacd173f083d996eea03898e095033103b6bfdd",
+      "size": 12000
+    },
+    {
+      "name": "chunk-0026.b64",
+      "sha256": "a088c11b4375b72a20abe9fd7415d37a6d9170f526d3d2a48ed8a2997925383b",
+      "size": 10756
+    }
+  ],
+  "schema": "beglin-c0-bundle-chunks/1"
+}
