@@ -195,8 +195,10 @@ jobs:
       - name: Install MLX and configure
         run: |
           set -euo pipefail
-          python3 -m pip install --user --upgrade mlx
-          MLX_CMAKE_DIR="$(python3 -c 'import mlx,os; print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          python3 -m venv .venv-mlx
+          . .venv-mlx/bin/activate
+          python -m pip install --upgrade pip mlx
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os; print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
           cmake -S . -B build-persistent-hosted \
             -DCMAKE_BUILD_TYPE=Release \
             -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
