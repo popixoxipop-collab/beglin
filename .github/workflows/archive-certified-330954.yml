@@ -1,0 +1,119 @@
+name: Archive certified Beglin 330954
+
+on:
+  push:
+    branches:
+      - archive-transfer-330954
+    paths:
+      - ".archive/330954/**"
+      - ".github/workflows/archive-certified-330954.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: archive-certified-beglin-330954
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      EXPECTED_BUNDLE_SHA256: c0591f4ad9a1d8193f2d7bc0d21420b29df9043942df64c6c15fdc0b6714a1b9
+      EXPECTED_BUNDLE_SIZE: "242067"
+      EXPECTED_COMMIT: 330954b27f146b8a17db2cb353c3e620968bad5e
+      EXPECTED_TREE: d77401fa1913125198da997712641820483f4a29
+      CERTIFIED_REF: refs/heads/certified/gpu-20260926-330954b27f14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reassemble exact bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64, hashlib, json, os
+          from pathlib import Path
+
+          root = Path('.archive/330954')
+          manifest = json.loads((root / 'manifest.json').read_text())
+          assert manifest['schema'] == 'beglin-c0-bundle-chunks/1'
+          assert manifest['chunk_count'] == 27
+          assert manifest['bundle_size'] == int(os.environ['EXPECTED_BUNDLE_SIZE'])
+          assert manifest['bundle_sha256'] == os.environ['EXPECTED_BUNDLE_SHA256']
+
+          encoded = bytearray()
+          for row in manifest['chunks']:
+              p = root / row['name']
+              data = p.read_bytes()
+              assert len(data) == row['size'], (p, len(data), row['size'])
+              assert hashlib.sha256(data).hexdigest() == row['sha256'], p
+              encoded.extend(data)
+
+          assert len(encoded) == manifest['base64_size']
+          bundle = base64.b64decode(encoded, validate=True)
+          assert len(bundle) == manifest['bundle_size']
+          assert hashlib.sha256(bundle).hexdigest() == manifest['bundle_sha256']
+          (root / 'c0-330954.bundle').write_bytes(bundle)
+          PY
+
+      - name: Verify bundle commit and tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle=.archive/330954/c0-330954.bundle
+          test "$(wc -c < "$bundle" | tr -d ' ')" = "$EXPECTED_BUNDLE_SIZE"
+          test "$(sha256sum "$bundle" | awk '{print $1}')" = "$EXPECTED_BUNDLE_SHA256"
+          git bundle verify "$bundle"
+          git bundle list-heads "$bundle" | tee /tmp/bundle-heads.txt
+          grep -Fx "$EXPECTED_COMMIT refs/heads/gpu-precision-g1-g3" /tmp/bundle-heads.txt
+          git fetch "$bundle" refs/heads/gpu-precision-g1-g3:refs/remotes/archive/gpu-precision-g1-g3
+          test "$(git rev-parse refs/remotes/archive/gpu-precision-g1-g3)" = "$EXPECTED_COMMIT"
+          test "$(git rev-parse refs/remotes/archive/gpu-precision-g1-g3^{tree})" = "$EXPECTED_TREE"
+
+      - name: Create immutable certified ref without force
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(git ls-remote --heads origin "$CERTIFIED_REF" | awk '{print $1}')"
+          if [ -n "$existing" ]; then
+            test "$existing" = "$EXPECTED_COMMIT"
+          else
+            git push origin "$EXPECTED_COMMIT:$CERTIFIED_REF"
+          fi
+
+      - name: Fetch back and verify remote identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$CERTIFIED_REF"
+          fetched="$(git rev-parse FETCH_HEAD)"
+          tree="$(git rev-parse FETCH_HEAD^{tree})"
+          test "$fetched" = "$EXPECTED_COMMIT"
+          test "$tree" = "$EXPECTED_TREE"
+          cat > /tmp/certified-remote-verification.json <<JSON
+          {
+            "schema": "beglin-certified-remote-verification/1",
+            "status": "VERIFIED",
+            "remote_ref": "$CERTIFIED_REF",
+            "commit": "$fetched",
+            "tree": "$tree",
+            "bundle_sha256": "$EXPECTED_BUNDLE_SHA256",
+            "bundle_size": $EXPECTED_BUNDLE_SIZE,
+            "production_enabled": false,
+            "force_push_used": false
+          }
+          JSON
+          cat /tmp/certified-remote-verification.json
+
+      - name: Upload verification artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: beglin-certified-remote-verification-330954
+          path: /tmp/certified-remote-verification.json
+          if-no-files-found: error
+          retention-days: 90
