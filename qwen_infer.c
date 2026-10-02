@@ -14568,12 +14568,16 @@ static void moe_gpu_persist_publish_response(const char *dir, long seq, int R,
     snprintf(tmp, sizeof tmp, "%s.tmp.%d", path, getpid());
     FILE *f = fopen(tmp, "w");
     if (!f) { perror(tmp); exit(1); }
+    struct rusage ru;
+    memset(&ru, 0, sizeof ru);
+    (void)getrusage(RUSAGE_SELF, &ru);
     fprintf(f,
             "{\"schema\":\"beglin-gpu-persistent-response-v1\",\"seq\":%ld,"
-            "\"requests\":%d,\"duration_ms\":%.3f,\"finite_logits\":%s,"
-            "\"logits_checked\":%ld,\"weight_epoch\":%llu,\"responses\":[",
-            seq, R, ms_wall, validation_finite ? "true" : "false",
-            validation_logits_checked, (unsigned long long)g_moe_gpu_weight_epoch);
+            "\"pid\":%d,\"requests\":%d,\"duration_ms\":%.3f,\"finite_logits\":%s,"
+            "\"logits_checked\":%ld,\"weight_epoch\":%llu,\"peak_rss_bytes\":%lld,\"responses\":[",
+            seq, getpid(), R, ms_wall, validation_finite ? "true" : "false",
+            validation_logits_checked, (unsigned long long)g_moe_gpu_weight_epoch,
+            (long long)ru.ru_maxrss);
     for (int r = 0; r < R; r++) {
         if (r) fputc(',', f);
         fprintf(f, "{\"request_index\":%d,\"generated_tokens\":[", r);
