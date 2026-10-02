@@ -1,0 +1,35 @@
+name: Persistent GPU Worker macOS Compile
+
+on:
+  push:
+    branches:
+      - persistent-gpu-serving-20261003
+    paths:
+      - "qwen_infer.c"
+      - "tools/test_persistent_gpu_worker_source.py"
+      - ".github/workflows/persistent-gpu-worker-macos.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Source contract
+        run: python3 tools/test_persistent_gpu_worker_source.py
+      - name: Install MLX
+        run: python3 -m pip install mlx
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          MLX_CMAKE_DIR="$(python3 -c 'import mlx,os; print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S . -B build-persistent -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build build-persistent --target qwen_infer_gpu -j3
+          file build-persistent/qwen_infer_gpu
