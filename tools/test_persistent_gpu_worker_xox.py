@@ -27,7 +27,7 @@ MARKER_RE = re.compile(
     r"finite_logits=(\d+) wall_ms=([0-9.]+) weight_epoch=(\d+)"
 )
 REQ_RE = re.compile(
-    r"\[moe gpu cb online\] req 0 .*? tokens:\s*([^\n\r]*)"
+    r"\[moe gpu cb online\] req (\d+) .*? tokens:\s*([^\n\r]*)"
 )
 
 
@@ -74,15 +74,22 @@ def read_cycle(proc: subprocess.Popen, generation: int, timeout: float=120.0) ->
             reqs=REQ_RE.findall(text)
             if not reqs:
                 raise RuntimeError("request token line missing before persistent result marker")
-            tokens=[int(x) for x in reqs[-1].split()]
+            request_tokens={
+                int(req_id): [int(x) for x in token_text.split()]
+                for req_id, token_text in reqs[-int(m.group(2)):]
+            }
+            if len(request_tokens) != int(m.group(2)):
+                raise RuntimeError(
+                    f"expected {m.group(2)} request token lines, got {len(request_tokens)}"
+                )
             return {
                 "generation":generation,
                 "requests":int(m.group(2)),
                 "finite_logits":m.group(3)=="1",
                 "engine_wall_ms":float(m.group(4)),
                 "weight_epoch":int(m.group(5)),
-                "tokens":tokens,
-                "log_tail":"".join(lines[-20:]),
+                "request_tokens":request_tokens,
+                "log_tail":"".join(lines[-40:]),
             }
     raise TimeoutError(f"timed out waiting for generation {generation}")
 
@@ -131,20 +138,40 @@ def run_variant(name: str, *, candidate: bool, expected_token: int) -> dict:
         try:
             first=read_cycle(proc,1)
             first_end=time.monotonic()
-            if len(first["tokens"]) <= 8 or first["tokens"][8] != expected_token:
+            first_tokens=first["request_tokens"][0]
+            if len(first_tokens) <= 8 or first_tokens[8] != expected_token:
                 raise RuntimeError(
-                    f"{name} generation1 token mismatch: {first['tokens']}"
+                    f"{name} generation1 token mismatch: {first_tokens}"
                 )
+
+            manifest.write_text("".join(f"{raw} {maxnew}\n" for _ in range(4)))
             atomic_text(gen,"2\n")
             second_start=time.monotonic()
             second=read_cycle(proc,2)
             second_end=time.monotonic()
             if proc.pid != pid:
                 raise RuntimeError("worker PID changed across persistent generations")
-            if len(second["tokens"]) <= 8 or second["tokens"][8] != expected_token:
+            if second["requests"] != 4:
+                raise RuntimeError(f"{name} generation2 request count mismatch: {second['requests']}")
+            for req_id,tokens in second["request_tokens"].items():
+                if len(tokens) <= 8 or tokens[8] != expected_token:
+                    raise RuntimeError(
+                        f"{name} generation2 req={req_id} token mismatch: {tokens}"
+                    )
+
+            manifest.write_text(f"{raw} {maxnew}\n")
+            atomic_text(gen,"3\n")
+            third_start=time.monotonic()
+            third=read_cycle(proc,3)
+            third_end=time.monotonic()
+            third_tokens=third["request_tokens"][0]
+            if len(third_tokens) <= 8 or third_tokens[8] != expected_token:
                 raise RuntimeError(
-                    f"{name} generation2 token mismatch: {second['tokens']}"
+                    f"{name} generation3 token mismatch: {third_tokens}"
                 )
+            if proc.pid != pid:
+                raise RuntimeError("worker PID changed after batch shrink")
+
             return {
                 "name":name,
                 "pid":pid,
@@ -152,8 +179,10 @@ def run_variant(name: str, *, candidate: bool, expected_token: int) -> dict:
                 "expected_token":expected_token,
                 "generation1":first,
                 "generation2":second,
+                "generation3":third,
                 "startup_to_generation1_ms":round((first_end-started)*1000,3),
                 "generation2_end_to_end_ms":round((second_end-second_start)*1000,3),
+                "generation3_end_to_end_ms":round((third_end-third_start)*1000,3),
                 "same_pid":True,
             }
         finally:
