@@ -179,3 +179,46 @@ jobs:
             "production_binary_replaced=false" \
             | tee "$WT/PERSISTENT_GPU_BUILD_2026-10-02.txt"
           EOS
+
+
+  persistent-macos-arm64-compile:
+    if: github.ref == 'refs/heads/persistent-gpu-serving-20261002'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify hosted Apple Silicon
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "arm64"
+          sw_vers
+      - name: Install MLX and configure
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user --upgrade mlx
+          MLX_CMAKE_DIR="$(python3 -c 'import mlx,os; print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S . -B build-persistent-hosted \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+      - name: Build persistent qwen GPU binary
+        run: |
+          set -euo pipefail
+          cmake --build build-persistent-hosted -j 3 --target qwen_infer_gpu
+          test -x build-persistent-hosted/qwen_infer_gpu
+          shasum -a 256 qwen_infer.c build-persistent-hosted/qwen_infer_gpu
+      - name: Preserve compile evidence
+        run: |
+          {
+            echo "schema=beglin-persistent-hosted-arm64-compile/1"
+            echo "status=BUILT"
+            echo "arch=$(uname -m)"
+            echo "source_commit=$GITHUB_SHA"
+            echo "qwen_infer_c_sha256=$(shasum -a 256 qwen_infer.c | awk '{print $1}')"
+            echo "binary_sha256=$(shasum -a 256 build-persistent-hosted/qwen_infer_gpu | awk '{print $1}')"
+          } > PERSISTENT_HOSTED_ARM64_BUILD.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-persistent-hosted-arm64-build
+          path: PERSISTENT_HOSTED_ARM64_BUILD.txt
+          if-no-files-found: error
+          retention-days: 30
