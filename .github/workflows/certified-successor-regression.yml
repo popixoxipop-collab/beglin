@@ -5,6 +5,7 @@ on:
     branches:
       - agent-e-absent-baseline-20261002
       - agent-e-preimage-materializer-20261002
+      - agent-e-signing-prep-xox-20261002
     paths:
       - ".github/workflows/certified-successor-regression.yml"
       - "tools/manual_canary_*.py"
@@ -41,6 +42,7 @@ jobs:
             tools/manual_canary_signature.py \
             tools/manual_canary_production_intent.py \
             tools/manual_canary_proposal_materializer.py \
+            tools/manual_canary_baseline_preimage_xox.py \
             tools/test_manual_canary_proposal_materializer.py
       - name: Precision v3 tests
         env:
