@@ -23,6 +23,9 @@ on:
       - "docs/PRODUCTION_ROUTING_CUTOVER_GATE.md"
       - "tools/production_serving_supervisor*.py"
       - "tools/test_production_serving_supervisor*.py"
+      - "tools/production_serving_cutover_xox*.py"
+      - "tools/test_production_serving_cutover_xox*.py"
+      - "attestations/BEGLIN_PRODUCTION_CUTOVER_APPROVAL_2026-10-02.json"
       - "attestations/BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json"
   workflow_dispatch:
 
@@ -60,10 +63,12 @@ jobs:
             tools/production_adapter_bridge_xox.py \
             tools/production_routing_cutover.py \
             tools/production_serving_supervisor.py \
+            tools/production_serving_cutover_xox.py \
             tools/test_manual_canary_proposal_materializer.py \
             tools/test_production_adapter_bridge.py \
             tools/test_production_routing_cutover.py \
-            tools/test_production_serving_supervisor.py
+            tools/test_production_serving_supervisor.py \
+            tools/test_production_serving_cutover_xox.py
       - name: Precision v3 tests
         env:
           PYTHONPATH: tools
@@ -87,6 +92,7 @@ jobs:
           python tools/test_production_adapter_bridge.py
           python tools/test_production_routing_cutover.py
           python tools/test_production_serving_supervisor.py
+          python tools/test_production_serving_cutover_xox.py
           python tools/test_checkpoint_identity.py
           python tools/test_agent_f_gpu_coverage_xox.py
       - name: Signature, evidence, and observer v3 regressions
