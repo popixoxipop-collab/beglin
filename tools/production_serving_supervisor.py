@@ -38,6 +38,7 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 
 import production_routing_cutover as routing
+from production_serving_prewarm import PrewarmPool, PrewarmError
 
 
 REPO = Path("/Users/xox/vdsp-engine-gpu-precision")
@@ -247,6 +248,18 @@ class EngineExecutor:
         self.route_manifest = Path(route_manifest)
         self.store = routing.AtomicRouteManifestStore(self.route_manifest)
         self.gpu_lock = threading.BoundedSemaphore(1)
+        self.prewarm_pool = PrewarmPool(
+            state_root=DEFAULT_STATE_ROOT / "prewarm",
+            repo=REPO,
+            binary=BINARY,
+            moe_base=MOE_BASE,
+            safetensors=SAFETENSORS,
+            timeout_seconds=WORKER_TIMEOUT_SECONDS,
+        )
+        self.prewarm_pool.configure(self.read_route_snapshot())
+
+    def shutdown(self) -> None:
+        self.prewarm_pool.shutdown()
 
     def read_route_snapshot(self) -> dict:
         manifest = self.store.read()
@@ -270,7 +283,15 @@ class EngineExecutor:
             raise SupervisorError("GPU worker is busy")
         started_ns = time.monotonic_ns()
         before_usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+        warm_worker = self.prewarm_pool.acquire(snapshot, len(parsed))
         try:
+            if warm_worker is not None:
+                try:
+                    return warm_worker.serve(parsed)
+                except PrewarmError as exc:
+                    raise SupervisorError(str(exc)) from exc
+                finally:
+                    self.prewarm_pool.consumed(warm_worker)
             with tempfile.TemporaryDirectory(prefix="beglin-supervisor-") as td:
                 root = Path(td)
                 manifest_path = root / "manifest.txt"
@@ -369,6 +390,7 @@ class EngineExecutor:
                     "engine_requests_completed": len(generated),
                     "engine_validation_requests": validation_requests,
                     "engine_cycles_manifest_when_underfilled": len(generated) > len(parsed),
+                    "prewarmed_worker": False,
                     "responses": [
                         {
                             "request_index": idx,
@@ -390,6 +412,12 @@ class SupervisorHTTPServer(ThreadingHTTPServer):
         super().__init__(server_address, handler_cls)
         self.executor = executor
         self.started_at = time.time()
+
+    def server_close(self) -> None:
+        try:
+            self.executor.shutdown()
+        finally:
+            super().server_close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -436,6 +464,7 @@ class Handler(BaseHTTPRequestHandler):
                         "external_network_exposed": False,
                         "production_write_allowed": False,
                         "auto_promotion_enabled": False,
+                        "prewarm_pool": self.server.executor.prewarm_pool.status(),
                     },
                 )
                 return
