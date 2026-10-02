@@ -1,0 +1,80 @@
+name: Production Adapter Bridge Review
+
+on:
+  push:
+    branches:
+      - production-adapter-bridge-shadow-20261002
+    paths:
+      - "tools/production_adapter_bridge*.py"
+      - "tools/test_production_adapter_bridge*.py"
+      - "configs/production_adapter_bridge_20261002.json"
+      - "attestations/BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json"
+      - ".github/workflows/production-adapter-bridge-review.yml"
+
+permissions:
+  contents: read
+  attestations: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify OIDC approval subject
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh attestation verify             attestations/BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json             --repo popixoxipop-collab/beglin             --signer-workflow popixoxipop-collab/beglin/.github/workflows/agent-e-github-approval-attest.yml             --source-ref refs/heads/agent-e-github-approval-seal-20261002             --deny-self-hosted-runners             --format json             > /tmp/beglin-agent-e-attestation.json
+
+      - name: Build exact bridge plan
+        env:
+          PYTHONPATH: tools
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import production_adapter_bridge as bridge
+
+          cfg=json.loads(Path("configs/production_adapter_bridge_20261002.json").read_text())
+          seal_path=Path(cfg["github_seal_path"])
+          seal=json.loads(seal_path.read_text())
+          verified=json.loads(Path("/tmp/beglin-agent-e-attestation.json").read_text())
+          if not isinstance(verified,list) or not verified:
+              raise SystemExit("no verified GitHub attestation")
+          av={
+              "schema":"beglin-github-attestation-verification/1",
+              "status":"VERIFIED",
+              "artifact_sha256":bridge.sha256_file(seal_path),
+              "repository":bridge.EXPECTED_REPO,
+              "signer_workflow":bridge.EXPECTED_SIGNER_WORKFLOW,
+              "source_ref":bridge.EXPECTED_SOURCE_REF,
+              "verified_attestations":len(verified),
+          }
+          plan=bridge.build_bridge_plan(
+              proposal=cfg["proposal"],
+              runtime_preimage=cfg["runtime_preimage"],
+              candidate_policy=cfg["candidate_policy"],
+              github_seal=seal,
+              measured_capture_sha256=cfg["measured_capture_sha256"],
+              attestation_verification=av,
+          )
+          Path("BEGLIN_PRODUCTION_ADAPTER_BRIDGE_PLAN_2026-10-02.json").write_text(
+              json.dumps(plan,indent=2,sort_keys=True)+"\n"
+          )
+          print(json.dumps({
+              "status":plan["status"],
+              "plan_sha256":plan["plan_sha256"],
+              "candidate_worker_launch_allowed":plan["candidate_worker_launch_allowed"],
+              "production_routing_switch_allowed":plan["production_routing_switch_allowed"],
+          },sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-production-adapter-bridge-plan
+          path: BEGLIN_PRODUCTION_ADAPTER_BRIDGE_PLAN_2026-10-02.json
+          if-no-files-found: error
+          retention-days: 90
