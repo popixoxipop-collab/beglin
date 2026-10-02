@@ -1,0 +1,35 @@
+name: Persistent GPU Worker Regression
+
+on:
+  push:
+    branches:
+      - persistent-worker-20261003
+    paths:
+      - "qwen_infer.c"
+      - "tools/test_persistent_gpu_source_contract.py"
+      - ".github/workflows/persistent-gpu-worker-regression.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Persistent source contract
+        run: python tools/test_persistent_gpu_source_contract.py
+      - name: Diff hygiene
+        run: git diff --check e33a500d77e55740607388f2cd82a9da806ee2d5...HEAD
+
+  macos-syntax:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: C syntax check with GPU gate compiled in
+        run: |
+          set -euo pipefail
+          /usr/bin/clang -std=c11 -DQWEN_GPU_MLX -fsyntax-only -Wno-everything qwen_infer.c
