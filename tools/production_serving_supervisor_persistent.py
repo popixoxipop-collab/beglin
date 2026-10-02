@@ -418,6 +418,9 @@ class PersistentEngineExecutor:
         self.pool = pool
         self.gpu_lock = threading.BoundedSemaphore(1)
 
+    def shutdown(self) -> None:
+        self.pool.stop_all()
+
     def read_route_snapshot(self) -> dict:
         manifest = self.store.read()
         route = base.routing.normalize_route(manifest["active_route"])
