@@ -9,6 +9,7 @@ on:
       - production-adapter-bridge-shadow-20261002
       - production-routing-cutover-gate-20261002
       - production-serving-supervisor-20261002
+      - persistent-gpu-serving-20261002
     paths:
       - ".github/workflows/certified-successor-regression.yml"
       - "tools/manual_canary_*.py"
@@ -27,6 +28,7 @@ on:
       - "tools/test_production_serving_cutover_xox*.py"
       - "attestations/BEGLIN_PRODUCTION_CUTOVER_APPROVAL_2026-10-02.json"
       - "attestations/BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json"
+      - "qwen_infer.c"
   workflow_dispatch:
 
 permissions:
@@ -105,3 +107,65 @@ jobs:
           python tools/test_backend_capabilities.py
       - name: Full successor diff check
         run: git diff --check 330954b27f146b8a17db2cb353c3e620968bad5e...HEAD
+
+
+  persistent-xox-build:
+    if: github.ref == 'refs/heads/persistent-gpu-serving-20261002'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build persistent GPU worker on isolated XOX worktree
+        shell: bash
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "EOE.local"
+          test "$(id -un)" = "eoe"
+          TARGET=""
+          for candidate in xox XOX.local; do
+            if remote_host="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$candidate" hostname 2>/dev/null)"; then
+              if [ "$remote_host" = "XOX.local" ]; then
+                TARGET="$candidate"
+                break
+              fi
+            fi
+          done
+          test -n "$TARGET"
+
+          ssh -o BatchMode=yes "$TARGET" bash -s -- "$COMMIT_SHA" <<'EOS'
+          set -euo pipefail
+          COMMIT_SHA="$1"
+          SRC="/Users/xox/vdsp-engine-gpu-precision"
+          WT="/Users/xox/vdsp-engine-persistent-serving"
+          BUILD="$WT/build-gpu-persistent"
+          MLX="/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake"
+
+          cd "$SRC"
+          git fetch origin persistent-gpu-serving-20261002
+          if [ -e "$WT/.git" ] || [ -f "$WT/.git" ]; then
+            git -C "$WT" reset --hard "$COMMIT_SHA"
+          else
+            rm -rf "$WT"
+            git worktree add --detach "$WT" "$COMMIT_SHA"
+          fi
+          test "$(git -C "$WT" rev-parse HEAD)" = "$COMMIT_SHA"
+
+          cmake -S "$WT" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX"
+          cmake --build "$BUILD" -j 4 --target qwen_infer_gpu
+
+          BIN="$BUILD/qwen_infer_gpu"
+          test -x "$BIN"
+          BIN_SHA="$(shasum -a 256 "$BIN" | awk '{print $1}')"
+          SRC_SHA="$(shasum -a 256 "$WT/qwen_infer.c" | awk '{print $1}')"
+          printf '%s\n' \
+            "schema=beglin-persistent-gpu-build/1" \
+            "status=BUILT" \
+            "source_commit=$COMMIT_SHA" \
+            "qwen_infer_c_sha256=$SRC_SHA" \
+            "binary_path=$BIN" \
+            "binary_sha256=$BIN_SHA" \
+            "production_binary_replaced=false" \
+            | tee "$WT/PERSISTENT_GPU_BUILD_2026-10-02.txt"
+          EOS
