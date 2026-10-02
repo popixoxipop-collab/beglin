@@ -715,6 +715,7 @@ def main() -> int:
     mode.add_argument("--self-test", action="store_true")
     mode.add_argument("--install-user-launchd", action="store_true")
     mode.add_argument("--probe-health", action="store_true")
+    mode.add_argument("--probe-mlx-version", action="store_true")
     mode.add_argument("--probe-reference", action="store_true")
     mode.add_argument("--probe-batch-reference", action="store_true")
     ap.add_argument(
@@ -729,6 +730,15 @@ def main() -> int:
         return 0
     if args.probe_health:
         print(json.dumps(_get_json(args.port, "/healthz"), indent=2, sort_keys=True))
+        return 0
+    if args.probe_mlx_version:
+        import importlib.metadata
+        print(json.dumps({
+            "schema": "beglin-mlx-version-probe-v1",
+            "mlx": importlib.metadata.version("mlx"),
+            "python": platform.python_version(),
+            "machine": platform.machine(),
+        }, indent=2, sort_keys=True))
         return 0
     if args.probe_reference:
         tokens = _read_first_certified_prompt()
