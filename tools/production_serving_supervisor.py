@@ -701,6 +701,89 @@ def _persistent_variant(*, candidate: bool, expected_token: int) -> dict:
                 proc.kill(); proc.wait(timeout=10)
 
 
+def _persistent_bounded_variant(*, candidate: bool, expected_token: int) -> dict:
+    if not PERSISTENT_TEST_BINARY.is_file():
+        raise SupervisorError("persistent test binary is not installed")
+    if _sha256_file(PERSISTENT_TEST_BINARY) != PERSISTENT_EXPECTED_BINARY_SHA:
+        raise SupervisorError("persistent test binary identity changed")
+    prompt=_read_first_certified_prompt()
+    with tempfile.TemporaryDirectory(prefix="beglin-persistent-bounded-") as td:
+        root=Path(td)
+        raw=root/"prompt.i32"
+        _write_i32(raw,prompt)
+        manifest=root/"manifest.txt"
+        generation=root/"generation.txt"
+        ack=root/"ack.json"
+        txn=root/"txn.cmd"
+        promo=root/"promotion_nq.txt"
+        manifest.write_text(f"{raw} 10\n")
+        generation.write_text("1\n")
+        promo.write_text("shared_up_proj 3 6\n" if candidate else "")
+
+        env=_minimal_env()
+        env.update({
+            "DYLD_LIBRARY_PATH":str(PERSISTENT_MLX_LIB),
+            "QWEN_MOE_GPU_CBATCH_ONLINE":"1",
+            "QWEN_MOE_BASE":str(MOE_BASE),
+            "QWEN_MOE_NEARTIE_CORRECT":"0",
+            "QWEN_MOE_CB_PROMPT_MANIFEST":str(manifest),
+            "QWEN_MOE_CB_SLOTS":"1",
+            "QWEN_MOE_CB_REQS":"1",
+            "QWEN_MOE_GPU_VALIDATION_REPORT":"1",
+            "QWEN_MOE_GPU_APPLIED_ACK":str(ack),
+            "QWEN_MOE_GPU_TXN_FILE":str(txn),
+            "QWEN_MOE_GPU_PERSIST_GENERATION_FILE":str(generation),
+            "QWEN_MOE_PROMOTION_SAFETENSORS":str(SAFETENSORS),
+        })
+        if candidate:
+            env["QWEN_MOE_PROMOTION_FILE_NQ"]=str(promo)
+
+        started=time.monotonic()
+        proc=subprocess.Popen(
+            [str(PERSISTENT_TEST_BINARY)],
+            cwd=REPO,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        pid=int(proc.pid)
+        try:
+            first=_persistent_read_cycle(proc,1,timeout=50.0)
+            first_end=time.monotonic()
+            t1=first["request_tokens"][0]
+            if len(t1)<=8 or t1[8] != expected_token:
+                raise SupervisorError(f"persistent generation1 token mismatch: {t1}")
+
+            _persistent_atomic_text(generation,"2\n")
+            second_start=time.monotonic()
+            second=_persistent_read_cycle(proc,2,timeout=30.0)
+            second_end=time.monotonic()
+            t2=second["request_tokens"][0]
+            if int(proc.pid) != pid:
+                raise SupervisorError("persistent worker PID changed")
+            if len(t2)<=8 or t2[8] != expected_token:
+                raise SupervisorError(f"persistent generation2 token mismatch: {t2}")
+
+            return {
+                "candidate":candidate,
+                "pid":pid,
+                "same_pid":True,
+                "expected_token":expected_token,
+                "generation1":first,
+                "generation2":second,
+                "startup_to_generation1_ms":round((first_end-started)*1000,3),
+                "generation2_end_to_end_ms":round((second_end-second_start)*1000,3),
+            }
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill(); proc.wait(timeout=10)
+
+
 def persistent_worker_self_test() -> dict:
     baseline=_persistent_variant(candidate=False,expected_token=3268)
     candidate=_persistent_variant(candidate=True,expected_token=1224)
@@ -952,6 +1035,8 @@ def main() -> int:
     mode.add_argument("--persistent-worker-self-test", action="store_true")
     mode.add_argument("--persistent-baseline-self-test", action="store_true")
     mode.add_argument("--persistent-candidate-self-test", action="store_true")
+    mode.add_argument("--persistent-baseline-bounded-test", action="store_true")
+    mode.add_argument("--persistent-candidate-bounded-test", action="store_true")
     mode.add_argument("--probe-reference", action="store_true")
     mode.add_argument("--probe-batch-reference", action="store_true")
     ap.add_argument(
@@ -993,6 +1078,22 @@ def main() -> int:
     if args.persistent_candidate_self_test:
         result=_persistent_variant(candidate=True, expected_token=1224)
         result["schema"]="beglin-persistent-candidate-selftest-v1"
+        result["status"]="PASS"
+        result["binary_sha256"]=_sha256_file(PERSISTENT_TEST_BINARY)
+        result["live_serving_route_touched"]=False
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    if args.persistent_baseline_bounded_test:
+        result=_persistent_bounded_variant(candidate=False, expected_token=3268)
+        result["schema"]="beglin-persistent-baseline-bounded-v1"
+        result["status"]="PASS"
+        result["binary_sha256"]=_sha256_file(PERSISTENT_TEST_BINARY)
+        result["live_serving_route_touched"]=False
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    if args.persistent_candidate_bounded_test:
+        result=_persistent_bounded_variant(candidate=True, expected_token=1224)
+        result["schema"]="beglin-persistent-candidate-bounded-v1"
         result["status"]="PASS"
         result["binary_sha256"]=_sha256_file(PERSISTENT_TEST_BINARY)
         result["live_serving_route_touched"]=False
