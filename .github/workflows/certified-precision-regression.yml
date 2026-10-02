@@ -54,5 +54,13 @@ jobs:
           python tools/test_manual_canary.py
           python tools/test_checkpoint_identity.py
           python tools/test_agent_f_gpu_coverage_xox.py
+      - name: Signature, evidence, and observer v3 regressions
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/test_manual_canary_signature.py
+          python tools/test_manual_canary_evidence_xox.py
+          python tools/test_autopilot_observer_v3.py
+          python tools/test_backend_capabilities.py
       - name: Diff check
         run: git diff --check HEAD^ HEAD
