@@ -1,0 +1,17 @@
+{
+  "schema": "beglin-production-routing-cutover-approval-v1",
+  "status": "VERIFIED_GITHUB_OIDC",
+  "approver": {
+    "github_login": "popixoxipop-collab",
+    "github_user_id": 261965176
+  },
+  "cutover_plan_sha256": "d398f2c56181f7ef819bbdce7418e00a73571687027bbc00e67e477246585c3d",
+  "candidate_route_id": "beglin-candidate-shared-up-l3-n6",
+  "baseline_route_id": "beglin-baseline-q4g64",
+  "router_id": "beglin-local-http-supervisor-v1",
+  "automatic_cutover_allowed": false,
+  "production_routing_switch_allowed": true,
+  "external_network_exposed": false,
+  "requested_scope": "localhost Beglin supervisor only",
+  "note": "Explicit GitHub-authenticated approval to switch the verified localhost serving supervisor route from the exact baseline route to the exact approved candidate route. Health failure must roll back immediately."
+}
