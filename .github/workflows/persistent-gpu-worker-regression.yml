@@ -48,7 +48,7 @@ jobs:
         run: |
           python3 -m venv .venv-mlx
           .venv-mlx/bin/python -m pip install --upgrade pip
-          .venv-mlx/bin/python -m pip install mlx
+          .venv-mlx/bin/python -m pip install mlx==0.32.0 mlx-metal==0.32.0
       - name: Build qwen_infer_gpu
         run: |
           set -euo pipefail
