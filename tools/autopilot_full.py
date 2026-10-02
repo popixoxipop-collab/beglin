@@ -23,6 +23,8 @@ import attribution_provenance as provenance
 import autopilot_shadow as shadow
 import promotion_writeback as pwb
 import quant_search_n as qsn
+import backend_adapters
+import precision_context as pctx
 
 DEFAULT_PLAN = "/private/tmp/qng64_ctl/autopilot_p5_plan.json"
 DEFAULT_AUDIT = "/private/tmp/qng64_ctl/autopilot_p5_audit.jsonl"
@@ -33,6 +35,33 @@ def _audit(path, payload):
     row["ts"] = datetime.now(timezone.utc).isoformat()
     with open(path, "a") as f:
         f.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _planner_backend_context():
+    backend = backend_adapters.normalize_backend_name(
+        os.environ.get("QWEN_AUTOPILOT_BACKEND", "cpu")
+    )
+    raw = os.environ.get("QWEN_PRECISION_CONTEXT_JSON")
+    context = None
+    if raw:
+        context = json.loads(raw)
+        backend_adapters.get_backend_adapter(backend).validate_context(context)
+    elif backend == "mlx_metal":
+        raise RuntimeError(
+            "mlx_metal planning requires QWEN_PRECISION_CONTEXT_JSON; "
+            "legacy/unscoped evidence is not admissible"
+        )
+    return backend, context, pctx.context_id(context) if context else None
+
+
+def _fetch_provenance_scoped(model, role, layer, backend, context_id):
+    if context_id:
+        raise provenance.ProvenanceStoreUnavailable(
+            "v3 provenance replay requires validation-run manifest join; failing closed"
+        )
+    if backend != "cpu":
+        raise RuntimeError("non-CPU provenance requires a v3 context")
+    return provenance.fetch_best(model, role, layer)
 
 
 def _merge_candidate(by_target, row):
@@ -56,8 +85,14 @@ def _merge_candidate(by_target, row):
             f"inconsistent current_bits for {key}: "
             f"{dst['current_bits']} vs {bits}"
         )
-def _live_evidence_gate(model, role, layer, safe_n, preimage_sha256):
-    ladder = [n for n in qsn.REAL_LADDER if int(n) >= int(safe_n)]
+
+def _live_evidence_gate(model, role, layer, safe_n, preimage_sha256,
+                        backend="cpu", context=None):
+    if context is None:
+        ladder = [n for n in qsn.REAL_LADDER if int(n) >= int(safe_n)]
+    else:
+        ladder = [n for n in backend_adapters.initial_auto_ladder(backend)
+                  if int(n) >= int(safe_n)]
     if not ladder:
         return "LIVE_LADDER_UNSAFE", {
             "reason": f"no live ladder value >= qng64 safe_n={safe_n}",
@@ -68,11 +103,31 @@ def _live_evidence_gate(model, role, layer, safe_n, preimage_sha256):
     evidence_by_n = {}
     for candidate_n in ladder:
         try:
-            evidence = live_preflight.fetch_latest_evidence(
-                model, role, layer, candidate_n, preimage_sha256
-            )
+            if context is not None:
+                evidence = live_preflight.fetch_latest_evidence_v3(
+                    context, role, layer, candidate_n, preimage_sha256
+                )
+                if evidence is not None:
+                    backend_adapters.get_backend_adapter(backend).validate_evidence(
+                        evidence, context)
+            else:
+                if backend != "cpu":
+                    return "CONTEXT_REQUIRED", {
+                        "reason": "non-CPU admission requires v3 context-scoped evidence",
+                        "qng64_safe_n": safe_n,
+                        "evidence_by_n": evidence_by_n,
+                    }
+                evidence = live_preflight.fetch_latest_evidence(
+                    model, role, layer, candidate_n, preimage_sha256
+                )
         except live_preflight.EvidenceStoreUnavailable as exc:
             return "EVIDENCE_STORE_UNAVAILABLE", {
+                "reason": str(exc),
+                "qng64_safe_n": safe_n,
+                "evidence_by_n": evidence_by_n,
+            }
+        except pctx.ContextError as exc:
+            return "EVIDENCE_CONTEXT_MISMATCH", {
                 "reason": str(exc),
                 "qng64_safe_n": safe_n,
                 "evidence_by_n": evidence_by_n,
@@ -202,6 +257,28 @@ def _needs_real_sweep(detail):
 
 def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
                plan_path):
+    backend, execution_context, context_hash = _planner_backend_context()
+    adapter = backend_adapters.get_backend_adapter(backend)
+    state_root = None
+    if backend == "mlx_metal":
+        control_root = os.environ.get("QWEN_PRECISION_CONTROL_DIR")
+        if not control_root:
+            raise RuntimeError(
+                "mlx_metal planning requires QWEN_PRECISION_CONTROL_DIR "
+                "so GPU state cannot share the legacy CPU control directory"
+            )
+        model_revision_id = execution_context["model"]["checkpoint_sha256"]
+        state_root = str(adapter.state_dir(control_root, model_revision_id))
+        for label, path in (
+            ("promotion_file", promotion_file),
+            ("quarantine_file", quarantine_file),
+        ):
+            if path and os.path.commonpath(
+                [os.path.abspath(path), os.path.abspath(state_root)]
+            ) != os.path.abspath(state_root):
+                raise RuntimeError(
+                    f"{label} must live under backend-scoped control dir {state_root}"
+                )
     existing = pwb.read_remote_promotion_file(ssh_host, promotion_file)
     quarantine = lowrisk._read_quarantine(
         ssh_host, quarantine_file
@@ -257,7 +334,9 @@ def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
         proposed_action = d["action"]
         if safe_n is None and old_n is None and _needs_real_sweep(detail):
             try:
-                prov = provenance.fetch_best(model, role, layer)
+                prov = _fetch_provenance_scoped(
+                    model, role, layer, backend, context_hash
+                )
             except provenance.ProvenanceStoreUnavailable as exc:
                 prov = None
                 d["action"] = "PROVENANCE_STORE_UNAVAILABLE"
@@ -276,7 +355,8 @@ def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
         proposed_action = d["action"]
         if proposed_action in ("ADD", "UPGRADE"):
             gate_action, live_detail = _live_evidence_gate(
-                model, role, layer, safe_n, preimage_sha256
+                model, role, layer, safe_n, preimage_sha256,
+                backend=backend, context=execution_context,
             )
             d["live_evidence"] = live_detail
             candidate_n = int(
@@ -308,9 +388,15 @@ def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
         "version": guarded.PLAN_VERSION,
         "phase": "P5-full-auto",
         "status": "prepared",
+        "run_id": pctx.new_run_id(backend, prefix="plan"),
+        "backend": backend,
+        "context_hash": context_hash,
+        "execution_context": execution_context,
+        "backend_state_root": state_root,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "model": model,
         "limit": limit,
+        "context_id": context_hash,
         "ssh_host": ssh_host,
         "promotion_file": promotion_file,
         "quarantine_file": quarantine_file,
@@ -323,7 +409,7 @@ def build_plan(model, limit, ssh_host, promotion_file, quarantine_file,
         "changes": changes,
         "preflight_candidates": preflight_candidates,
         "real_sweep_candidates": sorted(real_sweep_candidates, key=_work_priority),
-        "evidence_contract": "p5-v2",
+        "evidence_contract": "precision-v3" if context_hash else "p5-v2-legacy-cpu",
         "serialization": "one-target-per-preimage",
         "p5_roles": sorted(lowrisk.P5_ROLES),
     }
