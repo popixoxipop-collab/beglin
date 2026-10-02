@@ -1,0 +1,98 @@
+name: Agent E GitHub Approval Attestation
+
+on:
+  push:
+    branches:
+      - agent-e-github-approval-seal-20261002
+    paths:
+      - "attestations/BEGLIN_AGENT_E_GITHUB_APPROVAL_2026-10-02.json"
+      - ".github/workflows/agent-e-github-approval-attest.yml"
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify approval seal and emit OIDC subject
+        shell: bash
+        env:
+          EXPECTED_ACTOR: popixoxipop-collab
+          EXPECTED_ACTOR_ID: "261965176"
+          EXPECTED_PROPOSAL_DIGEST: 726ae550c7519307e771d1f9fb23157a7f75338921082f7a64282be56c9cbc15
+          EXPECTED_CAPTURE_SHA: caec06441a9fab41fd0f98cb8fc027931671903b001e28561e94d4dd82d4ab2f
+          EXPECTED_PRIVATE_APPROVAL_COMMIT: 7dc3398c87ffbe8e9bf2496c6d16e762ea787094
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          src=Path("attestations/BEGLIN_AGENT_E_GITHUB_APPROVAL_2026-10-02.json")
+          raw=src.read_bytes()
+          obj=json.loads(raw)
+          actor=os.environ["GITHUB_ACTOR"]
+          actor_id=os.environ.get("GITHUB_ACTOR_ID","")
+
+          assert actor == os.environ["EXPECTED_ACTOR"]
+          if actor_id:
+              assert actor_id == os.environ["EXPECTED_ACTOR_ID"]
+          assert obj["schema"] == "beglin-agent-e-github-public-approval/1"
+          assert obj["status"] == "APPROVED_FOR_NON_EXECUTABLE_INTENT_SEALING"
+          assert obj["approver"]["github_login"] == actor
+          assert int(obj["approver"]["github_user_id"]) == int(os.environ["EXPECTED_ACTOR_ID"])
+          assert obj["proposal_digest"] == os.environ["EXPECTED_PROPOSAL_DIGEST"]
+          assert obj["measured_capture_sha256"] == os.environ["EXPECTED_CAPTURE_SHA"]
+          assert obj["private_approval_commit"] == os.environ["EXPECTED_PRIVATE_APPROVAL_COMMIT"]
+          assert obj["guards"]["production_write_allowed"] is False
+          assert obj["guards"]["execution_enabled"] is False
+          assert obj["guards"]["auto_promotion_enabled"] is False
+          assert obj["guards"]["production_bridge_reviewed"] is False
+
+          seal={
+            "schema":"beglin-agent-e-github-oidc-seal/1",
+            "status":"VERIFIED_GITHUB_OIDC_ATTESTATION_SUBJECT",
+            "github":{
+              "repository":os.environ["GITHUB_REPOSITORY"],
+              "actor":actor,
+              "actor_id":actor_id or os.environ["EXPECTED_ACTOR_ID"],
+              "sha":os.environ["GITHUB_SHA"],
+              "ref":os.environ["GITHUB_REF"],
+              "workflow":os.environ["GITHUB_WORKFLOW"],
+              "run_id":os.environ["GITHUB_RUN_ID"],
+              "run_attempt":os.environ["GITHUB_RUN_ATTEMPT"],
+            },
+            "approval_file_sha256":hashlib.sha256(raw).hexdigest(),
+            "proposal_digest":obj["proposal_digest"],
+            "measured_capture_sha256":obj["measured_capture_sha256"],
+            "private_approval_commit":obj["private_approval_commit"],
+            "private_verification_run_id":obj["private_verification_run_id"],
+            "execution_enabled":False,
+            "production_write_allowed":False,
+            "auto_promotion_enabled":False,
+            "production_bridge_reviewed":False,
+            "ssh_detached_signature_used":False,
+            "approval_path":"github_account_plus_github_oidc",
+          }
+          Path("BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json").write_text(
+              json.dumps(seal,indent=2,sort_keys=True)+"\n"
+          )
+          print(json.dumps(seal,sort_keys=True))
+          PY
+
+      - name: Publish GitHub OIDC provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-agent-e-github-oidc-seal
+          path: BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json
+          if-no-files-found: error
+          retention-days: 90
