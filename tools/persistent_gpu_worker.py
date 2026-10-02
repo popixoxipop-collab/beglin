@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import selectors
 import subprocess
 import tempfile
 import threading
@@ -105,33 +106,43 @@ class PersistentGpuWorker:
             stdin.write(f"{rid} {manifest_path}\n")
             stdin.flush()
 
-            # stdout is line-oriented. The engine emits exactly one PERSIST_RESPONSE
-            # per accepted batch. readline() is blocking, so enforce the timeout by
-            # observing wall time between any unexpected lines.
-            while True:
-                if time.monotonic()-started > self.response_timeout_seconds:
-                    raise PersistentWorkerError(
-                        f"persistent response timeout request_id={rid}"
-                    )
-                line=stdout.readline()
-                if line == "":
-                    self._ensure_alive()
-                    raise PersistentWorkerError("persistent worker stdout closed")
-                if not line.startswith("PERSIST_RESPONSE "):
-                    continue
-                try:
-                    value=json.loads(line[len("PERSIST_RESPONSE "):])
-                except json.JSONDecodeError as exc:
-                    raise PersistentWorkerError("invalid persistent response JSON") from exc
-                if value.get("status") != "OK":
-                    raise PersistentWorkerError(
-                        f"persistent worker rejected request: {value.get('status')}"
-                    )
-                if value.get("request_id") != rid:
-                    raise PersistentWorkerError(
-                        "persistent response request_id mismatch"
-                    )
-                return value
+            # stdout is line-oriented. select() makes the timeout real even when
+            # the engine is silent while executing a long GPU batch.
+            selector=selectors.DefaultSelector()
+            selector.register(stdout,selectors.EVENT_READ)
+            try:
+                while True:
+                    remaining=self.response_timeout_seconds-(time.monotonic()-started)
+                    if remaining <= 0:
+                        raise PersistentWorkerError(
+                            f"persistent response timeout request_id={rid}"
+                        )
+                    events=selector.select(timeout=remaining)
+                    if not events:
+                        raise PersistentWorkerError(
+                            f"persistent response timeout request_id={rid}"
+                        )
+                    line=stdout.readline()
+                    if line == "":
+                        self._ensure_alive()
+                        raise PersistentWorkerError("persistent worker stdout closed")
+                    if not line.startswith("PERSIST_RESPONSE "):
+                        continue
+                    try:
+                        value=json.loads(line[len("PERSIST_RESPONSE "):])
+                    except json.JSONDecodeError as exc:
+                        raise PersistentWorkerError("invalid persistent response JSON") from exc
+                    if value.get("status") != "OK":
+                        raise PersistentWorkerError(
+                            f"persistent worker rejected request: {value.get('status')}"
+                        )
+                    if value.get("request_id") != rid:
+                        raise PersistentWorkerError(
+                            "persistent response request_id mismatch"
+                        )
+                    return value
+            finally:
+                selector.close()
 
     def close(self) -> None:
         proc=self._proc
@@ -177,6 +188,7 @@ class PersistentWorkerManager:
         self.route_id: str | None=None
         self.policy_hash: str | None=None
         self.worker_root: tempfile.TemporaryDirectory | None=None
+        self.startup_ack: dict | None=None
 
     def _shutdown(self):
         if self.worker is not None:
@@ -185,6 +197,7 @@ class PersistentWorkerManager:
         self.generation=None
         self.route_id=None
         self.policy_hash=None
+        self.startup_ack=None
         if self.worker_root is not None:
             self.worker_root.cleanup()
         self.worker_root=None
@@ -233,6 +246,7 @@ class PersistentWorkerManager:
                 self.generation=generation
                 self.route_id=route["route_id"]
                 self.policy_hash=route["policy_hash"]
+                self.startup_ack=dict(state)
                 return worker
             worker._ensure_alive()
             time.sleep(0.05)
