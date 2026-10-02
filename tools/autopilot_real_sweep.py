@@ -18,6 +18,7 @@ import attribution_provenance as prov
 import autopilot_guarded as guarded
 import quant_search_n as qsn
 import promotion_writeback as pwb
+import precision_context as pctx
 
 
 def _write_combo(host, path, role, layer):
@@ -40,6 +41,33 @@ def _candidate_from_plan(path):
     return items[0]
 
 
+
+def _execution_scope(plan_path=None):
+    backend = pctx.normalize_backend(os.environ.get("QWEN_AUTOPILOT_BACKEND", "cpu"))
+    context_hash = None
+    if plan_path:
+        plan = guarded._load_plan(plan_path)
+        backend = pctx.normalize_backend(plan.get("backend") or backend)
+        context_hash = plan.get("context_id") or plan.get("context_hash")
+    else:
+        raw = os.environ.get("QWEN_PRECISION_CONTEXT_JSON")
+        if raw:
+            context = pctx.validate_context(json.loads(raw))
+            backend = context["execution"]["backend"]
+            context_hash = pctx.context_id(context)
+    if backend != "cpu" and not context_hash:
+        raise RuntimeError("non-CPU real sweep requires an explicit v3 execution context")
+    return backend, context_hash
+
+
+def _fetch_scoped_provenance(model, role, layer, backend, context_hash):
+    if context_hash:
+        raise prov.ProvenanceStoreUnavailable(
+            "v3 provenance replay requires validation-run manifest/corpus join; "
+            "G1 fails closed until G4 persists replay-complete provenance"
+        )
+    return prov.fetch_best(model, role, layer)
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--model", default="deepseek-v2-lite")
@@ -58,23 +86,33 @@ def main():
     ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--max-pos", type=int, default=19)
     args = ap.parse_args()
+    backend, context_hash = _execution_scope(args.plan)
 
     if args.plan:
         c = _candidate_from_plan(args.plan)
         role, layer = c["role"], int(c["layer"])
         model = c.get("model") or args.model
-        row = c.get("provenance") or prov.fetch_best(model, role, layer)
+        row = c.get("provenance") or _fetch_scoped_provenance(model, role, layer, backend, context_hash)
     else:
         if not args.role or args.layer is None:
             ap.error("provide --plan or both --role and --layer")
         model, role, layer = args.model, args.role, args.layer
-        row = prov.fetch_best(model, role, layer)
+        row = _fetch_scoped_provenance(model, role, layer, backend, context_hash)
 
+    if context_hash and row:
+        if row.get("context_id") != context_hash:
+            raise pctx.ContextMismatch(
+                f"provenance context mismatch: {row.get('context_id')!r} != {context_hash!r}"
+            )
+        if not row.get("manifest") or not row.get("corpus"):
+            raise RuntimeError(
+                "v3 provenance lacks replay manifest/corpus; G4 join is required"
+            )
     if not row:
         raise RuntimeError(f"no replayable provenance for {model}/{role}/L{layer}")
 
     stamp = int(time.time())
-    run_id = f"prov_{role}_L{layer}_{row['id']}_{stamp}"
+    run_id = f"prov_{backend}_{role}_L{layer}_{row['id']}_{stamp}"
     combo = f"{args.work_dir}/{run_id}.combo.txt"
     _write_combo(args.ssh_host, combo, role, layer)
     derived, _, _ = qsn.derive_isolated_manifest(
@@ -94,6 +132,11 @@ def main():
         raise RuntimeError(f"real sweep aborted: {abort}")
 
     print("RESULTS", {n: outcome for n, (outcome, _) in results.items()})
+    if context_hash:
+        raise RuntimeError(
+            "v3-scoped sweep completed but legacy qng64_real DB write is blocked; "
+            "G4 must persist this run with backend/context/run identity"
+        )
     landed = qsn.push_sweep_results_atomic(
         model, row["corpus"], role, layer, int(row["req"]), int(row["pos"]), results
     )
