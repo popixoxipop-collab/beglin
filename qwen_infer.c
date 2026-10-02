@@ -13926,6 +13926,35 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
     float *gpu_logits = (float *)malloc(sizeof(float) * (size_t)MOE_BATCH_MAX * MOE_VOCAB);
     int slot_arr[MOE_BATCH_MAX], spos_arr[MOE_BATCH_MAX], tok_arr[MOE_BATCH_MAX];
 
+    const char *persist_gen_path = getenv("QWEN_MOE_GPU_PERSIST_GENERATION_FILE");
+    int persistent_worker = persist_gen_path && persist_gen_path[0];
+    long long persist_generation = 0;
+    int persist_cycles_completed = 0;
+    if (persistent_worker) {
+        if (!manifest_path || !manifest_path[0]) {
+            fprintf(stderr, "FATAL: QWEN_MOE_GPU_PERSIST_GENERATION_FILE requires QWEN_MOE_CB_PROMPT_MANIFEST\n");
+            exit(1);
+        }
+        if (R != 1 || MCN != 1) {
+            fprintf(stderr,
+                    "FATAL: persistent GPU worker currently requires QWEN_MOE_CB_REQS=1 and exactly one manifest entry "
+                    "(got R=%d MCN=%d)\n", R, MCN);
+            exit(1);
+        }
+        persist_generation = moe_gpu_persist_read_generation(persist_gen_path);
+        if (persist_generation <= 0) {
+            fprintf(stderr,
+                    "FATAL: persistent GPU worker generation file '%s' must contain an integer > 0 before startup\n",
+                    persist_gen_path);
+            exit(1);
+        }
+        fprintf(stderr,
+                "GPU_PERSIST_READY_V1 generation=%lld pid=%d policy_epoch=%llu\n",
+                persist_generation, (int)getpid(),
+                (unsigned long long)g_moe_gpu_weight_epoch);
+        fflush(stderr);
+    }
+
     long steps_idle = 0, steps_with_idle_slot = 0, admitted_after_evict = 0;
     long queue_wait_events = 0, queue_wait_max_steps = 0, steps_pure_prefill = 0;
     int step = 0, total_tok_processed = 0;
@@ -14498,6 +14527,38 @@ static int run_moe_gpu_cbatch_prefill_gate(int argc, char **argv) {
 // real SME2 numerical noise in the CPU's own scalar/batched prefill kernels; the GPU MLX path has
 // shown zero non-determinism or numerical noise across every V5d-g gate, so there is no analogous
 // problem here for it to solve.
+
+// Persistent GPU worker protocol (2026-10-02).
+//
+// Opt-in only: QWEN_MOE_GPU_PERSIST_GENERATION_FILE=<path>.  The existing
+// GPU online gate remains byte-for-byte equivalent in behavior when unset.
+// In persistent mode the gate requires exactly one request per manifest
+// (QWEN_MOE_CB_REQS=1, one manifest entry), keeps all model/MLX bindings
+// resident after the first cycle, waits for a monotonically increasing
+// generation integer, reloads the same manifest path, and runs only the real
+// timed pass on subsequent cycles.  stdout/stderr remain the response stream;
+// GPU_PERSIST_RESULT_V1 is the cycle delimiter consumed by the supervisor.
+static long long moe_gpu_persist_read_generation(const char *path) {
+    if (!path || !path[0]) return -1;
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    long long generation = -1;
+    int ok = fscanf(f, "%lld", &generation);
+    fclose(f);
+    return ok == 1 ? generation : -1;
+}
+
+static long long moe_gpu_persist_wait_generation(const char *path, long long last_generation) {
+    struct timespec nap;
+    nap.tv_sec = 0;
+    nap.tv_nsec = 5 * 1000 * 1000;   // 5ms: idle-only poll, no hot-path cost.
+    for (;;) {
+        long long generation = moe_gpu_persist_read_generation(path);
+        if (generation > last_generation) return generation;
+        nanosleep(&nap, NULL);
+    }
+}
+
 static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     (void)argc; (void)argv;
     const char *gate_env = getenv("QWEN_MOE_GPU_CBATCH_ONLINE");
@@ -14681,7 +14742,8 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     // schedule for real, timed. Pass 1's own scatter writes overwrite every (slot,pos) coordinate
     // pass 0 touched, in the same order, before any decode ever reads them back -- same reasoning
     // as V5g's single-step warmup, just over a whole multi-step run instead of one step.
-    for (int pass = 0; pass < 2; pass++) {
+persistent_cycle:
+    for (int pass = persistent_worker && persist_cycles_completed > 0 ? 1 : 0; pass < 2; pass++) {
         for (int r = 0; r < R; r++) rq_arrive[r] = 0;
         if (env_arrive && env_arrive[0]) {
             const char *p = env_arrive;
@@ -14868,6 +14930,33 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 correction_on ? "on" : "off", validation_finite,
                 validation_logits_checked, R);
     }
+
+    if (persistent_worker) {
+        fprintf(stderr,
+                "GPU_PERSIST_RESULT_V1 generation=%lld requests=%d finite_logits=%d "
+                "wall_ms=%.3f weight_epoch=%llu\n",
+                persist_generation, R, validation_finite, ms_wall,
+                (unsigned long long)g_moe_gpu_weight_epoch);
+        fflush(stderr);
+
+        long long next_generation =
+            moe_gpu_persist_wait_generation(persist_gen_path, persist_generation);
+        int reloaded = moe_cbatch_load_manifest(
+            manifest_path, mf_plen, mf_maxnew, mf_ids, MOE_CB4B_RMAX);
+        if (reloaded != 1) {
+            fprintf(stderr,
+                    "FATAL: persistent GPU worker requires exactly one manifest entry per generation "
+                    "(generation=%lld entries=%d)\n",
+                    next_generation, reloaded);
+            exit(1);
+        }
+        persist_generation = next_generation;
+        persist_cycles_completed++;
+        validation_finite = 1;
+        validation_logits_checked = 0;
+        goto persistent_cycle;
+    }
+
     free(x_embed); free(gpu_logits);
     return 1;
 }
