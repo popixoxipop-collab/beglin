@@ -9,6 +9,7 @@ on:
       - production-adapter-bridge-shadow-20261002
       - production-routing-cutover-gate-20261002
       - production-serving-supervisor-20261002
+      - persistent-gpu-worker-20261003
     paths:
       - ".github/workflows/certified-successor-regression.yml"
       - "tools/manual_canary_*.py"
@@ -25,6 +26,10 @@ on:
       - "tools/test_production_serving_supervisor*.py"
       - "tools/production_serving_cutover_xox*.py"
       - "tools/test_production_serving_cutover_xox*.py"
+      - "tools/production_persistent_worker*.py"
+      - "tools/production_serving_supervisor_persistent*.py"
+      - "tools/test_production_persistent_worker*.py"
+      - "qwen_infer.c"
       - "attestations/BEGLIN_PRODUCTION_CUTOVER_APPROVAL_2026-10-02.json"
       - "attestations/BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json"
   workflow_dispatch:
@@ -63,6 +68,9 @@ jobs:
             tools/production_adapter_bridge_xox.py \
             tools/production_routing_cutover.py \
             tools/production_serving_supervisor.py \
+            tools/test_production_persistent_worker.py \
+            tools/production_serving_supervisor_persistent.py \
+            tools/production_persistent_worker.py \
             tools/production_serving_cutover_xox.py \
             tools/test_manual_canary_proposal_materializer.py \
             tools/test_production_adapter_bridge.py \
@@ -92,6 +100,7 @@ jobs:
           python tools/test_production_adapter_bridge.py
           python tools/test_production_routing_cutover.py
           python tools/test_production_serving_supervisor.py
+          python tools/test_production_persistent_worker.py
           python tools/test_production_serving_cutover_xox.py
           python tools/test_checkpoint_identity.py
           python tools/test_agent_f_gpu_coverage_xox.py
