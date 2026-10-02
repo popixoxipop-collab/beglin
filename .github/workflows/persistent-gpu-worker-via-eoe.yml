@@ -1,0 +1,131 @@
+name: Persistent GPU Worker via EOE
+
+on:
+  push:
+    branches:
+      - gpu-persistent-admission-20261003
+    paths:
+      - ".github/workflows/persistent-gpu-worker-via-eoe.yml"
+      - "qwen_infer.c"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify EOE and transfer exact branch source to XOX
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "EOE.local"
+          test "$(id -un)" = "eoe"
+          DEST="/Users/xox/mcp-sandbox/tailnet-commander/beglin-persistent-build-20261003"
+          tar --exclude=.git -czf - . | ssh -o BatchMode=yes -o ConnectTimeout=10 xox             "rm -rf '$DEST' && mkdir -p '$DEST' && tar -xzf - -C '$DEST'"
+
+      - name: Build and run persistent worker on XOX
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes xox 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="/Users/xox/mcp-sandbox/tailnet-commander/beglin-persistent-build-20261003"
+          cd "$ROOT"
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+
+          rm -rf build-persistent
+          cmake -S . -B build-persistent             -DCMAKE_BUILD_TYPE=Release             -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          cmake --build build-persistent --target qwen_infer_gpu -j4
+          BIN_SHA="$(/usr/bin/shasum -a 256 build-persistent/qwen_infer_gpu | awk '{print $1}')"
+
+          SMOKE="/Users/xox/mcp-sandbox/tailnet-commander/beglin-persistent-smoke-20261003"
+          rm -rf "$SMOKE"; mkdir -p "$SMOKE"
+          SOURCE_MANIFEST="/Users/xox/vdsp-engine-gpu-precision/g5_drill_manifest.txt"
+          read -r RAW MAXNEW < <(awk 'NF && $1 !~ /^#/ {print $1, $2; exit}' "$SOURCE_MANIFEST")
+          test -f "$RAW"
+          MANIFEST="$SMOKE/request.manifest"
+          : > "$MANIFEST"
+          for i in $(seq 1 12); do printf '%s %s\n' "$RAW" "$MAXNEW" >> "$MANIFEST"; done
+
+          PROMO="$SMOKE/promotion_nq.txt"
+          printf 'shared_up_proj 3 6\n' > "$PROMO"
+          CONTROL="$SMOKE/control.txt"
+          ACK="$SMOKE/applied_ack.json"
+          LOG="$SMOKE/worker.log"
+          RESP1="$SMOKE/response-1.json"
+          RESP2="$SMOKE/response-2.json"
+
+          env -i             PATH="$PATH" HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME"             QWEN_MOE_GPU_CBATCH_ONLINE=1             QWEN_MOE_BASE=/Users/xox/vdsp_local_data/moe_base_deepseek             QWEN_MOE_NEARTIE_CORRECT=0             QWEN_MOE_CB_SLOTS=4             QWEN_MOE_GPU_VALIDATION_REPORT=1             QWEN_MOE_GPU_APPLIED_ACK="$ACK"             QWEN_MOE_GPU_TXN_FILE="$SMOKE/txn.cmd"             QWEN_MOE_PROMOTION_FILE_NQ="$PROMO"             QWEN_MOE_PROMOTION_SAFETENSORS=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json             QWEN_MOE_GPU_PERSIST_CONTROL="$CONTROL"             ./build-persistent/qwen_infer_gpu >"$LOG" 2>&1 &
+          WPID=$!
+          trap 'kill "$WPID" 2>/dev/null || true' EXIT
+
+          for i in $(seq 1 180); do [ -s "$ACK" ] && break; sleep 1; done
+          test -s "$ACK"
+
+          printf '1 %s %s\n' "$MANIFEST" "$RESP1" > "$CONTROL.tmp"; mv "$CONTROL.tmp" "$CONTROL"
+          for i in $(seq 1 180); do [ -s "$RESP1" ] && break; sleep 1; done
+          test -s "$RESP1"
+
+          printf '2 %s %s\n' "$MANIFEST" "$RESP2" > "$CONTROL.tmp"; mv "$CONTROL.tmp" "$CONTROL"
+          for i in $(seq 1 180); do [ -s "$RESP2" ] && break; sleep 1; done
+          test -s "$RESP2"
+
+          printf '3 QUIT -\n' > "$CONTROL.tmp"; mv "$CONTROL.tmp" "$CONTROL"
+          wait "$WPID"; trap - EXIT
+
+          BIN_SHA="$BIN_SHA" SMOKE="$SMOKE" GITHUB_SHA="$GITHUB_SHA" python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path(os.environ["SMOKE"])
+          r1=json.loads((root/"response-1.json").read_text())
+          r2=json.loads((root/"response-2.json").read_text())
+          for r in (r1,r2):
+              assert r["schema"]=="beglin-gpu-persistent-response-v1"
+              assert r["status"]=="OK"
+              assert r["requests"]==12
+              assert r["finite_logits"] is True
+              vals=[]
+              for row in r["responses"]:
+                  toks=row["generated_tokens"]
+                  assert len(toks)>8
+                  vals.append(toks[8])
+              assert vals==[1224]*12, vals
+          result={
+              "schema":"beglin-persistent-gpu-worker-xox/1",
+              "status":"PASS",
+              "requests_per_batch":12,
+              "first_duration_ms":r1["duration_ms"],
+              "warm_duration_ms":r2["duration_ms"],
+              "warm_speedup":r1["duration_ms"]/r2["duration_ms"],
+              "first_weight_epoch":r1["weight_epoch"],
+              "warm_weight_epoch":r2["weight_epoch"],
+              "reference_token":1224,
+              "reference_hits":"12/12 both batches",
+              "binary_sha256":os.environ["BIN_SHA"],
+              "source_commit":os.environ["GITHUB_SHA"],
+              "worker_log_sha256":hashlib.sha256((root/"worker.log").read_bytes()).hexdigest(),
+          }
+          (root/"result.json").write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(result,sort_keys=True))
+          PY
+          REMOTE
+
+      - name: Pull result back to EOE
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/persistent"
+          scp -o BatchMode=yes             xox:/Users/xox/mcp-sandbox/tailnet-commander/beglin-persistent-smoke-20261003/result.json             "$RUNNER_TEMP/persistent/result.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-persistent-gpu-worker-via-eoe
+          path: ${{ runner.temp }}/persistent/result.json
+          if-no-files-found: error
+          retention-days: 30
