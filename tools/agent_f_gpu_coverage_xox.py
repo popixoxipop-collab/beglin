@@ -24,6 +24,7 @@ import json
 import os
 from pathlib import Path
 import re
+import resource
 import shlex
 import subprocess
 import sys
@@ -426,7 +427,16 @@ def _launch_worker(
     return proc, ack, txn
 
 
-def _communicate_owned(proc, timeout: int = WORKER_TIMEOUT) -> tuple[str, int]:
+def _child_peak_rss_bytes() -> int:
+    value = int(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
+    if value < 0:
+        raise CoverageError("child peak RSS is negative")
+    # macOS reports bytes; Linux reports KiB.
+    return value if sys.platform == "darwin" else value * 1024
+
+
+def _communicate_owned(proc, timeout: int = WORKER_TIMEOUT) -> tuple[str, int, int, int]:
+    started_ns = time.monotonic_ns()
     try:
         output, _ = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -439,7 +449,9 @@ def _communicate_owned(proc, timeout: int = WORKER_TIMEOUT) -> tuple[str, int]:
         raise CoverageError(
             f"owned qwen worker timed out and was stopped: pid={proc.pid}"
         )
-    return output, int(proc.returncode)
+    duration_ms = max(1, (time.monotonic_ns() - started_ns) // 1_000_000)
+    peak_rss_bytes = _child_peak_rss_bytes()
+    return output, int(proc.returncode), int(duration_ms), int(peak_rss_bytes)
 
 
 def _wait_for_startup_ack(grc, ack_path: Path, timeout: int = 60) -> dict:
@@ -471,7 +483,7 @@ def _finish_sync_run(
     n: int | None,
     slots: int,
 ) -> dict:
-    output, rc = _communicate_owned(proc)
+    output, rc, duration_ms, child_peak_rss_bytes = _communicate_owned(proc)
     (run_dir / "worker.log").write_text(output)
     reqs = _parse_requests(output)
     counts = _token_counts(reqs, target)
@@ -502,7 +514,10 @@ def _finish_sync_run(
     row = {
         "label": label,
         "pid": proc.pid,
+        "worker_instance_id": f"pid-{proc.pid}",
         "returncode": rc,
+        "duration_ms": duration_ms,
+        "child_peak_rss_bytes": child_peak_rss_bytes,
         "target": {
             "role": target["role"],
             "layer": int(target["layer"]),
@@ -1425,6 +1440,20 @@ def _latest_public_summary() -> dict | None:
         "checkpoint_sha256": obj.get("checkpoint_sha256"),
         "process_launches": obj.get("process_launches"),
         "matrix_sha256": _sha256_file(LATEST_RESULT),
+        "baseline_preimages": {
+            row.get("label"): {
+                "active_policy_hash": row.get("active_policy_hash"),
+                "weight_epoch": row.get("weight_epoch"),
+                "ack_sha256": row.get("ack_sha256"),
+                "worker_instance_id": row.get("worker_instance_id"),
+                "requests_completed": row.get("requests_completed"),
+                "tokens_evaluated": row.get("tokens_evaluated"),
+                "duration_ms": row.get("duration_ms"),
+                "child_peak_rss_bytes": row.get("child_peak_rss_bytes"),
+            }
+            for row in (obj.get("runs") or [])
+            if isinstance(row, dict) and row.get("classification") == "BASELINE"
+        },
         "kva_candidate_scan": kva_scan,
         "g5_kva_status": (
             obj.get("g5_kva_rollback", {}).get("status")
