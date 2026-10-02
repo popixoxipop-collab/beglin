@@ -236,6 +236,10 @@ class PersistentGpuWorker:
                         raise PersistentWorkerError("persistent response request count mismatch")
                     if obj.get("finite_logits") is not True:
                         raise PersistentWorkerError("persistent worker reported non-finite logits")
+                    if int(obj.get("pid",-1)) != int(self.pid or -2):
+                        raise PersistentWorkerError(
+                            f"persistent response PID mismatch expected={self.pid} actual={obj.get('pid')}"
+                        )
                     responses=obj.get("responses")
                     if not isinstance(responses,list) or len(responses)!=len(parsed):
                         raise PersistentWorkerError("persistent response rows mismatch")
@@ -251,6 +255,7 @@ class PersistentGpuWorker:
                         "roundtrip_duration_ms":total_ms,
                         "finite_logits":True,
                         "weight_epoch":int(obj["weight_epoch"]),
+                        "peak_rss_bytes":int(obj.get("peak_rss_bytes",0)),
                         "responses":responses,
                     }
                 time.sleep(0.01)
