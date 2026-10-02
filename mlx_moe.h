@@ -53,6 +53,28 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
 // for proving requested/applied binding identity across rebind/rollback tests.
 int mlx_gpu_binding_kind(const char *name, int *bits_out);
 
+// P8 reconciliation: canonical runtime binding truth for evidence collection.
+// This API intentionally has its own representation enum so the pre-existing
+// mlx_gpu_binding_kind() numeric contract remains unchanged.
+enum mlx_gpu_binding_representation {
+    MLX_GPU_BINDING_NONE = 0,
+    MLX_GPU_BINDING_NATIVE_QUANT = 1,
+    MLX_GPU_BINDING_QNG64 = 2,
+    MLX_GPU_BINDING_DENSE = 3,
+};
+int mlx_gpu_get_binding_state(const char *name, int *bound_n, int *representation);
+int mlx_gpu_assert_binding(const char *name, int requested_n, int *bound_n,
+                           int *representation);
+int mlx_gpu_get_role_binding_state(const char *role, int layer,
+                                   int *bound_n, int *representation);
+int mlx_gpu_assert_role_binding(const char *role, int layer, int requested_n,
+                                int *bound_n, int *representation);
+
+// Synthetic real-MLX correctness probe for the custom qNg64 single-expert path.
+// x is row-major {batch,in}; y is row-major {batch,out}.
+int mlx_gpu_qng64_batch_probe(const char *name, const float *x, int batch,
+                              float *y);
+
 // G2 registry transaction primitive. Snapshot retains the active MLX arrays so
 // rollback can restore the exact prior representation after the caller has
 // paused admission, drained requests, and synchronized GPU work.

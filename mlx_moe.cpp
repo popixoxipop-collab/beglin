@@ -16,9 +16,11 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace mx = mlx::core;
@@ -95,6 +97,174 @@ struct BindingSnapshot {
 static uint64_t g_binding_snapshot_next_id = 1;
 static std::unordered_map<uint64_t, BindingSnapshot> g_binding_snapshots;
 static int g_bound_count = 0;
+
+// P8 reconciliation: canonical evidence view of the same three maps used by
+// runtime dispatch. Representation numbering is local to the P8 evidence ABI
+// and intentionally does not change mlx_gpu_binding_kind().
+static int beglin_binding_state(const char *name, int *bound_n, int *representation) {
+    if (bound_n) *bound_n = -1;
+    if (representation) *representation = MLX_GPU_BINDING_NONE;
+    if (!name || !name[0]) return 0;
+
+    auto qng = g_qng64_tensors.find(name);
+    if (qng != g_qng64_tensors.end()) {
+        if (bound_n) *bound_n = qng->second.n;
+        if (representation) *representation = MLX_GPU_BINDING_QNG64;
+        return 1;
+    }
+    auto quant = g_tensors.find(name);
+    if (quant != g_tensors.end()) {
+        if (bound_n) *bound_n = quant->second.bits;
+        if (representation) *representation = MLX_GPU_BINDING_NATIVE_QUANT;
+        return 1;
+    }
+    auto dense = g_dtensors.find(name);
+    if (dense != g_dtensors.end()) {
+        if (bound_n) *bound_n = dense->second.bits;
+        if (representation) *representation = MLX_GPU_BINDING_DENSE;
+        return 1;
+    }
+    return 0;
+}
+
+int mlx_gpu_get_binding_state(const char *name, int *bound_n, int *representation) {
+    return beglin_binding_state(name, bound_n, representation);
+}
+
+int mlx_gpu_assert_binding(const char *name, int requested_n, int *bound_n,
+                           int *representation) {
+    int observed_n = -1;
+    int observed_representation = MLX_GPU_BINDING_NONE;
+    const int present = beglin_binding_state(name, &observed_n, &observed_representation);
+    if (bound_n) *bound_n = observed_n;
+    if (representation) *representation = observed_representation;
+    if (!present) return 0;
+    return observed_n == requested_n ? 1 : 0;
+}
+
+static int beglin_role_tensor_name(const char *role, int layer,
+                                   char *out, size_t out_size) {
+    if (!role || !role[0] || layer < 0 || !out || out_size == 0) return 0;
+    const char *suffix = nullptr;
+    if (std::strcmp(role, "q_proj") == 0) suffix = "self_attn.q_proj";
+    else if (std::strcmp(role, "kv_a_proj_with_mqa") == 0) suffix = "self_attn.kv_a_proj_with_mqa";
+    else if (std::strcmp(role, "kv_b_proj") == 0) suffix = "self_attn.kv_b_proj";
+    else if (std::strcmp(role, "o_proj") == 0) suffix = "self_attn.o_proj";
+    else if (std::strcmp(role, "shared_gate_proj") == 0) suffix = "mlp.shared_experts.gate_proj";
+    else if (std::strcmp(role, "shared_up_proj") == 0) suffix = "mlp.shared_experts.up_proj";
+    else if (std::strcmp(role, "shared_down_proj") == 0) suffix = "mlp.shared_experts.down_proj";
+    else return 0;
+    const int written = std::snprintf(out, out_size, "model.layers.%d.%s", layer, suffix);
+    return written > 0 && (size_t)written < out_size;
+}
+
+int mlx_gpu_get_role_binding_state(const char *role, int layer,
+                                   int *bound_n, int *representation) {
+    char name[192];
+    if (!beglin_role_tensor_name(role, layer, name, sizeof name)) {
+        if (bound_n) *bound_n = -1;
+        if (representation) *representation = MLX_GPU_BINDING_NONE;
+        return 0;
+    }
+    return beglin_binding_state(name, bound_n, representation);
+}
+
+int mlx_gpu_assert_role_binding(const char *role, int layer, int requested_n,
+                                int *bound_n, int *representation) {
+    char name[192];
+    if (!beglin_role_tensor_name(role, layer, name, sizeof name)) {
+        if (bound_n) *bound_n = -1;
+        if (representation) *representation = MLX_GPU_BINDING_NONE;
+        return 0;
+    }
+    return mlx_gpu_assert_binding(name, requested_n, bound_n, representation);
+}
+
+static bool beglin_instrumentation_hex64(const char *s) {
+    if (!s || std::strlen(s) != 64) return false;
+    for (int i = 0; i < 64; i++) {
+        const char c = s[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+    }
+    return true;
+}
+
+static const char *beglin_instrumentation_role(const char *name, int *layer_out) {
+    int layer = -1;
+    if (!name || std::sscanf(name, "model.layers.%d.", &layer) != 1 || layer < 0) return nullptr;
+    char expected[192];
+    std::snprintf(expected, sizeof expected, "model.layers.%d.self_attn.kv_a_proj_with_mqa", layer);
+    if (std::strcmp(name, expected) == 0) { *layer_out = layer; return "kv_a_proj_with_mqa"; }
+    std::snprintf(expected, sizeof expected, "model.layers.%d.self_attn.kv_b_proj", layer);
+    if (std::strcmp(name, expected) == 0) { *layer_out = layer; return "kv_b_proj"; }
+    std::snprintf(expected, sizeof expected, "model.layers.%d.mlp.shared_experts.gate_proj", layer);
+    if (std::strcmp(name, expected) == 0) { *layer_out = layer; return "shared_gate_proj"; }
+    std::snprintf(expected, sizeof expected, "model.layers.%d.mlp.shared_experts.up_proj", layer);
+    if (std::strcmp(name, expected) == 0) { *layer_out = layer; return "shared_up_proj"; }
+    std::snprintf(expected, sizeof expected, "model.layers.%d.mlp.shared_experts.down_proj", layer);
+    if (std::strcmp(name, expected) == 0) { *layer_out = layer; return "shared_down_proj"; }
+    return nullptr;
+}
+
+static void beglin_emit_activation_summary_once(const char *name, const mx::array &x) {
+    const char *enabled = std::getenv("BEGLIN_INSTRUMENTATION_V2");
+    if (!enabled || std::strcmp(enabled, "1") != 0) return;
+    static bool config_error_reported = false;
+    const char *target_role = std::getenv("BEGLIN_INSTRUMENTATION_ROLE");
+    const char *target_layer_raw = std::getenv("BEGLIN_INSTRUMENTATION_LAYER");
+    const char *policy_hash = std::getenv("BEGLIN_INSTRUMENTATION_POLICY_HASH");
+    const char *weight_epoch_raw = std::getenv("BEGLIN_INSTRUMENTATION_WEIGHT_EPOCH");
+    char *layer_end = nullptr;
+    char *epoch_end = nullptr;
+    long target_layer = target_layer_raw ? std::strtol(target_layer_raw, &layer_end, 10) : -1;
+    long weight_epoch = weight_epoch_raw ? std::strtol(weight_epoch_raw, &epoch_end, 10) : -1;
+    const bool config_ok =
+        target_role && target_role[0] &&
+        target_layer_raw && layer_end && *layer_end == '\0' && target_layer >= 0 &&
+        beglin_instrumentation_hex64(policy_hash) &&
+        weight_epoch_raw && epoch_end && *epoch_end == '\0' && weight_epoch >= 0;
+    if (!config_ok) {
+        if (!config_error_reported) {
+            std::fprintf(stderr, "BEGLIN_INSTRUMENTATION_V2_ERROR reason=missing_or_invalid_identity_env\n");
+            config_error_reported = true;
+        }
+        return;
+    }
+    int layer = -1;
+    const char *role = beglin_instrumentation_role(name, &layer);
+    if (!role || std::strcmp(role, target_role) != 0 || layer != target_layer) return;
+    int n = -1;
+    int representation = MLX_GPU_BINDING_NONE;
+    if (!beglin_binding_state(name, &n, &representation)) return;
+    if (n < 2 || n > 32) return;
+    static std::unordered_set<std::string> emitted;
+    const std::string key = std::string(name) + "#n=" + std::to_string(n);
+    if (emitted.count(key)) return;
+    mx::eval(x);
+    size_t count = 1;
+    for (int dim : x.shape()) count *= (size_t)dim;
+    if (count == 0) return;
+    const float *values = x.data<float>();
+    double sum_abs = 0.0;
+    double sum_sq = 0.0;
+    for (size_t i = 0; i < count; i++) {
+        const double v = (double)values[i];
+        sum_abs += std::fabs(v);
+        sum_sq += v * v;
+    }
+    const double mean_abs = sum_abs / (double)count;
+    const double rms = std::sqrt(sum_sq / (double)count);
+    std::fprintf(stderr,
+        "BEGLIN_INSTRUMENTATION_V2 kind=activation role=%s layer=%d n=%d "
+        "sample_count=%zu policy_hash=%s weight_epoch=%ld mean_abs=%.9g rms=%.9g "
+        "binding_present=1 binding_representation=%d\n",
+        role, layer, n, count, policy_hash, weight_epoch, mean_abs, rms, representation);
+    std::fprintf(stderr,
+        "BEGLIN_POLICY_BINDING_V1 role=%s layer=%d bound_n=%d representation=%d "
+        "policy_hash=%s weight_epoch=%ld applied=1\n",
+        role, layer, n, representation, policy_hash, weight_epoch);
+    emitted.insert(key);
+}
 
 static void noop_deleter(void *) {
     // Data is owned by qwen_infer.c's mmap of the AF blob (or, for
@@ -1608,6 +1778,24 @@ static mx::array qng64_gemv_e0(const char *name, const mx::array &x) {
     return outputs[0];
 }
 
+int mlx_gpu_qng64_batch_probe(const char *name, const float *x, int batch,
+                              float *y) {
+    if (!name || !x || !y || batch <= 0) return 0;
+    auto it = g_qng64_tensors.find(name);
+    if (it == g_qng64_tensors.end()) return 0;
+    QNg64Tensor &t = it->second;
+    try {
+        mx::array xin((void *)x, {batch, (int)t.in}, mx::float32, noop_deleter);
+        mx::array yout = qng64_gemv_e0(name, xin);
+        mx::eval(yout);
+        std::memcpy(y, yout.data<float>(),
+                    sizeof(float) * (size_t)batch * (size_t)t.out);
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
 // D-metal-7: routed-FFN counterpart to qng64_gemv_e0() above -- same decode logic, extended
 // to a 3D grid (z = explicit (row,expert) pair index) so ffn_gather()'s new branch can serve
 // real top-K-routed MoE FFN calls, not just the single-expert attention-role scope
@@ -1761,6 +1949,7 @@ int mlx_gpu_qng64_gather_probe(const uint8_t *planes, long E, long out, long in,
 }
 
 static mx::array lazy_matvec_e0(const char *name, const mx::array &x) {
+    beglin_emit_activation_summary_once(name, x);
     // D-gpu-4: bits threaded from the tensor's own record. NOTE (D-gpu-5 scope): this
     // function does not yet check g_dtensors -- a shared/dense role promoted to
     // bits=16/32 would throw here (g_tensors.at() on a name that only exists in
