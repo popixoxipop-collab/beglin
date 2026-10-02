@@ -1,0 +1,63 @@
+{
+  "schema": "beglin-production-adapter-bridge-input/1",
+  "measured_capture_sha256": "caec06441a9fab41fd0f98cb8fc027931671903b001e28561e94d4dd82d4ab2f",
+  "proposal": {
+    "architecture": "mla",
+    "backend": "mlx_metal",
+    "baseline_policy_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "binary_sha256": "6e6258d6d4e402033c303c8c4b622db5a088354a0de79e687eb0fad4190c4392",
+    "budget": {
+      "max_duration_ms": 30000,
+      "max_memory_bytes": 7890145280,
+      "max_requests": 18,
+      "max_tokens": 256
+    },
+    "candidate_policy_hash": "0e048b8c5c50a1c005ea573caadd6ccdf99797c24b9c443e993fe0d7b0b27141",
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "environment_id": "xox-vdsp-gpu-precision",
+    "evidence_refs": [
+      {
+        "kind": "G4_A_B_R",
+        "run_id": "f-20261002T091915Z-32080",
+        "sha256": "d3a814ccd685cb4bdb2bdad6e0c7561b3ba54b123ed32395168227846c162b9e"
+      },
+      {
+        "kind": "G6_RESTART_CANARY",
+        "run_id": "f-20261002T091915Z-32080",
+        "sha256": "f06a9b6b537f7db317421ab5a6922e1c3c239c9a9f975324e2480501ba5829ee"
+      }
+    ],
+    "expected_epoch": 0,
+    "kill_switch_scope": "single-target",
+    "mode": "dry_run",
+    "model_revision": "deepseek-v2-lite",
+    "production_write_allowed": false,
+    "proposal_id": "beglin-shared-up-l3-n6-20261002",
+    "proposer": "A0-planner",
+    "restart_instance_id": "pid-59196",
+    "rollback_plan": "restore exact runtime baseline preimage",
+    "schema": "manual-canary-proposal-v1",
+    "single_target": {
+      "after_n": 6,
+      "before_n": null,
+      "layer": 3,
+      "role": "shared_up_proj"
+    },
+    "source_commit": "330954b27f146b8a17db2cb353c3e620968bad5e"
+  },
+  "runtime_preimage": {
+    "active_policy": [],
+    "active_policy_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "weight_epoch": 0,
+    "ack_sha256": "67365f4df26d895b05a683f0f63e1f26808bf849a3d4274a2f3b6159cd868c8d",
+    "worker_instance_id": "pid-59196"
+  },
+  "candidate_policy": [
+    {
+      "role": "shared_up_proj",
+      "layer": 3,
+      "n": 6
+    }
+  ],
+  "github_seal_path": "attestations/BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json"
+}
