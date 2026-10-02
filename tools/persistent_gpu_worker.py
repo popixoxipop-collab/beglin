@@ -163,6 +163,12 @@ class PersistentGpuWorker:
                 except Exception:
                     pass
         finally:
+            for stream in (proc.stdin, proc.stdout, proc.stderr):
+                try:
+                    if stream is not None:
+                        stream.close()
+                except Exception:
+                    pass
             self._proc=None
 
 
