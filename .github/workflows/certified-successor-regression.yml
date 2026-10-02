@@ -10,6 +10,8 @@ on:
       - "tools/manual_canary_*.py"
       - "tools/test_manual_canary*.py"
       - "docs/MANUAL_CANARY*.md"
+      - "tools/agent_f_gpu_coverage_xox.py"
+      - "tools/test_agent_f_gpu_coverage_xox.py"
   workflow_dispatch:
 
 permissions:
@@ -41,7 +43,9 @@ jobs:
             tools/manual_canary_signature.py \
             tools/manual_canary_production_intent.py \
             tools/manual_canary_proposal_materializer.py \
-            tools/test_manual_canary_proposal_materializer.py
+            tools/test_manual_canary_proposal_materializer.py \
+            tools/agent_f_gpu_coverage_xox.py \
+            tools/test_agent_f_gpu_coverage_xox.py
       - name: Precision v3 tests
         env:
           PYTHONPATH: tools
