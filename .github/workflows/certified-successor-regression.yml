@@ -25,6 +25,12 @@ on:
       - ".github/workflows/production-routing-cutover-gate.yml"
       - "docs/PRODUCTION_ROUTING_CUTOVER_GATE.md"
       - "tools/production_serving_supervisor*.py"
+      - "supabase_migration_lock_down_beglin_data_api.sql"
+      - "supabase_migration_precision_context_v3.sql"
+      - "tools/test_precision_evidence_v3.py"
+      - "tools/precision_evidence_v3.py"
+      - "tools/test_gpu_autopilot_v3_persistence.py"
+      - "tools/gpu_autopilot.py"
       - "tools/test_production_serving_supervisor*.py"
       - "tools/production_serving_cutover_xox*.py"
       - "tools/test_production_serving_cutover_xox*.py"
@@ -59,6 +65,7 @@ jobs:
             tools/precision_planner_v3.py \
             tools/autopilot_preflight_v3.py \
             tools/precision_evidence_v3.py \
+            tools/gpu_autopilot.py \
             tools/gpu_runtime_control.py \
             tools/manual_canary_contract.py \
             tools/manual_canary_controller.py \
@@ -83,6 +90,7 @@ jobs:
           PYTHONPATH: tools
         run: |
           python tools/test_precision_evidence_v3.py
+          python tools/test_gpu_autopilot_v3_persistence.py
           python tools/test_precision_planner_v3.py
           python tools/test_precision_control_state.py
           python tools/test_precision_transactions.py
