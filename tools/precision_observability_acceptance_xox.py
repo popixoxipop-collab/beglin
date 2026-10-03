@@ -109,6 +109,10 @@ def main():
             [(prompt,10)],signal={},admission_id="p6-hold-b")
         restored=worker.submit_with_precision_policy(
             [(prompt,10)],target_policy=A,admission_id="p6-restore-a")
+        adaptive=worker.submit([(prompt,10)])
+        adaptive_health=worker.health()
+        final_restore=worker.submit_with_precision_policy(
+            [(prompt,10)],target_policy=A,admission_id="p6-final-restore-a")
         final_health=worker.health()
         summary=worker.precision_observability.summary()
         records=worker.precision_observability.read_records()
@@ -119,37 +123,61 @@ def main():
             risk.get("precision_observability",{}).get("status"),
             hold.get("precision_observability",{}).get("status"),
             restored.get("precision_observability",{}).get("status"),
+            adaptive.get("precision_observability",{}).get("status"),
+            final_restore.get("precision_observability",{}).get("status"),
         ]
+        adaptive_policy=pc.policy_hash([
+            {"role":"shared_up_proj","layer":3,"n":6},
+            {"role":"shared_down_proj","layer":26,"n":6},
+        ])
         expected_residency={
-            "shared_down_proj/L26/n5":2,
-            "shared_down_proj/L26/n6":2,
+            "shared_down_proj/L26/n5":3,
+            "shared_down_proj/L26/n6":3,
             "shared_up_proj/L3/n5":2,
-            "shared_up_proj/L3/n6":2,
+            "shared_up_proj/L3/n6":4,
+        }
+        expected_policy_residency={AH:3,BH:2,adaptive_policy:1}
+        expected_transitions={
+            "shared_down_proj/L26:5->6":2,
+            "shared_down_proj/L26:6->5":2,
+            "shared_up_proj/L3:5->6":1,
+            "shared_up_proj/L3:6->5":1,
         }
         ok=(
-            record_status==["RECORDED","RECORDED","RECORDED","RECORDED"]
-            and summary["admissions"]==4
-            and summary["requests"]==4
-            and summary["trigger_counts"]=={"low_margin":1}
-            and summary["triggered_admissions"]==1
-            and summary["transitioned_admissions"]==2
+            record_status==["RECORDED"]*6
+            and summary["admissions"]==6
+            and summary["requests"]==6
+            and summary["trigger_counts"]=={"low_margin":2}
+            and summary["triggered_admissions"]==2
+            and abs(summary["trigger_rate"]-(2.0/6.0))<1e-12
+            and summary["transitioned_admissions"]==4
+            and summary["target_transition_counts"]==expected_transitions
             and summary["cache_misses"]==2
-            and summary["cache_hits"]==2
-            and summary["cache_hit_rate"]==0.5
+            and summary["cache_hits"]==4
+            and abs(summary["cache_hit_rate"]-(4.0/6.0))<1e-12
             and summary["cache_bytes_added"]>0
-            and summary["inference_pass_histogram"]=={"1":4}
-            and summary["extra_pass_rate"]==0.0
+            and summary["inference_pass_histogram"]=={"1":5,"2":1}
+            and abs(summary["extra_pass_rate"]-(1.0/6.0))<1e-12
             and summary["finite_logits_rate"]==1.0
-            and summary["policy_residency_admissions"]=={AH:2,BH:2}
+            and summary["policy_residency_admissions"]==expected_policy_residency
             and summary["precision_residency_admissions"]==expected_residency
+            and summary["evidence_use_counts"]=={
+                "adaptive-l26-certified":1,
+                "xox-l26-production-low-margin":1,
+            }
             and summary["expected_e2e_ms_mean"] is not None
             and summary["actual_roundtrip_ms_mean"]>0
             and summary["lineage_head_sha256"]==records[-1]["record_sha256"]
             and records[0]["prev_record_sha256"] is None
-            and records[1]["prev_record_sha256"]==records[0]["record_sha256"]
-            and records[2]["prev_record_sha256"]==records[1]["record_sha256"]
-            and records[3]["prev_record_sha256"]==records[2]["record_sha256"]
+            and all(
+                records[i]["prev_record_sha256"]==records[i-1]["record_sha256"]
+                for i in range(1,len(records))
+            )
             and risk["responses"][0][8]==1224
+            and adaptive["responses"][0][8]==1224
+            and adaptive.get("inference_passes")==2
+            and (adaptive.get("adaptive_precision") or {}).get("action")=="RECOVERY_N6"
+            and adaptive_health["runtime_policy_hash"]==adaptive_policy
             and final_health["runtime_policy_hash"]==AH
             and final_health["pid"]==pid
         )
@@ -166,7 +194,11 @@ def main():
             "snapshot_path":str(snapshot),
             "snapshot_sha256":sha(snapshot),
             "risk_token8":risk["responses"][0][8],
+            "adaptive_token8":adaptive["responses"][0][8],
+            "adaptive_inference_passes":adaptive.get("inference_passes"),
+            "adaptive_observability":adaptive.get("precision_observability"),
             "restore_epoch":restored["precision_epoch"],
+            "final_restore_epoch":final_restore["precision_epoch"],
             "final_health":final_health,
         })
     finally:
