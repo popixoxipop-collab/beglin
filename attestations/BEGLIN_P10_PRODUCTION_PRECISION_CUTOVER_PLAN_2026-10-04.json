@@ -1,0 +1,58 @@
+{
+  "automatic_live_promotion": false,
+  "canary_pass_sha256": "37c7ab8d51eb6fde98ffcda3859939c284c2a3378f726ad7a76850dda05fa9c7",
+  "candidate": {
+    "expected_epoch_after": 9,
+    "expected_reference_tokens": [55222, 1],
+    "finite_logits_required": true,
+    "policy": [
+      {"layer": 3, "n": 5, "role": "shared_up_proj"},
+      {"layer": 26, "n": 5, "role": "shared_down_proj"}
+    ],
+    "policy_hash": "b58064ae93c3550c5ca5fccab83c9976268370d559b8602f3d91772cb9ac82bd"
+  },
+  "execution_contract": {
+    "approval_status_required": "VERIFIED_GITHUB_OIDC",
+    "external_network_exposure_allowed": false,
+    "rollback_on_any_failed_postcondition": true,
+    "same_route_generation_required": true,
+    "same_route_manifest_required": true,
+    "same_worker_pid_required": true,
+    "single_target_only": true,
+    "stale_preimage_rejected": true,
+    "trusted_approval_required": true
+  },
+  "execution_enabled": false,
+  "expected_preimage": {
+    "ack_sha256": "bfbaa5bb91e30946b1034785ab1520abb76bf9c98c10b1b0305a6ef28dfd0681",
+    "policy": [
+      {"layer": 3, "n": 6, "role": "shared_up_proj"},
+      {"layer": 26, "n": 5, "role": "shared_down_proj"}
+    ],
+    "policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+    "route_generation": 6,
+    "route_manifest_sha256": "c2bf7eed2788e115af0c0cb3316fceb061000013b2bfcf57710f66d291ff4221",
+    "weight_epoch": 8,
+    "worker_pid": 35493
+  },
+  "p10_result_sha256": "9c9c809097d18d735855f09bd85016272a319087501d160873f52985669f2fff",
+  "p9_bundle_sha256": "4369437169ff410aa57d1a31699a7a6f19e44f88f82160b4f4f6c79105ad70ba",
+  "plan_sha256": "43b7bbfb659639cf442bc97b5e328d2ec8d25ddb97e3179a646224f738e81443",
+  "preimage_sha256": "4dca9b7ac12c387df07573f740a2dac06c0e20df3963afe14abcbdd8a9522e7c",
+  "production_cutover_allowed": false,
+  "production_write_allowed": false,
+  "raw_token_sha256": "9a0dfec8bb5d047acb340a7d61fa2467624f2f2b5b95398e2a3d60211357aab7",
+  "rollback": {
+    "expected_reference_tokens": [55222, 372],
+    "policy": [
+      {"layer": 3, "n": 6, "role": "shared_up_proj"},
+      {"layer": 26, "n": 5, "role": "shared_down_proj"}
+    ],
+    "policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+    "restore_exact_preimage_policy": true
+  },
+  "rollback_drill_sha256": "e79f88ad158919ae1161ab421323c3ddf77d976d0f6bb623541b83cb29cfdf33",
+  "schema": "beglin-p10-production-precision-cutover-plan-v1",
+  "status": "AWAITING_TRUSTED_PRODUCTION_APPROVAL",
+  "target": {"after_n": 5, "before_n": 6, "layer": 3, "role": "shared_up_proj"}
+}
