@@ -128,6 +128,28 @@ class P11GateTests(unittest.TestCase):
                 p10_evidence=evidence,
             )
 
+    def test_capture_timestamp_does_not_change_preimage_identity(self):
+        first = self.build()
+        health, manifest, ack, evidence = self.fixture()
+        second = p11.build_preimage(
+            captured_at="2026-10-03T17:31:00Z",
+            health=health,
+            manifest=manifest,
+            manifest_file_sha256="9" * 64,
+            ack=ack,
+            ack_file_sha256="a" * 64,
+            txn_text="REBIND txn-1 7 6 5 shared_down_proj 26 deadbeef",
+            txn_file_sha256="b" * 64,
+            persistent_binary_sha256="c" * 64,
+            p10_evidence=evidence,
+        )
+        self.assertNotEqual(first["captured_at"], second["captured_at"])
+        self.assertEqual(first["preimage_sha256"], second["preimage_sha256"])
+        self.assertEqual(
+            p11.build_plan(first, executor_source_sha256="d" * 64, production_binary_rebind_compat_sha256="e" * 64)["cutover_plan_sha256"],
+            p11.build_plan(second, executor_source_sha256="d" * 64, production_binary_rebind_compat_sha256="e" * 64)["cutover_plan_sha256"],
+        )
+
     def test_approval_request_does_not_enable_cutover(self):
         plan = p11.build_plan(self.build(), executor_source_sha256="d" * 64, production_binary_rebind_compat_sha256="e" * 64)
         req = p11.build_approval_request(plan)

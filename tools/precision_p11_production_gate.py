@@ -47,6 +47,14 @@ def require_sha(name: str, value: Any) -> str:
     return out
 
 
+def preimage_identity_payload(value: Mapping[str, Any]) -> dict:
+    """Return the stable live-state identity; observation time is metadata only."""
+    out = dict(value)
+    out.pop("preimage_sha256", None)
+    out.pop("captured_at", None)
+    return out
+
+
 def validate_p10(result: Mapping[str, Any], result_sha256: str) -> dict:
     if require_sha("p10 result", result_sha256) != P10_RESULT_SHA256:
         raise P11Error("unexpected P10 result sha256")
@@ -179,7 +187,7 @@ def build_preimage(
         },
         "p10_evidence": dict(p10_evidence),
     }
-    preimage["preimage_sha256"] = sha256_json(preimage)
+    preimage["preimage_sha256"] = sha256_json(preimage_identity_payload(preimage))
     return preimage
 
 
@@ -189,10 +197,9 @@ def build_plan(
 ) -> dict:
     if preimage.get("schema") != PREIMAGE_SCHEMA:
         raise P11Error("unexpected preimage schema")
-    check = dict(preimage)
-    expected_preimage_sha = check.pop("preimage_sha256", None)
-    if require_sha("preimage", expected_preimage_sha) != sha256_json(check):
-        raise P11Error("preimage self-hash mismatch")
+    expected_preimage_sha = preimage.get("preimage_sha256")
+    if require_sha("preimage", expected_preimage_sha) != sha256_json(preimage_identity_payload(preimage)):
+        raise P11Error("preimage identity hash mismatch")
     worker = preimage["worker"]
     p10 = preimage["p10_evidence"]
     executor_source_sha256 = require_sha("executor source", executor_source_sha256)
