@@ -14,7 +14,7 @@
       "type": "array"
     },
     "schema": {
-      "type": "string"
+      "const": "beglin-quant-capability-v1"
     }
   },
   "required": [
