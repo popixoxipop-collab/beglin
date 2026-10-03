@@ -24,6 +24,7 @@ const REQUIRED_ARCHIVE_FILES = [
   "gguf_write_quants.c",
   "gguf_write_quants.h",
   "tools/model_capability.py",
+  "tools/precision_context.py",
   "tools/backend_adapters_v2.py",
   "tools/inspect_model.py",
   "tools/p12_pipeline_bridge.py",
