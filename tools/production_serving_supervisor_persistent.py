@@ -195,6 +195,14 @@ def _load_precision_epoch_scheduler():
     return _assert_local_helper(pes, "precision_epoch_scheduler")
 
 
+def _load_precision_closed_loop():
+    tools = _runtime_tools_path()
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import precision_closed_loop as pcl
+    return _assert_local_helper(pcl, "precision_closed_loop")
+
+
 def _read_runtime_ack(path: Path) -> dict:
     return _load_gpu_runtime_control().read_runtime_ack(path)
 
@@ -328,6 +336,7 @@ class PersistentRouteWorker:
         self.ack: dict | None = None
         self.lock = threading.RLock()
         self.precision_epoch_scheduler = None
+        self.precision_closed_loop_engine = None
 
     @property
     def route_id(self) -> str:
@@ -453,6 +462,11 @@ class PersistentRouteWorker:
                 "max_atomic_targets": 8,
                 "hot_policy_shape_change": False,
             },
+            "precision_closed_loop": {
+                "available": True,
+                "configured": self.precision_closed_loop_engine is not None,
+                "production_write_allowed": False,
+            },
         }
 
     def _epoch_scheduler(self):
@@ -465,6 +479,90 @@ class PersistentRouteWorker:
                 admission_lock=self.lock,
             )
         return self.precision_epoch_scheduler
+
+    def configure_precision_closed_loop(
+        self,
+        *,
+        candidates: list[dict],
+        trigger_evidence: list[dict],
+        combined_policy_evidence: list[dict],
+        memory_weight: float = 1.0,
+        latency_weight: float = 0.0,
+        rss_weight: float = 0.0,
+    ) -> dict:
+        pcl = _load_precision_closed_loop()
+        with self.lock:
+            self.precision_closed_loop_engine = pcl.PrecisionClosedLoopEngine(
+                candidates=candidates,
+                trigger_evidence=trigger_evidence,
+                combined_policy_evidence=combined_policy_evidence,
+                memory_weight=memory_weight,
+                latency_weight=latency_weight,
+                rss_weight=rss_weight,
+            )
+            return {
+                "schema": "beglin-precision-closed-loop-config-v1",
+                "status": "CONFIGURED",
+                "evidence_snapshot_sha256": (
+                    self.precision_closed_loop_engine.snapshot_sha256
+                ),
+                "production_write_allowed": False,
+            }
+
+    def submit_with_closed_loop_precision(
+        self,
+        parsed: list[tuple[list[int], int]],
+        *,
+        signal: dict,
+        admission_id: str | None = None,
+    ) -> dict:
+        """Allocate, select and apply one exact precision policy for admission."""
+        with self.lock:
+            engine = self.precision_closed_loop_engine
+            if engine is None:
+                raise PersistentSupervisorError(
+                    "precision closed-loop engine is not configured"
+                )
+            before = _read_runtime_ack(self.ack_path)
+            decision = engine.decide(
+                current_policy=before["active_policy"],
+                signal=signal,
+            )
+            result = self._epoch_scheduler().run(
+                parsed,
+                target_policy=decision["selected_policy"],
+                admission_id=admission_id,
+            )
+            epoch = result.get("precision_epoch") or {}
+            if epoch.get("before_policy_hash") != decision["current_policy_hash"]:
+                raise PersistentSupervisorError(
+                    "closed-loop scheduler preimage differs from decision preimage"
+                )
+            if epoch.get("after_policy_hash") != decision["selected_policy_hash"]:
+                raise PersistentSupervisorError(
+                    "closed-loop scheduler result differs from selected policy"
+                )
+            self.ack = _read_runtime_ack(self.ack_path)
+            out = dict(result)
+            out["precision_closed_loop"] = {
+                "schema": decision["schema"],
+                "status": decision["status"],
+                "evidence_snapshot_sha256": decision[
+                    "evidence_snapshot_sha256"
+                ],
+                "allocation_sha256": decision["allocation_sha256"],
+                "selection_sha256": decision["selection_sha256"],
+                "current_policy_hash": decision["current_policy_hash"],
+                "selected_policy_hash": decision["selected_policy_hash"],
+                "selected_policy": decision["selected_policy"],
+                "changes": decision["changes"],
+                "combined_policy_evidence": decision[
+                    "combined_policy_evidence"
+                ],
+                "signal": decision["signal"],
+                "production_write_allowed": False,
+            }
+            return out
 
     def submit_with_precision_policy(
         self,
