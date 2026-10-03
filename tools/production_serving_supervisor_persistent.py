@@ -50,6 +50,9 @@ ADAPTIVE_L26_MARGIN_MAX = 0.02
 ADAPTIVE_L26_EVIDENCE_SHA256 = "de976ab12283673a8cf97638be9cf0b5c8f7ab3df2a0db87d4be96d9e67f6075"
 ADAPTIVE_L26_REBIND_EVIDENCE_SHA256 = "de976ab12283673a8cf97638be9cf0b5c8f7ab3df2a0db87d4be96d9e67f6075"
 ADAPTIVE_L26_STARTUP_POLICY_SHA256 = "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1"
+ADAPTIVE_L26_ACCEPTANCE_EVIDENCE = Path("/Users/xox/vdsp_serving/adaptive-isolated-final-48a7872-20261003/result.json")
+ADAPTIVE_L26_ACCEPTANCE_SHA256 = "dc95591d79698369dd93903d6bf39bd0d66afaaf24300f708c4bbe3c5912792c"
+ADAPTIVE_L26_ACCEPTANCE_SOURCE = "48a7872a9c837138a1556cfa3011459fcf47c530"
 LAUNCHD_PROCESS_TYPE = "Interactive"
 
 
@@ -87,6 +90,68 @@ def verify_persistent_artifact() -> dict:
         "binary_sha256": binary_sha,
         "source_head": EXPECTED_PERSISTENT_SOURCE_SHA,
         "probe": probe,
+    }
+
+
+def verify_adaptive_l26_acceptance() -> dict:
+    path = ADAPTIVE_L26_ACCEPTANCE_EVIDENCE
+    if not path.is_file():
+        raise PersistentSupervisorError(f"adaptive L26 acceptance evidence missing: {path}")
+    actual_sha = base._sha256_file(path)
+    if actual_sha != ADAPTIVE_L26_ACCEPTANCE_SHA256:
+        raise PersistentSupervisorError(
+            "adaptive L26 acceptance evidence SHA mismatch: "
+            f"expected={ADAPTIVE_L26_ACCEPTANCE_SHA256} actual={actual_sha}"
+        )
+    try:
+        evidence = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersistentSupervisorError("adaptive L26 acceptance evidence is unreadable") from exc
+    required = {
+        "schema": "beglin-adaptive-isolated-final/1",
+        "status": "PASS",
+        "source_head": ADAPTIVE_L26_ACCEPTANCE_SOURCE,
+        "binary_sha256": EXPECTED_PERSISTENT_BINARY_SHA,
+        "adaptive_evidence_sha256": ADAPTIVE_L26_EVIDENCE_SHA256,
+        "adaptive_startup_policy_sha256": ADAPTIVE_L26_STARTUP_POLICY_SHA256,
+        "production_route_touched": False,
+    }
+    for key, expected in required.items():
+        if evidence.get(key) != expected:
+            raise PersistentSupervisorError(
+                f"adaptive L26 acceptance evidence field mismatch: {key}"
+            )
+    rows = evidence.get("requests")
+    if not isinstance(rows, list) or len(rows) < 2:
+        raise PersistentSupervisorError("adaptive L26 acceptance requires two verified requests")
+    pids = set()
+    for idx, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise PersistentSupervisorError("adaptive L26 acceptance request row is invalid")
+        try:
+            pids.add(int(row["pid"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PersistentSupervisorError("adaptive L26 acceptance PID is invalid") from exc
+        if row.get("finite_logits") is not True or int(row.get("token8", -1)) != 1224:
+            raise PersistentSupervisorError("adaptive L26 acceptance output mismatch")
+        if row.get("action") != "RECOVERY_N6" or row.get("trigger_request_indices") != [0]:
+            raise PersistentSupervisorError("adaptive L26 acceptance recovery contract mismatch")
+        if int(row.get("worker_left_at_n", -1)) != ADAPTIVE_L26_RECOVERY_N:
+            raise PersistentSupervisorError("adaptive L26 acceptance terminal precision mismatch")
+        base_events = row.get("base_events")
+        if not isinstance(base_events, list) or not base_events:
+            raise PersistentSupervisorError("adaptive L26 acceptance trigger evidence missing")
+        if any(float(event.get("margin", 1.0)) > ADAPTIVE_L26_MARGIN_MAX for event in base_events):
+            raise PersistentSupervisorError("adaptive L26 acceptance margin exceeds certified bucket")
+        if idx > 0 and row.get("restored_from_n6") is not True:
+            raise PersistentSupervisorError("adaptive L26 acceptance did not prove n6->n5 restore")
+    if len(pids) != 1:
+        raise PersistentSupervisorError("adaptive L26 acceptance did not prove same-PID reuse")
+    return {
+        "path": str(path),
+        "sha256": actual_sha,
+        "worker_pid": next(iter(pids)),
+        "request_count": len(rows),
     }
 
 
@@ -890,11 +955,14 @@ def make_server(
     if host != "127.0.0.1":
         raise PersistentSupervisorError("persistent supervisor refuses non-loopback binding")
     verify_persistent_artifact()
+    adaptive_l26 = _adaptive_enabled_from_env()
+    if adaptive_l26:
+        verify_adaptive_l26_acceptance()
     manifest = Path(route_manifest)
     base.ensure_route_manifest(manifest)
     pool = PersistentWorkerPool(
         Path(persistent_root),
-        adaptive_l26=_adaptive_enabled_from_env(),
+        adaptive_l26=adaptive_l26,
     )
     pool.start_all()
     try:
