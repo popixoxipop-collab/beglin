@@ -7,6 +7,7 @@ Execution adapters can later consume these plans.
 """
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -51,12 +52,17 @@ class BackendAdapterV2:
     name = "abstract"
 
     def __init__(self, capability_bundle: Mapping[str, Any]):
-        self.bundle = dict(capability_bundle)
+        self.bundle = copy.deepcopy(dict(capability_bundle))
         if self.bundle.get("schema") != "beglin-model-capability-bundle-v1":
             raise BackendV2Error("invalid model capability bundle")
         self.bundle_sha = str(self.bundle.get("bundle_sha256") or "")
         if not self.bundle_sha:
             raise BackendV2Error("capability bundle SHA missing")
+        actual = mc.stable_identity_sha256(self.bundle)
+        if actual != self.bundle_sha:
+            raise BackendV2Error(
+                f"capability bundle hash mismatch: expected={self.bundle_sha} actual={actual}"
+            )
 
     def probe_capabilities(self) -> dict:
         rows = [
