@@ -59,3 +59,17 @@ A repeated 0.010715 request became a no-op epoch because the accepted target pol
 
 ## Production boundary
 No new HTTP API is exposed and the generic closed-loop engine is not configured in the live supervisor. Existing adaptive L26 production remains unchanged. A future cutover requires exact-source acceptance and a separate deployment gate.
+
+## Exact-source acceptance
+Implementation commit: 5cba2397e038b80a0b662d2783d587e29657fce3
+
+XOX result:
+/Users/xox/vdsp_serving/precision-closed-loop-acceptance-5cba239/result.json
+SHA-256 40aa3b263bfd3a034dd795eae1555155ebb138385f72262f5e3247a2416fa046
+
+The result is source-bound to 5cba2397e038b80a0b662d2783d587e29657fce3, reports production_touched=false, applies exact accepted policy e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae, returns token 1224, proves an unaccepted policy is blocked before inference, and restores the scratch worker to the reviewed startup policy.
+
+Certified successor regression:
+- run 37115955677
+- head 5cba2397e038b80a0b662d2783d587e29657fce3
+- conclusion SUCCESS
