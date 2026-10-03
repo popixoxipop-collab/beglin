@@ -37,6 +37,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import precision_context as pc
+import precision_evidence_v3 as ev3
 import precision_control_state as pcs
 import precision_planner_v3 as planner
 import backend_adapters as ba
@@ -58,7 +59,7 @@ def log(msg):
 def build_context(*, binary_sha256, checkpoint_sha256, model_id="deepseek-v2-lite",
                    architecture="mla", kernel_revision="unspecified"):
     return pc.ExecutionContext(
-        schema="precision-context-v1",
+        schema="precision-context-v3",
         model_id=model_id,
         architecture=architecture,
         checkpoint_sha256=checkpoint_sha256,
@@ -75,6 +76,108 @@ def build_context(*, binary_sha256, checkpoint_sha256, model_id="deepseek-v2-lit
         group_size=64,
         correction_mode="off",
     )
+
+
+def _persist_context_v3(context):
+    if not ev3.configured():
+        log("Supabase v3 evidence disabled: credentials absent")
+        return False
+    row = ev3.upsert_execution_context(context)
+    if row.get("context_hash") != context.context_hash:
+        raise AutopilotError("Supabase v3 context upsert verification mismatch")
+    log(f"Supabase v3 context persisted: {context.context_hash}")
+    return True
+
+
+def _new_v3_run_id(stage, context_hash):
+    return (
+        f"gpu-autopilot-{stage}-{context_hash[:12]}-"
+        f"{time.time_ns()}"
+    )
+
+
+def _persist_g4_v3(*, args, context, g4_result, event, reference):
+    if not ev3.configured():
+        return None
+
+    bundle = g4_result.get("evidence_bundle") or {}
+    baseline = g4_result["baseline"]
+    candidate = g4_result["candidate"]
+    baseline_run_id = _new_v3_run_id("g4-baseline", context.context_hash)
+    candidate_run_id = _new_v3_run_id("g4-candidate", context.context_hash)
+
+    def validation_row(run_id, run_kind, run, n, emitted_token, policy_hash):
+        row = {
+            "run_id": run_id,
+            "context_hash": context.context_hash,
+            "backend": context.backend,
+            "run_kind": run_kind,
+            "status": "PASS",
+            "model_id": args.model,
+            "role": args.role,
+            "layer": int(args.layer),
+            "n": n,
+            "policy_postimage_sha256": policy_hash,
+            "weight_epoch": int(run["weight_epoch"]),
+            "manifest_sha256": run.get("manifest_sha256"),
+            "req": event.get("req"),
+            "pos": int(event["pos"]),
+            "pass": True,
+            "reason": "gpu_autopilot isolated G4 replay passed",
+            "evidence_path": run.get("worker_log_path"),
+            "evidence_sha256": run.get("worker_log_sha256"),
+            "metrics": {
+                "emitted_token": int(emitted_token),
+                "reference_token": int(reference["emitted_token"]),
+                "returncode": int(run.get("returncode", 0)),
+                "ack_sha256": run.get("ack_sha256"),
+            },
+        }
+        return {k: v for k, v in row.items() if v is not None}
+
+    ev3.insert_validation_run(validation_row(
+        baseline_run_id, "baseline", baseline, None,
+        g4_result["baseline_emitted_token"],
+        g4_result["baseline_policy_hash"],
+    ))
+    ev3.insert_validation_run(validation_row(
+        candidate_run_id, "candidate", candidate, int(args.n),
+        g4_result["candidate_emitted_token"],
+        g4_result["candidate_policy_hash"],
+    ))
+
+    preflight_row = {
+        "context_hash": context.context_hash,
+        "baseline_run_id": baseline_run_id,
+        "candidate_run_id": candidate_run_id,
+        "model_id": args.model,
+        "role": args.role,
+        "layer": int(args.layer),
+        "n": int(args.n),
+        "baseline_policy_hash": g4_result["baseline_policy_hash"],
+        "requested_policy_hash": g4_result["candidate_policy_hash"],
+        "applied_policy_hash": g4_result["candidate_policy_hash"],
+        "expected_epoch": 0,
+        "observed_epoch": int(g4_result["candidate_epoch"]),
+        "pass": True,
+        "status": "PASS",
+        "reason": "isolated GPU A/B preflight matched immutable reference",
+        "emitted_token": int(g4_result["candidate_emitted_token"]),
+        "reference_token": int(g4_result["reference_emitted_token"]),
+        "evidence_sha256": bundle.get("verdict_payload_sha256"),
+    }
+    persisted = ev3.insert_live_preflight({
+        k: v for k, v in preflight_row.items() if v is not None
+    })
+    log(
+        "Supabase v3 G4 evidence persisted: "
+        f"baseline={baseline_run_id} candidate={candidate_run_id}"
+    )
+    return {
+        "baseline_run_id": baseline_run_id,
+        "candidate_run_id": candidate_run_id,
+        "preflight_id": persisted.get("id"),
+    }
 
 
 def run_worker(binary, cwd, moe_base, safetensors, manifest, run_dir,
@@ -226,6 +329,7 @@ def run_candidate(args):
     )
     context_hash = context.context_hash
     log(f"context_hash={context_hash}")
+    _persist_context_v3(context)
 
     root = args.control_root
     os.makedirs(root, exist_ok=True)
@@ -267,6 +371,13 @@ def run_candidate(args):
 
     planner_evidence = preflight.to_planner_evidence(
         g4_result, context_hash=context_hash, expected_epoch=0,
+    )
+    _persist_g4_v3(
+        args=args,
+        context=context,
+        g4_result=g4_result,
+        event=event,
+        reference=reference,
     )
 
     # ---- admission: the REAL planner decides, not a hand-built dict ----
