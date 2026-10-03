@@ -87,6 +87,44 @@ def _expected_cost(decision: dict) -> dict | None:
     return None
 
 
+def build_explicit_policy_decision(*, target_policy: list[dict], changes: list[dict]) -> dict:
+    policy = pc.normalize_policy(target_policy)
+    selection = {
+        "targets": [
+            {
+                "role": row["role"],
+                "layer": int(row["layer"]),
+                "status": "EXPLICIT_POLICY",
+                "selected_n": int(row["n"]),
+                "active_triggers": [],
+                "evidence": {},
+            }
+            for row in policy
+        ]
+    }
+    return {
+        "schema": "beglin-precision-explicit-lineage-decision-v1",
+        "status": "READY_FOR_OBSERVABILITY",
+        "production_write_allowed": False,
+        "signal": {
+            "active_triggers": [],
+            "margin": None,
+            "entropy": None,
+            "routing_ambiguity_score": None,
+            "raw": {},
+        },
+        "evidence_snapshot_sha256": None,
+        "allocation_sha256": None,
+        "selection_sha256": _sha(selection),
+        "cost_evidence_sha256": None,
+        "combined_policy_evidence": None,
+        "selected_policy": policy,
+        "changes": list(changes),
+        "selection": selection,
+        "policy_cost_optimizer": None,
+    }
+
+
 def build_adaptive_decision(
     *,
     adaptive: dict,
@@ -240,6 +278,25 @@ def verify_records(records: list[dict]) -> None:
         actual = _sha(body)
         if expected != actual:
             raise PrecisionObservabilityError(f"lineage record hash mismatch at index {idx}")
+        if idx > 0:
+            prior = records[idx - 1]
+            same_worker = (
+                prior.get("worker_pid") is not None
+                and prior.get("worker_pid") == raw.get("worker_pid")
+            )
+            if same_worker:
+                prior_policy = prior.get("after_policy_hash")
+                current_policy = raw.get("before_policy_hash")
+                if prior_policy is not None and current_policy is not None and prior_policy != current_policy:
+                    raise PrecisionObservabilityError(
+                        f"unobserved policy transition before index {idx}"
+                    )
+                prior_epoch = prior.get("after_epoch")
+                current_epoch = raw.get("before_epoch")
+                if prior_epoch is not None and current_epoch is not None and int(prior_epoch) != int(current_epoch):
+                    raise PrecisionObservabilityError(
+                        f"unobserved precision epoch change before index {idx}"
+                    )
         prev = expected
 
 

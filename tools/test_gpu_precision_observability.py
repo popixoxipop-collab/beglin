@@ -79,8 +79,13 @@ class ObservabilityTests(unittest.TestCase):
             )
             a=obs.record(admission_id="a",worker_pid=7,request_count=1,
                          decision=decision(),result=result())
+            second=result(transitioned=False,passes=2)
+            second["precision_epoch"]["before_policy_hash"]="2"*64
+            second["precision_epoch"]["after_policy_hash"]="2"*64
+            second["precision_epoch"]["before_epoch"]=3
+            second["precision_epoch"]["after_epoch"]=3
             b=obs.record(admission_id="b",worker_pid=7,request_count=2,
-                         decision=decision(False),result=result(transitioned=False,passes=2))
+                         decision=decision(False),result=second)
             self.assertNotEqual(a["record_sha256"],b["record_sha256"])
             summary=obs.summary()
             self.assertEqual(summary["admissions"],2)
@@ -149,6 +154,32 @@ class ObservabilityTests(unittest.TestCase):
         row=got["selection"]["targets"][0]
         self.assertEqual(row["status"],"TRIGGER_CONDITIONED_ALTERNATE")
         self.assertEqual(row["selected_n"],6)
+
+    def test_same_pid_policy_discontinuity_is_detected(self):
+        first=po.build_record(
+            admission_id="a",worker_pid=7,request_count=1,
+            decision=decision(),result=result(),prev_record_sha256=None,
+        )
+        second_result=result(transitioned=False)
+        second_result["precision_epoch"]["before_policy_hash"]="9"*64
+        second_result["precision_epoch"]["after_policy_hash"]="9"*64
+        second_result["precision_epoch"]["before_epoch"]=3
+        second_result["precision_epoch"]["after_epoch"]=3
+        second=po.build_record(
+            admission_id="b",worker_pid=7,request_count=1,
+            decision=decision(False),result=second_result,
+            prev_record_sha256=first["record_sha256"],
+        )
+        with self.assertRaises(po.PrecisionObservabilityError):
+            po.verify_records([first,second])
+
+    def test_explicit_policy_decision_has_no_fake_trigger(self):
+        got=po.build_explicit_policy_decision(
+            target_policy=[{"role":"shared_up_proj","layer":3,"n":6}],
+            changes=[],
+        )
+        self.assertEqual(got["signal"]["active_triggers"],[])
+        self.assertEqual(got["selection"]["targets"][0]["status"],"EXPLICIT_POLICY")
 
     def test_tamper_is_detected(self):
         with tempfile.TemporaryDirectory() as td:

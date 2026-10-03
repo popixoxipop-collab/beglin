@@ -256,10 +256,32 @@ class PrecisionEpochWorkerTests(unittest.TestCase):
             )
             policy = [{"role": "shared_up_proj", "layer": 3, "n": 6}]
             fake = unittest.mock.Mock()
+            ph = ps._policy_hash(policy)
             fake.run.return_value = {
                 "finite_logits": True,
                 "responses": [[1224]],
-                "precision_epoch": {"transitioned": False},
+                "engine_wall_ms": 1.0,
+                "roundtrip_ms": 2.0,
+                "inference_passes": 1,
+                "precision_epoch": {
+                    "admission_id": "unit-admission",
+                    "transitioned": False,
+                    "changed_targets": [],
+                    "before_policy_hash": ph,
+                    "after_policy_hash": ph,
+                    "before_epoch": 1,
+                    "after_epoch": 1,
+                    "transition_cost": {
+                        "transition_wall_ms": 0.0,
+                        "cache_hits": 0,
+                        "cache_misses": 0,
+                        "cache_bytes_added": 0,
+                        "resident_cache_bytes": 0,
+                    },
+                    "inference_passes": 1,
+                    "engine_wall_ms": 1.0,
+                    "roundtrip_ms": 2.0,
+                },
             }
             worker.precision_epoch_scheduler = fake
             ack = {
@@ -280,14 +302,21 @@ class PrecisionEpochWorkerTests(unittest.TestCase):
             }
             worker.ack_path.parent.mkdir(parents=True, exist_ok=True)
             worker.ack_path.write_text(json.dumps(ack))
+            worker.configure_precision_observability(
+                lineage_path=Path(td) / "lineage.jsonl",
+                snapshot_path=Path(td) / "summary.json",
+                strict=True,
+            )
             got = worker.submit_with_precision_policy(
                 [([1], 1)],
                 target_policy=policy,
                 admission_id="unit-admission",
             )
             self.assertTrue(got["finite_logits"])
+            self.assertEqual(got["precision_observability"]["status"], "RECORDED")
             fake.run.assert_called_once()
             self.assertEqual(worker.ack["weight_epoch"], 1)
+            self.assertEqual(worker.precision_observability.summary()["admissions"], 1)
 
 
 class AdaptiveObservabilityTests(unittest.TestCase):

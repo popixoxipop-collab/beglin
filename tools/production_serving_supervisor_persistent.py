@@ -684,6 +684,45 @@ class PersistentRouteWorker:
             admission_id=admission_id,
         )
         self.ack = _read_runtime_ack(self.ack_path)
+        observer = self.precision_observability
+        if observer is not None:
+            pob = _load_precision_observability()
+            epoch = result.get("precision_epoch") or {}
+            changes = [
+                {
+                    "role": row.get("role"),
+                    "layer": row.get("layer"),
+                    "from_n": row.get("expected_n"),
+                    "to_n": row.get("target_n"),
+                }
+                for row in epoch.get("changed_targets") or []
+            ]
+            decision = pob.build_explicit_policy_decision(
+                target_policy=target_policy,
+                changes=changes,
+            )
+            actual_admission_id = str(
+                epoch.get("admission_id") or admission_id or ""
+            )
+            try:
+                result["precision_observability"] = observer.record(
+                    admission_id=actual_admission_id,
+                    worker_pid=(int(self.proc.pid) if self.is_alive() else None),
+                    request_count=len(parsed),
+                    decision=decision,
+                    result=result,
+                )
+            except Exception as exc:
+                result["precision_observability"] = {
+                    "schema": "beglin-precision-observability-record-v1",
+                    "status": "ERROR",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+                if observer.strict:
+                    raise PersistentSupervisorError(
+                        "precision observability strict explicit-policy recording failed"
+                    ) from exc
         return result
 
     def submit(self, parsed: list[tuple[list[int], int]]) -> dict:
