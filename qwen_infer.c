@@ -7120,15 +7120,21 @@ static int moe_precision_control_pending_cpu(void);
 // writing GPU state into a CPU-labeled global is needless confusion for zero benefit.
 typedef struct {
     int valid;
+    int op;                    // 1=DEMOTE to retained base snapshot, 2=REBIND qNg64 n->n
     char txn_id[96];
     uint64_t expected_epoch;
     int expected_n;
+    int target_n;              // REBIND only; 0 for DEMOTE
     MoeAttribRole role;
     int layer;
     char expected_policy_hash[65];
 } MoeGpuTxnCommand;
 
 static int g_moe_promoted_nq_gpu[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
+// Dynamic precision v1: qNg64 registrations allocate packed CPU backing memory.
+// Cache each certified width after first materialization so repeated 5<->9-style
+// REBIND transactions only change MLX bindings instead of leaking a new tensor.
+static MoeAFTensor *g_moe_promoted_nq_gpu_cache[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS][16];
 // G2/G3: retain the exact pre-promotion GPU registry representation so a later
 // quiescent demotion restores the approved binding rather than rebuilding it.
 static uint64_t g_moe_promoted_nq_gpu_snapshot[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
@@ -17006,18 +17012,37 @@ static int moe_gpu_txn_read(MoeGpuTxnCommand *out, char *err, size_t errcap) {
 
     char op[16], txn_id[96], role_buf[64], hash[65], extra[2];
     unsigned long long expected_epoch = 0;
-    int expected_n = 0, layer = -1;
-    int got = sscanf(line, "%15s %95s %llu %d %63s %d %64s %1s",
-                     op, txn_id, &expected_epoch, &expected_n,
-                     role_buf, &layer, hash, extra);
-    if (got != 7) {
-        snprintf(err, errcap, "expected 7 fields, got %d", got);
+    int expected_n = 0, target_n = 0, layer = -1;
+    if (sscanf(line, "%15s", op) != 1) {
+        snprintf(err, errcap, "missing op");
         return -1;
     }
-    if (strcmp(op, "DEMOTE")) {
+
+    int got = 0;
+    if (!strcmp(op, "DEMOTE")) {
+        got = sscanf(line, "%15s %95s %llu %d %63s %d %64s %1s",
+                     op, txn_id, &expected_epoch, &expected_n,
+                     role_buf, &layer, hash, extra);
+        if (got != 7) {
+            snprintf(err, errcap, "DEMOTE expected 7 fields, got %d", got);
+            return -1;
+        }
+        out->op = 1;
+        target_n = 0;
+    } else if (!strcmp(op, "REBIND")) {
+        got = sscanf(line, "%15s %95s %llu %d %d %63s %d %64s %1s",
+                     op, txn_id, &expected_epoch, &expected_n, &target_n,
+                     role_buf, &layer, hash, extra);
+        if (got != 8) {
+            snprintf(err, errcap, "REBIND expected 8 fields, got %d", got);
+            return -1;
+        }
+        out->op = 2;
+    } else {
         snprintf(err, errcap, "unsupported op '%s'", op);
         return -1;
     }
+
     if (!moe_gpu_txn_token_safe(txn_id)) {
         snprintf(err, errcap, "invalid txn_id");
         return -1;
@@ -17035,11 +17060,22 @@ static int moe_gpu_txn_read(MoeGpuTxnCommand *out, char *err, size_t errcap) {
         snprintf(err, errcap, "expected_n=%d is not qNg64", expected_n);
         return -1;
     }
+    if (out->op == 2) {
+        if (!moe_qng64_n_supported(target_n)) {
+            snprintf(err, errcap, "target_n=%d is not qNg64", target_n);
+            return -1;
+        }
+        if (target_n == expected_n) {
+            snprintf(err, errcap, "REBIND target_n equals expected_n=%d", expected_n);
+            return -1;
+        }
+    }
 
     out->valid = 1;
     snprintf(out->txn_id, sizeof out->txn_id, "%s", txn_id);
     out->expected_epoch = (uint64_t)expected_epoch;
     out->expected_n = expected_n;
+    out->target_n = target_n;
     out->role = (MoeAttribRole)role_i;
     out->layer = layer;
     snprintf(out->expected_policy_hash, sizeof out->expected_policy_hash, "%s", hash);
@@ -17092,6 +17128,161 @@ static MoeAFTensor *moe_gpu_role_base_tensor(MoeAttribRole role, int layer) {
         case MOE_ATTRIB_EXPERT_DOWN: return g_moe_lt[layer].switch_down;
         default: return NULL;
     }
+}
+
+static const char *moe_gpu_role_st_pattern(MoeAttribRole role, int *is_expert) {
+    const char *role_name = MOE_ATTRIB_ROLE_NAMES[role];
+    *is_expert = (
+        role == MOE_ATTRIB_EXPERT_GATE ||
+        role == MOE_ATTRIB_EXPERT_UP ||
+        role == MOE_ATTRIB_EXPERT_DOWN
+    );
+    if (role == MOE_ATTRIB_EXPERT_GATE) return MOE_ST_EXPERT_ROLES[0].st_pattern;
+    if (role == MOE_ATTRIB_EXPERT_UP) return MOE_ST_EXPERT_ROLES[1].st_pattern;
+    if (role == MOE_ATTRIB_EXPERT_DOWN) return MOE_ST_EXPERT_ROLES[2].st_pattern;
+
+    const MoeStRole *tabs[3];
+    size_t cnts[3];
+    int nt = 0;
+    if (MOE_ATTN_KIND == MOE_ATTN_MLA) {
+        tabs[nt] = MOE_ST_ATTN_ROLES_MLA;
+        cnts[nt] = sizeof(MOE_ST_ATTN_ROLES_MLA)/sizeof(MOE_ST_ATTN_ROLES_MLA[0]);
+        nt++;
+    } else {
+        tabs[nt] = MOE_ST_ATTN_ROLES_GQA;
+        cnts[nt] = sizeof(MOE_ST_ATTN_ROLES_GQA)/sizeof(MOE_ST_ATTN_ROLES_GQA[0]);
+        nt++;
+    }
+    tabs[nt] = MOE_ST_DENSE_ROLES;
+    cnts[nt] = sizeof(MOE_ST_DENSE_ROLES)/sizeof(MOE_ST_DENSE_ROLES[0]);
+    nt++;
+    tabs[nt] = MOE_ST_SHARED_ROLES;
+    cnts[nt] = sizeof(MOE_ST_SHARED_ROLES)/sizeof(MOE_ST_SHARED_ROLES[0]);
+    nt++;
+    for (int ti = 0; ti < nt; ti++)
+        for (size_t ri = 0; ri < cnts[ti]; ri++)
+            if (tabs[ti][ri].is_af && tabs[ti][ri].role &&
+                !strcmp(tabs[ti][ri].role, role_name))
+                return tabs[ti][ri].st_pattern;
+    return NULL;
+}
+
+static MoeAFTensor *moe_gpu_qng64_cached(
+        MoeAttribRole role, int layer, int n, MoeAFTensor *base_ptr) {
+    if (n <= 0 || n >= 16 || !moe_qng64_n_supported(n)) return NULL;
+    MoeAFTensor *cached = g_moe_promoted_nq_gpu_cache[role][layer][n];
+    if (cached) {
+        fprintf(stderr,
+                "[moe gpu rebind] CACHE_HIT role=%s layer=%d n=%d\n",
+                MOE_ATTRIB_ROLE_NAMES[role], layer, n);
+        return cached;
+    }
+    if (!g_moe_hi_st || !base_ptr) return NULL;
+
+    int is_expert = 0;
+    const char *st_pattern = moe_gpu_role_st_pattern(role, &is_expert);
+    if (!st_pattern) return NULL;
+
+    SafetensorsMulti *saved_st_moe = g_st_moe;
+    g_st_moe = g_moe_hi_st;
+    MoeAFTensor *qnt = NULL;
+    if (is_expert) {
+        qnt = st_register_moe_experts_qNg64_as(
+            st_pattern, layer, MOE_N_EXPERTS, n, base_ptr->name);
+    } else {
+        char st_name[192];
+        snprintf(st_name, sizeof st_name, st_pattern, layer);
+        qnt = st_register_moe_dense_af_qNg64_as(st_name, n, base_ptr->name);
+    }
+    g_st_moe = saved_st_moe;
+    if (qnt) g_moe_promoted_nq_gpu_cache[role][layer][n] = qnt;
+    return qnt;
+}
+
+static int moe_gpu_rebind_apply_quiescent(const MoeGpuTxnCommand *cmd) {
+    MoeAFTensor *base_ptr = moe_gpu_role_base_tensor(cmd->role, cmd->layer);
+    uint64_t baseline_sid = g_moe_promoted_nq_gpu_snapshot[cmd->role][cmd->layer];
+    if (!base_ptr || !baseline_sid || !g_moe_hi_st) {
+        fprintf(stderr,
+                "[moe gpu rebind] FAIL missing base/snapshot/source txn=%s role=%s layer=%d\n",
+                cmd->txn_id, MOE_ATTRIB_ROLE_NAMES[cmd->role], cmd->layer);
+        return moe_gpu_txn_mark_terminal(cmd, "REBIND_FAILED", 0);
+    }
+
+    int before_bits = 0;
+    int before_kind = mlx_gpu_binding_kind(base_ptr->name, &before_bits);
+    int expected_before_kind =
+        (cmd->expected_n == 7 || (cmd->expected_n >= 9 && cmd->expected_n <= 15)) ? 3 : 1;
+    if (before_kind != expected_before_kind || before_bits != cmd->expected_n) {
+        fprintf(stderr,
+                "[moe gpu rebind] FAIL preimage binding txn=%s got(kind=%d,bits=%d) expected(kind=%d,bits=%d)\n",
+                cmd->txn_id, before_kind, before_bits, expected_before_kind, cmd->expected_n);
+        return moe_gpu_txn_mark_terminal(cmd, "STALE_COMMAND", 0);
+    }
+    if (!mlx_gpu_synchronize()) {
+        fprintf(stderr, "[moe gpu rebind] FAIL sync txn=%s\n", cmd->txn_id);
+        return moe_gpu_txn_mark_terminal(cmd, "REBIND_FAILED", 0);
+    }
+
+    uint64_t attempt_sid = 0;
+    if (!mlx_gpu_snapshot_binding(base_ptr->name, &attempt_sid)) {
+        fprintf(stderr, "[moe gpu rebind] FAIL attempt snapshot txn=%s\n", cmd->txn_id);
+        return moe_gpu_txn_mark_terminal(cmd, "REBIND_FAILED", 0);
+    }
+
+    MoeAFTensor *qnt = moe_gpu_qng64_cached(
+        cmd->role, cmd->layer, cmd->target_n, base_ptr);
+    int ok = qnt && mlx_gpu_bind_af(
+        qnt->base, 0, qnt->name, qnt->E, qnt->out, qnt->in, qnt->ng,
+        qnt->packed_off, qnt->scale_off, qnt->bias_off, qnt->bits);
+    int applied_bits = 0;
+    int applied_kind = ok ? mlx_gpu_binding_kind(base_ptr->name, &applied_bits) : 0;
+    int expected_kind =
+        (cmd->target_n == 7 || (cmd->target_n >= 9 && cmd->target_n <= 15)) ? 3 : 1;
+    if (!ok || applied_kind != expected_kind || applied_bits != cmd->target_n) {
+        fprintf(stderr,
+                "[moe gpu rebind] FAIL bind/verify txn=%s target_n=%d got(kind=%d,bits=%d); restoring current binding\n",
+                cmd->txn_id, cmd->target_n, applied_kind, applied_bits);
+        if (!mlx_gpu_synchronize() || !mlx_gpu_restore_binding_snapshot(attempt_sid)) {
+            fprintf(stderr, "FATAL: [moe gpu rebind] failed to restore attempt snapshot txn=%s\n",
+                    cmd->txn_id);
+            return 0;
+        }
+        (void)mlx_gpu_drop_binding_snapshot(attempt_sid);
+        return moe_gpu_txn_mark_terminal(cmd, "REBIND_FAILED", 0);
+    }
+
+    if (!mlx_gpu_reset_runtime_epoch()) {
+        fprintf(stderr,
+                "[moe gpu rebind] FAIL runtime epoch reset txn=%s; restoring current binding\n",
+                cmd->txn_id);
+        if (!mlx_gpu_synchronize() || !mlx_gpu_restore_binding_snapshot(attempt_sid)) {
+            fprintf(stderr, "FATAL: [moe gpu rebind] restore failed after epoch reset failure txn=%s\n",
+                    cmd->txn_id);
+            return 0;
+        }
+        (void)mlx_gpu_drop_binding_snapshot(attempt_sid);
+        return moe_gpu_txn_mark_terminal(cmd, "REBIND_FAILED", 0);
+    }
+
+    // Keep the original pre-promotion snapshot for a future DEMOTE to base.
+    // The attempt snapshot represents the previous qNg64 width and is no
+    // longer needed after a verified rebind.
+    (void)mlx_gpu_drop_binding_snapshot(attempt_sid);
+    g_moe_promoted_nq_gpu[cmd->role][cmd->layer] = cmd->target_n;
+    g_moe_gpu_weight_epoch++;
+    if (!moe_gpu_txn_mark_terminal(cmd, "REBIND_APPLIED", 1)) {
+        fprintf(stderr,
+                "FATAL: [moe gpu rebind] durable ACK failed txn=%s; worker must remain isolated\n",
+                cmd->txn_id);
+        return 0;
+    }
+    fprintf(stderr,
+            "[moe gpu rebind] COMMIT txn=%s role=%s layer=%d n=%d->%d epoch=%llu\n",
+            cmd->txn_id, MOE_ATTRIB_ROLE_NAMES[cmd->role], cmd->layer,
+            cmd->expected_n, cmd->target_n,
+            (unsigned long long)g_moe_gpu_weight_epoch);
+    return 1;
 }
 
 static int moe_gpu_demotion_pending(void) {
@@ -17151,6 +17342,11 @@ static int moe_gpu_demotion_apply_quiescent(void) {
         if (cmd.expected_epoch != g_moe_gpu_weight_epoch || current_n != cmd.expected_n) {
             memset(&g_moe_gpu_pending_txn, 0, sizeof g_moe_gpu_pending_txn);
             return moe_gpu_txn_mark_terminal(&cmd, "STALE_COMMAND", 0);
+        }
+        if (cmd.op == 2) {
+            int ok = moe_gpu_rebind_apply_quiescent(&cmd);
+            memset(&g_moe_gpu_pending_txn, 0, sizeof g_moe_gpu_pending_txn);
+            return ok;
         }
         if (!mlx_gpu_synchronize()) {
             fprintf(stderr, "[moe gpu txn] FAIL sync txn=%s\n", cmd.txn_id);
@@ -17425,13 +17621,17 @@ static void moe_promotion_nq_init_gpu(void) {
         }
 
         char st_name[192];
-        MoeAFTensor *qnt;
-        if (is_expert) {
-            qnt = st_register_moe_experts_qNg64_as(st_pattern, layer, MOE_N_EXPERTS, n, base_ptr->name);
-        } else {
+        MoeAFTensor *qnt = (n > 0 && n < 16)
+            ? g_moe_promoted_nq_gpu_cache[role][layer][n] : NULL;
+        if (!qnt && is_expert) {
+            qnt = st_register_moe_experts_qNg64_as(
+                st_pattern, layer, MOE_N_EXPERTS, n, base_ptr->name);
+        } else if (!qnt) {
             snprintf(st_name, sizeof st_name, st_pattern, layer);
             qnt = st_register_moe_dense_af_qNg64_as(st_name, n, base_ptr->name);
         }
+        if (qnt && n > 0 && n < 16)
+            g_moe_promoted_nq_gpu_cache[role][layer][n] = qnt;
         // qnt->base is always non-NULL for a freshly-registered tensor (both registrars malloc
         // it unconditionally) -- the ": af_blob" fallback every other GPU bind call site in this
         // file carries never actually applies here, so this function needs no af_blob parameter.

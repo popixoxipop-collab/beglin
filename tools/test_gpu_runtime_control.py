@@ -83,6 +83,65 @@ class RuntimeControlTests(unittest.TestCase):
                 f"DEMOTE demote-001 7 6 shared_down_proj 4 {ph}\n",
             )
 
+    def test_prepare_rebind_writes_exact_runtime_command(self):
+        with tempfile.TemporaryDirectory() as td:
+            ack_path = self.write_ack(td)
+            txn_path = pathlib.Path(td) / "txn.txt"
+            ph = pc.policy_hash(POLICY)
+            got = ctl.prepare_rebind(
+                ack_path=ack_path,
+                txn_path=txn_path,
+                txn_id="rebind-001",
+                expected_epoch=7,
+                expected_policy_hash=ph,
+                role="shared_up_proj",
+                layer=3,
+                expected_n=5,
+                target_n=9,
+            )
+            self.assertEqual(got["status"], "REQUESTED")
+            self.assertEqual(got["target_n"], 9)
+            self.assertEqual(
+                txn_path.read_text(),
+                f"REBIND rebind-001 7 5 9 shared_up_proj 3 {ph}\n",
+            )
+
+    def test_prepare_rebind_rejects_stale_target(self):
+        with tempfile.TemporaryDirectory() as td:
+            ack_path = self.write_ack(td)
+            txn_path = pathlib.Path(td) / "txn.txt"
+            with self.assertRaises(ctl.StaleRuntimeState):
+                ctl.prepare_rebind(
+                    ack_path=ack_path,
+                    txn_path=txn_path,
+                    txn_id="rebind-stale",
+                    expected_epoch=7,
+                    expected_policy_hash=pc.policy_hash(POLICY),
+                    role="shared_up_proj",
+                    layer=3,
+                    expected_n=6,
+                    target_n=9,
+                )
+            self.assertFalse(txn_path.exists())
+
+    def test_prepare_rebind_rejects_non_qng64_target(self):
+        with tempfile.TemporaryDirectory() as td:
+            ack_path = self.write_ack(td)
+            txn_path = pathlib.Path(td) / "txn.txt"
+            with self.assertRaises(ctl.RuntimeControlError):
+                ctl.prepare_rebind(
+                    ack_path=ack_path,
+                    txn_path=txn_path,
+                    txn_id="rebind-bad",
+                    expected_epoch=7,
+                    expected_policy_hash=pc.policy_hash(POLICY),
+                    role="shared_up_proj",
+                    layer=3,
+                    expected_n=5,
+                    target_n=4,
+                )
+            self.assertFalse(txn_path.exists())
+
     def test_prepare_rejects_stale_epoch_without_writing(self):
         with tempfile.TemporaryDirectory() as td:
             ack_path = self.write_ack(td)
@@ -160,6 +219,25 @@ class RuntimeControlTests(unittest.TestCase):
                 txn_id="demote-001",
             )
             self.assertEqual(got["status"], "ROLLBACK_APPLIED")
+            self.assertEqual(got["weight_epoch"], 8)
+
+    def test_verify_terminal_ack_accepts_rebind(self):
+        with tempfile.TemporaryDirectory() as td:
+            ack_path = self.write_ack(
+                td,
+                status="REBIND_APPLIED",
+                txn_id="rebind-001",
+                weight_epoch=8,
+                active_policy=[
+                    {"role": "shared_down_proj", "layer": 4, "n": 6},
+                    {"role": "shared_up_proj", "layer": 3, "n": 9},
+                ],
+            )
+            got = ctl.verify_terminal_ack(
+                ack_path=ack_path,
+                txn_id="rebind-001",
+            )
+            self.assertEqual(got["status"], "REBIND_APPLIED")
             self.assertEqual(got["weight_epoch"], 8)
 
     def test_verify_terminal_ack_rejects_wrong_txn(self):

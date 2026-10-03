@@ -127,6 +127,32 @@ class MlxRuntimeAdapterTests(unittest.TestCase):
                 f"DEMOTE demote-1 7 6 shared_down_proj 4 {ph}\n",
             )
 
+    def test_verified_adapter_emits_exact_rebind_command(self):
+        with tempfile.TemporaryDirectory() as td:
+            ack = self.write_ack(td)
+            txn = pathlib.Path(td) / "txn.txt"
+            adapter = MlxMetalBackendAdapter(
+                verified=True,
+                context=context(),
+                ack_path=str(ack),
+                txn_path=str(txn),
+            )
+            ph = pc.policy_hash(POLICY)
+            got = adapter.request_rebind(
+                txn_id="rebind-2",
+                expected_epoch=7,
+                expected_policy_hash=ph,
+                role="shared_up_proj",
+                layer=3,
+                expected_n=5,
+                target_n=9,
+            )
+            self.assertEqual(got["status"], "REQUESTED")
+            self.assertEqual(
+                txn.read_text(),
+                f"REBIND rebind-2 7 5 9 shared_up_proj 3 {ph}\n",
+            )
+
     def test_adapter_preserves_runtime_stale_rejection(self):
         with tempfile.TemporaryDirectory() as td:
             ack = self.write_ack(td)
