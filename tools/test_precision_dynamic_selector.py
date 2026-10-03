@@ -41,7 +41,7 @@ class DynamicSelectorTests(unittest.TestCase):
             {
                 "role":"shared_up_proj","layer":3,
                 "from_n":5,"to_n":9,"trigger_type":"near_tie",
-                "status":"PASS","pass":True,"requests":20,
+                "status":"PASS","pass":True,"requests":20,"signal_bucket":{"trigger_only":True},
                 "signal_bucket":{"trigger_only":True},
             }
         ]
@@ -56,7 +56,7 @@ class DynamicSelectorTests(unittest.TestCase):
             evidence.append({
                 "role":"shared_up_proj","layer":3,
                 "from_n":5,"to_n":n,"trigger_type":"near_tie",
-                "status":"PASS","pass":True,"requests":20,
+                "status":"PASS","pass":True,"requests":20,"signal_bucket":{"trigger_only":True},
                 "signal_bucket":{"trigger_only":True},
             })
         got=ds.select(allocator_decision(),{"near_tie":True},evidence)
@@ -67,7 +67,7 @@ class DynamicSelectorTests(unittest.TestCase):
         evidence=[{
             "role":"shared_up_proj","layer":3,
             "from_n":5,"to_n":6,"trigger_type":"near_tie",
-            "status":"PASS","pass":True,"requests":20,
+            "status":"PASS","pass":True,"requests":20,"signal_bucket":{"trigger_only":True},
             "signal_bucket":{},
         }]
         got=ds.select(allocator_decision(),{"near_tie":True},evidence)
@@ -80,7 +80,7 @@ class DynamicSelectorTests(unittest.TestCase):
         evidence=[{
             "role":"shared_up_proj","layer":3,
             "from_n":5,"to_n":6,"trigger_type":"low_margin",
-            "status":"PASS","pass":True,"requests":20,
+            "status":"PASS","pass":True,"requests":20,"signal_bucket":{"trigger_only":True},
             "signal_bucket":{"margin_max":0.02},
         }]
         matched=ds.select(
@@ -106,7 +106,7 @@ class DynamicSelectorTests(unittest.TestCase):
         evidence=[{
             "role":"shared_up_proj","layer":3,
             "from_n":5,"to_n":6,"trigger_type":"near_tie",
-            "status":"PASS","pass":True,"requests":20,
+            "status":"PASS","pass":True,"requests":20,"signal_bucket":{"trigger_only":True},
                 "signal_bucket":{"trigger_only":True},
         }]
         got=ds.select(
