@@ -4,6 +4,7 @@ Canonical contracts for the model-capability front door.
 
 - `architecture-descriptor-v1.schema.json`
 - `backend-capability-v1.schema.json`
+- `backend-transition-result-v1.schema.json`
 - `loader-contract-v1.schema.json`
 - `model-capability-bundle-v1.schema.json`
 - `model-skeleton-v1.schema.json`
