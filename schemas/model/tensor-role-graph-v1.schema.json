@@ -15,7 +15,7 @@
       "type": "array"
     },
     "schema": {
-      "type": "string"
+      "const": "beglin-tensor-role-graph-v1"
     },
     "tensor_role_graph_sha256": {
       "pattern": "^[0-9a-f]{64}$",
