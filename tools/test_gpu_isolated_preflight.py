@@ -84,11 +84,19 @@ class GpuIsolatedPreflightTests(unittest.TestCase):
             "shared_down_proj 4 6\nshared_up_proj 3 5\n",
         )
 
-    def test_first_release_rejects_unapproved_width(self):
-        with self.assertRaises(gp.GpuPreflightError):
-            gp.normalize_policy([
-                {"role": "shared_down_proj", "layer": 4, "n": 9}
-            ])
+    def test_current_ladder_accepts_custom_metal_width(self):
+        got = gp.normalize_policy([
+            {"role": "shared_down_proj", "layer": 4, "n": 9}
+        ])
+        self.assertEqual(got[0]["n"], 9)
+
+    def test_current_ladder_rejects_non_qng64_widths(self):
+        for n in (4, 16):
+            with self.subTest(n=n):
+                with self.assertRaises(gp.GpuPreflightError):
+                    gp.normalize_policy([
+                        {"role": "shared_down_proj", "layer": 4, "n": n}
+                    ])
 
     def test_parse_mla_and_gqa_tokens(self):
         mla = (
