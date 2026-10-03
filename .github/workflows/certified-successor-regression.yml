@@ -13,7 +13,6 @@ on:
       - persistent-gpu-serving-20261003
       - persistent-serving-interactive-launchd-20261003
       - adaptive-two-pass-l26-20261003
-      - adaptive-evidence-file-gate-20261003
       - supabase-v3-evidence-reconnect-20261003
       - quant-search-full-qng64-ladder-20261003
       - precision-allocator-v1-20261003
