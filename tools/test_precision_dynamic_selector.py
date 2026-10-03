@@ -42,6 +42,7 @@ class DynamicSelectorTests(unittest.TestCase):
                 "role":"shared_up_proj","layer":3,
                 "from_n":5,"to_n":9,"trigger_type":"near_tie",
                 "status":"PASS","pass":True,"requests":20,
+                "signal_bucket":{"trigger_only":True},
             }
         ]
         got=ds.select(allocator_decision(),{"near_tie":True},evidence)
@@ -56,15 +57,57 @@ class DynamicSelectorTests(unittest.TestCase):
                 "role":"shared_up_proj","layer":3,
                 "from_n":5,"to_n":n,"trigger_type":"near_tie",
                 "status":"PASS","pass":True,"requests":20,
+                "signal_bucket":{"trigger_only":True},
             })
         got=ds.select(allocator_decision(),{"near_tie":True},evidence)
         self.assertEqual(got["targets"][0]["selected_n"],6)
+
+
+    def test_empty_signal_bucket_is_not_reused(self):
+        evidence=[{
+            "role":"shared_up_proj","layer":3,
+            "from_n":5,"to_n":6,"trigger_type":"near_tie",
+            "status":"PASS","pass":True,"requests":20,
+            "signal_bucket":{},
+        }]
+        got=ds.select(allocator_decision(),{"near_tie":True},evidence)
+        self.assertEqual(
+            got["targets"][0]["status"],
+            "HOLD_BASE_NO_TRIGGER_EVIDENCE",
+        )
+
+    def test_margin_bucket_must_match_current_signal(self):
+        evidence=[{
+            "role":"shared_up_proj","layer":3,
+            "from_n":5,"to_n":6,"trigger_type":"low_margin",
+            "status":"PASS","pass":True,"requests":20,
+            "signal_bucket":{"margin_max":0.02},
+        }]
+        matched=ds.select(
+            allocator_decision(),
+            {"low_margin":True,"margin":0.01},
+            evidence,
+        )
+        self.assertEqual(
+            matched["targets"][0]["status"],
+            "TRIGGER_CONDITIONED_ALTERNATE",
+        )
+        blocked=ds.select(
+            allocator_decision(),
+            {"low_margin":True,"margin":0.05},
+            evidence,
+        )
+        self.assertEqual(
+            blocked["targets"][0]["status"],
+            "HOLD_BASE_NO_TRIGGER_EVIDENCE",
+        )
 
     def test_all_active_triggers_need_evidence(self):
         evidence=[{
             "role":"shared_up_proj","layer":3,
             "from_n":5,"to_n":6,"trigger_type":"near_tie",
             "status":"PASS","pass":True,"requests":20,
+                "signal_bucket":{"trigger_only":True},
         }]
         got=ds.select(
             allocator_decision(),
