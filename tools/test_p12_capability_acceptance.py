@@ -98,7 +98,8 @@ class CapabilityAcceptanceTests(unittest.TestCase):
         self.assertEqual(
             result["p11_capability_preimage"]["runtime_precision_n"], 5
         )
-        self.assertEqual(bundle["p8_p11_eligibility"]["status"], "PARTIAL")\n        self.assertTrue(bundle["p8_p11_eligibility"]["p11_allowed"])
+        self.assertEqual(bundle["p8_p11_eligibility"]["status"], "PARTIAL")
+        self.assertTrue(bundle["p8_p11_eligibility"]["p11_allowed"])
         self.assertFalse(result["production_write_allowed"])
 
     def test_runtime_precision_mismatch_is_rejected(self):
