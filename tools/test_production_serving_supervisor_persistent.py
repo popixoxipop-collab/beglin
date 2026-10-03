@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 import production_serving_supervisor as base
@@ -106,12 +107,75 @@ class RuntimeControlImportTests(unittest.TestCase):
         self.assertTrue(callable(grc.prepare_rebind))
         self.assertTrue(callable(grc.verify_terminal_ack))
 
+    def test_precision_epoch_scheduler_is_loaded_from_supervisor_tools_tree(self):
+        pes = ps._load_precision_epoch_scheduler()
+        self.assertEqual(
+            Path(pes.__file__).resolve().parent,
+            Path(ps.__file__).resolve().parent,
+        )
+        self.assertTrue(callable(pes.PrecisionEpochScheduler))
+
     def test_policy_hash_uses_local_precision_context(self):
         got = ps._policy_hash([
             {"role": "shared_down_proj", "layer": 26, "n": 5},
             {"role": "shared_up_proj", "layer": 3, "n": 6},
         ])
         self.assertEqual(len(got), 64)
+
+
+class PrecisionEpochWorkerTests(unittest.TestCase):
+    def test_worker_uses_reentrant_admission_lock_for_scheduler_bridge(self):
+        with tempfile.TemporaryDirectory() as td:
+            worker = ps.PersistentRouteWorker(
+                route=base.candidate_route(), root=Path(td)
+            )
+            acquired = worker.lock.acquire(blocking=False)
+            self.assertTrue(acquired)
+            try:
+                self.assertTrue(worker.lock.acquire(blocking=False))
+                worker.lock.release()
+            finally:
+                worker.lock.release()
+
+    def test_submit_with_precision_policy_delegates_and_refreshes_ack(self):
+        with tempfile.TemporaryDirectory() as td:
+            worker = ps.PersistentRouteWorker(
+                route=base.candidate_route(), root=Path(td)
+            )
+            policy = [{"role": "shared_up_proj", "layer": 3, "n": 6}]
+            fake = unittest.mock.Mock()
+            fake.run.return_value = {
+                "finite_logits": True,
+                "responses": [[1224]],
+                "precision_epoch": {"transitioned": False},
+            }
+            worker.precision_epoch_scheduler = fake
+            ack = {
+                "schema": "gpu-precision-applied-v1",
+                "status": "PROMOTION_APPLIED",
+                "backend": "mlx_metal",
+                "correction_mode": "off",
+                "weight_epoch": 1,
+                "changed_targets": 1,
+                "snapshot_count": 1,
+                "txn_id": None,
+                "expected_epoch": None,
+                "expected_n": None,
+                "expected_policy_hash": None,
+                "target_role": None,
+                "target_layer": None,
+                "active_policy": policy,
+            }
+            worker.ack_path.parent.mkdir(parents=True, exist_ok=True)
+            worker.ack_path.write_text(json.dumps(ack))
+            got = worker.submit_with_precision_policy(
+                [([1], 1)],
+                target_policy=policy,
+                admission_id="unit-admission",
+            )
+            self.assertTrue(got["finite_logits"])
+            fake.run.assert_called_once()
+            self.assertEqual(worker.ack["weight_epoch"], 1)
 
 
 class AdaptiveTwoPassTests(unittest.TestCase):

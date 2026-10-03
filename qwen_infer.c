@@ -21,6 +21,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <time.h>
+#include <errno.h>
+#include <limits.h>
 #include "q4gemv.h"
 #include "q4gemv_g256.h"   // Phase 2 (M36): g256sf kernels + pool glue (additive header)
 #include "sme2_kai.h"      // SME2 integration Phase 3: runtime detection + one-time repack (additive header)
@@ -7118,15 +7120,26 @@ static int moe_precision_control_pending_cpu(void);
 // because the two gates are mutually-exclusive dispatch branches within one process (main()'s
 // GPU/CPU serving gates never coexist in one run), so there's no cross-talk risk either way, but
 // writing GPU state into a CPU-labeled global is needless confusion for zero benefit.
+#define MOE_GPU_TXN_MAX_TARGETS 8
+
 typedef struct {
-    int valid;
-    int op;                    // 1=DEMOTE to retained base snapshot, 2=REBIND qNg64 n->n
-    char txn_id[96];
-    uint64_t expected_epoch;
     int expected_n;
-    int target_n;              // REBIND only; 0 for DEMOTE
+    int target_n;
     MoeAttribRole role;
     int layer;
+} MoeGpuTxnTarget;
+
+typedef struct {
+    int valid;
+    int op;                    // 1=DEMOTE, 2=REBIND one target, 3=REBIND_SET atomically
+    char txn_id[96];
+    uint64_t expected_epoch;
+    int expected_n;            // legacy alias; first target for REBIND_SET
+    int target_n;              // legacy alias; first target for REBIND_SET
+    MoeAttribRole role;        // legacy alias; first target for REBIND_SET
+    int layer;                 // legacy alias; first target for REBIND_SET
+    int target_count;
+    MoeGpuTxnTarget targets[MOE_GPU_TXN_MAX_TARGETS];
     char expected_policy_hash[65];
 } MoeGpuTxnCommand;
 
@@ -16989,19 +17002,35 @@ static int moe_gpu_write_applied_ack(
     if (txn && txn->valid) {
         fprintf(f,
                 "\"txn_id\":\"%s\",\"expected_epoch\":%llu,"
-                "\"expected_n\":%d,\"expected_policy_hash\":\"%s\","
-                "\"target_role\":\"%s\",\"target_layer\":%d,",
+                "\"expected_policy_hash\":\"%s\",",
                 txn->txn_id,
                 (unsigned long long)txn->expected_epoch,
-                txn->expected_n,
-                txn->expected_policy_hash,
-                MOE_ATTRIB_ROLE_NAMES[txn->role],
-                txn->layer);
+                txn->expected_policy_hash);
+        if (txn->op == 3) {
+            fprintf(f,
+                    "\"expected_n\":null,\"target_role\":null,\"target_layer\":null,");
+        } else {
+            fprintf(f,
+                    "\"expected_n\":%d,\"target_role\":\"%s\",\"target_layer\":%d,",
+                    txn->expected_n,
+                    MOE_ATTRIB_ROLE_NAMES[txn->role],
+                    txn->layer);
+        }
+        fprintf(f, "\"txn_targets\":[");
+        for (int i = 0; i < txn->target_count; i++) {
+            const MoeGpuTxnTarget *t = &txn->targets[i];
+            fprintf(f,
+                    "%s{\"role\":\"%s\",\"layer\":%d,\"expected_n\":%d,\"target_n\":%d}",
+                    i ? "," : "",
+                    MOE_ATTRIB_ROLE_NAMES[t->role], t->layer,
+                    t->expected_n, t->target_n);
+        }
+        fprintf(f, "],");
     } else {
         fprintf(f,
                 "\"txn_id\":null,\"expected_epoch\":null,"
                 "\"expected_n\":null,\"expected_policy_hash\":null,"
-                "\"target_role\":null,\"target_layer\":null,");
+                "\"target_role\":null,\"target_layer\":null,\"txn_targets\":[],");
     }
     fprintf(f, "\"active_policy\":[");
     int first = 1;
@@ -17068,28 +17097,162 @@ static int moe_gpu_hash64_hex(const char *s) {
 // One command controls one target, matching the control plane's one-target-
 // per-preimage rule. The command is copied into g_moe_gpu_pending_txn before
 // drain starts, so replacing the file during drain cannot change the target.
+static int moe_gpu_parse_i32(const char *text, int *out) {
+    if (!text || !text[0]) return 0;
+    char *endp = NULL;
+    errno = 0;
+    long v = strtol(text, &endp, 10);
+    if (errno || !endp || *endp || v < INT_MIN || v > INT_MAX) return 0;
+    *out = (int)v;
+    return 1;
+}
+
+static int moe_gpu_parse_u64(const char *text, uint64_t *out) {
+    if (!text || !text[0]) return 0;
+    char *endp = NULL;
+    errno = 0;
+    unsigned long long v = strtoull(text, &endp, 10);
+    if (errno || !endp || *endp) return 0;
+    *out = (uint64_t)v;
+    return 1;
+}
+
+// Additive G3/G4 control protocol. Legacy one-target commands remain valid:
+//   DEMOTE <txn_id> <expected_epoch> <expected_n> <role> <layer> <policy_sha256>
+//   REBIND <txn_id> <expected_epoch> <expected_n> <target_n> <role> <layer> <policy_sha256>
+//
+// Precision Epoch Scheduler v1 adds one atomic multi-target command:
+//   REBIND_SET <txn_id> <expected_epoch> <count> <policy_sha256>
+//              (<role> <layer> <expected_n> <target_n>){count}
+//
+// The command is copied into g_moe_gpu_pending_txn before the quiescent drain starts,
+// so every target belongs to one immutable admission-time preimage.
 static int moe_gpu_txn_read(MoeGpuTxnCommand *out, char *err, size_t errcap) {
     memset(out, 0, sizeof *out);
     const char *path = getenv("QWEN_MOE_GPU_TXN_FILE");
     if (!path || !path[0]) return 0;
     FILE *f = fopen(path, "r");
     if (!f) return 0;
-    char line[512];
+    char line[2048];
     if (!fgets(line, sizeof line, f)) {
         fclose(f);
         snprintf(err, errcap, "empty command file");
         return -1;
     }
+    if (!feof(f)) {
+        int c = fgetc(f);
+        if (c != EOF) {
+            fclose(f);
+            snprintf(err, errcap, "command file has extra lines");
+            return -1;
+        }
+    }
     fclose(f);
 
-    char op[16], txn_id[96], role_buf[64], hash[65], extra[2];
-    unsigned long long expected_epoch = 0;
-    int expected_n = 0, target_n = 0, layer = -1;
+    char op[16];
     if (sscanf(line, "%15s", op) != 1) {
         snprintf(err, errcap, "missing op");
         return -1;
     }
 
+    if (!strcmp(op, "REBIND_SET")) {
+        char copy[2048];
+        snprintf(copy, sizeof copy, "%s", line);
+        char *save = NULL;
+        char *tok = strtok_r(copy, " \t\r\n", &save);
+        (void)tok;
+        char *txn_id = strtok_r(NULL, " \t\r\n", &save);
+        char *epoch_s = strtok_r(NULL, " \t\r\n", &save);
+        char *count_s = strtok_r(NULL, " \t\r\n", &save);
+        char *hash = strtok_r(NULL, " \t\r\n", &save);
+        if (!txn_id || !epoch_s || !count_s || !hash) {
+            snprintf(err, errcap, "REBIND_SET missing header fields");
+            return -1;
+        }
+        if (!moe_gpu_txn_token_safe(txn_id)) {
+            snprintf(err, errcap, "invalid txn_id");
+            return -1;
+        }
+        if (!moe_gpu_hash64_hex(hash)) {
+            snprintf(err, errcap, "expected_policy_hash must be 64 hex chars");
+            return -1;
+        }
+        uint64_t expected_epoch = 0;
+        int count = 0;
+        if (!moe_gpu_parse_u64(epoch_s, &expected_epoch)) {
+            snprintf(err, errcap, "invalid expected_epoch");
+            return -1;
+        }
+        if (!moe_gpu_parse_i32(count_s, &count) ||
+            count < 1 || count > MOE_GPU_TXN_MAX_TARGETS) {
+            snprintf(err, errcap, "REBIND_SET count out of range");
+            return -1;
+        }
+
+        out->op = 3;
+        out->target_count = count;
+        out->expected_epoch = expected_epoch;
+        snprintf(out->txn_id, sizeof out->txn_id, "%s", txn_id);
+        snprintf(out->expected_policy_hash, sizeof out->expected_policy_hash, "%s", hash);
+
+        for (int i = 0; i < count; i++) {
+            char *role_buf = strtok_r(NULL, " \t\r\n", &save);
+            char *layer_s = strtok_r(NULL, " \t\r\n", &save);
+            char *expected_s = strtok_r(NULL, " \t\r\n", &save);
+            char *target_s = strtok_r(NULL, " \t\r\n", &save);
+            if (!role_buf || !layer_s || !expected_s || !target_s) {
+                snprintf(err, errcap, "REBIND_SET target %d is incomplete", i);
+                return -1;
+            }
+            int role_i = moe_attrib_role_from_name(role_buf);
+            int layer = -1, expected_n = 0, target_n = 0;
+            if (role_i < 0 || !moe_gpu_parse_i32(layer_s, &layer) ||
+                layer < 0 || layer >= MOE_NL) {
+                snprintf(err, errcap, "invalid target role=%s layer=%s", role_buf, layer_s);
+                return -1;
+            }
+            if (!moe_gpu_parse_i32(expected_s, &expected_n) ||
+                !moe_qng64_n_supported(expected_n)) {
+                snprintf(err, errcap, "target %d expected_n is not qNg64", i);
+                return -1;
+            }
+            if (!moe_gpu_parse_i32(target_s, &target_n) ||
+                !moe_qng64_n_supported(target_n)) {
+                snprintf(err, errcap, "target %d target_n is not qNg64", i);
+                return -1;
+            }
+            if (target_n == expected_n) {
+                snprintf(err, errcap, "target %d target_n equals expected_n=%d", i, expected_n);
+                return -1;
+            }
+            for (int j = 0; j < i; j++) {
+                if (out->targets[j].role == (MoeAttribRole)role_i &&
+                    out->targets[j].layer == layer) {
+                    snprintf(err, errcap, "REBIND_SET duplicate target role=%s layer=%d",
+                             role_buf, layer);
+                    return -1;
+                }
+            }
+            out->targets[i].role = (MoeAttribRole)role_i;
+            out->targets[i].layer = layer;
+            out->targets[i].expected_n = expected_n;
+            out->targets[i].target_n = target_n;
+        }
+        if (strtok_r(NULL, " \t\r\n", &save) != NULL) {
+            snprintf(err, errcap, "REBIND_SET has extra fields");
+            return -1;
+        }
+        out->role = out->targets[0].role;
+        out->layer = out->targets[0].layer;
+        out->expected_n = out->targets[0].expected_n;
+        out->target_n = out->targets[0].target_n;
+        out->valid = 1;
+        return 1;
+    }
+
+    char txn_id[96], role_buf[64], hash[65], extra[2];
+    unsigned long long expected_epoch = 0;
+    int expected_n = 0, target_n = 0, layer = -1;
     int got = 0;
     if (!strcmp(op, "DEMOTE")) {
         got = sscanf(line, "%15s %95s %llu %d %63s %d %64s %1s",
@@ -17144,12 +17307,17 @@ static int moe_gpu_txn_read(MoeGpuTxnCommand *out, char *err, size_t errcap) {
     }
 
     out->valid = 1;
+    out->target_count = 1;
     snprintf(out->txn_id, sizeof out->txn_id, "%s", txn_id);
     out->expected_epoch = (uint64_t)expected_epoch;
     out->expected_n = expected_n;
     out->target_n = target_n;
     out->role = (MoeAttribRole)role_i;
     out->layer = layer;
+    out->targets[0].expected_n = expected_n;
+    out->targets[0].target_n = target_n;
+    out->targets[0].role = (MoeAttribRole)role_i;
+    out->targets[0].layer = layer;
     snprintf(out->expected_policy_hash, sizeof out->expected_policy_hash, "%s", hash);
     return 1;
 }
@@ -17357,6 +17525,129 @@ static int moe_gpu_rebind_apply_quiescent(const MoeGpuTxnCommand *cmd) {
     return 1;
 }
 
+static int moe_gpu_rebind_set_apply_quiescent(const MoeGpuTxnCommand *cmd) {
+    if (!cmd || cmd->op != 3 || cmd->target_count < 1 ||
+        cmd->target_count > MOE_GPU_TXN_MAX_TARGETS) {
+        return 0;
+    }
+
+    MoeAFTensor *base_ptrs[MOE_GPU_TXN_MAX_TARGETS] = {0};
+    uint64_t attempt_sids[MOE_GPU_TXN_MAX_TARGETS] = {0};
+    int bound_count = 0;
+
+    for (int i = 0; i < cmd->target_count; i++) {
+        const MoeGpuTxnTarget *t = &cmd->targets[i];
+        base_ptrs[i] = moe_gpu_role_base_tensor(t->role, t->layer);
+        uint64_t baseline_sid = g_moe_promoted_nq_gpu_snapshot[t->role][t->layer];
+        if (!base_ptrs[i] || !baseline_sid || !g_moe_hi_st) {
+            fprintf(stderr,
+                    "[moe gpu rebind set] FAIL missing base/snapshot/source txn=%s target=%d role=%s layer=%d\n",
+                    cmd->txn_id, i, MOE_ATTRIB_ROLE_NAMES[t->role], t->layer);
+            return moe_gpu_txn_mark_terminal(cmd, "REBIND_SET_FAILED", 0);
+        }
+        int before_bits = 0;
+        int before_kind = mlx_gpu_binding_kind(base_ptrs[i]->name, &before_bits);
+        int expected_kind =
+            (t->expected_n == 7 || (t->expected_n >= 9 && t->expected_n <= 15)) ? 3 : 1;
+        if (before_kind != expected_kind || before_bits != t->expected_n) {
+            fprintf(stderr,
+                    "[moe gpu rebind set] STALE binding txn=%s target=%d got(kind=%d,bits=%d) expected(kind=%d,bits=%d)\n",
+                    cmd->txn_id, i, before_kind, before_bits, expected_kind, t->expected_n);
+            return moe_gpu_txn_mark_terminal(cmd, "STALE_COMMAND", 0);
+        }
+    }
+
+    if (!mlx_gpu_synchronize()) {
+        fprintf(stderr, "[moe gpu rebind set] FAIL sync txn=%s\n", cmd->txn_id);
+        return moe_gpu_txn_mark_terminal(cmd, "REBIND_SET_FAILED", 0);
+    }
+
+    for (int i = 0; i < cmd->target_count; i++) {
+        if (!mlx_gpu_snapshot_binding(base_ptrs[i]->name, &attempt_sids[i])) {
+            fprintf(stderr,
+                    "[moe gpu rebind set] FAIL attempt snapshot txn=%s target=%d\n",
+                    cmd->txn_id, i);
+            goto rollback;
+        }
+    }
+
+    for (int i = 0; i < cmd->target_count; i++) {
+        const MoeGpuTxnTarget *t = &cmd->targets[i];
+        MoeAFTensor *qnt = moe_gpu_qng64_cached(
+            t->role, t->layer, t->target_n, base_ptrs[i]);
+        int ok = qnt && mlx_gpu_bind_af(
+            qnt->base, 0, qnt->name, qnt->E, qnt->out, qnt->in, qnt->ng,
+            qnt->packed_off, qnt->scale_off, qnt->bias_off, qnt->bits);
+        int applied_bits = 0;
+        int applied_kind = ok ? mlx_gpu_binding_kind(base_ptrs[i]->name, &applied_bits) : 0;
+        int expected_kind =
+            (t->target_n == 7 || (t->target_n >= 9 && t->target_n <= 15)) ? 3 : 1;
+        if (!ok || applied_kind != expected_kind || applied_bits != t->target_n) {
+            fprintf(stderr,
+                    "[moe gpu rebind set] FAIL bind/verify txn=%s target=%d role=%s layer=%d target_n=%d got(kind=%d,bits=%d)\n",
+                    cmd->txn_id, i, MOE_ATTRIB_ROLE_NAMES[t->role], t->layer,
+                    t->target_n, applied_kind, applied_bits);
+            goto rollback;
+        }
+        bound_count++;
+    }
+
+    if (!mlx_gpu_reset_runtime_epoch()) {
+        fprintf(stderr,
+                "[moe gpu rebind set] FAIL runtime epoch reset txn=%s; restoring full preimage\n",
+                cmd->txn_id);
+        goto rollback;
+    }
+
+    for (int i = 0; i < cmd->target_count; i++) {
+        (void)mlx_gpu_drop_binding_snapshot(attempt_sids[i]);
+        attempt_sids[i] = 0;
+        const MoeGpuTxnTarget *t = &cmd->targets[i];
+        g_moe_promoted_nq_gpu[t->role][t->layer] = t->target_n;
+    }
+    g_moe_gpu_weight_epoch++;
+    if (!moe_gpu_txn_mark_terminal(cmd, "REBIND_SET_APPLIED", cmd->target_count)) {
+        fprintf(stderr,
+                "FATAL: [moe gpu rebind set] durable ACK failed txn=%s; worker must remain isolated\n",
+                cmd->txn_id);
+        return 0;
+    }
+    fprintf(stderr,
+            "[moe gpu rebind set] COMMIT txn=%s targets=%d epoch=%llu\n",
+            cmd->txn_id, cmd->target_count,
+            (unsigned long long)g_moe_gpu_weight_epoch);
+    return 1;
+
+rollback:
+    if (!mlx_gpu_synchronize()) {
+        fprintf(stderr,
+                "FATAL: [moe gpu rebind set] synchronize failed during rollback txn=%s\n",
+                cmd->txn_id);
+        return 0;
+    }
+    for (int i = 0; i < cmd->target_count; i++) {
+        if (!attempt_sids[i]) continue;
+        if (!mlx_gpu_restore_binding_snapshot(attempt_sids[i])) {
+            fprintf(stderr,
+                    "FATAL: [moe gpu rebind set] rollback restore failed txn=%s target=%d\n",
+                    cmd->txn_id, i);
+            return 0;
+        }
+    }
+    for (int i = 0; i < cmd->target_count; i++) {
+        if (!attempt_sids[i]) continue;
+        (void)mlx_gpu_drop_binding_snapshot(attempt_sids[i]);
+        attempt_sids[i] = 0;
+    }
+    if (bound_count > 0 && !mlx_gpu_reset_runtime_epoch()) {
+        fprintf(stderr,
+                "FATAL: [moe gpu rebind set] runtime epoch reset failed after rollback txn=%s\n",
+                cmd->txn_id);
+        return 0;
+    }
+    return moe_gpu_txn_mark_terminal(cmd, "REBIND_SET_FAILED", 0);
+}
+
 static int moe_gpu_demotion_pending(void) {
     if (g_moe_gpu_pending_txn.valid) return 1;
 
@@ -17373,14 +17664,23 @@ static int moe_gpu_demotion_pending(void) {
             exit(1);
         }
         if (moe_gpu_ack_already_has_txn(cmd.txn_id)) return 0;
-        int current_n = g_moe_promoted_nq_gpu[cmd.role][cmd.layer];
-        if (cmd.expected_epoch != g_moe_gpu_weight_epoch || current_n != cmd.expected_n) {
+        int stale = (cmd.expected_epoch != g_moe_gpu_weight_epoch);
+        if (!stale) {
+            for (int i = 0; i < cmd.target_count; i++) {
+                const MoeGpuTxnTarget *t = &cmd.targets[i];
+                if (g_moe_promoted_nq_gpu[t->role][t->layer] != t->expected_n) {
+                    stale = 1;
+                    break;
+                }
+            }
+        }
+        if (stale) {
             fprintf(stderr,
-                    "[moe gpu txn] STALE txn=%s expected(epoch=%llu,n=%d) actual(epoch=%llu,n=%d) role=%s layer=%d\n",
+                    "[moe gpu txn] STALE txn=%s expected_epoch=%llu actual_epoch=%llu targets=%d\n",
                     cmd.txn_id,
-                    (unsigned long long)cmd.expected_epoch, cmd.expected_n,
-                    (unsigned long long)g_moe_gpu_weight_epoch, current_n,
-                    MOE_ATTRIB_ROLE_NAMES[cmd.role], cmd.layer);
+                    (unsigned long long)cmd.expected_epoch,
+                    (unsigned long long)g_moe_gpu_weight_epoch,
+                    cmd.target_count);
             if (!moe_gpu_txn_mark_terminal(&cmd, "STALE_COMMAND", 0)) {
                 fprintf(stderr, "FATAL: [moe gpu txn] failed to persist STALE_COMMAND ACK\n");
                 exit(1);
@@ -17410,10 +17710,24 @@ static int moe_gpu_demotion_pending(void) {
 static int moe_gpu_demotion_apply_quiescent(void) {
     if (g_moe_gpu_pending_txn.valid) {
         MoeGpuTxnCommand cmd = g_moe_gpu_pending_txn;
-        int current_n = g_moe_promoted_nq_gpu[cmd.role][cmd.layer];
-        if (cmd.expected_epoch != g_moe_gpu_weight_epoch || current_n != cmd.expected_n) {
+        int stale = (cmd.expected_epoch != g_moe_gpu_weight_epoch);
+        if (!stale) {
+            for (int i = 0; i < cmd.target_count; i++) {
+                const MoeGpuTxnTarget *t = &cmd.targets[i];
+                if (g_moe_promoted_nq_gpu[t->role][t->layer] != t->expected_n) {
+                    stale = 1;
+                    break;
+                }
+            }
+        }
+        if (stale) {
             memset(&g_moe_gpu_pending_txn, 0, sizeof g_moe_gpu_pending_txn);
             return moe_gpu_txn_mark_terminal(&cmd, "STALE_COMMAND", 0);
+        }
+        if (cmd.op == 3) {
+            int ok = moe_gpu_rebind_set_apply_quiescent(&cmd);
+            memset(&g_moe_gpu_pending_txn, 0, sizeof g_moe_gpu_pending_txn);
+            return ok;
         }
         if (cmd.op == 2) {
             int ok = moe_gpu_rebind_apply_quiescent(&cmd);
