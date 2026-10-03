@@ -14,7 +14,7 @@
       "type": "array"
     },
     "schema": {
-      "type": "string"
+      "const": "beglin-backend-capability-v1"
     }
   },
   "required": [
