@@ -246,6 +246,7 @@ def select_p10_canary(
         ),
         "target_key": target_key,
         "backend": backend,
+        "requested_n": p9.get("requested_n"),
         "mutation_mode": mode,
         "canary_strategy": strategy,
         "backend_inference_status": backend_cap["inference_status"],
@@ -302,6 +303,19 @@ def build_p11_capability_preimage(
         raise PipelineCapabilityError("runtime backend mismatch")
     if str(runtime_state.get("target_key")) != target_key:
         raise PipelineCapabilityError("runtime target mismatch")
+    requested_n = p10.get("requested_n")
+    runtime_n = runtime_state.get("precision_n")
+    if requested_n is not None:
+        if runtime_n is None:
+            raise PipelineCapabilityError("runtime precision is missing")
+        try:
+            runtime_n = int(runtime_n)
+        except (TypeError, ValueError) as exc:
+            raise PipelineCapabilityError("runtime precision is invalid") from exc
+        if runtime_n != int(requested_n):
+            raise PipelineCapabilityError(
+                f"runtime precision mismatch: expected={requested_n} actual={runtime_n}"
+            )
 
     preimage = {
         "schema": "beglin-p12-p11-capability-preimage-v1",
@@ -315,6 +329,8 @@ def build_p11_capability_preimage(
         ),
         "target_key": target_key,
         "backend": backend,
+        "requested_n": int(requested_n) if requested_n is not None else None,
+        "runtime_precision_n": runtime_n,
         "runtime_identity_sha256": mc.stable_identity_sha256(dict(runtime_state)),
         "trusted_production_approval_present": False,
         "production_cutover_allowed": False,
