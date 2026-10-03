@@ -306,7 +306,9 @@ class PipelineBridgeTests(unittest.TestCase):
                 tokenizer_evidence=evidence("tokenizer", "5"),
                 loader_evidence=evidence("loader", "6"),
             )
-            self.assertEqual(bundle["p8_p11_eligibility"]["status"], "FULL")
+            self.assertEqual(bundle["p8_p11_eligibility"]["status"], "PARTIAL")
+            self.assertIn("TEXT_IO_NOT_WIRED", bundle["p8_p11_eligibility"]["reasons"])
+            self.assertTrue(bundle["p8_p11_eligibility"]["p11_allowed"])
             target = self.q_target(bundle)
             p8 = bridge.bind_p8_target(
                 bundle, target_key=target, backend="mlx_metal", requested_n=5
@@ -356,6 +358,36 @@ class PipelineBridgeTests(unittest.TestCase):
                         "backend": "mlx_metal",
                         "target_key": target,
                         "precision_n": 4,
+                        "worker_pid": 1234,
+                        "weight_epoch": 9,
+                    },
+                )
+
+            p8_unspecified = bridge.bind_p8_target(
+                bundle, target_key=target, backend="mlx_metal"
+            )
+            p9_unspecified = bridge.bind_p9_certification(
+                bundle,
+                p8_binding=p8_unspecified,
+                provenance_evidence_sha256="8" * 64,
+            )
+            p10_unspecified = bridge.select_p10_canary(
+                bundle, p9_binding=p9_unspecified
+            )
+            with self.assertRaisesRegex(
+                bridge.PipelineCapabilityError, "explicit requested_n"
+            ):
+                bridge.build_p11_capability_preimage(
+                    bundle,
+                    p10_binding=p10_unspecified,
+                    runtime_state={
+                        "model_capability_bundle_sha256": bundle["bundle_sha256"],
+                        "checkpoint_identity_sha256": bundle[
+                            "checkpoint_identity_sha256"
+                        ],
+                        "backend": "mlx_metal",
+                        "target_key": target,
+                        "precision_n": 5,
                         "worker_pid": 1234,
                         "weight_epoch": 9,
                     },
