@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import signal
 from pathlib import Path
 import shutil
 import struct
@@ -56,6 +57,7 @@ WORKFLOW = (
 SOURCE_REF = "refs/heads/precision-p11-production-approval-v1-20261004"
 REPO = "popixoxipop-collab/beglin"
 HEALTH_URL = "http://127.0.0.1:18765/healthz"
+BATCH_URL = "http://127.0.0.1:18765/v1/batch_generate"
 EXPECTED_GOOD = [55222, 1]
 EXPECTED_BAD = [55222, 372]
 
@@ -82,6 +84,81 @@ def read_json(path: Path) -> dict:
 def health() -> dict:
     with urllib.request.urlopen(HEALTH_URL, timeout=3) as response:
         return json.load(response)
+
+
+def supervisor_pid() -> int:
+    proc = subprocess.run(
+        ["lsof", "-nP", "-iTCP:18765", "-sTCP:LISTEN", "-t"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=5,
+    )
+    pids = [int(x) for x in proc.stdout.split() if x.strip().isdigit()]
+    if proc.returncode != 0 or len(pids) != 1:
+        raise P11ExecutionError(f"expected exactly one supervisor listener pid, got {pids}")
+    return pids[0]
+
+
+def _process_state(pid: int) -> str:
+    proc = subprocess.run(
+        ["ps", "-o", "state=", "-p", str(int(pid))],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=5,
+    )
+    return proc.stdout.strip()
+
+
+def quiesce_supervisor() -> int:
+    require_queue_idle()
+    pid = supervisor_pid()
+    os.kill(pid, signal.SIGSTOP)
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        if "T" in _process_state(pid):
+            require_queue_idle()
+            return pid
+        time.sleep(0.02)
+    try:
+        os.kill(pid, signal.SIGCONT)
+    except ProcessLookupError:
+        pass
+    raise P11ExecutionError("supervisor did not enter stopped state")
+
+
+def resume_supervisor(pid: int) -> dict:
+    os.kill(int(pid), signal.SIGCONT)
+    deadline = time.time() + 5
+    last = None
+    while time.time() < deadline:
+        try:
+            last = health()
+            return last
+        except Exception:
+            time.sleep(0.05)
+    raise P11ExecutionError(f"supervisor did not resume cleanly: {last!r}")
+
+
+def http_refresh(tokens: list[int], *, expected: list[int], expected_epoch: int, expected_policy_hash: str) -> dict:
+    payload = json.dumps({
+        "requests": [{"prompt_tokens": tokens, "max_new_tokens": 2}]
+    }).encode()
+    req = urllib.request.Request(
+        BATCH_URL, data=payload, method="POST", headers={"Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(req, timeout=60) as response:
+        row = json.load(response)
+    generated = (row.get("responses") or [{}])[0].get("generated_tokens")
+    if row.get("finite_logits") is not True or generated != expected:
+        raise P11ExecutionError(f"HTTP refresh reference mismatch: {generated!r}")
+    adaptive = row.get("adaptive_precision") or {}
+    if adaptive.get("action") != "BASE_N5" or adaptive.get("trigger_request_indices") != []:
+        raise P11ExecutionError(f"HTTP refresh unexpectedly triggered adaptive recovery: {adaptive!r}")
+    if int(row.get("worker_epoch")) != int(expected_epoch):
+        raise P11ExecutionError("HTTP refresh worker epoch mismatch")
+    live = health()
+    worker = (live.get("workers") or {}).get(p11.ACTIVE_ROUTE_ID) or {}
+    if int(worker.get("weight_epoch")) != int(expected_epoch):
+        raise P11ExecutionError("health cache did not refresh to expected epoch")
+    if worker.get("runtime_policy_hash") != expected_policy_hash:
+        raise P11ExecutionError("health cache did not refresh to expected policy")
+    return row
 
 
 def tokens_from_raw(path: Path = P10_RAW) -> list[int]:
@@ -375,7 +452,18 @@ def execute() -> dict:
 
     txn_id = "p11-prod-" + approval["nonce"]
     published = False
+    supervisor = None
+    supervisor_stopped = False
     try:
+        supervisor = quiesce_supervisor()
+        supervisor_stopped = True
+        frozen_ack = grc.read_runtime_ack(ACK_PATH)
+        if int(frozen_ack["weight_epoch"]) != int(request["weight_epoch"]):
+            raise P11ExecutionError("runtime epoch drifted after quiesce")
+        if frozen_ack["active_policy_hash"] != p11.BASELINE_POLICY_HASH:
+            raise P11ExecutionError("runtime policy drifted after quiesce")
+        if frozen_ack["ack_sha256"] != request["ack_sha256"]:
+            raise P11ExecutionError("runtime ACK drifted after quiesce")
         change = plan["target"]["changes"]
         if change != [{"role":"shared_up_proj","layer":3,"expected_n":6,"target_n":5}]:
             raise P11ExecutionError("approved cutover is not the exact single L3 6->5 target")
@@ -409,6 +497,13 @@ def execute() -> dict:
                 f"cutover reference mismatch: {result.get('responses')!r}"
             )
 
+        resume_supervisor(supervisor)
+        supervisor_stopped = False
+        refresh = http_refresh(
+            tokens, expected=EXPECTED_GOOD,
+            expected_epoch=int(terminal["weight_epoch"]),
+            expected_policy_hash=p11.TARGET_POLICY_HASH,
+        )
         live_after = health()
         worker = (live_after.get("workers") or {}).get(p11.ACTIVE_ROUTE_ID) or {}
         if int(worker.get("pid")) != int(request["worker_pid"]):
@@ -442,6 +537,9 @@ def execute() -> dict:
             "response": result["responses"][0],
             "engine_wall_ms": float(result.get("engine_wall_ms", 0.0)),
             "roundtrip_ms": float(result.get("roundtrip_ms", 0.0)),
+            "http_refresh_response": refresh["responses"][0]["generated_tokens"],
+            "http_refresh_worker_epoch": int(refresh["worker_epoch"]),
+            "supervisor_pid": int(supervisor),
             "route_generation": live_after["route_generation"],
             "route_manifest_sha256": live_after["route_manifest_sha256"],
             "rollback": None,
@@ -453,6 +551,12 @@ def execute() -> dict:
         return out
     except Exception as exc:
         cancel = False
+        if not supervisor_stopped:
+            try:
+                supervisor = quiesce_supervisor()
+                supervisor_stopped = True
+            except Exception:
+                pass
         if published:
             try:
                 cancel = cancel_pending_txn(txn_id)
@@ -474,6 +578,12 @@ def execute() -> dict:
             (EVIDENCE_ROOT / "cutover-result.json").write_text(
                 json.dumps(failure, sort_keys=True, indent=2) + "\n"
             )
+            if supervisor_stopped and supervisor is not None:
+                try:
+                    resume_supervisor(supervisor)
+                    supervisor_stopped = False
+                except Exception:
+                    pass
             raise P11ExecutionError(
                 "cutover failed and rollback also failed"
             ) from rollback_exc
@@ -489,6 +599,9 @@ def execute() -> dict:
         (EVIDENCE_ROOT / "cutover-result.json").write_text(
             json.dumps(failure, sort_keys=True, indent=2) + "\n"
         )
+        if supervisor_stopped and supervisor is not None:
+            resume_supervisor(supervisor)
+            supervisor_stopped = False
         raise
 
 
