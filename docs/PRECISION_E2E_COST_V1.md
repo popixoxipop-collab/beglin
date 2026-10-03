@@ -121,3 +121,43 @@ P4 is not enabled in production by this implementation stage.
 Current production remains generation 6 on the existing adaptive L26 supervisor, with auto-promotion OFF and no external exposure.
 
 A later cutover must separately pin the new native binary, the measured cost snapshot, and exact-source P4 acceptance evidence.
+
+## Inference-pass measurement hardening
+The original P4 acceptance measured REBIND/cache/resident-memory costs directly, while accepted closed-loop policies were one-pass and therefore carried expected_inference_passes=1.
+
+This hardening makes the worker result itself authoritative for pass count:
+- every ordinary PersistentRouteWorker admission reports inference_passes=1;
+- AdaptivePersistentRouteWorker reports inference_passes=2 when a low-cost base pass is followed by n6 recovery;
+- the scratch P4 benchmark records an adaptive_recovery_profile from the real XOX worker and requires observed_inference_passes=[2];
+- the P4 acceptance refuses cost evidence that does not contain this real two-pass measurement.
+
+Exact-source evidence is generated after the implementation commit is fixed.
+
+## Exact-source inference-pass evidence
+Implementation commit:
+78740c0209d4f0483de9b85b47fdb99767c2c7f4
+
+Exact-source benchmark:
+/Users/xox/vdsp_shadow_runs/precision_e2e_cost/p4-pass-metrics-78740c0/result.json
+SHA-256:
+9647217bf707741fdbf11c7ff0f32bbf719fd090b61060c016bf9e8f4b923871
+
+Adaptive recovery profile:
+- same PID 82470
+- 3 measured samples
+- observed_inference_passes=[2]
+- expected_inference_passes=2
+- p50 engine about 668.033 ms
+- p50 roundtrip about 701.572 ms
+
+Exact-source P4 acceptance:
+/Users/xox/vdsp_serving/precision-e2e-cost-pass-metrics-78740c0/result.json
+SHA-256:
+0251105c3a37703681a8b9ad209b980dcb444c7849f02d341c84e4af834fe14b
+
+The acceptance is source-bound to 78740c0209d4f0483de9b85b47fdb99767c2c7f4 and explicitly carries the measured adaptive 2-pass profile while closed-loop exact-policy admissions report inference_passes=1.
+
+Certified successor regression:
+- run 37122034952
+- head 78740c0209d4f0483de9b85b47fdb99767c2c7f4
+- conclusion SUCCESS

@@ -361,6 +361,7 @@ class AdaptiveTwoPassTests(unittest.TestCase):
             )
             self.assertEqual(got["engine_wall_ms"], 14.0)
             self.assertEqual(got["roundtrip_ms"], 16.0)
+            self.assertEqual(got["inference_passes"], 2)
             prepare.assert_called_once()
             self.assertEqual(prepare.call_args.kwargs["expected_n"], 5)
             self.assertEqual(prepare.call_args.kwargs["target_n"], 6)
@@ -391,6 +392,7 @@ class AdaptiveTwoPassTests(unittest.TestCase):
                 got = worker.submit([([1], 2)])
 
             self.assertEqual(got["responses"], [[123]])
+            self.assertEqual(got.get("inference_passes", 1), 1)
             self.assertEqual(got["adaptive_precision"]["action"], "BASE_N5")
             self.assertTrue(got["adaptive_precision"]["restored_from_n6"])
             prepare.assert_called_once()
