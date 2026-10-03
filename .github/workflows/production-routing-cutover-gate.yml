@@ -1,0 +1,110 @@
+name: Production Routing Cutover Gate
+
+on:
+  push:
+    branches:
+      - production-routing-cutover-gate-20261002
+    paths:
+      - "tools/production_routing_cutover.py"
+      - "tools/test_production_routing_cutover.py"
+      - "configs/production_router_capability_20261002.json"
+      - ".github/workflows/production-routing-cutover-gate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile and test routing controller
+        env:
+          PYTHONPATH: tools
+        run: |
+          set -euo pipefail
+          python -m py_compile tools/production_routing_cutover.py tools/test_production_routing_cutover.py
+          python tools/test_production_routing_cutover.py
+
+      - name: Prove live cutover remains blocked without a verified router
+        env:
+          PYTHONPATH: tools
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import production_routing_cutover as c
+
+          cap=json.loads(Path("configs/production_router_capability_20261002.json").read_text())
+          bridge={
+            "schema":"beglin-production-adapter-bridge-execution/1",
+            "plan":{"plan_sha256":"d26bcc0273a887f4341581536e41dcb4398c319138107d12c9061aa3d07bc1dc"},
+            "result":{
+              "source_commit":"330954b27f146b8a17db2cb353c3e620968bad5e",
+              "binary_sha256":"6e6258d6d4e402033c303c8c4b622db5a088354a0de79e687eb0fad4190c4392",
+              "checkpoint_sha256":"1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+              "candidate_policy_hash":"0e048b8c5c50a1c005ea573caadd6ccdf99797c24b9c443e993fe0d7b0b27141",
+              "candidate_worker_exited":True,
+              "baseline_worker_mutated":False,
+              "production_routing_switched":False,
+              "reference_token_match":True,
+              "finite_logits":True,
+              "result_sha256":"37227ea66f6dc5766e879eca383e41494860bd7d5496334de5bc8ecd90f3202e"
+            },
+            "verdict":{
+              "status":"CANARY_PASS_REVIEW_REQUIRED",
+              "decision":"NO_AUTO_PROMOTION",
+              "production_routing_switch_allowed":False,
+              "verdict_sha256":"1cc814c61e886befd30d1b9549d47ab4a53186a16d4f81ce82f609e9ccf8a1ea"
+            }
+          }
+          base={
+            "route_id":"unbound-baseline",
+            "worker_instance_id":"unbound-baseline",
+            "endpoint":"unbound://baseline",
+            "source_commit":bridge["result"]["source_commit"],
+            "binary_sha256":bridge["result"]["binary_sha256"],
+            "checkpoint_sha256":bridge["result"]["checkpoint_sha256"],
+            "policy_hash":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "role":"shared_up_proj","layer":3,"n":None
+          }
+          cand={
+            **base,
+            "route_id":"unbound-candidate",
+            "worker_instance_id":"unbound-candidate",
+            "endpoint":"unbound://candidate",
+            "policy_hash":bridge["result"]["candidate_policy_hash"],
+            "n":6
+          }
+          plan=c.build_cutover_plan(
+              bridge_status=bridge,
+              baseline_route=base,
+              candidate_route=cand,
+              router_capability=cap,
+          )
+          assert plan["status"] == "BLOCKED_NO_VERIFIED_SERVING_ROUTER"
+          assert plan["router_verified"] is False
+          assert plan["production_routing_switch_allowed"] is False
+          assert plan["automatic_cutover_allowed"] is False
+          Path("BEGLIN_PRODUCTION_ROUTING_BLOCKED_PLAN_2026-10-02.json").write_text(
+              json.dumps(plan,indent=2,sort_keys=True)+"\n"
+          )
+          print(json.dumps({
+              "status":plan["status"],
+              "plan_sha256":plan["plan_sha256"],
+              "production_routing_switch_allowed":plan["production_routing_switch_allowed"]
+          },sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-production-routing-blocked-plan
+          path: BEGLIN_PRODUCTION_ROUTING_BLOCKED_PLAN_2026-10-02.json
+          if-no-files-found: error
+          retention-days: 90

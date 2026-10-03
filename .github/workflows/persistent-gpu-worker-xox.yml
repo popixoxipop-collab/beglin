@@ -1,0 +1,171 @@
+name: Persistent GPU Worker XOX
+
+on:
+  push:
+    branches:
+      - persistent-gpu-serving-20261003
+    paths:
+      - "qwen_infer.c"
+      - ".github/workflows/persistent-gpu-worker-xox.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-probe:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify XOX
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+
+      - name: Build persistent GPU binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build-persistent
+          cmake -S . -B build-persistent             -DCMAKE_BUILD_TYPE=Release             -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          cmake --build build-persistent --target qwen_infer_gpu -j4
+          /usr/bin/shasum -a 256 build-persistent/qwen_infer_gpu | tee /tmp/beglin-persistent-binary.sha256
+
+      - name: Persistent two-request real-GPU probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, pathlib, shlex, subprocess, tempfile, time
+
+          root=pathlib.Path.cwd()
+          binary=root/"build-persistent/qwen_infer_gpu"
+          source_manifest=pathlib.Path("/Users/xox/vdsp-engine-gpu-precision/g5_drill_manifest.txt")
+          rows=[x.strip() for x in source_manifest.read_text().splitlines() if x.strip() and not x.lstrip().startswith("#")]
+          if not rows:
+              raise SystemExit("missing certified prompt manifest row")
+          parts=shlex.split(rows[0])
+          raw=pathlib.Path(parts[0]); max_new=int(parts[1])
+          if not raw.is_file():
+              raise SystemExit("certified raw prompt missing")
+
+          with tempfile.TemporaryDirectory(prefix="beglin-persistent-xox-") as td:
+              td=pathlib.Path(td)
+              qdir=td/"queue"; qdir.mkdir()
+              manifest=td/"manifest.txt"
+              manifest.write_text((f"{raw} {max_new}\n")*12)
+              promo=td/"promotion_nq.txt"
+              promo.write_text("shared_up_proj 3 6\n")
+              ack=td/"ack.json"
+              txn=td/"txn.cmd"
+              log=td/"worker.log"
+
+              env={k:v for k,v in os.environ.items() if k in ("PATH","HOME","USER","LOGNAME","LANG","LC_ALL","TMPDIR")}
+              env.update({
+                "QWEN_MOE_GPU_CBATCH_ONLINE":"1",
+                "QWEN_MOE_BASE":"/Users/xox/vdsp_local_data/moe_base_deepseek",
+                "QWEN_MOE_NEARTIE_CORRECT":"0",
+                "QWEN_MOE_CB_SLOTS":"4",
+                "QWEN_MOE_CB_REQS":"12",
+                "QWEN_MOE_GPU_VALIDATION_REPORT":"1",
+                "QWEN_MOE_GPU_APPLIED_ACK":str(ack),
+                "QWEN_MOE_GPU_TXN_FILE":str(txn),
+                "QWEN_MOE_PROMOTION_FILE_NQ":str(promo),
+                "QWEN_MOE_PROMOTION_SAFETENSORS":"/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json",
+                "QWEN_MOE_GPU_PERSISTENT_DIR":str(qdir),
+              })
+              lf=log.open("w")
+              proc=subprocess.Popen([str(binary)],cwd=root,env=env,stdout=lf,stderr=subprocess.STDOUT,text=True)
+              pid=proc.pid
+
+              deadline=time.time()+120
+              while time.time()<deadline:
+                  if proc.poll() is not None:
+                      lf.flush()
+                      raise SystemExit(f"worker exited early rc={proc.returncode}\n{log.read_text()[-8000:]}")
+                  if log.exists() and "persistent admission enabled" in log.read_text(errors="ignore"):
+                      break
+                  time.sleep(.1)
+              else:
+                  proc.terminate(); proc.wait(timeout=10)
+                  raise SystemExit("persistent worker did not become ready")
+
+              def submit(rid):
+                  result=td/f"{rid}.result"
+                  tmp=qdir/"request.txt.tmp"
+                  tmp.write_text(f"BEGLIN_GPU_PERSISTENT_REQUEST_V1 {rid} {manifest} {result}\n")
+                  t0=time.monotonic()
+                  os.replace(tmp,qdir/"request.txt")
+                  deadline=time.time()+120
+                  while time.time()<deadline:
+                      if proc.poll() is not None:
+                          raise SystemExit(f"worker died while serving {rid} rc={proc.returncode}")
+                      if result.exists():
+                          elapsed=(time.monotonic()-t0)*1000
+                          return elapsed,result.read_text()
+                      time.sleep(.01)
+                  raise SystemExit(f"timeout waiting for {rid}")
+
+              def parse(text):
+                  lines=[x.strip() for x in text.splitlines() if x.strip()]
+                  head=lines[0].split()
+                  assert head[0]=="BEGLIN_GPU_PERSISTENT_RESULT_V1",head
+                  reqs=[]
+                  for line in lines[1:]:
+                      if line=="END": break
+                      p=line.split()
+                      assert p[0]=="REQ",p
+                      idx=int(p[1]); n=int(p[2]); toks=list(map(int,p[3:]))
+                      assert len(toks)==n,(idx,n,len(toks))
+                      reqs.append(toks)
+                  assert len(reqs)==12,len(reqs)
+                  assert all(len(t)>8 and t[8]==1224 for t in reqs),[t[8] if len(t)>8 else None for t in reqs]
+                  return {
+                    "request_id":head[1],
+                    "requests":int(head[2]),
+                    "finite_logits":int(head[3]),
+                    "engine_wall_ms":float(head[4]),
+                    "reference_hits":sum(t[8]==1224 for t in reqs),
+                  }
+
+              cold_ms,cold_text=submit("cold")
+              warm_ms,warm_text=submit("warm")
+              cold=parse(cold_text); warm=parse(warm_text)
+
+              (qdir/"shutdown").write_text("")
+              rc=proc.wait(timeout=30)
+              lf.close()
+              if rc!=0:
+                  raise SystemExit(f"worker shutdown rc={rc}")
+
+              out={
+                "schema":"beglin-persistent-gpu-worker-probe/1",
+                "status":"PASS",
+                "worker_pid":pid,
+                "same_process_for_both_requests":True,
+                "cold_roundtrip_ms":cold_ms,
+                "warm_roundtrip_ms":warm_ms,
+                "cold":cold,
+                "warm":warm,
+                "warm_speedup_vs_cold":cold_ms/warm_ms if warm_ms else None,
+                "binary_sha256":subprocess.check_output(["/usr/bin/shasum","-a","256",str(binary)],text=True).split()[0],
+                "source_head":subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip(),
+              }
+              pathlib.Path("/tmp/BEGLIN_PERSISTENT_GPU_WORKER_PROBE.json").write_text(json.dumps(out,indent=2,sort_keys=True)+"\n")
+              print(json.dumps(out,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-persistent-gpu-worker-probe
+          path: |
+            /tmp/BEGLIN_PERSISTENT_GPU_WORKER_PROBE.json
+            /tmp/beglin-persistent-binary.sha256
+          if-no-files-found: error
+          retention-days: 90

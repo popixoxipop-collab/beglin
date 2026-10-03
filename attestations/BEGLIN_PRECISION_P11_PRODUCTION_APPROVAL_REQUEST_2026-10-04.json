@@ -1,0 +1,20 @@
+{
+  "ack_sha256": "c4a984463fdf75cbe83246c1128e7164faea0076a7f9113dbade21fff359f615",
+  "approval_request_sha256": "4ea00bdd864a6ddee05b6ea89df82a27ecb8d8d8881b65af97bcb9b2794b1703",
+  "automatic_live_promotion": false,
+  "candidate_policy_hash": "b58064ae93c3550c5ca5fccab83c9976268370d559b8602f3d91772cb9ac82bd",
+  "cutover_plan_sha256": "520bb1628f6f83150a10b087a64b56f015a863ce83a6f77d4393686a94a7cc69",
+  "executor_source_sha256": "f05c05b9e7048d7152a300f6751010628211269e488d22ce50a4bc0993cc1639",
+  "p10_result_sha256": "9c9c809097d18d735855f09bd85016272a319087501d160873f52985669f2fff",
+  "preimage_sha256": "26d81f37ba7ecdc3a2a6f24af0927bd920a7ce3f12bc4b40b512c2a8b1273d60",
+  "production_binary_rebind_compat_sha256": "026c88a3ba39f4cada099b09583c6fc0a8d440a1c38a4348a87844d99f513958",
+  "production_cutover_allowed": false,
+  "requested_capability": "ONE_SHOT_PRECISION_EPOCH_CUTOVER",
+  "route_generation": 6,
+  "route_manifest_sha256": "c2bf7eed2788e115af0c0cb3316fceb061000013b2bfcf57710f66d291ff4221",
+  "schema": "beglin-precision-p11-production-approval-request-v1",
+  "status": "AWAITING_TRUSTED_PRODUCTION_APPROVAL",
+  "trusted_production_approval_present": false,
+  "weight_epoch": 10,
+  "worker_pid": 35493
+}

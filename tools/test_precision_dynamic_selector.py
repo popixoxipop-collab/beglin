@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+import unittest
+
+import precision_dynamic_selector as ds
+
+
+def allocator_decision():
+    return {
+        "targets": [{
+            "role":"shared_up_proj",
+            "layer":3,
+            "status":"PROPOSED",
+            "selected_n":5,
+            "current_n":6,
+            "dynamic_escalation":{
+                "candidate_alternates":[
+                    {"n":6,"real_pass_events":3,"persistent_p50_ms":None},
+                    {"n":9,"real_pass_events":1,"persistent_p50_ms":None},
+                ]
+            }
+        }]
+    }
+
+
+def benefit_evidence(to_n, trigger="near_tie", bucket=None):
+    return {
+        "role":"shared_up_proj",
+        "layer":3,
+        "from_n":5,
+        "to_n":int(to_n),
+        "trigger_type":trigger,
+        "status":"PASS",
+        "pass":True,
+        "requests":20,
+        "signal_bucket":bucket or {"trigger_only":True},
+        "metrics":{"base_failures":4,"target_failures":0},
+    }
+
+
+class DynamicSelectorTests(unittest.TestCase):
+    def test_no_trigger_uses_low_cost_base(self):
+        got=ds.select(allocator_decision(),{},[])
+        row=got["targets"][0]
+        self.assertEqual(row["status"],"BASE_LOW_COST")
+        self.assertEqual(row["selected_n"],5)
+
+    def test_trigger_without_context_evidence_holds_base(self):
+        got=ds.select(allocator_decision(),{"near_tie":True},[])
+        row=got["targets"][0]
+        self.assertEqual(row["status"],"HOLD_BASE_NO_TRIGGER_EVIDENCE")
+        self.assertEqual(row["selected_n"],5)
+        self.assertTrue(row["required_calibrations"])
+
+    def test_trigger_requires_proven_base_failure_and_target_recovery(self):
+        evidence=[benefit_evidence(9)]
+        got=ds.select(allocator_decision(),{"near_tie":True},evidence)
+        row=got["targets"][0]
+        self.assertEqual(row["status"],"TRIGGER_CONDITIONED_ALTERNATE")
+        self.assertEqual(row["selected_n"],9)
+
+    def test_trigger_evidence_without_benefit_holds_base(self):
+        row=benefit_evidence(6)
+        row["metrics"]={"base_failures":0,"target_failures":0}
+        got=ds.select(allocator_decision(),{"near_tie":True},[row])
+        self.assertEqual(
+            got["targets"][0]["status"],
+            "HOLD_BASE_NO_TRIGGER_EVIDENCE",
+        )
+
+    def test_target_must_remove_all_observed_failures(self):
+        row=benefit_evidence(6)
+        row["metrics"]={"base_failures":4,"target_failures":1}
+        got=ds.select(allocator_decision(),{"near_tie":True},[row])
+        self.assertEqual(
+            got["targets"][0]["status"],
+            "HOLD_BASE_NO_TRIGGER_EVIDENCE",
+        )
+
+    def test_boolean_pass_metrics_are_supported(self):
+        row=benefit_evidence(6)
+        row["metrics"]={"base_pass":False,"target_pass":True}
+        got=ds.select(allocator_decision(),{"near_tie":True},[row])
+        self.assertEqual(
+            got["targets"][0]["status"],
+            "TRIGGER_CONDITIONED_ALTERNATE",
+        )
+
+    def test_multiple_valid_alternates_choose_measured_e2e_cost(self):
+        decision=allocator_decision()
+        for alt in decision["targets"][0]["dynamic_escalation"]["candidate_alternates"]:
+            alt["expected_e2e_ms"] = 20.0 if alt["n"]==6 else 8.0
+            alt["transition_p50_ms"] = 2.0
+            alt["resident_cache_bytes_after"] = 100
+            alt["expected_inference_passes"] = 1
+            alt["transition_cache_state"] = "warm"
+        evidence=[benefit_evidence(6),benefit_evidence(9)]
+        got=ds.select(decision,{"near_tie":True},evidence)
+        self.assertEqual(got["targets"][0]["selected_n"],9)
+        self.assertEqual(got["targets"][0]["cost"]["expected_e2e_ms"],8.0)
+
+    def test_multiple_valid_alternates_choose_lower_cost_n(self):
+        evidence=[benefit_evidence(6),benefit_evidence(9)]
+        got=ds.select(allocator_decision(),{"near_tie":True},evidence)
+        self.assertEqual(got["targets"][0]["selected_n"],6)
+
+    def test_empty_signal_bucket_is_not_reused(self):
+        row=benefit_evidence(6)
+        row["signal_bucket"]={}
+        got=ds.select(allocator_decision(),{"near_tie":True},[row])
+        self.assertEqual(
+            got["targets"][0]["status"],
+            "HOLD_BASE_NO_TRIGGER_EVIDENCE",
+        )
+
+    def test_margin_bucket_must_match_current_signal(self):
+        evidence=[benefit_evidence(
+            6,
+            trigger="low_margin",
+            bucket={"margin_max":0.02},
+        )]
+        matched=ds.select(
+            allocator_decision(),
+            {"low_margin":True,"margin":0.01},
+            evidence,
+        )
+        self.assertEqual(
+            matched["targets"][0]["status"],
+            "TRIGGER_CONDITIONED_ALTERNATE",
+        )
+        blocked=ds.select(
+            allocator_decision(),
+            {"low_margin":True,"margin":0.05},
+            evidence,
+        )
+        self.assertEqual(
+            blocked["targets"][0]["status"],
+            "HOLD_BASE_NO_TRIGGER_EVIDENCE",
+        )
+
+    def test_high_entropy_bucket_matches_exact_signal(self):
+        evidence=[benefit_evidence(6,"high_entropy",{"entropy_min":0.23,"entropy_max":0.24})]
+        got=ds.select(
+            allocator_decision(),
+            {"high_entropy":True,"entropy":0.232097685},
+            evidence,
+        )
+        self.assertEqual(got["targets"][0]["status"],"TRIGGER_CONDITIONED_ALTERNATE")
+        blocked=ds.select(
+            allocator_decision(),
+            {"high_entropy":True,"entropy":0.25},
+            evidence,
+        )
+        self.assertEqual(blocked["targets"][0]["status"],"HOLD_BASE_NO_TRIGGER_EVIDENCE")
+
+    def test_routing_ambiguity_bucket_matches_exact_signal(self):
+        evidence=[benefit_evidence(6,"routing_ambiguity",{
+            "routing_ambiguity_score_min":0.9998,
+            "routing_ambiguity_score_max":1.0,
+        })]
+        got=ds.select(
+            allocator_decision(),
+            {"routing_ambiguity":True,"routing_ambiguity_score":0.999847949},
+            evidence,
+        )
+        self.assertEqual(got["targets"][0]["status"],"TRIGGER_CONDITIONED_ALTERNATE")
+
+    def test_three_p5_triggers_require_three_context_rows(self):
+        signal={
+            "near_tie":True,"margin":0.043699,
+            "high_entropy":True,"entropy":0.232097685,
+            "routing_ambiguity":True,"routing_ambiguity_score":0.999847949,
+        }
+        evidence=[
+            benefit_evidence(6,"near_tie",{"margin_min":0.04,"margin_max":0.05}),
+            benefit_evidence(6,"high_entropy",{"entropy_min":0.23,"entropy_max":0.24}),
+            benefit_evidence(6,"routing_ambiguity",{
+                "routing_ambiguity_score_min":0.9998,
+                "routing_ambiguity_score_max":1.0,
+            }),
+        ]
+        got=ds.select(allocator_decision(),signal,evidence)
+        self.assertEqual(got["targets"][0]["status"],"TRIGGER_CONDITIONED_ALTERNATE")
+        blocked=ds.select(allocator_decision(),signal,evidence[:2])
+        self.assertEqual(blocked["targets"][0]["status"],"HOLD_BASE_NO_TRIGGER_EVIDENCE")
+
+    def test_all_active_triggers_need_evidence(self):
+        evidence=[benefit_evidence(6,"near_tie")]
+        got=ds.select(
+            allocator_decision(),
+            {"near_tie":True,"routing_ambiguity":True},
+            evidence,
+        )
+        self.assertEqual(
+            got["targets"][0]["status"],
+            "HOLD_BASE_NO_TRIGGER_EVIDENCE",
+        )
+
+
+if __name__=="__main__":
+    unittest.main()

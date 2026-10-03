@@ -23,6 +23,18 @@ extern "C" {
 // otherwise. Every other function below re-checks this internally.
 int mlx_gpu_available(void);
 
+// G3 precision-transition fence. Blocks until work queued on MLX's current
+// default stream has completed. Callers use this only after admission has
+// stopped and all serving requests have drained.
+int mlx_gpu_synchronize(void);
+
+// G3 weight-epoch boundary. After the serving scheduler has stopped admission
+// and drained all requests, discard persistent lazy residual state and every
+// fused MLA/GQA K/V cache so no request in the next weight epoch can observe
+// state created under the previous binding set. Performs a final synchronize
+// before destruction and returns 1 on success.
+int mlx_gpu_reset_runtime_epoch(void);
+
 // Registers one AF-family tensor (E experts, out x in, group size ng) with
 // MLX, reading directly out of `blob` at the given byte offsets -- same
 // mmap the CPU arm (moe_decode_af/moe_matvec_af) reads, zero-copy where
@@ -34,6 +46,21 @@ int mlx_gpu_available(void);
 int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
                      long E, long out, long in, long ng,
                      long packed_off, long scale_off, long bias_off, int bits);
+
+// Returns the active representation for a previously-bound tensor name:
+// 0=missing, 1=native MLX quantized, 2=dense fp16/fp32, 3=custom qNg64.
+// bits_out receives the active bit width. This is a G0 control-plane probe
+// for proving requested/applied binding identity across rebind/rollback tests.
+int mlx_gpu_binding_kind(const char *name, int *bits_out);
+
+// G2 registry transaction primitive. Snapshot retains the active MLX arrays so
+// rollback can restore the exact prior representation after the caller has
+// paused admission, drained requests, and synchronized GPU work.
+// These functions do NOT perform that quiescence themselves.
+int mlx_gpu_snapshot_binding(const char *name, uint64_t *snapshot_id);
+int mlx_gpu_restore_binding_snapshot(uint64_t snapshot_id);
+int mlx_gpu_drop_binding_snapshot(uint64_t snapshot_id);
+int mlx_gpu_binding_snapshot_count(void);
 
 // Reports how many previously-bound tensors got true zero-copy vs an
 // explicit-copy fallback, and total bytes copied (should be near 0 -- only
@@ -228,6 +255,15 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
                                     const float *w_postln, const float *w_kvaln,
                                     const float *w_gate);
 int mlx_gpu_cbatch_forward_finalize(const float *w_finalnorm, float *logits_out);
+
+// P5 observation-only routing ambiguity telemetry for the ragged MLX scheduler.
+// Disabled by default. When enabled, each MoE layer copies only the router softmax
+// row to host after evaluation and records the maximum top-k boundary ambiguity
+// (next-unselected / kth-selected) per physical slot. This is calibration telemetry,
+// not part of the production fast path unless explicitly enabled.
+int mlx_gpu_risk_signal_telemetry_set(int enabled);
+int mlx_gpu_risk_signal_telemetry_get(int slot, float *score, int *layer,
+                                       float *selected_boundary, float *next_boundary);
 
 // V5j: GQA full multi-layer lazy forward -- the GQA-equivalent of
 // mlx_gpu_layer_step_lazy()/mlx_gpu_forward_finalize() above. A deliberately

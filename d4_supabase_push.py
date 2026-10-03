@@ -7,7 +7,7 @@ prints a warning and continues. Tracks a byte offset in a sidecar file so re-run
 
 Usage: python3 d4_supabase_push.py <jsonl_path> [--batch-size N]
 """
-import json, os, sys, time
+import hashlib, json, os, sys, time
 import urllib.request, urllib.error
 
 BATCH = 20
@@ -38,6 +38,31 @@ def post(url, key, path, rows):
 
 
 
+def upsert_events(url, key, rows):
+    if not rows:
+        return True
+    req = urllib.request.Request(
+        url + "/rest/v1/moe_neartie_events?on_conflict=ingest_id",
+        data=json.dumps(rows).encode(),
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=ignore-duplicates,return=minimal",
+        },
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10)
+        return True
+    except Exception as e:
+        print(
+            f"[d4 push] WARN event upsert failed: {e}",
+            file=sys.stderr,
+        )
+        return False
+
+
 def upsert_provenance(url, key, rows):
     if not rows:
         return True
@@ -60,15 +85,22 @@ def upsert_provenance(url, key, rows):
         print(f'[d4 push] WARN provenance upsert failed: {e}', file=sys.stderr)
         return False
 
-def rpc_increment(url, key, model, corpus, role, layer, margin=None):
+def rpc_increment(url, key, ingest_id, model, corpus, role, layer, margin=None):
     # D-quant-supabase-2: increment_role_precision() now takes p_corpus too --
     # moe_role_precision_state's PK widened to (model,corpus,role,layer) so a
     # different corpus's data (e.g. WikiText-103, once Phase 7/8 pushes it)
     # can't silently conflate its counts with WikiText-2's under the same
     # (model,role,layer) row. See migrate_corpus_pk.sql / RESULTS.md.
     req = urllib.request.Request(
-        url + "/rest/v1/rpc/increment_role_precision",
-        data=json.dumps({"p_model": model, "p_corpus": corpus, "p_role": role, "p_layer": layer, "p_margin": margin}).encode(),
+        url + "/rest/v1/rpc/increment_role_precision_idempotent",
+        data=json.dumps({
+            "p_ingest_id": ingest_id,
+            "p_model": model,
+            "p_corpus": corpus,
+            "p_role": role,
+            "p_layer": layer,
+            "p_margin": margin,
+        }).encode(),
         headers={
             "apikey": key,
             "Authorization": f"Bearer {key}",
@@ -81,76 +113,77 @@ def rpc_increment(url, key, model, corpus, role, layer, margin=None):
         urllib.request.urlopen(req, timeout=10)
         return True
     except Exception as e:
-        print(f"[d4 push] WARN increment_role_precision({model},{corpus},{role},{layer},margin={margin}) failed: {e}", file=sys.stderr)
+        print(f"[d4 push] WARN increment_role_precision_idempotent({ingest_id},{model},{corpus},{role},{layer},margin={margin}) failed: {e}", file=sys.stderr)
         return False
 
-def main():
-    if len(sys.argv) < 2:
-        print("usage: d4_supabase_push.py <jsonl_path>", file=sys.stderr); sys.exit(1)
-    path = sys.argv[1]
-    url = os.environ.get("QWEN_SUPABASE_URL", "").rstrip("/")
-    key = os.environ.get("QWEN_SUPABASE_KEY", "")
-    if not url or not key:
-        print("FATAL: QWEN_SUPABASE_URL / QWEN_SUPABASE_KEY not set", file=sys.stderr); sys.exit(1)
+def _atomic_write_json(path, value):
+    tmp = path + f".tmp.{os.getpid()}"
+    with open(tmp, "w") as f:
+        json.dump(value, f, sort_keys=True)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
 
-    offset_path = path + ".pushed_offset"
-    offset = 0
-    if os.path.exists(offset_path):
-        offset = int(open(offset_path).read().strip() or "0")
 
-    # D-push-margin-1 (this session): moe_role_precision_state.min_margin_observed
-    # was ALWAYS null in the live DB (269/269 rows, verified via SELECT) --
-    # root cause: attribs tuples never carried a margin value in the first
-    # place, so every rpc_increment() call used the p_margin=None default.
-    #   WHY this fix: attribution rows (kind="attribution") never carried
-    #   their own margin field (see qwen_infer.c's attribution fprintf --
-    #   only corrected_argmax/orig_argmax/threshold). The margin instead
-    #   lives on the "event" row for the same (req,pos).
-    #   COST/caveat: (req,pos) is only unique within one manifest -- per
-    #   D-qNg64-9's own comment, req numbering restarts at 0 per manifest
-    #   file. If a single JSONL file accumulates runs from MULTIPLE
-    #   manifests for the SAME (model,corpus) pair, a stale/wrong-run
-    #   margin could be joined by coincidence. Event rows don't carry a
-    #   manifest field today (only attribution rows do) so this can't be
-    #   fully guarded here -- documented, not silently assumed safe.
-    #   EXIT: if this becomes a real problem, add "manifest" to the event
-    #   row's JSON too and widen the join key to (model,corpus,manifest,req,pos).
-    #
-    # D-push-margin-2 (this session, SAME-DAY correction of D-push-margin-1's
-    # own bug): the first version above built margin_by_key incrementally
-    # while streaming forward and assumed the event row always precedes its
-    # attribution rows in the file -- verified FALSE by actually looking at a
-    # real JSONL: moe_neartie_maybe_correct() (which writes attribution rows)
-    # runs BEFORE moe_neartie_maybe_log() (which writes the event row) in
-    # both emit loops (qwen_infer.c decode/prefill columns) -- same ordering
-    # fact promotion_controller.py's own docstring already documented, which
-    # this fix somehow missed the first time despite reading that exact file
-    # this session. Caught by re-checking a real fresh JSONL's actual line
-    # order after the "fix" landed instead of trusting it worked -- min_margin
-    # was STILL null after D-push-margin-1's own supposed fix, which is what
-    # forced this second look.
-    #   FIX: two passes over the new lines instead of one streaming pass --
-    #   pass 1 builds the COMPLETE margin_by_key index from every event row
-    #   in this batch, pass 2 resolves every attribution row against it,
-    #   independent of which kind physically comes first in the file.
-    lines = []
-    with open(path) as f:
+def _atomic_write_text(path, value):
+    tmp = path + f".tmp.{os.getpid()}"
+    with open(tmp, "w") as f:
+        f.write(value)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def _read_complete_records(path, offset):
+    size = os.path.getsize(path)
+    if size < offset:
+        raise RuntimeError(
+            f"source log shrank below checkpoint: size={size} offset={offset}"
+        )
+    with open(path, "rb") as f:
         f.seek(offset)
-        for line in f:
-            line = line.strip()
-            if line:
-                lines.append(json.loads(line))
-        new_offset = f.tell()
+        data = f.read()
+    if not data:
+        return [], offset, b""
+    last_nl = data.rfind(b"\n")
+    if last_nl < 0:
+        return [], offset, b""
+    complete = data[:last_nl + 1]
+    rows = []
+    cursor = int(offset)
+    for i, raw_with_nl in enumerate(complete.splitlines(keepends=True), 1):
+        raw = raw_with_nl.rstrip(b"\r\n")
+        if raw.strip():
+            try:
+                row = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    f"invalid complete JSONL record at relative line {i}: {exc}"
+                ) from exc
+            seed = (
+                os.path.abspath(path).encode()
+                + b":"
+                + str(cursor).encode()
+                + b":"
+                + raw
+            )
+            row["_ingest_id"] = hashlib.sha256(seed).hexdigest()
+            rows.append(row)
+        cursor += len(raw_with_nl)
+    return rows, offset + last_nl + 1, complete
 
+
+def _build_operations(lines, source_path):
     event_by_key = {}
     ambiguous_event_keys = set()
     for row in lines:
         if row.get("kind") == "event":
-            key = (row["model"], row["corpus"], row["req"], row["pos"])
-            if key in event_by_key:
-                ambiguous_event_keys.add(key)
+            event_key = (row["model"], row["corpus"], row["req"], row["pos"])
+            if event_key in event_by_key:
+                ambiguous_event_keys.add(event_key)
             else:
-                event_by_key[key] = row
+                event_by_key[event_key] = row
 
     events, attribs, provenance = [], [], []
     n_events = n_attribs = 0
@@ -158,21 +191,34 @@ def main():
         if row.get("kind") == "event":
             events.append({
                 "req": row["req"], "pos": row["pos"],
-                "predicted_token": row["predicted_token"], "competing_token": row["competing_token"],
-                "margin": row["margin"], "model": row["model"], "corpus": row["corpus"],
+                "predicted_token": row["predicted_token"],
+                "competing_token": row["competing_token"],
+                "margin": row["margin"], "model": row["model"],
+                "corpus": row["corpus"],
                 "batch_size": row.get("batch_size"),
-                # D-neartie-batch-2: paired B=1 single-stream replay margin for the same
-                # (req,pos) -- absent (None) on any JSONL line from before this instrumentation.
                 "replay_margin_b1": row.get("replay_margin_b1"),
+                "ingest_id": row["_ingest_id"],
             })
             n_events += 1
         elif row.get("kind") == "attribution":
-            ev_key = (row["model"], row["corpus"], row["req"], row["pos"])
-            ev = None if ev_key in ambiguous_event_keys else event_by_key.get(ev_key)
-            margin = None if ev is None else ev.get("margin")
-            attribs.append((row["model"], row["corpus"], row["role"], row["layer"], margin))
+            event_key = (row["model"], row["corpus"], row["req"], row["pos"])
+            event = (
+                None if event_key in ambiguous_event_keys
+                else event_by_key.get(event_key)
+            )
+            margin = None if event is None else event.get("margin")
+            attribs.append({
+                "ingest_id": row["_ingest_id"],
+                "model": row["model"], "corpus": row["corpus"],
+                "role": row["role"], "layer": row["layer"],
+                "margin": margin,
+            })
             manifest = row.get("manifest")
-            if manifest and row.get("orig_argmax") is not None and row.get("corrected_argmax") is not None:
+            if (
+                manifest
+                and row.get("orig_argmax") is not None
+                and row.get("corrected_argmax") is not None
+            ):
                 provenance.append({
                     "model": row["model"], "corpus": row["corpus"],
                     "role": row["role"], "layer": row["layer"],
@@ -181,26 +227,141 @@ def main():
                     "corrected_argmax": row["corrected_argmax"],
                     "threshold": row.get("threshold"),
                     "margin": margin,
-                    "batch_size": None if ev is None else ev.get("batch_size"),
-                    "replay_margin_b1": None if ev is None else ev.get("replay_margin_b1"),
+                    "batch_size": None if event is None else event.get("batch_size"),
+                    "replay_margin_b1": (
+                        None if event is None else event.get("replay_margin_b1")
+                    ),
                     "attribution_ts_unix": row.get("ts_unix"),
-                    "event_ts_unix": None if ev is None else ev.get("ts_unix"),
-                    "source_jsonl": os.path.abspath(path),
-                    "last_seen_at": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                    "event_ts_unix": None if event is None else event.get("ts_unix"),
+                    "source_jsonl": os.path.abspath(source_path),
+                    "last_seen_at": time.strftime(
+                        "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+                    ),
                 })
             n_attribs += 1
-        if len(events) >= BATCH:
-            post(url, key, "/rest/v1/moe_neartie_events", events); events = []
 
-    post(url, key, "/rest/v1/moe_neartie_events", events)
-    for model, corpus, role, layer, margin in attribs:
-        rpc_increment(url, key, model, corpus, role, layer, margin)
+    ops = []
+    for i in range(0, len(events), BATCH):
+        ops.append({"kind": "events", "rows": events[i:i + BATCH], "done": False})
+    for item in attribs:
+        ops.append({"kind": "increment", "args": item, "done": False})
     for i in range(0, len(provenance), BATCH):
-        upsert_provenance(url, key, provenance[i:i + BATCH])
+        ops.append({
+            "kind": "provenance",
+            "rows": provenance[i:i + BATCH],
+            "done": False,
+        })
+    return ops, n_events, n_attribs, len(provenance)
 
-    with open(offset_path, "w") as f:
-        f.write(str(new_offset))
-    print(f"[d4 push] pushed {n_events} events, {n_attribs} attribution increments, {len(provenance)} replayable provenance row(s) (offset {offset}->{new_offset})")
+
+def _execute_operation(url, api_key, op):
+    if op["kind"] == "events":
+        return upsert_events(url, api_key, op["rows"])
+    if op["kind"] == "increment":
+        a = op["args"]
+        return rpc_increment(
+            url, api_key, a["ingest_id"], a["model"], a["corpus"],
+            a["role"], a["layer"], a.get("margin"),
+        )
+    if op["kind"] == "provenance":
+        return upsert_provenance(url, api_key, op["rows"])
+    raise RuntimeError(f"unknown outbox operation kind: {op['kind']}")
+
+
+def run_once(path, url, api_key):
+    offset_path = path + ".pushed_offset"
+    outbox_path = path + ".push_outbox.json"
+    offset = 0
+    if os.path.exists(offset_path):
+        offset = int(open(offset_path).read().strip() or "0")
+
+    if os.path.exists(outbox_path):
+        with open(outbox_path) as f:
+            outbox = json.load(f)
+        if outbox.get("source_path") != os.path.abspath(path):
+            raise RuntimeError("outbox source path does not match current source")
+        if int(outbox.get("start_offset", -1)) != offset:
+            raise RuntimeError(
+                "outbox start offset does not match committed checkpoint"
+            )
+        end = int(outbox["end_offset"])
+        with open(path, "rb") as f:
+            f.seek(offset)
+            complete = f.read(end - offset)
+        digest = hashlib.sha256(complete).hexdigest()
+        if digest != outbox.get("source_sha256"):
+            raise RuntimeError("source bytes changed underneath durable outbox")
+    else:
+        lines, end, complete = _read_complete_records(path, offset)
+        if not lines:
+            print(
+                f"[d4 push] no complete new JSONL records "
+                f"(checkpoint remains {offset})"
+            )
+            return True
+        ops, n_events, n_attribs, n_provenance = _build_operations(lines, path)
+        outbox = {
+            "version": 1,
+            "source_path": os.path.abspath(path),
+            "start_offset": offset,
+            "end_offset": end,
+            "source_sha256": hashlib.sha256(complete).hexdigest(),
+            "counts": {
+                "events": n_events,
+                "attributions": n_attribs,
+                "provenance": n_provenance,
+            },
+            "operations": ops,
+        }
+        _atomic_write_json(outbox_path, outbox)
+
+    for i, op in enumerate(outbox["operations"]):
+        if op.get("done"):
+            continue
+        if not _execute_operation(url, api_key, op):
+            print(
+                f"[d4 push] ERROR operation {i}/{len(outbox['operations'])} "
+                f"({op['kind']}) failed; checkpoint stays at {offset}",
+                file=sys.stderr,
+            )
+            return False
+        op["done"] = True
+        _atomic_write_json(outbox_path, outbox)
+
+    end = int(outbox["end_offset"])
+    _atomic_write_text(offset_path, str(end))
+    os.unlink(outbox_path)
+    c = outbox["counts"]
+    print(
+        f"[d4 push] committed {c['events']} events, "
+        f"{c['attributions']} attribution increments, "
+        f"{c['provenance']} provenance row(s) "
+        f"(offset {offset}->{end})"
+    )
+    return True
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("usage: d4_supabase_push.py <jsonl_path>", file=sys.stderr)
+        sys.exit(1)
+    path = sys.argv[1]
+    url = os.environ.get("QWEN_SUPABASE_URL", "").rstrip("/")
+    api_key = os.environ.get("QWEN_SUPABASE_KEY", "")
+    if not url or not api_key:
+        print(
+            "FATAL: QWEN_SUPABASE_URL / QWEN_SUPABASE_KEY not set",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    try:
+        ok = run_once(path, url, api_key)
+    except Exception as exc:
+        print(f"[d4 push] FATAL {type(exc).__name__}: {exc}", file=sys.stderr)
+        sys.exit(2)
+    if not ok:
+        sys.exit(2)
+
 
 if __name__ == "__main__":
     main()

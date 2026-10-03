@@ -1,0 +1,66 @@
+name: Production Cutover Approval Attestation
+
+on:
+  push:
+    branches:
+      - production-serving-supervisor-20261002
+    paths:
+      - "attestations/BEGLIN_PRODUCTION_CUTOVER_APPROVAL_2026-10-02.json"
+      - ".github/workflows/production-cutover-approval-attest.yml"
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify exact cutover approval
+        shell: bash
+        env:
+          EXPECTED_ACTOR: popixoxipop-collab
+          EXPECTED_ACTOR_ID: "261965176"
+          EXPECTED_PLAN_SHA: d398f2c56181f7ef819bbdce7418e00a73571687027bbc00e67e477246585c3d
+          EXPECTED_BASELINE: beglin-baseline-q4g64
+          EXPECTED_CANDIDATE: beglin-candidate-shared-up-l3-n6
+          EXPECTED_ROUTER: beglin-local-http-supervisor-v1
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path("attestations/BEGLIN_PRODUCTION_CUTOVER_APPROVAL_2026-10-02.json")
+          obj=json.loads(p.read_text())
+          actor=os.environ["GITHUB_ACTOR"]
+          actor_id=os.environ.get("GITHUB_ACTOR_ID","")
+          assert actor == os.environ["EXPECTED_ACTOR"]
+          if actor_id:
+              assert actor_id == os.environ["EXPECTED_ACTOR_ID"]
+          assert obj["schema"] == "beglin-production-routing-cutover-approval-v1"
+          assert obj["status"] == "VERIFIED_GITHUB_OIDC"
+          assert obj["approver"]["github_login"] == actor
+          assert int(obj["approver"]["github_user_id"]) == int(os.environ["EXPECTED_ACTOR_ID"])
+          assert obj["cutover_plan_sha256"] == os.environ["EXPECTED_PLAN_SHA"]
+          assert obj["baseline_route_id"] == os.environ["EXPECTED_BASELINE"]
+          assert obj["candidate_route_id"] == os.environ["EXPECTED_CANDIDATE"]
+          assert obj["router_id"] == os.environ["EXPECTED_ROUTER"]
+          assert obj["automatic_cutover_allowed"] is False
+          assert obj["production_routing_switch_allowed"] is True
+          assert obj["external_network_exposed"] is False
+          print(json.dumps({
+              "status":"VERIFIED",
+              "actor":actor,
+              "plan_sha256":obj["cutover_plan_sha256"],
+              "baseline_route_id":obj["baseline_route_id"],
+              "candidate_route_id":obj["candidate_route_id"],
+          },sort_keys=True))
+          PY
+
+      - name: Publish GitHub OIDC provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: attestations/BEGLIN_PRODUCTION_CUTOVER_APPROVAL_2026-10-02.json

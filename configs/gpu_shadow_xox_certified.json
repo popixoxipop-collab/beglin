@@ -1,0 +1,19 @@
+{
+  "model": "deepseek-v2-lite",
+  "limit": 100,
+  "shadow_root": "/Users/xox/vdsp_shadow_runs",
+  "cwd": "/Users/xox/vdsp-engine-gpu-precision",
+  "autopilot": "/Users/xox/vdsp-engine-gpu-precision/tools/gpu_autopilot.py",
+  "binary": "/Users/xox/vdsp-engine-gpu-precision/build-gpu-precision/qwen_infer_gpu",
+  "checkpoint_sha256": "auto",
+  "moe_base": "/Users/xox/vdsp_local_data/moe_base_deepseek",
+  "safetensors": "/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json",
+  "path_maps": [
+    "/Users/bob/vdsp_p5_pre=/Users/xox/vdsp_shadow_mirror/vdsp_p5_pre"
+  ],
+  "g6_repeats": 64,
+  "timeout": 3600,
+  "forbidden_roots": [
+    "/private/tmp/qng64_ctl"
+  ]
+}

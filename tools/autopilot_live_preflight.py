@@ -133,7 +133,7 @@ def fetch_latest_evidence(model, role, layer, n, promotion_preimage_sha256):
     return rows[0] if rows else None
 
 
-def _engine_commit():
+def _controller_commit():
     repo = Path(__file__).resolve().parents[1]
     p = subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -143,7 +143,8 @@ def _engine_commit():
 
 
 def _evidence_row(plan, change, attr, verdict, candidate_hash, status,
-                  baseline_rc=None, candidate_rc=None, evidence_path=None):
+                  baseline_rc=None, candidate_rc=None, evidence_path=None,
+                  worker_identity=None):
     return {
         "source": EVIDENCE_SOURCE,
         "model": plan["model"],
@@ -166,7 +167,9 @@ def _evidence_row(plan, change, attr, verdict, candidate_hash, status,
         "baseline_rc": baseline_rc,
         "candidate_rc": candidate_rc,
         "evidence_path": evidence_path,
-        "engine_commit": _engine_commit(),
+        # Never substitute the controller checkout SHA for the worker build.
+        # Until a signed/verified worker build manifest exists, leave this NULL.
+        "engine_commit": (worker_identity or {}).get("engine_commit"),
     }
 
 
@@ -195,9 +198,48 @@ def persist_no_current_signal(model, role, layer, n, promotion_preimage_sha256,
         "baseline_rc": None,
         "candidate_rc": None,
         "evidence_path": evidence_path,
-        "engine_commit": _engine_commit(),
+        "engine_commit": None,
     }
     return persist_evidence(row)
+SUPPORTED_PREFLIGHT_BACKENDS = {"cpu"}
+
+
+def _validate_backend(backend):
+    if backend not in SUPPORTED_PREFLIGHT_BACKENDS:
+        raise RuntimeError(
+            f"backend={backend!r} is not supported by this preflight runner; "
+            "GPU evidence must come from the dedicated MLX/Metal adapter"
+        )
+
+
+def _worker_identity(host, bin_path, backend):
+    _validate_backend(backend)
+    qbin = shlex.quote(bin_path)
+    out = _ssh(
+        host,
+        (
+            f"set -e; shasum -a 256 {qbin}; "
+            f"stat -f '%z' {qbin}; hostname; uname -m"
+        ),
+    ).splitlines()
+    if len(out) < 4:
+        raise RuntimeError(
+            f"could not collect worker identity for {host}:{bin_path}: {out!r}"
+        )
+    sha = out[0].split()[0]
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", sha):
+        raise RuntimeError(f"invalid worker SHA256 from {host}: {out[0]!r}")
+    return {
+        "backend": backend,
+        "host": out[2].strip(),
+        "arch": out[3].strip(),
+        "binary_path": bin_path,
+        "binary_sha256": sha.lower(),
+        "binary_size": int(out[1].strip()),
+        "engine_commit": None,
+    }
+
+
 def _ssh(host, command, timeout=30):
     p = subprocess.run(
         ["ssh", host, command],
@@ -260,14 +302,18 @@ def _parse_emitted_tokens(output):
     return toks
 
 
-def classify_candidate(output, pos, prompt_len, corrected):
-    flip_re = re.compile(
-        rf"REAL FLIP orig=(\d+) corrected=(\d+)"
+def _target_flips(output, pos):
+    pattern = re.compile(
+        rf"^\[moe neartie\] correct req=0 pos={int(pos)}\b"
+        rf"[^\n]*REAL FLIP orig=(\d+) corrected=(\d+)[^\n]*$",
+        re.MULTILINE,
     )
-    flips = [
-        (int(a), int(b)) for a, b in flip_re.findall(output)
-    ]
-    exact_flip = any(b == int(corrected) for _, b in flips)
+    return [(int(a), int(b)) for a, b in pattern.findall(output)]
+
+
+def classify_candidate(output, pos, prompt_len, corrected):
+    flips = _target_flips(output, pos)
+    correction_required = bool(flips)
 
     gen_idx = int(pos) - (int(prompt_len) - 1)
     tokens = _parse_emitted_tokens(output)
@@ -276,7 +322,7 @@ def classify_candidate(output, pos, prompt_len, corrected):
         if 0 <= gen_idx < len(tokens)
         else None
     )
-    passed = (not exact_flip) and emitted == int(corrected)
+    passed = (not correction_required) and emitted == int(corrected)
     return {
         "pass": passed,
         "emitted_token": emitted,
@@ -287,7 +333,7 @@ def classify_candidate(output, pos, prompt_len, corrected):
             if passed else
             (
                 "correction REAL FLIP was still required"
-                if exact_flip else
+                if correction_required else
                 f"base promotion emitted {emitted}, expected {corrected}"
             )
         ),
@@ -330,14 +376,12 @@ def _run_engine(host, cwd, bin_path, moe_base, manifest, combo,
 
 
 def _baseline_ok(output, orig, corrected, pos):
-    marker = f"REAL FLIP orig={orig} corrected={corrected}"
-    target = f"correct req=0 pos={pos}"
-    return marker in output and target in output
+    return (int(orig), int(corrected)) in _target_flips(output, pos)
 
 
 def run_preflight(plan_path, log_host, events_log, bin_path, cwd, moe_base,
                   safetensors_index, remote_dir, report_path,
-                  timeout=180):
+                  timeout=180, backend="cpu"):
     plan = guarded._load_plan(plan_path)
     if plan.get("phase") != "P5-full-auto":
         raise RuntimeError("live preflight only accepts P5-full-auto plans")
@@ -347,6 +391,10 @@ def run_preflight(plan_path, log_host, events_log, bin_path, cwd, moe_base,
         )
     if not plan.get("changes"):
         return {"status": "no_changes", "targets": []}
+
+    _validate_backend(backend)
+    worker_identity = _worker_identity(plan["ssh_host"], bin_path, backend)
+    controller_commit = _controller_commit()
 
     blob = observer._read_bytes(log_host, events_log)
     events = observer.parse_events(blob, model=plan["model"])
@@ -410,6 +458,7 @@ def run_preflight(plan_path, log_host, events_log, bin_path, cwd, moe_base,
                 plan, change, attr, baseline_verdict, candidate_hash,
                 "baseline_failed", baseline_rc=rc0,
                 candidate_rc=None, evidence_path=baseline_log,
+                worker_identity=worker_identity,
             ))
             raise RuntimeError(
                 f"{role}/L{layer} baseline isolation failed: rc={rc0}; "
@@ -436,10 +485,14 @@ def run_preflight(plan_path, log_host, events_log, bin_path, cwd, moe_base,
             plan, change, attr, verdict, candidate_hash,
             evidence_status, baseline_rc=rc0, candidate_rc=rc1,
             evidence_path=candidate_log,
+            worker_identity=worker_identity,
         ))
         if rc1 != 0 or not verdict["pass"]:
             report = {
                 "status": "failed",
+                "backend": backend,
+                "worker_identity": worker_identity,
+                "controller_commit": controller_commit,
                 "plan_after_sha256": plan["after_sha256"],
                 "targets": results,
             }
@@ -451,6 +504,9 @@ def run_preflight(plan_path, log_host, events_log, bin_path, cwd, moe_base,
 
     report = {
         "status": "passed",
+        "backend": backend,
+        "worker_identity": worker_identity,
+        "controller_commit": controller_commit,
         "plan_after_sha256": plan["after_sha256"],
         "targets": results,
     }
@@ -478,11 +534,16 @@ def main():
     )
     ap.add_argument("--report", default=DEFAULT_REPORT)
     ap.add_argument("--timeout", type=int, default=180)
+    ap.add_argument(
+        "--backend", choices=("cpu", "mlx_metal"), default="cpu",
+        help="This runner currently accepts cpu only; mlx_metal fails closed.",
+    )
     args = ap.parse_args()
     run_preflight(
         args.plan, args.log_host, args.events_log, args.bin,
         args.cwd, args.moe_base, args.safetensors_index,
         args.remote_dir, args.report, timeout=args.timeout,
+        backend=args.backend,
     )
 
 

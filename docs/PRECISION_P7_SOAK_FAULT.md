@@ -1,0 +1,199 @@
+name: Certified successor regression
+# Supabase v3 reconnect revalidation: 2026-10-03
+
+on:
+  push:
+    branches:
+      - agent-e-absent-baseline-20261002
+      - agent-e-preimage-materializer-20261002
+      - agent-e-signing-prep-xox-20261002
+      - production-adapter-bridge-shadow-20261002
+      - production-routing-cutover-gate-20261002
+      - production-serving-supervisor-20261002
+      - persistent-gpu-serving-20261003
+      - persistent-serving-interactive-launchd-20261003
+      - precision-p7-certification-v1-20261003
+      - adaptive-two-pass-l26-20261003
+      - supabase-v3-evidence-reconnect-20261003
+      - quant-search-full-qng64-ladder-20261003
+      - precision-allocator-v1-20261003
+      - precision-observability-review-20261003
+    paths:
+      - ".github/workflows/certified-successor-regression.yml"
+      - "tools/manual_canary_*.py"
+      - "tools/test_manual_canary*.py"
+      - "docs/MANUAL_CANARY*.md"
+      - "tools/production_adapter_bridge*.py"
+      - "tools/test_production_adapter_bridge*.py"
+      - "tools/production_routing_cutover*.py"
+      - "tools/test_production_routing_cutover*.py"
+      - "configs/production_router_capability_20261002.json"
+      - ".github/workflows/production-routing-cutover-gate.yml"
+      - "docs/PRODUCTION_ROUTING_CUTOVER_GATE.md"
+      - "tools/production_serving_supervisor*.py"
+      - "supabase_migration_lock_down_beglin_data_api.sql"
+      - "supabase_migration_precision_context_v3.sql"
+      - "tools/test_precision_evidence_v3.py"
+      - "tools/precision_evidence_v3.py"
+      - "tools/test_gpu_autopilot_v3_persistence.py"
+      - "tools/gpu_autopilot.py"
+      - "tools/test_production_serving_supervisor*.py"
+      - "tools/production_serving_cutover_xox*.py"
+      - "tools/test_production_serving_cutover_xox*.py"
+      - "attestations/BEGLIN_PRODUCTION_CUTOVER_APPROVAL_2026-10-02.json"
+      - "attestations/BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json"
+      - "qwen_infer.c"
+      - "tools/test_persistent_gpu_worker_source.py"
+      - "tools/production_serving_supervisor_persistent.py"
+      - "tools/precision_epoch_scheduler.py"
+      - "tools/precision_risk_signals.py"
+      - "tools/test_gpu_precision_risk_signals.py"
+      - "tools/precision_risk_signal_acceptance_xox.py"
+      - "mlx_moe.cpp"
+      - "mlx_moe.h"
+      - "tools/precision_closed_loop.py"
+      - "tools/precision_observability.py"
+      - "tools/test_gpu_precision_observability.py"
+      - "tools/test_gpu_precision_observability_guards.py"
+      - "tools/precision_observability_review_acceptance_xox.py"
+      - "tools/precision_observability_acceptance_xox.py"
+      - "tools/precision_e2e_cost.py"
+      - "tools/test_gpu_precision_e2e_cost.py"
+      - "tools/precision_policy_cost_optimizer.py"
+      - "tools/test_gpu_precision_policy_cost_optimizer.py"
+      - "tools/precision_cost_benchmark_xox.py"
+      - "tools/precision_e2e_cost_acceptance_xox.py"
+      - "tools/test_gpu_precision_closed_loop.py"
+      - "tools/precision_closed_loop_acceptance_xox.py"
+      - "tools/test_gpu_precision_epoch_scheduler.py"
+      - "tools/precision_epoch_acceptance_xox.py"
+      - "tools/test_production_serving_supervisor_persistent.py"
+      - "tools/test_backend_capabilities.py"
+      - "tools/backend_capabilities.py"
+      - "tools/test_gpu_isolated_preflight.py"
+      - "tools/gpu_isolated_preflight.py"
+      - "tools/test_quant_search_n_push.py"
+      - "tools/quant_search_n.py"
+      - "supabase_migration_precision_dynamic_v1.sql"
+      - "supabase_migration_precision_allocator_v1.sql"
+      - "tools/promotion_writeback.py"
+      - "tools/test_persistent_precision_benchmark.py"
+      - "tools/persistent_precision_benchmark.py"
+      - "tools/test_precision_dynamic_selector.py"
+      - "tools/precision_dynamic_selector.py"
+      - "tools/test_precision_allocator.py"
+      - "tools/precision_allocator.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile precision runtime modules
+        run: |
+          python -m py_compile \
+            tools/precision_context.py \
+            tools/backend_adapters.py \
+            tools/precision_transactions.py \
+            tools/precision_planner_v3.py \
+            tools/autopilot_preflight_v3.py \
+            tools/precision_evidence_v3.py \
+            tools/quant_search_n.py \
+            tools/gpu_isolated_preflight.py \
+            tools/backend_capabilities.py \
+            tools/precision_allocator.py \
+            tools/precision_dynamic_selector.py \
+            tools/persistent_precision_benchmark.py \
+            tools/promotion_writeback.py \
+            tools/gpu_autopilot.py \
+            tools/gpu_runtime_control.py \
+            tools/precision_epoch_scheduler.py \
+            tools/precision_risk_signals.py \
+            tools/precision_risk_signal_acceptance_xox.py \
+            tools/precision_closed_loop.py \
+            tools/precision_observability.py \
+            tools/precision_observability_acceptance_xox.py \
+            tools/precision_e2e_cost.py \
+            tools/precision_policy_cost_optimizer.py \
+            tools/precision_cost_benchmark_xox.py \
+            tools/precision_e2e_cost_acceptance_xox.py \
+            tools/precision_closed_loop_acceptance_xox.py \
+            tools/precision_epoch_acceptance_xox.py \
+            tools/manual_canary_contract.py \
+            tools/manual_canary_controller.py \
+            tools/manual_canary_signature.py \
+            tools/manual_canary_production_intent.py \
+            tools/manual_canary_proposal_materializer.py \
+            tools/manual_canary_baseline_preimage_xox.py \
+            tools/production_adapter_bridge.py \
+            tools/production_adapter_bridge_xox.py \
+            tools/production_routing_cutover.py \
+            tools/production_serving_supervisor.py \
+            tools/production_serving_supervisor_persistent.py \
+            tools/production_serving_cutover_xox.py \
+            tools/test_manual_canary_proposal_materializer.py \
+            tools/test_production_adapter_bridge.py \
+            tools/test_production_routing_cutover.py \
+            tools/test_production_serving_supervisor.py \
+            tools/test_production_serving_supervisor_persistent.py \
+            tools/test_production_serving_cutover_xox.py
+      - name: Precision v3 tests
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/test_precision_evidence_v3.py
+          python tools/test_gpu_autopilot_v3_persistence.py
+          python tools/test_quant_search_n_push.py
+          python tools/test_backend_capabilities.py
+          python tools/test_precision_allocator.py
+          python tools/test_precision_dynamic_selector.py
+          python tools/test_persistent_precision_benchmark.py
+          python tools/test_precision_planner_v3.py
+          python tools/test_precision_control_state.py
+          python tools/test_precision_transactions.py
+          python tools/test_autopilot_preflight_v3.py
+          python tools/test_mlx_runtime_adapter.py
+      - name: GPU unit and guard suite
+        env:
+          PYTHONPATH: tools
+        run: python -m unittest discover -s tools -p 'test_gpu_*.py'
+      - name: Manual canary and identity regressions
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/test_manual_canary.py
+          python tools/test_manual_canary_proposal_materializer.py
+          python tools/test_production_adapter_bridge.py
+          python tools/test_production_routing_cutover.py
+          python tools/test_production_serving_supervisor.py
+          python tools/test_production_serving_supervisor_persistent.py
+          python tools/test_production_serving_cutover_xox.py
+          python tools/test_persistent_gpu_worker_source.py
+          python tools/test_checkpoint_identity.py
+          python tools/test_agent_f_gpu_coverage_xox.py
+      - name: Signature, evidence, and observer v3 regressions
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/test_manual_canary_signature.py
+          python tools/test_manual_canary_evidence_xox.py
+          python tools/test_autopilot_observer_v3.py
+          python tools/test_backend_capabilities.py
+      - name: Full successor diff check
+        run: git diff --check 330954b27f146b8a17db2cb353c3e620968bad5e...HEAD
+
+Final certification CI:
+- run 37129718206
+- head 9de9a02feff47467d47d7cd6a02f16dc961cf877
+- conclusion SUCCESS
+- the only subsequent branch change removes the temporary CI trigger.

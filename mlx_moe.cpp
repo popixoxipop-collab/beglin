@@ -9,6 +9,7 @@
 // residual-vs-stochastic-rounding tradeoff does not apply here.
 #include "mlx_moe.h"
 #include "mlx/mlx.h"
+#include "mlx/scheduler.h"
 
 #include <cmath>
 #include <cstdint>
@@ -83,6 +84,16 @@ struct QNg64Tensor {
 static std::unordered_map<std::string, QTensor> g_tensors;
 static std::unordered_map<std::string, DTensor> g_dtensors;  // bits=16/32, dense (D-gpu-5)
 static std::unordered_map<std::string, QNg64Tensor> g_qng64_tensors;  // n=7,9-15 (D-metal-4)
+
+struct BindingSnapshot {
+    std::string name;
+    int kind = 0;  // 1=native quant, 2=dense, 3=custom qNg64
+    std::optional<QTensor> q;
+    std::optional<DTensor> d;
+    std::optional<QNg64Tensor> ng64;
+};
+static uint64_t g_binding_snapshot_next_id = 1;
+static std::unordered_map<uint64_t, BindingSnapshot> g_binding_snapshots;
 static int g_bound_count = 0;
 
 static void noop_deleter(void *) {
@@ -105,6 +116,16 @@ int mlx_gpu_available(void) {
         available = 0;
     }
     return available;
+}
+
+int mlx_gpu_synchronize(void) {
+    if (!mlx_gpu_available()) return 0;
+    try {
+        mx::synchronize();
+        return 1;
+    } catch (...) {
+        return 0;
+    }
 }
 
 int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
@@ -149,6 +170,7 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
             // and the mixed-precision check still read it back as quantized. A tensor
             // must exist in exactly one of g_tensors/g_dtensors at a time.
             g_tensors.erase(std::string(name));
+            g_qng64_tensors.erase(std::string(name));
             g_dtensors.insert_or_assign(std::string(name), DTensor{w, E, out, in, bits});
             g_bound_count++;
             return 1;
@@ -310,6 +332,7 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
         // D-gpu-7-fix: symmetric with the bits=16/32 branch's own erase above -- a name
         // previously bound dense must not leave a stale g_dtensors entry either.
         g_dtensors.erase(std::string(name));
+        g_qng64_tensors.erase(std::string(name));
         g_tensors.insert_or_assign(
             std::string(name),
             QTensor{w, scales, biases, E, out, in, ng, bits});
@@ -318,6 +341,92 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
     } catch (...) {
         return 0;
     }
+}
+
+int mlx_gpu_snapshot_binding(const char *name, uint64_t *snapshot_id) {
+    if (!mlx_gpu_available() || !name || !snapshot_id) return 0;
+    std::string key(name);
+    int present = (int)g_tensors.count(key) + (int)g_dtensors.count(key)
+                + (int)g_qng64_tensors.count(key);
+    if (present != 1) return 0;  // missing or already-corrupt multi-map state
+
+    BindingSnapshot snap;
+    snap.name = key;
+    if (auto it = g_qng64_tensors.find(key); it != g_qng64_tensors.end()) {
+        snap.kind = 3;
+        snap.ng64 = it->second;
+    } else if (auto it = g_tensors.find(key); it != g_tensors.end()) {
+        snap.kind = 1;
+        snap.q = it->second;
+    } else {
+        auto dit = g_dtensors.find(key);
+        if (dit == g_dtensors.end()) return 0;
+        snap.kind = 2;
+        snap.d = dit->second;
+    }
+
+    uint64_t id = g_binding_snapshot_next_id++;
+    if (id == 0) id = g_binding_snapshot_next_id++;
+    g_binding_snapshots.insert_or_assign(id, std::move(snap));
+    *snapshot_id = id;
+    return 1;
+}
+
+// SAFETY CONTRACT: caller must pause admission, drain existing requests, and
+// synchronize pending MLX/Metal work before calling this restore primitive.
+// This function only restores registry ownership/selection; it does not make
+// an in-flight graph safe by itself.
+int mlx_gpu_restore_binding_snapshot(uint64_t snapshot_id) {
+    auto sit = g_binding_snapshots.find(snapshot_id);
+    if (sit == g_binding_snapshots.end()) return 0;
+    const BindingSnapshot &snap = sit->second;
+    const std::string &key = snap.name;
+
+    g_tensors.erase(key);
+    g_dtensors.erase(key);
+    g_qng64_tensors.erase(key);
+
+    if (snap.kind == 1 && snap.q) {
+        g_tensors.insert_or_assign(key, *snap.q);
+    } else if (snap.kind == 2 && snap.d) {
+        g_dtensors.insert_or_assign(key, *snap.d);
+    } else if (snap.kind == 3 && snap.ng64) {
+        g_qng64_tensors.insert_or_assign(key, *snap.ng64);
+    } else {
+        return 0;
+    }
+    g_bound_count++;
+    return 1;
+}
+
+int mlx_gpu_drop_binding_snapshot(uint64_t snapshot_id) {
+    return g_binding_snapshots.erase(snapshot_id) ? 1 : 0;
+}
+
+int mlx_gpu_binding_snapshot_count(void) {
+    return (int)g_binding_snapshots.size();
+}
+
+int mlx_gpu_binding_kind(const char *name, int *bits_out) {
+    if (bits_out) *bits_out = 0;
+    if (!name) return 0;
+    std::string key(name);
+    auto ng = g_qng64_tensors.find(key);
+    if (ng != g_qng64_tensors.end()) {
+        if (bits_out) *bits_out = ng->second.n;
+        return 3;  // custom qNg64 bit-plane binding
+    }
+    auto q = g_tensors.find(key);
+    if (q != g_tensors.end()) {
+        if (bits_out) *bits_out = q->second.bits;
+        return 1;  // native MLX quantized binding
+    }
+    auto d = g_dtensors.find(key);
+    if (d != g_dtensors.end()) {
+        if (bits_out) *bits_out = d->second.bits;
+        return 2;  // dense fp16/fp32 binding
+    }
+    return 0;
 }
 
 int mlx_gpu_zerocopy_count(int *zero_copy, int *copied, size_t *bytes_copied) {
@@ -1428,6 +1537,7 @@ static mx::fast::CustomKernelFunction &qng64_gemv_kernel() {
         std::string source = R"(
             uint p = thread_position_in_grid.x;
             uint row = thread_position_in_grid.y;
+            uint z = thread_position_in_grid.z;
             if (p >= 64) return;
             int bias_code = 1 << (n - 1);
             float partial = 0.0f;
@@ -1444,7 +1554,7 @@ static mx::fast::CustomKernelFunction &qng64_gemv_kernel() {
                 int code = u - bias_code;
                 float scale = scales[row * ng + g];
                 float decoded = (float)code * scale;
-                partial += decoded * x[g * 64 + p];
+                partial += decoded * x[z * (ng * 64u) + g * 64 + p];
             }
             threadgroup float shared_sums[2];
             uint simd_lane = p % 32;
@@ -1453,7 +1563,7 @@ static mx::fast::CustomKernelFunction &qng64_gemv_kernel() {
             if (simd_lane == 0) shared_sums[simd_group] = simd_partial;
             threadgroup_barrier(mem_flags::mem_threadgroup);
             if (p == 0) {
-                out[row] = shared_sums[0] + shared_sums[1];
+                out[z * (uint)out_dim + row] = shared_sums[0] + shared_sums[1];
             }
         )";
         g_qng64_gemv_kernel = mx::fast::metal_kernel(
@@ -1466,29 +1576,34 @@ static mx::fast::CustomKernelFunction &qng64_gemv_kernel() {
 // attention-role call sites below, q/kv_a/kv_b/o_proj, never route across experts). The full
 // per-token/per-expert routed MoE path is explicitly NOT covered -- see QNg64Tensor's own
 // COST/EXIT comment.
-// D-metal-4: x arrives shaped {B, in} (B=1 for this call path -- lazy_matvec_e0's own single-
-// expert scope -- confirmed by direct shape debugging: real shape [1, 2048] observed for a
-// real DeepSeek kv_a_proj_with_mqa call, not the flat {in} this function's first draft assumed).
-// The kernel's own memory-layout read (`x[g*64+p]`) is byte-identical either way (a size-1
-// leading dim doesn't change the underlying buffer), but the OUTPUT shape must match what
-// mx::quantized_matmul's own bits=4/8 path returns ({B, out}) for downstream code (whatever
-// consumes lazy_matvec_e0's return value next) to reshape/concatenate correctly -- returning a
-// bare {out} 1D array here was the actual bug ("[slice] Invalid number of indices or strides
-// for array with dimension 1", a real caught exception, not guessed at) since the CALLER
-// expected {B, out} and got {out} instead.
+// D-metal-4: x arrives shaped {B, in}. The original version of this function hardcoded
+// output_shapes={{1,out}} and grid z=1, silently ignoring any B>1 -- correct only by
+// accident for the B=1 single-token decode path (mlx_gpu_layer_step_lazy before V5d/V5h
+// ever set g_fused_B>1 or ran the ragged cbatch scheduler with A>1 active slots). First
+// real-hardware exposure: a G3 online-admission demotion drill promoting kv_a_proj_with_mqa
+// to a custom qNg64 representation and running it through mlx_gpu_cbatch_layer_step_lazy
+// (A=2 slots) crashed with "[reshape] Cannot reshape array of size 64 into shape (9,1,64)"
+// downstream, because this function always returned a single row no matter how many rows
+// of x were passed. Fixed by threading the real batch size A=x.shape(0) through as the
+// kernel's z grid dimension (same per-row-batched pattern qng64_gather_gemv_kernel already
+// uses for the routed-FFN case, just without its per-z expert lookup since this path is
+// always single-expert) and declaring the output shape as {A,out} instead of {1,out}.
+// A=1 (every previously-verified call site) reproduces the exact prior behavior bit-for-bit
+// -- the added z loop/offset is a no-op at z=0.
 static mx::array qng64_gemv_e0(const char *name, const mx::array &x) {
     QNg64Tensor &t = g_qng64_tensors.at(name);
     mx::array planes_e = mx::take(t.planes, 0, 0);
     mx::array scales_e = mx::take(t.scales, 0, 0);
     auto &kernel = qng64_gemv_kernel();
+    int A = (int)x.shape(0);
     std::vector<mx::array> inputs = {planes_e, scales_e, x};
-    std::vector<mx::Shape> output_shapes = {{1, (int)t.out}};
+    std::vector<mx::Shape> output_shapes = {{A, (int)t.out}};
     std::vector<mx::Dtype> output_dtypes = {mx::float32};
     std::vector<std::pair<std::string, mx::fast::TemplateArg>> template_args = {
-        {"n", t.n}, {"ng", (int)t.ng}
+        {"n", t.n}, {"ng", (int)t.ng}, {"out_dim", (int)t.out}
     };
     auto outputs = kernel(inputs, output_shapes, output_dtypes,
-                           {64, (int)t.out, 1}, {64, 1, 1},
+                           {64, (int)t.out, A}, {64, 1, 1},
                            template_args, std::nullopt, false, {});
     return outputs[0];
 }
@@ -2020,6 +2135,35 @@ static mx::array *g_cbatch_x = nullptr;
 static int g_cbatch_A = 0;
 static int g_cbatch_layers_done = 0;
 
+// P5: calibration-only router ambiguity capture. A slot records the largest
+// next-unselected/kth-selected softmax ratio observed across MoE layers in the
+// current cbatch step. 1.0 is maximally ambiguous; lower is clearer.
+static int g_risk_signal_telemetry_on = 0;
+static float g_risk_route_score[64] = {0};
+static int g_risk_route_layer[64] = {0};
+static float g_risk_route_selected[64] = {0};
+static float g_risk_route_next[64] = {0};
+
+int mlx_gpu_risk_signal_telemetry_set(int enabled) {
+    if (!mlx_gpu_available()) return 0;
+    g_risk_signal_telemetry_on = enabled ? 1 : 0;
+    for (int s = 0; s < 64; s++) {
+        g_risk_route_score[s] = 0.0f; g_risk_route_layer[s] = -1;
+        g_risk_route_selected[s] = 0.0f; g_risk_route_next[s] = 0.0f;
+    }
+    return 1;
+}
+
+int mlx_gpu_risk_signal_telemetry_get(int slot, float *score, int *layer,
+                                       float *selected_boundary, float *next_boundary) {
+    if (slot < 0 || slot >= 64) return 0;
+    if (score) *score = g_risk_route_score[slot];
+    if (layer) *layer = g_risk_route_layer[slot];
+    if (selected_boundary) *selected_boundary = g_risk_route_selected[slot];
+    if (next_boundary) *next_boundary = g_risk_route_next[slot];
+    return 1;
+}
+
 int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spos, int is_dense,
                                     const float *x_in_host, const float *w_inln,
                                     const float *w_postln, const float *w_kvaln,
@@ -2043,6 +2187,14 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
             delete g_cbatch_x;
             g_cbatch_x = new mx::array(wrap_host_f32(x_in_host, {A, HIDDEN}));
             g_cbatch_A = A; g_cbatch_layers_done = 0;
+            if (g_risk_signal_telemetry_on) {
+                for (int m = 0; m < A; m++) {
+                    int s = slot[m];
+                    if (s < 0 || s >= 64) return 0;
+                    g_risk_route_score[s] = 0.0f; g_risk_route_layer[s] = -1;
+                    g_risk_route_selected[s] = 0.0f; g_risk_route_next[s] = 0.0f;
+                }
+            }
         }
         if (g_cbatch_A != A || g_cbatch_layers_done != l) return 0;
 
@@ -2149,6 +2301,35 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
             mx::array w_gate_arr = wrap_host_f32(w_gate, {NE, HIDDEN});
             mx::array scores_raw = mx::matmul(h2, mx::transpose(w_gate_arr));       // {A,NE}
             mx::array scores = mx::softmax(scores_raw, std::vector<int>{-1}, /*precise=*/true);
+            if (g_risk_signal_telemetry_on) {
+                mx::array observed = mx::contiguous(scores);
+                mx::eval(observed);
+                const float *sp = observed.data<float>();
+                for (int m = 0; m < A; m++) {
+                    std::vector<int> used(NE, 0);
+                    float kth = 0.0f;
+                    for (int k = 0; k < TOPK; k++) {
+                        int best = -1; float bestv = -1.0f;
+                        for (int e = 0; e < NE; e++) {
+                            float v = sp[(size_t)m * NE + e];
+                            if (!used[e] && v > bestv) { bestv = v; best = e; }
+                        }
+                        if (best < 0) break;
+                        used[best] = 1; kth = bestv;
+                    }
+                    float next = 0.0f;
+                    for (int e = 0; e < NE; e++)
+                        if (!used[e] && sp[(size_t)m * NE + e] > next) next = sp[(size_t)m * NE + e];
+                    float ambiguity = kth > 0.0f ? next / kth : 1.0f;
+                    if (ambiguity < 0.0f) ambiguity = 0.0f;
+                    if (ambiguity > 1.0f) ambiguity = 1.0f;
+                    int phys = slot[m];
+                    if (ambiguity > g_risk_route_score[phys]) {
+                        g_risk_route_score[phys] = ambiguity; g_risk_route_layer[phys] = l;
+                        g_risk_route_selected[phys] = kth; g_risk_route_next[phys] = next;
+                    }
+                }
+            }
             mx::array order = mx::argsort(scores, -1);                              // {A,NE}, per-row
             mx::array top_idx_u = mx::slice(order, {0, NE - TOPK}, {A, NE});         // {A,TOPK}
             mx::array top_idx = mx::astype(top_idx_u, mx::int32);
@@ -2215,6 +2396,14 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
         g_cbatch_x = new mx::array(x_out);   // still LAZY -- not evaluated until finalize()
         g_cbatch_layers_done = l + 1;
         return 1;
+    } catch (const std::exception &e) {
+        // D-metal-4 pattern (see mlx_gpu_layer_step_lazy's own catch above): a bare
+        // catch(...) here turns any real MLX-side failure into an uninformative generic
+        // "failed at layer/step" from the caller. Surface it.
+        fprintf(stderr, "[moe gpu cb online] mlx_gpu_cbatch_layer_step_lazy exception: %s\n", e.what());
+        delete g_cbatch_x; g_cbatch_x = nullptr;
+        g_cbatch_A = 0; g_cbatch_layers_done = 0;
+        return 0;
     } catch (...) {
         delete g_cbatch_x; g_cbatch_x = nullptr;
         g_cbatch_A = 0; g_cbatch_layers_done = 0;
@@ -2738,6 +2927,45 @@ int mlx_gpu_gqa_cbatch_forward_finalize(const float *w_finalnorm, float *logits_
     } catch (...) {
         delete g_cbatch_x; g_cbatch_x = nullptr;
         g_cbatch_A = 0; g_cbatch_layers_done = 0;
+        return 0;
+    }
+}
+
+int mlx_gpu_reset_runtime_epoch(void) {
+    if (!mlx_gpu_available()) return 0;
+    try {
+        // Callers already drained serving requests. This fence additionally
+        // guarantees that evaluated work no longer references the old binding
+        // set before persistent arrays and any unevaluated pending graph are
+        // released below.
+        mx::synchronize();
+
+        delete g_fused_x;
+        g_fused_x = nullptr;
+        g_fused_pos = -1;
+        g_fused_layers_done = 0;
+
+        delete g_cbatch_x;
+        g_cbatch_x = nullptr;
+        g_cbatch_A = 0;
+        g_cbatch_layers_done = 0;
+
+        g_fused_K.clear();
+        g_fused_V.clear();
+        g_fused_kv_inited = false;
+        g_fused_kv_inited_B = 0;
+
+        g_fused_gqa_K.clear();
+        g_fused_gqa_V.clear();
+        g_fused_gqa_kv_inited = false;
+        g_fused_gqa_kv_inited_B = 0;
+
+        g_fused_gqa_cK.clear();
+        g_fused_gqa_cV.clear();
+        g_fused_gqa_ck_inited = 0;
+        g_fused_gqa_ck_inited_B = 0;
+        return 1;
+    } catch (...) {
         return 0;
     }
 }
