@@ -87,6 +87,96 @@ class PrecisionAllocatorTests(unittest.TestCase):
         self.assertEqual(chosen["n"], 9)
         self.assertIn("latency", chosen["objective_dimensions"])
 
+    def conditional_evidence(self, with_trigger=True):
+        role="shared_down_proj"; layer=26
+        sweeps=[
+            {"corpus":"safe","role":role,"layer":layer,"req":0,"pos":8,"n":5,"pass":True},
+            {"corpus":"risk","role":role,"layer":layer,"req":0,"pos":9,"n":5,"pass":False},
+            {"corpus":"safe","role":role,"layer":layer,"req":0,"pos":8,"n":6,"pass":True},
+            {"corpus":"risk","role":role,"layer":layer,"req":0,"pos":9,"n":6,"pass":True},
+            {"corpus":"risk","role":role,"layer":layer,"req":0,"pos":9,"n":7,"pass":False},
+        ]
+        preflight=[
+            {"role":role,"layer":layer,"n":n,"pass":True,"status":"PASS","context_hash":f"ctx{n}"}
+            for n in (5,6)
+        ]
+        validation=[
+            {
+                "role":role,"layer":layer,"n":n,"pass":True,
+                "status":"CANARY_PASS","context_hash":f"ctx{n}",
+                "metrics":{
+                    "target_replay_pass":True,
+                    "post_attribution_hits":0,
+                    "rollback_required":False,
+                },
+            }
+            for n in (5,6)
+        ]
+        trigger=[]
+        if with_trigger:
+            trigger=[{
+                "evidence_id":"risk-low-margin-5-to-6",
+                "role":role,"layer":layer,
+                "from_n":5,"to_n":6,
+                "trigger_type":"low_margin",
+                "signal_bucket":{"margin_max":0.02},
+                "requests":40,"pass":True,"status":"PASS",
+                "evidence_sha256":"e"*64,
+                "metrics":{
+                    "base_failures":40,
+                    "target_failures":0,
+                    "source_event":{"corpus":"risk","req":0,"pos":9},
+                },
+            }]
+        return {
+            "sweeps":sweeps,
+            "preflight":preflight,
+            "validation":validation,
+            "trigger":trigger,
+        }
+
+    def conditional_sizes(self):
+        return {("shared_down_proj",26):{
+            "role":"shared_down_proj","layer":26,
+            "tensor_count":1,"numel":1000,
+        }}
+
+    def test_conditional_base_requires_all_failure_events_covered(self):
+        rows=pa.build_candidates(
+            self.conditional_evidence(with_trigger=False),
+            self.conditional_sizes(),
+        )
+        by_n={r["n"]:r for r in rows}
+        self.assertFalse(by_n[5]["feasible"])
+        self.assertFalse(by_n[5]["conditionally_feasible"])
+        self.assertTrue(by_n[6]["feasible"])
+        got=pa.optimize(rows,memory_weight=1.0,latency_weight=0.0,rss_weight=0.0)
+        target=got["targets"][0]
+        self.assertEqual(target["selected_n"],6)
+        self.assertEqual(target["policy_mode"],"STATIC")
+
+    def test_conditional_base_uses_low_cost_n_only_with_recovery_evidence(self):
+        rows=pa.build_candidates(
+            self.conditional_evidence(with_trigger=True),
+            self.conditional_sizes(),
+        )
+        by_n={r["n"]:r for r in rows}
+        self.assertFalse(by_n[5]["feasible"])
+        self.assertTrue(by_n[5]["conditionally_feasible"])
+        self.assertTrue(by_n[6]["feasible"])
+        self.assertEqual(by_n[5]["conditional_recoveries"][0]["to_n"],6)
+
+        got=pa.optimize(rows,memory_weight=1.0,latency_weight=0.0,rss_weight=0.0)
+        target=got["targets"][0]
+        self.assertEqual(target["selected_n"],5)
+        self.assertEqual(target["static_safe_n"],6)
+        self.assertEqual(target["policy_mode"],"CONDITIONAL")
+        self.assertEqual(target["dynamic_escalation"]["status"],"EVIDENCE_READY")
+        self.assertEqual(
+            target["dynamic_escalation"]["candidate_alternates"],
+            [{"n":6,"real_pass_events":2,"persistent_p50_ms":None}],
+        )
+
     def test_checkpoint_shared_and_expert_numel(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
