@@ -8,7 +8,7 @@
       "type": "string"
     },
     "schema": {
-      "type": "string"
+      "const": "beglin-loader-contract-v1"
     },
     "silent_dense_fallback_allowed": {
       "const": false
