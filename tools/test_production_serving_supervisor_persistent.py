@@ -99,8 +99,19 @@ class RuntimeControlImportTests(unittest.TestCase):
             Path(ps.__file__).resolve().parent,
         )
         grc = ps._load_gpu_runtime_control()
+        self.assertEqual(
+            Path(grc.__file__).resolve().parent,
+            Path(ps.__file__).resolve().parent,
+        )
         self.assertTrue(callable(grc.prepare_rebind))
         self.assertTrue(callable(grc.verify_terminal_ack))
+
+    def test_policy_hash_uses_local_precision_context(self):
+        got = ps._policy_hash([
+            {"role": "shared_down_proj", "layer": 26, "n": 5},
+            {"role": "shared_up_proj", "layer": 3, "n": 6},
+        ])
+        self.assertEqual(len(got), 64)
 
 
 class AdaptiveTwoPassTests(unittest.TestCase):
