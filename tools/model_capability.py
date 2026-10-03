@@ -477,9 +477,46 @@ def inspect_model_source(path: str | Path) -> dict:
             raise ModelCapabilityError(f"missing safetensors shard(s): {missing}")
         identity_files.append(primary)
         identity_files.extend(shard_paths)
+        expected_by_tensor = {}
+        for tensor_name, shard_name in weight_map.items():
+            if not isinstance(tensor_name, str) or not tensor_name:
+                raise ModelCapabilityError("safetensors weight_map has invalid tensor name")
+            if not isinstance(shard_name, str) or not shard_name:
+                raise ModelCapabilityError(
+                    f"safetensors weight_map has invalid shard for tensor={tensor_name!r}"
+                )
+            expected_by_tensor[tensor_name] = shard_name
         seen = set()
+        root_resolved = root.resolve()
         for shard in shard_paths:
+            resolved = shard.resolve()
+            if resolved != root_resolved and root_resolved not in resolved.parents:
+                raise ModelCapabilityError(
+                    f"safetensors shard escapes model root: {shard}"
+                )
+            relative_name = shard.relative_to(root).as_posix()
             parsed = parse_safetensors_header(shard)
+            actual_names = {str(row["name"]) for row in parsed["tensors"]}
+            expected_names = {
+                name for name, declared in expected_by_tensor.items()
+                if declared == relative_name
+            }
+            missing_declared = sorted(expected_names - actual_names)
+            if missing_declared:
+                raise ModelCapabilityError(
+                    f"safetensors weight_map tensor missing from declared shard "
+                    f"{relative_name}: {missing_declared[:8]}"
+                )
+            wrong_or_unindexed = sorted(actual_names - expected_names)
+            if wrong_or_unindexed:
+                details = [
+                    f"{name}->{expected_by_tensor.get(name, 'UNINDEXED')}"
+                    for name in wrong_or_unindexed[:8]
+                ]
+                raise ModelCapabilityError(
+                    f"safetensors shard membership disagrees with weight_map "
+                    f"{relative_name}: {details}"
+                )
             for row in parsed["tensors"]:
                 if row["name"] in seen:
                     raise ModelCapabilityError(
@@ -487,6 +524,11 @@ def inspect_model_source(path: str | Path) -> dict:
                     )
                 seen.add(row["name"])
                 tensor_inventory.append(row)
+        if seen != set(expected_by_tensor):
+            missing = sorted(set(expected_by_tensor) - seen)
+            raise ModelCapabilityError(
+                f"safetensors weight_map contains unresolved tensor(s): {missing[:8]}"
+            )
         metadata = index.get("metadata", {}) if isinstance(index.get("metadata"), dict) else {}
     elif source_format == "LEGACY_BEG_LIN":
         assert primary is not None
@@ -1109,6 +1151,7 @@ def build_tokenizer_contract(
         checkpoint_identity_sha256=str(source["checkpoint_identity_sha256"]),
         architecture_id=arch,
     )
+    source_format = str(source.get("source_format") or "")
     if arch in {"qwen2", "qwen3_moe", "llama", "olmoe"}:
         status = "IN_ENGINE_VERIFIED" if evidence is not None else "IMPLEMENTED_UNVERIFIED"
         encode_backend = "beglin_bpe"
@@ -1121,6 +1164,15 @@ def build_tokenizer_contract(
     else:
         status = "UNSUPPORTED"
         encode_backend = None
+
+    # Tokenizer algorithm verification is distinct from an engine text-I/O path.
+    # Today real text input/output is wired only for dense GGUF greedy mode.
+    text_io_supported = bool(
+        evidence is not None
+        and source_format == "GGUF"
+        and arch in {"qwen2", "llama"}
+    )
+    text_io_mode = "DENSE_GGUF_GREEDY" if text_io_supported else "NOT_WIRED"
     contract = {
         "schema": "beglin-tokenizer-contract-v1",
         "architecture_id": arch,
@@ -1129,7 +1181,8 @@ def build_tokenizer_contract(
         "status": status,
         "encode_backend": encode_backend,
         "decode_backend": encode_backend,
-        "text_io_supported": status in {"IN_ENGINE_VERIFIED", "EXTERNAL_VERIFIED"},
+        "text_io_supported": text_io_supported,
+        "text_io_mode": text_io_mode,
         "verification_evidence": evidence,
         "silent_fallback_allowed": False,
     }
@@ -1508,6 +1561,7 @@ def pipeline_eligibility(
         partial = (
             tensor_graph.get("unmapped_tensor_count", 0) > 0
             or tokenizer.get("status") in {"UNSUPPORTED", "IMPLEMENTED_UNVERIFIED"}
+            or not bool(tokenizer.get("text_io_supported"))
             or loader.get("status") != "VERIFIED"
             or any(row.get("requires_validation") for row in search_space)
         )
@@ -1516,14 +1570,14 @@ def pipeline_eligibility(
             reasons.append("UNMAPPED_TENSORS")
         if tokenizer.get("status") in {"UNSUPPORTED", "IMPLEMENTED_UNVERIFIED"}:
             reasons.append("TOKENIZER_NOT_FULLY_VERIFIED")
+        elif not bool(tokenizer.get("text_io_supported")):
+            reasons.append("TEXT_IO_NOT_WIRED")
         if loader.get("status") != "VERIFIED":
             reasons.append("LOADER_NOT_VERIFIED")
         if any(row.get("requires_validation") for row in search_space):
             reasons.append("BACKEND_OR_QNG64_REQUIRES_VALIDATION")
     precision_pipeline_allowed = status in {"FULL", "PARTIAL"}
-    text_io_ready = tokenizer.get("status") in {
-        "IN_ENGINE_VERIFIED", "EXTERNAL_VERIFIED"
-    }
+    text_io_ready = bool(tokenizer.get("text_io_supported"))
     p11_allowed = bool(
         precision_pipeline_allowed
         and loader.get("status") == "VERIFIED"
