@@ -329,6 +329,7 @@ class PipelineBridgeTests(unittest.TestCase):
                     ],
                     "backend": "mlx_metal",
                     "target_key": target,
+                    "precision_n": 5,
                     "worker_pid": 1234,
                     "weight_epoch": 9,
                     "precision_n": 5,
@@ -341,6 +342,24 @@ class PipelineBridgeTests(unittest.TestCase):
             self.assertEqual(
                 p11["model_capability_bundle_sha256"], bundle["bundle_sha256"]
             )
+            with self.assertRaisesRegex(
+                bridge.PipelineCapabilityError, "runtime precision mismatch"
+            ):
+                bridge.build_p11_capability_preimage(
+                    bundle,
+                    p10_binding=p10,
+                    runtime_state={
+                        "model_capability_bundle_sha256": bundle["bundle_sha256"],
+                        "checkpoint_identity_sha256": bundle[
+                            "checkpoint_identity_sha256"
+                        ],
+                        "backend": "mlx_metal",
+                        "target_key": target,
+                        "precision_n": 4,
+                        "worker_pid": 1234,
+                        "weight_epoch": 9,
+                    },
+                )
 
     def test_deepseek_pretokenized_partial_bundle_can_reach_p11_with_verified_loader(self):
         with tempfile.TemporaryDirectory() as td:
@@ -443,6 +462,7 @@ class PipelineBridgeTests(unittest.TestCase):
                     "checkpoint_identity_sha256": bundle["checkpoint_identity_sha256"],
                     "backend": "mlx_metal",
                     "target_key": target,
+                    "precision_n": 5,
                     "worker_pid": 1234,
                     "weight_epoch": 11,
                     "precision_n": 5,
