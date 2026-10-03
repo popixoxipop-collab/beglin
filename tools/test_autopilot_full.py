@@ -354,8 +354,9 @@ class FullAutopilotTests(unittest.TestCase):
             "m", "shared_gate_proj", 14, 5, "pre"
         )
         self.assertEqual(action, "LIVE_LADDER_UNSAFE")
-        self.assertEqual(detail["tested_ns"], [5, 6, 7])
-        self.assertEqual(fetch.call_count, 3)
+        expected = [n for n in p5.qsn.REAL_LADDER if n >= 5]
+        self.assertEqual(detail["tested_ns"], expected)
+        self.assertEqual(fetch.call_count, len(expected))
 
     @patch.object(p5, "_live_evidence_gate")
     @patch.object(p5.shadow, "fetch_candidates")
