@@ -240,9 +240,15 @@ class AdaptivePrewarmTests(unittest.TestCase):
                 "trigger_request_indices": list(range(12)),
             },
         }
-        with patch.object(worker, "submit", return_value=fake) as submit, patch.object(
+        with patch.object(
+            base, "_read_first_certified_prompt", return_value=[1, 2, 3]
+        ), patch.object(
+            worker, "submit", return_value=fake
+        ) as submit, patch.object(
             worker, "submit_base"
-        ) as submit_base, patch.object(worker, "health", return_value={"pid": 123}):
+        ) as submit_base, patch.object(
+            worker, "health", return_value={"pid": 123}
+        ):
             got = pool._prewarm(worker)
         self.assertEqual(got["reference_hits"], 12)
         submit.assert_called_once()
