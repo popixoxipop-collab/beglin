@@ -139,6 +139,7 @@ def detect_trigger(
     threshold: float,
     timeout: int,
 ) -> dict:
+    root.mkdir(parents=True,exist_ok=True)
     event_log=root/"trigger.jsonl"
     combo=root/"hi-combos.txt"
     combo.write_text(f"{role} {int(layer)}\n")
@@ -500,10 +501,4 @@ def main() -> int:
 
 
 if __name__=="__main__":
-    # detection root creation before main's first detector call
-    original=detect_trigger
-    def wrapped_detect_trigger(**kwargs):
-        Path(kwargs["root"]).mkdir(parents=True,exist_ok=True)
-        return original(**kwargs)
-    detect_trigger=wrapped_detect_trigger
     raise SystemExit(main())
