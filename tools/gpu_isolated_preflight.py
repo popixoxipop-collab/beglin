@@ -25,7 +25,7 @@ import precision_context as pc
 
 ACK_SCHEMA = grc.ACK_SCHEMA
 BACKEND = "mlx_metal"
-FIRST_RELEASE_NS = {5, 6, 7}
+SUPPORTED_QNG64_NS = set(bc.GPU_NATIVE_QNG64) | set(bc.GPU_CUSTOM_QNG64)
 ARCH_GATE = {
     "mla": "QWEN_MOE_GPU_CBATCH_ONLINE",
     "gqa": "QWEN_MOE_GPU_GQA_CBATCH_ONLINE",
@@ -54,10 +54,10 @@ def normalize_policy(policy) -> list[dict]:
                 f"duplicate policy target: {row['role']}/L{row['layer']}"
             )
         seen.add(key)
-        if int(row["n"]) not in FIRST_RELEASE_NS:
+        if int(row["n"]) not in SUPPORTED_QNG64_NS:
             raise GpuPreflightError(
-                f"n={row['n']} is outside first-release GPU ladder "
-                f"{sorted(FIRST_RELEASE_NS)}"
+                f"n={row['n']} is outside current GPU qNg64 ladder "
+                f"{sorted(SUPPORTED_QNG64_NS)}"
             )
     return rows
 
