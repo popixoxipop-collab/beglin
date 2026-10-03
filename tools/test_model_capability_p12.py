@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 import shutil
@@ -354,6 +355,8 @@ class SourceAndCompilerTests(unittest.TestCase):
             self.assertEqual(
                 bundle["tokenizer_contract"]["status"], "IN_ENGINE_VERIFIED"
             )
+            self.assertFalse(bundle["tokenizer_contract"]["text_io_supported"])
+            self.assertEqual(bundle["tokenizer_contract"]["text_io_mode"], "NOT_WIRED")
             self.assertEqual(
                 bundle["tokenizer_contract"]["verification_evidence"]["evidence_sha256"],
                 "a" * 64,
@@ -430,7 +433,9 @@ class SourceAndCompilerTests(unittest.TestCase):
             )
             self.assertEqual(bundle["tokenizer_contract"]["status"], "IN_ENGINE_VERIFIED")
             self.assertEqual(bundle["loader_contract"]["status"], "VERIFIED")
-            self.assertEqual(bundle["p8_p11_eligibility"]["status"], "FULL")
+            self.assertEqual(bundle["p8_p11_eligibility"]["status"], "PARTIAL")
+            self.assertIn("TEXT_IO_NOT_WIRED", bundle["p8_p11_eligibility"]["reasons"])
+            self.assertTrue(bundle["p8_p11_eligibility"]["p11_allowed"])
             self.assertTrue(bundle["p8_p11_eligibility"]["p11_allowed"])
             self.assertTrue(bundle["precision_search_targets"])
             self.assertTrue(
@@ -479,6 +484,43 @@ class SourceAndCompilerTests(unittest.TestCase):
                 second["checkpoint_identity_sha256"],
             )
             self.assertEqual(first["bundle_sha256"],second["bundle_sha256"])
+
+    def test_sharded_weight_map_must_match_tensor_membership(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "config.json").write_text(json.dumps({
+                "_name_or_path": "acme/qwen2-sharded-membership",
+                "model_type": "qwen2",
+                "hidden_size": 64,
+                "intermediate_size": 128,
+                "num_hidden_layers": 1,
+                "num_attention_heads": 8,
+                "num_key_value_heads": 2,
+                "vocab_size": 128,
+                "max_position_embeddings": 256,
+            }))
+            write_safetensors(
+                root / "model-00001-of-00002.safetensors",
+                {
+                    "model.embed_tokens.weight": ("F16", [128, 64]),
+                    "lm_head.weight": ("F16", [128, 64]),
+                },
+            )
+            write_safetensors(
+                root / "model-00002-of-00002.safetensors",
+                {"model.norm.weight": ("F16", [64])},
+            )
+            (root / "model.safetensors.index.json").write_text(json.dumps({
+                "weight_map": {
+                    "model.embed_tokens.weight": "model-00001-of-00002.safetensors",
+                    "lm_head.weight": "model-00002-of-00002.safetensors",
+                    "model.norm.weight": "model-00002-of-00002.safetensors",
+                }
+            }))
+            with self.assertRaisesRegex(
+                mc.ModelCapabilityError, "membership disagrees with weight_map"
+            ):
+                mc.inspect_model_source(root)
 
     def test_missing_safetensors_shard_is_rejected(self):
         with tempfile.TemporaryDirectory() as td:
@@ -552,6 +594,22 @@ class BackendSymmetryTests(unittest.TestCase):
         self.assertEqual(cpu["action"], "RESTART_REQUIRED")
         self.assertEqual(mlx["action"], "HOT_REBIND_SINGLE")
         self.assertEqual(cpu["target_policy_hash"], mlx["target_policy_hash"])
+
+    def test_backend_adapter_rejects_tampered_bundle_and_snapshots_input(self):
+        bundle = self._bundle()
+        tampered = copy.deepcopy(bundle)
+        tampered["backend_capability_matrix"]["rows"][0]["inference_status"] = "VERIFIED"
+        with self.assertRaisesRegex(
+            bav2.BackendV2Error, "capability bundle hash mismatch"
+        ):
+            bav2.MlxMetalBackendAdapterV2(tampered)
+
+        adapter = bav2.MlxMetalBackendAdapterV2(bundle)
+        original = adapter.probe_capabilities()["rows"][0]["inference_status"]
+        bundle["backend_capability_matrix"]["rows"][0]["inference_status"] = "CORRUPTED"
+        self.assertEqual(
+            adapter.probe_capabilities()["rows"][0]["inference_status"], original
+        )
 
     def test_policy_shape_change_requires_restart_on_both_backends(self):
         bundle = self._bundle()
