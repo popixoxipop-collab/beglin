@@ -30,6 +30,16 @@ def load_cost(path, expected_sha):
     out=json.loads(path.read_text())
     if not (out.get("status")=="PASS" and out.get("production_touched") is False):
         raise RuntimeError("cost evidence contract mismatch")
+    adaptive=out.get("adaptive_recovery_profile") or {}
+    if not (
+        adaptive.get("status")=="PASS"
+        and adaptive.get("same_pid") is True
+        and int(adaptive.get("samples",0))>=3
+        and adaptive.get("observed_inference_passes")==[2]
+        and int(adaptive.get("expected_inference_passes",0))==2
+        and float(adaptive.get("p50_roundtrip_ms",0.0))>0.0
+    ):
+        raise RuntimeError("adaptive inference-pass cost evidence contract mismatch")
     return out
 
 def accepted_rows(combo):
@@ -110,6 +120,7 @@ def main():
         warm_opt=mw["closed_loop"]["policy_cost_optimizer"]
         out.update({
             "status":"PASS","pid":pid,"configuration":cfg,
+            "adaptive_recovery_profile":cost["adaptive_recovery_profile"],
             "no_risk_startup":{**m0,"health":h0},
             "risk_cold":{**mc,"health":h1},
             "no_risk_on_target":{**mb,"health":h2},

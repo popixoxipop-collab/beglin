@@ -652,6 +652,7 @@ class PersistentRouteWorker:
                             expected_requests=len(parsed),
                         )
                         parsed_result["roundtrip_ms"] = roundtrip_ms
+                        parsed_result["inference_passes"] = 1
                         parsed_result["neartie_events"] = _read_neartie_events_since(
                             self.neartie_path, neartie_offset
                         )
@@ -888,6 +889,7 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
             "finite_logits": bool(first["finite_logits"] and recovery["finite_logits"]),
             "engine_wall_ms": float(first["engine_wall_ms"]) + float(recovery["engine_wall_ms"]),
             "roundtrip_ms": float(first["roundtrip_ms"]) + float(recovery["roundtrip_ms"]),
+            "inference_passes": int(first.get("inference_passes", 1)) + int(recovery.get("inference_passes", 1)),
             "responses": merged_responses,
             "neartie_events": base_events + recovery_events,
             "adaptive_precision": {

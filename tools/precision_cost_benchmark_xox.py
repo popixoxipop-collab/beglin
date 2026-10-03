@@ -161,6 +161,51 @@ def profile_combined(binary,root,steady_n,warm_cycles):
         }
     finally:
         worker.stop(force=True)
+def profile_adaptive_recovery(binary, root, iterations=3):
+    ps.PERSISTENT_BINARY=binary
+    worker=ps.AdaptivePersistentRouteWorker(
+        route=base.candidate_route(), root=root
+    )
+    prompt=base._read_first_certified_prompt()
+    rows=[]
+    try:
+        worker.start(); pid=worker.health()["pid"]
+        for i in range(int(iterations)):
+            got=worker.submit([(prompt,10)])
+            adaptive=got.get("adaptive_precision") or {}
+            if adaptive.get("action")!="RECOVERY_N6":
+                raise RuntimeError("adaptive benchmark did not exercise recovery")
+            if int(got.get("inference_passes",0))!=2:
+                raise RuntimeError("adaptive recovery did not report two inference passes")
+            tokens=got.get("responses",[[]])[0]
+            if len(tokens)<=8 or int(tokens[8])!=1224:
+                raise RuntimeError("adaptive recovery reference mismatch")
+            rows.append({
+                "iteration":i,
+                "inference_passes":int(got["inference_passes"]),
+                "engine_wall_ms":float(got["engine_wall_ms"]),
+                "roundtrip_ms":float(got["roundtrip_ms"]),
+                "worker_epoch":int(worker.health()["weight_epoch"]),
+                "worker_pid":int(worker.health()["pid"]),
+            })
+        if any(row["worker_pid"]!=pid for row in rows):
+            raise RuntimeError("adaptive benchmark PID changed")
+        return {
+            "schema":"beglin-adaptive-inference-pass-profile-v1",
+            "status":"PASS",
+            "same_pid":True,
+            "pid":pid,
+            "samples":len(rows),
+            "observed_inference_passes":sorted({r["inference_passes"] for r in rows}),
+            "expected_inference_passes":2,
+            "p50_engine_ms":pct([r["engine_wall_ms"] for r in rows]),
+            "p50_roundtrip_ms":pct([r["roundtrip_ms"] for r in rows]),
+            "rows":rows,
+        }
+    finally:
+        worker.stop(force=True)
+
+
 def aggregate_cost_rows(rows, from_hash, cache_state):
     return {
         "from_policy_hash": from_hash,
@@ -226,6 +271,7 @@ def main():
     p1,e1=profile_target(binary,root/"l3","shared_up_proj",3,6,5,ALT_L3,args.steady,args.warm_cycles)
     p2,e2=profile_target(binary,root/"l26","shared_down_proj",26,5,6,ALT_L26,args.steady,args.warm_cycles)
     combo=profile_combined(binary,root/"combined",args.steady,args.warm_cycles)
+    adaptive=profile_adaptive_recovery(binary,root/"adaptive",iterations=max(3,args.warm_cycles))
     out={
         "schema":"beglin-precision-e2e-cost-v1",
         "status":"PASS",
@@ -236,6 +282,7 @@ def main():
         "target_profiles":p1+p2,
         "accepted_policy_profiles":accepted_policy_profiles(combo),
         "policy_profiles":{"combined":combo},
+        "adaptive_recovery_profile":adaptive,
         "raw_evidence":{"l3":e1,"l26":e2},
     }
     raw=json.dumps(out,indent=2,sort_keys=True)+"\n"

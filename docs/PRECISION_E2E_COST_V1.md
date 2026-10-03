@@ -121,3 +121,14 @@ P4 is not enabled in production by this implementation stage.
 Current production remains generation 6 on the existing adaptive L26 supervisor, with auto-promotion OFF and no external exposure.
 
 A later cutover must separately pin the new native binary, the measured cost snapshot, and exact-source P4 acceptance evidence.
+
+## Inference-pass measurement hardening
+The original P4 acceptance measured REBIND/cache/resident-memory costs directly, while accepted closed-loop policies were one-pass and therefore carried expected_inference_passes=1.
+
+This hardening makes the worker result itself authoritative for pass count:
+- every ordinary PersistentRouteWorker admission reports inference_passes=1;
+- AdaptivePersistentRouteWorker reports inference_passes=2 when a low-cost base pass is followed by n6 recovery;
+- the scratch P4 benchmark records an adaptive_recovery_profile from the real XOX worker and requires observed_inference_passes=[2];
+- the P4 acceptance refuses cost evidence that does not contain this real two-pass measurement.
+
+Exact-source evidence is generated after the implementation commit is fixed.
