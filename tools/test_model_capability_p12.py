@@ -70,6 +70,30 @@ def qwen_fixture(root: Path) -> Path:
     return root
 
 
+def verification_evidence(
+    root: Path,
+    *,
+    component: str,
+    backend: str | None = None,
+    evidence_byte: str = "e",
+) -> dict:
+    source = mc.inspect_model_source(root)
+    descriptor = mc.build_architecture_descriptor(source)
+    row = {
+        "schema": "beglin-verification-evidence-v1",
+        "status": "VERIFIED",
+        "component": component,
+        "architecture_id": descriptor["architecture_id"],
+        "checkpoint_identity_sha256": source["checkpoint_identity_sha256"],
+        "evidence_sha256": evidence_byte * 64,
+        "run_id": f"fixture-{component}-{backend or 'none'}",
+        "kind": "UNIT_TEST_FIXTURE",
+    }
+    if backend is not None:
+        row["backend"] = backend
+    return row
+
+
 def gguf_string(value: str) -> bytes:
     raw = value.encode()
     return struct.pack("<Q", len(raw)) + raw
@@ -123,7 +147,7 @@ class SourceAndCompilerTests(unittest.TestCase):
             self.assertEqual(first["architecture_descriptor"]["architecture_id"], "qwen2")
             self.assertEqual(first["architecture_descriptor"]["attention_kind"], "GQA")
             self.assertEqual(first["model_skeleton"]["layer_count"], 2)
-            self.assertEqual(first["tokenizer_contract"]["status"], "IN_ENGINE_VERIFIED")
+            self.assertEqual(first["tokenizer_contract"]["status"], "IMPLEMENTED_UNVERIFIED")
             self.assertGreater(len(first["precision_search_targets"]), 0)
             self.assertEqual(first["p8_p11_eligibility"]["status"], "PARTIAL")
 
@@ -207,17 +231,78 @@ class SourceAndCompilerTests(unittest.TestCase):
             self.assertTrue(all(r["qng64_status"] == "IMPLEMENTED_UNVERIFIED" for r in precision))
             self.assertTrue(all(r["verification_source"] == "inspection_only" for r in rows))
 
-    def test_cpu_runtime_verified_requires_explicit_evidence_flag(self):
+    def test_cpu_runtime_verified_requires_explicit_evidence_artifact(self):
         with tempfile.TemporaryDirectory() as td:
             root = qwen_fixture(Path(td) / "m")
+            with self.assertRaisesRegex(
+                mc.ModelCapabilityError, "requires explicit cpu_runtime_evidence"
+            ):
+                mc.compile_model_capabilities(
+                    root, backend="cpu", cpu_runtime_verified=True
+                )
+            evidence = verification_evidence(
+                root, component="backend_runtime", backend="cpu"
+            )
             bundle = mc.compile_model_capabilities(
-                root, backend="cpu", cpu_runtime_verified=True
+                root,
+                backend="cpu",
+                cpu_runtime_verified=True,
+                cpu_runtime_evidence=evidence,
             )
             rows = bundle["backend_capability_matrix"]["rows"]
             self.assertTrue(all(r["inference_status"] == "VERIFIED" for r in rows))
             precision = [r for r in rows if r["supported_n"]]
             self.assertTrue(all(r["qng64_status"] == "VERIFIED" for r in precision))
-            self.assertTrue(all(r["verification_source"] == "explicit_runtime_evidence" for r in rows))
+            self.assertTrue(
+                all(r["verification_source"] == "explicit_runtime_evidence" for r in rows)
+            )
+            self.assertTrue(all(r["evidence_refs"] for r in rows))
+            self.assertTrue(
+                all(
+                    r["evidence_refs"][0]["evidence_sha256"] == "e" * 64
+                    for r in rows
+                )
+            )
+
+    def test_tokenizer_verification_requires_matching_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "m")
+            evidence = verification_evidence(
+                root, component="tokenizer", evidence_byte="a"
+            )
+            bundle = mc.compile_model_capabilities(
+                root, tokenizer_evidence=evidence
+            )
+            self.assertEqual(
+                bundle["tokenizer_contract"]["status"], "IN_ENGINE_VERIFIED"
+            )
+            self.assertEqual(
+                bundle["tokenizer_contract"]["verification_evidence"]["evidence_sha256"],
+                "a" * 64,
+            )
+            stale = dict(evidence)
+            stale["checkpoint_identity_sha256"] = "b" * 64
+            with self.assertRaisesRegex(
+                mc.ModelCapabilityError, "checkpoint identity mismatch"
+            ):
+                mc.compile_model_capabilities(
+                    root, tokenizer_evidence=stale
+                )
+
+    def test_runtime_evidence_must_match_backend_and_checkpoint(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "m")
+            evidence = verification_evidence(
+                root, component="backend_runtime", backend="cpu"
+            )
+            wrong_backend = dict(evidence)
+            wrong_backend["backend"] = "mlx_metal"
+            with self.assertRaisesRegex(
+                mc.ModelCapabilityError, "backend mismatch"
+            ):
+                mc.compile_model_capabilities(
+                    root, backend="cpu", cpu_runtime_evidence=wrong_backend
+                )
 
     def test_olmoe_gguf_is_not_overclaimed_as_supported_loader(self):
         with tempfile.TemporaryDirectory() as td:
@@ -247,7 +332,14 @@ class BackendSymmetryTests(unittest.TestCase):
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
         root = qwen_fixture(Path(td.name) / "m")
-        return mc.compile_model_capabilities(root, mlx_runtime_verified=True)
+        evidence = verification_evidence(
+            root, component="backend_runtime", backend="mlx_metal", evidence_byte="f"
+        )
+        return mc.compile_model_capabilities(
+            root,
+            mlx_runtime_verified=True,
+            mlx_runtime_evidence=evidence,
+        )
 
     def test_cpu_and_mlx_use_same_plan_schema_with_different_actions(self):
         bundle = self._bundle()
@@ -274,7 +366,7 @@ class BackendSymmetryTests(unittest.TestCase):
         )
         self.assertEqual(cpu["schema"], mlx["schema"])
         self.assertEqual(cpu["action"], "RESTART_REQUIRED")
-        self.assertEqual(mlx["action"], "VALIDATION_REQUIRED")
+        self.assertEqual(mlx["action"], "HOT_REBIND_SINGLE")
         self.assertEqual(cpu["target_policy_hash"], mlx["target_policy_hash"])
 
     def test_policy_shape_change_requires_restart_on_both_backends(self):
@@ -304,7 +396,7 @@ class ContractTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1] / "schemas" / "model"
         result = vmc.verify(root)
         self.assertEqual(result["status"], "PASS")
-        self.assertEqual(result["schema_count"], 13)
+        self.assertEqual(result["schema_count"], 14)
 
 
 if __name__ == "__main__":
