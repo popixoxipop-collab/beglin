@@ -19,3 +19,5 @@ Current boundary:
 The historical L3 P8/P9 candidate still lacks replay provenance, so no real P9 MANUAL_REVIEW_CANDIDATE exists yet. P10 therefore does not launch or mutate a production canary. The gate is ready for the first future provenance-backed P9 candidate.
 
 Regression: P10/manual-canary/routing focused 49/49 PASS; GPU suite 230/230 PASS.
+
+Certified successor regression: run 37131421126, exact implementation head a285f3759627490f3d55ac30b039846cfa33913b, SUCCESS. The subsequent commit only removes the temporary branch trigger and seals this result.
