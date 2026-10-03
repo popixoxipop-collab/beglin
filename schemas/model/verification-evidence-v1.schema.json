@@ -1,0 +1,51 @@
+{
+  "$id": "https://beglin.local/schemas/model/verification-evidence-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "verification-evidence-v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "status",
+    "component",
+    "architecture_id",
+    "checkpoint_identity_sha256",
+    "evidence_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-verification-evidence-v1"
+    },
+    "status": {
+      "const": "VERIFIED"
+    },
+    "component": {
+      "enum": ["backend_runtime", "tokenizer", "loader"]
+    },
+    "architecture_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "backend": {
+      "enum": ["cpu", "mlx_metal"]
+    },
+    "checkpoint_identity_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "binary_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    }
+  }
+}
