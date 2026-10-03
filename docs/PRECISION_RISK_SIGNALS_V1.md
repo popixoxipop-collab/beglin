@@ -73,3 +73,34 @@ P5 telemetry and evidence are successor-only in this stage.
 No production binary or route is changed.
 The existing generation-6 adaptive L26 service remains the live path.
 Exact-source acceptance and certified regression are sealed after the implementation commit is fixed.
+
+## Exact-source acceptance
+Implementation commit:
+ae4c9530d270946ee7cb2bab2485d64f485768ef
+
+Exact-source XOX result:
+/Users/xox/vdsp_serving/precision-risk-signals-acceptance-ae4c953/result.json
+SHA-256:
+c28ec889c8e6c33a64fd61a195d5ee2aa6c3912214b75988fd96b28edfb48d2a
+
+The result is source-bound to ae4c9530d270946ee7cb2bab2485d64f485768ef and reports:
+- base L3 n6 failures 6/6
+- target L3 n5 failures 0/6
+- return-to-n6 failures 3/3
+- measured near_tie margin 0.043699
+- measured normalized entropy 0.232097685
+- measured routing ambiguity 0.999847949 at layer 24
+- P5 triad selects L3 n5 while leaving L26 n5
+- low_margin 0.010715 separately selects L26 n6 while L3 stays n6
+- missing one active-trigger evidence row holds L3 at n6
+- selected P5 policy returns [55222,1]
+- scratch worker restores to reviewed startup policy on the same PID
+- production_touched=false
+
+P5 native calibration binary SHA-256:
+a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028
+
+Certified successor regression:
+- run 37123674801
+- head ae4c9530d270946ee7cb2bab2485d64f485768ef
+- conclusion SUCCESS
