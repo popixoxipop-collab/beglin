@@ -89,12 +89,29 @@ def verify_persistent_artifact() -> dict:
     }
 
 
-def _read_runtime_ack(path: Path) -> dict:
-    tools = str(base.REPO / "tools")
+def _runtime_tools_path() -> str:
+    # Bind control helpers to the same reviewed/deployed source tree as this
+    # supervisor. base.REPO may point at an older local engine checkout on XOX
+    # and must not silently override the adaptive control contract.
+    return str(Path(__file__).resolve().parent)
+
+
+def _load_gpu_runtime_control():
+    tools = _runtime_tools_path()
     if tools not in sys.path:
         sys.path.insert(0, tools)
     import gpu_runtime_control as grc
-    return grc.read_runtime_ack(path)
+    required = ("read_runtime_ack", "prepare_rebind", "verify_terminal_ack")
+    missing = [name for name in required if not callable(getattr(grc, name, None))]
+    if missing:
+        raise PersistentSupervisorError(
+            f"gpu runtime control helper is stale/missing: {','.join(missing)}"
+        )
+    return grc
+
+
+def _read_runtime_ack(path: Path) -> dict:
+    return _load_gpu_runtime_control().read_runtime_ack(path)
 
 
 def _read_neartie_events_since(path: Path, offset: int) -> list[dict]:
@@ -511,10 +528,7 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
         return int(n)
 
     def _prepare_rebind(self, *, expected_n: int, target_n: int, txn_id: str) -> None:
-        tools = str(base.REPO / "tools")
-        if tools not in sys.path:
-            sys.path.insert(0, tools)
-        import gpu_runtime_control as grc
+        grc = _load_gpu_runtime_control()
         ack = _read_runtime_ack(self.ack_path)
         self.ack = ack
         grc.prepare_rebind(
@@ -530,10 +544,7 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
         )
 
     def _verify_rebind(self, *, txn_id: str, target_n: int) -> dict:
-        tools = str(base.REPO / "tools")
-        if tools not in sys.path:
-            sys.path.insert(0, tools)
-        import gpu_runtime_control as grc
+        grc = _load_gpu_runtime_control()
         ack = grc.verify_terminal_ack(
             ack_path=self.ack_path,
             txn_id=txn_id,
