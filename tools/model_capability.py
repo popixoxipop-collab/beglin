@@ -1185,7 +1185,7 @@ def build_backend_capability_matrix(
                 supported_n = CPU_QNG64_WIDTHS if precision_role else []
             else:
                 arch = str(descriptor.get("architecture_id") or "unknown")
-                target_verified = bool(mlx_runtime_verified and arch == "deepseek_v2")
+                target_verified = bool(mlx_runtime_verified)
                 if arch == "gpt-oss":
                     inference_status = "UNSUPPORTED_MODEL"
                     qng64_status = "UNSUPPORTED_MODEL" if precision_role else "UNSUPPORTED_ROLE"
