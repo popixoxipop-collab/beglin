@@ -16,6 +16,7 @@ the result explicitly requires pairwise/interaction evidence before production.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -364,15 +365,75 @@ def optimize(candidates: list[dict], current_policy: list[dict] | None = None, *
         {"role": role, "layer": layer, "n": n}
         for (role, layer), n in sorted(proposed_policy.items())
     ]
+    current_normalized = [
+        {"role": role, "layer": layer, "n": n}
+        for (role, layer), n in sorted(current.items())
+    ]
     return {
         "schema": "beglin-precision-allocator-v1",
         "status": "PROPOSAL_ONLY",
         "production_write_allowed": False,
         "interaction_model": "coordinate_independent_v1",
         "pairwise_evidence_required_before_combined_production": True,
+        "current_policy": current_normalized,
         "proposed_policy": normalized,
+        "objective_weights": {
+            "memory": float(weights.get("memory_weight", 1.0)),
+            "latency": float(weights.get("latency_weight", 0.0)),
+            "rss": float(weights.get("rss_weight", 0.0)),
+        },
         "targets": proposals,
     }
+
+
+def persist_decision(result: dict, model: str) -> dict:
+    url, key = _credentials()
+    canonical = json.dumps(result, sort_keys=True, separators=(",", ":"))
+    decision_id = hashlib.sha256(canonical.encode()).hexdigest()
+    contexts = sorted({
+        ctx
+        for target in result.get("targets", [])
+        for row in target.get("pareto_frontier", [])
+        for ctx in (row.get("g4_context_hash"), row.get("g6_context_hash"))
+        if ctx
+    })
+    payload = {
+        "decision_id": decision_id,
+        "model_id": model,
+        "schema_version": result["schema"],
+        "status": result["status"],
+        "current_policy": result.get("current_policy", []),
+        "proposed_policy": result.get("proposed_policy", []),
+        "objective": {
+            "weights": result.get("objective_weights", {}),
+            "interaction_model": result.get("interaction_model"),
+        },
+        "constraints": {
+            "quality_is_hard_constraint": True,
+            "pairwise_evidence_required_before_combined_production": result.get(
+                "pairwise_evidence_required_before_combined_production", True
+            ),
+        },
+        "target_decisions": result.get("targets", []),
+        "source_contexts": contexts,
+        "production_write_allowed": False,
+    }
+    req = urllib.request.Request(
+        f"{url}/rest/v1/moe_precision_allocator_decisions_v1?on_conflict=decision_id",
+        data=json.dumps(payload).encode(),
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=representation",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        rows = json.loads(resp.read())
+    if not isinstance(rows, list) or len(rows) != 1:
+        raise AllocatorError("allocator decision persistence was not verified")
+    return rows[0]
 
 
 def _load_benchmark(path: str | None) -> dict:
@@ -409,6 +470,7 @@ def main() -> int:
     ap.add_argument("--latency-weight", type=float, default=0.0)
     ap.add_argument("--rss-weight", type=float, default=0.0)
     ap.add_argument("--output")
+    ap.add_argument("--persist", action="store_true")
     args = ap.parse_args()
 
     evidence = fetch_evidence(args.model)
@@ -438,6 +500,12 @@ def main() -> int:
     text = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.output:
         Path(args.output).write_text(text)
+    if args.persist:
+        persisted = persist_decision(result, args.model)
+        result["persisted_decision_id"] = persisted["decision_id"]
+        text = json.dumps(result, indent=2, sort_keys=True) + "\n"
+        if args.output:
+            Path(args.output).write_text(text)
     print(text, end="")
     return 0
 
