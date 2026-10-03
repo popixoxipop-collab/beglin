@@ -47,8 +47,9 @@ ADAPTIVE_L26_LAYER = 26
 ADAPTIVE_L26_BASE_N = 5
 ADAPTIVE_L26_RECOVERY_N = 6
 ADAPTIVE_L26_MARGIN_MAX = 0.02
-ADAPTIVE_L26_EVIDENCE_SHA256 = "b72141959d642beb8aec90c871c4d00edd5352770366c5296e2798d8a2715017"
-ADAPTIVE_L26_REBIND_EVIDENCE_SHA256 = "a142ce28b0fb83a13efc80b34e205018b0b81de4698ffbad695e3a1917d31fb4"
+ADAPTIVE_L26_EVIDENCE_SHA256 = "de976ab12283673a8cf97638be9cf0b5c8f7ab3df2a0db87d4be96d9e67f6075"
+ADAPTIVE_L26_REBIND_EVIDENCE_SHA256 = "de976ab12283673a8cf97638be9cf0b5c8f7ab3df2a0db87d4be96d9e67f6075"
+ADAPTIVE_L26_STARTUP_POLICY_SHA256 = "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1"
 LAUNCHD_PROCESS_TYPE = "Interactive"
 
 
@@ -489,6 +490,12 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
             },
         ]
         self.startup_policy_hash = _policy_hash(self.startup_policy)
+        if self.startup_policy_hash != ADAPTIVE_L26_STARTUP_POLICY_SHA256:
+            raise PersistentSupervisorError(
+                "adaptive L26 startup policy identity mismatch: "
+                f"expected={ADAPTIVE_L26_STARTUP_POLICY_SHA256} "
+                f"actual={self.startup_policy_hash}"
+            )
 
     def expected_runtime_policy_hash(self) -> str:
         return self.startup_policy_hash
