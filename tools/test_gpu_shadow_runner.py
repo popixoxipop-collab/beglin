@@ -98,6 +98,20 @@ class GpuShadowRunnerTests(unittest.TestCase):
             self.assertEqual(cmd[idx + 1], str(control))
             self.assertNotIn("/private/tmp/qng64_ctl", cmd)
 
+    def test_baseline_policy_is_forwarded_to_autopilot(self):
+        with tempfile.TemporaryDirectory() as td:
+            s = spec(td)
+            s["baseline_policy"] = [
+                {"role":"shared_up_proj","layer":3,"n":6},
+                {"role":"shared_down_proj","layer":26,"n":5},
+            ]
+            cmd = gs.build_autopilot_command(
+                s, autopilot=str(Path(s["cwd"])/"tools"/"gpu_autopilot.py"),
+                control_root=Path(td)/"shadow"/"control", python_bin="python3")
+            self.assertIn("--baseline-policy-json", cmd)
+            idx=cmd.index("--baseline-policy-json")
+            self.assertEqual(json.loads(cmd[idx+1]), s["baseline_policy"])
+
     def test_admitted_child_is_shadow_admitted_not_production_approval(self):
         with tempfile.TemporaryDirectory() as td:
             s = spec(td)

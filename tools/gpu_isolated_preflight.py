@@ -688,9 +688,21 @@ def to_planner_evidence(result: dict, *, context_hash: str, expected_epoch: int)
         raise GpuPreflightError("isolated preflight lacks policy hashes")
     baseline_epoch = int(result.get("baseline_epoch", -1))
     candidate_epoch = int(result.get("candidate_epoch", -1))
-    if baseline_epoch < 0 or candidate_epoch <= baseline_epoch:
+    # PRE and POST are separate isolated processes. Their startup epochs count
+    # promotions applied inside each process, so comparing candidate_epoch >
+    # baseline_epoch is only valid for the historical empty-baseline case.
+    # With a resident baseline policy both workers may legitimately report the
+    # same epoch count while binding different exact policies. The immutable
+    # policy hashes are the cross-process transition proof.
+    if baseline_epoch < 0 or candidate_epoch < 0:
+        raise GpuPreflightError("isolated preflight lacks valid startup epochs")
+    if baseline_hash == candidate_hash:
         raise GpuPreflightError(
-            "isolated candidate worker did not prove a startup epoch transition"
+            "isolated candidate policy does not differ from baseline policy"
+        )
+    if candidate_epoch == 0:
+        raise GpuPreflightError(
+            "isolated candidate worker did not apply a startup precision policy"
         )
     return {
         "evidence_mode": "isolated_restart",

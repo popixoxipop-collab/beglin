@@ -416,8 +416,19 @@ def run_candidate(args):
     os.makedirs(root, exist_ok=True)
     event = json.loads(args.event_json)
     reference = json.loads(args.reference_json)
+    baseline_policy = pc.normalize_policy(json.loads(args.baseline_policy_json))
+    baseline_map = {(r["role"], int(r["layer"])): int(r["n"]) for r in baseline_policy}
+    target_key = (str(args.role), int(args.layer))
+    candidate_map = dict(baseline_map)
+    candidate_map[target_key] = int(args.n)
+    candidate_policy = pc.normalize_policy([
+        {"role": role, "layer": layer, "n": n}
+        for (role, layer), n in candidate_map.items()
+    ])
+    baseline_rows = [(r["role"], int(r["layer"]), int(r["n"])) for r in baseline_policy]
+    candidate_rows = [(r["role"], int(r["layer"]), int(r["n"])) for r in candidate_policy]
 
-    # ---- G4: real isolated A/B preflight (baseline=[], candidate=this one target) ----
+    # ---- G4: real isolated A/B preflight in the exact baseline policy context ----
     # This is the FIRST real gate: a candidate that doesn't actually reproduce the
     # known corrected token is expected to be rejected right here, before ever
     # reaching a live restart canary. run_ab_preflight raises rather than
@@ -435,8 +446,8 @@ def run_candidate(args):
             manifest=args.g4_manifest,
             safetensors=args.safetensors,
             root=g4_root,
-            baseline_policy=[],
-            candidate_policy=[{"role": args.role, "layer": args.layer, "n": args.n}],
+            baseline_policy=baseline_policy,
+            candidate_policy=candidate_policy,
             event=event,
             reference=reference,
             prompt_len=args.prompt_len,
@@ -464,7 +475,7 @@ def run_candidate(args):
     # ---- admission: the REAL planner decides, not a hand-built dict ----
     admission = planner.evaluate_candidate(
         context=context,
-        current_policy=[],
+        current_policy=baseline_policy,
         current_epoch=0,
         role=args.role,
         layer=args.layer,
@@ -478,7 +489,7 @@ def run_candidate(args):
 
     # ---- G6: real restart canary, built by the real module ----
     plan = canary.build_restart_canary(
-        admission, baseline_policy=[],
+        admission, baseline_policy=baseline_policy,
         min_requests=args.min_requests, max_requests=args.max_requests,
         min_effective_checks=1,
     )
@@ -487,7 +498,7 @@ def run_candidate(args):
     log("G6: PRE restart (baseline policy)")
     pre_rc, pre_pid, pre_out, pre_ack = run_worker(
         args.binary, args.cwd, args.moe_base, args.safetensors, args.g6_manifest,
-        os.path.join(root, "g6_pre"), promotion_rows=None, slots=args.slots,
+        os.path.join(root, "g6_pre"), promotion_rows=baseline_rows or None, slots=args.slots,
         timeout=args.timeout,
     )
     pre_evidence, pre_reqs, pre_matches_correct = observation_from_replay(
@@ -512,7 +523,7 @@ def run_candidate(args):
     post_rc, post_pid, post_out, post_ack = run_worker(
         args.binary, args.cwd, args.moe_base, args.safetensors, args.g6_manifest,
         os.path.join(root, "g6_post"),
-        promotion_rows=[(args.role, args.layer, args.n)], slots=args.slots,
+        promotion_rows=candidate_rows, slots=args.slots,
         timeout=args.timeout,
     )
     post_evidence, post_reqs, post_matches = observation_from_replay(
@@ -546,7 +557,7 @@ def run_candidate(args):
 
     if not canary_result["rollback_required"]:
         store.set_desired(context_hash=context_hash,
-                           policy=[{"role": args.role, "layer": args.layer, "n": args.n}],
+                           policy=candidate_policy,
                            reason="gpu_autopilot: restart canary passed", source="gpu_autopilot")
         store.set_applied(context_hash=context_hash, policy=post_ack["active_policy"],
                            epoch=post_ack["weight_epoch"], txn_id="autopilot-canary-pass",
@@ -566,15 +577,15 @@ def run_candidate(args):
     # mechanism still works end to end, matching the G5 invariant that a
     # demote command is not success until a terminal ACK says so.
     log("G6 says rollback required -- exercising the real G5 rollback path")
-    store.set_desired(context_hash=context_hash, policy=[],
+    store.set_desired(context_hash=context_hash, policy=baseline_policy,
                        reason="gpu_autopilot: candidate never admitted", source="gpu_autopilot")
-    store.set_applied(context_hash=context_hash, policy=[{"role": args.role, "layer": args.layer, "n": args.n}],
+    store.set_applied(context_hash=context_hash, policy=candidate_policy,
                        epoch=post_ack["weight_epoch"], txn_id="autopilot-pre-rollback",
                        ack_sha256=post_ack["ack_sha256"])
 
     live_proc, live_ack_path, live_txn_path = run_worker_live(
         args.binary, args.cwd, args.moe_base, args.safetensors, args.g6_manifest,
-        os.path.join(root, "g5_live"), promotion_rows=[(args.role, args.layer, args.n)],
+        os.path.join(root, "g5_live"), promotion_rows=candidate_rows,
         slots=args.slots,
     )
     live_ack = wait_for_ack(live_ack_path)
@@ -596,7 +607,7 @@ def run_candidate(args):
     rollback_request = goc.request_regression_rollback(
         adapter=adapter, store=store,
         baseline=pre_evidence, post=live_evidence,
-        baseline_policy=[], failed_policy=[{"role": args.role, "layer": args.layer, "n": args.n}],
+        baseline_policy=baseline_policy, failed_policy=candidate_policy,
         role=args.role, layer=args.layer, n=args.n,
         txn_id=f"gpu-autopilot-rollback-{int(time.time())}",
         min_requests=args.min_requests, min_effective_checks=1,
@@ -606,7 +617,7 @@ def run_candidate(args):
     rollback_complete = goc.complete_regression_rollback(
         adapter=adapter, store=store,
         txn_id=rollback_request["txn_id"], context_hash=context_hash,
-        baseline_policy=[], failed_epoch=live_evidence.weight_epoch,
+        baseline_policy=baseline_policy, failed_epoch=live_evidence.weight_epoch,
     )
     log(f"rollback complete: status={rollback_complete['status']}")
     return {
@@ -625,6 +636,7 @@ def main():
     ap.add_argument("--n", type=int, required=True)
     ap.add_argument("--event-json", required=True)
     ap.add_argument("--reference-json", required=True)
+    ap.add_argument("--baseline-policy-json", default="[]")
     ap.add_argument("--prompt-len", type=int, required=True)
     ap.add_argument("--g4-manifest", required=True, help="single-entry manifest for the isolated G4 replay")
     ap.add_argument("--g6-manifest", required=True, help="repeated-entry manifest for real G6 PRE/POST traffic")
