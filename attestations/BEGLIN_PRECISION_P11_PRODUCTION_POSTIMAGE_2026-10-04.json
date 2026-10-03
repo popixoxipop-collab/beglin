@@ -1,0 +1,29 @@
+{
+  "ack_sha256": "b5181a52c717c1117074e47b21677c6e428f33df107416fba547fa2c47b477f6",
+  "active_route_id": "beglin-candidate-shared-up-l3-n6",
+  "automatic_live_promotion": false,
+  "captured_at": "2026-10-03T18:07:18.198482Z",
+  "cutover_result_sha256": "d2b5db4a2d6aeb21cd871d874f1b7dbe90138e532ae01fdde46a65db77c128fa",
+  "external_network_exposed": false,
+  "health_matches_ack": true,
+  "production_write_allowed": false,
+  "route_generation": 6,
+  "route_manifest_sha256": "c2bf7eed2788e115af0c0cb3316fceb061000013b2bfcf57710f66d291ff4221",
+  "runtime_policy": [
+    {
+      "layer": 26,
+      "n": 5,
+      "role": "shared_down_proj"
+    },
+    {
+      "layer": 3,
+      "n": 5,
+      "role": "shared_up_proj"
+    }
+  ],
+  "runtime_policy_hash": "b58064ae93c3550c5ca5fccab83c9976268370d559b8602f3d91772cb9ac82bd",
+  "schema": "beglin-precision-p11-production-postimage-v1",
+  "status": "CUTOVER_VERIFIED",
+  "weight_epoch": 11,
+  "worker_pid": 35493
+}

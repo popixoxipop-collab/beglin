@@ -1,0 +1,34 @@
+{
+  "after_epoch": 11,
+  "after_policy_hash": "b58064ae93c3550c5ca5fccab83c9976268370d559b8602f3d91772cb9ac82bd",
+  "approval_nonce": "b0271e9d79827a8954de7bd249defe31",
+  "approval_request_sha256": "4ea00bdd864a6ddee05b6ea89df82a27ecb8d8d8881b65af97bcb9b2794b1703",
+  "approval_sha256": "668da5afe34ba44ecdfe31caf88728cc98fd1c3c30054b48027f5796a3c62b24",
+  "automatic_live_promotion": false,
+  "before_epoch": 10,
+  "before_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+  "cutover_plan_sha256": "520bb1628f6f83150a10b087a64b56f015a863ce83a6f77d4393686a94a7cc69",
+  "engine_wall_ms": 340.474,
+  "external_network_exposed": false,
+  "http_refresh_response": [
+    55222,
+    1
+  ],
+  "http_refresh_worker_epoch": 11,
+  "production_touched": true,
+  "response": [
+    55222,
+    1
+  ],
+  "result_sha256": "d2b5db4a2d6aeb21cd871d874f1b7dbe90138e532ae01fdde46a65db77c128fa",
+  "rollback": null,
+  "roundtrip_ms": 363.83450007997453,
+  "route_generation": 6,
+  "route_manifest_sha256": "c2bf7eed2788e115af0c0cb3316fceb061000013b2bfcf57710f66d291ff4221",
+  "schema": "beglin-precision-p11-production-cutover-result-v1",
+  "status": "CUTOVER_VERIFIED",
+  "supervisor_pid": 35480,
+  "txn_id": "p11-prod-b0271e9d79827a8954de7bd249defe31",
+  "verified_attestations": 1,
+  "worker_pid": 35493
+}
