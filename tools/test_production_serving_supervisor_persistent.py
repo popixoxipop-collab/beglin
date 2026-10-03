@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import json
+from pathlib import Path
+import tempfile
 import unittest
 
 import production_serving_supervisor as base
@@ -30,6 +33,62 @@ class ResultParserTests(unittest.TestCase):
         text = "BEGLIN_GPU_PERSISTENT_RESULT_V1 req-a 1 1 1.0\nEND\n"
         with self.assertRaises(ps.PersistentSupervisorError):
             ps.parse_persistent_result(text, request_id="req-a", expected_requests=1)
+
+
+class NearTieTelemetryTests(unittest.TestCase):
+    def test_delta_parser_returns_only_new_valid_events(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "neartie.jsonl"
+            path.write_text(
+                json.dumps({
+                    "kind": "event", "req": 9, "pos": 1,
+                    "predicted_token": 99, "competing_token": 98,
+                    "margin": 0.5, "batch_size": 1,
+                }) + "\n"
+            )
+            offset = path.stat().st_size
+            with path.open("a") as handle:
+                handle.write("{not-json}\n")
+                handle.write(json.dumps({"kind": "attribution", "req": 0}) + "\n")
+                handle.write(json.dumps({
+                    "kind": "event", "req": 0, "pos": 9,
+                    "predicted_token": 372, "competing_token": 1,
+                    "margin": 0.002424, "batch_size": 4,
+                }) + "\n")
+            self.assertEqual(
+                ps._read_neartie_events_since(path, offset),
+                [{
+                    "req": 0, "pos": 9, "predicted_token": 372,
+                    "competing_token": 1, "margin": 0.002424,
+                    "batch_size": 4,
+                }],
+            )
+
+    def test_worker_env_enables_telemetry_but_not_correction(self):
+        with tempfile.TemporaryDirectory() as td:
+            worker = ps.PersistentRouteWorker(
+                route=base.candidate_route(), root=Path(td)
+            )
+            env = worker._env()
+            self.assertEqual(env["QWEN_MOE_NEARTIE_LOG"], "1")
+            self.assertEqual(env["QWEN_MOE_NEARTIE_CORRECT"], "0")
+            self.assertEqual(
+                float(env["QWEN_MOE_NEARTIE_THRESHOLD"]),
+                ps.NEARTIE_TELEMETRY_THRESHOLD,
+            )
+            self.assertEqual(
+                env["QWEN_MOE_NEARTIE_EVENTS_LOG"],
+                str(worker.neartie_path),
+            )
+
+    def test_worker_health_exposes_telemetry_contract(self):
+        with tempfile.TemporaryDirectory() as td:
+            worker = ps.PersistentRouteWorker(
+                route=base.candidate_route(), root=Path(td)
+            )
+            got = worker.health()["near_tie_telemetry"]
+            self.assertTrue(got["enabled"])
+            self.assertEqual(got["threshold"], 0.02)
 
 
 class WorkerPoolContractTests(unittest.TestCase):
@@ -70,11 +129,11 @@ class ArtifactContractTests(unittest.TestCase):
     def test_expected_hardware_identity_is_pinned(self):
         self.assertEqual(
             ps.EXPECTED_PERSISTENT_BINARY_SHA,
-            "3be6d59b77e554f5abee86851f4d901b7e2d9750ae6257a1538eebb64693d59e",
+            "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9",
         )
         self.assertEqual(
             ps.EXPECTED_PERSISTENT_SOURCE_SHA,
-            "a26f9a8ab93493a1aad8da643d00c1d998aa60cd",
+            "8b46cdd38f5b39dcaeaa9d1c5dfbd9642601a30a",
         )
 
     def test_launchd_process_type_is_interactive(self):

@@ -34,12 +34,13 @@ import production_serving_supervisor as base
 
 PERSISTENT_BINARY = Path("/Users/xox/vdsp_serving/persistent-stage/qwen_infer_gpu")
 PERSISTENT_PROBE = Path("/Users/xox/vdsp_serving/persistent-stage/probe.json")
-EXPECTED_PERSISTENT_BINARY_SHA = "3be6d59b77e554f5abee86851f4d901b7e2d9750ae6257a1538eebb64693d59e"
-EXPECTED_PERSISTENT_SOURCE_SHA = "a26f9a8ab93493a1aad8da643d00c1d998aa60cd"
+EXPECTED_PERSISTENT_BINARY_SHA = "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9"
+EXPECTED_PERSISTENT_SOURCE_SHA = "8b46cdd38f5b39dcaeaa9d1c5dfbd9642601a30a"
 DEFAULT_PERSISTENT_ROOT = Path("/Users/xox/vdsp_serving/persistent-workers")
 WORKER_READY_TIMEOUT_SECONDS = 120
 REQUEST_TIMEOUT_SECONDS = 60
 POLL_SECONDS = 0.01
+NEARTIE_TELEMETRY_THRESHOLD = 0.02
 LAUNCHD_PROCESS_TYPE = "Interactive"
 
 
@@ -86,6 +87,39 @@ def _read_runtime_ack(path: Path) -> dict:
         sys.path.insert(0, tools)
     import gpu_runtime_control as grc
     return grc.read_runtime_ack(path)
+
+
+def _read_neartie_events_since(path: Path, offset: int) -> list[dict]:
+    if offset < 0:
+        raise PersistentSupervisorError("near-tie telemetry offset cannot be negative")
+    if not path.is_file():
+        return []
+    events = []
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        for raw in handle:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                row = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if row.get("kind") != "event":
+                continue
+            try:
+                event = {
+                    "req": int(row["req"]),
+                    "pos": int(row["pos"]),
+                    "predicted_token": int(row["predicted_token"]),
+                    "competing_token": int(row["competing_token"]),
+                    "margin": float(row["margin"]),
+                    "batch_size": int(row["batch_size"]),
+                }
+            except (KeyError, TypeError, ValueError):
+                continue
+            events.append(event)
+    return events
 
 
 def parse_persistent_result(text: str, *, request_id: str, expected_requests: int) -> dict:
@@ -144,6 +178,7 @@ class PersistentRouteWorker:
         self.ack_path = self.root / "applied_ack.json"
         self.txn_path = self.root / "txn.cmd"
         self.log_path = self.root / "worker.log"
+        self.neartie_path = self.root / "neartie.jsonl"
         self.proc: subprocess.Popen | None = None
         self.log_handle = None
         self.ack: dict | None = None
@@ -171,6 +206,7 @@ class PersistentRouteWorker:
             self.txn_path.unlink()
         except FileNotFoundError:
             pass
+        self.neartie_path.write_text("")
 
     def _env(self) -> dict[str, str]:
         env = base._minimal_env()
@@ -186,6 +222,11 @@ class PersistentRouteWorker:
             "QWEN_MOE_PROMOTION_FILE_NQ": str(self.promotion_path),
             "QWEN_MOE_PROMOTION_SAFETENSORS": str(base.SAFETENSORS),
             "QWEN_MOE_GPU_PERSISTENT_DIR": str(self.queue_dir),
+            "QWEN_MOE_NEARTIE_LOG": "1",
+            "QWEN_MOE_NEARTIE_THRESHOLD": str(NEARTIE_TELEMETRY_THRESHOLD),
+            "QWEN_MOE_NEARTIE_EVENTS_LOG": str(self.neartie_path),
+            "QWEN_MOE_NEARTIE_MODEL": "deepseek-v2-lite",
+            "QWEN_MOE_NEARTIE_CORPUS": "production-persistent",
         })
         return env
 
@@ -248,6 +289,10 @@ class PersistentRouteWorker:
             "weight_epoch": int(self.ack["weight_epoch"]) if self.ack else None,
             "ack_sha256": self.ack.get("ack_sha256") if self.ack else None,
             "rss_bytes": self._rss_bytes(),
+            "near_tie_telemetry": {
+                "enabled": True,
+                "threshold": NEARTIE_TELEMETRY_THRESHOLD,
+            },
         }
 
     def submit(self, parsed: list[tuple[list[int], int]]) -> dict:
@@ -276,6 +321,7 @@ class PersistentRouteWorker:
             request_tmp.write_text(
                 f"BEGLIN_GPU_PERSISTENT_REQUEST_V1 {request_id} {manifest} {result_path}\n"
             )
+            neartie_offset = self.neartie_path.stat().st_size if self.neartie_path.exists() else 0
             started = time.monotonic()
             os.replace(request_tmp, request_ready)
             deadline = time.time() + REQUEST_TIMEOUT_SECONDS
@@ -293,6 +339,9 @@ class PersistentRouteWorker:
                             expected_requests=len(parsed),
                         )
                         parsed_result["roundtrip_ms"] = roundtrip_ms
+                        parsed_result["neartie_events"] = _read_neartie_events_since(
+                            self.neartie_path, neartie_offset
+                        )
                         return parsed_result
                     time.sleep(POLL_SECONDS)
                 raise PersistentSupervisorError(
@@ -458,6 +507,8 @@ class PersistentEngineExecutor:
                 "route": snapshot["route"],
                 "worker_instance_id": f"pid-{h['pid']}",
                 "worker_ack_sha256": h["ack_sha256"],
+                "neartie_events": result.get("neartie_events", []),
+                "neartie_event_count": len(result.get("neartie_events", [])),
                 "worker_epoch": h["weight_epoch"],
                 "finite_logits": True,
                 "duration_ms": max(1, int((time.monotonic() - started) * 1000)),
