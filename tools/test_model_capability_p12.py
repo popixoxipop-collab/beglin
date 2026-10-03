@@ -367,6 +367,23 @@ class SourceAndCompilerTests(unittest.TestCase):
                     root, tokenizer_evidence=stale
                 )
 
+    def test_runtime_evidence_accepts_and_binds_binary_sha256(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "m")
+            evidence = verification_evidence(
+                root, component="backend_runtime", backend="cpu", evidence_byte="c"
+            )
+            evidence["binary_sha256"] = "b" * 64
+            bundle = mc.compile_model_capabilities(
+                root, backend="cpu", cpu_runtime_evidence=evidence
+            )
+            rows = bundle["backend_capability_matrix"]["rows"]
+            self.assertTrue(rows)
+            self.assertTrue(all(r["inference_status"] == "VERIFIED" for r in rows))
+            self.assertTrue(
+                all(r["evidence_refs"][0]["binary_sha256"] == "b" * 64 for r in rows)
+            )
+
     def test_runtime_evidence_must_match_backend_and_checkpoint(self):
         with tempfile.TemporaryDirectory() as td:
             root = qwen_fixture(Path(td) / "m")

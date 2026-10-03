@@ -85,6 +85,13 @@ class ModelCapabilityError(RuntimeError):
     pass
 
 
+def require_sha(name: str, value: Any) -> str:
+    out = str(value or "").lower()
+    if len(out) != 64 or any(c not in "0123456789abcdef" for c in out):
+        raise ModelCapabilityError(f"{name} must be lowercase SHA-256 hex")
+    return out
+
+
 def canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
