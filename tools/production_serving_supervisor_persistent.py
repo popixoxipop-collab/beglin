@@ -203,6 +203,14 @@ def _load_precision_closed_loop():
     return _assert_local_helper(pcl, "precision_closed_loop")
 
 
+def _load_precision_observability():
+    tools = _runtime_tools_path()
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import precision_observability as pob
+    return _assert_local_helper(pob, "precision_observability")
+
+
 def _read_runtime_ack(path: Path) -> dict:
     return _load_gpu_runtime_control().read_runtime_ack(path)
 
@@ -349,6 +357,7 @@ class PersistentRouteWorker:
         self.lock = threading.RLock()
         self.precision_epoch_scheduler = None
         self.precision_closed_loop_engine = None
+        self.precision_observability = None
 
     @property
     def route_id(self) -> str:
@@ -480,6 +489,14 @@ class PersistentRouteWorker:
                 "configured": self.precision_closed_loop_engine is not None,
                 "production_write_allowed": False,
             },
+            "precision_observability": {
+                "available": True,
+                "configured": self.precision_observability is not None,
+                "strict": (
+                    bool(self.precision_observability.strict)
+                    if self.precision_observability is not None else False
+                ),
+            },
         }
 
     def _epoch_scheduler(self):
@@ -537,6 +554,30 @@ class PersistentRouteWorker:
                 "evidence_snapshot_sha256": (
                     self.precision_closed_loop_engine.snapshot_sha256
                 ),
+                "production_write_allowed": False,
+            }
+
+    def configure_precision_observability(
+        self,
+        *,
+        lineage_path: str | Path,
+        snapshot_path: str | Path | None = None,
+        strict: bool = False,
+    ) -> dict:
+        pob = _load_precision_observability()
+        with self.lock:
+            self.precision_observability = pob.PrecisionObservability(
+                lineage_path=lineage_path,
+                snapshot_path=snapshot_path,
+                strict=strict,
+            )
+            summary = self.precision_observability.summary()
+            return {
+                "schema": "beglin-precision-observability-config-v1",
+                "status": "CONFIGURED",
+                "strict": bool(strict),
+                "admissions": summary["admissions"],
+                "lineage_head_sha256": summary["lineage_head_sha256"],
                 "production_write_allowed": False,
             }
 
@@ -598,6 +639,30 @@ class PersistentRouteWorker:
                 "signal": decision["signal"],
                 "production_write_allowed": False,
             }
+            observer = self.precision_observability
+            if observer is not None:
+                actual_admission_id = str(
+                    epoch.get("admission_id") or admission_id or ""
+                )
+                try:
+                    out["precision_observability"] = observer.record(
+                        admission_id=actual_admission_id,
+                        worker_pid=(int(self.proc.pid) if self.is_alive() else None),
+                        request_count=len(parsed),
+                        decision=decision,
+                        result=out,
+                    )
+                except Exception as exc:
+                    out["precision_observability"] = {
+                        "schema": "beglin-precision-observability-record-v1",
+                        "status": "ERROR",
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    }
+                    if observer.strict:
+                        raise PersistentSupervisorError(
+                            "precision observability strict recording failed"
+                        ) from exc
             return out
 
     def submit_with_precision_policy(

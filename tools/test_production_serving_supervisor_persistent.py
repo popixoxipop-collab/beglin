@@ -118,6 +118,14 @@ class RuntimeControlImportTests(unittest.TestCase):
         self.assertTrue(callable(grc.prepare_rebind))
         self.assertTrue(callable(grc.verify_terminal_ack))
 
+    def test_precision_observability_is_loaded_from_supervisor_tools_tree(self):
+        pob = ps._load_precision_observability()
+        self.assertEqual(
+            Path(pob.__file__).resolve().parent,
+            Path(ps.__file__).resolve().parent,
+        )
+        self.assertTrue(callable(pob.PrecisionObservability))
+
     def test_precision_closed_loop_is_loaded_from_supervisor_tools_tree(self):
         pcl = ps._load_precision_closed_loop()
         self.assertEqual(
@@ -155,6 +163,21 @@ class PrecisionEpochWorkerTests(unittest.TestCase):
                 worker.lock.release()
             finally:
                 worker.lock.release()
+
+    def test_observability_configuration_is_opt_in(self):
+        with tempfile.TemporaryDirectory() as td:
+            worker = ps.PersistentRouteWorker(
+                route=base.candidate_route(), root=Path(td) / "worker"
+            )
+            self.assertIsNone(worker.precision_observability)
+            got = worker.configure_precision_observability(
+                lineage_path=Path(td) / "lineage.jsonl",
+                snapshot_path=Path(td) / "summary.json",
+                strict=True,
+            )
+            self.assertEqual(got["status"], "CONFIGURED")
+            self.assertTrue(worker.precision_observability.strict)
+            self.assertTrue(worker.health()["precision_observability"]["configured"])
 
     def test_closed_loop_requires_configuration(self):
         with tempfile.TemporaryDirectory() as td:
