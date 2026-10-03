@@ -107,6 +107,14 @@ class RuntimeControlImportTests(unittest.TestCase):
         self.assertTrue(callable(grc.prepare_rebind))
         self.assertTrue(callable(grc.verify_terminal_ack))
 
+    def test_precision_closed_loop_is_loaded_from_supervisor_tools_tree(self):
+        pcl = ps._load_precision_closed_loop()
+        self.assertEqual(
+            Path(pcl.__file__).resolve().parent,
+            Path(ps.__file__).resolve().parent,
+        )
+        self.assertTrue(callable(pcl.PrecisionClosedLoopEngine))
+
     def test_precision_epoch_scheduler_is_loaded_from_supervisor_tools_tree(self):
         pes = ps._load_precision_epoch_scheduler()
         self.assertEqual(
@@ -136,6 +144,76 @@ class PrecisionEpochWorkerTests(unittest.TestCase):
                 worker.lock.release()
             finally:
                 worker.lock.release()
+
+    def test_closed_loop_requires_configuration(self):
+        with tempfile.TemporaryDirectory() as td:
+            worker = ps.PersistentRouteWorker(
+                route=base.candidate_route(), root=Path(td)
+            )
+            with self.assertRaises(ps.PersistentSupervisorError):
+                worker.submit_with_closed_loop_precision(
+                    [([1], 1)], signal={}, admission_id="unconfigured"
+                )
+
+    def test_closed_loop_bridge_binds_decision_to_scheduler_hashes(self):
+        with tempfile.TemporaryDirectory() as td:
+            worker = ps.PersistentRouteWorker(
+                route=base.candidate_route(), root=Path(td)
+            )
+            policy = [{"role": "shared_up_proj", "layer": 3, "n": 6}]
+            ack = {
+                "schema": "gpu-precision-applied-v1",
+                "status": "PROMOTION_APPLIED",
+                "backend": "mlx_metal",
+                "correction_mode": "off",
+                "weight_epoch": 1,
+                "changed_targets": 1,
+                "snapshot_count": 1,
+                "txn_id": None,
+                "expected_epoch": None,
+                "expected_n": None,
+                "expected_policy_hash": None,
+                "target_role": None,
+                "target_layer": None,
+                "active_policy": policy,
+            }
+            worker.ack_path.parent.mkdir(parents=True, exist_ok=True)
+            worker.ack_path.write_text(json.dumps(ack))
+            ph = ps._policy_hash(policy)
+            engine = unittest.mock.Mock()
+            engine.decide.return_value = {
+                "schema": "beglin-precision-closed-loop-decision-v1",
+                "status": "READY_FOR_SCHEDULER",
+                "evidence_snapshot_sha256": "a" * 64,
+                "allocation_sha256": "b" * 64,
+                "selection_sha256": "c" * 64,
+                "current_policy_hash": ph,
+                "selected_policy_hash": ph,
+                "selected_policy": policy,
+                "changes": [],
+                "combined_policy_evidence": None,
+                "signal": {"active_triggers": []},
+            }
+            scheduler = unittest.mock.Mock()
+            scheduler.run.return_value = {
+                "finite_logits": True,
+                "responses": [[1]],
+                "precision_epoch": {
+                    "before_policy_hash": ph,
+                    "after_policy_hash": ph,
+                },
+            }
+            worker.precision_closed_loop_engine = engine
+            worker.precision_epoch_scheduler = scheduler
+            got = worker.submit_with_closed_loop_precision(
+                [([1], 1)], signal={}, admission_id="bridge"
+            )
+            self.assertTrue(got["finite_logits"])
+            self.assertEqual(
+                got["precision_closed_loop"]["selected_policy_hash"], ph
+            )
+            engine.decide.assert_called_once()
+            scheduler.run.assert_called_once()
 
     def test_submit_with_precision_policy_delegates_and_refreshes_ack(self):
         with tempfile.TemporaryDirectory() as td:

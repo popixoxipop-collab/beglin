@@ -44,6 +44,9 @@ on:
       - "tools/test_persistent_gpu_worker_source.py"
       - "tools/production_serving_supervisor_persistent.py"
       - "tools/precision_epoch_scheduler.py"
+      - "tools/precision_closed_loop.py"
+      - "tools/test_gpu_precision_closed_loop.py"
+      - "tools/precision_closed_loop_acceptance_xox.py"
       - "tools/test_gpu_precision_epoch_scheduler.py"
       - "tools/precision_epoch_acceptance_xox.py"
       - "tools/test_production_serving_supervisor_persistent.py"
@@ -97,6 +100,8 @@ jobs:
             tools/gpu_autopilot.py \
             tools/gpu_runtime_control.py \
             tools/precision_epoch_scheduler.py \
+            tools/precision_closed_loop.py \
+            tools/precision_closed_loop_acceptance_xox.py \
             tools/precision_epoch_acceptance_xox.py \
             tools/manual_canary_contract.py \
             tools/manual_canary_controller.py \
