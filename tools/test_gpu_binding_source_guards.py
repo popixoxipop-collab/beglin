@@ -134,6 +134,19 @@ class BindingSourceGuardTests(unittest.TestCase):
         self.assertIn("moe_gpu_write_applied_ack(ack_status, n_applied, NULL)", block)
         self.assertNotIn("if (n_applied && !moe_gpu_write_applied_ack", block)
 
+    def test_p5_risk_signal_sensor_is_observation_only_and_env_gated(self):
+        self.assertIn("QWEN_MOE_RISK_SIGNALS", QWEN)
+        self.assertIn("moe_logits_normalized_entropy", QWEN)
+        self.assertIn("routing_ambiguity_score", QWEN)
+        self.assertIn("mlx_gpu_risk_signal_telemetry_set", QWEN)
+        self.assertIn("mlx_gpu_risk_signal_telemetry_get", QWEN)
+        self.assertIn("next / kth", CPP)
+        self.assertIn("g_risk_signal_telemetry_on", CPP)
+        # The MLX host read/eval must sit behind the explicit opt-in gate.
+        risk = CPP.split("if (g_risk_signal_telemetry_on)", 1)[1]
+        risk = risk.split("mx::array order", 1)[0]
+        self.assertIn("mx::eval(observed)", risk)
+
     def test_gpu_online_argmax_rejects_nonfinite_logits(self):
         self.assertIn("static int moe_gpu_argmax_finite(", QWEN)
         helper = QWEN.split("static int moe_gpu_argmax_finite(", 1)[1]

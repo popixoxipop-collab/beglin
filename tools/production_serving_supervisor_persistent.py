@@ -236,6 +236,18 @@ def _read_neartie_events_since(path: Path, offset: int) -> list[dict]:
                 }
             except (KeyError, TypeError, ValueError):
                 continue
+            for key, caster in (
+                ("entropy", float),
+                ("routing_ambiguity_score", float),
+                ("routing_ambiguity_layer", int),
+                ("routing_boundary_selected", float),
+                ("routing_boundary_next", float),
+            ):
+                if row.get(key) is not None:
+                    try:
+                        event[key] = caster(row[key])
+                    except (TypeError, ValueError):
+                        pass
             events.append(event)
     return events
 
@@ -384,6 +396,7 @@ class PersistentRouteWorker:
             "QWEN_MOE_NEARTIE_EVENTS_LOG": str(self.neartie_path),
             "QWEN_MOE_NEARTIE_MODEL": "deepseek-v2-lite",
             "QWEN_MOE_NEARTIE_CORPUS": "production-persistent",
+            "QWEN_MOE_RISK_SIGNALS": os.environ.get("QWEN_MOE_RISK_SIGNALS", "0"),
         })
         return env
 

@@ -44,6 +44,11 @@ on:
       - "tools/test_persistent_gpu_worker_source.py"
       - "tools/production_serving_supervisor_persistent.py"
       - "tools/precision_epoch_scheduler.py"
+      - "tools/precision_risk_signals.py"
+      - "tools/test_gpu_precision_risk_signals.py"
+      - "tools/precision_risk_signal_acceptance_xox.py"
+      - "mlx_moe.cpp"
+      - "mlx_moe.h"
       - "tools/precision_closed_loop.py"
       - "tools/precision_e2e_cost.py"
       - "tools/test_gpu_precision_e2e_cost.py"
@@ -106,6 +111,8 @@ jobs:
             tools/gpu_autopilot.py \
             tools/gpu_runtime_control.py \
             tools/precision_epoch_scheduler.py \
+            tools/precision_risk_signals.py \
+            tools/precision_risk_signal_acceptance_xox.py \
             tools/precision_closed_loop.py \
             tools/precision_e2e_cost.py \
             tools/precision_policy_cost_optimizer.py \

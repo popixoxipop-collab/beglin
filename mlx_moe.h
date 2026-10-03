@@ -256,6 +256,15 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
                                     const float *w_gate);
 int mlx_gpu_cbatch_forward_finalize(const float *w_finalnorm, float *logits_out);
 
+// P5 observation-only routing ambiguity telemetry for the ragged MLX scheduler.
+// Disabled by default. When enabled, each MoE layer copies only the router softmax
+// row to host after evaluation and records the maximum top-k boundary ambiguity
+// (next-unselected / kth-selected) per physical slot. This is calibration telemetry,
+// not part of the production fast path unless explicitly enabled.
+int mlx_gpu_risk_signal_telemetry_set(int enabled);
+int mlx_gpu_risk_signal_telemetry_get(int slot, float *score, int *layer,
+                                       float *selected_boundary, float *next_boundary);
+
 // V5j: GQA full multi-layer lazy forward -- the GQA-equivalent of
 // mlx_gpu_layer_step_lazy()/mlx_gpu_forward_finalize() above. A deliberately
 // separate pair of functions (not a runtime branch inside the MLA lazy

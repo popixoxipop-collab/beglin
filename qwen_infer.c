@@ -4887,6 +4887,14 @@ static float *g_mfnb_router_scores; static int *g_mfnb_top_idx;
 //   EXIT: if a future round needs finer granularity (e.g. per-position history, not just
 //   latest-step-per-slot), extend the trailing dimension; the capture call site doesn't change.
 static int *g_moe_routing_capture;   // flat [slot*MOE_MAXLAYERS*MOE_TOP_K + layer*MOE_TOP_K + k]
+// P5 risk-signal sensor: per active slot, capture the MOST ambiguous MoE top-k boundary
+// seen across layers for the current forward step. Ambiguity is next_unselected/kth_selected
+// after the full router softmax and BEFORE optional selected-top-k renormalization, so 1.0
+// means a tie at the routing boundary and smaller values mean a clearer expert decision.
+static float *g_moe_routing_ambiguity_capture;
+static int   *g_moe_routing_ambiguity_layer;
+static float *g_moe_routing_boundary_selected_capture;
+static float *g_moe_routing_boundary_next_capture;
 // Phase 4 sub-part 1, Step 11 (sweep): moe_ffn_naive_batched()'s own per-token FFN scratch --
 // found in the final literal-array sweep, missed by Group C (which only covered moe_forward_
 // token()/moe_cbatch_step_scalar_one()). Same Rule 3 reasoning: own set, not shared.
@@ -5153,6 +5161,22 @@ static void moe_ffn_batched(const uint8_t *af, MoeLayerTensors *t, int l, int B,
         moe_softmax_full(router_scores, MOE_N_EXPERTS);
         int *top_idx = g_mfb_top_idx;
         moe_top_k_select(router_scores, MOE_N_EXPERTS, MOE_TOP_K, top_idx);
+        if (g_moe_routing_ambiguity_capture && slot && MOE_TOP_K > 0) {
+            int s = slot[b];
+            float kth = router_scores[top_idx[MOE_TOP_K - 1]];
+            float next = 0.0f;
+            for (int e = 0; e < MOE_N_EXPERTS; e++)
+                if (!g_moe_topk_used[e] && router_scores[e] > next) next = router_scores[e];
+            float ambiguity = kth > 0.0f ? next / kth : 1.0f;
+            if (ambiguity < 0.0f) ambiguity = 0.0f;
+            if (ambiguity > 1.0f) ambiguity = 1.0f;
+            if (ambiguity > g_moe_routing_ambiguity_capture[s]) {
+                g_moe_routing_ambiguity_capture[s] = ambiguity;
+                g_moe_routing_ambiguity_layer[s] = l;
+                g_moe_routing_boundary_selected_capture[s] = kth;
+                g_moe_routing_boundary_next_capture[s] = next;
+            }
+        }
         if (MOE_NORM_TOPK_PROB) moe_topk_renorm(router_scores, top_idx, MOE_TOP_K);
         // D-roadmap-4 routing sensor: pure observation copy, computed values (router_scores/
         // top_idx) themselves untouched below -- `b` here is moe_cbatch_step()'s COMPACT index
@@ -5560,6 +5584,17 @@ static void moe_cbatch_step(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor
                              const int *spos, int A, float *logits_out,
                              int want_logits) {
     float *x = g_mcbs_x, *h = g_mcbs_h, *h2 = g_mcbs_h2, *mlp_out = g_mcbs_mlp_out;
+
+    // P5: each step fully refreshes the active slots' ambiguity summary before any layer routes.
+    if (g_moe_routing_ambiguity_capture) {
+        for (int m = 0; m < A; m++) {
+            int s = slot[m];
+            g_moe_routing_ambiguity_capture[s] = 0.0f;
+            g_moe_routing_ambiguity_layer[s] = -1;
+            g_moe_routing_boundary_selected_capture[s] = 0.0f;
+            g_moe_routing_boundary_next_capture[s] = 0.0f;
+        }
+    }
 
     for (int m = 0; m < A; m++)
         for (int c = 0; c < MOE_HIDDEN; c++) x[(size_t)m*MOE_HIDDEN+c] = moe_decode_af(af, t_embed, 0, token_ids[m], c);
@@ -6216,6 +6251,22 @@ static float *g_moe_neartie_replay_scratch = NULL;
 //   EXIT: if replay_margin_b1 shows no significant paired difference from
 //   margin either, that's a real, properly-controlled null result --
 //   unlike D-neartie-batch-1's confounded one.
+static double moe_logits_normalized_entropy(const float *logits) {
+    if (!logits || MOE_VOCAB <= 1) return 0.0;
+    double mx = logits[0];
+    for (int v = 1; v < MOE_VOCAB; v++) if ((double)logits[v] > mx) mx = logits[v];
+    double sum = 0.0;
+    for (int v = 0; v < MOE_VOCAB; v++) sum += exp((double)logits[v] - mx);
+    if (!(sum > 0.0) || !isfinite(sum)) return 0.0;
+    double h = 0.0;
+    for (int v = 0; v < MOE_VOCAB; v++) {
+        double p = exp((double)logits[v] - mx) / sum;
+        if (p > 0.0) h -= p * log(p);
+    }
+    double denom = log((double)MOE_VOCAB);
+    return denom > 0.0 ? h / denom : 0.0;
+}
+
 static double moe_neartie_maybe_log(int slot, int req, int pos, int token_id, int argmax, const float *logits, int batch_size,
                                      const uint8_t *af, MoeAFTensor *t_embed, MoeAFTensor *t_lmhead, float *w_finalnorm) {
     if (!g_moe_neartie_log_on) return -1.0;
@@ -6223,6 +6274,16 @@ static double moe_neartie_maybe_log(int slot, int req, int pos, int token_id, in
     double margin = moe_cb4c_margin_ex(logits, &competing_token);
     double threshold = moe_neartie_threshold();
     if (margin >= threshold) return -1.0;
+    double entropy = moe_logits_normalized_entropy(logits);
+    double routing_ambiguity_score = 0.0;
+    int routing_ambiguity_layer = -1;
+    double routing_boundary_selected = 0.0, routing_boundary_next = 0.0;
+    if (g_moe_routing_ambiguity_capture && slot >= 0 && slot < MOE_BATCH_MAX) {
+        routing_ambiguity_score = g_moe_routing_ambiguity_capture[slot];
+        routing_ambiguity_layer = g_moe_routing_ambiguity_layer[slot];
+        routing_boundary_selected = g_moe_routing_boundary_selected_capture[slot];
+        routing_boundary_next = g_moe_routing_boundary_next_capture[slot];
+    }
     double replay_margin_b1 = -1.0;
     if (!g_moe_neartie_replay_scratch) {
         g_moe_neartie_replay_scratch = malloc(MOE_VOCAB * sizeof(float));
@@ -6239,8 +6300,11 @@ static double moe_neartie_maybe_log(int slot, int req, int pos, int token_id, in
         char *routing_json = g_moe_routing_capture ? moe_routing_capture_json(slot) : NULL;
         fprintf(g_moe_nt_events_fp,
                 "{\"kind\":\"event\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,\"predicted_token\":%d,\"competing_token\":%d,"
-                "\"margin\":%.6f,\"batch_size\":%d,\"replay_margin_b1\":%.6f,\"active_experts_by_layer\":%s,\"model\":\"%s\",\"corpus\":\"%s\"}\n",
-                (long)time(NULL), req, pos, argmax, competing_token, margin, batch_size, replay_margin_b1, routing_json ? routing_json : "null",
+                "\"margin\":%.6f,\"entropy\":%.9f,\"routing_ambiguity_score\":%.9f,\"routing_ambiguity_layer\":%d,"
+                "\"routing_boundary_selected\":%.9f,\"routing_boundary_next\":%.9f,"
+                "\"batch_size\":%d,\"replay_margin_b1\":%.6f,\"active_experts_by_layer\":%s,\"model\":\"%s\",\"corpus\":\"%s\"}\n",
+                (long)time(NULL), req, pos, argmax, competing_token, margin, entropy, routing_ambiguity_score, routing_ambiguity_layer,
+                routing_boundary_selected, routing_boundary_next, batch_size, replay_margin_b1, routing_json ? routing_json : "null",
                 g_moe_nt_events_model, g_moe_nt_events_corpus);
         fflush(g_moe_nt_events_fp);
         free(routing_json);
@@ -8120,6 +8184,10 @@ static void alloc_moe_buffers(void) {
     // established "disabled costs nothing real" pattern closely enough not to warrant a second
     // env-gated allocation path.
     g_moe_routing_capture = malloc((size_t)MOE_BATCH_MAX*MOE_MAXLAYERS*MOE_TOP_K*sizeof(int));
+    g_moe_routing_ambiguity_capture = malloc((size_t)MOE_BATCH_MAX*sizeof(float));
+    g_moe_routing_ambiguity_layer = malloc((size_t)MOE_BATCH_MAX*sizeof(int));
+    g_moe_routing_boundary_selected_capture = malloc((size_t)MOE_BATCH_MAX*sizeof(float));
+    g_moe_routing_boundary_next_capture = malloc((size_t)MOE_BATCH_MAX*sizeof(float));
     g_moe_bucket = malloc((size_t)MOE_N_EXPERTS*sizeof(MoeExpertBucket));
 
     // Step 7 (Group E): token-major batch/ragged buffers, flat, MOE_BATCH_MAX*MOE_HIDDEN each --
@@ -8199,7 +8267,8 @@ static void alloc_moe_buffers(void) {
         !g_mcs_sgate_v || !g_mcs_sup_v || !g_mcs_sdown_v ||
         !g_mft_router_scores || !g_mft_top_idx || !g_mcs_router_scores || !g_mcs_top_idx ||
         !g_mfb_router_scores || !g_mfb_top_idx || !g_mfnb_router_scores || !g_mfnb_top_idx ||
-        !g_moe_routing_capture ||
+        !g_moe_routing_capture || !g_moe_routing_ambiguity_capture || !g_moe_routing_ambiguity_layer ||
+        !g_moe_routing_boundary_selected_capture || !g_moe_routing_boundary_next_capture ||
         !g_moe_bucket ||
         !g_mfob_x || !g_mfob_h || !g_mfob_h2 || !g_mfob_mlp_out ||
         !g_mcbs_x || !g_mcbs_h || !g_mcbs_h2 || !g_mcbs_mlp_out ||
@@ -13902,23 +13971,30 @@ static int moe_gpu_argmax_finite(const float *lg, int vocab,
     return am;
 }
 
-static void moe_gpu_neartie_maybe_log(int req, int pos, int token_id,
+static void moe_gpu_neartie_maybe_log(int slot, int req, int pos, int token_id,
                                       int argmax, int competing_token,
-                                      double margin, int batch_size) {
+                                      double margin, const float *logits, int batch_size) {
     if (!g_moe_neartie_log_on || !isfinite(margin)) return;
     double threshold = moe_neartie_threshold();
     if (margin >= threshold) return;
+    double entropy = moe_logits_normalized_entropy(logits);
+    float routing_score = 0.0f, routing_selected = 0.0f, routing_next = 0.0f;
+    int routing_layer = -1;
+    (void)mlx_gpu_risk_signal_telemetry_get(slot, &routing_score, &routing_layer,
+                                             &routing_selected, &routing_next);
     fprintf(stderr,
-            "[moe gpu neartie] event req=%d pos=%d token=%d argmax=%d vs_token=%d margin=%.6f threshold=%.6f batch_size=%d\n",
-            req, pos, token_id, argmax, competing_token, margin, threshold, batch_size);
+            "[moe gpu neartie] event req=%d pos=%d token=%d argmax=%d vs_token=%d margin=%.6f entropy=%.6f routing_ambiguity=%.6f threshold=%.6f batch_size=%d\n",
+            req, pos, token_id, argmax, competing_token, margin, entropy, routing_score, threshold, batch_size);
     if (g_moe_nt_events_fp) {
         fprintf(g_moe_nt_events_fp,
                 "{\"kind\":\"event\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,"
                 "\"predicted_token\":%d,\"competing_token\":%d,\"margin\":%.6f,"
+                "\"entropy\":%.9f,\"routing_ambiguity_score\":%.9f,\"routing_ambiguity_layer\":%d,"
+                "\"routing_boundary_selected\":%.9f,\"routing_boundary_next\":%.9f,"
                 "\"batch_size\":%d,\"replay_margin_b1\":-1.0,"
                 "\"active_experts_by_layer\":null,\"model\":\"%s\",\"corpus\":\"%s\"}\n",
-                (long)time(NULL), req, pos, argmax, competing_token, margin, batch_size,
-                g_moe_nt_events_model, g_moe_nt_events_corpus);
+                (long)time(NULL), req, pos, argmax, competing_token, margin, entropy, routing_score, routing_layer,
+                routing_selected, routing_next, batch_size, g_moe_nt_events_model, g_moe_nt_events_corpus);
         fflush(g_moe_nt_events_fp);
     }
 }
@@ -13967,6 +14043,7 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
     const char *env_correction = getenv("QWEN_MOE_NEARTIE_CORRECT");
     const char *env_neartie_log = getenv("QWEN_MOE_NEARTIE_LOG");
     const char *env_neartie_thr = getenv("QWEN_MOE_NEARTIE_THRESHOLD");
+    const char *env_risk_signals = getenv("QWEN_MOE_RISK_SIGNALS");
     int validation_on = env_validation && env_validation[0] && atoi(env_validation) != 0;
     g_moe_neartie_log_on =
         env_neartie_log && env_neartie_log[0] && atoi(env_neartie_log) != 0;
@@ -14803,6 +14880,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     const char *env_correction = getenv("QWEN_MOE_NEARTIE_CORRECT");
     const char *env_neartie_log = getenv("QWEN_MOE_NEARTIE_LOG");
     const char *env_neartie_thr = getenv("QWEN_MOE_NEARTIE_THRESHOLD");
+    const char *env_risk_signals = getenv("QWEN_MOE_RISK_SIGNALS");
     int validation_on = env_validation && env_validation[0] && atoi(env_validation) != 0;
     int validation_finite = 1; long validation_logits_checked = 0;
 
@@ -14810,10 +14888,15 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
         env_neartie_log && env_neartie_log[0] && atoi(env_neartie_log) != 0;
     g_moe_neartie_threshold_override =
         env_neartie_thr && env_neartie_thr[0] ? atof(env_neartie_thr) : -1.0;
+    int risk_signals_on = env_risk_signals && env_risk_signals[0] && atoi(env_risk_signals) != 0;
+    if (!mlx_gpu_risk_signal_telemetry_set(risk_signals_on)) {
+        fprintf(stderr, "FATAL: [moe gpu risk signals] telemetry configuration failed\n");
+        exit(1);
+    }
     if (g_moe_neartie_log_on) {
         fprintf(stderr,
-                "[moe gpu neartie] telemetry enabled threshold=%.6f\n",
-                moe_neartie_threshold());
+                "[moe gpu neartie] telemetry enabled threshold=%.6f risk_signals=%d\n",
+                moe_neartie_threshold(), risk_signals_on);
         moe_neartie_events_init();
     }
 
@@ -15072,7 +15155,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                                       &competing_token, &margin);
                 if (pass == 1) {
                     moe_gpu_neartie_maybe_log(
-                        r, spos_arr[m], tok_arr[m], am, competing_token, margin, A);
+                        s, r, spos_arr[m], tok_arr[m], am, competing_token, margin, lg, A);
                 }
                 rq_out[r][rq_nout[r]++] = am; mcb_pos[s]++;
                 if (am == MOE_EOS_TOKEN_ID || am == stop_extra || rq_nout[r] >= rq_maxnew[r] || mcb_pos[s] >= MOE_CBATCH_MAXPOS)
@@ -15090,7 +15173,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                                       &competing_token, &margin);
                 if (pass == 1) {
                     moe_gpu_neartie_maybe_log(
-                        r, spos_arr[m], tok_arr[m], am, competing_token, margin, A);
+                        s, r, spos_arr[m], tok_arr[m], am, competing_token, margin, lg, A);
                 }
                 rq_out[r][rq_nout[r]++] = am; rq_t_first[r] = temit;
                 if (am == MOE_EOS_TOKEN_ID || am == stop_extra || rq_nout[r] >= rq_maxnew[r])

@@ -56,6 +56,11 @@ class NearTieTelemetryTests(unittest.TestCase):
                     "kind": "event", "req": 0, "pos": 9,
                     "predicted_token": 372, "competing_token": 1,
                     "margin": 0.002424, "batch_size": 4,
+                    "entropy": 0.232097685,
+                    "routing_ambiguity_score": 0.999847949,
+                    "routing_ambiguity_layer": 24,
+                    "routing_boundary_selected": 0.027097726,
+                    "routing_boundary_next": 0.027093606,
                 }) + "\n")
             self.assertEqual(
                 ps._read_neartie_events_since(path, offset),
@@ -63,6 +68,11 @@ class NearTieTelemetryTests(unittest.TestCase):
                     "req": 0, "pos": 9, "predicted_token": 372,
                     "competing_token": 1, "margin": 0.002424,
                     "batch_size": 4,
+                    "entropy": 0.232097685,
+                    "routing_ambiguity_score": 0.999847949,
+                    "routing_ambiguity_layer": 24,
+                    "routing_boundary_selected": 0.027097726,
+                    "routing_boundary_next": 0.027093606,
                 }],
             )
 
@@ -74,6 +84,7 @@ class NearTieTelemetryTests(unittest.TestCase):
             env = worker._env()
             self.assertEqual(env["QWEN_MOE_NEARTIE_LOG"], "1")
             self.assertEqual(env["QWEN_MOE_NEARTIE_CORRECT"], "0")
+            self.assertEqual(env["QWEN_MOE_RISK_SIGNALS"], "0")
             self.assertEqual(
                 float(env["QWEN_MOE_NEARTIE_THRESHOLD"]),
                 ps.NEARTIE_TELEMETRY_THRESHOLD,
