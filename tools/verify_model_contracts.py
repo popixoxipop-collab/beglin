@@ -6,6 +6,7 @@ import json
 EXPECTED={
  'model-source-v1','architecture-descriptor-v1','model-skeleton-v1','tensor-role-graph-v1',
  'operator-graph-v1','tokenizer-contract-v1','loader-contract-v1','backend-capability-v1',
+ 'backend-transition-result-v1',
  'quant-capability-v1','runtime-mutation-v1','model-capability-bundle-v1','pipeline-eligibility-v1',
  'validation-plan-v1','verification-evidence-v1',
 }
