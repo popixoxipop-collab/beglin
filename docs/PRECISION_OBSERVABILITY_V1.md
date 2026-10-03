@@ -145,3 +145,45 @@ Certified successor regression:
 - run 37125908837
 - head 4faab46dc6a44c5f41df2745d03976e16e05b305
 - conclusion SUCCESS
+
+## Exact-source sealed acceptance
+Implementation commit:
+4faab46dc6a44c5f41df2745d03976e16e05b305
+
+Sealed XOX evidence directory:
+/Users/xox/vdsp_serving/precision-observability-acceptance-sealed-4faab46
+
+Hashes:
+- result.json: 696315c359b5c0ffce00903d2160c17c84659320fb8a1e261b9d107ac1dca8dc
+- lineage.jsonl: 14a06b51c2b0ecf3fe955918247bb3a68d305b229b877b5d089d64c5e30f4fa8
+- observability-summary.json: f6368eb4b4206cb9c80db998224be85d8344ccb642295f247ee5c3788f4e0f08
+
+The sealed result is source-bound to 4faab46dc6a44c5f41df2745d03976e16e05b305 and native binary SHA-256 a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028.
+
+Six consecutive admissions on the same scratch worker cover:
+1. no-risk exact-policy admission on startup policy A;
+2. low-margin closed-loop transition to policy B;
+3. no-risk hold on B;
+4. explicit warm restore B -> A;
+5. legacy adaptive L26 low-margin recovery with two inference passes;
+6. explicit final restore to A.
+
+Measured aggregate metrics:
+- admissions: 6
+- triggered admissions: 2, trigger rate 33.333%
+- transitioned admissions: 4, transition rate 66.667%
+- cache hits/misses: 4/2, hit rate 66.667%
+- inference-pass histogram: 1-pass=5, 2-pass=1
+- extra-pass rate: 16.667%
+- finite-logit rate: 100%
+- resident qNg64 cache max/current: 17,301,504 bytes
+- evidence-use counts: xox-l26-production-low-margin=1, adaptive-l26-certified=1
+- exact policy residency and role/layer/n residency are both present in the summary
+- lineage is hash chained and continuity-checked across explicit and adaptive transitions
+
+Certified successor regression:
+- run 37125908837
+- head 4faab46dc6a44c5f41df2745d03976e16e05b305
+- conclusion SUCCESS
+
+Production remains unconfigured for P6 observability in this stage.
