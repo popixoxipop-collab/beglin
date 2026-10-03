@@ -890,6 +890,98 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
         self.ack = ack
         return ack
 
+    def _record_adaptive_observability(
+        self,
+        *,
+        parsed: list[tuple[list[int], int]],
+        result: dict,
+        before_ack: dict | None,
+        transition_acks: list[dict],
+    ) -> dict:
+        observer = self.precision_observability
+        if observer is None or before_ack is None:
+            return result
+        pob = _load_precision_observability()
+        after_ack = _read_runtime_ack(self.ack_path)
+        adaptive = dict(result.get("adaptive_precision") or {})
+        base_events = [
+            dict(row) for row in (result.get("neartie_events") or [])
+            if not row.get("phase") or row.get("phase") == "base_n5"
+        ]
+        adaptive["base_events"] = base_events
+        changes = []
+        if adaptive.get("restored_from_n6"):
+            changes.append({
+                "role": ADAPTIVE_L26_ROLE,
+                "layer": ADAPTIVE_L26_LAYER,
+                "from_n": ADAPTIVE_L26_RECOVERY_N,
+                "to_n": ADAPTIVE_L26_BASE_N,
+            })
+        if adaptive.get("action") == "RECOVERY_N6":
+            changes.append({
+                "role": ADAPTIVE_L26_ROLE,
+                "layer": ADAPTIVE_L26_LAYER,
+                "from_n": ADAPTIVE_L26_BASE_N,
+                "to_n": ADAPTIVE_L26_RECOVERY_N,
+            })
+        transition_wall_ms = sum(
+            float(row.get("transition_wall_ms", 0.0)) for row in transition_acks
+        )
+        cache_hits = sum(int(row.get("transition_cache_hits", 0)) for row in transition_acks)
+        cache_misses = sum(int(row.get("transition_cache_misses", 0)) for row in transition_acks)
+        cache_bytes_added = sum(
+            int(row.get("transition_cache_bytes_added", 0)) for row in transition_acks
+        )
+        observed = dict(result)
+        observed["precision_epoch"] = {
+            "schema": "beglin-adaptive-observability-epoch-v1",
+            "admission_id": f"adaptive-{uuid.uuid4().hex}",
+            "before_epoch": int(before_ack["weight_epoch"]),
+            "after_epoch": int(after_ack["weight_epoch"]),
+            "before_policy_hash": str(before_ack["active_policy_hash"]),
+            "after_policy_hash": str(after_ack["active_policy_hash"]),
+            "transitioned": bool(transition_acks),
+            "changed_targets": changes,
+            "transition_cost": {
+                "transition_wall_ms": transition_wall_ms,
+                "cache_hits": cache_hits,
+                "cache_misses": cache_misses,
+                "cache_bytes_added": cache_bytes_added,
+                "resident_cache_bytes": int(
+                    after_ack.get("resident_qng64_cache_bytes", 0)
+                ),
+            },
+            "inference_passes": int(result.get("inference_passes", 1)),
+            "engine_wall_ms": float(result.get("engine_wall_ms", 0.0)),
+            "roundtrip_ms": float(result.get("roundtrip_ms", 0.0)),
+        }
+        decision = pob.build_adaptive_decision(
+            adaptive=adaptive,
+            active_policy=after_ack["active_policy"],
+            changes=changes,
+            evidence_sha256=ADAPTIVE_L26_EVIDENCE_SHA256,
+        )
+        try:
+            result["precision_observability"] = observer.record(
+                admission_id=observed["precision_epoch"]["admission_id"],
+                worker_pid=(int(self.proc.pid) if self.is_alive() else None),
+                request_count=len(parsed),
+                decision=decision,
+                result=observed,
+            )
+        except Exception as exc:
+            result["precision_observability"] = {
+                "schema": "beglin-precision-observability-record-v1",
+                "status": "ERROR",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }
+            if observer.strict:
+                raise PersistentSupervisorError(
+                    "precision observability strict adaptive recording failed"
+                ) from exc
+        return result
+
     def submit_base(self, parsed: list[tuple[list[int], int]]) -> dict:
         """Bypass adaptive rerun; used only for startup prewarm evidence."""
         return super().submit(parsed)
@@ -897,6 +989,11 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
     def submit(self, parsed: list[tuple[list[int], int]]) -> dict:
         if not parsed:
             raise PersistentSupervisorError("adaptive persistent batch cannot be empty")
+        obs_before = (
+            _read_runtime_ack(self.ack_path)
+            if self.precision_observability is not None else None
+        )
+        obs_transition_acks: list[dict] = []
 
         # A triggered request is intentionally left at n6.  The next request
         # itself applies 6->5 at the quiescent boundary before computing its
@@ -910,7 +1007,10 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
                 txn_id=txn_id,
             )
             first = super().submit(parsed)
-            self._verify_rebind(txn_id=txn_id, target_n=ADAPTIVE_L26_BASE_N)
+            restore_ack = self._verify_rebind(
+                txn_id=txn_id, target_n=ADAPTIVE_L26_BASE_N
+            )
+            obs_transition_acks.append(restore_ack)
             restored_from_n6 = True
         else:
             first = super().submit(parsed)
@@ -932,7 +1032,10 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
                 "evidence_sha256": ADAPTIVE_L26_EVIDENCE_SHA256,
                 "rebind_evidence_sha256": ADAPTIVE_L26_REBIND_EVIDENCE_SHA256,
             }
-            return first
+            return self._record_adaptive_observability(
+                parsed=parsed, result=first, before_ack=obs_before,
+                transition_acks=obs_transition_acks,
+            )
 
         txn_id = f"adaptive-recover-{uuid.uuid4().hex}"
         self._prepare_rebind(
@@ -942,7 +1045,10 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
         )
         recovery_parsed = [parsed[idx] for idx in trigger_indices]
         recovery = super().submit(recovery_parsed)
-        self._verify_rebind(txn_id=txn_id, target_n=ADAPTIVE_L26_RECOVERY_N)
+        recovery_ack = self._verify_rebind(
+            txn_id=txn_id, target_n=ADAPTIVE_L26_RECOVERY_N
+        )
+        obs_transition_acks.append(recovery_ack)
 
         merged_responses = [list(tokens) for tokens in first["responses"]]
         for local_idx, original_idx in enumerate(trigger_indices):
@@ -962,7 +1068,7 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
             row["phase"] = "recovery_n6"
             recovery_events.append(row)
 
-        return {
+        result = {
             **first,
             "finite_logits": bool(first["finite_logits"] and recovery["finite_logits"]),
             "engine_wall_ms": float(first["engine_wall_ms"]) + float(recovery["engine_wall_ms"]),
@@ -985,6 +1091,10 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
                 "evidence_sha256": ADAPTIVE_L26_EVIDENCE_SHA256,
             },
         }
+        return self._record_adaptive_observability(
+            parsed=parsed, result=result, before_ack=obs_before,
+            transition_acks=obs_transition_acks,
+        )
 
 
 class PersistentWorkerPool:

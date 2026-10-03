@@ -8,6 +8,8 @@ signal -> evidence -> selected target/n -> expected cost -> actual transition/in
 
 Observability is opt-in per persistent worker. Production remains unconfigured in this stage.
 
+The existing adaptive L26 two-pass path is also normalized into the same lineage schema when observability is explicitly configured, so a later cutover does not create a second incompatible telemetry format.
+
 ## Lineage contract
 Each closed-loop admission records:
 - admission ID, timestamp, worker PID and request count

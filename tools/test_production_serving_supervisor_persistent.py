@@ -290,6 +290,87 @@ class PrecisionEpochWorkerTests(unittest.TestCase):
             self.assertEqual(worker.ack["weight_epoch"], 1)
 
 
+class AdaptiveObservabilityTests(unittest.TestCase):
+    def test_adaptive_result_is_normalized_into_lineage(self):
+        with tempfile.TemporaryDirectory() as td:
+            worker = ps.AdaptivePersistentRouteWorker(
+                route=base.candidate_route(), root=Path(td)
+            )
+            observer = unittest.mock.Mock()
+            observer.strict = True
+            observer.record.return_value = {
+                "schema": "beglin-precision-observability-record-v1",
+                "status": "RECORDED",
+                "record_sha256": "a" * 64,
+            }
+            worker.precision_observability = observer
+            worker.proc = unittest.mock.Mock(pid=99)
+            before = {
+                "weight_epoch": 2,
+                "active_policy_hash": ps._policy_hash([
+                    {"role":"shared_up_proj","layer":3,"n":6},
+                    {"role":"shared_down_proj","layer":26,"n":5},
+                ]),
+                "active_policy": [
+                    {"role":"shared_down_proj","layer":26,"n":5},
+                    {"role":"shared_up_proj","layer":3,"n":6},
+                ],
+            }
+            after = {
+                "weight_epoch": 3,
+                "active_policy_hash": ps._policy_hash([
+                    {"role":"shared_up_proj","layer":3,"n":6},
+                    {"role":"shared_down_proj","layer":26,"n":6},
+                ]),
+                "active_policy": [
+                    {"role":"shared_down_proj","layer":26,"n":6},
+                    {"role":"shared_up_proj","layer":3,"n":6},
+                ],
+                "resident_qng64_cache_bytes": 4096,
+            }
+            result = {
+                "finite_logits": True,
+                "responses": [[1]],
+                "engine_wall_ms": 12.0,
+                "roundtrip_ms": 15.0,
+                "inference_passes": 2,
+                "neartie_events": [
+                    {"req":0,"margin":0.010715,"phase":"base_n5"}
+                ],
+                "adaptive_precision": {
+                    "enabled": True,
+                    "action": "RECOVERY_N6",
+                    "restored_from_n6": False,
+                    "role": "shared_down_proj",
+                    "layer": 26,
+                    "base_n": 5,
+                    "recovery_n": 6,
+                    "trigger_request_indices": [0],
+                    "worker_left_at_n": 6,
+                },
+            }
+            transition = {
+                "transition_wall_ms": 3.0,
+                "transition_cache_hits": 1,
+                "transition_cache_misses": 0,
+                "transition_cache_bytes_added": 0,
+            }
+            with patch.object(ps, "_read_runtime_ack", return_value=after), patch.object(
+                worker, "is_alive", return_value=True
+            ):
+                got = worker._record_adaptive_observability(
+                    parsed=[([1],1)], result=result, before_ack=before,
+                    transition_acks=[transition],
+                )
+            self.assertEqual(got["precision_observability"]["status"], "RECORDED")
+            kwargs = observer.record.call_args.kwargs
+            self.assertEqual(kwargs["decision"]["signal"]["active_triggers"], ["low_margin"])
+            self.assertEqual(kwargs["result"]["precision_epoch"]["inference_passes"], 2)
+            self.assertEqual(
+                kwargs["result"]["precision_epoch"]["transition_cost"]["cache_hits"], 1
+            )
+
+
 class AdaptiveTwoPassTests(unittest.TestCase):
     def test_trigger_indices_are_request_scoped_and_thresholded(self):
         events = [
