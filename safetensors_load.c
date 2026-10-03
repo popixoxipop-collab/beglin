@@ -171,6 +171,7 @@ static SafetensorsType parse_dtype(const char *s) {
     if (!strcmp(s, "I16")) return ST_TYPE_I16;
     if (!strcmp(s, "I8")) return ST_TYPE_I8;
     if (!strcmp(s, "U8")) return ST_TYPE_U8;
+    if (!strcmp(s, "U32")) return ST_TYPE_U32;
     if (!strcmp(s, "BOOL")) return ST_TYPE_BOOL;
     return ST_TYPE_UNKNOWN;
 }
@@ -181,7 +182,7 @@ const char *safetensors_type_name(SafetensorsType t) {
         case ST_TYPE_F16: return "F16"; case ST_TYPE_BF16: return "BF16";
         case ST_TYPE_I64: return "I64"; case ST_TYPE_I32: return "I32";
         case ST_TYPE_I16: return "I16"; case ST_TYPE_I8: return "I8";
-        case ST_TYPE_U8: return "U8"; case ST_TYPE_BOOL: return "BOOL";
+        case ST_TYPE_U8: return "U8"; case ST_TYPE_U32: return "U32"; case ST_TYPE_BOOL: return "BOOL";
         default: return "UNKNOWN";
     }
 }
