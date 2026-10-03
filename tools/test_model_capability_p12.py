@@ -76,6 +76,9 @@ def verification_evidence(
     component: str,
     backend: str | None = None,
     evidence_byte: str = "e",
+    target_key: str | None = None,
+    supported_n: list[int] | None = None,
+    mutation_mode: str | None = None,
 ) -> dict:
     source = mc.inspect_model_source(root)
     descriptor = mc.build_architecture_descriptor(source)
@@ -91,6 +94,12 @@ def verification_evidence(
     }
     if backend is not None:
         row["backend"] = backend
+    if target_key is not None:
+        row["target_key"] = target_key
+    if supported_n is not None:
+        row["supported_n"] = list(supported_n)
+    if mutation_mode is not None:
+        row["mutation_mode"] = mutation_mode
     return row
 
 
@@ -321,7 +330,7 @@ class SourceAndCompilerTests(unittest.TestCase):
             rows = bundle["backend_capability_matrix"]["rows"]
             self.assertTrue(all(r["inference_status"] == "VERIFIED" for r in rows))
             precision = [r for r in rows if r["supported_n"]]
-            self.assertTrue(all(r["qng64_status"] == "VERIFIED" for r in precision))
+            self.assertTrue(all(r["qng64_status"] == "IMPLEMENTED_UNVERIFIED" for r in precision))
             self.assertTrue(
                 all(r["verification_source"] == "explicit_runtime_evidence" for r in rows)
             )
@@ -385,10 +394,20 @@ class SourceAndCompilerTests(unittest.TestCase):
             loader = verification_evidence(
                 root, component="loader", evidence_byte="9"
             )
+            inspected = mc.compile_model_capabilities(root, backend="mlx_metal")
+            qng64 = [
+                verification_evidence(
+                    root, component="qng64_runtime", backend="mlx_metal",
+                    evidence_byte="a", target_key=row["target_key"],
+                    supported_n=row["supported_n"],
+                )
+                for row in inspected["precision_search_targets"]
+            ]
             bundle = mc.compile_model_capabilities(
                 root,
                 backend="mlx_metal",
                 mlx_runtime_evidence=runtime,
+                mlx_qng64_evidence=qng64,
                 tokenizer_evidence=tokenizer,
                 loader_evidence=loader,
             )
@@ -447,10 +466,27 @@ class BackendSymmetryTests(unittest.TestCase):
         evidence = verification_evidence(
             root, component="backend_runtime", backend="mlx_metal", evidence_byte="f"
         )
+        inspected = mc.compile_model_capabilities(root)
+        target = next(
+            row["canonical_target_key"]
+            for row in inspected["tensor_role_graph"]["nodes"]
+            if row["role"] == "Q_PROJ" and row["layer"] == 0
+        )
+        qng = verification_evidence(
+            root, component="qng64_runtime", backend="mlx_metal",
+            evidence_byte="a", target_key=target, supported_n=[5, 6],
+        )
+        mutation = verification_evidence(
+            root, component="mutation_runtime", backend="mlx_metal",
+            evidence_byte="b", target_key=target, supported_n=[5, 6],
+            mutation_mode="HOT_REBIND_SINGLE",
+        )
         return mc.compile_model_capabilities(
             root,
             mlx_runtime_verified=True,
             mlx_runtime_evidence=evidence,
+            mlx_qng64_evidence=[qng],
+            mlx_mutation_evidence=[mutation],
         )
 
     def test_cpu_and_mlx_use_same_plan_schema_with_different_actions(self):

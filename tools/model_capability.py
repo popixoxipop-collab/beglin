@@ -573,7 +573,48 @@ def normalize_verification_evidence(
         normalized["binary_sha256"] = require_sha(
             "verification evidence binary_sha256", row["binary_sha256"]
         )
+    if row.get("target_key"):
+        normalized["target_key"] = str(row["target_key"])
+    if row.get("supported_n") is not None:
+        values = row.get("supported_n")
+        if not isinstance(values, list) or not values:
+            raise ModelCapabilityError("verification evidence supported_n must be a non-empty list")
+        normalized["supported_n"] = sorted({int(x) for x in values})
+    if row.get("mutation_mode"):
+        normalized["mutation_mode"] = str(row["mutation_mode"])
     return normalized
+
+
+def normalize_verification_evidence_list(
+    values: list[Mapping[str, Any]] | None,
+    *,
+    component: str,
+    checkpoint_identity_sha256: str,
+    architecture_id: str,
+    backend: str,
+) -> list[dict]:
+    out = []
+    seen = set()
+    for value in values or []:
+        row = normalize_verification_evidence(
+            value,
+            component=component,
+            checkpoint_identity_sha256=checkpoint_identity_sha256,
+            architecture_id=architecture_id,
+            backend=backend,
+        )
+        if row is None or not row.get("target_key"):
+            raise ModelCapabilityError(
+                f"{component} verification evidence requires exact target_key"
+            )
+        key = str(row["target_key"])
+        if key in seen:
+            raise ModelCapabilityError(
+                f"duplicate {component} verification evidence for target={key}"
+            )
+        seen.add(key)
+        out.append(row)
+    return out
 
 
 ARCH_REGISTRY = {
@@ -1244,11 +1285,15 @@ def build_backend_capability_matrix(
     requested_backend: str | None = None,
     cpu_runtime_evidence: Mapping[str, Any] | None = None,
     mlx_runtime_evidence: Mapping[str, Any] | None = None,
+    cpu_qng64_evidence: list[Mapping[str, Any]] | None = None,
+    mlx_qng64_evidence: list[Mapping[str, Any]] | None = None,
 ) -> dict:
     if requested_backend not in {None, "cpu", "mlx_metal"}:
         raise ModelCapabilityError(f"unsupported backend request: {requested_backend}")
     cpu_runtime_verified = cpu_runtime_evidence is not None
     mlx_runtime_verified = mlx_runtime_evidence is not None
+    cpu_qng64_by_target = {str(row["target_key"]): dict(row) for row in (cpu_qng64_evidence or [])}
+    mlx_qng64_by_target = {str(row["target_key"]): dict(row) for row in (mlx_qng64_evidence or [])}
     rows = []
     for node in tensor_graph.get("nodes", []):
         role = str(node["role"])
@@ -1261,28 +1306,35 @@ def build_backend_capability_matrix(
                 continue
             if backend == "cpu":
                 inference_status = "VERIFIED" if cpu_runtime_verified else "IMPLEMENTED_UNVERIFIED"
+                qev = cpu_qng64_by_target.get(target) if precision_role else None
                 qng64_status = (
-                    "VERIFIED" if precision_role and cpu_runtime_verified
+                    "VERIFIED" if qev is not None
                     else ("IMPLEMENTED_UNVERIFIED" if precision_role else "UNSUPPORTED_ROLE")
                 )
                 mutation_mode = "RESTART_REQUIRED" if precision_role else "IMMUTABLE"
-                supported_n = CPU_QNG64_WIDTHS if precision_role else []
+                supported_n = (
+                    list(qev.get("supported_n") or CPU_QNG64_WIDTHS)
+                    if qev is not None else (CPU_QNG64_WIDTHS if precision_role else [])
+                )
             else:
                 arch = str(descriptor.get("architecture_id") or "unknown")
-                target_verified = bool(mlx_runtime_verified)
+                qev = mlx_qng64_by_target.get(target) if precision_role else None
                 if arch == "gpt-oss":
                     inference_status = "UNSUPPORTED_MODEL"
                     qng64_status = "UNSUPPORTED_MODEL" if precision_role else "UNSUPPORTED_ROLE"
                     mutation_mode = "RESTART_REQUIRED"
                     supported_n = []
                 else:
-                    inference_status = "VERIFIED" if target_verified else "IMPLEMENTED_UNVERIFIED"
+                    inference_status = "VERIFIED" if mlx_runtime_verified else "IMPLEMENTED_UNVERIFIED"
                     qng64_status = (
-                        "VERIFIED" if precision_role and target_verified
+                        "VERIFIED" if qev is not None
                         else ("IMPLEMENTED_UNVERIFIED" if precision_role else "UNSUPPORTED_ROLE")
                     )
                     mutation_mode = "HOT_REBIND_CANDIDATE" if precision_role else "RESTART_REQUIRED"
-                    supported_n = MLX_QNG64_WIDTHS if precision_role else []
+                    supported_n = (
+                        list(qev.get("supported_n") or MLX_QNG64_WIDTHS)
+                        if qev is not None else (MLX_QNG64_WIDTHS if precision_role else [])
+                    )
             rows.append({
                 "target_key": target,
                 "role": role,
@@ -1296,9 +1348,9 @@ def build_backend_capability_matrix(
                 "validation_required": inference_status != "VERIFIED" or qng64_status != "VERIFIED",
                 "reason_code": None,
                 "evidence_refs": (
-                    [dict(cpu_runtime_evidence)] if backend == "cpu" and cpu_runtime_evidence is not None
-                    else [dict(mlx_runtime_evidence)] if backend == "mlx_metal" and mlx_runtime_evidence is not None
-                    else []
+                    ([dict(cpu_runtime_evidence)] if backend == "cpu" and cpu_runtime_evidence is not None else [])
+                    + ([dict(mlx_runtime_evidence)] if backend == "mlx_metal" and mlx_runtime_evidence is not None else [])
+                    + ([dict(qev)] if qev is not None else [])
                 ),
                 "verification_source": (
                     "explicit_runtime_evidence" if inference_status == "VERIFIED"
@@ -1351,16 +1403,28 @@ def build_quant_capability_matrix(
     return matrix
 
 
-def build_runtime_mutation_matrix(backend_matrix: Mapping[str, Any]) -> dict:
+def build_runtime_mutation_matrix(
+    backend_matrix: Mapping[str, Any],
+    *,
+    cpu_mutation_evidence: list[Mapping[str, Any]] | None = None,
+    mlx_mutation_evidence: list[Mapping[str, Any]] | None = None,
+) -> dict:
+    cpu_by_target = {str(row["target_key"]): dict(row) for row in (cpu_mutation_evidence or [])}
+    mlx_by_target = {str(row["target_key"]): dict(row) for row in (mlx_mutation_evidence or [])}
     rows = []
     for cap in backend_matrix.get("rows", []):
         mode = str(cap["mutation_mode"])
+        mev = (cpu_by_target if cap["backend"] == "cpu" else mlx_by_target).get(str(cap["target_key"]))
         if mode == "HOT_REBIND_CANDIDATE":
-            resolved_mode = (
-                "HOT_REBIND_SINGLE"
-                if cap["qng64_status"] == "VERIFIED"
-                else "IMPLEMENTED_UNVERIFIED"
-            )
+            if mev is not None:
+                requested = str(mev.get("mutation_mode") or "HOT_REBIND_SINGLE")
+                if requested not in {"HOT_REBIND_SINGLE", "HOT_REBIND_MULTI"}:
+                    raise ModelCapabilityError(
+                        f"invalid verified mutation_mode={requested} for target={cap['target_key']}"
+                    )
+                resolved_mode = requested
+            else:
+                resolved_mode = "IMPLEMENTED_UNVERIFIED"
         else:
             resolved_mode = mode
         rows.append({
@@ -1374,6 +1438,7 @@ def build_runtime_mutation_matrix(backend_matrix: Mapping[str, Any]) -> dict:
             "epoch_increment": 1 if cap.get("supported_n") else 0,
             "rollback_supported": bool(cap.get("supported_n")),
             "policy_shape_change_allowed": False,
+            "evidence_refs": [dict(mev)] if mev is not None else [],
         })
     matrix = {
         "schema": "beglin-runtime-mutation-v1",
@@ -1443,14 +1508,26 @@ def pipeline_eligibility(
             reasons.append("LOADER_NOT_VERIFIED")
         if any(row.get("requires_validation") for row in search_space):
             reasons.append("BACKEND_OR_QNG64_REQUIRES_VALIDATION")
+    precision_pipeline_allowed = status in {"FULL", "PARTIAL"}
+    text_io_ready = tokenizer.get("status") in {
+        "IN_ENGINE_VERIFIED", "EXTERNAL_VERIFIED"
+    }
+    p11_allowed = bool(
+        precision_pipeline_allowed
+        and loader.get("status") == "VERIFIED"
+        and int(tensor_graph.get("unmapped_tensor_count", 0)) == 0
+    )
     return {
         "schema": "beglin-pipeline-eligibility-v1",
         "status": status,
         "reasons": sorted(set(reasons)),
-        "p8_allowed": status in {"FULL", "PARTIAL"},
-        "p9_allowed": status in {"FULL", "PARTIAL"},
-        "p10_allowed": status in {"FULL", "PARTIAL"},
-        "p11_allowed": status == "FULL",
+        "text_io_ready": text_io_ready,
+        "pretokenized_precision_pipeline_ready": precision_pipeline_allowed,
+        "p8_allowed": precision_pipeline_allowed,
+        "p9_allowed": precision_pipeline_allowed,
+        "p10_allowed": precision_pipeline_allowed,
+        "p11_allowed": p11_allowed,
+        "p11_requires_verified_loader": True,
         "automatic_live_promotion": False,
     }
 
@@ -1498,6 +1575,10 @@ def compile_model_capabilities(
     mlx_runtime_verified: bool = False,
     cpu_runtime_evidence: Mapping[str, Any] | None = None,
     mlx_runtime_evidence: Mapping[str, Any] | None = None,
+    cpu_qng64_evidence: list[Mapping[str, Any]] | None = None,
+    mlx_qng64_evidence: list[Mapping[str, Any]] | None = None,
+    cpu_mutation_evidence: list[Mapping[str, Any]] | None = None,
+    mlx_mutation_evidence: list[Mapping[str, Any]] | None = None,
     tokenizer_evidence: Mapping[str, Any] | None = None,
     loader_evidence: Mapping[str, Any] | None = None,
 ) -> dict:
@@ -1527,6 +1608,34 @@ def compile_model_capabilities(
         architecture_id=str(descriptor["architecture_id"]),
         backend="mlx_metal",
     )
+    cpu_qng64 = normalize_verification_evidence_list(
+        cpu_qng64_evidence,
+        component="qng64_runtime",
+        checkpoint_identity_sha256=str(source["checkpoint_identity_sha256"]),
+        architecture_id=str(descriptor["architecture_id"]),
+        backend="cpu",
+    )
+    mlx_qng64 = normalize_verification_evidence_list(
+        mlx_qng64_evidence,
+        component="qng64_runtime",
+        checkpoint_identity_sha256=str(source["checkpoint_identity_sha256"]),
+        architecture_id=str(descriptor["architecture_id"]),
+        backend="mlx_metal",
+    )
+    cpu_mutation = normalize_verification_evidence_list(
+        cpu_mutation_evidence,
+        component="mutation_runtime",
+        checkpoint_identity_sha256=str(source["checkpoint_identity_sha256"]),
+        architecture_id=str(descriptor["architecture_id"]),
+        backend="cpu",
+    )
+    mlx_mutation = normalize_verification_evidence_list(
+        mlx_mutation_evidence,
+        component="mutation_runtime",
+        checkpoint_identity_sha256=str(source["checkpoint_identity_sha256"]),
+        architecture_id=str(descriptor["architecture_id"]),
+        backend="mlx_metal",
+    )
     tokenizer = build_tokenizer_contract(
         source, descriptor, verification_evidence=tokenizer_evidence
     )
@@ -1541,9 +1650,15 @@ def compile_model_capabilities(
         requested_backend=backend,
         cpu_runtime_evidence=cpu_evidence,
         mlx_runtime_evidence=mlx_evidence,
+        cpu_qng64_evidence=cpu_qng64,
+        mlx_qng64_evidence=mlx_qng64,
     )
     quant_matrix = build_quant_capability_matrix(tensor_graph, backend_matrix)
-    mutation_matrix = build_runtime_mutation_matrix(backend_matrix)
+    mutation_matrix = build_runtime_mutation_matrix(
+        backend_matrix,
+        cpu_mutation_evidence=cpu_mutation,
+        mlx_mutation_evidence=mlx_mutation,
+    )
     search_space = build_precision_search_space(quant_matrix, mutation_matrix)
     eligibility = pipeline_eligibility(
         descriptor, tensor_graph, operator_graph, tokenizer, loader, search_space

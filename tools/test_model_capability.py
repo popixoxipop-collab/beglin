@@ -115,10 +115,32 @@ class ModelCapabilityTests(unittest.TestCase):
                 "run_id":"legacy-unit-fixture",
                 "kind":"UNIT_TEST_FIXTURE",
             }
+            inspected=mc.compile_model_capabilities(root)
+            target=next(
+                n["canonical_target_key"] for n in inspected["tensor_role_graph"]["nodes"]
+                if n["role"]=="Q_PROJ" and n["layer"]==0
+            )
+            qng={
+                "schema":"beglin-verification-evidence-v1","status":"VERIFIED",
+                "component":"qng64_runtime","architecture_id":desc["architecture_id"],
+                "checkpoint_identity_sha256":source["checkpoint_identity_sha256"],
+                "backend":"mlx_metal","evidence_sha256":"d"*64,"run_id":"qng-unit",
+                "kind":"UNIT_TEST_FIXTURE","target_key":target,"supported_n":[5,6],
+            }
+            mutation={
+                "schema":"beglin-verification-evidence-v1","status":"VERIFIED",
+                "component":"mutation_runtime","architecture_id":desc["architecture_id"],
+                "checkpoint_identity_sha256":source["checkpoint_identity_sha256"],
+                "backend":"mlx_metal","evidence_sha256":"e"*64,"run_id":"mutation-unit",
+                "kind":"UNIT_TEST_FIXTURE","target_key":target,"supported_n":[5,6],
+                "mutation_mode":"HOT_REBIND_SINGLE",
+            }
             bundle=mc.compile_model_capabilities(
                 root,
                 mlx_runtime_verified=True,
                 mlx_runtime_evidence=evidence,
+                mlx_qng64_evidence=[qng],
+                mlx_mutation_evidence=[mutation],
             )
             rows=bundle['runtime_mutation_matrix']['rows']
             q=[r for r in rows if r['target_key'].endswith('/q_proj')]

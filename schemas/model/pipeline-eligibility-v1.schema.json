@@ -6,6 +6,24 @@
     "automatic_live_promotion": {
       "const": false
     },
+    "p10_allowed": {
+      "type": "boolean"
+    },
+    "p11_allowed": {
+      "type": "boolean"
+    },
+    "p11_requires_verified_loader": {
+      "const": true
+    },
+    "p8_allowed": {
+      "type": "boolean"
+    },
+    "p9_allowed": {
+      "type": "boolean"
+    },
+    "pretokenized_precision_pipeline_ready": {
+      "type": "boolean"
+    },
     "reasons": {
       "items": {
         "type": "string"
@@ -21,12 +39,22 @@
         "PARTIAL",
         "DENIED"
       ]
+    },
+    "text_io_ready": {
+      "type": "boolean"
     }
   },
   "required": [
     "schema",
     "status",
-    "reasons"
+    "reasons",
+    "text_io_ready",
+    "pretokenized_precision_pipeline_ready",
+    "p8_allowed",
+    "p9_allowed",
+    "p10_allowed",
+    "p11_allowed",
+    "p11_requires_verified_loader"
   ],
   "title": "pipeline-eligibility-v1",
   "type": "object"
