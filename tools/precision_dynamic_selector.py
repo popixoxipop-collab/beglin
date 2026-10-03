@@ -90,7 +90,36 @@ def _target_key(row: dict):
     return str(row["role"]),int(row["layer"])
 
 
-def _passed_context_evidence(rows, *, role, layer, from_n, to_n, trigger):
+def _signal_matches_bucket(signal: dict, bucket: dict) -> bool:
+    if not isinstance(bucket, dict) or not bucket:
+        return False
+    if bucket.get("trigger_only") is True:
+        return True
+
+    checks = (
+        ("margin", "margin_min", "margin_max"),
+        ("entropy", "entropy_min", "entropy_max"),
+        ("routing_ambiguity_score", "routing_ambiguity_score_min", "routing_ambiguity_score_max"),
+    )
+    constrained = False
+    for field, lo_key, hi_key in checks:
+        lo = bucket.get(lo_key)
+        hi = bucket.get(hi_key)
+        if lo is None and hi is None:
+            continue
+        constrained = True
+        value = signal.get(field)
+        if value is None:
+            return False
+        value = float(value)
+        if lo is not None and value < float(lo):
+            return False
+        if hi is not None and value > float(hi):
+            return False
+    return constrained
+
+
+def _passed_context_evidence(rows, *, role, layer, from_n, to_n, trigger, signal):
     matches=[]
     for row in rows:
         if (
@@ -102,6 +131,7 @@ def _passed_context_evidence(rows, *, role, layer, from_n, to_n, trigger):
             and row.get("status")=="PASS"
             and row.get("pass") is True
             and int(row.get("requests",0))>0
+            and _signal_matches_bucket(signal, row.get("signal_bucket") or {})
         ):
             matches.append(row)
     return matches
@@ -140,7 +170,7 @@ def choose_for_target(target: dict, signal: dict, trigger_evidence: list[dict]) 
             rows=_passed_context_evidence(
                 trigger_evidence,
                 role=target["role"],layer=target["layer"],
-                from_n=base_n,to_n=n,trigger=trigger,
+                from_n=base_n,to_n=n,trigger=trigger,signal=normalized,
             )
             if not rows:
                 ok=False
