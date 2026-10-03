@@ -40,6 +40,7 @@ DEFAULT_PERSISTENT_ROOT = Path("/Users/xox/vdsp_serving/persistent-workers")
 WORKER_READY_TIMEOUT_SECONDS = 120
 REQUEST_TIMEOUT_SECONDS = 60
 POLL_SECONDS = 0.01
+NEARTIE_TELEMETRY_THRESHOLD = 0.02
 LAUNCHD_PROCESS_TYPE = "Interactive"
 
 
@@ -86,6 +87,39 @@ def _read_runtime_ack(path: Path) -> dict:
         sys.path.insert(0, tools)
     import gpu_runtime_control as grc
     return grc.read_runtime_ack(path)
+
+
+def _read_neartie_events_since(path: Path, offset: int) -> list[dict]:
+    if offset < 0:
+        raise PersistentSupervisorError("near-tie telemetry offset cannot be negative")
+    if not path.is_file():
+        return []
+    events = []
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        for raw in handle:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                row = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if row.get("kind") != "event":
+                continue
+            try:
+                event = {
+                    "req": int(row["req"]),
+                    "pos": int(row["pos"]),
+                    "predicted_token": int(row["predicted_token"]),
+                    "competing_token": int(row["competing_token"]),
+                    "margin": float(row["margin"]),
+                    "batch_size": int(row["batch_size"]),
+                }
+            except (KeyError, TypeError, ValueError):
+                continue
+            events.append(event)
+    return events
 
 
 def parse_persistent_result(text: str, *, request_id: str, expected_requests: int) -> dict:
@@ -189,7 +223,7 @@ class PersistentRouteWorker:
             "QWEN_MOE_PROMOTION_SAFETENSORS": str(base.SAFETENSORS),
             "QWEN_MOE_GPU_PERSISTENT_DIR": str(self.queue_dir),
             "QWEN_MOE_NEARTIE_LOG": "1",
-            "QWEN_MOE_NEARTIE_THRESHOLD": "0.01",
+            "QWEN_MOE_NEARTIE_THRESHOLD": str(NEARTIE_TELEMETRY_THRESHOLD),
             "QWEN_MOE_NEARTIE_EVENTS_LOG": str(self.neartie_path),
             "QWEN_MOE_NEARTIE_MODEL": "deepseek-v2-lite",
             "QWEN_MOE_NEARTIE_CORPUS": "production-persistent",
@@ -255,6 +289,10 @@ class PersistentRouteWorker:
             "weight_epoch": int(self.ack["weight_epoch"]) if self.ack else None,
             "ack_sha256": self.ack.get("ack_sha256") if self.ack else None,
             "rss_bytes": self._rss_bytes(),
+            "near_tie_telemetry": {
+                "enabled": True,
+                "threshold": NEARTIE_TELEMETRY_THRESHOLD,
+            },
         }
 
     def submit(self, parsed: list[tuple[list[int], int]]) -> dict:
@@ -301,21 +339,9 @@ class PersistentRouteWorker:
                             expected_requests=len(parsed),
                         )
                         parsed_result["roundtrip_ms"] = roundtrip_ms
-                        events = []
-                        if self.neartie_path.exists():
-                            with self.neartie_path.open("r", encoding="utf-8") as handle:
-                                handle.seek(neartie_offset)
-                                for raw in handle:
-                                    raw = raw.strip()
-                                    if not raw:
-                                        continue
-                                    try:
-                                        row = json.loads(raw)
-                                    except json.JSONDecodeError:
-                                        continue
-                                    if row.get("kind") == "event":
-                                        events.append(row)
-                        parsed_result["neartie_events"] = events
+                        parsed_result["neartie_events"] = _read_neartie_events_since(
+                            self.neartie_path, neartie_offset
+                        )
                         return parsed_result
                     time.sleep(POLL_SECONDS)
                 raise PersistentSupervisorError(
@@ -482,6 +508,7 @@ class PersistentEngineExecutor:
                 "worker_instance_id": f"pid-{h['pid']}",
                 "worker_ack_sha256": h["ack_sha256"],
                 "neartie_events": result.get("neartie_events", []),
+                "neartie_event_count": len(result.get("neartie_events", [])),
                 "worker_epoch": h["weight_epoch"],
                 "finite_logits": True,
                 "duration_ms": max(1, int((time.monotonic() - started) * 1000)),
