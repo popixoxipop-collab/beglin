@@ -313,11 +313,11 @@ def build_p11_capability_preimage(
         except (TypeError, ValueError) as exc:
             raise PipelineCapabilityError("runtime precision is invalid") from exc
     if runtime_n is None:
-            raise PipelineCapabilityError("runtime precision is missing")
-        if runtime_n != int(requested_n):
-            raise PipelineCapabilityError(
-                f"runtime precision mismatch: expected={requested_n} actual={runtime_n}"
-            )
+        raise PipelineCapabilityError("runtime precision is missing")
+    if runtime_n != int(requested_n):
+        raise PipelineCapabilityError(
+            f"runtime precision mismatch: expected={requested_n} actual={runtime_n}"
+        )
 
     preimage = {
         "schema": "beglin-p12-p11-capability-preimage-v1",
