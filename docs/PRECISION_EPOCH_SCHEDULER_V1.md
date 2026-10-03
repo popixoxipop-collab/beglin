@@ -71,4 +71,19 @@ Production remains:
 Next gate: allocator and selector policy materialization into the scheduler, then separate production acceptance.
 
 ## Post-commit acceptance
-Final source-bound acceptance is intentionally generated after the implementation commit is fixed.
+The implementation was fixed at source commit:
+ae1b06b3fbb86930e4c23e51f6ff82373272cde5
+
+Exact-source XOX isolated acceptance:
+/Users/xox/vdsp_serving/precision-epoch-acceptance-ae1b06b/result.json
+SHA-256:
+5934f6d3f596c5d69baf97600af87c7fc41a844be50c3234fecd5148e0953b34
+
+The evidence reports source_head ae1b06b3fbb86930e4c23e51f6ff82373272cde5,
+sequential PASS, concurrency PASS, production_touched=false, and native binary
+SHA-256 4540599d86a59dd3cfd14fc863d21ed3f0cc5a8a1d872a821a04bc04ae23b490.
+
+Certified successor regression:
+- run 37114905775
+- head ae1b06b3fbb86930e4c23e51f6ff82373272cde5
+- conclusion SUCCESS
