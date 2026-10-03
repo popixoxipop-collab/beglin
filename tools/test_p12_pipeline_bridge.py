@@ -331,6 +331,7 @@ class PipelineBridgeTests(unittest.TestCase):
                     "target_key": target,
                     "worker_pid": 1234,
                     "weight_epoch": 9,
+                    "precision_n": 5,
                 },
             )
             self.assertEqual(
@@ -444,6 +445,7 @@ class PipelineBridgeTests(unittest.TestCase):
                     "target_key": target,
                     "worker_pid": 1234,
                     "weight_epoch": 11,
+                    "precision_n": 5,
                 },
             )
             self.assertEqual(
