@@ -608,11 +608,15 @@ def step0_baseline_gate(ssh_host, moe_base, bin_path, cwd, derived_manifest, com
     return False, detail
 
 
-# D-qNg64-12 (L3b Phase C, continued): the real per-n sweep loop -- this is what actually
-# tests a triple across the deployable ladder {5,6,7}, gated on step0_baseline_gate() already
-# having passed for this exact (manifest, event). Reuses the same portable timeout-kill pattern
-# step0 established (no GNU coreutils on bob), same env-sanitization, same self-log discipline.
-REAL_LADDER = (5, 6, 7)
+# D-qNg64-12/D-qNg64-18: real per-n qNg64 sweep loop. The original Phase C
+# implementation was intentionally bounded to {5,6,7}; the runtime now supports
+# qNg64 bit-plane widths {2,3,5..15}. Keep this capability ladder separate from
+# promotion eligibility: the production promotion path still enforces n >= the
+# target's base precision, so a real-kernel PASS below base_bits is evidence only,
+# never permission to demote production precision.
+#
+# n=4 is the separate q4g64 format, not qNg64. n=16 is f16 territory.
+REAL_LADDER = (2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
 
 
 def sweep_one_n(ssh_host, moe_base, bin_path, cwd, derived_manifest, combo_path,
