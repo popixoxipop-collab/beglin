@@ -1,0 +1,65 @@
+name: P10 Production Precision Approval Attestation
+
+on:
+  push:
+    branches:
+      - p10-production-precision-approval-20261004
+    paths:
+      - "attestations/BEGLIN_P10_PRODUCTION_PRECISION_APPROVAL_2026-10-04.json"
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify exact P10 precision approval
+        shell: bash
+        env:
+          EXPECTED_ACTOR: popixoxipop-collab
+          EXPECTED_ACTOR_ID: "261965176"
+          EXPECTED_PLAN_SHA: 43b7bbfb659639cf442bc97b5e328d2ec8d25ddb97e3179a646224f738e81443
+          EXPECTED_PREIMAGE_SHA: 4dca9b7ac12c387df07573f740a2dac06c0e20df3963afe14abcbdd8a9522e7c
+          EXPECTED_CANDIDATE_POLICY_SHA: b58064ae93c3550c5ca5fccab83c9976268370d559b8602f3d91772cb9ac82bd
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path("attestations/BEGLIN_P10_PRODUCTION_PRECISION_APPROVAL_2026-10-04.json")
+          obj=json.loads(p.read_text())
+          actor=os.environ["GITHUB_ACTOR"]
+          actor_id=os.environ.get("GITHUB_ACTOR_ID","")
+          assert actor == os.environ["EXPECTED_ACTOR"]
+          if actor_id:
+              assert actor_id == os.environ["EXPECTED_ACTOR_ID"]
+          assert obj["schema"] == "beglin-p10-production-precision-approval-v1"
+          assert obj["status"] == "VERIFIED_GITHUB_OIDC"
+          assert obj["approver"]["github_login"] == actor
+          assert int(obj["approver"]["github_user_id"]) == int(os.environ["EXPECTED_ACTOR_ID"])
+          assert obj["cutover_plan_sha256"] == os.environ["EXPECTED_PLAN_SHA"]
+          assert obj["preimage_sha256"] == os.environ["EXPECTED_PREIMAGE_SHA"]
+          assert obj["candidate_policy_hash"] == os.environ["EXPECTED_CANDIDATE_POLICY_SHA"]
+          assert obj["target"] == {"role":"shared_up_proj","layer":3,"before_n":6,"after_n":5}
+          assert obj["automatic_live_promotion"] is False
+          assert obj["production_precision_write_allowed"] is True
+          assert obj["production_routing_switch_allowed"] is False
+          assert obj["external_network_exposed"] is False
+          print(json.dumps({
+              "status":"VERIFIED",
+              "actor":actor,
+              "cutover_plan_sha256":obj["cutover_plan_sha256"],
+              "preimage_sha256":obj["preimage_sha256"],
+              "candidate_policy_hash":obj["candidate_policy_hash"],
+          },sort_keys=True))
+          PY
+
+      - name: Publish GitHub OIDC provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: attestations/BEGLIN_P10_PRODUCTION_PRECISION_APPROVAL_2026-10-04.json
