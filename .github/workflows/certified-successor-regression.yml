@@ -16,6 +16,7 @@ on:
       - supabase-v3-evidence-reconnect-20261003
       - quant-search-full-qng64-ladder-20261003
       - precision-allocator-v1-20261003
+      - precision-p8-provenance-v1-20261003
       - precision-observability-review-20261003
     paths:
       - ".github/workflows/certified-successor-regression.yml"
@@ -44,6 +45,7 @@ on:
       - "qwen_infer.c"
       - "tools/test_persistent_gpu_worker_source.py"
       - "tools/production_serving_supervisor_persistent.py"
+      - "tools/p8_provenance_probe_xox.py"
       - "tools/precision_epoch_scheduler.py"
       - "tools/precision_risk_signals.py"
       - "tools/test_gpu_precision_risk_signals.py"

@@ -32,3 +32,17 @@ P8 acceptance:
 The current L3 recovery evidence proves the precision behavior on XOX but does not contain the replayable source manifest/provenance fields required by the existing gpu_shadow_pipeline. Therefore P8 intentionally stops at NEEDS_REPLAY_PROVENANCE and does not manufacture SHADOW_ADMITTED.
 
 Once replay provenance is attached, the existing shadow pipeline can run the one-target candidate. Only a matching SHADOW_ADMITTED result can produce MANUAL_REVIEW_CANDIDATE. A separate human review/cutover gate remains required.
+
+## Replay provenance capture for future refresh cycles
+Persistent workers now have an opt-in replay provenance capture path for P8 shadow evidence. It is disabled by default and must be explicitly configured to a child directory of /Users/xox/vdsp_serving.
+
+When enabled, only admissions that actually emit precision risk events are retained. Before the normal ephemeral request directory is removed, the worker stores a content-addressed copy of the raw int32 prompt, a one-entry replay manifest, and SHA-bound metadata. The record includes prompt length, max-new-tokens, event count/hash, raw-token SHA and production_write_allowed=false.
+
+XOX scratch proof:
+- /Users/xox/vdsp_serving/p8-replay-provenance-probe/provenance/989f093b187541dffb98df11/provenance.json
+- raw token SHA-256 989f093b187541dffb98df11e792cadf5177dc7f3d5d3ca2525b0e788f83abba
+- provenance SHA-256 86342477535e7755299a0f8f4b83c24c7d4451099df51d65c19a98981f5f8af5
+- event_count=1
+- production_write_allowed=false
+
+This new capture does not retroactively manufacture provenance for the current L3 n6->n5 P8 proposal. That historical fixture did not preserve its original raw token source, so the existing proposal correctly remains NEEDS_REPLAY_PROVENANCE. Future evidence generated with capture enabled can enter the existing gpu_shadow_pipeline without weakening its provenance gate.

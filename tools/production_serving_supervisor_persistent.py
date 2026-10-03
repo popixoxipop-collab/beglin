@@ -407,6 +407,7 @@ class PersistentRouteWorker:
         self.precision_epoch_scheduler = None
         self.precision_closed_loop_engine = None
         self.precision_observability = None
+        self.replay_provenance_root: Path | None = None
 
     @property
     def route_id(self) -> str:
@@ -863,6 +864,72 @@ class PersistentRouteWorker:
                     ) from exc
         return result
 
+    def configure_replay_provenance_capture(self, *, root: Path | str | None) -> dict:
+        """Opt-in content-addressed replay capture for certified shadow evidence."""
+        with self.lock:
+            if root is None:
+                self.replay_provenance_root = None
+                return {"status": "DISABLED"}
+            value = Path(root).expanduser().resolve()
+            serving = Path("/Users/xox/vdsp_serving").resolve()
+            if value == serving or serving not in value.parents:
+                raise PersistentSupervisorError(
+                    "replay provenance root must be a child of vdsp_serving"
+                )
+            value.mkdir(parents=True, exist_ok=True)
+            self.replay_provenance_root = value
+            return {"status": "ENABLED", "root": str(value)}
+
+    def _capture_replay_provenance(
+        self, *, parsed, request_root: Path, manifest: Path, result: dict
+    ) -> dict | None:
+        root = self.replay_provenance_root
+        if root is None:
+            return None
+        events = result.get("neartie_events") or []
+        if not events:
+            return None
+        if len(parsed) != 1:
+            raise PersistentSupervisorError(
+                "replay provenance capture currently requires one request per admission"
+            )
+        token_file = request_root / "req-0.i32"
+        if not token_file.is_file() or not manifest.is_file():
+            raise PersistentSupervisorError("replay provenance source files disappeared")
+        token_sha = base._sha256_file(token_file)
+        evidence_id = token_sha[:24]
+        dest = root / evidence_id
+        dest.mkdir(parents=True, exist_ok=True)
+        raw_dest = dest / "prompt.i32"
+        manifest_dest = dest / "manifest.txt"
+        if raw_dest.exists() and base._sha256_file(raw_dest) != token_sha:
+            raise PersistentSupervisorError("replay provenance token collision")
+        if not raw_dest.exists():
+            shutil.copyfile(token_file, raw_dest)
+        max_new = int(parsed[0][1])
+        expected_manifest = f"{raw_dest} {max_new}\n"
+        if manifest_dest.exists() and manifest_dest.read_text() != expected_manifest:
+            raise PersistentSupervisorError("replay provenance manifest collision")
+        manifest_dest.write_text(expected_manifest)
+        meta = {
+            "schema": "beglin-replay-provenance-v1",
+            "evidence_id": evidence_id,
+            "manifest": str(manifest_dest),
+            "raw_token_file": str(raw_dest),
+            "raw_token_sha256": token_sha,
+            "prompt_len": len(parsed[0][0]),
+            "max_new_tokens": max_new,
+            "event_count": len(events),
+            "events_sha256": __import__("hashlib").sha256(
+                json.dumps(events, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest(),
+            "production_write_allowed": False,
+        }
+        meta_path = dest / "provenance.json"
+        meta_path.write_text(json.dumps(meta, sort_keys=True, indent=2) + "\n")
+        meta["provenance_sha256"] = base._sha256_file(meta_path)
+        return meta
+
     @_precision_observation_guard("direct")
     def submit(self, parsed: list[tuple[list[int], int]]) -> dict:
         if not parsed:
@@ -912,6 +979,12 @@ class PersistentRouteWorker:
                         parsed_result["neartie_events"] = _read_neartie_events_since(
                             self.neartie_path, neartie_offset
                         )
+                        provenance = self._capture_replay_provenance(
+                            parsed=parsed, request_root=request_root,
+                            manifest=manifest, result=parsed_result,
+                        )
+                        if provenance is not None:
+                            parsed_result["replay_provenance"] = provenance
                         return parsed_result
                     time.sleep(POLL_SECONDS)
                 raise PersistentSupervisorError(
