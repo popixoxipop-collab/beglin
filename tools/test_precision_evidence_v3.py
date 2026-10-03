@@ -63,6 +63,36 @@ class EvidenceStoreTests(unittest.TestCase):
 
     @patch.object(ev, "_credentials", return_value=("https://x", "k"))
     @patch.object(ev.urllib.request, "urlopen")
+    def test_live_preflight_insert_returns_verified_row(self, urlopen, _creds):
+        urlopen.return_value = FakeResponse(json.dumps([{"id": 7, "status": "PASS"}]))
+        got = ev.insert_live_preflight({
+            "context_hash": "ctx",
+            "model_id": "m",
+            "role": "shared_up_proj",
+            "layer": 3,
+            "n": 6,
+            "baseline_policy_hash": h("1"),
+            "requested_policy_hash": h("2"),
+            "pass": True,
+            "status": "PASS",
+        })
+        self.assertEqual(got["id"], 7)
+        req = urlopen.call_args.args[0]
+        self.assertTrue(req.full_url.endswith("/rest/v1/moe_live_preflight_results_v3"))
+
+    def test_configured_requires_both_environment_values(self):
+        with patch.dict(ev.os.environ, {}, clear=True):
+            self.assertFalse(ev.configured())
+        with patch.dict(ev.os.environ, {"QWEN_SUPABASE_URL": "https://x"}, clear=True):
+            self.assertFalse(ev.configured())
+        with patch.dict(ev.os.environ, {
+            "QWEN_SUPABASE_URL": "https://x",
+            "QWEN_SUPABASE_KEY": "k",
+        }, clear=True):
+            self.assertTrue(ev.configured())
+
+    @patch.object(ev, "_credentials", return_value=("https://x", "k"))
+    @patch.object(ev.urllib.request, "urlopen")
     def test_preflight_lookup_is_context_scoped(self, urlopen, _creds):
         urlopen.return_value = FakeResponse(json.dumps([{"id": 1}]))
         got = ev.fetch_latest_preflight("ctx", "shared_down_proj", 4, 6)
