@@ -304,6 +304,49 @@ class SourceAndCompilerTests(unittest.TestCase):
                     root, backend="cpu", cpu_runtime_evidence=wrong_backend
                 )
 
+    def test_full_eligibility_requires_matching_backend_tokenizer_and_loader_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "m")
+            runtime = verification_evidence(
+                root, component="backend_runtime", backend="mlx_metal", evidence_byte="7"
+            )
+            tokenizer = verification_evidence(
+                root, component="tokenizer", evidence_byte="8"
+            )
+            loader = verification_evidence(
+                root, component="loader", evidence_byte="9"
+            )
+            bundle = mc.compile_model_capabilities(
+                root,
+                backend="mlx_metal",
+                mlx_runtime_evidence=runtime,
+                tokenizer_evidence=tokenizer,
+                loader_evidence=loader,
+            )
+            self.assertEqual(bundle["tokenizer_contract"]["status"], "IN_ENGINE_VERIFIED")
+            self.assertEqual(bundle["loader_contract"]["status"], "VERIFIED")
+            self.assertEqual(bundle["p8_p11_eligibility"]["status"], "FULL")
+            self.assertTrue(bundle["p8_p11_eligibility"]["p11_allowed"])
+            self.assertTrue(bundle["precision_search_targets"])
+            self.assertTrue(
+                all(not row["requires_validation"] for row in bundle["precision_search_targets"])
+            )
+
+    def test_loader_verification_rejects_stale_checkpoint_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "m")
+            evidence = verification_evidence(
+                root, component="loader", evidence_byte="d"
+            )
+            stale = dict(evidence)
+            stale["checkpoint_identity_sha256"] = "0" * 64
+            with self.assertRaisesRegex(
+                mc.ModelCapabilityError, "checkpoint identity mismatch"
+            ):
+                mc.compile_model_capabilities(
+                    root, loader_evidence=stale
+                )
+
     def test_olmoe_gguf_is_not_overclaimed_as_supported_loader(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "olmoe.gguf"
