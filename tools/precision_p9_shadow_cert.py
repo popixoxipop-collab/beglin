@@ -42,6 +42,7 @@ def queue_item(*,proposal:dict,provenance:dict|None)->dict:
  prov=validate_provenance(provenance)
  return {"schema":SCHEMA,"status":"READY_FOR_SHADOW","production_write_allowed":False,
          "automatic_live_promotion":False,"proposal_id":proposal["proposal_id"],"candidate":candidate,
+         "baseline_policy":pc.normalize_policy(proposal.get("current_policy") or []),
          "provenance":prov,"queue_sha256":_sha({"proposal":proposal,"provenance":prov})}
 
 def candidate_spec(*,queue:dict,event:dict,reference:dict,cwd:str,binary:str,binary_sha256:str,
@@ -49,6 +50,7 @@ def candidate_spec(*,queue:dict,event:dict,reference:dict,cwd:str,binary:str,bin
  if queue.get("status")!="READY_FOR_SHADOW": raise P9Error("queue item is not READY_FOR_SHADOW")
  c=queue["candidate"]; p=queue["provenance"]
  return {"candidate_id":c["candidate_id"],"role":c["role"],"layer":int(c["layer"]),"n":int(c["n"]),
+         "baseline_policy":pc.normalize_policy(queue.get("baseline_policy") or []),
          "event":event,"reference":reference,"prompt_len":int(p["prompt_len"]),
          "g4_manifest":p["manifest"],"g6_manifest":p["manifest"],"cwd":cwd,"binary":binary,
          "binary_sha256":binary_sha256,"checkpoint_sha256":checkpoint_sha256,"moe_base":moe_base,

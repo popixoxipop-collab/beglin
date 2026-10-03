@@ -155,6 +155,23 @@ class PlannerV3Tests(unittest.TestCase):
         self.assertEqual(got["action"], "ADMIT_ONE_TARGET_RESTART_CANARY")
         self.assertEqual(got["evidence_mode"], "isolated_restart")
 
+    def test_isolated_restart_equal_startup_epochs_are_valid_across_processes(self):
+        ctx=context()
+        baseline=[{"role":"shared_up_proj","layer":3,"n":6},{"role":"shared_down_proj","layer":26,"n":5}]
+        candidate=[{"role":"shared_up_proj","layer":3,"n":5},{"role":"shared_down_proj","layer":26,"n":5}]
+        evidence={
+            "evidence_mode":"isolated_restart","context_hash":ctx.context_hash,
+            "baseline_policy_hash":pc.policy_hash(baseline),
+            "requested_policy_hash":pc.policy_hash(candidate),
+            "applied_policy_hash":pc.policy_hash(candidate),
+            "expected_epoch":7,"status":"passed","pass":True,
+            "binary_sha256":ctx.binary_sha256,"correction_mode":"off",
+            "isolated_baseline_epoch":2,"isolated_candidate_epoch":2,
+        }
+        got=evaluate_candidate(context=ctx,current_policy=baseline,current_epoch=7,
+            role="shared_up_proj",layer=3,n=5,preflight_evidence=evidence)
+        self.assertEqual(got["action"],"ADMIT_ONE_TARGET_RESTART_CANARY")
+
     def test_isolated_restart_rejects_different_binary(self):
         ctx = context(binary="a")
         candidate = BASE + [{"role": "shared_down_proj", "layer": 4, "n": 6}]

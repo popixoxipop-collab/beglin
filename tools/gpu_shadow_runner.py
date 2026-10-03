@@ -224,7 +224,7 @@ def build_autopilot_command(
     python_bin: str,
 ):
     validate_spec(spec)
-    return [
+    command = [
         python_bin,
         str(autopilot),
         "--role",
@@ -258,6 +258,9 @@ def build_autopilot_command(
         "--control-root",
         str(control_root),
     ]
+    if "baseline_policy" in spec:
+        command.extend(["--baseline-policy-json", canonical_json(spec["baseline_policy"])])
+    return command
 
 
 def _extract_last_json(text: str):

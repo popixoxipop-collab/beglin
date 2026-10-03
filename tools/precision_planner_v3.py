@@ -92,12 +92,17 @@ def evaluate_candidate(
         if (
             baseline_iso is None
             or candidate_iso is None
-            or int(candidate_iso) <= int(baseline_iso)
+            or int(baseline_iso) < 0
+            or int(candidate_iso) <= 0
         ):
             return {
                 "action": "UNVERIFIED_EPOCH_TRANSITION",
-                "reason": "isolated restart evidence did not prove candidate startup transition",
+                "reason": "isolated restart evidence lacks valid startup policy epochs",
             }
+        # Isolated PRE/POST workers have independent epoch counters. A
+        # same-cardinality baseline and candidate legitimately report equal
+        # startup epochs. Exact baseline/requested/applied policy hashes were
+        # already checked above, so do not compare counters across processes.
         return {
             "action": "ADMIT_ONE_TARGET_RESTART_CANARY",
             "baseline_policy_hash": baseline_hash,
