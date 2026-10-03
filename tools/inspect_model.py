@@ -17,6 +17,9 @@ def _load_evidence(path):
         raise mc.ModelCapabilityError(f"evidence must be a JSON object: {p}")
     return value
 
+def _load_evidence_list(paths):
+    return [_load_evidence(path) for path in (paths or [])]
+
 def main()->int:
     ap=argparse.ArgumentParser(description='Inspect a model and compile the P12 Beglin capability bundle.')
     ap.add_argument('path')
@@ -27,6 +30,10 @@ def main()->int:
     ap.add_argument('--mlx-runtime-evidence')
     ap.add_argument('--tokenizer-evidence')
     ap.add_argument('--loader-evidence')
+    ap.add_argument('--cpu-qng64-evidence',action='append',default=[])
+    ap.add_argument('--mlx-qng64-evidence',action='append',default=[])
+    ap.add_argument('--cpu-mutation-evidence',action='append',default=[])
+    ap.add_argument('--mlx-mutation-evidence',action='append',default=[])
     ap.add_argument('--json',action='store_true')
     ap.add_argument('--target')
     args=ap.parse_args()
@@ -40,6 +47,10 @@ def main()->int:
             mlx_runtime_evidence=_load_evidence(args.mlx_runtime_evidence),
             tokenizer_evidence=_load_evidence(args.tokenizer_evidence),
             loader_evidence=_load_evidence(args.loader_evidence),
+            cpu_qng64_evidence=_load_evidence_list(args.cpu_qng64_evidence),
+            mlx_qng64_evidence=_load_evidence_list(args.mlx_qng64_evidence),
+            cpu_mutation_evidence=_load_evidence_list(args.cpu_mutation_evidence),
+            mlx_mutation_evidence=_load_evidence_list(args.mlx_mutation_evidence),
         )
     except mc.ModelCapabilityError as exc:
         print(json.dumps({'status':'ERROR','error':str(exc)},sort_keys=True),file=sys.stderr)
