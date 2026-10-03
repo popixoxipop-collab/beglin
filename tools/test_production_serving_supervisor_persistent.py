@@ -96,8 +96,8 @@ class AdaptiveTwoPassTests(unittest.TestCase):
     def test_trigger_indices_are_request_scoped_and_thresholded(self):
         events = [
             {"req": 0, "margin": 0.009},
-            {"req": 1, "margin": 0.010},
-            {"req": 2, "margin": 0.0101},
+            {"req": 1, "margin": 0.020},
+            {"req": 2, "margin": 0.0201},
             {"req": 1, "margin": 0.001},
             {"req": 99, "margin": 0.0},
             {"req": "bad", "margin": 0.0},
@@ -222,6 +222,24 @@ class AdaptiveTwoPassTests(unittest.TestCase):
             verify.assert_called_once()
             self.assertEqual(verify.call_args.kwargs["target_n"], 5)
 
+
+    def test_adaptive_prewarm_uses_two_pass_submit(self):
+        with tempfile.TemporaryDirectory() as td:
+            pool = ps.PersistentWorkerPool(Path(td), adaptive_l26=True)
+            rid = base.candidate_route()["route_id"]
+            worker = pool.workers[rid]
+            fake = {
+                "finite_logits": True,
+                "engine_wall_ms": 1.0,
+                "roundtrip_ms": 2.0,
+                "responses": [[0,0,0,0,0,0,0,0,1224,0] for _ in range(12)],
+                "neartie_events": [],
+                "adaptive_precision": {"enabled": True, "action": "RECOVERY_N6"},
+            }
+            with patch.object(worker, "submit", return_value=fake) as submit:
+                got = pool._prewarm(worker)
+            self.assertEqual(got["reference_hits"], 12)
+            submit.assert_called_once()
 
 class WorkerPoolContractTests(unittest.TestCase):
     def test_exact_two_routes_are_registered(self):
