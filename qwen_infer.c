@@ -14992,10 +14992,10 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                             fprintf(gpu_neartie_fp,
                                     "{\"kind\":\"gpu_event\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,"
                                     "\"predicted_token\":%d,\"competing_token\":%d,\"margin\":%.6f,"
-                                    "\"batch_size\":%d,\"model\":\"%s\",\"corpus\":\"%s\","
+                                    "\"threshold\":%.6f,\"batch_size\":%d,\"model\":\"%s\",\"corpus\":\"%s\","
                                     "\"backend\":\"mlx_metal\"}\n",
-                                    (long)time(NULL), r, event_pos, am, competing, margin, A,
-                                    gpu_neartie_model, gpu_neartie_corpus);
+                                    (long)time(NULL), r, event_pos, am, competing, margin,
+                                    gpu_neartie_threshold, A, gpu_neartie_model, gpu_neartie_corpus);
                             fflush(gpu_neartie_fp);
                         }
                     }
@@ -15023,10 +15023,10 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                             fprintf(gpu_neartie_fp,
                                     "{\"kind\":\"gpu_event\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,"
                                     "\"predicted_token\":%d,\"competing_token\":%d,\"margin\":%.6f,"
-                                    "\"batch_size\":%d,\"model\":\"%s\",\"corpus\":\"%s\","
+                                    "\"threshold\":%.6f,\"batch_size\":%d,\"model\":\"%s\",\"corpus\":\"%s\","
                                     "\"backend\":\"mlx_metal\"}\n",
-                                    (long)time(NULL), r, event_pos, am, competing, margin, A,
-                                    gpu_neartie_model, gpu_neartie_corpus);
+                                    (long)time(NULL), r, event_pos, am, competing, margin,
+                                    gpu_neartie_threshold, A, gpu_neartie_model, gpu_neartie_corpus);
                             fflush(gpu_neartie_fp);
                         }
                     }
