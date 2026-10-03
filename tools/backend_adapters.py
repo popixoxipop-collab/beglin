@@ -150,6 +150,32 @@ class MlxMetalBackendAdapter(BackendAdapter):
             expected_n=expected_n,
         )
 
+    def request_rebind(
+        self,
+        *,
+        txn_id: str,
+        expected_epoch: int,
+        expected_policy_hash: str,
+        role: str,
+        layer: int,
+        expected_n: int,
+        target_n: int,
+    ):
+        self._require_probe()
+        if not self._txn_path:
+            raise BackendError("mlx_metal runtime txn path not configured")
+        return grc.prepare_rebind(
+            ack_path=self._ack_path,
+            txn_path=self._txn_path,
+            txn_id=txn_id,
+            expected_epoch=expected_epoch,
+            expected_policy_hash=expected_policy_hash,
+            role=role,
+            layer=layer,
+            expected_n=expected_n,
+            target_n=target_n,
+        )
+
     def verify_runtime_txn(self, txn_id: str):
         self._require_probe()
         return grc.verify_terminal_ack(

@@ -23,8 +23,11 @@ SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_.-]+$")
 TERMINAL_STATUSES = {
     "PROMOTION_APPLIED",
     "ROLLBACK_APPLIED",
+    "REBIND_APPLIED",
+    "REBIND_FAILED",
     "STALE_COMMAND",
 }
+SUPPORTED_QNG64 = {2, 3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15}
 
 
 class RuntimeControlError(RuntimeError):
@@ -202,6 +205,76 @@ def prepare_demote(
     }
 
 
+def prepare_rebind(
+    *,
+    ack_path: str | os.PathLike,
+    txn_path: str | os.PathLike,
+    txn_id: str,
+    expected_epoch: int,
+    expected_policy_hash: str,
+    role: str,
+    layer: int,
+    expected_n: int,
+    target_n: int,
+) -> dict:
+    if not SAFE_TOKEN.fullmatch(str(txn_id)):
+        raise RuntimeControlError("txn_id contains unsupported characters")
+    if not SAFE_TOKEN.fullmatch(str(role)):
+        raise RuntimeControlError("role contains unsupported characters")
+    expected_policy_hash = _validate_sha256(
+        expected_policy_hash, "expected_policy_hash"
+    )
+    expected_epoch = int(expected_epoch)
+    layer = int(layer)
+    expected_n = int(expected_n)
+    target_n = int(target_n)
+    if expected_epoch < 0 or layer < 0:
+        raise RuntimeControlError("epoch/layer values are out of range")
+    if expected_n not in SUPPORTED_QNG64:
+        raise RuntimeControlError(f"expected_n={expected_n} is not supported qNg64")
+    if target_n not in SUPPORTED_QNG64:
+        raise RuntimeControlError(f"target_n={target_n} is not supported qNg64")
+    if target_n == expected_n:
+        raise RuntimeControlError("target_n must differ from expected_n")
+
+    ack = read_runtime_ack(ack_path)
+    if ack["weight_epoch"] != expected_epoch:
+        raise StaleRuntimeState(
+            f"runtime epoch changed: expected={expected_epoch} "
+            f"actual={ack['weight_epoch']}"
+        )
+    if ack["active_policy_hash"] != expected_policy_hash:
+        raise StaleRuntimeState(
+            "runtime policy preimage changed: "
+            f"expected={expected_policy_hash} "
+            f"actual={ack['active_policy_hash']}"
+        )
+    actual_n = _target_n(ack["active_policy"], role, layer)
+    if actual_n != expected_n:
+        raise StaleRuntimeState(
+            f"runtime target changed: {role}/L{layer} "
+            f"expected_n={expected_n} actual_n={actual_n}"
+        )
+
+    line = (
+        f"REBIND {txn_id} {expected_epoch} {expected_n} {target_n} "
+        f"{role} {layer} {expected_policy_hash}\n"
+    )
+    _atomic_text(txn_path, line)
+    return {
+        "status": "REQUESTED",
+        "backend": BACKEND,
+        "txn_id": txn_id,
+        "expected_epoch": expected_epoch,
+        "expected_policy_hash": expected_policy_hash,
+        "role": role,
+        "layer": layer,
+        "expected_n": expected_n,
+        "target_n": target_n,
+        "command": line.rstrip(),
+    }
+
+
 def verify_terminal_ack(
     *,
     ack_path: str | os.PathLike,
@@ -235,6 +308,17 @@ def main() -> int:
     p.add_argument("--layer", required=True, type=int)
     p.add_argument("--expected-n", required=True, type=int)
 
+    r = sub.add_parser("prepare-rebind")
+    r.add_argument("--ack", required=True)
+    r.add_argument("--txn-file", required=True)
+    r.add_argument("--txn-id", required=True)
+    r.add_argument("--expected-epoch", required=True, type=int)
+    r.add_argument("--expected-policy-hash", required=True)
+    r.add_argument("--role", required=True)
+    r.add_argument("--layer", required=True, type=int)
+    r.add_argument("--expected-n", required=True, type=int)
+    r.add_argument("--target-n", required=True, type=int)
+
     v = sub.add_parser("verify-ack")
     v.add_argument("--ack", required=True)
     v.add_argument("--txn-id", required=True)
@@ -251,6 +335,18 @@ def main() -> int:
                 role=args.role,
                 layer=args.layer,
                 expected_n=args.expected_n,
+            )
+        elif args.command == "prepare-rebind":
+            result = prepare_rebind(
+                ack_path=args.ack,
+                txn_path=args.txn_file,
+                txn_id=args.txn_id,
+                expected_epoch=args.expected_epoch,
+                expected_policy_hash=args.expected_policy_hash,
+                role=args.role,
+                layer=args.layer,
+                expected_n=args.expected_n,
+                target_n=args.target_n,
             )
         else:
             result = verify_terminal_ack(
