@@ -15,7 +15,6 @@ on:
       - supabase-v3-evidence-reconnect-20261003
       - quant-search-full-qng64-ladder-20261003
       - precision-allocator-v1-20261003
-      - gpu-persistent-neartie-telemetry-20261003
     paths:
       - ".github/workflows/certified-successor-regression.yml"
       - "tools/manual_canary_*.py"
