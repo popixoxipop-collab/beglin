@@ -50,6 +50,9 @@ on:
       - "mlx_moe.cpp"
       - "mlx_moe.h"
       - "tools/precision_closed_loop.py"
+      - "tools/precision_observability.py"
+      - "tools/test_gpu_precision_observability.py"
+      - "tools/precision_observability_acceptance_xox.py"
       - "tools/precision_e2e_cost.py"
       - "tools/test_gpu_precision_e2e_cost.py"
       - "tools/precision_policy_cost_optimizer.py"
@@ -114,6 +117,8 @@ jobs:
             tools/precision_risk_signals.py \
             tools/precision_risk_signal_acceptance_xox.py \
             tools/precision_closed_loop.py \
+            tools/precision_observability.py \
+            tools/precision_observability_acceptance_xox.py \
             tools/precision_e2e_cost.py \
             tools/precision_policy_cost_optimizer.py \
             tools/precision_cost_benchmark_xox.py \
