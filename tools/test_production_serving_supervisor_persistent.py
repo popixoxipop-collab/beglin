@@ -157,6 +157,18 @@ class AdaptiveTwoPassTests(unittest.TestCase):
                 worker.expected_runtime_policy_hash(),
                 worker.route["policy_hash"],
             )
+            self.assertEqual(
+                worker.expected_runtime_policy_hash(),
+                ps.ADAPTIVE_L26_STARTUP_POLICY_SHA256,
+            )
+            self.assertEqual(
+                ps.ADAPTIVE_L26_EVIDENCE_SHA256,
+                "de976ab12283673a8cf97638be9cf0b5c8f7ab3df2a0db87d4be96d9e67f6075",
+            )
+            self.assertEqual(
+                ps.ADAPTIVE_L26_REBIND_EVIDENCE_SHA256,
+                ps.ADAPTIVE_L26_EVIDENCE_SHA256,
+            )
             worker._prepare_files()
             self.assertEqual(
                 worker.promotion_path.read_text().splitlines(),
