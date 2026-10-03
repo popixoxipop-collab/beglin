@@ -444,6 +444,25 @@ class SourceAndCompilerTests(unittest.TestCase):
             self.assertEqual(bundle["loader_contract"]["status"], "UNSUPPORTED")
             self.assertEqual(bundle["p8_p11_eligibility"]["status"], "DENIED")
 
+    def test_unnamed_gguf_model_identity_is_directory_independent(self):
+        with tempfile.TemporaryDirectory() as td:
+            a=Path(td)/"a"; b=Path(td)/"b"
+            a.mkdir(); b.mkdir()
+            pa=a/"model.gguf"; pb=b/"model.gguf"
+            write_minimal_gguf(pa)
+            write_minimal_gguf(pb)
+            first=mc.compile_model_capabilities(pa)
+            second=mc.compile_model_capabilities(pb)
+            self.assertTrue(
+                first["model_id"].startswith("checkpoint-")
+            )
+            self.assertEqual(first["model_id"],second["model_id"])
+            self.assertEqual(
+                first["checkpoint_identity_sha256"],
+                second["checkpoint_identity_sha256"],
+            )
+            self.assertEqual(first["bundle_sha256"],second["bundle_sha256"])
+
     def test_missing_safetensors_shard_is_rejected(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
