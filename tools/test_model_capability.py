@@ -131,7 +131,7 @@ class ModelCapabilityTests(unittest.TestCase):
     def test_schema_files_are_valid_json_and_indexed(self):
         root=Path(__file__).resolve().parents[1]/'schemas'/'model'
         schemas=sorted(root.glob('*.schema.json'))
-        self.assertEqual(len(schemas),13)
+        self.assertEqual(len(schemas),14)
         for path in schemas:
             obj=json.loads(path.read_text())
             self.assertEqual(obj['$schema'],'https://json-schema.org/draft/2020-12/schema')
