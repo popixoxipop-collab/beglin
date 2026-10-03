@@ -185,18 +185,31 @@ def main() -> int:
     persistent.verify_persistent_artifact()
     root = validate_root(args.root)
     root.mkdir(parents=True, exist_ok=True)
-    rows = [
-        benchmark_one(
-            n, root,
-            warmups=args.warmups,
-            iterations=args.iterations,
-            batch_iterations=args.batch_iterations,
-        )
-        for n in args.n
-    ]
+    rows = []
+    unavailable = 0
+    for n in args.n:
+        try:
+            rows.append(benchmark_one(
+                n, root,
+                warmups=args.warmups,
+                iterations=args.iterations,
+                batch_iterations=args.batch_iterations,
+            ))
+        except (persistent.PersistentSupervisorError, BenchmarkError) as exc:
+            unavailable += 1
+            rows.append({
+                "role": ALLOWED_TARGET[0],
+                "layer": ALLOWED_TARGET[1],
+                "n": int(n),
+                "status": "STARTUP_UNAVAILABLE",
+                "persistent_worker": False,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "production_write_allowed": False,
+            })
     out = {
         "schema": "beglin-persistent-precision-benchmark-v1",
-        "status": "PASS",
+        "status": "PASS" if unavailable == 0 else "PARTIAL_UNAVAILABLE",
         "production_write_allowed": False,
         "production_route_manifest_touched": False,
         "target": {"role": ALLOWED_TARGET[0], "layer": ALLOWED_TARGET[1]},
