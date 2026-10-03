@@ -41,6 +41,7 @@ import sys
 import time
 
 from quant_search_n import fetch_prior_points_by_event, suffix_closed_knee, event_source_contradiction
+import backend_capabilities as bc
 
 # D-qNg64-12 (second Opus review of L3b Phase C follow-up): the file moe_promotion_nq_init()
 # actually reads is on the ENGINE's host (bob), not wherever this script runs. The original
@@ -53,12 +54,11 @@ from quant_search_n import fetch_prior_points_by_event, suffix_closed_knee, even
 # at startup and a torn write would silently truncate the whole promotion set).
 DEFAULT_PROMOTION_FILE = "/private/tmp/qng64_ctl/promotion_nq_live.txt"
 
-# D-qNg64-11: the only bit-widths the qNg64 bit-plane decoder actually supports for a real
-# deployment promotion (matches qwen_infer.c's moe_promotion_nq_init()/moe_register_hi_role()
-# hard allowlist, commit c36aadc). suffix_closed_knee() must be called with this explicit ladder
-# for real-sourced data -- NOT the sim data's historical n=2..16 range, which includes values
-# (4, 8, 9-16) this path cannot decode at all.
-REAL_LADDER = (5, 6, 7)
+# Current qNg64 deployment-capable widths come from the same backend capability
+# contract used by isolated GPU preflight. This does NOT change the conservative
+# suffix-closed writeback rule; it only prevents a stale {5,6,7} capability list
+# from hiding custom-Metal widths such as n=9..15.
+REAL_LADDER = tuple(sorted(set(bc.GPU_NATIVE_QNG64) | set(bc.GPU_CUSTOM_QNG64)))
 
 TRUSTED_SOURCE = "qng64_real"
 
