@@ -22,7 +22,7 @@ def write_safetensors(path: Path, tensors: dict[str, tuple[str, list[int]]]) -> 
     header = {}
     offset = 0
     payload = bytearray()
-    width = {"F16": 2, "BF16": 2, "F32": 4}
+    width = {"F16": 2, "BF16": 2, "F32": 4, "U32": 4}
     for name, (dtype, shape) in tensors.items():
         n = 1
         for dim in shape:
@@ -181,6 +181,75 @@ class SourceAndCompilerTests(unittest.TestCase):
             )
             self.assertEqual(bundle["p8_p11_eligibility"]["status"], "DENIED")
             self.assertFalse(bundle["p8_p11_eligibility"]["p10_allowed"])
+
+    def test_mlx_affine_quantized_safetensors_auxiliaries_are_structurally_grouped(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "mlx-q4"
+            root.mkdir(parents=True)
+            (root / "config.json").write_text(json.dumps({
+                "_name_or_path": "acme/qwen2-mlx-q4",
+                "model_type": "qwen2",
+                "hidden_size": 64,
+                "intermediate_size": 128,
+                "num_hidden_layers": 1,
+                "num_attention_heads": 8,
+                "num_key_value_heads": 2,
+                "vocab_size": 128,
+                "max_position_embeddings": 256,
+                "quantization": {"group_size": 64, "bits": 4, "mode": "affine"},
+            }, sort_keys=True))
+            (root / "tokenizer.json").write_text('{"version":"1.0"}')
+            tensors = {
+                "model.embed_tokens.weight": ("U32", [128, 8]),
+                "model.embed_tokens.scales": ("BF16", [128, 1]),
+                "model.embed_tokens.biases": ("BF16", [128, 1]),
+                "model.norm.weight": ("BF16", [64]),
+                "lm_head.weight": ("U32", [128, 8]),
+                "lm_head.scales": ("BF16", [128, 1]),
+                "lm_head.biases": ("BF16", [128, 1]),
+                "model.layers.0.self_attn.q_proj.weight": ("U32", [64, 8]),
+                "model.layers.0.self_attn.q_proj.scales": ("BF16", [64, 1]),
+                "model.layers.0.self_attn.q_proj.biases": ("BF16", [64, 1]),
+                "model.layers.0.self_attn.k_proj.weight": ("U32", [16, 8]),
+                "model.layers.0.self_attn.k_proj.scales": ("BF16", [16, 1]),
+                "model.layers.0.self_attn.k_proj.biases": ("BF16", [16, 1]),
+                "model.layers.0.self_attn.v_proj.weight": ("U32", [16, 8]),
+                "model.layers.0.self_attn.v_proj.scales": ("BF16", [16, 1]),
+                "model.layers.0.self_attn.v_proj.biases": ("BF16", [16, 1]),
+                "model.layers.0.self_attn.o_proj.weight": ("U32", [64, 8]),
+                "model.layers.0.self_attn.o_proj.scales": ("BF16", [64, 1]),
+                "model.layers.0.self_attn.o_proj.biases": ("BF16", [64, 1]),
+                "model.layers.0.mlp.gate_proj.weight": ("U32", [128, 8]),
+                "model.layers.0.mlp.gate_proj.scales": ("BF16", [128, 1]),
+                "model.layers.0.mlp.gate_proj.biases": ("BF16", [128, 1]),
+                "model.layers.0.mlp.up_proj.weight": ("U32", [128, 8]),
+                "model.layers.0.mlp.up_proj.scales": ("BF16", [128, 1]),
+                "model.layers.0.mlp.up_proj.biases": ("BF16", [128, 1]),
+                "model.layers.0.mlp.down_proj.weight": ("U32", [64, 16]),
+                "model.layers.0.mlp.down_proj.scales": ("BF16", [64, 2]),
+                "model.layers.0.mlp.down_proj.biases": ("BF16", [64, 2]),
+            }
+            write_safetensors(root / "model.safetensors", tensors)
+            bundle = mc.compile_model_capabilities(root)
+            graph = bundle["tensor_role_graph"]
+            self.assertEqual(graph["unmapped_tensor_count"], 0)
+            self.assertEqual(graph["mapping_coverage"], 1.0)
+            aux = [row for row in graph["nodes"] if row["role"] == "QUANT_AUX"]
+            self.assertTrue(aux)
+            self.assertTrue(all(row["parent_target_key"] for row in aux))
+            loader = bundle["loader_contract"]
+            self.assertEqual(loader["status"], "UNSUPPORTED")
+            self.assertEqual(
+                loader["source_quantization"]["scheme"], "MLX_AFFINE"
+            )
+            self.assertEqual(
+                loader["unsupported_reason_codes"],
+                ["SOURCE_QUANTIZATION_MLX_AFFINE_UNSUPPORTED"],
+            )
+            backend_roles = {
+                row["role"] for row in bundle["backend_capability_matrix"]["rows"]
+            }
+            self.assertNotIn("QUANT_AUX", backend_roles)
 
     def test_minimal_gguf_is_parsed_without_external_gguf_package(self):
         with tempfile.TemporaryDirectory() as td:
