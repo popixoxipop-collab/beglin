@@ -129,11 +129,11 @@ class ArtifactContractTests(unittest.TestCase):
     def test_expected_hardware_identity_is_pinned(self):
         self.assertEqual(
             ps.EXPECTED_PERSISTENT_BINARY_SHA,
-            "f6f19e0ed8c3d568cf33bd89310b121fa955fbf843b27a9bd931016b9eeab161",
+            "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9",
         )
         self.assertEqual(
             ps.EXPECTED_PERSISTENT_SOURCE_SHA,
-            "0dfc14f1a024822e8f38d24eb04b46da08ad26d4",
+            "8b46cdd38f5b39dcaeaa9d1c5dfbd9642601a30a",
         )
 
     def test_launchd_process_type_is_interactive(self):
