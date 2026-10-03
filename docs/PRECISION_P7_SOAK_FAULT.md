@@ -53,3 +53,5 @@ Fault/rotation tests include manifest write failure, reset failure after seal, m
 Regression before implementation seal: GPU suite 219/219 PASS, focused precision/supervisor/fault suite 63/63 PASS, native transition 1/1 PASS.
 
 Production after acceptance remains generation 6, route manifest `c2bf7eed2788e115af0c0cb3316fceb061000013b2bfcf57710f66d291ff4221`, baseline/candidate PIDs 35481/35493, adaptive L26 enabled and automatic promotion disabled.
+
+Certified successor regression: run `37127197730` SUCCESS on `f73891411d65be15a5de9e7496828a40d2b05d27`. The only change after that implementation+evidence state is removal of the temporary P7 branch trigger from the workflow.
