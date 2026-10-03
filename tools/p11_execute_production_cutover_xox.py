@@ -87,13 +87,17 @@ def health() -> dict:
 
 
 def supervisor_pid() -> int:
+    # Port 18765 may also be used by a separate Tailnet listener. P11 is bound
+    # only to the localhost production supervisor, so select that socket exactly.
     proc = subprocess.run(
-        ["lsof", "-nP", "-iTCP:18765", "-sTCP:LISTEN", "-t"],
+        ["lsof", "-nP", "-iTCP@127.0.0.1:18765", "-sTCP:LISTEN", "-t"],
         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=5,
     )
     pids = [int(x) for x in proc.stdout.split() if x.strip().isdigit()]
     if proc.returncode != 0 or len(pids) != 1:
-        raise P11ExecutionError(f"expected exactly one supervisor listener pid, got {pids}")
+        raise P11ExecutionError(
+            f"expected exactly one localhost supervisor listener pid, got {pids}"
+        )
     return pids[0]
 
 
