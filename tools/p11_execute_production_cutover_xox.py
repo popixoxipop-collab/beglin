@@ -30,6 +30,8 @@ EVIDENCE_ROOT = SERVING / "p11-production-approval-20261004"
 REQUEST_PATH = EVIDENCE_ROOT / "approval-request.json"
 PLAN_PATH = EVIDENCE_ROOT / "cutover-plan.json"
 PREIMAGE_PATH = EVIDENCE_ROOT / "production-preimage.json"
+PERSISTENT_BINARY = SERVING / "persistent-stage/qwen_infer_gpu"
+COMPAT_CERT = SERVING / "p11-production-binary-legacy-rebind-compat/certification.json"
 P10_RAW = (
     SERVING
     / "p8-l3-provenance-recapture-f7f7532"
@@ -140,6 +142,7 @@ def verify_approval(request: dict, plan: dict) -> dict:
         "preimage_sha256": request["preimage_sha256"],
         "p10_result_sha256": request["p10_result_sha256"],
         "executor_source_sha256": request["executor_source_sha256"],
+        "production_binary_rebind_compat_sha256": request["production_binary_rebind_compat_sha256"],
         "route_generation": request["route_generation"],
         "route_manifest_sha256": request["route_manifest_sha256"],
         "worker_pid": request["worker_pid"],
@@ -162,6 +165,13 @@ def verify_approval(request: dict, plan: dict) -> dict:
         raise P11ExecutionError("request/plan executor SHA mismatch")
     if sha_file(Path(__file__).resolve()) != request["executor_source_sha256"]:
         raise P11ExecutionError("executor source SHA differs from approved plan")
+    if plan.get("production_binary_rebind_compat_sha256") != request["production_binary_rebind_compat_sha256"]:
+        raise P11ExecutionError("request/plan compatibility SHA mismatch")
+    if sha_file(COMPAT_CERT) != request["production_binary_rebind_compat_sha256"]:
+        raise P11ExecutionError("production binary compatibility evidence SHA mismatch")
+    compat = read_json(COMPAT_CERT)
+    if compat.get("status") != "PASS" or compat.get("persistent_binary_sha256") != sha_file(PERSISTENT_BINARY):
+        raise P11ExecutionError("production binary compatibility evidence is stale")
 
     now = datetime.now(timezone.utc)
     issued = datetime.fromisoformat(approval["issued_at"].replace("Z", "+00:00"))
@@ -297,28 +307,22 @@ def rollback_if_needed(*, approval: dict, request: dict, tokens: list[int]) -> d
             + str(ack["active_policy_hash"])
         )
     rollback_txn = "p11-rollback-" + approval["nonce"]
-    requested = grc.prepare_rebind_set(
+    requested = grc.prepare_rebind(
         ack_path=ACK_PATH,
         txn_path=TXN_PATH,
         txn_id=rollback_txn,
         expected_epoch=int(ack["weight_epoch"]),
         expected_policy_hash=p11.TARGET_POLICY_HASH,
-        changes=[
-            {
-                "role": "shared_up_proj",
-                "layer": 3,
-                "expected_n": 5,
-                "target_n": 6,
-            }
-        ],
+        role="shared_up_proj",
+        layer=3,
+        expected_n=5,
+        target_n=6,
     )
-    if requested["target_policy_hash"] != p11.BASELINE_POLICY_HASH:
-        raise P11ExecutionError("rollback target policy hash mismatch")
     result = direct_admission(tokens)
     terminal = grc.verify_terminal_ack(
         ack_path=ACK_PATH,
         txn_id=rollback_txn,
-        allowed_statuses={"REBIND_SET_APPLIED"},
+        allowed_statuses={"REBIND_APPLIED"},
     )
     if terminal["active_policy_hash"] != p11.BASELINE_POLICY_HASH:
         raise P11ExecutionError("rollback terminal policy mismatch")
@@ -372,23 +376,27 @@ def execute() -> dict:
     txn_id = "p11-prod-" + approval["nonce"]
     published = False
     try:
-        requested = grc.prepare_rebind_set(
+        change = plan["target"]["changes"]
+        if change != [{"role":"shared_up_proj","layer":3,"expected_n":6,"target_n":5}]:
+            raise P11ExecutionError("approved cutover is not the exact single L3 6->5 target")
+        requested = grc.prepare_rebind(
             ack_path=ACK_PATH,
             txn_path=TXN_PATH,
             txn_id=txn_id,
             expected_epoch=int(request["weight_epoch"]),
             expected_policy_hash=p11.BASELINE_POLICY_HASH,
-            changes=plan["target"]["changes"],
+            role="shared_up_proj",
+            layer=3,
+            expected_n=6,
+            target_n=5,
         )
         published = True
-        if requested["target_policy_hash"] != p11.TARGET_POLICY_HASH:
-            raise P11ExecutionError("cutover target policy hash mismatch")
 
         result = direct_admission(tokens)
         terminal = grc.verify_terminal_ack(
             ack_path=ACK_PATH,
             txn_id=txn_id,
-            allowed_statuses={"REBIND_SET_APPLIED"},
+            allowed_statuses={"REBIND_APPLIED"},
         )
         if int(terminal["weight_epoch"]) != int(request["weight_epoch"]) + 1:
             raise P11ExecutionError("cutover did not advance exactly one epoch")

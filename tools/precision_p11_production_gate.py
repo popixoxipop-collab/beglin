@@ -90,7 +90,7 @@ def build_preimage(
     ack: Mapping[str, Any],
     ack_file_sha256: str,
     txn_text: str,
-    txn_file_sha256: str,
+    txn_file_sha256: str | None,
     persistent_binary_sha256: str,
     p10_evidence: Mapping[str, Any],
 ) -> dict:
@@ -138,10 +138,19 @@ def build_preimage(
     if worker.get("ack_sha256") != ack_sha:
         raise P11Error("runtime ACK identity mismatch")
 
-    txn = str(txn_text).strip()
-    parts = txn.split()
-    if len(parts) < 2 or str(ack.get("txn_id") or "") != parts[1]:
-        raise P11Error("last transaction does not match terminal ACK")
+    txn = str(txn_text or "").strip()
+    ack_txn_id = str(ack.get("txn_id") or "")
+    if not ack_txn_id:
+        raise P11Error("terminal ACK txn_id is empty")
+    if txn:
+        parts = txn.split()
+        if len(parts) < 2 or ack_txn_id != parts[1]:
+            raise P11Error("last transaction does not match terminal ACK")
+        txn_file_present = True
+        txn_file_hash = require_sha("txn file", txn_file_sha256)
+    else:
+        txn_file_present = False
+        txn_file_hash = None
 
     preimage = {
         "schema": PREIMAGE_SCHEMA,
@@ -164,8 +173,9 @@ def build_preimage(
             "runtime_policy_hash": BASELINE_POLICY_HASH,
             "ack_sha256": ack_sha,
             "ack_file_sha256": require_sha("ack file", ack_file_sha256),
-            "last_txn_id": parts[1],
-            "last_txn_file_sha256": require_sha("txn file", txn_file_sha256),
+            "last_txn_id": ack_txn_id,
+            "last_txn_file_present": txn_file_present,
+            "last_txn_file_sha256": txn_file_hash,
         },
         "p10_evidence": dict(p10_evidence),
     }
@@ -173,7 +183,10 @@ def build_preimage(
     return preimage
 
 
-def build_plan(preimage: Mapping[str, Any], *, executor_source_sha256: str) -> dict:
+def build_plan(
+    preimage: Mapping[str, Any], *, executor_source_sha256: str,
+    production_binary_rebind_compat_sha256: str,
+) -> dict:
     if preimage.get("schema") != PREIMAGE_SCHEMA:
         raise P11Error("unexpected preimage schema")
     check = dict(preimage)
@@ -183,6 +196,9 @@ def build_plan(preimage: Mapping[str, Any], *, executor_source_sha256: str) -> d
     worker = preimage["worker"]
     p10 = preimage["p10_evidence"]
     executor_source_sha256 = require_sha("executor source", executor_source_sha256)
+    production_binary_rebind_compat_sha256 = require_sha(
+        "production binary rebind compat", production_binary_rebind_compat_sha256
+    )
     expected_epoch = int(worker["weight_epoch"])
     plan = {
         "schema": PLAN_SCHEMA,
@@ -194,7 +210,8 @@ def build_plan(preimage: Mapping[str, Any], *, executor_source_sha256: str) -> d
         "preimage_sha256": expected_preimage_sha,
         "p10_result_sha256": p10["p10_result_sha256"],
         "executor_source_sha256": executor_source_sha256,
-        "evidence": dict(p10),
+        "production_binary_rebind_compat_sha256": production_binary_rebind_compat_sha256,
+        "evidence": {**dict(p10), "production_binary_rebind_compat_sha256": production_binary_rebind_compat_sha256},
         "expected_live_preimage": {
             "route_generation": int(preimage["route_generation"]),
             "route_manifest_sha256": preimage["route_manifest_sha256"],
@@ -218,7 +235,8 @@ def build_plan(preimage: Mapping[str, Any], *, executor_source_sha256: str) -> d
             }],
         },
         "execution_contract": {
-            "kind": "single_worker_precision_epoch_rebind",
+            "kind": "single_worker_legacy_rebind",
+            "runtime_command": "REBIND",
             "trusted_approval_required": True,
             "recapture_exact_preimage_before_any_write": True,
             "quiescent_boundary_required": True,
@@ -250,6 +268,7 @@ def build_approval_request(plan: Mapping[str, Any]) -> dict:
         "preimage_sha256": plan["preimage_sha256"],
         "p10_result_sha256": plan["p10_result_sha256"],
         "executor_source_sha256": plan["executor_source_sha256"],
+        "production_binary_rebind_compat_sha256": plan["production_binary_rebind_compat_sha256"],
         "route_generation": int(expected["route_generation"]),
         "route_manifest_sha256": expected["route_manifest_sha256"],
         "worker_pid": int(expected["worker_pid"]),

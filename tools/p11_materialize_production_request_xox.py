@@ -24,6 +24,7 @@ TXN = Path("/Users/xox/vdsp_serving/persistent-workers/candidate/txn.cmd")
 PERSISTENT_BINARY = Path("/Users/xox/vdsp_serving/persistent-stage/qwen_infer_gpu")
 HEALTH_URL = "http://127.0.0.1:18765/healthz"
 EXECUTOR = Path(__file__).resolve().parent / "p11_execute_production_cutover_xox.py"
+COMPAT_CERT = Path("/Users/xox/vdsp_serving/p11-production-binary-legacy-rebind-compat/certification.json")
 
 
 def sha_file(path: Path) -> str:
@@ -78,7 +79,8 @@ def main() -> int:
 
     manifest = json.loads(MANIFEST.read_text())
     ack = grc.read_runtime_ack(ACK)
-    txn_text = TXN.read_text()
+    txn_text = TXN.read_text() if TXN.is_file() else ""
+    txn_file_sha256 = sha_file(TXN) if TXN.is_file() else None
     captured_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     preimage = p11.build_preimage(
@@ -89,12 +91,29 @@ def main() -> int:
         ack=ack,
         ack_file_sha256=sha_file(ACK),
         txn_text=txn_text,
-        txn_file_sha256=sha_file(TXN),
+        txn_file_sha256=txn_file_sha256,
         persistent_binary_sha256=sha_file(PERSISTENT_BINARY),
         p10_evidence=p10_evidence,
     )
     executor_source_sha256 = sha_file(EXECUTOR)
-    plan = p11.build_plan(preimage, executor_source_sha256=executor_source_sha256)
+    compat = json.loads(COMPAT_CERT.read_text())
+    if compat.get("status") != "PASS" or compat.get("production_touched") is not False:
+        raise p11.P11Error("production binary legacy REBIND compatibility evidence is not PASS")
+    if compat.get("persistent_binary_sha256") != sha_file(PERSISTENT_BINARY):
+        raise p11.P11Error("compatibility evidence binary SHA differs from production binary")
+    if compat.get("baseline_policy_hash") != p11.BASELINE_POLICY_HASH:
+        raise p11.P11Error("compatibility evidence baseline policy mismatch")
+    if compat.get("cutover_policy_hash") != p11.TARGET_POLICY_HASH:
+        raise p11.P11Error("compatibility evidence cutover policy mismatch")
+    if compat.get("rollback_policy_hash") != p11.BASELINE_POLICY_HASH:
+        raise p11.P11Error("compatibility evidence rollback policy mismatch")
+    if compat.get("baseline_response") != [55222, 372] or compat.get("cutover_response") != [55222, 1] or compat.get("rollback_response") != [55222, 372]:
+        raise p11.P11Error("compatibility evidence reference response mismatch")
+    compat_sha256 = sha_file(COMPAT_CERT)
+    plan = p11.build_plan(
+        preimage, executor_source_sha256=executor_source_sha256,
+        production_binary_rebind_compat_sha256=compat_sha256,
+    )
     approval_request = p11.build_approval_request(plan)
 
     after = get_health()
@@ -121,6 +140,7 @@ def main() -> int:
         "approval_request_sha256": approval_request["approval_request_sha256"],
         "p10_result_sha256": p10_evidence["p10_result_sha256"],
         "executor_source_sha256": executor_source_sha256,
+        "production_binary_rebind_compat_sha256": compat_sha256,
         "expected_worker_pid": plan["expected_live_preimage"]["worker_pid"],
         "expected_weight_epoch": plan["expected_live_preimage"]["weight_epoch"],
         "expected_after_epoch": plan["target"]["expected_after_epoch"],

@@ -23,9 +23,9 @@ jobs:
         env:
           EXPECTED_ACTOR: popixoxipop-collab
           EXPECTED_ACTOR_ID: "261965176"
-          EXPECTED_REQUEST_SHA: a9803c662dd9c69e81fc486554eeb8b17c08f992619ecc28356cd40d2428c8e7
-          EXPECTED_PLAN_SHA: 268442999b5e414f0badc651818ee5a5c1b5f79b96e7624495824434778c33ef
-          EXPECTED_PREIMAGE_SHA: 02d84b6d831b7e6ab02c99e5165e3ee6b78b3c67f9e9189c1b982538b93b244a
+          EXPECTED_REQUEST_SHA: 32924415798a4ea71be8b9d129e8f942f490575d16f4b4e49c9b469682f386ac
+          EXPECTED_PLAN_SHA: ba0c1e9fbed86bd9d5a7f150e19c69c57363bbf03d5a72bd5ab21a1de224cd0c
+          EXPECTED_PREIMAGE_SHA: c0cc1d39208198aa6dc58c77ec9cad5d874cd03b6c6b51fa3b1019a959b87a5a
           EXPECTED_P10_SHA: 9c9c809097d18d735855f09bd85016272a319087501d160873f52985669f2fff
           EXPECTED_ROUTE_GENERATION: "6"
           EXPECTED_ROUTE_MANIFEST_SHA: c2bf7eed2788e115af0c0cb3316fceb061000013b2bfcf57710f66d291ff4221
@@ -33,7 +33,8 @@ jobs:
           EXPECTED_WEIGHT_EPOCH: "8"
           EXPECTED_ACK_SHA: bfbaa5bb91e30946b1034785ab1520abb76bf9c98c10b1b0305a6ef28dfd0681
           EXPECTED_CANDIDATE_POLICY_SHA: b58064ae93c3550c5ca5fccab83c9976268370d559b8602f3d91772cb9ac82bd
-          EXPECTED_EXECUTOR_SHA: cba845ccaa5df18d37fdc9f800c23d19896256d201550ddaf1b86c1660e7a766
+          EXPECTED_EXECUTOR_SHA: ea55b9f0aad1573f759ce6df8d54ba7d366ab0fc23de77681c451d2936939b44
+          EXPECTED_COMPAT_SHA: 026c88a3ba39f4cada099b09583c6fc0a8d440a1c38a4348a87844d99f513958
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -67,6 +68,7 @@ jobs:
           assert obj["ack_sha256"] == os.environ["EXPECTED_ACK_SHA"]
           assert obj["candidate_policy_hash"] == os.environ["EXPECTED_CANDIDATE_POLICY_SHA"]
           assert obj["executor_source_sha256"] == os.environ["EXPECTED_EXECUTOR_SHA"]
+          assert obj["production_binary_rebind_compat_sha256"] == os.environ["EXPECTED_COMPAT_SHA"]
 
           assert obj["one_shot_precision_cutover_allowed"] is True
           assert obj["automatic_live_promotion"] is False
