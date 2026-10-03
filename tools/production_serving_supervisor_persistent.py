@@ -144,6 +144,7 @@ class PersistentRouteWorker:
         self.ack_path = self.root / "applied_ack.json"
         self.txn_path = self.root / "txn.cmd"
         self.log_path = self.root / "worker.log"
+        self.neartie_path = self.root / "neartie.jsonl"
         self.proc: subprocess.Popen | None = None
         self.log_handle = None
         self.ack: dict | None = None
@@ -171,6 +172,7 @@ class PersistentRouteWorker:
             self.txn_path.unlink()
         except FileNotFoundError:
             pass
+        self.neartie_path.write_text("")
 
     def _env(self) -> dict[str, str]:
         env = base._minimal_env()
@@ -186,6 +188,11 @@ class PersistentRouteWorker:
             "QWEN_MOE_PROMOTION_FILE_NQ": str(self.promotion_path),
             "QWEN_MOE_PROMOTION_SAFETENSORS": str(base.SAFETENSORS),
             "QWEN_MOE_GPU_PERSISTENT_DIR": str(self.queue_dir),
+            "QWEN_MOE_NEARTIE_LOG": "1",
+            "QWEN_MOE_NEARTIE_THRESHOLD": "0.01",
+            "QWEN_MOE_NEARTIE_EVENTS_LOG": str(self.neartie_path),
+            "QWEN_MOE_NEARTIE_MODEL": "deepseek-v2-lite",
+            "QWEN_MOE_NEARTIE_CORPUS": "production-persistent",
         })
         return env
 
@@ -276,6 +283,7 @@ class PersistentRouteWorker:
             request_tmp.write_text(
                 f"BEGLIN_GPU_PERSISTENT_REQUEST_V1 {request_id} {manifest} {result_path}\n"
             )
+            neartie_offset = self.neartie_path.stat().st_size if self.neartie_path.exists() else 0
             started = time.monotonic()
             os.replace(request_tmp, request_ready)
             deadline = time.time() + REQUEST_TIMEOUT_SECONDS
@@ -293,6 +301,21 @@ class PersistentRouteWorker:
                             expected_requests=len(parsed),
                         )
                         parsed_result["roundtrip_ms"] = roundtrip_ms
+                        events = []
+                        if self.neartie_path.exists():
+                            with self.neartie_path.open("r", encoding="utf-8") as handle:
+                                handle.seek(neartie_offset)
+                                for raw in handle:
+                                    raw = raw.strip()
+                                    if not raw:
+                                        continue
+                                    try:
+                                        row = json.loads(raw)
+                                    except json.JSONDecodeError:
+                                        continue
+                                    if row.get("kind") == "event":
+                                        events.append(row)
+                        parsed_result["neartie_events"] = events
                         return parsed_result
                     time.sleep(POLL_SECONDS)
                 raise PersistentSupervisorError(
@@ -458,6 +481,7 @@ class PersistentEngineExecutor:
                 "route": snapshot["route"],
                 "worker_instance_id": f"pid-{h['pid']}",
                 "worker_ack_sha256": h["ack_sha256"],
+                "neartie_events": result.get("neartie_events", []),
                 "worker_epoch": h["weight_epoch"],
                 "finite_logits": True,
                 "duration_ms": max(1, int((time.monotonic() - started) * 1000)),
