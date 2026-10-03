@@ -1,0 +1,20 @@
+{
+  "automatic_live_promotion": false,
+  "candidate_policy_hash": "b58064ae93c3550c5ca5fccab83c9976268370d559b8602f3d91772cb9ac82bd",
+  "cutover_plan_sha256": "43b7bbfb659639cf442bc97b5e328d2ec8d25ddb97e3179a646224f738e81443",
+  "preimage_sha256": "4dca9b7ac12c387df07573f740a2dac06c0e20df3963afe14abcbdd8a9522e7c",
+  "production_write_allowed": false,
+  "requested_action": "APPLY_SINGLE_TARGET_REBIND",
+  "required_approval": {
+    "automatic_live_promotion": false,
+    "cutover_plan_sha256": "43b7bbfb659639cf442bc97b5e328d2ec8d25ddb97e3179a646224f738e81443",
+    "preimage_sha256": "4dca9b7ac12c387df07573f740a2dac06c0e20df3963afe14abcbdd8a9522e7c",
+    "production_precision_write_allowed": true,
+    "schema": "beglin-p10-production-precision-approval-v1",
+    "status": "VERIFIED_GITHUB_OIDC"
+  },
+  "rollback_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+  "schema": "beglin-p10-production-precision-approval-request-v1",
+  "status": "AWAITING_TRUSTED_PRODUCTION_APPROVAL",
+  "target": {"after_n": 5, "before_n": 6, "layer": 3, "role": "shared_up_proj"}
+}
