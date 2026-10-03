@@ -224,6 +224,31 @@ class AdaptiveTwoPassTests(unittest.TestCase):
             self.assertEqual(verify.call_args.kwargs["target_n"], 5)
 
 
+class AdaptivePrewarmTests(unittest.TestCase):
+    def test_prewarm_uses_adaptive_recovery_not_raw_base(self):
+        pool = ps.PersistentWorkerPool(adaptive_l26=True)
+        worker = pool.workers[base.candidate_route()["route_id"]]
+        fake = {
+            "finite_logits": True,
+            "engine_wall_ms": 7.0,
+            "roundtrip_ms": 8.0,
+            "responses": [[0] * 8 + [1224, 0] for _ in range(12)],
+            "neartie_events": [],
+            "adaptive_precision": {
+                "enabled": True,
+                "action": "RECOVERY_N6",
+                "trigger_request_indices": list(range(12)),
+            },
+        }
+        with patch.object(worker, "submit", return_value=fake) as submit, patch.object(
+            worker, "submit_base"
+        ) as submit_base, patch.object(worker, "health", return_value={"pid": 123}):
+            got = pool._prewarm(worker)
+        self.assertEqual(got["reference_hits"], 12)
+        submit.assert_called_once()
+        submit_base.assert_not_called()
+
+
 class WorkerPoolContractTests(unittest.TestCase):
     def test_exact_two_routes_are_registered(self):
         pool = ps.PersistentWorkerPool()
