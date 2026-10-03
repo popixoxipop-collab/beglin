@@ -1235,7 +1235,10 @@ def build_loader_contract(
                 "bits": 4,
                 "group_size": 64,
                 "mode": "affine",
-                "status": "RECOGNIZED_UNSUPPORTED",
+                "status": (
+                    "VERIFIED" if evidence is not None
+                    else "IMPLEMENTED_UNVERIFIED"
+                ),
             }
     if fmt == "GGUF":
         supported_arch = arch in GGUF_SUPPORTED_ARCH
@@ -1260,8 +1263,8 @@ def build_loader_contract(
     else:
         supported_arch = False
         unsupported_formats = encountered
-    if source_quantization is not None:
-        status = "UNSUPPORTED"
+    if source_quantization is not None and supported_arch and not unsupported_formats:
+        status = "VERIFIED" if evidence is not None else "IMPLEMENTED_UNVERIFIED"
     elif supported_arch and not unsupported_formats:
         status = "VERIFIED" if evidence is not None else "IMPLEMENTED_UNVERIFIED"
     else:
@@ -1278,8 +1281,8 @@ def build_loader_contract(
         "unsupported_formats": unsupported_formats,
         "source_quantization": source_quantization,
         "unsupported_reason_codes": (
-            ["SOURCE_QUANTIZATION_MLX_AFFINE_UNSUPPORTED"]
-            if source_quantization is not None else []
+            ["SOURCE_QUANTIZATION_MLX_AFFINE_REQUIRES_VERIFICATION"]
+            if source_quantization is not None and evidence is None else []
         ),
         "verification_evidence": evidence,
         "silent_dense_fallback_allowed": False,
