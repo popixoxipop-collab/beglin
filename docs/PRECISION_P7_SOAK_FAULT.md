@@ -55,3 +55,27 @@ Regression before implementation seal: GPU suite 219/219 PASS, focused precision
 Production after acceptance remains generation 6, route manifest `c2bf7eed2788e115af0c0cb3316fceb061000013b2bfcf57710f66d291ff4221`, baseline/candidate PIDs 35481/35493, adaptive L26 enabled and automatic promotion disabled.
 
 Certified successor regression: run `37127197730` SUCCESS on `f73891411d65be15a5de9e7496828a40d2b05d27`. The only change after that implementation+evidence state is removal of the temporary P7 branch trigger from the workflow.
+
+## Extended 300-admission soak
+
+A longer post-merge isolated soak was run from source `fd05cd328b9436f495eb01401bfb7ec24ff79909` using the same certified P7 native binary and cost evidence. Production was not modified.
+
+Evidence:
+- `/Users/xox/vdsp_serving/precision-p7-soak-300-20261003/result.json`
+- SHA-256 `ed453333e55c52fdaf727a10eec4fd654ac8b5b78c4a98bac4c2edd50336a749`
+
+Measured result:
+- 300/300 successful admissions on one isolated worker PID;
+- 150 closed-loop, 100 explicit-policy and 50 adaptive admissions;
+- 200 transition admissions, 100 low-margin trigger admissions;
+- cache hits/misses 298/2 = 99.33% hit rate after warm materialization;
+- cache bytes added stayed bounded at 8,650,752 bytes;
+- resident qNg64 cache current/max stayed bounded at 17,301,504 bytes;
+- inference passes: 250 one-pass, 50 two-pass;
+- finite logits 300/300;
+- 29 sealed 10-record segments retained and replayed;
+- restart summary exactly equaled the pre-restart aggregate;
+- final scratch policy restored to startup policy;
+- production pre/post identity unchanged.
+
+This is an accelerated 300-admission soak, not a multi-hour or multi-day endurance claim. The next endurance gate should add wall-clock duration and explicit worker/ACK fault injection in addition to the already-covered journal/manifest faults.
