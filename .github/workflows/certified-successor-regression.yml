@@ -11,6 +11,7 @@ on:
       - production-serving-supervisor-20261002
       - persistent-gpu-serving-20261003
       - persistent-serving-interactive-launchd-20261003
+      - supabase-v3-evidence-reconnect-20261003
     paths:
       - ".github/workflows/certified-successor-regression.yml"
       - "tools/manual_canary_*.py"
