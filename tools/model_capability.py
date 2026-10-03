@@ -492,13 +492,18 @@ def inspect_model_source(path: str | Path) -> dict:
          for r in records]
     )
 
+    explicit_model_id = (
+        Path(str(config.get("_name_or_path"))).name
+        if config.get("_name_or_path")
+        else str(metadata.get("general.name") or "")
+    )
+    stable_model_id = explicit_model_id or (
+        "checkpoint-" + checkpoint_identity_sha256[:16]
+    )
+
     manifest = {
         "schema": "beglin-model-source-v1",
-        "model_id": (
-            Path(str(config.get("_name_or_path"))).name
-            if config.get("_name_or_path")
-            else str(metadata.get("general.name") or root.name)
-        ),
+        "model_id": stable_model_id,
         "model_revision": str(config.get("_commit_hash") or ""),
         "source_format": source_format,
         "root_path": str(root),
