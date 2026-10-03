@@ -203,6 +203,71 @@ class PipelineBridgeTests(unittest.TestCase):
                 provenance_evidence_sha256="e" * 64,
             )
 
+    def test_non_deepseek_full_bundle_reaches_p11_capability_preimage(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "qwen-full")
+            source = mc.inspect_model_source(root)
+            descriptor = mc.build_architecture_descriptor(source)
+
+            def evidence(component, marker, backend=None):
+                row = {
+                    "schema": mc.VERIFICATION_EVIDENCE_SCHEMA,
+                    "status": "VERIFIED",
+                    "component": component,
+                    "architecture_id": descriptor["architecture_id"],
+                    "checkpoint_identity_sha256": source["checkpoint_identity_sha256"],
+                    "evidence_sha256": marker * 64,
+                    "run_id": f"p12-full-{component}",
+                    "kind": "TEST_RUNTIME_EVIDENCE",
+                }
+                if backend is not None:
+                    row["backend"] = backend
+                return row
+
+            bundle = mc.compile_model_capabilities(
+                root,
+                backend="mlx_metal",
+                mlx_runtime_evidence=evidence(
+                    "backend_runtime", "4", backend="mlx_metal"
+                ),
+                tokenizer_evidence=evidence("tokenizer", "5"),
+                loader_evidence=evidence("loader", "6"),
+            )
+            self.assertEqual(bundle["p8_p11_eligibility"]["status"], "FULL")
+            target = self.q_target(bundle)
+            p8 = bridge.bind_p8_target(
+                bundle, target_key=target, backend="mlx_metal", requested_n=5
+            )
+            p9 = bridge.bind_p9_certification(
+                bundle, p8_binding=p8, provenance_evidence_sha256="7" * 64
+            )
+            p10 = bridge.select_p10_canary(bundle, p9_binding=p9)
+            self.assertEqual(p10["status"], "READY_FOR_P10_CANARY")
+            self.assertEqual(
+                p10["canary_strategy"], "SAME_WORKER_PRECISION_CANARY"
+            )
+            p11 = bridge.build_p11_capability_preimage(
+                bundle,
+                p10_binding=p10,
+                runtime_state={
+                    "model_capability_bundle_sha256": bundle["bundle_sha256"],
+                    "checkpoint_identity_sha256": bundle[
+                        "checkpoint_identity_sha256"
+                    ],
+                    "backend": "mlx_metal",
+                    "target_key": target,
+                    "worker_pid": 1234,
+                    "weight_epoch": 9,
+                },
+            )
+            self.assertEqual(
+                p11["status"], "AWAITING_TRUSTED_PRODUCTION_APPROVAL"
+            )
+            self.assertFalse(p11["production_cutover_allowed"])
+            self.assertEqual(
+                p11["model_capability_bundle_sha256"], bundle["bundle_sha256"]
+            )
+
     def test_partial_bundle_cannot_materialize_p11_preimage(self):
         bundle = self.bundle(mlx_verified=True)
         target = self.q_target(bundle)
