@@ -136,6 +136,28 @@ class CapabilityBridgeTests(unittest.TestCase):
         self.assertEqual(final["model_capability_bundle_sha256"],bundle["bundle_sha256"])
         self.assertEqual(final["capability_target_key"],"synthetic/L3/shared_up")
 
+    def test_p9_certification_rejects_shadow_from_other_capability_bundle(self):
+        bundle=capability_bundle()
+        proposal=p8.propose(
+            candidates=CANDS,current_policy=CURRENT,lineage_summary=SUMMARY,
+            p7_certification=P7,model_capability_bundle=bundle)
+        candidate=p8.shadow_candidate(proposal)
+        repeated={
+            "shadow_status":"SHADOW_ADMITTED",
+            "production_write_allowed":False,
+            "automatic_live_promotion":False,
+            "candidate":candidate,
+            "result_sha256":"d"*64,
+            "repeats":2,
+            "statuses":["SHADOW_ADMITTED","SHADOW_ADMITTED"],
+            "model_capability_bundle_sha256":"f"*64,
+            "capability_target_key":proposal["capability_target_key"],
+            "capability_backend":proposal["capability_backend"],
+        }
+        with self.assertRaisesRegex(p9.P9Error,"capability lineage mismatch"):
+            p9.certification_bundle(
+                proposal=proposal,repeated_shadow=repeated)
+
     def test_p11_approval_request_carries_optional_lineage(self):
         bundle=capability_bundle()
         plan={
