@@ -105,3 +105,43 @@ Certified successor regression:
 - run 37125908837
 - head 4faab46dc6a44c5f41df2745d03976e16e05b305
 - conclusion SUCCESS
+
+## Exact-source XOX acceptance
+Implementation commit:
+4faab46dc6a44c5f41df2745d03976e16e05b305
+
+Fresh cost evidence:
+/Users/xox/vdsp_shadow_runs/precision_e2e_cost/p6-observability-4faab46/result.json
+SHA-256:
+d0a7f12d58a9b18090717b75a16669364927f7bb39e8724106cb178b400754ff
+
+P6 acceptance:
+/Users/xox/vdsp_serving/precision-observability-acceptance-4faab46/result.json
+SHA-256:
+696315c359b5c0ffce00903d2160c17c84659320fb8a1e261b9d107ac1dca8dc
+
+Observed lineage:
+- 6 admissions / 6 requests on one scratch worker lineage
+- 6/6 observability records RECORDED
+- low_margin trigger count 2, trigger rate 1/3
+- 4 transitioned admissions
+- cache hits 4, misses 2, hit rate 2/3
+- 8,650,752 cache bytes materialized
+- inference-pass histogram: 1 pass x5, 2 passes x1
+- extra-pass rate 1/6
+- finite-logit rate 100%
+- exact-policy and role/layer/n residency shares recorded
+- adaptive L26 evidence and closed-loop L26 evidence both appear in evidence-use counts
+- final scratch state restored to reviewed startup policy
+- production_touched=false
+
+Lineage JSONL SHA-256:
+14a06b51c2b0ecf3fe955918247bb3a68d305b229b877b5d089d64c5e30f4fa8
+
+Summary snapshot SHA-256:
+f6368eb4b4206cb9c80db998224be85d8344ccb642295f247ee5c3788f4e0f08
+
+Certified successor regression:
+- run 37125908837
+- head 4faab46dc6a44c5f41df2745d03976e16e05b305
+- conclusion SUCCESS
