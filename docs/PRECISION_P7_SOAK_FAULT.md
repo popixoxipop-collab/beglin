@@ -191,3 +191,9 @@ jobs:
           python tools/test_backend_capabilities.py
       - name: Full successor diff check
         run: git diff --check 330954b27f146b8a17db2cb353c3e620968bad5e...HEAD
+
+Final certification CI:
+- run 37129718206
+- head 9de9a02feff47467d47d7cd6a02f16dc961cf877
+- conclusion SUCCESS
+- the only subsequent branch change removes the temporary CI trigger.
