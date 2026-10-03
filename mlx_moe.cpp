@@ -2135,6 +2135,35 @@ static mx::array *g_cbatch_x = nullptr;
 static int g_cbatch_A = 0;
 static int g_cbatch_layers_done = 0;
 
+// P5: calibration-only router ambiguity capture. A slot records the largest
+// next-unselected/kth-selected softmax ratio observed across MoE layers in the
+// current cbatch step. 1.0 is maximally ambiguous; lower is clearer.
+static int g_risk_signal_telemetry_on = 0;
+static float g_risk_route_score[64] = {0};
+static int g_risk_route_layer[64] = {0};
+static float g_risk_route_selected[64] = {0};
+static float g_risk_route_next[64] = {0};
+
+int mlx_gpu_risk_signal_telemetry_set(int enabled) {
+    if (!mlx_gpu_available()) return 0;
+    g_risk_signal_telemetry_on = enabled ? 1 : 0;
+    for (int s = 0; s < 64; s++) {
+        g_risk_route_score[s] = 0.0f; g_risk_route_layer[s] = -1;
+        g_risk_route_selected[s] = 0.0f; g_risk_route_next[s] = 0.0f;
+    }
+    return 1;
+}
+
+int mlx_gpu_risk_signal_telemetry_get(int slot, float *score, int *layer,
+                                       float *selected_boundary, float *next_boundary) {
+    if (slot < 0 || slot >= 64) return 0;
+    if (score) *score = g_risk_route_score[slot];
+    if (layer) *layer = g_risk_route_layer[slot];
+    if (selected_boundary) *selected_boundary = g_risk_route_selected[slot];
+    if (next_boundary) *next_boundary = g_risk_route_next[slot];
+    return 1;
+}
+
 int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spos, int is_dense,
                                     const float *x_in_host, const float *w_inln,
                                     const float *w_postln, const float *w_kvaln,
@@ -2158,6 +2187,14 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
             delete g_cbatch_x;
             g_cbatch_x = new mx::array(wrap_host_f32(x_in_host, {A, HIDDEN}));
             g_cbatch_A = A; g_cbatch_layers_done = 0;
+            if (g_risk_signal_telemetry_on) {
+                for (int m = 0; m < A; m++) {
+                    int s = slot[m];
+                    if (s < 0 || s >= 64) return 0;
+                    g_risk_route_score[s] = 0.0f; g_risk_route_layer[s] = -1;
+                    g_risk_route_selected[s] = 0.0f; g_risk_route_next[s] = 0.0f;
+                }
+            }
         }
         if (g_cbatch_A != A || g_cbatch_layers_done != l) return 0;
 
@@ -2264,6 +2301,35 @@ int mlx_gpu_cbatch_layer_step_lazy(int l, int A, const int *slot, const int *spo
             mx::array w_gate_arr = wrap_host_f32(w_gate, {NE, HIDDEN});
             mx::array scores_raw = mx::matmul(h2, mx::transpose(w_gate_arr));       // {A,NE}
             mx::array scores = mx::softmax(scores_raw, std::vector<int>{-1}, /*precise=*/true);
+            if (g_risk_signal_telemetry_on) {
+                mx::array observed = mx::contiguous(scores);
+                mx::eval(observed);
+                const float *sp = observed.data<float>();
+                for (int m = 0; m < A; m++) {
+                    std::vector<int> used(NE, 0);
+                    float kth = 0.0f;
+                    for (int k = 0; k < TOPK; k++) {
+                        int best = -1; float bestv = -1.0f;
+                        for (int e = 0; e < NE; e++) {
+                            float v = sp[(size_t)m * NE + e];
+                            if (!used[e] && v > bestv) { bestv = v; best = e; }
+                        }
+                        if (best < 0) break;
+                        used[best] = 1; kth = bestv;
+                    }
+                    float next = 0.0f;
+                    for (int e = 0; e < NE; e++)
+                        if (!used[e] && sp[(size_t)m * NE + e] > next) next = sp[(size_t)m * NE + e];
+                    float ambiguity = kth > 0.0f ? next / kth : 1.0f;
+                    if (ambiguity < 0.0f) ambiguity = 0.0f;
+                    if (ambiguity > 1.0f) ambiguity = 1.0f;
+                    int phys = slot[m];
+                    if (ambiguity > g_risk_route_score[phys]) {
+                        g_risk_route_score[phys] = ambiguity; g_risk_route_layer[phys] = l;
+                        g_risk_route_selected[phys] = kth; g_risk_route_next[phys] = next;
+                    }
+                }
+            }
             mx::array order = mx::argsort(scores, -1);                              // {A,NE}, per-row
             mx::array top_idx_u = mx::slice(order, {0, NE - TOPK}, {A, NE});         // {A,TOPK}
             mx::array top_idx = mx::astype(top_idx_u, mx::int32);
