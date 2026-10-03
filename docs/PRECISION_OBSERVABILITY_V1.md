@@ -52,3 +52,56 @@ P6 does not enable observability in the live generation-6 supervisor.
 No production binary, route generation, adaptive policy, or auto-promotion setting is changed.
 
 Exact-source XOX acceptance and certified regression are sealed after the implementation commit is fixed.
+
+## Canonical exact-source sealed acceptance
+Implementation commit:
+4faab46dc6a44c5f41df2745d03976e16e05b305
+
+Immutable evidence directory:
+/Users/xox/vdsp_serving/precision-observability-sealed-4faab46-20261003
+
+Hashes:
+- result.json: 9c0c0fd6bf80cb80626462984bac70e416ee7e9410b06c28f78b241cb8d31c0e
+- lineage.jsonl: f9368c6dd80321a89002a4724c874f5b87d650058d26f8b29149ec50efd497a2
+- observability-summary.json: d8cffefef1ca9a1c0119814f479ad4ba78e311611d3c3f42352c194218782018
+- pinned P6 cost evidence: 13cac65d375cf9ef2cb59d17a7f2b8204ce7ca9ae58c24426aac0955cce7c270
+- native binary: a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028
+
+The acceptance is source-bound to 4faab46dc6a44c5f41df2745d03976e16e05b305 and reports production_touched=false.
+
+Six sequential admissions ran on one scratch worker PID:
+1. startup-policy no-risk closed-loop admission;
+2. low-margin closed-loop transition to the exact accepted target policy;
+3. no-risk hold on that policy;
+4. explicit warm restore to startup policy;
+5. legacy adaptive L26 recovery with two inference passes;
+6. explicit final restore to startup policy.
+
+Measured aggregate metrics:
+- admissions: 6
+- low-margin triggered admissions: 2/6 = 33.333%
+- transitioned admissions: 4/6 = 66.667%
+- cache hits/misses: 4/2, hit rate 66.667%
+- cache bytes materialized: 8,650,752
+- inference-pass histogram: 1-pass=5, 2-pass=1
+- extra-pass rate: 1/6 = 16.667%
+- finite-logit rate: 100%
+- resident qNg64 cache current/max: 17,301,504 bytes
+- startup policy residency: 3/6
+- closed-loop target policy residency: 2/6
+- adaptive n6/n6 policy residency: 1/6
+- target residency: L3 n6=4/6, L3 n5=2/6, L26 n5=3/6, L26 n6=3/6
+- evidence use: xox-l26-production-low-margin=1, adaptive-l26-certified=1
+
+Integrity checks:
+- all six records are hash chained;
+- duplicate admission IDs are rejected before append;
+- same-PID before/after policy hashes and weight epochs must be continuous;
+- hidden precision mutations therefore fail verification instead of being silently accepted.
+
+Certified successor regression:
+- run 37125908837
+- head 4faab46dc6a44c5f41df2745d03976e16e05b305
+- conclusion SUCCESS
+
+Production remains unconfigured for P6 observability in this stage.
