@@ -26,3 +26,30 @@ The production generation-6 supervisor, route manifest, binary and worker proces
 7. manifest failure leaves the active journal intact;
 8. reset failure after a durable seal is recoverable without data loss;
 9. production pre/post identity is unchanged.
+
+## Exact-source XOX acceptance
+Implementation commit: `4baf28b3745a170fa7dc36a6630b1316ac0970fe`.
+
+- native binary SHA-256: `d03f4748345195500179a6418142e1a73b2259a2e330ddcc0c28b702994d401e`
+- cost evidence: `/Users/xox/vdsp_shadow_runs/precision_e2e_cost/p7-soak-4baf28b/result.json`
+- cost evidence SHA-256: `8f969bd0b01a20a960bdf659ef9fe683cd953608b5f3286b3da597796edca30e`
+- soak result: `/Users/xox/vdsp_serving/precision-p7-soak-4baf28b/result.json`
+- soak result SHA-256: `8376c1605f2c4e8e9ac89310efadb7ed8aff396ba3631e24e916bfcaf2ab17bd`
+
+Measured 60-admission accelerated soak:
+- 60/60 successful admissions on one isolated worker PID;
+- 30 closed-loop, 20 explicit-policy and 10 adaptive admissions;
+- 40 precision-transition admissions;
+- 20 low-margin trigger admissions;
+- cache hits/misses 58/2 = 96.67% hit rate after warm materialization;
+- inference passes: 50 one-pass, 10 two-pass;
+- finite logits 60/60;
+- five sealed 10-record segments retained, manifest chain valid;
+- restart summary exactly equals the pre-restart aggregate;
+- final policy restored to startup policy.
+
+Fault/rotation tests include manifest write failure, reset failure after seal, manifest tamper and segment tamper. The reset crash window is recovered only when the active journal bytes exactly match the latest sealed segment SHA; other overlap remains fail-closed.
+
+Regression before implementation seal: GPU suite 219/219 PASS, focused precision/supervisor/fault suite 63/63 PASS, native transition 1/1 PASS.
+
+Production after acceptance remains generation 6, route manifest `c2bf7eed2788e115af0c0cb3316fceb061000013b2bfcf57710f66d291ff4221`, baseline/candidate PIDs 35481/35493, adaptive L26 enabled and automatic promotion disabled.
