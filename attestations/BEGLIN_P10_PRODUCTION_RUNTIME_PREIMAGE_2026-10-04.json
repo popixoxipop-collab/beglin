@@ -1,0 +1,57 @@
+{
+  "baseline_worker": {
+    "pid": 35481,
+    "runtime_policy_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "weight_epoch": 0
+  },
+  "captured_at_utc": "2026-10-03T17:12:40.309406+00:00",
+  "identity": {
+    "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+    "persistent_binary_sha256": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9",
+    "plist_sha256": "ae39386ecd356373d85b2244c0edefcd13cd22a26359aa832d2ff61472170db8",
+    "route_binary_sha256": "6e6258d6d4e402033c303c8c4b622db5a088354a0de79e687eb0fad4190c4392",
+    "runtime_control_sha256": "3f906b292fdb948b520539d04000c49ef045ac4375f4454131dbdb025d6f03bb",
+    "source_commit": "330954b27f146b8a17db2cb353c3e620968bad5e",
+    "supervisor_persistent_sha256": "48b3cfee6d4a0e5d4b1dac1d06f3d94566f9f0a5dd5bd651406174e8cd7ede06"
+  },
+  "p10_result_sha256": "9c9c809097d18d735855f09bd85016272a319087501d160873f52985669f2fff",
+  "preimage_sha256": "4dca9b7ac12c387df07573f740a2dac06c0e20df3963afe14abcbdd8a9522e7c",
+  "production_route": {
+    "active_route": {
+      "binary_sha256": "6e6258d6d4e402033c303c8c4b622db5a088354a0de79e687eb0fad4190c4392",
+      "checkpoint_sha256": "1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898",
+      "endpoint": "local-supervisor://candidate",
+      "layer": 3,
+      "n": 6,
+      "policy_hash": "0e048b8c5c50a1c005ea573caadd6ccdf99797c24b9c443e993fe0d7b0b27141",
+      "role": "shared_up_proj",
+      "route_id": "beglin-candidate-shared-up-l3-n6",
+      "schema": "beglin-serving-route-v1",
+      "source_commit": "330954b27f146b8a17db2cb353c3e620968bad5e",
+      "worker_instance_id": "spawn-per-admission"
+    },
+    "generation": 6,
+    "manifest_sha256": "c2bf7eed2788e115af0c0cb3316fceb061000013b2bfcf57710f66d291ff4221",
+    "route_file_sha256": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47"
+  },
+  "safety": {
+    "adaptive_precision_enabled": true,
+    "auto_promotion_enabled": false,
+    "external_network_exposed": false,
+    "listen_host": "127.0.0.1",
+    "production_write_allowed": false
+  },
+  "schema": "beglin-p10-production-runtime-preimage-v1",
+  "status": "FRESH",
+  "worker": {
+    "ack_sha256": "bfbaa5bb91e30946b1034785ab1520abb76bf9c98c10b1b0305a6ef28dfd0681",
+    "pid": 35493,
+    "route_id": "beglin-candidate-shared-up-l3-n6",
+    "runtime_policy": [
+      {"layer": 26, "n": 5, "role": "shared_down_proj"},
+      {"layer": 3, "n": 6, "role": "shared_up_proj"}
+    ],
+    "runtime_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+    "weight_epoch": 8
+  }
+}
