@@ -250,13 +250,18 @@ def persist(result: dict, model_id: str) -> dict:
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--allocator-decision",required=True)
-    ap.add_argument("--signal-json",required=True)
+    signal_group=ap.add_mutually_exclusive_group(required=True)
+    signal_group.add_argument("--signal-json")
+    signal_group.add_argument("--signal-file")
     ap.add_argument("--model",default="deepseek-v2-lite")
     ap.add_argument("--persist",action="store_true")
     ap.add_argument("--output")
     args=ap.parse_args()
     decision=json.loads(Path(args.allocator_decision).read_text())
-    signal=json.loads(args.signal_json)
+    if args.signal_file:
+        signal=json.loads(Path(args.signal_file).read_text())
+    else:
+        signal=json.loads(args.signal_json)
     evidence=fetch_trigger_evidence(args.model)
     result=select(decision,signal,evidence)
     if args.persist:
