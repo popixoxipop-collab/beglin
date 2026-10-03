@@ -138,3 +138,40 @@ comment on table moe_execution_contexts_v3 is
 'Immutable backend/device/binary/runtime identity. CPU and MLX/Metal evidence never share a context hash.';
 comment on table moe_precision_transactions_v3 is
 'Desired/applied precision policy transactions with durable epoch and rollback state.';
+
+-- Internal control-plane evidence only.
+-- Keep Data API access service-role-only even after Supabase's 2026-10-30
+-- explicit-grant rollout. RLS stays enabled with no anon/authenticated policy
+-- by design: these tables are not user-facing application data.
+alter table moe_execution_contexts_v3 enable row level security;
+alter table moe_validation_runs_v3 enable row level security;
+alter table moe_attribution_provenance_v3 enable row level security;
+alter table moe_live_preflight_results_v3 enable row level security;
+alter table moe_precision_transactions_v3 enable row level security;
+
+revoke all privileges on table
+  moe_execution_contexts_v3,
+  moe_validation_runs_v3,
+  moe_attribution_provenance_v3,
+  moe_live_preflight_results_v3,
+  moe_precision_transactions_v3
+from anon, authenticated;
+
+grant all privileges on table
+  moe_execution_contexts_v3,
+  moe_validation_runs_v3,
+  moe_attribution_provenance_v3,
+  moe_live_preflight_results_v3,
+  moe_precision_transactions_v3
+to service_role;
+
+revoke all privileges on sequence
+  moe_attribution_provenance_v3_id_seq,
+  moe_live_preflight_results_v3_id_seq
+from anon, authenticated;
+
+grant all privileges on sequence
+  moe_attribution_provenance_v3_id_seq,
+  moe_live_preflight_results_v3_id_seq
+to service_role;
+
