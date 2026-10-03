@@ -62,6 +62,58 @@ class SupabaseV3AutopilotTests(unittest.TestCase):
         self.assertTrue(ga._persist_context_v3(ctx))
         upsert.assert_called_once_with(ctx)
 
+    @patch.object(ga.time, "time_ns", return_value=201)
+    @patch.object(ga.ev3, "insert_validation_run")
+    @patch.object(ga.ev3, "configured", return_value=True)
+    def test_g6_verdict_persists_observer_evidence(
+        self, _configured, insert_validation, _time_ns
+    ):
+        ctx = self.context()
+        args = SimpleNamespace(
+            model="deepseek-v2-lite",
+            role="shared_up_proj",
+            layer=3,
+            n=6,
+        )
+        pre = SimpleNamespace(
+            worker_instance_id="pid-10",
+            requests_completed=12,
+            attribution_hits=12,
+        )
+        post = SimpleNamespace(
+            worker_instance_id="pid-11",
+            requests_completed=12,
+            attribution_hits=0,
+            target_replay_pass=True,
+        )
+        canary = {
+            "status": "CANARY_PASS",
+            "decision": "CANARY_PASS_NO_AUTO_EXPANSION",
+            "rollback_required": False,
+            "auto_expand": False,
+            "observer": {
+                "reason": "attribution rate decreased",
+                "baseline_rate": 1.0,
+                "post_rate": 0.0,
+            },
+        }
+        insert_validation.side_effect = lambda row: row
+        got = ga._persist_g6_v3(
+            args=args,
+            context=ctx,
+            pre_evidence=pre,
+            post_evidence=post,
+            pre_ack={"active_policy_hash": h("8")},
+            post_ack={"active_policy_hash": h("9"), "weight_epoch": 1},
+            canary_result=canary,
+        )
+        self.assertEqual(got["run_kind"], "observer")
+        self.assertTrue(got["pass"])
+        self.assertEqual(got["status"], "CANARY_PASS")
+        self.assertEqual(got["metrics"]["baseline_worker_instance_id"], "pid-10")
+        self.assertEqual(got["metrics"]["post_worker_instance_id"], "pid-11")
+        self.assertEqual(got["metrics"]["post_attribution_hits"], 0)
+
     @patch.object(ga.time, "time_ns", side_effect=[101, 102])
     @patch.object(ga.ev3, "insert_live_preflight")
     @patch.object(ga.ev3, "insert_validation_run")
