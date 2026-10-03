@@ -4,7 +4,7 @@
   "additionalProperties": true,
   "properties": {
     "schema": {
-      "type": "string"
+      "const": "beglin-validation-plan-v1"
     },
     "stages": {
       "type": "array"
