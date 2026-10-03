@@ -304,14 +304,16 @@ def build_p11_capability_preimage(
     if str(runtime_state.get("target_key")) != target_key:
         raise PipelineCapabilityError("runtime target mismatch")
     requested_n = p10.get("requested_n")
+    if requested_n is None:
+        raise PipelineCapabilityError("P11 requires an explicit requested_n")
     runtime_n = runtime_state.get("precision_n")
-    if requested_n is not None:
-        if runtime_n is None:
-            raise PipelineCapabilityError("runtime precision is missing")
+    if runtime_n is not None:
         try:
             runtime_n = int(runtime_n)
         except (TypeError, ValueError) as exc:
             raise PipelineCapabilityError("runtime precision is invalid") from exc
+    if runtime_n is None:
+            raise PipelineCapabilityError("runtime precision is missing")
         if runtime_n != int(requested_n):
             raise PipelineCapabilityError(
                 f"runtime precision mismatch: expected={requested_n} actual={runtime_n}"
