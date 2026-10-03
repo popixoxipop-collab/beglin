@@ -173,7 +173,7 @@ def build_preimage(
     return preimage
 
 
-def build_plan(preimage: Mapping[str, Any]) -> dict:
+def build_plan(preimage: Mapping[str, Any], *, executor_source_sha256: str) -> dict:
     if preimage.get("schema") != PREIMAGE_SCHEMA:
         raise P11Error("unexpected preimage schema")
     check = dict(preimage)
@@ -182,6 +182,7 @@ def build_plan(preimage: Mapping[str, Any]) -> dict:
         raise P11Error("preimage self-hash mismatch")
     worker = preimage["worker"]
     p10 = preimage["p10_evidence"]
+    executor_source_sha256 = require_sha("executor source", executor_source_sha256)
     expected_epoch = int(worker["weight_epoch"])
     plan = {
         "schema": PLAN_SCHEMA,
@@ -192,6 +193,7 @@ def build_plan(preimage: Mapping[str, Any]) -> dict:
         "external_network_exposed": False,
         "preimage_sha256": expected_preimage_sha,
         "p10_result_sha256": p10["p10_result_sha256"],
+        "executor_source_sha256": executor_source_sha256,
         "evidence": dict(p10),
         "expected_live_preimage": {
             "route_generation": int(preimage["route_generation"]),
@@ -247,6 +249,7 @@ def build_approval_request(plan: Mapping[str, Any]) -> dict:
         "cutover_plan_sha256": plan_sha,
         "preimage_sha256": plan["preimage_sha256"],
         "p10_result_sha256": plan["p10_result_sha256"],
+        "executor_source_sha256": plan["executor_source_sha256"],
         "route_generation": int(expected["route_generation"]),
         "route_manifest_sha256": expected["route_manifest_sha256"],
         "worker_pid": int(expected["worker_pid"]),

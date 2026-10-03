@@ -81,7 +81,7 @@ class P11GateTests(unittest.TestCase):
 
     def test_exact_preimage_builds_fail_closed_plan(self):
         preimage = self.build()
-        plan = p11.build_plan(preimage)
+        plan = p11.build_plan(preimage, executor_source_sha256="d" * 64)
         self.assertEqual(plan["status"], "AWAITING_TRUSTED_PRODUCTION_APPROVAL")
         self.assertFalse(plan["production_cutover_allowed"])
         self.assertFalse(plan["production_write_allowed"])
@@ -129,7 +129,7 @@ class P11GateTests(unittest.TestCase):
             )
 
     def test_approval_request_does_not_enable_cutover(self):
-        plan = p11.build_plan(self.build())
+        plan = p11.build_plan(self.build(), executor_source_sha256="d" * 64)
         req = p11.build_approval_request(plan)
         self.assertEqual(req["status"], "AWAITING_TRUSTED_PRODUCTION_APPROVAL")
         self.assertFalse(req["trusted_production_approval_present"])

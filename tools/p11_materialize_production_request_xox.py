@@ -23,6 +23,7 @@ ACK = Path("/Users/xox/vdsp_serving/persistent-workers/candidate/applied_ack.jso
 TXN = Path("/Users/xox/vdsp_serving/persistent-workers/candidate/txn.cmd")
 PERSISTENT_BINARY = Path("/Users/xox/vdsp_serving/persistent-stage/qwen_infer_gpu")
 HEALTH_URL = "http://127.0.0.1:18765/healthz"
+EXECUTOR = Path(__file__).resolve().parent / "p11_execute_production_cutover_xox.py"
 
 
 def sha_file(path: Path) -> str:
@@ -92,7 +93,8 @@ def main() -> int:
         persistent_binary_sha256=sha_file(PERSISTENT_BINARY),
         p10_evidence=p10_evidence,
     )
-    plan = p11.build_plan(preimage)
+    executor_source_sha256 = sha_file(EXECUTOR)
+    plan = p11.build_plan(preimage, executor_source_sha256=executor_source_sha256)
     approval_request = p11.build_approval_request(plan)
 
     after = get_health()
@@ -118,6 +120,7 @@ def main() -> int:
         "cutover_plan_sha256": plan["cutover_plan_sha256"],
         "approval_request_sha256": approval_request["approval_request_sha256"],
         "p10_result_sha256": p10_evidence["p10_result_sha256"],
+        "executor_source_sha256": executor_source_sha256,
         "expected_worker_pid": plan["expected_live_preimage"]["worker_pid"],
         "expected_weight_epoch": plan["expected_live_preimage"]["weight_epoch"],
         "expected_after_epoch": plan["target"]["expected_after_epoch"],
