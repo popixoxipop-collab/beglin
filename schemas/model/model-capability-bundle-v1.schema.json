@@ -21,7 +21,7 @@
       "const": false
     },
     "schema": {
-      "type": "string"
+      "const": "beglin-model-capability-bundle-v1"
     },
     "validation_plan": {}
   },
