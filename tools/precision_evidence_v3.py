@@ -86,6 +86,17 @@ def insert_transaction(row):
     )[0]
 
 
+def insert_live_preflight(row):
+    return _write("moe_live_preflight_results_v3", row)[0]
+
+
+def configured():
+    return bool(
+        os.environ.get("QWEN_SUPABASE_URL")
+        and os.environ.get("QWEN_SUPABASE_KEY")
+    )
+
+
 def fetch_latest_preflight(context_hash, role, layer, n):
     url, key = _credentials()
     params = {
