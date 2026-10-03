@@ -1,4 +1,5 @@
 name: Certified successor regression
+# Supabase v3 reconnect revalidation: 2026-10-03
 
 on:
   push:
