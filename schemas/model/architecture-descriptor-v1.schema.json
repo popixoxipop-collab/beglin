@@ -21,7 +21,7 @@
       ]
     },
     "schema": {
-      "type": "string"
+      "const": "beglin-architecture-descriptor-v1"
     },
     "status": {
       "enum": [
