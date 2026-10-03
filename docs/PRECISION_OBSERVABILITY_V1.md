@@ -53,133 +53,51 @@ No production binary, route generation, adaptive policy, or auto-promotion setti
 
 Exact-source XOX acceptance and certified regression are sealed after the implementation commit is fixed.
 
-## Exact-source XOX acceptance
+## Canonical exact-source sealed acceptance
 Implementation commit:
 4faab46dc6a44c5f41df2745d03976e16e05b305
 
-Acceptance result:
-/Users/xox/vdsp_serving/precision-observability-acceptance-4faab46/result.json
-SHA-256:
-dfcb7e304ef13fd10c28e78b009b027ff7d4571a6c57668991fe183df3952201
-
-Lineage JSONL:
-/Users/xox/vdsp_serving/precision-observability-acceptance-4faab46/lineage.jsonl
-SHA-256:
-a02461d0dbdb7c35906bf68d5fddf7d93e100564f1452064b27064c2a5474ea5
-
-Atomic summary snapshot SHA-256:
-ac83cc80528dcf07ee8ee479828a28cc671b12b18584d668ee05fe5659cc7130
-
-Pinned P6 cost evidence SHA-256:
-13cac65d375cf9ef2cb59d17a7f2b8204ce7ca9ae58c24426aac0955cce7c270
-
-Native binary SHA-256:
-a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028
-
-The exact-source acceptance ran six sequential admissions on the same scratch worker PID and verified policy/epoch continuity across every lineage record:
-- A no-risk closed-loop admission
-- A -> B low-margin closed-loop transition
-- B no-op hold
-- B -> A explicit-policy restore
-- A -> adaptive L26 recovery with two inference passes
-- adaptive policy -> A explicit final restore
-
-Measured aggregate result:
-- admissions: 6
-- low-margin triggered admissions: 2 / 6 = 33.3%
-- precision transitions: 4 / 6 = 66.7%
-- cache hits/misses: 4 / 2, hit rate 66.7%
-- cache bytes materialized: 8,650,752
-- inference-pass histogram: one-pass=5, two-pass=1
-- extra-pass rate: 1 / 6 = 16.7%
-- finite-logit rate: 100%
-- startup policy residency: 3/6
-- closed-loop target policy residency: 2/6
-- adaptive n6/n6 policy residency: 1/6
-- target precision residency: L3 n6=4/6, L3 n5=2/6, L26 n5=3/6, L26 n6=3/6
-- evidence use: xox-l26-production-low-margin=1, adaptive-l26-certified=1
-
-The append-only chain also rejects duplicate admission IDs before write and detects same-PID policy/epoch discontinuities, exposing hidden precision mutations rather than silently accepting them.
-
-Certified successor regression:
-- run 37125908837
-- head 4faab46dc6a44c5f41df2745d03976e16e05b305
-- conclusion SUCCESS
-
-## Exact-source XOX acceptance
-Implementation commit:
-4faab46dc6a44c5f41df2745d03976e16e05b305
-
-Fresh cost evidence:
-/Users/xox/vdsp_shadow_runs/precision_e2e_cost/p6-observability-4faab46/result.json
-SHA-256:
-d0a7f12d58a9b18090717b75a16669364927f7bb39e8724106cb178b400754ff
-
-P6 acceptance:
-/Users/xox/vdsp_serving/precision-observability-acceptance-4faab46/result.json
-SHA-256:
-696315c359b5c0ffce00903d2160c17c84659320fb8a1e261b9d107ac1dca8dc
-
-Observed lineage:
-- 6 admissions / 6 requests on one scratch worker lineage
-- 6/6 observability records RECORDED
-- low_margin trigger count 2, trigger rate 1/3
-- 4 transitioned admissions
-- cache hits 4, misses 2, hit rate 2/3
-- 8,650,752 cache bytes materialized
-- inference-pass histogram: 1 pass x5, 2 passes x1
-- extra-pass rate 1/6
-- finite-logit rate 100%
-- exact-policy and role/layer/n residency shares recorded
-- adaptive L26 evidence and closed-loop L26 evidence both appear in evidence-use counts
-- final scratch state restored to reviewed startup policy
-- production_touched=false
-
-Lineage JSONL SHA-256:
-14a06b51c2b0ecf3fe955918247bb3a68d305b229b877b5d089d64c5e30f4fa8
-
-Summary snapshot SHA-256:
-f6368eb4b4206cb9c80db998224be85d8344ccb642295f247ee5c3788f4e0f08
-
-Certified successor regression:
-- run 37125908837
-- head 4faab46dc6a44c5f41df2745d03976e16e05b305
-- conclusion SUCCESS
-
-## Exact-source sealed acceptance
-Implementation commit:
-4faab46dc6a44c5f41df2745d03976e16e05b305
-
-Sealed XOX evidence directory:
-/Users/xox/vdsp_serving/precision-observability-acceptance-sealed-4faab46
+Immutable evidence directory:
+/Users/xox/vdsp_serving/precision-observability-sealed-4faab46-20261003
 
 Hashes:
-- result.json: 696315c359b5c0ffce00903d2160c17c84659320fb8a1e261b9d107ac1dca8dc
-- lineage.jsonl: 14a06b51c2b0ecf3fe955918247bb3a68d305b229b877b5d089d64c5e30f4fa8
-- observability-summary.json: f6368eb4b4206cb9c80db998224be85d8344ccb642295f247ee5c3788f4e0f08
+- result.json: 9c0c0fd6bf80cb80626462984bac70e416ee7e9410b06c28f78b241cb8d31c0e
+- lineage.jsonl: f9368c6dd80321a89002a4724c874f5b87d650058d26f8b29149ec50efd497a2
+- observability-summary.json: d8cffefef1ca9a1c0119814f479ad4ba78e311611d3c3f42352c194218782018
+- pinned P6 cost evidence: 13cac65d375cf9ef2cb59d17a7f2b8204ce7ca9ae58c24426aac0955cce7c270
+- native binary: a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028
 
-The sealed result is source-bound to 4faab46dc6a44c5f41df2745d03976e16e05b305 and native binary SHA-256 a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028.
+The acceptance is source-bound to 4faab46dc6a44c5f41df2745d03976e16e05b305 and reports production_touched=false.
 
-Six consecutive admissions on the same scratch worker cover:
-1. no-risk exact-policy admission on startup policy A;
-2. low-margin closed-loop transition to policy B;
-3. no-risk hold on B;
-4. explicit warm restore B -> A;
-5. legacy adaptive L26 low-margin recovery with two inference passes;
-6. explicit final restore to A.
+Six sequential admissions ran on one scratch worker PID:
+1. startup-policy no-risk closed-loop admission;
+2. low-margin closed-loop transition to the exact accepted target policy;
+3. no-risk hold on that policy;
+4. explicit warm restore to startup policy;
+5. legacy adaptive L26 recovery with two inference passes;
+6. explicit final restore to startup policy.
 
 Measured aggregate metrics:
 - admissions: 6
-- triggered admissions: 2, trigger rate 33.333%
-- transitioned admissions: 4, transition rate 66.667%
+- low-margin triggered admissions: 2/6 = 33.333%
+- transitioned admissions: 4/6 = 66.667%
 - cache hits/misses: 4/2, hit rate 66.667%
+- cache bytes materialized: 8,650,752
 - inference-pass histogram: 1-pass=5, 2-pass=1
-- extra-pass rate: 16.667%
+- extra-pass rate: 1/6 = 16.667%
 - finite-logit rate: 100%
-- resident qNg64 cache max/current: 17,301,504 bytes
-- evidence-use counts: xox-l26-production-low-margin=1, adaptive-l26-certified=1
-- exact policy residency and role/layer/n residency are both present in the summary
-- lineage is hash chained and continuity-checked across explicit and adaptive transitions
+- resident qNg64 cache current/max: 17,301,504 bytes
+- startup policy residency: 3/6
+- closed-loop target policy residency: 2/6
+- adaptive n6/n6 policy residency: 1/6
+- target residency: L3 n6=4/6, L3 n5=2/6, L26 n5=3/6, L26 n6=3/6
+- evidence use: xox-l26-production-low-margin=1, adaptive-l26-certified=1
+
+Integrity checks:
+- all six records are hash chained;
+- duplicate admission IDs are rejected before append;
+- same-PID before/after policy hashes and weight epochs must be continuous;
+- hidden precision mutations therefore fail verification instead of being silently accepted.
 
 Certified successor regression:
 - run 37125908837
