@@ -46,8 +46,9 @@ ADAPTIVE_L26_ROLE = "shared_down_proj"
 ADAPTIVE_L26_LAYER = 26
 ADAPTIVE_L26_BASE_N = 5
 ADAPTIVE_L26_RECOVERY_N = 6
-ADAPTIVE_L26_MARGIN_MAX = 0.01
-ADAPTIVE_L26_EVIDENCE_SHA256 = "a142ce28b0fb83a13efc80b34e205018b0b81de4698ffbad695e3a1917d31fb4"
+ADAPTIVE_L26_MARGIN_MAX = 0.02
+ADAPTIVE_L26_EVIDENCE_SHA256 = "b72141959d642beb8aec90c871c4d00edd5352770366c5296e2798d8a2715017"
+ADAPTIVE_L26_REBIND_EVIDENCE_SHA256 = "a142ce28b0fb83a13efc80b34e205018b0b81de4698ffbad695e3a1917d31fb4"
 LAUNCHD_PROCESS_TYPE = "Interactive"
 
 
@@ -493,6 +494,7 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
             "recovery_n": ADAPTIVE_L26_RECOVERY_N,
             "margin_max": ADAPTIVE_L26_MARGIN_MAX,
             "evidence_sha256": ADAPTIVE_L26_EVIDENCE_SHA256,
+            "rebind_evidence_sha256": ADAPTIVE_L26_REBIND_EVIDENCE_SHA256,
         }
         return row
 
@@ -587,6 +589,7 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
                 "trigger_request_indices": [],
                 "worker_left_at_n": ADAPTIVE_L26_BASE_N,
                 "evidence_sha256": ADAPTIVE_L26_EVIDENCE_SHA256,
+                "rebind_evidence_sha256": ADAPTIVE_L26_REBIND_EVIDENCE_SHA256,
             }
             return first
 
