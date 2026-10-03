@@ -66,6 +66,7 @@ LOADER_SUPPORTED_QUANTS = {
     "Q3_K", "Q4_K", "Q5_K", "Q6_K", "MXFP4",
 }
 LOADER_EXPLICIT_UNSUPPORTED = {"Q2_K", "IQ_SERIES"}
+VERIFICATION_EVIDENCE_SCHEMA = "beglin-verification-evidence-v1"
 
 CPU_QNG64_WIDTHS = [2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 MLX_QNG64_WIDTHS = [2, 3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15]
@@ -517,6 +518,64 @@ def inspect_model_source(path: str | Path) -> dict:
     return manifest
 
 
+def normalize_verification_evidence(
+    value: Mapping[str, Any] | None,
+    *,
+    component: str,
+    checkpoint_identity_sha256: str,
+    architecture_id: str,
+    backend: str | None = None,
+) -> dict | None:
+    """Validate one explicit verification evidence reference.
+
+    Inspection or a boolean flag can never create VERIFIED state.  The
+    evidence object is intentionally a reference to an immutable external
+    artifact, so evidence_sha256 is mandatory and becomes part of the
+    capability-bundle identity.
+    """
+    if value is None:
+        return None
+    row = dict(value)
+    if row.get("schema") != VERIFICATION_EVIDENCE_SCHEMA:
+        raise ModelCapabilityError("unsupported verification evidence schema")
+    if row.get("status") != "VERIFIED":
+        raise ModelCapabilityError("verification evidence status must be VERIFIED")
+    if str(row.get("component") or "") != str(component):
+        raise ModelCapabilityError(
+            f"verification evidence component mismatch: expected={component} "
+            f"actual={row.get('component')}"
+        )
+    if str(row.get("checkpoint_identity_sha256") or "") != str(checkpoint_identity_sha256):
+        raise ModelCapabilityError("verification evidence checkpoint identity mismatch")
+    if str(row.get("architecture_id") or "") != str(architecture_id):
+        raise ModelCapabilityError("verification evidence architecture mismatch")
+    if backend is not None and str(row.get("backend") or "") != str(backend):
+        raise ModelCapabilityError(
+            f"verification evidence backend mismatch: expected={backend} "
+            f"actual={row.get('backend')}"
+        )
+    evidence_sha = str(row.get("evidence_sha256") or "").lower()
+    if len(evidence_sha) != 64 or any(c not in "0123456789abcdef" for c in evidence_sha):
+        raise ModelCapabilityError("verification evidence SHA must be lowercase SHA-256")
+    normalized = {
+        "schema": VERIFICATION_EVIDENCE_SCHEMA,
+        "status": "VERIFIED",
+        "component": str(component),
+        "architecture_id": str(architecture_id),
+        "checkpoint_identity_sha256": str(checkpoint_identity_sha256),
+        "evidence_sha256": evidence_sha,
+        "run_id": str(row.get("run_id") or ""),
+        "kind": str(row.get("kind") or component),
+    }
+    if backend is not None:
+        normalized["backend"] = str(backend)
+    if row.get("binary_sha256"):
+        normalized["binary_sha256"] = require_sha(
+            "verification evidence binary_sha256", row["binary_sha256"]
+        )
+    return normalized
+
+
 ARCH_REGISTRY = {
     "qwen2": {
         "family": "qwen",
@@ -952,15 +1011,26 @@ def build_operator_graph(descriptor: Mapping[str, Any]) -> dict:
     return graph
 
 
-def build_tokenizer_contract(source: Mapping[str, Any], descriptor: Mapping[str, Any]) -> dict:
+def build_tokenizer_contract(
+    source: Mapping[str, Any],
+    descriptor: Mapping[str, Any],
+    *,
+    verification_evidence: Mapping[str, Any] | None = None,
+) -> dict:
     arch = str(descriptor["architecture_id"])
     files = [Path(p).name for p in source.get("tokenizer_paths", [])]
     family = ARCH_REGISTRY.get(arch, {}).get("tokenizer_family", "UNKNOWN")
+    evidence = normalize_verification_evidence(
+        verification_evidence,
+        component="tokenizer",
+        checkpoint_identity_sha256=str(source["checkpoint_identity_sha256"]),
+        architecture_id=arch,
+    )
     if arch in {"qwen2", "qwen3_moe", "llama", "olmoe"}:
-        status = "IN_ENGINE_VERIFIED" if files else "IMPLEMENTED_UNVERIFIED"
+        status = "IN_ENGINE_VERIFIED" if evidence is not None else "IMPLEMENTED_UNVERIFIED"
         encode_backend = "beglin_bpe"
     elif arch == "gpt-oss":
-        status = "EXTERNAL_VERIFIED"
+        status = "EXTERNAL_VERIFIED" if evidence is not None else "IMPLEMENTED_UNVERIFIED"
         encode_backend = "tiktoken_o200k_harmony"
     elif arch == "deepseek_v2":
         status = "UNSUPPORTED"
@@ -977,6 +1047,7 @@ def build_tokenizer_contract(source: Mapping[str, Any], descriptor: Mapping[str,
         "encode_backend": encode_backend,
         "decode_backend": encode_backend,
         "text_io_supported": status in {"IN_ENGINE_VERIFIED", "EXTERNAL_VERIFIED"},
+        "verification_evidence": evidence,
         "silent_fallback_allowed": False,
     }
     contract["tokenizer_contract_sha256"] = stable_identity_sha256(contract)
@@ -1087,11 +1158,13 @@ def build_backend_capability_matrix(
     descriptor: Mapping[str, Any],
     *,
     requested_backend: str | None = None,
-    cpu_runtime_verified: bool = False,
-    mlx_runtime_verified: bool = False,
+    cpu_runtime_evidence: Mapping[str, Any] | None = None,
+    mlx_runtime_evidence: Mapping[str, Any] | None = None,
 ) -> dict:
     if requested_backend not in {None, "cpu", "mlx_metal"}:
         raise ModelCapabilityError(f"unsupported backend request: {requested_backend}")
+    cpu_runtime_verified = cpu_runtime_evidence is not None
+    mlx_runtime_verified = mlx_runtime_evidence is not None
     rows = []
     for node in tensor_graph.get("nodes", []):
         role = str(node["role"])
@@ -1138,7 +1211,11 @@ def build_backend_capability_matrix(
                 "mutation_mode": mutation_mode,
                 "validation_required": inference_status != "VERIFIED" or qng64_status != "VERIFIED",
                 "reason_code": None,
-                "evidence_refs": [],
+                "evidence_refs": (
+                    [dict(cpu_runtime_evidence)] if backend == "cpu" and cpu_runtime_evidence is not None
+                    else [dict(mlx_runtime_evidence)] if backend == "mlx_metal" and mlx_runtime_evidence is not None
+                    else []
+                ),
                 "verification_source": (
                     "explicit_runtime_evidence" if inference_status == "VERIFIED"
                     else "inspection_only"
@@ -1335,12 +1412,39 @@ def compile_model_capabilities(
     backend: str | None = None,
     cpu_runtime_verified: bool = False,
     mlx_runtime_verified: bool = False,
+    cpu_runtime_evidence: Mapping[str, Any] | None = None,
+    mlx_runtime_evidence: Mapping[str, Any] | None = None,
+    tokenizer_evidence: Mapping[str, Any] | None = None,
 ) -> dict:
     source = inspect_model_source(path)
     descriptor = build_architecture_descriptor(source)
     tensor_graph = build_tensor_role_graph(source, descriptor)
     operator_graph = build_operator_graph(descriptor)
-    tokenizer = build_tokenizer_contract(source, descriptor)
+    if cpu_runtime_verified and cpu_runtime_evidence is None:
+        raise ModelCapabilityError(
+            "cpu_runtime_verified requires explicit cpu_runtime_evidence"
+        )
+    if mlx_runtime_verified and mlx_runtime_evidence is None:
+        raise ModelCapabilityError(
+            "mlx_runtime_verified requires explicit mlx_runtime_evidence"
+        )
+    cpu_evidence = normalize_verification_evidence(
+        cpu_runtime_evidence,
+        component="backend_runtime",
+        checkpoint_identity_sha256=str(source["checkpoint_identity_sha256"]),
+        architecture_id=str(descriptor["architecture_id"]),
+        backend="cpu",
+    )
+    mlx_evidence = normalize_verification_evidence(
+        mlx_runtime_evidence,
+        component="backend_runtime",
+        checkpoint_identity_sha256=str(source["checkpoint_identity_sha256"]),
+        architecture_id=str(descriptor["architecture_id"]),
+        backend="mlx_metal",
+    )
+    tokenizer = build_tokenizer_contract(
+        source, descriptor, verification_evidence=tokenizer_evidence
+    )
     loader = build_loader_contract(source, descriptor)
     skeleton = build_model_skeleton(
         source, descriptor, tensor_graph, operator_graph, tokenizer, loader
@@ -1348,8 +1452,8 @@ def compile_model_capabilities(
     backend_matrix = build_backend_capability_matrix(
         tensor_graph, descriptor,
         requested_backend=backend,
-        cpu_runtime_verified=cpu_runtime_verified,
-        mlx_runtime_verified=mlx_runtime_verified,
+        cpu_runtime_evidence=cpu_evidence,
+        mlx_runtime_evidence=mlx_evidence,
     )
     quant_matrix = build_quant_capability_matrix(tensor_graph, backend_matrix)
     mutation_matrix = build_runtime_mutation_matrix(backend_matrix)
