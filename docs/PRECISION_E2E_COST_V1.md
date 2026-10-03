@@ -87,7 +87,34 @@ Observed behavior:
 - final scratch state restored to policy A
 - production_touched=false
 
-Exact-source acceptance will be generated after the implementation commit is fixed.
+## Exact-source P4 evidence
+Implementation commit:
+5c9e111bfd3ff12e1274864cb7fe47fa287d7e11
+
+Exact-source cost benchmark:
+/Users/xox/vdsp_shadow_runs/precision_e2e_cost/p4-5c9e111/result.json
+SHA-256:
+e4e5ed9cc05a5d85b565b0accbae4df90143b9703d54aac4c3a52404b3c463b4
+
+The benchmark reports source_head 5c9e111bfd3ff12e1274864cb7fe47fa287d7e11 and native binary SHA-256 b7dbe0fe768f53ed22dd2ec88d44d61a52d647a93509af9f57d63f98fa2d4c86.
+
+Exact-source P4 closed-loop acceptance:
+/Users/xox/vdsp_serving/precision-e2e-cost-acceptance-5c9e111/result.json
+SHA-256:
+86f6c2a5d3cd747236920207c79bbc919509de08d5706d210aaaf57202c978cf
+
+Observed exact-source acceptance:
+- no-risk startup kept policy A, transition 0 ms
+- correctness-triggered cold A -> B stayed mandatory, actual transition 616.699 ms, 2 misses, +8,650,752 bytes, token 1224
+- no-risk while B was active kept B instead of paying a transition back to A
+- later A -> B warm transition measured 314.29 ms, 2 hits, 0 new bytes, token 1224
+- final scratch state restored to policy A on the same PID
+- production_touched=false
+
+Certified successor regression:
+- run 37118827288
+- head 5c9e111bfd3ff12e1274864cb7fe47fa287d7e11
+- conclusion SUCCESS
 ## Production boundary
 P4 is not enabled in production by this implementation stage.
 
