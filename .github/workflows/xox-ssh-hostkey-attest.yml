@@ -1,0 +1,34 @@
+name: XOX SSH Host Key Attestation
+
+on:
+  push:
+    branches:
+      - rdc-xox-hostkey-attest-20261003
+    paths:
+      - ".github/workflows/xox-ssh-hostkey-attest.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  attest:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 5
+    steps:
+      - name: Verify runner identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+
+      - name: Emit SSH ED25519 host public key and fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUB=/etc/ssh/ssh_host_ed25519_key.pub
+          test -f "$PUB"
+          echo "XOX_SSH_HOSTKEY_BEGIN"
+          cat "$PUB"
+          /usr/bin/ssh-keygen -lf "$PUB" -E sha256
+          echo "XOX_SSH_HOSTKEY_END"
