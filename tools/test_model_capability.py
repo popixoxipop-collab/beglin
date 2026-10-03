@@ -102,7 +102,24 @@ class ModelCapabilityTests(unittest.TestCase):
             }
             root=make_model(Path(td)/'m','deepseek_v2',tensors=tensors,tokenizer=False,
                             extra={'n_routed_experts':4,'num_experts_per_tok':2,'n_shared_experts':1,'first_k_dense_replace':0})
-            bundle=mc.compile_model_capabilities(root,mlx_runtime_verified=True)
+            source=mc.inspect_model_source(root)
+            desc=mc.build_architecture_descriptor(source)
+            evidence={
+                "schema":"beglin-verification-evidence-v1",
+                "status":"VERIFIED",
+                "component":"backend_runtime",
+                "architecture_id":desc["architecture_id"],
+                "checkpoint_identity_sha256":source["checkpoint_identity_sha256"],
+                "backend":"mlx_metal",
+                "evidence_sha256":"c"*64,
+                "run_id":"legacy-unit-fixture",
+                "kind":"UNIT_TEST_FIXTURE",
+            }
+            bundle=mc.compile_model_capabilities(
+                root,
+                mlx_runtime_verified=True,
+                mlx_runtime_evidence=evidence,
+            )
             rows=bundle['runtime_mutation_matrix']['rows']
             q=[r for r in rows if r['target_key'].endswith('/q_proj')]
             by={r['backend']:r for r in q}
