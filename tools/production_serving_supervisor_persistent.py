@@ -34,8 +34,8 @@ import production_serving_supervisor as base
 
 PERSISTENT_BINARY = Path("/Users/xox/vdsp_serving/persistent-stage/qwen_infer_gpu")
 PERSISTENT_PROBE = Path("/Users/xox/vdsp_serving/persistent-stage/probe.json")
-EXPECTED_PERSISTENT_BINARY_SHA = "3be6d59b77e554f5abee86851f4d901b7e2d9750ae6257a1538eebb64693d59e"
-EXPECTED_PERSISTENT_SOURCE_SHA = "a26f9a8ab93493a1aad8da643d00c1d998aa60cd"
+EXPECTED_PERSISTENT_BINARY_SHA = "f6f19e0ed8c3d568cf33bd89310b121fa955fbf843b27a9bd931016b9eeab161"
+EXPECTED_PERSISTENT_SOURCE_SHA = "0dfc14f1a024822e8f38d24eb04b46da08ad26d4"
 DEFAULT_PERSISTENT_ROOT = Path("/Users/xox/vdsp_serving/persistent-workers")
 WORKER_READY_TIMEOUT_SECONDS = 120
 REQUEST_TIMEOUT_SECONDS = 60
