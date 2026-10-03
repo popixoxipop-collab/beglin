@@ -16,7 +16,6 @@ on:
       - supabase-v3-evidence-reconnect-20261003
       - quant-search-full-qng64-ladder-20261003
       - precision-allocator-v1-20261003
-      - precision-soak-v1-20261003
       - precision-observability-review-20261003
     paths:
       - ".github/workflows/certified-successor-regression.yml"
