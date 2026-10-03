@@ -57,25 +57,45 @@ def log(msg):
 
 
 def build_context(*, binary_sha256, checkpoint_sha256, model_id="deepseek-v2-lite",
-                   architecture="mla", kernel_revision="unspecified"):
+                   architecture="mla", kernel_revision="unspecified",
+                   tokenizer_sha256=None, base_artifact_sha256=None,
+                   runtime_config_sha256=None, device_fingerprint="gpu-autopilot"):
     return pc.ExecutionContext(
         schema="precision-context-v3",
         model_id=model_id,
         architecture=architecture,
         checkpoint_sha256=checkpoint_sha256,
-        tokenizer_sha256=checkpoint_sha256,
-        base_artifact_sha256=checkpoint_sha256,
+        tokenizer_sha256=tokenizer_sha256 or checkpoint_sha256,
+        base_artifact_sha256=base_artifact_sha256 or checkpoint_sha256,
         backend="mlx_metal",
-        device_fingerprint="gpu-autopilot",
+        device_fingerprint=device_fingerprint,
         binary_sha256=binary_sha256,
         build_manifest_sha256=binary_sha256,
         kernel_revision=kernel_revision,
         execution_mode="online_cbatch",
-        runtime_config_sha256=checkpoint_sha256,
+        runtime_config_sha256=runtime_config_sha256 or checkpoint_sha256,
         quant_format="qng64",
         group_size=64,
         correction_mode="off",
     )
+
+
+def _require_v3_identity_for_persistence(args):
+    if not ev3.configured():
+        return
+    required = {
+        "tokenizer_sha256": getattr(args, "tokenizer_sha256", None),
+        "base_artifact_sha256": getattr(args, "base_artifact_sha256", None),
+        "runtime_config_sha256": getattr(args, "runtime_config_sha256", None),
+        "device_fingerprint": getattr(args, "device_fingerprint", None),
+        "kernel_revision": getattr(args, "kernel_revision", None),
+    }
+    missing = sorted(name for name, value in required.items() if not value)
+    if missing:
+        raise AutopilotError(
+            "Supabase v3 persistence requires explicit immutable identity: "
+            + ", ".join(missing)
+        )
 
 
 def _persist_context_v3(context):
@@ -323,9 +343,17 @@ def observation_from_replay(*, context_hash, ack, output, pos, prompt_len,
 def run_candidate(args):
     binary_sha256 = args.binary_sha256
     checkpoint_sha256 = args.checkpoint_sha256
+    _require_v3_identity_for_persistence(args)
     context = build_context(
-        binary_sha256=binary_sha256, checkpoint_sha256=checkpoint_sha256,
+        binary_sha256=binary_sha256,
+        checkpoint_sha256=checkpoint_sha256,
         architecture=args.architecture,
+        model_id=args.model,
+        tokenizer_sha256=args.tokenizer_sha256,
+        base_artifact_sha256=args.base_artifact_sha256,
+        runtime_config_sha256=args.runtime_config_sha256,
+        device_fingerprint=args.device_fingerprint or "gpu-autopilot",
+        kernel_revision=args.kernel_revision or "unspecified",
     )
     context_hash = context.context_hash
     log(f"context_hash={context_hash}")
@@ -542,6 +570,11 @@ def main():
     ap.add_argument("--binary", required=True)
     ap.add_argument("--binary-sha256", required=True)
     ap.add_argument("--checkpoint-sha256", required=True)
+    ap.add_argument("--tokenizer-sha256")
+    ap.add_argument("--base-artifact-sha256")
+    ap.add_argument("--runtime-config-sha256")
+    ap.add_argument("--device-fingerprint")
+    ap.add_argument("--kernel-revision")
     ap.add_argument("--moe-base", required=True)
     ap.add_argument("--safetensors", required=True)
     ap.add_argument("--architecture", default="mla")
