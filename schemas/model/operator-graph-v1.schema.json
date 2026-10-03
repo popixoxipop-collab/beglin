@@ -14,7 +14,7 @@
       "type": "array"
     },
     "schema": {
-      "type": "string"
+      "const": "beglin-operator-graph-v1"
     },
     "unsupported_primitives": {
       "items": {
