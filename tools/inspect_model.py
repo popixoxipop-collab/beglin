@@ -26,6 +26,7 @@ def main()->int:
     ap.add_argument('--cpu-runtime-evidence')
     ap.add_argument('--mlx-runtime-evidence')
     ap.add_argument('--tokenizer-evidence')
+    ap.add_argument('--loader-evidence')
     ap.add_argument('--json',action='store_true')
     ap.add_argument('--target')
     args=ap.parse_args()
@@ -38,6 +39,7 @@ def main()->int:
             cpu_runtime_evidence=_load_evidence(args.cpu_runtime_evidence),
             mlx_runtime_evidence=_load_evidence(args.mlx_runtime_evidence),
             tokenizer_evidence=_load_evidence(args.tokenizer_evidence),
+            loader_evidence=_load_evidence(args.loader_evidence),
         )
     except mc.ModelCapabilityError as exc:
         print(json.dumps({'status':'ERROR','error':str(exc)},sort_keys=True),file=sys.stderr)
