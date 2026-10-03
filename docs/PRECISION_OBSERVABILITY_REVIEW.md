@@ -59,3 +59,34 @@ The XOX acceptance checks all four paths plus a rejected policy, negative-contro
 inference, actual adaptive recovery, exact journal replay, source/binary identity,
 and unchanged production PID/binary/route snapshots. Exact-source results are
 recorded after the implementation commit is fixed.
+
+## Exact-source XOX evidence
+
+Implementation: `f1f8307048e92bbfa3467e2bb6dfe65a73eb2ed6`. Native binary: `a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028`.
+
+Cost evidence: `/Users/xox/vdsp_shadow_runs/precision_e2e_cost/p6-review-f1f8307/result.json`
+SHA-256: `eda23b8d594cd80a935975994d9b61f9882f4cc76a8ec7479efabe971d441336`.
+
+Acceptance: `/Users/xox/vdsp_serving/precision-observability-review-f1f8307/result.json`
+SHA-256: `72ffe37957fe2af291cb613523d91aada2b70c4bc292a40e985a075fb2ee1814`.
+
+Nine records: 8 SUCCESS, 1 REJECTED; closed_loop 4, explicit_policy 2, direct 1, adaptive 2.
+Native transaction/ACK did not change on rejection.
+Pass histogram: 0-pass 1, 1-pass 6, 2-pass 2; extra-pass rate 2/8 = 25%.
+Measured transition cache hits 6, misses 2 (75% hit rate). Five admissions changed
+precision, containing eight target changes in total. Same isolated worker PID `13854`.
+Fresh in-memory, persisted and restarted/offline summaries were exactly equal.
+Three recovery checks returned token 1224. The deliberate direct negative-control
+request returned token 16822; it is not mislabeled as reference accuracy PASS.
+
+Recording cost in this small run: median 0.995 ms,
+maximum 1.162 ms over 8 successful admissions.
+This is a tiny scratch sample, not a production SLO or a throughput claim.
+
+Validation: GPU unit/guard suite 214/214, focused allocator/selector/supervisor
+58/58, native transition 1/1. Certified successor regression run 37126150619
+SUCCESS on exact implementation f1f8307048e92bbfa3467e2bb6dfe65a73eb2ed6.
+
+Production pre/post snapshots were equal: generation 6, PIDs 35481/35493,
+binary 8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9.
+P6 remains opt-in and is not deployed to production.
