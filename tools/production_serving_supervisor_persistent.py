@@ -684,11 +684,11 @@ class PersistentWorkerPool:
     def _prewarm(self, worker: PersistentRouteWorker) -> dict:
         prompt = base._read_first_certified_prompt()
         batch = [(prompt, 10) for _ in range(12)]
-        result = (
-            worker.submit_base(batch)
-            if isinstance(worker, AdaptivePersistentRouteWorker)
-            else worker.submit(batch)
-        )
+        # Prewarm must validate the same end-to-end output users receive.
+        # An adaptive worker may intentionally produce a wrong low-cost base pass
+        # and recover only triggered requests at n6, so bypassing adaptive recovery
+        # here would reject a valid fail-closed policy during startup.
+        result = worker.submit(batch)
         if not result["finite_logits"]:
             raise PersistentSupervisorError(f"prewarm non-finite logits for {worker.route_id}")
         expected = self._reference_token(worker.route)
