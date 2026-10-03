@@ -79,6 +79,13 @@ def run_repeated_shadow(*,queue:dict,spec:dict,shadow_root:str,autopilot:str,rep
 
 def certification_bundle(*,proposal:dict,repeated_shadow:dict)->dict:
  if repeated_shadow.get("shadow_status")!="SHADOW_ADMITTED": raise P9Error("repeated shadow is not unanimously admitted")
+ proposal_lineage=mcb.optional_lineage(proposal)
+ shadow_lineage=mcb.optional_lineage(repeated_shadow)
+ if proposal_lineage != shadow_lineage:
+  raise P9Error(
+   "capability lineage mismatch between proposal and repeated shadow: "
+   f"proposal={proposal_lineage} shadow={shadow_lineage}"
+  )
  cert=p8.certification_candidate(proposal=proposal,shadow_result={
   "shadow_status":"SHADOW_ADMITTED","production_write_allowed":False,
   "candidate":repeated_shadow["candidate"],"result_sha256":repeated_shadow["result_sha256"]})
