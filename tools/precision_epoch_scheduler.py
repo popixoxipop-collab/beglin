@@ -153,6 +153,25 @@ class PrecisionEpochScheduler:
                     "runtime active policy rows differ from requested precision policy"
                 )
 
+            if changes:
+                transition_cost = {
+                    "transition_wall_ms": float(after.get("transition_wall_ms", 0.0)),
+                    "cache_hits": int(after.get("transition_cache_hits", 0)),
+                    "cache_misses": int(after.get("transition_cache_misses", 0)),
+                    "cache_bytes_added": int(after.get("transition_cache_bytes_added", 0)),
+                    "resident_cache_bytes": int(after.get("resident_qng64_cache_bytes", 0)),
+                }
+            else:
+                transition_cost = {
+                    "transition_wall_ms": 0.0,
+                    "cache_hits": 0,
+                    "cache_misses": 0,
+                    "cache_bytes_added": 0,
+                    "resident_cache_bytes": int(after.get("resident_qng64_cache_bytes", 0)),
+                }
+            inference_passes = int(result.get("inference_passes", 1))
+            if inference_passes < 1:
+                raise PrecisionEpochSchedulerError("inference_passes must be >= 1")
             out = dict(result)
             out["precision_epoch"] = {
                 "schema": "beglin-precision-epoch-admission-v1",
@@ -165,5 +184,9 @@ class PrecisionEpochScheduler:
                 "before_policy_hash": str(before["active_policy_hash"]),
                 "after_policy_hash": str(after["active_policy_hash"]),
                 "target_policy_hash": target_hash,
+                "transition_cost": transition_cost,
+                "inference_passes": inference_passes,
+                "engine_wall_ms": float(result.get("engine_wall_ms", 0.0)),
+                "roundtrip_ms": float(result.get("roundtrip_ms", 0.0)),
             }
             return out

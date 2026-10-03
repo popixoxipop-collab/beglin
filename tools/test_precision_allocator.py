@@ -74,6 +74,35 @@ class PrecisionAllocatorTests(unittest.TestCase):
         self.assertEqual(target["dynamic_escalation"]["status"], "EVIDENCE_REQUIRED")
         self.assertTrue(got["pairwise_evidence_required_before_combined_production"])
 
+    def test_measured_e2e_cost_can_override_smaller_bitwidth(self):
+        rows=pa.build_candidates(evidence(),self.sizes())
+        by_n={r["n"]:r for r in rows}
+        by_n[5]["expected_e2e_ms"]=30.0
+        by_n[5]["resident_cache_bytes_after"]=300
+        by_n[5]["transition_p50_ms"]=8.0
+        by_n[5]["expected_inference_passes"]=2
+        by_n[6]["expected_e2e_ms"]=12.0
+        by_n[6]["resident_cache_bytes_after"]=200
+        by_n[6]["transition_p50_ms"]=0.0
+        by_n[6]["expected_inference_passes"]=1
+        by_n[9]["expected_e2e_ms"]=20.0
+        by_n[9]["resident_cache_bytes_after"]=400
+        by_n[9]["transition_p50_ms"]=5.0
+        by_n[9]["expected_inference_passes"]=1
+        chosen=pa.choose_target(
+            rows,memory_weight=0.0,e2e_weight=1.0,
+            transition_weight=0.0,cache_weight=0.0,
+            inference_pass_weight=0.0,
+        )
+        self.assertEqual(chosen["n"],6)
+        self.assertIn("e2e",chosen["objective_dimensions"])
+
+    def test_requested_e2e_dimension_requires_complete_measurements(self):
+        rows=pa.build_candidates(evidence(),self.sizes())
+        rows[0]["expected_e2e_ms"]=10.0
+        with self.assertRaises(pa.AllocatorError):
+            pa.choose_target(rows,memory_weight=0.0,e2e_weight=1.0)
+
     def test_measured_latency_can_change_choice(self):
         bench = {
             "shared_up_proj:3:5": {"p50_engine_ms": 10.0, "rss_bytes": 100},

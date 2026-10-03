@@ -486,9 +486,18 @@ class PersistentRouteWorker:
         candidates: list[dict],
         trigger_evidence: list[dict],
         combined_policy_evidence: list[dict],
+        cost_evidence: dict | None = None,
         memory_weight: float = 1.0,
         latency_weight: float = 0.0,
         rss_weight: float = 0.0,
+        transition_weight: float = 0.0,
+        cache_weight: float = 0.0,
+        inference_pass_weight: float = 0.0,
+        e2e_weight: float = 0.0,
+        policy_e2e_weight: float = 0.0,
+        policy_cache_weight: float = 0.0,
+        policy_transition_weight: float = 0.0,
+        policy_active_memory_weight: float = 0.0,
     ) -> dict:
         pcl = _load_precision_closed_loop()
         with self.lock:
@@ -496,9 +505,18 @@ class PersistentRouteWorker:
                 candidates=candidates,
                 trigger_evidence=trigger_evidence,
                 combined_policy_evidence=combined_policy_evidence,
+                cost_evidence=cost_evidence,
                 memory_weight=memory_weight,
                 latency_weight=latency_weight,
                 rss_weight=rss_weight,
+                transition_weight=transition_weight,
+                cache_weight=cache_weight,
+                inference_pass_weight=inference_pass_weight,
+                e2e_weight=e2e_weight,
+                policy_e2e_weight=policy_e2e_weight,
+                policy_cache_weight=policy_cache_weight,
+                policy_transition_weight=policy_transition_weight,
+                policy_active_memory_weight=policy_active_memory_weight,
             )
             return {
                 "schema": "beglin-precision-closed-loop-config-v1",
@@ -527,6 +545,7 @@ class PersistentRouteWorker:
             decision = engine.decide(
                 current_policy=before["active_policy"],
                 signal=signal,
+                runtime_state=before,
             )
             result = self._epoch_scheduler().run(
                 parsed,
@@ -552,6 +571,10 @@ class PersistentRouteWorker:
                 ],
                 "allocation_sha256": decision["allocation_sha256"],
                 "selection_sha256": decision["selection_sha256"],
+                "cost_evidence_sha256": decision.get("cost_evidence_sha256"),
+                "objective_weights": decision.get("objective_weights"),
+                "policy_cost_optimizer": decision.get("policy_cost_optimizer"),
+                "policy_cost_weights": decision.get("policy_cost_weights"),
                 "current_policy_hash": decision["current_policy_hash"],
                 "selected_policy_hash": decision["selected_policy_hash"],
                 "selected_policy": decision["selected_policy"],

@@ -7154,8 +7154,56 @@ static uint64_t g_moe_promoted_nq_gpu_snapshot[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAY
 static int g_moe_promoted_nq_gpu_snapshot_kind[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
 static int g_moe_promoted_nq_gpu_snapshot_bits[MOE_ATTRIB_ROLE_COUNT][MOE_MAXLAYERS];
 static uint64_t g_moe_gpu_weight_epoch = 0;
+// P4 measured transition-cost telemetry. All fields describe the last durable
+// transaction ACK; resident cache bytes are process-lifetime cumulative bytes
+// for materialized qNg64 cache entries and therefore expose the real memory
+// tradeoff of avoiding repeated transcodes.
+static int g_moe_gpu_transition_active = 0;
+static double g_moe_gpu_transition_t0 = 0.0;
+static double g_moe_gpu_last_transition_ms = 0.0;
+static int g_moe_gpu_last_cache_hits = 0;
+static int g_moe_gpu_last_cache_misses = 0;
+static uint64_t g_moe_gpu_last_cache_bytes_added = 0;
+static uint64_t g_moe_gpu_resident_qng64_cache_bytes = 0;
 static MoeGpuTxnCommand g_moe_gpu_pending_txn;
 static char g_moe_gpu_last_txn_id[96];
+
+static uint64_t moe_gpu_qng64_tensor_bytes(const MoeAFTensor *t) {
+    if (!t || t->packed_bytes < 0 || t->E <= 0 || t->out <= 0 || t->ng <= 0)
+        return 0;
+    uint64_t scale_bytes = (uint64_t)t->E * (uint64_t)t->out *
+                           (uint64_t)t->ng * (uint64_t)sizeof(float);
+    return (uint64_t)t->packed_bytes + scale_bytes;
+}
+
+static void moe_gpu_transition_begin(void) {
+    g_moe_gpu_transition_active = 1;
+    g_moe_gpu_transition_t0 = nowt();
+    g_moe_gpu_last_transition_ms = 0.0;
+    g_moe_gpu_last_cache_hits = 0;
+    g_moe_gpu_last_cache_misses = 0;
+    g_moe_gpu_last_cache_bytes_added = 0;
+}
+
+static void moe_gpu_transition_finish(void) {
+    if (!g_moe_gpu_transition_active) return;
+    g_moe_gpu_last_transition_ms = (nowt() - g_moe_gpu_transition_t0) * 1000.0;
+    if (g_moe_gpu_last_transition_ms < 0.0) g_moe_gpu_last_transition_ms = 0.0;
+    g_moe_gpu_transition_active = 0;
+}
+
+static void moe_gpu_cache_store(
+        MoeAttribRole role, int layer, int n, MoeAFTensor *tensor) {
+    if (!tensor || n <= 0 || n >= 16) return;
+    if (g_moe_promoted_nq_gpu_cache[role][layer][n]) return;
+    g_moe_promoted_nq_gpu_cache[role][layer][n] = tensor;
+    uint64_t bytes = moe_gpu_qng64_tensor_bytes(tensor);
+    g_moe_gpu_resident_qng64_cache_bytes += bytes;
+    if (g_moe_gpu_transition_active) {
+        g_moe_gpu_last_cache_misses++;
+        g_moe_gpu_last_cache_bytes_added += bytes;
+    }
+}
 static int moe_gpu_write_applied_ack(
     const char *status, int changed_targets, const MoeGpuTxnCommand *txn);
 static void moe_promotion_nq_init_gpu(void);
@@ -16993,12 +17041,22 @@ static int moe_gpu_write_applied_ack(
             "\"status\":\"%s\",\"backend\":\"mlx_metal\","
             "\"correction_mode\":\"%s\","
             "\"weight_epoch\":%llu,\"changed_targets\":%d,"
-            "\"snapshot_count\":%d,",
+            "\"snapshot_count\":%d,"
+            "\"transition_wall_ms\":%.6f,"
+            "\"transition_cache_hits\":%d,"
+            "\"transition_cache_misses\":%d,"
+            "\"transition_cache_bytes_added\":%llu,"
+            "\"resident_qng64_cache_bytes\":%llu,",
             status ? status : "UNKNOWN",
             corr_mode,
             (unsigned long long)g_moe_gpu_weight_epoch,
             changed_targets,
-            mlx_gpu_binding_snapshot_count());
+            mlx_gpu_binding_snapshot_count(),
+            g_moe_gpu_last_transition_ms,
+            g_moe_gpu_last_cache_hits,
+            g_moe_gpu_last_cache_misses,
+            (unsigned long long)g_moe_gpu_last_cache_bytes_added,
+            (unsigned long long)g_moe_gpu_resident_qng64_cache_bytes);
     if (txn && txn->valid) {
         fprintf(f,
                 "\"txn_id\":\"%s\",\"expected_epoch\":%llu,"
@@ -17032,6 +17090,22 @@ static int moe_gpu_write_applied_ack(
                 "\"expected_n\":null,\"expected_policy_hash\":null,"
                 "\"target_role\":null,\"target_layer\":null,\"txn_targets\":[],");
     }
+    fprintf(f, "\"qng64_cache\":[");
+    int cache_first = 1;
+    for (int r = 0; r < MOE_ATTRIB_ROLE_COUNT; r++) {
+        for (int l = 0; l < MOE_NL; l++) {
+            for (int n = 1; n < 16; n++) {
+                MoeAFTensor *cached = g_moe_promoted_nq_gpu_cache[r][l][n];
+                if (!cached) continue;
+                fprintf(f,
+                        "%s{\"role\":\"%s\",\"layer\":%d,\"n\":%d,\"bytes\":%llu}",
+                        cache_first ? "" : ",", MOE_ATTRIB_ROLE_NAMES[r], l, n,
+                        (unsigned long long)moe_gpu_qng64_tensor_bytes(cached));
+                cache_first = 0;
+            }
+        }
+    }
+    fprintf(f, "],");
     fprintf(f, "\"active_policy\":[");
     int first = 1;
     for (int r = 0; r < MOE_ATTRIB_ROLE_COUNT; r++) {
@@ -17343,6 +17417,7 @@ static int moe_gpu_ack_already_has_txn(const char *txn_id) {
 
 static int moe_gpu_txn_mark_terminal(
         const MoeGpuTxnCommand *txn, const char *status, int changed_targets) {
+    moe_gpu_transition_finish();
     if (!moe_gpu_write_applied_ack(status, changed_targets, txn)) return 0;
     snprintf(g_moe_gpu_last_txn_id, sizeof g_moe_gpu_last_txn_id, "%s", txn->txn_id);
     return 1;
@@ -17412,6 +17487,7 @@ static MoeAFTensor *moe_gpu_qng64_cached(
     if (n <= 0 || n >= 16 || !moe_qng64_n_supported(n)) return NULL;
     MoeAFTensor *cached = g_moe_promoted_nq_gpu_cache[role][layer][n];
     if (cached) {
+        if (g_moe_gpu_transition_active) g_moe_gpu_last_cache_hits++;
         fprintf(stderr,
                 "[moe gpu rebind] CACHE_HIT role=%s layer=%d n=%d\n",
                 MOE_ATTRIB_ROLE_NAMES[role], layer, n);
@@ -17435,7 +17511,7 @@ static MoeAFTensor *moe_gpu_qng64_cached(
         qnt = st_register_moe_dense_af_qNg64_as(st_name, n, base_ptr->name);
     }
     g_st_moe = saved_st_moe;
-    if (qnt) g_moe_promoted_nq_gpu_cache[role][layer][n] = qnt;
+    if (qnt) moe_gpu_cache_store(role, layer, n, qnt);
     return qnt;
 }
 
@@ -17664,6 +17740,7 @@ static int moe_gpu_demotion_pending(void) {
             exit(1);
         }
         if (moe_gpu_ack_already_has_txn(cmd.txn_id)) return 0;
+        moe_gpu_transition_begin();
         int stale = (cmd.expected_epoch != g_moe_gpu_weight_epoch);
         if (!stale) {
             for (int i = 0; i < cmd.target_count; i++) {
@@ -18017,7 +18094,7 @@ static void moe_promotion_nq_init_gpu(void) {
             qnt = st_register_moe_dense_af_qNg64_as(st_name, n, base_ptr->name);
         }
         if (qnt && n > 0 && n < 16)
-            g_moe_promoted_nq_gpu_cache[role][layer][n] = qnt;
+            moe_gpu_cache_store(role, layer, n, qnt);
         // qnt->base is always non-NULL for a freshly-registered tensor (both registrars malloc
         // it unconditionally) -- the ": af_blob" fallback every other GPU bind call site in this
         // file carries never actually applies here, so this function needs no af_blob parameter.

@@ -31,6 +31,15 @@ class RuntimeControlTests(unittest.TestCase):
             "target_role": None,
             "target_layer": None,
             "active_policy": list(reversed(POLICY)),
+            "transition_wall_ms": 12.5,
+            "transition_cache_hits": 1,
+            "transition_cache_misses": 2,
+            "transition_cache_bytes_added": 4096,
+            "resident_qng64_cache_bytes": 8192,
+            "qng64_cache": [
+                {"role": "shared_up_proj", "layer": 3, "n": 5, "bytes": 4096},
+                {"role": "shared_down_proj", "layer": 4, "n": 6, "bytes": 4096},
+            ],
         }
         value.update(overrides)
         path = pathlib.Path(root) / "ack.json"
@@ -52,6 +61,28 @@ class RuntimeControlTests(unittest.TestCase):
                 ctl.normalize_runtime_ack(raw),
                 ctl.read_runtime_ack(path),
             )
+
+    def test_ack_normalizes_transition_cost_telemetry(self):
+        with tempfile.TemporaryDirectory() as td:
+            ack = ctl.read_runtime_ack(self.write_ack(td))
+            self.assertEqual(ack["transition_wall_ms"], 12.5)
+            self.assertEqual(ack["transition_cache_hits"], 1)
+            self.assertEqual(ack["transition_cache_misses"], 2)
+            self.assertEqual(ack["transition_cache_bytes_added"], 4096)
+            self.assertEqual(ack["resident_qng64_cache_bytes"], 8192)
+            self.assertEqual(
+                ack["qng64_cache"],
+                [
+                    {"role": "shared_down_proj", "layer": 4, "n": 6, "bytes": 4096},
+                    {"role": "shared_up_proj", "layer": 3, "n": 5, "bytes": 4096},
+                ],
+            )
+
+    def test_negative_transition_telemetry_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = self.write_ack(td, transition_wall_ms=-1)
+            with self.assertRaises(ctl.RuntimeControlError):
+                ctl.read_runtime_ack(path)
 
     def test_ack_requires_explicit_correction_mode(self):
         with self.assertRaises(ctl.RuntimeControlError):
