@@ -1,8 +1,8 @@
 # Agent E Handoff — Manual Approval Canary Contract
 
-Status: **READY_FOR_REVIEW**  
-Branch: `agent-e-manual-canary-20260926`  
-Remote staging base: `018c0147dcb7853642078e359606ca876678d85f`  
+Status: **READY_FOR_REVIEW**
+Branch: `agent-e-manual-canary-20260926`
+Remote staging base: `018c0147dcb7853642078e359606ca876678d85f`
 Implementation/CI head: `8e824fa7ed728be76ecc4d31a43876707337813e`
 
 ## What Agent E implemented
@@ -60,8 +60,8 @@ isolation. All controller files use `production_write_allowed=false`.
 
 ## Verification
 
-GitHub Actions run: **36153245385**  
-Job: **108131474709**  
+GitHub Actions run: **36153245385**
+Job: **108131474709**
 Result: **SUCCESS**
 
 ```text

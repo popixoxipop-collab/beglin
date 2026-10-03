@@ -1,7 +1,7 @@
 # HANDOFF — CPU/GPU Local Quantization Closed Loop
 
-작성 시각: 2026-09-24 KST  
-저장소: `popixoxipop-collab/beglin`  
+작성 시각: 2026-09-24 KST
+저장소: `popixoxipop-collab/beglin`
 목적: 새 ChatGPT 채팅에서 `@Tailnet Commander EOE Probe`로 XOX/BOB에 재접속한 뒤 GPU precision-control 구현을 즉시 이어가기 위한 상태 전달 문서.
 
 ## 1. 한 줄 요약
@@ -801,4 +801,3 @@ FORBIDDEN: This conversation does not support developer MCPs
 - GitHub connector로 branch/PR/code 작업은 계속 가능
 - 실제 XOX/BOB compile/runtime 검증은 Tailnet Commander가 실행 가능한 새 채팅에서 해야 함
 - production 변경은 그 전까지 하지 말 것
-
