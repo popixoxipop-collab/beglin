@@ -85,6 +85,19 @@ class DynamicSelectorTests(unittest.TestCase):
             "TRIGGER_CONDITIONED_ALTERNATE",
         )
 
+    def test_multiple_valid_alternates_choose_measured_e2e_cost(self):
+        decision=allocator_decision()
+        for alt in decision["targets"][0]["dynamic_escalation"]["candidate_alternates"]:
+            alt["expected_e2e_ms"] = 20.0 if alt["n"]==6 else 8.0
+            alt["transition_p50_ms"] = 2.0
+            alt["resident_cache_bytes_after"] = 100
+            alt["expected_inference_passes"] = 1
+            alt["transition_cache_state"] = "warm"
+        evidence=[benefit_evidence(6),benefit_evidence(9)]
+        got=ds.select(decision,{"near_tie":True},evidence)
+        self.assertEqual(got["targets"][0]["selected_n"],9)
+        self.assertEqual(got["targets"][0]["cost"]["expected_e2e_ms"],8.0)
+
     def test_multiple_valid_alternates_choose_lower_cost_n(self):
         evidence=[benefit_evidence(6),benefit_evidence(9)]
         got=ds.select(allocator_decision(),{"near_tie":True},evidence)

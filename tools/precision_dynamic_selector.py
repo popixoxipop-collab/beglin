@@ -204,6 +204,11 @@ def choose_for_target(target: dict, signal: dict, trigger_evidence: list[dict]) 
                 "n":n,
                 "real_pass_events":int(alt.get("real_pass_events",0)),
                 "persistent_p50_ms":alt.get("persistent_p50_ms"),
+                "transition_p50_ms":alt.get("transition_p50_ms"),
+                "resident_cache_bytes_after":alt.get("resident_cache_bytes_after"),
+                "expected_inference_passes":alt.get("expected_inference_passes"),
+                "expected_e2e_ms":alt.get("expected_e2e_ms"),
+                "transition_cache_state":alt.get("transition_cache_state"),
                 "evidence":evidence_by_trigger,
             })
 
@@ -229,10 +234,16 @@ def choose_for_target(target: dict, signal: dict, trigger_evidence: list[dict]) 
 
     # Non-monotonic rule: never rank by larger n. Prefer the eligible alternate
     # with the smallest effective precision cost, then stronger event coverage.
-    chosen=min(
-        eligible,
-        key=lambda x:(x["n"],-x["real_pass_events"]),
-    )
+    if all(row.get("expected_e2e_ms") is not None for row in eligible):
+        chosen=min(
+            eligible,
+            key=lambda x:(float(x["expected_e2e_ms"]),x["n"],-x["real_pass_events"]),
+        )
+    else:
+        chosen=min(
+            eligible,
+            key=lambda x:(x["n"],-x["real_pass_events"]),
+        )
     return {
         "role":target["role"],"layer":int(target["layer"]),
         "status":"TRIGGER_CONDITIONED_ALTERNATE",
@@ -240,6 +251,13 @@ def choose_for_target(target: dict, signal: dict, trigger_evidence: list[dict]) 
         "base_n":base_n,
         "active_triggers":active,
         "evidence":chosen["evidence"],
+        "cost": {
+            "expected_e2e_ms": chosen.get("expected_e2e_ms"),
+            "transition_p50_ms": chosen.get("transition_p50_ms"),
+            "resident_cache_bytes_after": chosen.get("resident_cache_bytes_after"),
+            "expected_inference_passes": chosen.get("expected_inference_passes"),
+            "transition_cache_state": chosen.get("transition_cache_state"),
+        },
         "production_write_allowed":False,
     }
 

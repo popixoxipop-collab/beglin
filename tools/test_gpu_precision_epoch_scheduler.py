@@ -22,7 +22,7 @@ TARGET = [
 
 
 def write_ack(path, *, epoch=7, policy=BASE, status="PROMOTION_APPLIED",
-              txn_id=None, changed_targets=0):
+              txn_id=None, changed_targets=0, **overrides):
     value = {
         "schema": grc.ACK_SCHEMA,
         "status": status,
@@ -39,6 +39,7 @@ def write_ack(path, *, epoch=7, policy=BASE, status="PROMOTION_APPLIED",
         "target_layer": None,
         "active_policy": policy,
     }
+    value.update(overrides)
     Path(path).write_text(json.dumps(value))
 
 
@@ -122,8 +123,18 @@ class SchedulerTests(unittest.TestCase):
                     status="REBIND_SET_APPLIED",
                     txn_id=txn_id,
                     changed_targets=2,
+                    transition_wall_ms=7.25,
+                    transition_cache_hits=1,
+                    transition_cache_misses=1,
+                    transition_cache_bytes_added=4096,
+                    resident_qng64_cache_bytes=8192,
                 )
-                return {"finite_logits": True, "responses": [[1]]}
+                return {
+                    "finite_logits": True,
+                    "responses": [[1]],
+                    "engine_wall_ms": 20.0,
+                    "roundtrip_ms": 30.0,
+                }
 
             scheduler = pes.PrecisionEpochScheduler(
                 ack_path=ack, txn_path=txn, submit_fn=submit
@@ -139,6 +150,14 @@ class SchedulerTests(unittest.TestCase):
             self.assertEqual(meta["after_epoch"], 8)
             self.assertEqual(len(meta["changed_targets"]), 2)
             self.assertEqual(meta["after_policy_hash"], pc.policy_hash(TARGET))
+            self.assertEqual(meta["transition_cost"]["transition_wall_ms"], 7.25)
+            self.assertEqual(meta["transition_cost"]["cache_hits"], 1)
+            self.assertEqual(meta["transition_cost"]["cache_misses"], 1)
+            self.assertEqual(meta["transition_cost"]["cache_bytes_added"], 4096)
+            self.assertEqual(meta["transition_cost"]["resident_cache_bytes"], 8192)
+            self.assertEqual(meta["inference_passes"], 1)
+            self.assertEqual(meta["engine_wall_ms"], 20.0)
+            self.assertEqual(meta["roundtrip_ms"], 30.0)
 
     def test_noop_policy_does_not_advance_epoch(self):
         with tempfile.TemporaryDirectory() as td:
@@ -154,6 +173,10 @@ class SchedulerTests(unittest.TestCase):
             self.assertFalse(got["precision_epoch"]["transitioned"])
             self.assertEqual(got["precision_epoch"]["before_epoch"], 7)
             self.assertEqual(got["precision_epoch"]["after_epoch"], 7)
+            self.assertEqual(
+                got["precision_epoch"]["transition_cost"]["transition_wall_ms"],
+                0.0,
+            )
             self.assertFalse(txn.exists())
 
     def test_concurrent_admissions_do_not_interleave(self):

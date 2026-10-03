@@ -121,18 +121,66 @@ def normalize_runtime_ack(value: dict) -> dict:
     except Exception as exc:
         raise RuntimeControlError(f"invalid ACK active_policy: {exc}") from exc
 
+    cache_rows = ack.get("qng64_cache", [])
+    if not isinstance(cache_rows, list):
+        raise RuntimeControlError("ACK qng64_cache must be a list")
+    normalized_cache = []
+    cache_keys = set()
+    for idx, row in enumerate(cache_rows):
+        if not isinstance(row, dict):
+            raise RuntimeControlError(f"ACK qng64_cache[{idx}] must be an object")
+        try:
+            role = str(row["role"])
+            layer = int(row["layer"])
+            n = int(row["n"])
+            bytes_ = int(row["bytes"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeControlError(f"ACK qng64_cache[{idx}] is invalid") from exc
+        if layer < 0 or n not in SUPPORTED_QNG64 or bytes_ < 0:
+            raise RuntimeControlError(f"ACK qng64_cache[{idx}] is out of range")
+        key = (role, layer, n)
+        if key in cache_keys:
+            raise RuntimeControlError("ACK qng64_cache contains duplicate target width")
+        cache_keys.add(key)
+        normalized_cache.append({"role": role, "layer": layer, "n": n, "bytes": bytes_})
+    normalized_cache.sort(key=lambda row: (row["role"], row["layer"], row["n"]))
+
     # One active row per role/layer.  Duplicates make the runtime state
     # ambiguous even if canonical hashing would otherwise be deterministic.
     keys = [(r["role"], r["layer"]) for r in normalized]
     if len(keys) != len(set(keys)):
         raise RuntimeControlError("ACK active_policy contains duplicate role/layer")
 
+    # P4 transition-cost telemetry is optional for backward compatibility with
+    # already-certified binaries. When present, validate and normalize it so
+    # callers never optimize on malformed negative measurements.
+    telemetry = {}
+    numeric_fields = {
+        "transition_wall_ms": float,
+        "transition_cache_hits": int,
+        "transition_cache_misses": int,
+        "transition_cache_bytes_added": int,
+        "resident_qng64_cache_bytes": int,
+    }
+    for field, caster in numeric_fields.items():
+        if field not in ack:
+            continue
+        try:
+            value = caster(ack[field])
+        except (TypeError, ValueError) as exc:
+            raise RuntimeControlError(f"ACK {field} is invalid") from exc
+        if value < 0:
+            raise RuntimeControlError(f"ACK {field} must be non-negative")
+        telemetry[field] = value
+
     return {
         **ack,
         "weight_epoch": epoch,
         "active_policy": normalized,
         "active_policy_hash": pc.policy_hash(normalized),
+        "qng64_cache": normalized_cache,
         "ack_sha256": raw_ack_sha256,
+        **telemetry,
     }
 
 

@@ -403,39 +403,93 @@ def pareto_frontier(rows: list[dict]) -> list[dict]:
     return sorted(frontier, key=lambda r: (r["estimated_bytes"], r["n"]))
 
 
-def choose_target(rows: list[dict], *, memory_weight=1.0, latency_weight=0.0, rss_weight=0.0) -> dict | None:
-    feasible = [r for r in rows if r["feasible"]]
-    if not feasible:
-        return None
-    mem0 = min(r["estimated_bytes"] for r in feasible)
-    lat_values = [r["persistent_p50_ms"] for r in feasible if r.get("persistent_p50_ms") is not None]
-    rss_values = [r["persistent_rss_bytes"] for r in feasible if r.get("persistent_rss_bytes") is not None]
-    lat0 = min(lat_values) if lat_values else None
-    rss0 = min(rss_values) if rss_values else None
-
-    scored = []
-    for row in feasible:
-        score = memory_weight * (row["estimated_bytes"] / mem0)
-        used = ["memory"]
-        if latency_weight and lat0 is not None and row.get("persistent_p50_ms") is not None:
-            score += latency_weight * (row["persistent_p50_ms"] / lat0)
-            used.append("latency")
-        if rss_weight and rss0 is not None and row.get("persistent_rss_bytes") is not None:
-            score += rss_weight * (row["persistent_rss_bytes"] / rss0)
-            used.append("rss")
-        scored.append((score, -row["real_pass_events"], row["n"], row, used))
-    _, _, _, chosen, used = min(scored, key=lambda x: (x[0], x[1], x[2]))
-    return {**chosen, "objective_score": min(x[0] for x in scored), "objective_dimensions": used}
+def _objective_dimensions(weights: dict) -> list[tuple[str, str, float]]:
+    specs = [
+        ("memory", "estimated_bytes", float(weights.get("memory_weight", 1.0))),
+        ("latency", "persistent_p50_ms", float(weights.get("latency_weight", 0.0))),
+        ("rss", "persistent_rss_bytes", float(weights.get("rss_weight", 0.0))),
+        ("transition", "transition_p50_ms", float(weights.get("transition_weight", 0.0))),
+        ("cache", "resident_cache_bytes_after", float(weights.get("cache_weight", 0.0))),
+        ("inference_passes", "expected_inference_passes", float(weights.get("inference_pass_weight", 0.0))),
+        ("e2e", "expected_e2e_ms", float(weights.get("e2e_weight", 0.0))),
+    ]
+    for name, _, weight in specs:
+        if weight < 0:
+            raise AllocatorError(f"objective weight {name} must be non-negative")
+    return [row for row in specs if row[2] != 0.0]
 
 
-def choose_conditional_base(rows: list[dict], static_safe: dict | None) -> dict | None:
-    candidates = [r for r in rows if r.get("conditionally_feasible")]
+def _score_candidate(row: dict, universe: list[dict], dimensions: list[tuple[str, str, float]]) -> tuple[float, list[str]]:
+    score = 0.0
+    used = []
+    for name, field, weight in dimensions:
+        values = [candidate.get(field) for candidate in universe]
+        if any(value is None for value in values):
+            raise AllocatorError(
+                f"objective dimension {name} requires complete measured field {field}"
+            )
+        vals = [float(value) for value in values]
+        if any(value < 0 for value in vals):
+            raise AllocatorError(f"objective dimension {name} contains negative values")
+        value = float(row[field])
+        baseline = min(vals)
+        if baseline > 0:
+            normalized = value / baseline
+        else:
+            scale = max(max(vals), 1.0)
+            normalized = value / scale
+        score += weight * normalized
+        used.append(name)
+    return score, used
+
+
+def _choose_scored(candidates: list[dict], universe: list[dict], **weights) -> dict | None:
     if not candidates:
         return None
-    chosen = min(candidates, key=lambda r: (r["estimated_bytes"], r["n"]))
-    if static_safe is not None and chosen["estimated_bytes"] >= static_safe["estimated_bytes"]:
+    dimensions = _objective_dimensions(weights)
+    if not dimensions:
+        raise AllocatorError("at least one objective weight must be non-zero")
+    scored = []
+    for row in candidates:
+        score, used = _score_candidate(row, universe, dimensions)
+        scored.append((score, -int(row.get("real_pass_events", 0)), int(row["n"]), row, used))
+    score, _, _, chosen, used = min(scored, key=lambda x: (x[0], x[1], x[2]))
+    return {**chosen, "objective_score": score, "objective_dimensions": used}
+
+
+def choose_target(rows: list[dict], **weights) -> dict | None:
+    feasible = [r for r in rows if r["feasible"]]
+    universe = [r for r in rows if r["feasible"] or r.get("conditionally_feasible")]
+    return _choose_scored(feasible, universe or feasible, **weights)
+
+
+def choose_conditional_base(rows: list[dict], static_safe: dict | None, **weights) -> dict | None:
+    candidates = [r for r in rows if r.get("conditionally_feasible")]
+    universe = [r for r in rows if r["feasible"] or r.get("conditionally_feasible")]
+    chosen = _choose_scored(candidates, universe or candidates, **weights)
+    if chosen is None:
+        return None
+    if static_safe is not None and chosen["objective_score"] >= static_safe["objective_score"]:
         return None
     return chosen
+
+
+def _alternate_summary(row: dict) -> dict:
+    out = {
+        "n": row["n"],
+        "real_pass_events": row["real_pass_events"],
+        "persistent_p50_ms": row.get("persistent_p50_ms"),
+    }
+    for key in (
+        "transition_p50_ms",
+        "resident_cache_bytes_after",
+        "expected_inference_passes",
+        "expected_e2e_ms",
+        "transition_cache_state",
+    ):
+        if row.get(key) is not None:
+            out[key] = row.get(key)
+    return out
 
 
 def optimize(candidates: list[dict], current_policy: list[dict] | None = None, **weights) -> dict:
@@ -451,7 +505,7 @@ def optimize(candidates: list[dict], current_policy: list[dict] | None = None, *
     proposed_policy = dict(current)
     for target, rows in sorted(grouped.items()):
         static_safe = choose_target(rows, **weights)
-        conditional_base = choose_conditional_base(rows, static_safe)
+        conditional_base = choose_conditional_base(rows, static_safe, **weights)
         frontier = pareto_frontier(rows)
 
         if conditional_base is not None:
@@ -466,11 +520,7 @@ def optimize(candidates: list[dict], current_policy: list[dict] | None = None, *
                     r for r in rows
                     if int(r["n"]) == n and r.get("feasible") is True
                 )
-                alternates.append({
-                    "n": n,
-                    "real_pass_events": target_row["real_pass_events"],
-                    "persistent_p50_ms": target_row.get("persistent_p50_ms"),
-                })
+                alternates.append(_alternate_summary(target_row))
             proposals.append({
                 "role": target[0],
                 "layer": target[1],
@@ -506,8 +556,7 @@ def optimize(candidates: list[dict], current_policy: list[dict] | None = None, *
             continue
         proposed_policy[target] = int(chosen["n"])
         alternates = [
-            {"n": r["n"], "real_pass_events": r["real_pass_events"],
-             "persistent_p50_ms": r.get("persistent_p50_ms")}
+            _alternate_summary(r)
             for r in rows if r["feasible"] and r["n"] != chosen["n"]
         ]
         proposals.append({
@@ -551,6 +600,10 @@ def optimize(candidates: list[dict], current_policy: list[dict] | None = None, *
             "memory": float(weights.get("memory_weight", 1.0)),
             "latency": float(weights.get("latency_weight", 0.0)),
             "rss": float(weights.get("rss_weight", 0.0)),
+            "transition": float(weights.get("transition_weight", 0.0)),
+            "cache": float(weights.get("cache_weight", 0.0)),
+            "inference_passes": float(weights.get("inference_pass_weight", 0.0)),
+            "e2e": float(weights.get("e2e_weight", 0.0)),
         },
         "targets": proposals,
     }

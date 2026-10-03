@@ -24,6 +24,8 @@ from typing import Callable
 import precision_allocator as pa
 import precision_context as pc
 import precision_dynamic_selector as ds
+import precision_e2e_cost as pec
+import precision_policy_cost_optimizer as pco
 
 
 class PrecisionClosedLoopError(RuntimeError):
@@ -179,6 +181,11 @@ def materialize_selected_policy(
                 raise PrecisionClosedLoopError(
                     "trigger-conditioned alternate lacks contextual evidence"
                 )
+        elif status == "COST_OPTIMIZED_SAFE_POLICY":
+            if (selection.get("signal") or {}).get("active_triggers"):
+                raise PrecisionClosedLoopError(
+                    "cost optimizer may not override target precision while triggers are active"
+                )
         elif selected_n != base_n:
             raise PrecisionClosedLoopError(
                 f"selector status {status!r} may not leave allocator base"
@@ -259,9 +266,18 @@ class PrecisionClosedLoopEngine:
         candidates: list[dict],
         trigger_evidence: list[dict],
         combined_policy_evidence: list[dict],
+        cost_evidence: dict | None = None,
         memory_weight: float = 1.0,
         latency_weight: float = 0.0,
         rss_weight: float = 0.0,
+        transition_weight: float = 0.0,
+        cache_weight: float = 0.0,
+        inference_pass_weight: float = 0.0,
+        e2e_weight: float = 0.0,
+        policy_e2e_weight: float = 0.0,
+        policy_cache_weight: float = 0.0,
+        policy_transition_weight: float = 0.0,
+        policy_active_memory_weight: float = 0.0,
     ):
         if not isinstance(candidates, list) or not candidates:
             raise PrecisionClosedLoopError("candidates must be a non-empty list")
@@ -270,10 +286,23 @@ class PrecisionClosedLoopEngine:
         self.combined_policy_evidence = json.loads(
             json.dumps(combined_policy_evidence or [])
         )
+        self.cost_evidence = (
+            json.loads(json.dumps(cost_evidence)) if cost_evidence is not None else None
+        )
         self.weights = {
             "memory_weight": float(memory_weight),
             "latency_weight": float(latency_weight),
             "rss_weight": float(rss_weight),
+            "transition_weight": float(transition_weight),
+            "cache_weight": float(cache_weight),
+            "inference_pass_weight": float(inference_pass_weight),
+            "e2e_weight": float(e2e_weight),
+        }
+        self.policy_cost_weights = {
+            "e2e_weight": float(policy_e2e_weight),
+            "cache_weight": float(policy_cache_weight),
+            "transition_weight": float(policy_transition_weight),
+            "active_memory_weight": float(policy_active_memory_weight),
         }
         # Validate combined evidence once at configuration time.
         _combined_evidence_index(self.combined_policy_evidence)
@@ -281,13 +310,36 @@ class PrecisionClosedLoopEngine:
             "candidates": self.candidates,
             "trigger_evidence": self.trigger_evidence,
             "combined_policy_evidence": self.combined_policy_evidence,
+            "cost_evidence": self.cost_evidence,
             "weights": self.weights,
+            "policy_cost_weights": self.policy_cost_weights,
         })
 
-    def decide(self, *, current_policy: list[dict], signal: dict) -> dict:
+    def decide(
+        self,
+        *,
+        current_policy: list[dict],
+        signal: dict,
+        runtime_state: dict | None = None,
+    ) -> dict:
         current = pc.normalize_policy(current_policy)
+        candidates = self.candidates
+        if self.cost_evidence is not None:
+            if not isinstance(runtime_state, dict):
+                raise PrecisionClosedLoopError(
+                    "runtime_state is required when P4 cost evidence is configured"
+                )
+            try:
+                candidates = pec.enrich_candidates(
+                    self.candidates,
+                    current_policy=current,
+                    runtime_state=runtime_state,
+                    cost_evidence=self.cost_evidence,
+                )
+            except pec.PrecisionCostError as exc:
+                raise PrecisionClosedLoopError(str(exc)) from exc
         allocation = pa.optimize(
-            self.candidates,
+            candidates,
             current_policy=current,
             **self.weights,
         )
@@ -296,6 +348,43 @@ class PrecisionClosedLoopEngine:
             signal,
             self.trigger_evidence,
         )
+        policy_cost_result = None
+        if any(value != 0.0 for value in self.policy_cost_weights.values()):
+            if self.cost_evidence is None or not isinstance(runtime_state, dict):
+                raise PrecisionClosedLoopError(
+                    "policy cost optimization requires cost_evidence and runtime_state"
+                )
+            try:
+                policy_cost_result = pco.optimize_policy(
+                    current_policy=current,
+                    allocation=allocation,
+                    selection=selection,
+                    combined_policy_evidence=self.combined_policy_evidence,
+                    cost_evidence=self.cost_evidence,
+                    runtime_state=runtime_state,
+                    **self.policy_cost_weights,
+                )
+            except pco.PolicyCostError as exc:
+                raise PrecisionClosedLoopError(str(exc)) from exc
+            optimized = {
+                (row["role"], int(row["layer"])): int(row["n"])
+                for row in policy_cost_result["selected_policy"]
+            }
+            selection = json.loads(json.dumps(selection))
+            active = (selection.get("signal") or {}).get("active_triggers") or []
+            for row in selection.get("targets", []):
+                key = (str(row["role"]), int(row["layer"]))
+                if key not in optimized:
+                    continue
+                new_n = optimized[key]
+                if int(row["selected_n"]) != new_n:
+                    if active:
+                        raise PrecisionClosedLoopError(
+                            "policy optimizer attempted to override active trigger precision"
+                        )
+                    row["selected_n"] = new_n
+                    row["status"] = "COST_OPTIMIZED_SAFE_POLICY"
+            selection["selected_policy"] = policy_cost_result["selected_policy"]
         result = materialize_selected_policy(
             current_policy=current,
             allocation=allocation,
@@ -304,4 +393,10 @@ class PrecisionClosedLoopEngine:
         )
         result["evidence_snapshot_sha256"] = self.snapshot_sha256
         result["objective_weights"] = dict(self.weights)
+        result["policy_cost_optimizer"] = policy_cost_result
+        result["policy_cost_weights"] = dict(self.policy_cost_weights)
+        result["cost_evidence_sha256"] = (
+            pec.snapshot_sha256(self.cost_evidence)
+            if self.cost_evidence is not None else None
+        )
         return result
