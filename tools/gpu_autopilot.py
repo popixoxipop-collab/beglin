@@ -200,6 +200,59 @@ def _persist_g4_v3(*, args, context, g4_result, event, reference):
     }
 
 
+def _persist_g6_v3(
+    *,
+    args,
+    context,
+    pre_evidence,
+    post_evidence,
+    pre_ack,
+    post_ack,
+    canary_result,
+):
+    if not ev3.configured():
+        return None
+    run_id = _new_v3_run_id("g6-observer", context.context_hash)
+    observer_result = canary_result.get("observer") or {}
+    passed = (
+        canary_result.get("status") == "CANARY_PASS"
+        and canary_result.get("rollback_required") is False
+    )
+    row = {
+        "run_id": run_id,
+        "context_hash": context.context_hash,
+        "backend": context.backend,
+        "run_kind": "observer",
+        "status": str(canary_result.get("status", "UNKNOWN")),
+        "model_id": args.model,
+        "role": args.role,
+        "layer": int(args.layer),
+        "n": int(args.n),
+        "policy_preimage_sha256": pre_ack.get("active_policy_hash"),
+        "policy_postimage_sha256": post_ack.get("active_policy_hash"),
+        "weight_epoch": int(post_ack.get("weight_epoch", 0)),
+        "pass": bool(passed),
+        "reason": observer_result.get("reason") or canary_result.get("decision"),
+        "metrics": {
+            "decision": canary_result.get("decision"),
+            "rollback_required": canary_result.get("rollback_required"),
+            "auto_expand": canary_result.get("auto_expand"),
+            "baseline_worker_instance_id": pre_evidence.worker_instance_id,
+            "post_worker_instance_id": post_evidence.worker_instance_id,
+            "baseline_requests_completed": pre_evidence.requests_completed,
+            "post_requests_completed": post_evidence.requests_completed,
+            "baseline_attribution_hits": pre_evidence.attribution_hits,
+            "post_attribution_hits": post_evidence.attribution_hits,
+            "target_replay_pass": post_evidence.target_replay_pass,
+            "baseline_rate": observer_result.get("baseline_rate"),
+            "post_rate": observer_result.get("post_rate"),
+        },
+    }
+    persisted = ev3.insert_validation_run(row)
+    log(f"Supabase v3 G6 verdict persisted: {run_id}")
+    return persisted
+
+
 def run_worker(binary, cwd, moe_base, safetensors, manifest, run_dir,
                promotion_rows, slots=4, timeout=180):
     """Launch one real qwen_infer_gpu process to completion; returns
@@ -478,6 +531,15 @@ def run_candidate(args):
     canary_result = canary.evaluate_restart_canary(plan, pre_evidence, post_evidence)
     log(f"G6 verdict: status={canary_result['status']} decision={canary_result['decision']} "
         f"rollback_required={canary_result['rollback_required']}")
+    _persist_g6_v3(
+        args=args,
+        context=context,
+        pre_evidence=pre_evidence,
+        post_evidence=post_evidence,
+        pre_ack=pre_ack,
+        post_ack=post_ack,
+        canary_result=canary_result,
+    )
 
     store = pcs.ControlStore(root=os.path.join(root, "state"),
                               model_revision_id=args.model, backend="mlx_metal")
