@@ -15,7 +15,7 @@
       "type": "string"
     },
     "schema": {
-      "type": "string"
+      "const": "beglin-model-source-v1"
     },
     "source_format": {
       "enum": [
