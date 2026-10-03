@@ -14689,6 +14689,44 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     const char *env_check     = getenv("QWEN_MOE_GPU_CB_CHECK");
     const char *env_validation = getenv("QWEN_MOE_GPU_VALIDATION_REPORT");
     const char *env_correction = getenv("QWEN_MOE_NEARTIE_CORRECT");
+
+    // Precision Allocator v1 GPU sensor. The legacy near-tie event logger is
+    // initialized only in the CPU verification gate, while this online Metal
+    // gate already owns final logits for every emitted token. Default-off
+    // sensing measures top1-vs-runner-up margin without changing weights,
+    // routing, correction, admission, or the production route.
+    const char *env_gpu_neartie_log = getenv("QWEN_MOE_NEARTIE_LOG");
+    const char *env_gpu_neartie_thr = getenv("QWEN_MOE_NEARTIE_THRESHOLD");
+    const char *env_gpu_neartie_events = getenv("QWEN_MOE_NEARTIE_EVENTS_LOG");
+    const char *env_gpu_neartie_model = getenv("QWEN_MOE_NEARTIE_MODEL");
+    const char *env_gpu_neartie_corpus = getenv("QWEN_MOE_NEARTIE_CORPUS");
+    int gpu_neartie_log_on = env_gpu_neartie_log && env_gpu_neartie_log[0]
+                             && atoi(env_gpu_neartie_log) != 0;
+    double gpu_neartie_threshold = env_gpu_neartie_thr && env_gpu_neartie_thr[0]
+                                   ? atof(env_gpu_neartie_thr) : 0.5;
+    FILE *gpu_neartie_fp = NULL;
+    char gpu_neartie_model[64] = "unknown";
+    char gpu_neartie_corpus[64] = "unknown";
+    if (env_gpu_neartie_model && env_gpu_neartie_model[0])
+        snprintf(gpu_neartie_model, sizeof gpu_neartie_model, "%s", env_gpu_neartie_model);
+    if (env_gpu_neartie_corpus && env_gpu_neartie_corpus[0])
+        snprintf(gpu_neartie_corpus, sizeof gpu_neartie_corpus, "%s", env_gpu_neartie_corpus);
+    if (gpu_neartie_log_on && env_gpu_neartie_events && env_gpu_neartie_events[0]) {
+        gpu_neartie_fp = fopen(env_gpu_neartie_events, "a");
+        if (!gpu_neartie_fp) {
+            fprintf(stderr,
+                    "FATAL: [moe gpu cb online] cannot open QWEN_MOE_NEARTIE_EVENTS_LOG='%s'\n",
+                    env_gpu_neartie_events);
+            exit(1);
+        }
+    }
+    if (gpu_neartie_log_on) {
+        fprintf(stderr,
+                "[moe gpu neartie] sensor enabled threshold=%.6f model=%s corpus=%s events=%s\n",
+                gpu_neartie_threshold, gpu_neartie_model, gpu_neartie_corpus,
+                gpu_neartie_fp ? env_gpu_neartie_events : "(stderr-only)");
+    }
+
     int validation_on = env_validation && env_validation[0] && atoi(env_validation) != 0;
     int validation_finite = 1; long validation_logits_checked = 0;
 
@@ -14942,6 +14980,26 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 int s = slot_arr[m], r = mcb_req[s];
                 float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
                 int am = moe_gpu_argmax_finite(lg, MOE_VOCAB, "moe gpu cb online", step, r);
+                if (gpu_neartie_log_on && pass == 1) {
+                    int competing = -1;
+                    double margin = moe_cb4c_margin_ex(lg, &competing);
+                    int event_pos = mcb_pos[s];
+                    if (margin < gpu_neartie_threshold) {
+                        fprintf(stderr,
+                                "[moe gpu neartie] event req=%d pos=%d argmax=%d vs_token=%d margin=%.6f threshold=%.6f batch_size=%d\n",
+                                r, event_pos, am, competing, margin, gpu_neartie_threshold, A);
+                        if (gpu_neartie_fp) {
+                            fprintf(gpu_neartie_fp,
+                                    "{\"kind\":\"gpu_event\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,"
+                                    "\"predicted_token\":%d,\"competing_token\":%d,\"margin\":%.6f,"
+                                    "\"batch_size\":%d,\"model\":\"%s\",\"corpus\":\"%s\","
+                                    "\"backend\":\"mlx_metal\"}\n",
+                                    (long)time(NULL), r, event_pos, am, competing, margin, A,
+                                    gpu_neartie_model, gpu_neartie_corpus);
+                            fflush(gpu_neartie_fp);
+                        }
+                    }
+                }
                 rq_out[r][rq_nout[r]++] = am; mcb_pos[s]++;
                 if (am == MOE_EOS_TOKEN_ID || am == stop_extra || rq_nout[r] >= rq_maxnew[r] || mcb_pos[s] >= MOE_CBATCH_MAXPOS)
                     { mcb_active[s] = 0; mcb_freed_before[s] = 1; nact--; }
@@ -14953,6 +15011,26 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 if (spos_arr[m] != rq_plen[r] - 1) continue;
                 float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
                 int am = moe_gpu_argmax_finite(lg, MOE_VOCAB, "moe gpu cb online", step, r);
+                if (gpu_neartie_log_on && pass == 1) {
+                    int competing = -1;
+                    double margin = moe_cb4c_margin_ex(lg, &competing);
+                    int event_pos = spos_arr[m];
+                    if (margin < gpu_neartie_threshold) {
+                        fprintf(stderr,
+                                "[moe gpu neartie] event req=%d pos=%d argmax=%d vs_token=%d margin=%.6f threshold=%.6f batch_size=%d\n",
+                                r, event_pos, am, competing, margin, gpu_neartie_threshold, A);
+                        if (gpu_neartie_fp) {
+                            fprintf(gpu_neartie_fp,
+                                    "{\"kind\":\"gpu_event\",\"ts_unix\":%ld,\"req\":%d,\"pos\":%d,"
+                                    "\"predicted_token\":%d,\"competing_token\":%d,\"margin\":%.6f,"
+                                    "\"batch_size\":%d,\"model\":\"%s\",\"corpus\":\"%s\","
+                                    "\"backend\":\"mlx_metal\"}\n",
+                                    (long)time(NULL), r, event_pos, am, competing, margin, A,
+                                    gpu_neartie_model, gpu_neartie_corpus);
+                            fflush(gpu_neartie_fp);
+                        }
+                    }
+                }
                 rq_out[r][rq_nout[r]++] = am; rq_t_first[r] = temit;
                 if (am == MOE_EOS_TOKEN_ID || am == stop_extra || rq_nout[r] >= rq_maxnew[r])
                     { mcb_active[s] = 0; mcb_freed_before[s] = 1; nact--; }
@@ -15016,6 +15094,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     break;
     }
 
+    if (gpu_neartie_fp) fclose(gpu_neartie_fp);
     free(x_embed); free(gpu_logits);
     return 1;
 }
