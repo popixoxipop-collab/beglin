@@ -16,9 +16,11 @@ The previous spawn-per-admission supervisor remains available for rollback.
 from __future__ import annotations
 
 import argparse
+import hashlib
 from http import HTTPStatus
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import signal
@@ -88,53 +90,137 @@ def verify_persistent_artifact() -> dict:
     }
 
 
-def _read_runtime_ack(path: Path) -> dict:
-    tools = str(base.REPO / "tools")
-    if tools not in sys.path:
-        sys.path.insert(0, tools)
-    import gpu_runtime_control as grc
-    return grc.read_runtime_ack(path)
-
-
-def _read_neartie_events_since(path: Path, offset: int) -> list[dict]:
-    if offset < 0:
-        raise PersistentSupervisorError("near-tie telemetry offset cannot be negative")
-    if not path.is_file():
-        return []
-    events = []
-    with path.open("rb") as handle:
-        handle.seek(offset)
-        for raw in handle:
-            raw = raw.strip()
-            if not raw:
-                continue
-            try:
-                row = json.loads(raw.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                continue
-            if row.get("kind") != "event":
-                continue
-            try:
-                event = {
-                    "req": int(row["req"]),
-                    "pos": int(row["pos"]),
-                    "predicted_token": int(row["predicted_token"]),
-                    "competing_token": int(row["competing_token"]),
-                    "margin": float(row["margin"]),
-                    "batch_size": int(row["batch_size"]),
-                }
-            except (KeyError, TypeError, ValueError):
-                continue
-            events.append(event)
-    return events
+def _canonical_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
 def _policy_hash(rows: list[dict]) -> str:
-    tools = str(base.REPO / "tools")
-    if tools not in sys.path:
-        sys.path.insert(0, tools)
-    import precision_context as pc
-    return pc.policy_hash(rows)
+    normalized = sorted(
+        [
+            {"role": str(row["role"]), "layer": int(row["layer"]), "n": int(row["n"])}
+            for row in rows
+        ],
+        key=lambda row: (row["role"], row["layer"], row["n"]),
+    )
+    return hashlib.sha256(_canonical_json(normalized).encode()).hexdigest()
+
+
+def _read_runtime_ack(path: Path) -> dict:
+    try:
+        raw = json.loads(Path(path).read_text())
+    except Exception as exc:
+        raise PersistentSupervisorError(f"invalid runtime ACK at {path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise PersistentSupervisorError("runtime ACK must be a JSON object")
+    if raw.get("schema") != "gpu-precision-applied-v1":
+        raise PersistentSupervisorError(
+            f"unexpected runtime ACK schema: {raw.get('schema')!r}"
+        )
+    if raw.get("backend") != "mlx_metal":
+        raise PersistentSupervisorError(
+            f"unexpected runtime ACK backend: {raw.get('backend')!r}"
+        )
+    if raw.get("correction_mode") not in {"off", "on"}:
+        raise PersistentSupervisorError("runtime ACK correction_mode is invalid")
+    try:
+        epoch = int(raw["weight_epoch"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PersistentSupervisorError("runtime ACK weight_epoch is invalid") from exc
+    if epoch < 0:
+        raise PersistentSupervisorError("runtime ACK weight_epoch is negative")
+    policy = raw.get("active_policy")
+    if not isinstance(policy, list):
+        raise PersistentSupervisorError("runtime ACK active_policy must be a list")
+    try:
+        normalized = sorted(
+            [
+                {"role": str(row["role"]), "layer": int(row["layer"]), "n": int(row["n"])}
+                for row in policy
+            ],
+            key=lambda row: (row["role"], row["layer"], row["n"]),
+        )
+    except Exception as exc:
+        raise PersistentSupervisorError(f"runtime ACK policy is invalid: {exc}") from exc
+    keys = [(row["role"], row["layer"]) for row in normalized]
+    if len(keys) != len(set(keys)):
+        raise PersistentSupervisorError("runtime ACK policy contains duplicate targets")
+    return {
+        **raw,
+        "weight_epoch": epoch,
+        "active_policy": normalized,
+        "active_policy_hash": _policy_hash(normalized),
+        "ack_sha256": hashlib.sha256(_canonical_json(raw).encode()).hexdigest(),
+    }
+
+
+_SAFE_TXN_TOKEN = re.compile(r"^[A-Za-z0-9._:-]+$")
+
+
+def _fsync_parent(path: Path) -> None:
+    flags = getattr(os, "O_DIRECTORY", 0) | os.O_RDONLY
+    fd = os.open(str(path.parent), flags)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _atomic_text(path: Path, text: str) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + f".tmp.{os.getpid()}")
+    data = text.encode()
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    try:
+        view = memoryview(data)
+        while view:
+            written = os.write(fd, view)
+            if written <= 0:
+                raise PersistentSupervisorError("short write while publishing adaptive txn")
+            view = view[written:]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.replace(tmp, path)
+    _fsync_parent(path)
+
+
+def _prepare_l26_rebind_txn(
+    *,
+    ack_path: Path,
+    txn_path: Path,
+    txn_id: str,
+    expected_n: int,
+    target_n: int,
+) -> dict:
+    if not _SAFE_TXN_TOKEN.fullmatch(str(txn_id)):
+        raise PersistentSupervisorError("adaptive txn_id contains unsupported characters")
+    expected_n = int(expected_n)
+    target_n = int(target_n)
+    if {expected_n, target_n} != {ADAPTIVE_L26_BASE_N, ADAPTIVE_L26_RECOVERY_N}:
+        raise PersistentSupervisorError(
+            f"adaptive L26 only allows {ADAPTIVE_L26_BASE_N}<->{ADAPTIVE_L26_RECOVERY_N}"
+        )
+    ack = _read_runtime_ack(ack_path)
+    actual_n = _policy_target_n(ack["active_policy"], ADAPTIVE_L26_ROLE, ADAPTIVE_L26_LAYER)
+    if actual_n != expected_n:
+        raise PersistentSupervisorError(
+            f"adaptive L26 stale target: expected_n={expected_n} actual_n={actual_n}"
+        )
+    epoch = int(ack["weight_epoch"])
+    policy_hash = str(ack["active_policy_hash"])
+    line = (
+        f"REBIND {txn_id} {epoch} {expected_n} {target_n} "
+        f"{ADAPTIVE_L26_ROLE} {ADAPTIVE_L26_LAYER} {policy_hash}\n"
+    )
+    _atomic_text(txn_path, line)
+    return {
+        "txn_id": txn_id,
+        "expected_epoch": epoch,
+        "expected_policy_hash": policy_hash,
+        "expected_n": expected_n,
+        "target_n": target_n,
+    }
 
 
 def _policy_target_n(policy: list[dict], role: str, layer: int) -> int | None:
@@ -509,34 +595,27 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
         return int(n)
 
     def _prepare_rebind(self, *, expected_n: int, target_n: int, txn_id: str) -> None:
-        tools = str(base.REPO / "tools")
-        if tools not in sys.path:
-            sys.path.insert(0, tools)
-        import gpu_runtime_control as grc
-        ack = _read_runtime_ack(self.ack_path)
-        self.ack = ack
-        grc.prepare_rebind(
+        request = _prepare_l26_rebind_txn(
             ack_path=self.ack_path,
             txn_path=self.txn_path,
             txn_id=txn_id,
-            expected_epoch=int(ack["weight_epoch"]),
-            expected_policy_hash=str(ack["active_policy_hash"]),
-            role=ADAPTIVE_L26_ROLE,
-            layer=ADAPTIVE_L26_LAYER,
-            expected_n=int(expected_n),
-            target_n=int(target_n),
+            expected_n=expected_n,
+            target_n=target_n,
         )
+        self.ack = _read_runtime_ack(self.ack_path)
+        if request["expected_policy_hash"] != self.ack["active_policy_hash"]:
+            raise PersistentSupervisorError("adaptive policy changed while preparing REBIND")
 
     def _verify_rebind(self, *, txn_id: str, target_n: int) -> dict:
-        tools = str(base.REPO / "tools")
-        if tools not in sys.path:
-            sys.path.insert(0, tools)
-        import gpu_runtime_control as grc
-        ack = grc.verify_terminal_ack(
-            ack_path=self.ack_path,
-            txn_id=txn_id,
-            allowed_statuses={"REBIND_APPLIED"},
-        )
+        ack = _read_runtime_ack(self.ack_path)
+        if ack.get("txn_id") != txn_id:
+            raise PersistentSupervisorError(
+                f"adaptive ACK txn mismatch: expected={txn_id!r} actual={ack.get('txn_id')!r}"
+            )
+        if ack.get("status") != "REBIND_APPLIED":
+            raise PersistentSupervisorError(
+                f"adaptive ACK status mismatch: {ack.get('status')!r}"
+            )
         actual_n = _policy_target_n(
             ack["active_policy"], ADAPTIVE_L26_ROLE, ADAPTIVE_L26_LAYER
         )
