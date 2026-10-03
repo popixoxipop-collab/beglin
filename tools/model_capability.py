@@ -871,6 +871,32 @@ def classify_tensor(name: str, source_format: str, model_id: str) -> dict | None
                     "stacked_experts": False,
                     "canonical_target_key": _target_key(model_id, layer, role, expert),
                 }
+    # Quantized safetensors commonly split one logical weight into packed
+    # `weight` plus physical `scales` / `biases` auxiliaries.  These
+    # auxiliaries are mapped for structural coverage but are never independent
+    # precision targets.
+    if source_format != "GGUF" and (
+        name.endswith(".scales") or name.endswith(".biases")
+    ):
+        suffix = ".scales" if name.endswith(".scales") else ".biases"
+        base_weight = name[: -len(suffix)] + ".weight"
+        parent = classify_tensor(base_weight, source_format, model_id)
+        if parent is not None and parent.get("role") not in {
+            "IGNORE_NON_PRECISION", "QUANT_AUX"
+        }:
+            aux_kind = "SCALES" if suffix == ".scales" else "BIASES"
+            return {
+                "role": "QUANT_AUX",
+                "layer": parent.get("layer"),
+                "expert_id": parent.get("expert_id"),
+                "stacked_experts": bool(parent.get("stacked_experts")),
+                "parent_role": parent.get("role"),
+                "parent_target_key": parent.get("canonical_target_key"),
+                "aux_kind": aux_kind,
+                "canonical_target_key": (
+                    f"{parent['canonical_target_key']}/aux/{aux_kind.lower()}"
+                ),
+            }
     # Biases and norms are valid model tensors but not precision targets in v1.
     if name.endswith(".bias") or name.endswith("_norm.weight") or ".input_layernorm.weight" in name or ".post_attention_layernorm.weight" in name:
         return {
@@ -907,7 +933,11 @@ def build_tensor_role_graph(source: Mapping[str, Any], descriptor: Mapping[str, 
             "shape": [int(x) for x in tensor.get("shape", [])],
             "dtype": str(tensor.get("dtype", "UNKNOWN")),
             "source_quant_format": str(tensor.get("dtype", "UNKNOWN")),
+            "parent_target_key": mapped.get("parent_target_key"),
+            "parent_role": mapped.get("parent_role"),
+            "aux_kind": mapped.get("aux_kind"),
             "semantic_group": (
+                "QUANT_AUX" if mapped["role"] == "QUANT_AUX" else
                 "GLOBAL" if mapped["role"] in GLOBAL_ROLES else
                 "ATTENTION" if mapped["role"] in {"Q_PROJ","K_PROJ","V_PROJ","O_PROJ","Q_A_PROJ","Q_B_PROJ","KV_A_PROJ","KV_B_PROJ","Q_NORM","K_NORM"} else
                 "MOE" if mapped["role"] == "ROUTER" or mapped["role"].startswith(("EXPERT_","SHARED_")) else
@@ -1072,6 +1102,35 @@ def build_loader_contract(
         str(row.get("dtype", "UNKNOWN"))
         for row in source.get("tensor_inventory", [])
     })
+    config = source.get("config") or {}
+    quant_cfg = config.get("quantization_config") or config.get("quantization") or {}
+    source_quantization = None
+    if isinstance(quant_cfg, Mapping):
+        try:
+            bits = int(quant_cfg.get("bits")) if quant_cfg.get("bits") is not None else None
+            group_size = (
+                int(quant_cfg.get("group_size"))
+                if quant_cfg.get("group_size") is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            bits = None
+            group_size = None
+        mode = str(quant_cfg.get("mode") or "").lower()
+        if (
+            fmt in {"SAFETENSORS_SINGLE", "SAFETENSORS_SHARDED"}
+            and bits == 4
+            and group_size == 64
+            and mode == "affine"
+            and "U32" in encountered
+        ):
+            source_quantization = {
+                "scheme": "MLX_AFFINE",
+                "bits": 4,
+                "group_size": 64,
+                "mode": "affine",
+                "status": "RECOGNIZED_UNSUPPORTED",
+            }
     if fmt == "GGUF":
         supported_arch = arch in GGUF_SUPPORTED_ARCH
         unsupported_formats = sorted(
@@ -1083,12 +1142,21 @@ def build_loader_contract(
         # Safetensors dtype names (F32/F16/BF16) plus architecture-specific AF paths.
         unsupported_formats = sorted(
             q for q in encountered
-            if q not in {"F32", "F16", "BF16", "float32", "float16", "bfloat16", "I8", "U8"}
+            if q not in {
+                "F32", "F16", "BF16", "float32", "float16", "bfloat16",
+                "I8", "U8",
+            }
         )
+        if source_quantization is not None:
+            unsupported_formats = [
+                q for q in unsupported_formats if q != "U32"
+            ]
     else:
         supported_arch = False
         unsupported_formats = encountered
-    if supported_arch and not unsupported_formats:
+    if source_quantization is not None:
+        status = "UNSUPPORTED"
+    elif supported_arch and not unsupported_formats:
         status = "VERIFIED" if evidence is not None else "IMPLEMENTED_UNVERIFIED"
     else:
         status = "UNSUPPORTED"
@@ -1102,6 +1170,11 @@ def build_loader_contract(
         "cache_strategy": "CONTENT_IDENTITY",
         "encountered_formats": encountered,
         "unsupported_formats": unsupported_formats,
+        "source_quantization": source_quantization,
+        "unsupported_reason_codes": (
+            ["SOURCE_QUANTIZATION_MLX_AFFINE_UNSUPPORTED"]
+            if source_quantization is not None else []
+        ),
         "verification_evidence": evidence,
         "silent_dense_fallback_allowed": False,
     }
@@ -1122,7 +1195,7 @@ def build_model_skeleton(
     by_layer: dict[int, list[str]] = {}
     for node in tensor_graph.get("nodes", []):
         layer = node.get("layer")
-        if layer is None:
+        if layer is None or node.get("role") == "QUANT_AUX":
             continue
         by_layer.setdefault(int(layer), []).append(str(node["role"]))
     for layer in range(n_layers):
@@ -1179,7 +1252,7 @@ def build_backend_capability_matrix(
     rows = []
     for node in tensor_graph.get("nodes", []):
         role = str(node["role"])
-        if role == "IGNORE_NON_PRECISION":
+        if role in {"IGNORE_NON_PRECISION", "QUANT_AUX"}:
             continue
         target = str(node["canonical_target_key"])
         precision_role = role in PRECISION_ROLES
