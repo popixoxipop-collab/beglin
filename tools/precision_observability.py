@@ -474,13 +474,22 @@ def summarize(records: list[dict]) -> dict:
 
 
 class PrecisionObservability:
-    def __init__(self, *, lineage_path, snapshot_path=None, strict=False, identity=None):
+    def __init__(self, *, lineage_path, snapshot_path=None, strict=False, identity=None,
+                 max_active_records=None, retention_segments=None):
         self.lineage_path = Path(lineage_path)
         self.snapshot_path = (Path(snapshot_path) if snapshot_path is not None else
                               self.lineage_path.with_suffix(self.lineage_path.suffix + '.summary.json'))
         if self.lineage_path.resolve() == self.snapshot_path.resolve():
             raise PrecisionObservabilityError('snapshot path must differ from lineage path')
         self.strict = bool(strict)
+        self.max_active_records = (int(max_active_records) if max_active_records is not None else None)
+        if self.max_active_records is not None and self.max_active_records < 2:
+            raise PrecisionObservabilityError('max_active_records must be >= 2')
+        self.retention_segments = (int(retention_segments) if retention_segments is not None else None)
+        if self.retention_segments is not None and self.retention_segments < 1:
+            raise PrecisionObservabilityError('retention_segments must be >= 1')
+        self.archive_dir = self.lineage_path.with_suffix(self.lineage_path.suffix + '.segments')
+        self.manifest_path = self.archive_dir / 'manifest.jsonl'
         self.identity = dict(identity or {})
         self.worker_instance_id = self.identity.get('worker_instance_id') or uuid.uuid4().hex
         self.lock = threading.RLock()
@@ -489,8 +498,10 @@ class PrecisionObservability:
         self.lock_path = self.lineage_path.with_suffix(self.lineage_path.suffix + '.lock')
         self._fingerprint = None
         self._seen = set()
+        self._archived_seen = set()
         self._last = None
         self._metrics = _Metrics()
+        self._archived_metrics = _Metrics()
         self.last_error_type = None
         self.sink_error_count = 0
         with self.lock, self._file_lock():
@@ -516,6 +527,33 @@ class PrecisionObservability:
         except FileNotFoundError:
             return None
 
+    def _load_archived(self):
+        seen=set(); metrics=_Metrics()
+        rows=self._segment_manifest_rows() if self.archive_dir.exists() else []
+        previous_record=None
+        for entry in rows:
+            path=self.archive_dir/entry['segment_file']
+            if not path.is_file():
+                if self.retention_segments is None:
+                    raise PrecisionObservabilityError(f'missing sealed segment: {path}')
+                continue
+            raw=path.read_bytes()
+            if hashlib.sha256(raw).hexdigest()!=entry['segment_sha256']:
+                raise PrecisionObservabilityError(f'sealed segment hash mismatch: {path}')
+            segment=[]
+            for line in raw.splitlines(keepends=True):
+                if not line.endswith(b'\n'): raise PrecisionObservabilityError('incomplete sealed segment tail')
+                if line.strip(): segment.append(json.loads(line))
+            verify_records(segment)
+            if segment and previous_record is not None:
+                # Rotation intentionally resets per-file prev hash; manifest carries cross-segment order.
+                pass
+            for row in segment:
+                if row['admission_id'] in seen: raise PrecisionObservabilityError('duplicate admission across sealed segments')
+                seen.add(row['admission_id']); metrics.add(row)
+            if segment: previous_record=segment[-1]
+        self._archived_seen=seen; self._archived_metrics=metrics
+
     def _reload(self):
         records = self.read_records()
         verify_records(records)
@@ -523,9 +561,26 @@ class PrecisionObservability:
         for row in records:
             _validate_record_values(row)
             metrics.add(row)
-        self._seen = {r['admission_id'] for r in records}
+        self._load_archived()
+        active_seen={r['admission_id'] for r in records}
+        overlap=active_seen & self._archived_seen
+        if overlap:
+            manifests=self._segment_manifest_rows()
+            raw=self.lineage_path.read_bytes() if self.lineage_path.is_file() else b''
+            exact_sealed=bool(manifests) and hashlib.sha256(raw).hexdigest()==manifests[-1]['segment_sha256']
+            if exact_sealed and len(records)==int(manifests[-1]['records']):
+                # Crash after durable segment+manifest but before active reset. The
+                # active bytes are exactly the sealed segment, so clearing them is recovery, not repair.
+                tmp=self.lineage_path.with_suffix(self.lineage_path.suffix+'.recover.tmp')
+                fd=os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.fsync(fd); os.close(fd); os.replace(tmp,self.lineage_path)
+                records=[]; active_seen=set(); metrics=_Metrics()
+            else:
+                raise PrecisionObservabilityError('duplicate admission across archive and active journal')
+        self._seen = active_seen | self._archived_seen
         self._last = records[-1] if records else None
-        self._metrics = metrics
+        combined=copy.deepcopy(self._archived_metrics)
+        for row in records: combined.add(row)
+        self._metrics = combined
         self._fingerprint = self._stat()
 
     def read_records(self):
@@ -556,11 +611,85 @@ class PrecisionObservability:
         finally:
             tmp.unlink(missing_ok=True)
 
+    def _segment_manifest_rows(self):
+        if not self.manifest_path.is_file():
+            return []
+        rows=[]
+        for lineno, raw in enumerate(self.manifest_path.read_bytes().splitlines(keepends=True),1):
+            if not raw.endswith(b'\n'):
+                raise PrecisionObservabilityError(f'incomplete segment manifest tail at line {lineno}')
+            if raw.strip(): rows.append(json.loads(raw))
+        prev=None
+        for idx,row in enumerate(rows):
+            body=dict(row); expected=body.pop('manifest_sha256',None)
+            if row.get('prev_manifest_sha256')!=prev or expected!=_sha(body):
+                raise PrecisionObservabilityError(f'segment manifest chain failure at index {idx}')
+            prev=expected
+        return rows
+
+    def _rotate_if_needed(self):
+        if self.max_active_records is None or len(self.read_records()) < self.max_active_records:
+            return None
+        records=self.read_records(); verify_records(records)
+        if len(records) < self.max_active_records:
+            return None
+        self.archive_dir.mkdir(parents=True,exist_ok=True)
+        manifests=self._segment_manifest_rows()
+        seq=(int(manifests[-1]['sequence'])+1) if manifests else 1
+        raw=self.lineage_path.read_bytes()
+        segment_sha=hashlib.sha256(raw).hexdigest()
+        name=f'segment-{seq:06d}-{segment_sha[:16]}.jsonl'
+        segment=self.archive_dir/name
+        if segment.exists():
+            raise PrecisionObservabilityError(f'rotation segment already exists: {segment}')
+        tmp=segment.with_suffix(segment.suffix+'.tmp')
+        fd=os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        try:
+            os.write(fd,raw); os.fsync(fd)
+        finally: os.close(fd)
+        os.replace(tmp,segment)
+        entry={
+            'schema':'beglin-precision-observability-segment-v1','sequence':seq,
+            'segment_file':name,'segment_sha256':segment_sha,'records':len(records),
+            'first_record_sha256':records[0]['record_sha256'],'last_record_sha256':records[-1]['record_sha256'],
+            'prev_manifest_sha256':manifests[-1]['manifest_sha256'] if manifests else None,
+            'sealed_unix_ns':time.time_ns(),
+        }
+        entry['manifest_sha256']=_sha({k:v for k,v in entry.items() if k!='manifest_sha256'})
+        with self.manifest_path.open('ab') as f:
+            f.write((json.dumps(entry,sort_keys=True,separators=(',',':'))+'\n').encode()); f.flush(); os.fsync(f.fileno())
+        # Start a fresh active journal only after both segment and manifest are durable.
+        empty=self.lineage_path.with_suffix(self.lineage_path.suffix+'.rotate.tmp')
+        fd=os.open(empty,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.fsync(fd); os.close(fd)
+        os.replace(empty,self.lineage_path)
+        self._fingerprint=None; self._last=None; self._reload()
+        self._prune_segments()
+        return entry
+
+    def _prune_segments(self):
+        if self.retention_segments is None:
+            return
+        rows=self._segment_manifest_rows()
+        keep={r['segment_file'] for r in rows[-self.retention_segments:]}
+        for path in self.archive_dir.glob('segment-*.jsonl'):
+            if path.name not in keep:
+                path.unlink(missing_ok=True)
+
+    def rotation_status(self):
+        with self.lock, self._file_lock():
+            rows=self._segment_manifest_rows()
+            existing=sum((self.archive_dir/r['segment_file']).is_file() for r in rows)
+            return {'schema':'beglin-precision-observability-rotation-v1',
+                    'max_active_records':self.max_active_records,'retention_segments':self.retention_segments,
+                    'sealed_segments':len(rows),'retained_segment_files':existing,
+                    'manifest_head_sha256':rows[-1]['manifest_sha256'] if rows else None}
+
     def record(self, *, admission_id, worker_pid, request_count, decision, result):
         started = time.monotonic()
         with self.lock, self._file_lock():
             if self._stat() != self._fingerprint:
                 self._reload()
+            self._rotate_if_needed()
             if str(admission_id) in self._seen:
                 raise PrecisionObservabilityError(f'duplicate admission_id: {admission_id}')
             row = build_record(admission_id=admission_id, worker_pid=worker_pid,
