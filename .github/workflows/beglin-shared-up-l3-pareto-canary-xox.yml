@@ -1,0 +1,117 @@
+name: Beglin Shared Up L3 Pareto Canary XOX
+
+on:
+  push:
+    branches:
+      - quant-search-full-qng64-ladder-20261003
+    paths:
+      - ".github/workflows/beglin-shared-up-l3-pareto-canary-xox.yml"
+      - "tools/gpu_autopilot.py"
+      - "tools/precision_evidence_v3.py"
+      - "tools/quant_search_n.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beglin-shared-up-l3-pareto-canary-xox
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 30
+    env:
+      ENGINE: /Users/xox/vdsp-engine-gpu-precision
+      ROOT: /Users/xox/vdsp_shadow_runs/pareto_canary_shared_up_l3_20261003
+      WRAP: /Users/xox/.claude/scripts/beglin-supabase-run.py
+      PROBE: /Users/xox/mcp-sandbox/tailnet-commander/production_serving_supervisor.py
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify XOX and immutable local helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+          test "$(shasum -a 256 "$WRAP" | awk '{print $1}')" = "30d265b58744a792e9c43ed9b2af758752b1015c0c8cf0af742e339ca62c396b"
+          test "$(shasum -a 256 "$ENGINE/build-gpu-precision/qwen_infer_gpu" | awk '{print $1}')" = "6e6258d6d4e402033c303c8c4b622db5a088354a0de79e687eb0fad4190c4392"
+
+      - name: Capture live route preimage
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROOT/$GITHUB_RUN_ID"
+          python3 "$PROBE" --probe-health --port 18765 > "$ROOT/$GITHUB_RUN_ID/live-before.json"
+          python3 - "$ROOT/$GITHUB_RUN_ID/live-before.json" <<'PY'
+          import json, sys
+          o=json.load(open(sys.argv[1]))
+          assert o["status"]=="ok"
+          assert o["router_id"]=="beglin-local-http-persistent-supervisor-v1"
+          assert o["route_generation"]==6
+          assert o["active_route"]["route_id"]=="beglin-candidate-shared-up-l3-n6"
+          assert o["external_network_exposed"] is False
+          assert o["production_write_allowed"] is False
+          assert o["auto_promotion_enabled"] is False
+          PY
+
+      - name: Materialize fixed replay manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_ROOT="$ROOT/$GITHUB_RUN_ID"
+          mkdir -p "$RUN_ROOT/manifests"
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path("/Users/xox/vdsp-engine-gpu-precision/g5_drill_manifest.txt")
+          rows=[x.strip() for x in src.read_text().splitlines() if x.strip() and not x.lstrip().startswith("#")]
+          if not rows:
+              raise SystemExit("source manifest empty")
+          first=rows[0]
+          root=Path("/Users/xox/vdsp_shadow_runs/pareto_canary_shared_up_l3_20261003") / __import__("os").environ["GITHUB_RUN_ID"] / "manifests"
+          (root/"g4_one.txt").write_text(first+"\n")
+          (root/"g6_twelve.txt").write_text((first+"\n")*12)
+          PY
+
+      - name: Run fixed n5 n6 n9 G4 to G6 canaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_ROOT="$ROOT/$GITHUB_RUN_ID"
+          for N in 5 6 9; do
+            mkdir -p "$RUN_ROOT/n$N"
+            "$WRAP" python3 "$GITHUB_WORKSPACE/tools/gpu_autopilot.py"               --role shared_up_proj               --layer 3               --n "$N"               --event-json '{"req":0,"orig_token":3268,"corrected_token":1224,"pos":16}'               --reference-json '{"emitted_token":1224}'               --prompt-len 9               --g4-manifest "$RUN_ROOT/manifests/g4_one.txt"               --g6-manifest "$RUN_ROOT/manifests/g6_twelve.txt"               --cwd "$ENGINE"               --binary "$ENGINE/build-gpu-precision/qwen_infer_gpu"               --binary-sha256 6e6258d6d4e402033c303c8c4b622db5a088354a0de79e687eb0fad4190c4392               --checkpoint-sha256 1ea6be7e3e5236d6d6f7c265f725f703db1b64170faf672ee9b98352b131e898               --tokenizer-sha256 43f205631553478b204f761d5894aaeec67100ed276aca762a24c62e63a91c50               --base-artifact-sha256 43f205631553478b204f761d5894aaeec67100ed276aca762a24c62e63a91c50               --runtime-config-sha256 35d74421a2e2b798215b0ed3dd48e5cb9981cd50a78af4199614c269fa4fcb0c               --device-fingerprint xox-apple-silicon               --kernel-revision gpu-precision-g1-g3@330954b27f146b8a17db2cb353c3e620968bad5e               --moe-base /Users/xox/vdsp_local_data/moe_base_deepseek               --safetensors /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json               --architecture mla               --model deepseek-v2-lite               --control-root "$RUN_ROOT/n$N/control"               --slots 4               --min-requests 10               --max-requests 100               --timeout 180               > "$RUN_ROOT/n$N/autopilot.out" 2>&1
+            tail -n 120 "$RUN_ROOT/n$N/autopilot.out"
+          done
+
+      - name: Verify live route unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_ROOT="$ROOT/$GITHUB_RUN_ID"
+          python3 "$PROBE" --probe-health --port 18765 > "$RUN_ROOT/live-after.json"
+          python3 - "$RUN_ROOT/live-before.json" "$RUN_ROOT/live-after.json" <<'PY'
+          import json, sys
+          a=json.load(open(sys.argv[1])); b=json.load(open(sys.argv[2]))
+          assert b["status"]=="ok"
+          assert b["router_id"]=="beglin-local-http-persistent-supervisor-v1"
+          assert b["route_generation"]==a["route_generation"]==6
+          assert b["route_manifest_sha256"]==a["route_manifest_sha256"]
+          assert b["active_route"]["route_id"]==a["active_route"]["route_id"]=="beglin-candidate-shared-up-l3-n6"
+          assert b["workers"]["beglin-candidate-shared-up-l3-n6"]["pid"]==a["workers"]["beglin-candidate-shared-up-l3-n6"]["pid"]
+          assert b["external_network_exposed"] is False
+          assert b["production_write_allowed"] is False
+          assert b["auto_promotion_enabled"] is False
+          print("LIVE_ROUTE_UNCHANGED_PASS")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-shared-up-l3-pareto-canary-xox
+          path: /Users/xox/vdsp_shadow_runs/pareto_canary_shared_up_l3_20261003/${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 90
