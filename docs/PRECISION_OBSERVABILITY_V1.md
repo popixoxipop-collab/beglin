@@ -52,3 +52,56 @@ P6 does not enable observability in the live generation-6 supervisor.
 No production binary, route generation, adaptive policy, or auto-promotion setting is changed.
 
 Exact-source XOX acceptance and certified regression are sealed after the implementation commit is fixed.
+
+## Exact-source XOX acceptance
+Implementation commit:
+4faab46dc6a44c5f41df2745d03976e16e05b305
+
+Acceptance result:
+/Users/xox/vdsp_serving/precision-observability-acceptance-4faab46/result.json
+SHA-256:
+dfcb7e304ef13fd10c28e78b009b027ff7d4571a6c57668991fe183df3952201
+
+Lineage JSONL:
+/Users/xox/vdsp_serving/precision-observability-acceptance-4faab46/lineage.jsonl
+SHA-256:
+a02461d0dbdb7c35906bf68d5fddf7d93e100564f1452064b27064c2a5474ea5
+
+Atomic summary snapshot SHA-256:
+ac83cc80528dcf07ee8ee479828a28cc671b12b18584d668ee05fe5659cc7130
+
+Pinned P6 cost evidence SHA-256:
+13cac65d375cf9ef2cb59d17a7f2b8204ce7ca9ae58c24426aac0955cce7c270
+
+Native binary SHA-256:
+a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028
+
+The exact-source acceptance ran six sequential admissions on the same scratch worker PID and verified policy/epoch continuity across every lineage record:
+- A no-risk closed-loop admission
+- A -> B low-margin closed-loop transition
+- B no-op hold
+- B -> A explicit-policy restore
+- A -> adaptive L26 recovery with two inference passes
+- adaptive policy -> A explicit final restore
+
+Measured aggregate result:
+- admissions: 6
+- low-margin triggered admissions: 2 / 6 = 33.3%
+- precision transitions: 4 / 6 = 66.7%
+- cache hits/misses: 4 / 2, hit rate 66.7%
+- cache bytes materialized: 8,650,752
+- inference-pass histogram: one-pass=5, two-pass=1
+- extra-pass rate: 1 / 6 = 16.7%
+- finite-logit rate: 100%
+- startup policy residency: 3/6
+- closed-loop target policy residency: 2/6
+- adaptive n6/n6 policy residency: 1/6
+- target precision residency: L3 n6=4/6, L3 n5=2/6, L26 n5=3/6, L26 n6=3/6
+- evidence use: xox-l26-production-low-margin=1, adaptive-l26-certified=1
+
+The append-only chain also rejects duplicate admission IDs before write and detects same-PID policy/epoch discontinuities, exposing hidden precision mutations rather than silently accepting them.
+
+Certified successor regression:
+- run 37125908837
+- head 4faab46dc6a44c5f41df2745d03976e16e05b305
+- conclusion SUCCESS
