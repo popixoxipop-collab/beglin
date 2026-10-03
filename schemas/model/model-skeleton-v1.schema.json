@@ -23,7 +23,7 @@
       "type": "array"
     },
     "schema": {
-      "type": "string"
+      "const": "beglin-model-skeleton-v1"
     },
     "skeleton_sha256": {
       "pattern": "^[0-9a-f]{64}$",
