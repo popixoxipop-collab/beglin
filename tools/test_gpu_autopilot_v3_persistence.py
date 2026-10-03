@@ -26,6 +26,34 @@ class SupabaseV3AutopilotTests(unittest.TestCase):
         self.assertEqual(ctx.schema, "precision-context-v3")
         self.assertEqual(ctx.backend, "mlx_metal")
 
+    def test_explicit_identity_is_preserved_for_v3(self):
+        ctx = ga.build_context(
+            binary_sha256=h("1"),
+            checkpoint_sha256=h("2"),
+            tokenizer_sha256=h("3"),
+            base_artifact_sha256=h("4"),
+            runtime_config_sha256=h("5"),
+            device_fingerprint="xox-apple-silicon",
+            kernel_revision="rev-1",
+        )
+        self.assertEqual(ctx.tokenizer_sha256, h("3"))
+        self.assertEqual(ctx.base_artifact_sha256, h("4"))
+        self.assertEqual(ctx.runtime_config_sha256, h("5"))
+        self.assertEqual(ctx.device_fingerprint, "xox-apple-silicon")
+        self.assertEqual(ctx.kernel_revision, "rev-1")
+
+    @patch.object(ga.ev3, "configured", return_value=True)
+    def test_persistence_requires_explicit_immutable_identity(self, _configured):
+        args = SimpleNamespace(
+            tokenizer_sha256=None,
+            base_artifact_sha256=None,
+            runtime_config_sha256=None,
+            device_fingerprint=None,
+            kernel_revision=None,
+        )
+        with self.assertRaises(ga.AutopilotError):
+            ga._require_v3_identity_for_persistence(args)
+
     @patch.object(ga.ev3, "upsert_execution_context")
     @patch.object(ga.ev3, "configured", return_value=True)
     def test_context_persistence_verifies_hash(self, _configured, upsert):
