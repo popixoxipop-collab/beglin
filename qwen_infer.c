@@ -1998,6 +1998,8 @@ static void serve_step(const int *ids, int B, int pos, float *L) {
 // however many slots are currently active (1..B).
 //
 // M21-D1 (slot/position state layout): WHY -- per-slot state is parallel arrays indexed by
+
+[executed on device: BOB.local (587d78c1-8831-4497-9227-c635448fe984)]
 // slot id (cb_pos/cb_tok/cb_active/...), and each step builds a COMPACT gather list
 // act[0..A-1] -> slot id. The batched-GEMM scratch (srv_x/srv_h/... reused from serve) is
 // indexed by the compact index m; only the KV cache and per-slot bookkeeping are indexed by
@@ -3998,6 +4000,8 @@ static void moe_forward_token(const uint8_t *af, MoeAFTensor *t_embed, MoeAFTens
     }
 
     // V5j anomaly root-cause: checksum the raw embedding x[] itself, right after it's
+
+[executed on device: BOB.local (587d78c1-8831-4497-9227-c635448fe984)]
     // computed, for every position -- separates "input to this position's forward differs"
     // from "same input, different computed output."
     if (getenv("QWEN_MOE_GQA_DEBUG_KVCHECK")) {
@@ -5998,6 +6002,8 @@ static void moe_cb4c_maybe_reverify(const uint8_t *af, MoeAFTensor *t_embed, Moe
 // axis. What remains: build real-traffic evidence of residual final-output near-ties, for a
 // *future* correction round to consume -- this round logs only, it never corrects.
 //
+
+[executed on device: BOB.local (587d78c1-8831-4497-9227-c635448fe984)]
 // D1: trigger axis is the SAME quantity moe_cb4c_margin() already computes (top1-minus-top2
 //   raw-logit gap over MOE_VOCAB), not the offline router-margin profiler's expert-selection-
 //   softmax margin (RESULTS.md, router-margin-profiler sections) -- those are different axes.
@@ -7998,6 +8004,8 @@ static void alloc_moe_buffers(void) {
     // Step 2.7: GQA per-call scratch, one set per function (Rule 3), harmless to allocate even
     // for MLA models (never read in that case, same reasoning as g_moe_rope_inv above).
     int gqa_q_sz = MOE_N_HEADS * MOE_HEAD_DIM, gqa_kv_sz = MOE_N_KV_HEADS * MOE_HEAD_DIM;
+
+[executed on device: BOB.local (587d78c1-8831-4497-9227-c635448fe984)]
     g_mgqa_q = malloc((size_t)gqa_q_sz*sizeof(float)); g_mgqa_k = malloc((size_t)gqa_kv_sz*sizeof(float));
     g_mgqa_v = malloc((size_t)gqa_kv_sz*sizeof(float)); g_mgqa_attn_out = malloc((size_t)gqa_q_sz*sizeof(float));
     g_mgqa_o_out = malloc((size_t)MOE_HIDDEN*sizeof(float));
@@ -9998,6 +10006,8 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
 // before the file-presence-gated one, or the file-presence check greedily wins first and this
 // mode never gets a chance to redirect (main()'s existing comment for the selftest group
 // states this exact reasoning; the 2026-08-30 plan's own text put this check AFTER
+
+[executed on device: BOB.local (587d78c1-8831-4497-9227-c635448fe984)]
 // run_moe_verify_mode(), which would have reproduced that bug -- fixed here, not followed
 // literally). Reuses moe_mmap_file()/moe_load_layout_af()/moe_decode_af()/moe_matvec_af_row()
 // completely unmodified -- this function only orchestrates gates 2-5 around them.
@@ -11998,6 +12008,8 @@ static int moe_gpu_sort_threshold(int B, int top_k) {
 // V5d: batched B-token GPU decode gate. Verbatim structural mirror of
 // run_moe_gpu_fused_gate() above (Rule 3 -- this project's own established convention,
 // see moe_forward_batch()'s own header comment) rather than a shared helper, so each
+
+[executed on device: BOB.local (587d78c1-8831-4497-9227-c635448fe984)]
 // gate stays independently readable and modifiable. The one real difference: B
 // sequences processed LOCKSTEP at the same `pos` per mlx_gpu_layer_step_lazy() call
 // (mlx_gpu_set_batch(B), a V5d addition to mlx_moe.cpp/mlx_moe.h) instead of B=1.
@@ -13871,7 +13883,19 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
     const char *env_check     = getenv("QWEN_MOE_GPU_CB_CHECK");
     const char *env_validation = getenv("QWEN_MOE_GPU_VALIDATION_REPORT");
     const char *env_correction = getenv("QWEN_MOE_NEARTIE_CORRECT");
+    const char *env_neartie_log = getenv("QWEN_MOE_NEARTIE_LOG");
+    const char *env_neartie_thr = getenv("QWEN_MOE_NEARTIE_THRESHOLD");
     int validation_on = env_validation && env_validation[0] && atoi(env_validation) != 0;
+    g_moe_neartie_log_on =
+        env_neartie_log && env_neartie_log[0] && atoi(env_neartie_log) != 0;
+    g_moe_neartie_threshold_override =
+        env_neartie_thr && env_neartie_thr[0] ? atof(env_neartie_thr) : -1.0;
+    if (g_moe_neartie_log_on) {
+        fprintf(stderr,
+                "[moe gpu neartie] enabled threshold=%.6f\n",
+                moe_neartie_threshold());
+        moe_neartie_events_init();
+    }
     int validation_finite = 1; long validation_logits_checked = 0;
 
     int B          = env_slots  && env_slots[0]  ? atoi(env_slots)  : 4;
@@ -13998,6 +14022,8 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
                 nact++;
             }
 
+
+[executed on device: BOB.local (587d78c1-8831-4497-9227-c635448fe984)]
             if (nact == 0) { step++; steps_idle++; continue; }
             if (qhead < R) {
                 int any_idle = 0; for (int s = 0; s < B; s++) if (!mcb_active[s]) any_idle = 1;
@@ -14948,6 +14974,11 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 int s = slot_arr[m], r = mcb_req[s];
                 float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
                 int am = moe_gpu_argmax_finite(lg, MOE_VOCAB, "moe gpu cb online", step, r);
+                if (pass == 1 && g_moe_neartie_log_on) {
+                    (void)moe_neartie_maybe_log(
+                        s, r, spos_arr[m], tok_arr[m], am, lg, A,
+                        af_blob, t_embed, t_lmhead, w_finalnorm);
+                }
                 rq_out[r][rq_nout[r]++] = am; mcb_pos[s]++;
                 if (am == MOE_EOS_TOKEN_ID || am == stop_extra || rq_nout[r] >= rq_maxnew[r] || mcb_pos[s] >= MOE_CBATCH_MAXPOS)
                     { mcb_active[s] = 0; mcb_freed_before[s] = 1; nact--; }
@@ -14959,6 +14990,11 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
                 if (spos_arr[m] != rq_plen[r] - 1) continue;
                 float *lg = gpu_logits + (size_t)m * MOE_VOCAB;
                 int am = moe_gpu_argmax_finite(lg, MOE_VOCAB, "moe gpu cb online", step, r);
+                if (pass == 1 && g_moe_neartie_log_on) {
+                    (void)moe_neartie_maybe_log(
+                        s, r, spos_arr[m], tok_arr[m], am, lg, A,
+                        af_blob, t_embed, t_lmhead, w_finalnorm);
+                }
                 rq_out[r][rq_nout[r]++] = am; rq_t_first[r] = temit;
                 if (am == MOE_EOS_TOKEN_ID || am == stop_extra || rq_nout[r] >= rq_maxnew[r])
                     { mcb_active[s] = 0; mcb_freed_before[s] = 1; nact--; }
@@ -15998,6 +16034,8 @@ static MoeAFTensor *st_register_moe_experts_f16_as_af(const char *name_pattern, 
         for (size_t i = 0; i < per_expert; i++) h[i] = (_Float16)deq[i];
     }
     free(deq);
+
+[executed on device: BOB.local (587d78c1-8831-4497-9227-c635448fe984)]
 
     MoeAFTensor *w = &g_moe_af[g_moe_naf++];
     snprintf(w->name, sizeof w->name, "%s", engine_name);
@@ -17998,6 +18036,8 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
     const char *promo_path = getenv("QWEN_MOE_EXPERT_BITS");
     if (promo_path && promo_path[0]) {
         g_promo_ebits = malloc(sizeof(int *) * (size_t)MOE_NL);
+
+[executed on device: BOB.local (587d78c1-8831-4497-9227-c635448fe984)]
         for (int l = 0; l < MOE_NL; l++) {
             g_promo_ebits[l] = malloc(sizeof(int) * (size_t)MOE_N_EXPERTS);
             for (int e = 0; e < MOE_N_EXPERTS; e++) g_promo_ebits[l][e] = 8;   // default: this loader's own shipped blanket default
@@ -19998,6 +20038,8 @@ int main(int argc, char **argv) {
             int qhead=0, nact=0;
             long dsteps=0, asum=0, psteps=0; double t_decode=0, t_prefill=0;
             double fullB_ms=0; long fullB_n=0;
+
+[executed on device: BOB.local (587d78c1-8831-4497-9227-c635448fe984)]
             long pstall=0;                       // M21 branch: prefill steps run while decode slots sat idle
             long msteps=0, pfonly=0, pfsum=0;    // M22 branch: mixed steps / prefill-only steps / prefill columns
             double maxgap=0, sumgap=0; long ngap=0;   // M22-D6 decode inter-token gaps (both branches)
@@ -20160,3 +20202,5 @@ int main(int argc, char **argv) {
     if (g_int4) q4pool_destroy(&g_pool);
     return 0;
 }
+
+[executed on device: BOB.local (587d78c1-8831-4497-9227-c635448fe984)]
