@@ -223,6 +223,39 @@ def _prepare_l26_rebind_txn(
     }
 
 
+def _read_neartie_events_since(path: Path, offset: int) -> list[dict]:
+    if offset < 0:
+        raise PersistentSupervisorError("near-tie telemetry offset cannot be negative")
+    if not path.is_file():
+        return []
+    events = []
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        for raw in handle:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                row = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if row.get("kind") != "event":
+                continue
+            try:
+                event = {
+                    "req": int(row["req"]),
+                    "pos": int(row["pos"]),
+                    "predicted_token": int(row["predicted_token"]),
+                    "competing_token": int(row["competing_token"]),
+                    "margin": float(row["margin"]),
+                    "batch_size": int(row["batch_size"]),
+                }
+            except (KeyError, TypeError, ValueError):
+                continue
+            events.append(event)
+    return events
+
+
 def _policy_target_n(policy: list[dict], role: str, layer: int) -> int | None:
     for row in policy:
         if row.get("role") == role and int(row.get("layer", -1)) == int(layer):
