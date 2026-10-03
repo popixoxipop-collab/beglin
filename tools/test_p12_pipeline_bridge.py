@@ -36,10 +36,41 @@ class PipelineBridgeTests(unittest.TestCase):
                 "kind": "TEST_RUNTIME_EVIDENCE",
             }
 
+        graph = mc.build_tensor_role_graph(source, descriptor)
+        precision_targets = [
+            row["canonical_target_key"] for row in graph["nodes"]
+            if row["role"] in mc.PRECISION_ROLES
+        ]
+
+        def target_evidence(backend, component, marker, mutation_mode=None):
+            widths = mc.CPU_QNG64_WIDTHS if backend == "cpu" else mc.MLX_QNG64_WIDTHS
+            rows = []
+            for target_key in precision_targets:
+                row = evidence(backend, marker)
+                row["component"] = component
+                row["target_key"] = target_key
+                row["supported_n"] = list(widths)
+                if mutation_mode is not None:
+                    row["mutation_mode"] = mutation_mode
+                rows.append(row)
+            return rows
+
         return mc.compile_model_capabilities(
             root,
             cpu_runtime_evidence=evidence("cpu", "1") if cpu_verified else None,
             mlx_runtime_evidence=evidence("mlx_metal", "2") if mlx_verified else None,
+            cpu_qng64_evidence=(
+                target_evidence("cpu", "qng64_runtime", "3") if cpu_verified else None
+            ),
+            mlx_qng64_evidence=(
+                target_evidence("mlx_metal", "qng64_runtime", "4") if mlx_verified else None
+            ),
+            mlx_mutation_evidence=(
+                target_evidence(
+                    "mlx_metal", "mutation_runtime", "5",
+                    mutation_mode="HOT_REBIND_SINGLE",
+                ) if mlx_verified else None
+            ),
         )
 
     @staticmethod
