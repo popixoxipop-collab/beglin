@@ -248,14 +248,28 @@ class SourceAndCompilerTests(unittest.TestCase):
             self.assertTrue(aux)
             self.assertTrue(all(row["parent_target_key"] for row in aux))
             loader = bundle["loader_contract"]
-            self.assertEqual(loader["status"], "UNSUPPORTED")
+            self.assertEqual(loader["status"], "IMPLEMENTED_UNVERIFIED")
             self.assertEqual(
                 loader["source_quantization"]["scheme"], "MLX_AFFINE"
             )
             self.assertEqual(
-                loader["unsupported_reason_codes"],
-                ["SOURCE_QUANTIZATION_MLX_AFFINE_UNSUPPORTED"],
+                loader["source_quantization"]["status"], "IMPLEMENTED_UNVERIFIED"
             )
+            self.assertEqual(
+                loader["unsupported_reason_codes"],
+                ["SOURCE_QUANTIZATION_MLX_AFFINE_REQUIRES_VERIFICATION"],
+            )
+            loader_evidence = verification_evidence(
+                root, component="loader", evidence_byte="6"
+            )
+            verified = mc.compile_model_capabilities(
+                root, loader_evidence=loader_evidence
+            )["loader_contract"]
+            self.assertEqual(verified["status"], "VERIFIED")
+            self.assertEqual(
+                verified["source_quantization"]["status"], "VERIFIED"
+            )
+            self.assertEqual(verified["unsupported_reason_codes"], [])
             backend_roles = {
                 row["role"] for row in bundle["backend_capability_matrix"]["rows"]
             }
