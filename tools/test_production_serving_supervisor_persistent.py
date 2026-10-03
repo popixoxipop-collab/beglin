@@ -323,6 +323,56 @@ class WorkerPoolContractTests(unittest.TestCase):
             pool.get(bad)
 
 
+class AdaptiveAcceptanceEvidenceTests(unittest.TestCase):
+    @staticmethod
+    def _evidence():
+        row = {
+            "pid": 123,
+            "finite_logits": True,
+            "token8": 1224,
+            "action": "RECOVERY_N6",
+            "trigger_request_indices": [0],
+            "restored_from_n6": True,
+            "worker_left_at_n": 6,
+            "base_events": [{"margin": 0.010715}],
+        }
+        return {
+            "schema": "beglin-adaptive-isolated-final/1",
+            "status": "PASS",
+            "source_head": ps.ADAPTIVE_L26_ACCEPTANCE_SOURCE,
+            "binary_sha256": ps.EXPECTED_PERSISTENT_BINARY_SHA,
+            "adaptive_evidence_sha256": ps.ADAPTIVE_L26_EVIDENCE_SHA256,
+            "adaptive_startup_policy_sha256": ps.ADAPTIVE_L26_STARTUP_POLICY_SHA256,
+            "production_route_touched": False,
+            "requests": [dict(row, restored_from_n6=False), row],
+        }
+
+    def test_adaptive_acceptance_file_is_hash_verified(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "acceptance.json"
+            path.write_text(json.dumps(self._evidence(), indent=2, sort_keys=True) + "\n")
+            digest = base._sha256_file(path)
+            with patch.object(ps, "ADAPTIVE_L26_ACCEPTANCE_EVIDENCE", path), patch.object(
+                ps, "ADAPTIVE_L26_ACCEPTANCE_SHA256", digest
+            ):
+                got = ps.verify_adaptive_l26_acceptance()
+            self.assertEqual(got["sha256"], digest)
+            self.assertEqual(got["request_count"], 2)
+            self.assertEqual(got["worker_pid"], 123)
+
+    def test_adaptive_acceptance_tamper_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "acceptance.json"
+            path.write_text(json.dumps(self._evidence(), sort_keys=True))
+            digest = base._sha256_file(path)
+            path.write_text(path.read_text() + " ")
+            with patch.object(ps, "ADAPTIVE_L26_ACCEPTANCE_EVIDENCE", path), patch.object(
+                ps, "ADAPTIVE_L26_ACCEPTANCE_SHA256", digest
+            ):
+                with self.assertRaises(ps.PersistentSupervisorError):
+                    ps.verify_adaptive_l26_acceptance()
+
+
 class ArtifactContractTests(unittest.TestCase):
     def test_expected_hardware_identity_is_pinned(self):
         self.assertEqual(
