@@ -474,7 +474,7 @@ def summarize(records: list[dict]) -> dict:
 
 
 class PrecisionObservability:
-    def __init__(self, *, lineage_path, snapshot_path=None, strict=False, identity=None):
+    def __init__(self, *, lineage_path, snapshot_path=None, strict=False, identity=None, max_bytes=0, max_rotated_files=0):
         self.lineage_path = Path(lineage_path)
         self.snapshot_path = (Path(snapshot_path) if snapshot_path is not None else
                               self.lineage_path.with_suffix(self.lineage_path.suffix + '.summary.json'))
@@ -482,6 +482,8 @@ class PrecisionObservability:
             raise PrecisionObservabilityError('snapshot path must differ from lineage path')
         self.strict = bool(strict)
         self.identity = dict(identity or {})
+        self.max_bytes = max(0, int(max_bytes))
+        self.max_rotated_files = max(0, int(max_rotated_files))
         self.worker_instance_id = self.identity.get('worker_instance_id') or uuid.uuid4().hex
         self.lock = threading.RLock()
         self.lineage_path.parent.mkdir(parents=True, exist_ok=True)
@@ -556,6 +558,31 @@ class PrecisionObservability:
         finally:
             tmp.unlink(missing_ok=True)
 
+    def _rotate_if_needed(self, incoming_bytes):
+        if self.max_bytes <= 0:
+            return None
+        current = self.lineage_path.stat().st_size if self.lineage_path.exists() else 0
+        if current == 0 or current + int(incoming_bytes) <= self.max_bytes:
+            return None
+        stamp = f"{time.time_ns()}-{uuid.uuid4().hex[:8]}"
+        rotated = self.lineage_path.with_name(
+            self.lineage_path.name + f".{stamp}.rotated"
+        )
+        os.replace(self.lineage_path, rotated)
+        self._seen = set()
+        self._last = None
+        self._metrics = _Metrics()
+        self._fingerprint = None
+        files = sorted(
+            self.lineage_path.parent.glob(self.lineage_path.name + ".*.rotated"),
+            key=lambda p: p.stat().st_mtime_ns,
+            reverse=True,
+        )
+        if self.max_rotated_files >= 0:
+            for old in files[self.max_rotated_files:]:
+                old.unlink(missing_ok=True)
+        return rotated
+
     def record(self, *, admission_id, worker_pid, request_count, decision, result):
         started = time.monotonic()
         with self.lock, self._file_lock():
@@ -577,6 +604,15 @@ class PrecisionObservability:
             updated.add(row)
             summary = updated.summary()
             raw = (json.dumps(row, sort_keys=True, separators=(',', ':'), allow_nan=False) + '\n').encode()
+            rotated = self._rotate_if_needed(len(raw))
+            if rotated is not None:
+                row['prev_record_sha256'] = None
+                row.pop('record_sha256', None)
+                row['record_sha256'] = _sha(row)
+                updated = _Metrics()
+                updated.add(row)
+                summary = updated.summary()
+                raw = (json.dumps(row, sort_keys=True, separators=(',', ':'), allow_nan=False) + '\n').encode()
             fd = os.open(self.lineage_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
             try:
                 offset = 0
