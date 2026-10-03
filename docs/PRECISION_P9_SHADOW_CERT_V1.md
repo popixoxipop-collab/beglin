@@ -17,3 +17,5 @@ Safety contracts:
 The historical L3 n6->n5 P8 proposal remains blocked because its original replay input was not preserved. P8 replay provenance capture added in PR #48 applies to future evidence and does not retroactively manufacture this missing input.
 
 Unit/regression acceptance: P9/P8 focused 8/8 PASS; GPU suite 227/227 PASS.
+
+Certified successor regression: run 37131083161, exact implementation head 391944b09131708769d3e3cfb99755d42d438292, SUCCESS. The subsequent commit only removes the temporary branch trigger and seals this result.

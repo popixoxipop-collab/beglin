@@ -16,7 +16,6 @@ on:
       - supabase-v3-evidence-reconnect-20261003
       - quant-search-full-qng64-ladder-20261003
       - precision-allocator-v1-20261003
-      - precision-p9-shadow-cert-v1-20261003
       - precision-p8-provenance-v1-20261003
       - precision-observability-review-20261003
     paths:
