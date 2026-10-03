@@ -86,6 +86,7 @@ class ObservabilityTests(unittest.TestCase):
             self.assertEqual(summary["admissions"],2)
             self.assertEqual(summary["requests"],3)
             self.assertEqual(summary["trigger_counts"],{"low_margin":1})
+            self.assertEqual(summary["trigger_rates"],{"low_margin":0.5})
             self.assertEqual(summary["cache_misses"],1)
             self.assertEqual(summary["inference_pass_histogram"],{"1":1,"2":1})
             self.assertEqual(summary["extra_pass_rate"],0.5)
@@ -95,6 +96,10 @@ class ObservabilityTests(unittest.TestCase):
                 {"shared_down_proj/L26/n6":2,"shared_up_proj/L3/n5":2},
             )
             self.assertEqual(summary["e2e_error_ms_mean"],10.0)
+            self.assertEqual(
+                summary["precision_residency_admissions"],
+                {"shared_down_proj/L26/n6":2,"shared_up_proj/L3/n5":2},
+            )
 
     def test_multi_trigger_counts_are_independent(self):
         with tempfile.TemporaryDirectory() as td:
@@ -110,6 +115,40 @@ class ObservabilityTests(unittest.TestCase):
                 obs.summary()["trigger_counts"],
                 {"high_entropy":1,"near_tie":1,"routing_ambiguity":1},
             )
+
+    def test_duplicate_record_is_rejected_before_append(self):
+        with tempfile.TemporaryDirectory() as td:
+            path=Path(td)/"lineage.jsonl"
+            obs=po.PrecisionObservability(lineage_path=path,strict=True)
+            obs.record(admission_id="same",worker_pid=1,request_count=1,
+                       decision=decision(),result=result())
+            before=path.read_bytes()
+            with self.assertRaises(po.PrecisionObservabilityError):
+                obs.record(admission_id="same",worker_pid=1,request_count=1,
+                           decision=decision(),result=result())
+            self.assertEqual(path.read_bytes(),before)
+
+    def test_adaptive_decision_normalizes_low_margin_lineage(self):
+        got=po.build_adaptive_decision(
+            adaptive={
+                "enabled":True,"action":"RECOVERY_N6",
+                "role":"shared_down_proj","layer":26,
+                "base_n":5,"recovery_n":6,"worker_left_at_n":6,
+                "trigger_request_indices":[0],
+                "base_events":[{"margin":0.010715}],
+            },
+            active_policy=[
+                {"role":"shared_down_proj","layer":26,"n":6},
+                {"role":"shared_up_proj","layer":3,"n":6},
+            ],
+            changes=[{"role":"shared_down_proj","layer":26,"from_n":5,"to_n":6}],
+            evidence_sha256="e"*64,
+        )
+        self.assertEqual(got["signal"]["active_triggers"],["low_margin"])
+        self.assertEqual(got["signal"]["margin"],0.010715)
+        row=got["selection"]["targets"][0]
+        self.assertEqual(row["status"],"TRIGGER_CONDITIONED_ALTERNATE")
+        self.assertEqual(row["selected_n"],6)
 
     def test_tamper_is_detected(self):
         with tempfile.TemporaryDirectory() as td:

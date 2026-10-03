@@ -121,10 +121,10 @@ def main():
             hold.get("precision_observability",{}).get("status"),
         ]
         expected_residency={
-            f"shared_down_proj/L26/n5":2,
-            f"shared_down_proj/L26/n6":1,
-            f"shared_up_proj/L3/n5":1,
-            f"shared_up_proj/L3/n6":2,
+            "shared_down_proj/L26/n5":1,
+            "shared_down_proj/L26/n6":2,
+            "shared_up_proj/L3/n5":2,
+            "shared_up_proj/L3/n6":1,
         }
         ok=(
             record_status==["RECORDED","RECORDED","RECORDED"]

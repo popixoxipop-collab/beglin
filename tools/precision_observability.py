@@ -87,6 +87,78 @@ def _expected_cost(decision: dict) -> dict | None:
     return None
 
 
+def build_adaptive_decision(
+    *,
+    adaptive: dict,
+    active_policy: list[dict],
+    changes: list[dict],
+    evidence_sha256: str,
+) -> dict:
+    """Normalize legacy adaptive L26 serving into the P6 lineage shape."""
+    if not isinstance(adaptive, dict) or adaptive.get("enabled") is not True:
+        raise PrecisionObservabilityError("adaptive precision metadata is invalid")
+    action = str(adaptive.get("action", ""))
+    triggered = action == "RECOVERY_N6"
+    events = adaptive.get("base_events") or []
+    margins = []
+    for row in events:
+        if isinstance(row, dict) and row.get("margin") is not None:
+            try:
+                margins.append(float(row["margin"]))
+            except (TypeError, ValueError):
+                pass
+    margin = min(margins) if margins else None
+    role = str(adaptive.get("role"))
+    layer = int(adaptive.get("layer"))
+    selected_n = int(adaptive.get("worker_left_at_n"))
+    status = "TRIGGER_CONDITIONED_ALTERNATE" if triggered else "BASE_LOW_COST"
+    evidence = {}
+    if triggered:
+        evidence = {
+            "low_margin": [{
+                "evidence_id": "adaptive-l26-certified",
+                "evidence_sha256": evidence_sha256,
+                "trigger_type": "low_margin",
+                "from_n": int(adaptive.get("base_n")),
+                "to_n": int(adaptive.get("recovery_n")),
+                "requests": len(adaptive.get("trigger_request_indices") or []),
+                "signal_bucket": {"margin_max": 0.02},
+            }]
+        }
+    selection = {
+        "targets": [{
+            "role": role,
+            "layer": layer,
+            "status": status,
+            "selected_n": selected_n,
+            "active_triggers": ["low_margin"] if triggered else [],
+            "evidence": evidence,
+        }]
+    }
+    signal = {
+        "active_triggers": ["low_margin"] if triggered else [],
+        "margin": margin,
+        "entropy": None,
+        "routing_ambiguity_score": None,
+        "raw": {"low_margin": triggered, "margin": margin},
+    }
+    return {
+        "schema": "beglin-precision-adaptive-lineage-decision-v1",
+        "status": "READY_FOR_OBSERVABILITY",
+        "production_write_allowed": False,
+        "signal": signal,
+        "evidence_snapshot_sha256": evidence_sha256,
+        "allocation_sha256": None,
+        "selection_sha256": _sha(selection),
+        "cost_evidence_sha256": None,
+        "combined_policy_evidence": {"evidence_sha256": evidence_sha256},
+        "selected_policy": pc.normalize_policy(active_policy),
+        "changes": list(changes),
+        "selection": selection,
+        "policy_cost_optimizer": None,
+    }
+
+
 def build_record(
     *,
     admission_id: str,
@@ -252,6 +324,10 @@ def summarize(records: list[dict]) -> dict:
         "triggered_admissions": triggered,
         "trigger_rate": triggered / admissions if admissions else 0.0,
         "trigger_counts": dict(sorted(trigger_counts.items())),
+        "trigger_rates": {
+            key: count / admissions if admissions else 0.0
+            for key, count in sorted(trigger_counts.items())
+        },
         "transitioned_admissions": transitioned,
         "transition_rate": transitioned / admissions if admissions else 0.0,
         "target_transition_counts": dict(sorted(target_transition_counts.items())),
@@ -345,6 +421,10 @@ class PrecisionObservability:
         with self.lock:
             records = self.read_records()
             verify_records(records)
+            if any(row.get("admission_id") == str(admission_id) for row in records):
+                raise PrecisionObservabilityError(
+                    f"duplicate admission_id: {admission_id}"
+                )
             prev = records[-1]["record_sha256"] if records else None
             row = build_record(
                 admission_id=admission_id,
@@ -361,7 +441,15 @@ class PrecisionObservability:
                 0o600,
             )
             try:
-                os.write(fd, raw.encode())
+                payload = raw.encode()
+                offset = 0
+                while offset < len(payload):
+                    written = os.write(fd, payload[offset:])
+                    if written <= 0:
+                        raise PrecisionObservabilityError(
+                            "lineage append made no progress"
+                        )
+                    offset += written
                 os.fsync(fd)
             finally:
                 os.close(fd)
