@@ -19,6 +19,8 @@ import urllib.request
 
 
 TRIGGERS = ("near_tie", "low_margin", "high_entropy", "routing_ambiguity")
+MIN_TRIGGER_DISTINCT_EVENTS = 3
+MIN_TRIGGER_TOTAL_REQUESTS = 36
 
 
 class DynamicSelectorError(RuntimeError):
@@ -134,6 +136,24 @@ def _passed_context_evidence(rows, *, role, layer, from_n, to_n, trigger, signal
             and _signal_matches_bucket(signal, row.get("signal_bucket") or {})
         ):
             matches.append(row)
+
+    # A repeated replay of one prompt is useful evidence for that event, but it
+    # is not enough to generalize a trigger-conditioned precision switch. v1
+    # requires at least three distinct event identities and 36 total replay
+    # requests before an alternate can be selected automatically.
+    event_ids=set()
+    total_requests=0
+    for row in matches:
+        total_requests += int(row.get("requests",0))
+        metrics=row.get("metrics") or {}
+        event_id=metrics.get("event_id")
+        if event_id:
+            event_ids.add(str(event_id))
+    if (
+        len(event_ids) < MIN_TRIGGER_DISTINCT_EVENTS
+        or total_requests < MIN_TRIGGER_TOTAL_REQUESTS
+    ):
+        return []
     return matches
 
 
