@@ -14,6 +14,7 @@ on:
       - persistent-serving-interactive-launchd-20261003
       - supabase-v3-evidence-reconnect-20261003
       - quant-search-full-qng64-ladder-20261003
+      - precision-allocator-v1-20261003
     paths:
       - ".github/workflows/certified-successor-regression.yml"
       - "tools/manual_canary_*.py"
@@ -48,6 +49,15 @@ on:
       - "tools/gpu_isolated_preflight.py"
       - "tools/test_quant_search_n_push.py"
       - "tools/quant_search_n.py"
+      - "supabase_migration_precision_dynamic_v1.sql"
+      - "supabase_migration_precision_allocator_v1.sql"
+      - "tools/promotion_writeback.py"
+      - "tools/test_persistent_precision_benchmark.py"
+      - "tools/persistent_precision_benchmark.py"
+      - "tools/test_precision_dynamic_selector.py"
+      - "tools/precision_dynamic_selector.py"
+      - "tools/test_precision_allocator.py"
+      - "tools/precision_allocator.py"
   workflow_dispatch:
 
 permissions:
@@ -76,6 +86,10 @@ jobs:
             tools/quant_search_n.py \
             tools/gpu_isolated_preflight.py \
             tools/backend_capabilities.py \
+            tools/precision_allocator.py \
+            tools/precision_dynamic_selector.py \
+            tools/persistent_precision_benchmark.py \
+            tools/promotion_writeback.py \
             tools/gpu_autopilot.py \
             tools/gpu_runtime_control.py \
             tools/manual_canary_contract.py \
@@ -104,6 +118,9 @@ jobs:
           python tools/test_gpu_autopilot_v3_persistence.py
           python tools/test_quant_search_n_push.py
           python tools/test_backend_capabilities.py
+          python tools/test_precision_allocator.py
+          python tools/test_precision_dynamic_selector.py
+          python tools/test_persistent_precision_benchmark.py
           python tools/test_precision_planner_v3.py
           python tools/test_precision_control_state.py
           python tools/test_precision_transactions.py
