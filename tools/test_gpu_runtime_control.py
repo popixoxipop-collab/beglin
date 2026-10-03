@@ -106,6 +106,55 @@ class RuntimeControlTests(unittest.TestCase):
                 f"REBIND rebind-001 7 5 9 shared_up_proj 3 {ph}\n",
             )
 
+    def test_prepare_rebind_set_writes_atomic_multi_target_command(self):
+        with tempfile.TemporaryDirectory() as td:
+            ack_path = self.write_ack(td)
+            txn_path = pathlib.Path(td) / "txn.txt"
+            ph = pc.policy_hash(POLICY)
+            got = ctl.prepare_rebind_set(
+                ack_path=ack_path,
+                txn_path=txn_path,
+                txn_id="epoch-001",
+                expected_epoch=7,
+                expected_policy_hash=ph,
+                changes=[
+                    {"role": "shared_up_proj", "layer": 3, "expected_n": 5, "target_n": 9},
+                    {"role": "shared_down_proj", "layer": 4, "expected_n": 6, "target_n": 7},
+                ],
+            )
+            self.assertEqual(got["status"], "REQUESTED")
+            self.assertEqual(len(got["changes"]), 2)
+            self.assertEqual(
+                txn_path.read_text(),
+                f"REBIND_SET epoch-001 7 2 {ph} "
+                "shared_down_proj 4 6 7 shared_up_proj 3 5 9\n",
+            )
+            self.assertEqual(
+                got["target_policy_hash"],
+                pc.policy_hash([
+                    {"role": "shared_down_proj", "layer": 4, "n": 7},
+                    {"role": "shared_up_proj", "layer": 3, "n": 9},
+                ]),
+            )
+
+    def test_prepare_rebind_set_rejects_duplicate_target(self):
+        with tempfile.TemporaryDirectory() as td:
+            ack_path = self.write_ack(td)
+            txn_path = pathlib.Path(td) / "txn.txt"
+            with self.assertRaises(ctl.RuntimeControlError):
+                ctl.prepare_rebind_set(
+                    ack_path=ack_path,
+                    txn_path=txn_path,
+                    txn_id="epoch-dup",
+                    expected_epoch=7,
+                    expected_policy_hash=pc.policy_hash(POLICY),
+                    changes=[
+                        {"role": "shared_up_proj", "layer": 3, "expected_n": 5, "target_n": 9},
+                        {"role": "shared_up_proj", "layer": 3, "expected_n": 5, "target_n": 6},
+                    ],
+                )
+            self.assertFalse(txn_path.exists())
+
     def test_prepare_rebind_rejects_stale_target(self):
         with tempfile.TemporaryDirectory() as td:
             ack_path = self.write_ack(td)

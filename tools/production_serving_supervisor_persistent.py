@@ -187,6 +187,14 @@ def _load_gpu_runtime_control():
     return grc
 
 
+def _load_precision_epoch_scheduler():
+    tools = _runtime_tools_path()
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import precision_epoch_scheduler as pes
+    return _assert_local_helper(pes, "precision_epoch_scheduler")
+
+
 def _read_runtime_ack(path: Path) -> dict:
     return _load_gpu_runtime_control().read_runtime_ack(path)
 
@@ -318,7 +326,8 @@ class PersistentRouteWorker:
         self.proc: subprocess.Popen | None = None
         self.log_handle = None
         self.ack: dict | None = None
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
+        self.precision_epoch_scheduler = None
 
     @property
     def route_id(self) -> str:
@@ -439,7 +448,44 @@ class PersistentRouteWorker:
                 "enabled": True,
                 "threshold": NEARTIE_TELEMETRY_THRESHOLD,
             },
+            "precision_epoch_scheduler": {
+                "available": True,
+                "max_atomic_targets": 8,
+                "hot_policy_shape_change": False,
+            },
         }
+
+    def _epoch_scheduler(self):
+        if self.precision_epoch_scheduler is None:
+            pes = _load_precision_epoch_scheduler()
+            self.precision_epoch_scheduler = pes.PrecisionEpochScheduler(
+                ack_path=self.ack_path,
+                txn_path=self.txn_path,
+                submit_fn=lambda parsed: PersistentRouteWorker.submit(self, parsed),
+                admission_lock=self.lock,
+            )
+        return self.precision_epoch_scheduler
+
+    def submit_with_precision_policy(
+        self,
+        parsed: list[tuple[list[int], int]],
+        *,
+        target_policy: list[dict],
+        admission_id: str | None = None,
+    ) -> dict:
+        """Run one admission under an exact resident-policy epoch.
+
+        v1 can only change n values for targets already materialized at worker
+        startup. The scheduler serializes read-CAS-transition-infer-ACK so a
+        second caller cannot observe or modify a half-transitioned policy.
+        """
+        result = self._epoch_scheduler().run(
+            parsed,
+            target_policy=target_policy,
+            admission_id=admission_id,
+        )
+        self.ack = _read_runtime_ack(self.ack_path)
+        return result
 
     def submit(self, parsed: list[tuple[list[int], int]]) -> dict:
         if not parsed:

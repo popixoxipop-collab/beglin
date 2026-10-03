@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Durable file bridge for the in-process MLX precision transaction protocol.
 
-The C runtime owns the actual quiescent transition.  This controller only emits
-one-target commands after proving that the runtime ACK still matches the
-planner's expected GPU epoch, policy preimage and target precision.
+The C runtime owns the actual quiescent transition.  This controller emits
+single-target or atomic multi-target commands only after proving that the
+runtime ACK still matches the planner's expected GPU epoch and policy preimage.
 """
 from __future__ import annotations
 
@@ -25,9 +25,12 @@ TERMINAL_STATUSES = {
     "ROLLBACK_APPLIED",
     "REBIND_APPLIED",
     "REBIND_FAILED",
+    "REBIND_SET_APPLIED",
+    "REBIND_SET_FAILED",
     "STALE_COMMAND",
 }
 SUPPORTED_QNG64 = {2, 3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15}
+MAX_REBIND_SET_TARGETS = 8
 
 
 class RuntimeControlError(RuntimeError):
@@ -271,6 +274,131 @@ def prepare_rebind(
         "layer": layer,
         "expected_n": expected_n,
         "target_n": target_n,
+        "command": line.rstrip(),
+    }
+
+
+def prepare_rebind_set(
+    *,
+    ack_path: str | os.PathLike,
+    txn_path: str | os.PathLike,
+    txn_id: str,
+    expected_epoch: int,
+    expected_policy_hash: str,
+    changes: list[dict],
+) -> dict:
+    """Publish one atomic n->n transition for all listed role/layer targets."""
+    if not SAFE_TOKEN.fullmatch(str(txn_id)):
+        raise RuntimeControlError("txn_id contains unsupported characters")
+    expected_policy_hash = _validate_sha256(
+        expected_policy_hash, "expected_policy_hash"
+    )
+    expected_epoch = int(expected_epoch)
+    if expected_epoch < 0:
+        raise RuntimeControlError("expected_epoch is out of range")
+    if not isinstance(changes, list) or not changes:
+        raise RuntimeControlError("changes must be a non-empty list")
+    if len(changes) > MAX_REBIND_SET_TARGETS:
+        raise RuntimeControlError(
+            f"REBIND_SET supports at most {MAX_REBIND_SET_TARGETS} targets"
+        )
+
+    normalized: list[dict] = []
+    seen: set[tuple[str, int]] = set()
+    for idx, raw in enumerate(changes):
+        if not isinstance(raw, dict):
+            raise RuntimeControlError(f"changes[{idx}] must be an object")
+        role = str(raw.get("role", ""))
+        if not SAFE_TOKEN.fullmatch(role):
+            raise RuntimeControlError(f"changes[{idx}].role is invalid")
+        try:
+            layer = int(raw["layer"])
+            expected_n = int(raw["expected_n"])
+            target_n = int(raw["target_n"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeControlError(
+                f"changes[{idx}] layer/expected_n/target_n is invalid"
+            ) from exc
+        if layer < 0:
+            raise RuntimeControlError(f"changes[{idx}].layer is out of range")
+        if expected_n not in SUPPORTED_QNG64:
+            raise RuntimeControlError(
+                f"changes[{idx}].expected_n={expected_n} is not supported qNg64"
+            )
+        if target_n not in SUPPORTED_QNG64:
+            raise RuntimeControlError(
+                f"changes[{idx}].target_n={target_n} is not supported qNg64"
+            )
+        if expected_n == target_n:
+            raise RuntimeControlError(
+                f"changes[{idx}] target_n must differ from expected_n"
+            )
+        key = (role, layer)
+        if key in seen:
+            raise RuntimeControlError(
+                f"duplicate REBIND_SET target: {role}/L{layer}"
+            )
+        seen.add(key)
+        normalized.append({
+            "role": role,
+            "layer": layer,
+            "expected_n": expected_n,
+            "target_n": target_n,
+        })
+    normalized.sort(key=lambda row: (row["role"], row["layer"]))
+
+    ack = read_runtime_ack(ack_path)
+    if ack["weight_epoch"] != expected_epoch:
+        raise StaleRuntimeState(
+            f"runtime epoch changed: expected={expected_epoch} "
+            f"actual={ack['weight_epoch']}"
+        )
+    if ack["active_policy_hash"] != expected_policy_hash:
+        raise StaleRuntimeState(
+            "runtime policy preimage changed: "
+            f"expected={expected_policy_hash} "
+            f"actual={ack['active_policy_hash']}"
+        )
+    for row in normalized:
+        actual_n = _target_n(ack["active_policy"], row["role"], row["layer"])
+        if actual_n != row["expected_n"]:
+            raise StaleRuntimeState(
+                f"runtime target changed: {row['role']}/L{row['layer']} "
+                f"expected_n={row['expected_n']} actual_n={actual_n}"
+            )
+
+    target_policy = [dict(row) for row in ack["active_policy"]]
+    by_key = {(row["role"], row["layer"]): row for row in target_policy}
+    for change in normalized:
+        by_key[(change["role"], change["layer"])]["n"] = change["target_n"]
+    target_policy = pc.normalize_policy(target_policy)
+    target_policy_hash = pc.policy_hash(target_policy)
+
+    fields = [
+        "REBIND_SET",
+        str(txn_id),
+        str(expected_epoch),
+        str(len(normalized)),
+        expected_policy_hash,
+    ]
+    for row in normalized:
+        fields.extend([
+            row["role"],
+            str(row["layer"]),
+            str(row["expected_n"]),
+            str(row["target_n"]),
+        ])
+    line = " ".join(fields) + "\n"
+    _atomic_text(txn_path, line)
+    return {
+        "status": "REQUESTED",
+        "backend": BACKEND,
+        "txn_id": str(txn_id),
+        "expected_epoch": expected_epoch,
+        "expected_policy_hash": expected_policy_hash,
+        "changes": normalized,
+        "target_policy": target_policy,
+        "target_policy_hash": target_policy_hash,
         "command": line.rstrip(),
     }
 
