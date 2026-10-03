@@ -174,4 +174,3 @@ grant all privileges on sequence
   moe_attribution_provenance_v3_id_seq,
   moe_live_preflight_results_v3_id_seq
 to service_role;
-
