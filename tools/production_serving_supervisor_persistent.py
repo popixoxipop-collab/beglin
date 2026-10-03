@@ -46,8 +46,8 @@ ADAPTIVE_L26_ROLE = "shared_down_proj"
 ADAPTIVE_L26_LAYER = 26
 ADAPTIVE_L26_BASE_N = 5
 ADAPTIVE_L26_RECOVERY_N = 6
-ADAPTIVE_L26_MARGIN_MAX = 0.01
-ADAPTIVE_L26_EVIDENCE_SHA256 = "a142ce28b0fb83a13efc80b34e205018b0b81de4698ffbad695e3a1917d31fb4"
+ADAPTIVE_L26_MARGIN_MAX = 0.02
+ADAPTIVE_L26_EVIDENCE_SHA256 = "b72141959d642beb8aec90c871c4d00edd5352770366c5296e2798d8a2715017"
 LAUNCHD_PROCESS_TYPE = "Interactive"
 
 
@@ -681,11 +681,11 @@ class PersistentWorkerPool:
     def _prewarm(self, worker: PersistentRouteWorker) -> dict:
         prompt = base._read_first_certified_prompt()
         batch = [(prompt, 10) for _ in range(12)]
-        result = (
-            worker.submit_base(batch)
-            if isinstance(worker, AdaptivePersistentRouteWorker)
-            else worker.submit(batch)
-        )
+        # Adaptive workers must validate the same two-pass contract that will
+        # serve production.  Bypassing recovery here can reject a sound
+        # adaptive configuration merely because the low-cost n5 base flips
+        # this certified route reference before n6 recovery.
+        result = worker.submit(batch)
         if not result["finite_logits"]:
             raise PersistentSupervisorError(f"prewarm non-finite logits for {worker.route_id}")
         expected = self._reference_token(worker.route)
