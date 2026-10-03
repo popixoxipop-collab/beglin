@@ -96,12 +96,13 @@ class AdaptiveTwoPassTests(unittest.TestCase):
     def test_trigger_indices_are_request_scoped_and_thresholded(self):
         events = [
             {"req": 0, "margin": 0.009},
-            {"req": 1, "margin": 0.010},
-            {"req": 2, "margin": 0.0101},
+            {"req": 1, "margin": 0.010714},
+            {"req": 2, "margin": 0.0201},
             {"req": 1, "margin": 0.001},
             {"req": 99, "margin": 0.0},
             {"req": "bad", "margin": 0.0},
         ]
+        self.assertEqual(ps.ADAPTIVE_L26_MARGIN_MAX, 0.02)
         self.assertEqual(ps._adaptive_trigger_indices(events, 3), [0, 1])
 
     def test_adaptive_pool_is_strictly_opt_in(self):
