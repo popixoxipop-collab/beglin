@@ -1054,9 +1054,20 @@ def build_tokenizer_contract(
     return contract
 
 
-def build_loader_contract(source: Mapping[str, Any], descriptor: Mapping[str, Any]) -> dict:
+def build_loader_contract(
+    source: Mapping[str, Any],
+    descriptor: Mapping[str, Any],
+    *,
+    verification_evidence: Mapping[str, Any] | None = None,
+) -> dict:
     arch = str(descriptor["architecture_id"])
     fmt = str(source["source_format"])
+    evidence = normalize_verification_evidence(
+        verification_evidence,
+        component="loader",
+        checkpoint_identity_sha256=str(source["checkpoint_identity_sha256"]),
+        architecture_id=arch,
+    )
     encountered = sorted({
         str(row.get("dtype", "UNKNOWN"))
         for row in source.get("tensor_inventory", [])
@@ -1077,11 +1088,10 @@ def build_loader_contract(source: Mapping[str, Any], descriptor: Mapping[str, An
     else:
         supported_arch = False
         unsupported_formats = encountered
-    status = (
-        "IMPLEMENTED_UNVERIFIED"
-        if supported_arch and not unsupported_formats
-        else "UNSUPPORTED"
-    )
+    if supported_arch and not unsupported_formats:
+        status = "VERIFIED" if evidence is not None else "IMPLEMENTED_UNVERIFIED"
+    else:
+        status = "UNSUPPORTED"
     contract = {
         "schema": "beglin-loader-contract-v1",
         "architecture_id": arch,
@@ -1092,6 +1102,7 @@ def build_loader_contract(source: Mapping[str, Any], descriptor: Mapping[str, An
         "cache_strategy": "CONTENT_IDENTITY",
         "encountered_formats": encountered,
         "unsupported_formats": unsupported_formats,
+        "verification_evidence": evidence,
         "silent_dense_fallback_allowed": False,
     }
     contract["loader_contract_sha256"] = stable_identity_sha256(contract)
@@ -1415,6 +1426,7 @@ def compile_model_capabilities(
     cpu_runtime_evidence: Mapping[str, Any] | None = None,
     mlx_runtime_evidence: Mapping[str, Any] | None = None,
     tokenizer_evidence: Mapping[str, Any] | None = None,
+    loader_evidence: Mapping[str, Any] | None = None,
 ) -> dict:
     source = inspect_model_source(path)
     descriptor = build_architecture_descriptor(source)
@@ -1445,7 +1457,9 @@ def compile_model_capabilities(
     tokenizer = build_tokenizer_contract(
         source, descriptor, verification_evidence=tokenizer_evidence
     )
-    loader = build_loader_contract(source, descriptor)
+    loader = build_loader_contract(
+        source, descriptor, verification_evidence=loader_evidence
+    )
     skeleton = build_model_skeleton(
         source, descriptor, tensor_graph, operator_graph, tokenizer, loader
     )
