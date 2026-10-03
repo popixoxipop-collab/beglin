@@ -4,7 +4,7 @@
   "additionalProperties": true,
   "properties": {
     "schema": {
-      "type": "string"
+      "const": "beglin-tokenizer-contract-v1"
     },
     "silent_fallback_allowed": {
       "const": false
