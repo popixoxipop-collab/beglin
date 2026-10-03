@@ -1,0 +1,37 @@
+{
+  "$id": "https://beglin.local/schemas/model/tokenizer-contract-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "schema": {
+      "type": "string"
+    },
+    "silent_fallback_allowed": {
+      "const": false
+    },
+    "status": {
+      "enum": [
+        "IN_ENGINE_VERIFIED",
+        "EXTERNAL_VERIFIED",
+        "IMPLEMENTED_UNVERIFIED",
+        "UNSUPPORTED"
+      ]
+    },
+    "text_io_supported": {
+      "type": "boolean"
+    },
+    "tokenizer_contract_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "architecture_id",
+    "tokenizer_family",
+    "status",
+    "tokenizer_contract_sha256"
+  ],
+  "title": "tokenizer-contract-v1",
+  "type": "object"
+}

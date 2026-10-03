@@ -1,0 +1,40 @@
+{
+  "$id": "https://beglin.local/schemas/model/tensor-role-graph-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "mapping_coverage": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    },
+    "nodes": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "type": "string"
+    },
+    "tensor_role_graph_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "unmapped_tensors": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "model_id",
+    "architecture_id",
+    "nodes",
+    "tensor_role_graph_sha256"
+  ],
+  "title": "tensor-role-graph-v1",
+  "type": "object"
+}

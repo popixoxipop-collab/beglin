@@ -1,0 +1,27 @@
+{
+  "$id": "https://beglin.local/schemas/model/quant-capability-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "quant_capability_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "rows": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "rows",
+    "quant_capability_sha256"
+  ],
+  "title": "quant-capability-v1",
+  "type": "object"
+}

@@ -1,14 +1,30 @@
 #!/usr/bin/env node
 "use strict";
 
-// Thin passthrough: `beglin <mode> [n_gen]` runs the compiled engine
-// directly with the same argv the C binary itself expects. All engine
-// configuration (weight paths, quantization mode, thread counts, etc.)
-// stays env-var driven -- see README.md for the list.
-
-const { binaryPath } = require("../lib/index.js");
 const { spawnSync } = require("child_process");
+const path = require("path");
 
+const args = process.argv.slice(2);
+
+// P12 capability front door. Keep this independent of the native engine
+// binary so unsupported models can be inspected/fail-closed even when the
+// native build is unavailable.
+if (args[0] === "inspect-model") {
+  const script = path.resolve(__dirname, "..", "tools", "inspect_model.py");
+  const python = process.env.BEGLIN_PYTHON || "python3";
+  const res = spawnSync(python, [script, ...args.slice(1)], { stdio: "inherit" });
+  if (res.error) {
+    console.error(
+      "beglin inspect-model: failed to launch Python capability inspector: " +
+        res.error.message
+    );
+    process.exit(1);
+  }
+  process.exit(res.status === null ? 1 : res.status);
+}
+
+// Existing native-engine passthrough remains unchanged for every other mode.
+const { binaryPath } = require("../lib/index.js");
 const bin = binaryPath();
 if (!bin) {
   console.error(
@@ -18,5 +34,5 @@ if (!bin) {
   process.exit(1);
 }
 
-const res = spawnSync(bin, process.argv.slice(2), { stdio: "inherit" });
+const res = spawnSync(bin, args, { stdio: "inherit" });
 process.exit(res.status === null ? 1 : res.status);

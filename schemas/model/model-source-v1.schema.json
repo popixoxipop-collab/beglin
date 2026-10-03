@@ -1,0 +1,46 @@
+{
+  "$id": "https://beglin.local/schemas/model/model-source-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "checkpoint_identity_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "immutable": {
+      "const": true
+    },
+    "model_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema": {
+      "type": "string"
+    },
+    "source_format": {
+      "enum": [
+        "GGUF",
+        "SAFETENSORS_SINGLE",
+        "SAFETENSORS_SHARDED",
+        "LEGACY_BEG_LIN"
+      ]
+    },
+    "source_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "tensor_count": {
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema",
+    "model_id",
+    "source_format",
+    "checkpoint_identity_sha256",
+    "source_manifest_sha256"
+  ],
+  "title": "model-source-v1",
+  "type": "object"
+}

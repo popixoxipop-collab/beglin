@@ -23,6 +23,11 @@ const REQUIRED_ARCHIVE_FILES = [
   "gguf_write.h",
   "gguf_write_quants.c",
   "gguf_write_quants.h",
+  "tools/model_capability.py",
+  "tools/backend_adapters_v2.py",
+  "tools/inspect_model.py",
+  "schemas/model/model-capability-bundle-v1.schema.json",
+  "schemas/model/model-skeleton-v1.schema.json",
 ];
 
 const FORBIDDEN_ARCHIVE_PREFIXES = [

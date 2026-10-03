@@ -1,0 +1,38 @@
+{
+  "$id": "https://beglin.local/schemas/model/model-capability-bundle-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "automatic_live_promotion": {
+      "const": false
+    },
+    "bundle_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "checkpoint_identity_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "model_id": {
+      "type": "string"
+    },
+    "production_write_allowed": {
+      "const": false
+    },
+    "schema": {
+      "type": "string"
+    },
+    "validation_plan": {}
+  },
+  "required": [
+    "schema",
+    "model_id",
+    "checkpoint_identity_sha256",
+    "p8_p11_eligibility",
+    "validation_plan",
+    "bundle_sha256"
+  ],
+  "title": "model-capability-bundle-v1",
+  "type": "object"
+}

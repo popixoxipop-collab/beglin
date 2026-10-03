@@ -1,0 +1,34 @@
+{
+  "$id": "https://beglin.local/schemas/model/operator-graph-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "operator_graph_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "operators": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "type": "string"
+    },
+    "unsupported_primitives": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "architecture_id",
+    "operators",
+    "operator_graph_sha256"
+  ],
+  "title": "operator-graph-v1",
+  "type": "object"
+}

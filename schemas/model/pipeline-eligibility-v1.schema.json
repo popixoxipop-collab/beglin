@@ -1,0 +1,33 @@
+{
+  "$id": "https://beglin.local/schemas/model/pipeline-eligibility-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "automatic_live_promotion": {
+      "const": false
+    },
+    "reasons": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "FULL",
+        "PARTIAL",
+        "DENIED"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "status",
+    "reasons"
+  ],
+  "title": "pipeline-eligibility-v1",
+  "type": "object"
+}
