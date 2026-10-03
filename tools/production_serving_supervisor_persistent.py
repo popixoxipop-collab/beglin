@@ -96,11 +96,22 @@ def _runtime_tools_path() -> str:
     return str(Path(__file__).resolve().parent)
 
 
+def _assert_local_helper(module, name: str):
+    expected = Path(_runtime_tools_path()).resolve()
+    actual_file = getattr(module, "__file__", None)
+    if not actual_file or Path(actual_file).resolve().parent != expected:
+        raise PersistentSupervisorError(
+            f"{name} loaded from unreviewed path: {actual_file}"
+        )
+    return module
+
+
 def _load_gpu_runtime_control():
     tools = _runtime_tools_path()
     if tools not in sys.path:
         sys.path.insert(0, tools)
     import gpu_runtime_control as grc
+    _assert_local_helper(grc, "gpu_runtime_control")
     required = ("read_runtime_ack", "prepare_rebind", "verify_terminal_ack")
     missing = [name for name in required if not callable(getattr(grc, name, None))]
     if missing:
@@ -148,10 +159,11 @@ def _read_neartie_events_since(path: Path, offset: int) -> list[dict]:
 
 
 def _policy_hash(rows: list[dict]) -> str:
-    tools = str(base.REPO / "tools")
+    tools = _runtime_tools_path()
     if tools not in sys.path:
         sys.path.insert(0, tools)
     import precision_context as pc
+    _assert_local_helper(pc, "precision_context")
     return pc.policy_hash(rows)
 
 
