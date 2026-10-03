@@ -236,7 +236,9 @@ class AdaptiveTwoPassTests(unittest.TestCase):
                 "neartie_events": [],
                 "adaptive_precision": {"enabled": True, "action": "RECOVERY_N6"},
             }
-            with patch.object(worker, "submit", return_value=fake) as submit:
+            with patch.object(
+                ps.base, "_read_first_certified_prompt", return_value=[1, 2, 3]
+            ), patch.object(worker, "submit", return_value=fake) as submit:
                 got = pool._prewarm(worker)
             self.assertEqual(got["reference_hits"], 12)
             submit.assert_called_once()
