@@ -92,6 +92,17 @@ class NearTieTelemetryTests(unittest.TestCase):
             self.assertEqual(got["threshold"], 0.02)
 
 
+class RuntimeControlImportTests(unittest.TestCase):
+    def test_runtime_control_is_loaded_from_supervisor_tools_tree(self):
+        self.assertEqual(
+            Path(ps._runtime_tools_path()).resolve(),
+            Path(ps.__file__).resolve().parent,
+        )
+        grc = ps._load_gpu_runtime_control()
+        self.assertTrue(callable(grc.prepare_rebind))
+        self.assertTrue(callable(grc.verify_terminal_ack))
+
+
 class AdaptiveTwoPassTests(unittest.TestCase):
     def test_trigger_indices_are_request_scoped_and_thresholded(self):
         events = [
