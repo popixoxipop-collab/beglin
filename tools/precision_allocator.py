@@ -168,7 +168,17 @@ def fetch_evidence(model: str) -> dict:
         "select": "context_hash,role,layer,n,status,pass,created_at,metrics",
         "order": "created_at.asc",
     })
-    return {"sweeps": sweeps, "preflight": preflight, "validation": validation}
+    trigger = _get("moe_precision_trigger_evidence_v1", {
+        "model_id": f"eq.{model}",
+        "select": "*",
+        "order": "created_at.asc",
+    })
+    return {
+        "sweeps": sweeps,
+        "preflight": preflight,
+        "validation": validation,
+        "trigger": trigger,
+    }
 
 
 def _truthy(value) -> bool:
@@ -177,6 +187,32 @@ def _truthy(value) -> bool:
     if isinstance(value, str):
         return value.lower() == "true"
     return bool(value)
+
+
+def _trigger_proves_benefit(row: dict) -> bool:
+    if row.get("status") != "PASS" or row.get("pass") is not True:
+        return False
+    if int(row.get("requests", 0)) <= 0:
+        return False
+    metrics = row.get("metrics") or {}
+    try:
+        if "base_failures" in metrics and "target_failures" in metrics:
+            return int(metrics["base_failures"]) > 0 and int(metrics["target_failures"]) == 0
+    except (TypeError, ValueError):
+        return False
+    return metrics.get("base_pass") is False and metrics.get("target_pass") is True
+
+
+def _trigger_source_event(row: dict):
+    event = (row.get("metrics") or {}).get("source_event") or {}
+    try:
+        return (
+            str(event["corpus"]),
+            int(event["req"]),
+            int(event["pos"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def build_candidates(evidence: dict, target_sizes: dict, benchmark: dict | None = None) -> list[dict]:
@@ -244,15 +280,29 @@ def build_candidates(evidence: dict, target_sizes: dict, benchmark: dict | None 
             reasons.append("NO_G4_PASS")
         if (role, layer, n) not in g6:
             reasons.append("NO_G6_PASS")
+        pass_event_keys = [
+            {"corpus": ev[0], "req": ev[1], "pos": ev[2]}
+            for ev, flags in sorted(events.items())
+            if flags == {True}
+        ]
+        fail_event_keys = [
+            {"corpus": ev[0], "req": ev[1], "pos": ev[2]}
+            for ev, flags in sorted(events.items())
+            if False in flags
+        ]
         out.append({
             "role": role,
             "layer": layer,
             "n": n,
             "feasible": feasible,
+            "conditionally_feasible": False,
+            "conditional_recoveries": [],
             "blocked_reasons": reasons,
             "real_pass_events": pass_events,
             "real_fail_events": fail_events,
             "real_event_count": len(events),
+            "real_pass_event_keys": pass_event_keys,
+            "real_fail_event_keys": fail_event_keys,
             "g4_context_hash": (g4.get((role, layer, n)) or {}).get("context_hash"),
             "g6_context_hash": (g6.get((role, layer, n)) or {}).get("context_hash"),
             "tensor_count": int(size["tensor_count"]),
@@ -264,6 +314,70 @@ def build_candidates(evidence: dict, target_sizes: dict, benchmark: dict | None 
             "persistent_rss_bytes": bench.get("rss_bytes"),
             "benchmark_pid": bench.get("pid"),
         })
+    by_key = {
+        (row["role"], int(row["layer"]), int(row["n"])): row
+        for row in out
+    }
+    triggers = evidence.get("trigger", [])
+    for base in out:
+        # A conditional base is intentionally allowed to fail only on events
+        # that have exact trigger-conditioned recovery evidence. It must still
+        # have its own G4/G6 pass on at least one non-trigger event.
+        if (
+            base["real_pass_events"] <= 0
+            or base["real_fail_events"] <= 0
+            or "CONTRADICTORY_REAL_EVENT" in base["blocked_reasons"]
+            or "NO_G4_PASS" in base["blocked_reasons"]
+            or "NO_G6_PASS" in base["blocked_reasons"]
+        ):
+            continue
+        fail_events = {
+            (row["corpus"], int(row["req"]), int(row["pos"]))
+            for row in base["real_fail_event_keys"]
+        }
+        covered = {event: [] for event in fail_events}
+        for trigger in triggers:
+            if (
+                str(trigger.get("role")) != base["role"]
+                or int(trigger.get("layer", -1)) != int(base["layer"])
+                or int(trigger.get("from_n", -1)) != int(base["n"])
+                or not _trigger_proves_benefit(trigger)
+            ):
+                continue
+            event = _trigger_source_event(trigger)
+            if event not in fail_events:
+                continue
+            try:
+                to_n = int(trigger["to_n"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            target = by_key.get((base["role"], int(base["layer"]), to_n))
+            if target is None or target.get("feasible") is not True:
+                continue
+            covered[event].append({
+                "evidence_id": trigger.get("evidence_id"),
+                "trigger_type": trigger.get("trigger_type"),
+                "signal_bucket": trigger.get("signal_bucket") or {},
+                "from_n": int(base["n"]),
+                "to_n": to_n,
+                "source_event": {
+                    "corpus": event[0],
+                    "req": event[1],
+                    "pos": event[2],
+                },
+                "requests": int(trigger.get("requests", 0)),
+                "evidence_sha256": trigger.get("evidence_sha256"),
+                "target_g4_context_hash": target.get("g4_context_hash"),
+                "target_g6_context_hash": target.get("g6_context_hash"),
+            })
+        if fail_events and all(covered[event] for event in fail_events):
+            base["conditionally_feasible"] = True
+            base["conditional_recoveries"] = [
+                row
+                for event in sorted(covered)
+                for row in covered[event]
+            ]
+
     return out
 
 
@@ -314,6 +428,16 @@ def choose_target(rows: list[dict], *, memory_weight=1.0, latency_weight=0.0, rs
     return {**chosen, "objective_score": min(x[0] for x in scored), "objective_dimensions": used}
 
 
+def choose_conditional_base(rows: list[dict], static_safe: dict | None) -> dict | None:
+    candidates = [r for r in rows if r.get("conditionally_feasible")]
+    if not candidates:
+        return None
+    chosen = min(candidates, key=lambda r: (r["estimated_bytes"], r["n"]))
+    if static_safe is not None and chosen["estimated_bytes"] >= static_safe["estimated_bytes"]:
+        return None
+    return chosen
+
+
 def optimize(candidates: list[dict], current_policy: list[dict] | None = None, **weights) -> dict:
     current = {
         (str(row["role"]), int(row["layer"])): int(row["n"])
@@ -326,8 +450,52 @@ def optimize(candidates: list[dict], current_policy: list[dict] | None = None, *
     proposals = []
     proposed_policy = dict(current)
     for target, rows in sorted(grouped.items()):
-        chosen = choose_target(rows, **weights)
+        static_safe = choose_target(rows, **weights)
+        conditional_base = choose_conditional_base(rows, static_safe)
         frontier = pareto_frontier(rows)
+
+        if conditional_base is not None:
+            proposed_policy[target] = int(conditional_base["n"])
+            recovery_ns = sorted({
+                int(row["to_n"])
+                for row in conditional_base["conditional_recoveries"]
+            })
+            alternates = []
+            for n in recovery_ns:
+                target_row = next(
+                    r for r in rows
+                    if int(r["n"]) == n and r.get("feasible") is True
+                )
+                alternates.append({
+                    "n": n,
+                    "real_pass_events": target_row["real_pass_events"],
+                    "persistent_p50_ms": target_row.get("persistent_p50_ms"),
+                })
+            proposals.append({
+                "role": target[0],
+                "layer": target[1],
+                "status": "PROPOSED",
+                "policy_mode": "CONDITIONAL",
+                "current_n": current.get(target),
+                "selected_n": conditional_base["n"],
+                "static_safe_n": static_safe["n"] if static_safe else None,
+                "selected": conditional_base,
+                "pareto_frontier": frontier,
+                "dynamic_escalation": {
+                    "status": "EVIDENCE_READY",
+                    "reason": (
+                        "low-cost base is admitted only outside exact failure events; "
+                        "all observed base failures have trigger-conditioned recovery "
+                        "evidence to a backend-admitted alternate"
+                    ),
+                    "candidate_alternates": alternates,
+                    "recoveries": conditional_base["conditional_recoveries"],
+                    "future_triggers": ["near_tie", "low_margin", "high_entropy", "routing_ambiguity"],
+                },
+            })
+            continue
+
+        chosen = static_safe
         if chosen is None:
             proposals.append({
                 "role": target[0], "layer": target[1],
@@ -346,6 +514,7 @@ def optimize(candidates: list[dict], current_policy: list[dict] | None = None, *
             "role": target[0],
             "layer": target[1],
             "status": "PROPOSED",
+            "policy_mode": "STATIC",
             "current_n": current.get(target),
             "selected_n": chosen["n"],
             "selected": chosen,
@@ -354,7 +523,8 @@ def optimize(candidates: list[dict], current_policy: list[dict] | None = None, *
                 "status": "EVIDENCE_REQUIRED",
                 "reason": (
                     "v1 does not assume higher n is more accurate; an alternate is enabled "
-                    "only after contextual trigger-conditioned evidence exists"
+                    "only after contextual trigger-conditioned evidence proves the base "
+                    "actually fails and the alternate removes that failure"
                 ),
                 "candidate_alternates": alternates,
                 "future_triggers": ["near_tie", "low_margin", "high_entropy", "routing_ambiguity"],
@@ -393,7 +563,10 @@ def persist_decision(result: dict, model: str) -> dict:
     contexts = sorted({
         ctx
         for target in result.get("targets", [])
-        for row in target.get("pareto_frontier", [])
+        for row in (
+            list(target.get("pareto_frontier", []))
+            + ([target.get("selected")] if target.get("selected") else [])
+        )
         for ctx in (row.get("g4_context_hash"), row.get("g6_context_hash"))
         if ctx
     })

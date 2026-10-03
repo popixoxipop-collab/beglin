@@ -119,6 +119,27 @@ def _signal_matches_bucket(signal: dict, bucket: dict) -> bool:
     return constrained
 
 
+def _evidence_proves_precision_benefit(row: dict) -> bool:
+    metrics=row.get("metrics") or {}
+    requests=int(row.get("requests",0))
+    if requests <= 0:
+        return False
+
+    base_failures=metrics.get("base_failures")
+    target_failures=metrics.get("target_failures")
+    if base_failures is not None and target_failures is not None:
+        try:
+            base_failures=int(base_failures)
+            target_failures=int(target_failures)
+        except (TypeError,ValueError):
+            return False
+        return base_failures > 0 and target_failures == 0
+
+    base_pass=metrics.get("base_pass")
+    target_pass=metrics.get("target_pass")
+    return base_pass is False and target_pass is True
+
+
 def _passed_context_evidence(rows, *, role, layer, from_n, to_n, trigger, signal):
     matches=[]
     for row in rows:
@@ -132,6 +153,7 @@ def _passed_context_evidence(rows, *, role, layer, from_n, to_n, trigger, signal
             and row.get("pass") is True
             and int(row.get("requests",0))>0
             and _signal_matches_bucket(signal, row.get("signal_bucket") or {})
+            and _evidence_proves_precision_benefit(row)
         ):
             matches.append(row)
     return matches
