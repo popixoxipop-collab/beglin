@@ -187,3 +187,42 @@ Certified successor regression:
 - conclusion SUCCESS
 
 Production remains unconfigured for P6 observability in this stage.
+
+## Exact-source P6 evidence
+Implementation commit: 4faab46dc6a44c5f41df2745d03976e16e05b305
+
+Native binary SHA-256:
+a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028
+
+Measured cost snapshot:
+- /Users/xox/vdsp_shadow_runs/precision_e2e_cost/p4-20261003/result.json
+- SHA-256 9d21155da1a1c17a0082784c41196f2700ec3b8777e96209c03ca81120eca692
+- source_head 4faab46dc6a44c5f41df2745d03976e16e05b305
+- adaptive recovery keeps observed_inference_passes=[2]
+
+Exact-source P6 acceptance:
+- /Users/xox/vdsp_serving/precision-observability-acceptance-v1/result.json
+- SHA-256 c06dfcb1b9e1d775dbfa7f3d106de8c589c4b689d047442df010eb18430fcd1b
+- production_touched=false
+- same scratch PID 10428 through final restore
+- 6 admissions / 6 requests
+- low_margin trigger count 2; trigger rate 1/3
+- 4 transitioned admissions; transition rate 2/3
+- cache hits 4 / misses 2; hit rate 2/3
+- inference-pass histogram {1:5, 2:1}; extra-pass rate 1/6
+- finite-logit rate 1.0
+- startup policy residency 3, closed-loop target residency 2, adaptive n6 residency 1
+- adaptive recovery uses the same lineage schema and records inference_passes=2
+- final scratch policy restored to the reviewed startup policy
+
+Tamper-evident artifacts:
+- lineage SHA-256 ade1285461db2797a3b1e5a1f2e6821fb80f0a213ffdc6d44a16b5b8d9af338f
+- summary snapshot SHA-256 3b7ce1148ecfb290c27833ccad42eae60e198e2f3d3ce873073b32b1b7a966c7
+
+Validation:
+- focused observability/supervisor tests 39/39 PASS
+- native mlx_binding_transition 1/1 PASS
+- Certified successor regression run 37125908837 SUCCESS on exact implementation head 4faab46dc6a44c5f41df2745d03976e16e05b305
+
+Production remains unconfigured for P6 observability.
+
