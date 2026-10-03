@@ -17,6 +17,7 @@ on:
       - quant-search-full-qng64-ladder-20261003
       - precision-allocator-v1-20261003
       - precision-observability-v1-20261003
+      - precision-observability-review-20261003
     paths:
       - ".github/workflows/certified-successor-regression.yml"
       - "tools/manual_canary_*.py"
@@ -53,6 +54,8 @@ on:
       - "tools/precision_closed_loop.py"
       - "tools/precision_observability.py"
       - "tools/test_gpu_precision_observability.py"
+      - "tools/test_gpu_precision_observability_guards.py"
+      - "tools/precision_observability_review_acceptance_xox.py"
       - "tools/precision_observability_acceptance_xox.py"
       - "tools/precision_e2e_cost.py"
       - "tools/test_gpu_precision_e2e_cost.py"

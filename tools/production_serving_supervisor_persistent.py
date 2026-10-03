@@ -14,6 +14,7 @@ PID receives the next admitted HTTP batch; they do not reload the model.
 The previous spawn-per-admission supervisor remains available for rollback.
 """
 from __future__ import annotations
+import functools
 
 import argparse
 from http import HTTPStatus
@@ -340,6 +341,54 @@ def parse_persistent_result(text: str, *, request_id: str, expected_requests: in
     }
 
 
+def _precision_observation_guard(path):
+    """One outer admission, one lineage row, under the worker's admission RLock."""
+    def decorate(fn):
+        @functools.wraps(fn)
+        def guarded(self, parsed, *args, **kwargs):
+            observer = self.precision_observability
+            started = time.monotonic()
+            if observer is None:
+                return fn(self, parsed, *args, **kwargs)
+            with self.lock:
+                depth = getattr(self, '_p6_observation_depth', 0)
+                self._p6_observation_depth = depth + 1
+                try:
+                    if depth:
+                        return fn(self, parsed, *args, **kwargs)
+                    admission = kwargs.get('admission_id') or ('admit-' + uuid.uuid4().hex)
+                    if path in {'closed_loop', 'explicit_policy'}:
+                        kwargs = {**kwargs, 'admission_id': admission}
+                    self._p6_stage = 'decision' if path == 'closed_loop' else 'inference'
+                    try:
+                        before = _read_runtime_ack(self.ack_path)
+                    except Exception:
+                        before = None
+                    start_count = observer._metrics.counts['admissions']
+                    try:
+                        result = fn(self, parsed, *args, **kwargs)
+                    except Exception as exc:
+                        # Preserve the original exception. A logging failure must not
+                        # hide the actual decision/execution error or duplicate a row.
+                        if observer._metrics.counts['admissions'] == start_count:
+                            self._record_terminal_observation(
+                                parsed=parsed, before=before, admission_id=admission,
+                                path=path, signal=kwargs.get('signal'), error=exc,
+                            )
+                        raise
+                    if 'precision_observability' not in result:
+                        self._record_terminal_observation(
+                            parsed=parsed, before=before, admission_id=admission,
+                            path=path, signal=kwargs.get('signal'), result=result,
+                        )
+                    result["observed_admission_wall_ms"] = (time.monotonic() - started) * 1000.0
+                    return result
+                finally:
+                    self._p6_observation_depth = depth
+        return guarded
+    return decorate
+
+
 class PersistentRouteWorker:
     def __init__(self, *, route: dict, root: Path):
         self.route = base.routing.normalize_route(route)
@@ -491,6 +540,10 @@ class PersistentRouteWorker:
             },
             "precision_observability": {
                 "available": True,
+                "sink_error_count": (self.precision_observability.sink_error_count
+                                     if self.precision_observability else 0),
+                "last_error_type": (self.precision_observability.last_error_type
+                                    if self.precision_observability else None),
                 "configured": self.precision_observability is not None,
                 "strict": (
                     bool(self.precision_observability.strict)
@@ -566,7 +619,24 @@ class PersistentRouteWorker:
     ) -> dict:
         pob = _load_precision_observability()
         with self.lock:
+            try:
+                source_commit = subprocess.check_output(
+                    ["git", "-C", str(Path(__file__).resolve().parents[1]), "rev-parse", "HEAD"],
+                    text=True, timeout=5,
+                ).strip()
+            except Exception:
+                source_commit = None
+            identity = {
+                "source_commit": source_commit,
+                "supervisor_sha256": base._sha256_file(Path(__file__)),
+                "binary_sha256": (base._sha256_file(PERSISTENT_BINARY)
+                                  if PERSISTENT_BINARY.is_file() else None),
+                "checkpoint_sha256": base.EXPECTED_CHECKPOINT_SHA,
+                "route_id": self.route_id,
+                "worker_instance_id": uuid.uuid4().hex,
+            }
             self.precision_observability = pob.PrecisionObservability(
+                identity=identity,
                 lineage_path=lineage_path,
                 snapshot_path=snapshot_path,
                 strict=strict,
@@ -581,6 +651,70 @@ class PersistentRouteWorker:
                 "production_write_allowed": False,
             }
 
+    def _record_terminal_observation(
+        self, *, parsed, before, admission_id, path, signal=None, result=None, error=None
+    ):
+        observer = self.precision_observability
+        if observer is None:
+            return
+        try:
+            pob = _load_precision_observability()
+            try:
+                after = _read_runtime_ack(self.ack_path)
+            except Exception:
+                after = None
+            before = before or {}
+            after = after or {}
+            policy = after.get('active_policy', [])
+            old = {(r['role'], r['layer']): r['n'] for r in before.get('active_policy', [])}
+            changes = [
+                {'role': r['role'], 'layer': r['layer'],
+                 'from_n': old[(r['role'], r['layer'])], 'to_n': r['n']}
+                for r in policy if (r['role'], r['layer']) in old
+                and r['n'] != old[(r['role'], r['layer'])]
+            ]
+            decision = pob.build_explicit_policy_decision(target_policy=policy, changes=changes)
+            if isinstance(signal, dict):
+                decision['signal'] = {
+                    **{k: signal.get(k) for k in ('margin', 'entropy', 'routing_ambiguity_score')},
+                    'active_triggers': [k for k in ('low_margin', 'near_tie', 'high_entropy', 'routing_ambiguity')
+                                        if signal.get(k) is True],
+                }
+            observed = dict(result or {})
+            observed['admission_path'] = path
+            if error is not None:
+                observed['lineage_outcome'] = (
+                    'REJECTED' if getattr(self, '_p6_stage', '') == 'decision' else 'ERROR'
+                )
+                observed['lineage_error_type'] = type(error).__name__
+                observed['inference_passes'] = 0 if observed['lineage_outcome'] == 'REJECTED' else None
+            observed['precision_epoch'] = {
+                'before_policy_hash': before.get('active_policy_hash'),
+                'after_policy_hash': after.get('active_policy_hash'),
+                'before_epoch': before.get('weight_epoch'),
+                'after_epoch': after.get('weight_epoch'),
+                'transitioned': bool(changes),
+                # No transition cost is guessed from a possibly stale terminal ACK.
+                'transition_cost': {'resident_cache_bytes': after.get('resident_qng64_cache_bytes')},
+            }
+            recorded = observer.record(
+                admission_id=admission_id,
+                worker_pid=(int(self.proc.pid) if self.is_alive() else None),
+                request_count=len(parsed), decision=decision, result=observed,
+            )
+            if result is not None:
+                result['precision_observability'] = recorded
+        except Exception as exc:
+            observer.last_error_type = type(exc).__name__
+            observer.sink_error_count += 1
+            if result is not None:
+                result['precision_observability'] = {
+                    'status': 'ERROR', 'error_type': type(exc).__name__,
+                }
+            if observer.strict and error is None:
+                raise PersistentSupervisorError('precision observation failed') from exc
+
+    @_precision_observation_guard("closed_loop")
     def submit_with_closed_loop_precision(
         self,
         parsed: list[tuple[list[int], int]],
@@ -601,6 +735,7 @@ class PersistentRouteWorker:
                 signal=signal,
                 runtime_state=before,
             )
+            self._p6_stage = "scheduler"
             result = self._epoch_scheduler().run(
                 parsed,
                 target_policy=decision["selected_policy"],
@@ -650,21 +785,23 @@ class PersistentRouteWorker:
                         worker_pid=(int(self.proc.pid) if self.is_alive() else None),
                         request_count=len(parsed),
                         decision=decision,
-                        result=out,
+                        result={**out, "admission_path": "closed_loop"},
                     )
                 except Exception as exc:
+                    observer.last_error_type = type(exc).__name__
+                    observer.sink_error_count += 1
                     out["precision_observability"] = {
                         "schema": "beglin-precision-observability-record-v1",
                         "status": "ERROR",
                         "error_type": type(exc).__name__,
-                        "error": str(exc),
-                    }
+                        }
                     if observer.strict:
                         raise PersistentSupervisorError(
                             "precision observability strict recording failed"
                         ) from exc
             return out
 
+    @_precision_observation_guard("explicit_policy")
     def submit_with_precision_policy(
         self,
         parsed: list[tuple[list[int], int]],
@@ -684,8 +821,49 @@ class PersistentRouteWorker:
             admission_id=admission_id,
         )
         self.ack = _read_runtime_ack(self.ack_path)
+        observer = self.precision_observability
+        if observer is not None:
+            pob = _load_precision_observability()
+            epoch = result.get("precision_epoch") or {}
+            changes = [
+                {
+                    "role": row.get("role"),
+                    "layer": row.get("layer"),
+                    "from_n": row.get("expected_n"),
+                    "to_n": row.get("target_n"),
+                }
+                for row in epoch.get("changed_targets") or []
+            ]
+            decision = pob.build_explicit_policy_decision(
+                target_policy=target_policy,
+                changes=changes,
+            )
+            actual_admission_id = str(
+                epoch.get("admission_id") or admission_id or ""
+            )
+            try:
+                result["precision_observability"] = observer.record(
+                    admission_id=actual_admission_id,
+                    worker_pid=(int(self.proc.pid) if self.is_alive() else None),
+                    request_count=len(parsed),
+                    decision=decision,
+                    result={**result, "admission_path": "explicit_policy"},
+                )
+            except Exception as exc:
+                observer.last_error_type = type(exc).__name__
+                observer.sink_error_count += 1
+                result["precision_observability"] = {
+                    "schema": "beglin-precision-observability-record-v1",
+                    "status": "ERROR",
+                    "error_type": type(exc).__name__,
+                }
+                if observer.strict:
+                    raise PersistentSupervisorError(
+                        "precision observability strict explicit-policy recording failed"
+                    ) from exc
         return result
 
+    @_precision_observation_guard("direct")
     def submit(self, parsed: list[tuple[list[int], int]]) -> dict:
         if not parsed:
             raise PersistentSupervisorError("persistent batch cannot be empty")
@@ -890,7 +1068,26 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
         self.ack = ack
         return ack
 
-    def _record_adaptive_observability(
+    def _record_adaptive_observability(self, *, parsed, result, before_ack, transition_acks):
+        try:
+            return self._record_adaptive_observability_impl(
+                parsed=parsed, result=result, before_ack=before_ack,
+                transition_acks=transition_acks,
+            )
+        except Exception as exc:
+            observer = self.precision_observability
+            if observer is None:
+                return result
+            observer.last_error_type = type(exc).__name__
+            observer.sink_error_count += 1
+            if observer.strict:
+                raise
+            result["precision_observability"] = {
+                "status": "ERROR", "error_type": type(exc).__name__,
+            }
+            return result
+
+    def _record_adaptive_observability_impl(
         self,
         *,
         parsed: list[tuple[list[int], int]],
@@ -932,7 +1129,7 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
         cache_bytes_added = sum(
             int(row.get("transition_cache_bytes_added", 0)) for row in transition_acks
         )
-        observed = dict(result)
+        observed = {**result, "admission_path": "adaptive"}
         observed["precision_epoch"] = {
             "schema": "beglin-adaptive-observability-epoch-v1",
             "admission_id": f"adaptive-{uuid.uuid4().hex}",
@@ -970,11 +1167,12 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
                 result=observed,
             )
         except Exception as exc:
+            observer.last_error_type = type(exc).__name__
+            observer.sink_error_count += 1
             result["precision_observability"] = {
                 "schema": "beglin-precision-observability-record-v1",
                 "status": "ERROR",
                 "error_type": type(exc).__name__,
-                "error": str(exc),
             }
             if observer.strict:
                 raise PersistentSupervisorError(
@@ -986,6 +1184,7 @@ class AdaptivePersistentRouteWorker(PersistentRouteWorker):
         """Bypass adaptive rerun; used only for startup prewarm evidence."""
         return super().submit(parsed)
 
+    @_precision_observation_guard("adaptive")
     def submit(self, parsed: list[tuple[list[int], int]]) -> dict:
         if not parsed:
             raise PersistentSupervisorError("adaptive persistent batch cannot be empty")
@@ -1186,6 +1385,28 @@ class PersistentWorkerPool:
             "adaptive_l26_enabled": self.adaptive_l26,
         }
 
+    def observability_snapshot(self) -> dict:
+        workers = {}
+        for rid, worker in self.workers.items():
+            observer = worker.precision_observability
+            if observer is None:
+                workers[rid] = {"status": "NOT_CONFIGURED"}
+                continue
+            try:
+                workers[rid] = {
+                    "status": "DEGRADED" if observer.sink_error_count else "OK",
+                    "summary": observer.summary(verify=False),
+                    "sink_error_count": observer.sink_error_count,
+                    "last_error_type": observer.last_error_type,
+                }
+            except Exception as exc:
+                workers[rid] = {"status": "ERROR", "error_type": type(exc).__name__}
+        return {
+            "schema": "beglin-precision-observability-api-v1",
+            "read_only": True, "production_write_allowed": False,
+            "workers": workers,
+        }
+
     def stop_all(self) -> None:
         for worker in self.workers.values():
             worker.stop()
@@ -1270,6 +1491,9 @@ class PersistentHandler(base.Handler):
     server_version = "BeglinPersistentSupervisor/1"
 
     def do_GET(self) -> None:
+        if self.path == "/observability":
+            self._send(HTTPStatus.OK, self.server.pool.observability_snapshot())
+            return
         if self.path != "/healthz":
             return super().do_GET()
         try:

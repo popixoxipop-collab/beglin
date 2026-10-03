@@ -107,39 +107,40 @@ def main():
         )
         hold=worker.submit_with_closed_loop_precision(
             [(prompt,10)],signal={},admission_id="p6-hold-b")
-        summary=worker.precision_observability.summary()
-        records=worker.precision_observability.read_records()
-        pob.verify_records(records)
-
         restored=worker.submit_with_precision_policy(
             [(prompt,10)],target_policy=A,admission_id="p6-restore-a")
         final_health=worker.health()
+        summary=worker.precision_observability.summary()
+        records=worker.precision_observability.read_records()
+        pob.verify_records(records)
 
         record_status=[
             no_risk.get("precision_observability",{}).get("status"),
             risk.get("precision_observability",{}).get("status"),
             hold.get("precision_observability",{}).get("status"),
+            restored.get("precision_observability",{}).get("status"),
         ]
         expected_residency={
-            "shared_down_proj/L26/n5":1,
+            "shared_down_proj/L26/n5":2,
             "shared_down_proj/L26/n6":2,
             "shared_up_proj/L3/n5":2,
-            "shared_up_proj/L3/n6":1,
+            "shared_up_proj/L3/n6":2,
         }
         ok=(
-            record_status==["RECORDED","RECORDED","RECORDED"]
-            and summary["admissions"]==3
-            and summary["requests"]==3
+            record_status==["RECORDED","RECORDED","RECORDED","RECORDED"]
+            and summary["admissions"]==4
+            and summary["requests"]==4
             and summary["trigger_counts"]=={"low_margin":1}
             and summary["triggered_admissions"]==1
-            and summary["transitioned_admissions"]==1
+            and summary["transitioned_admissions"]==2
             and summary["cache_misses"]==2
-            and summary["cache_hits"]==0
+            and summary["cache_hits"]==2
+            and summary["cache_hit_rate"]==0.5
             and summary["cache_bytes_added"]>0
-            and summary["inference_pass_histogram"]=={"1":3}
+            and summary["inference_pass_histogram"]=={"1":4}
             and summary["extra_pass_rate"]==0.0
             and summary["finite_logits_rate"]==1.0
-            and summary["policy_residency_admissions"]=={AH:1,BH:2}
+            and summary["policy_residency_admissions"]=={AH:2,BH:2}
             and summary["precision_residency_admissions"]==expected_residency
             and summary["expected_e2e_ms_mean"] is not None
             and summary["actual_roundtrip_ms_mean"]>0
