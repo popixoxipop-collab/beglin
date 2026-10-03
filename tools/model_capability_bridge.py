@@ -184,3 +184,25 @@ def optional_lineage(value: Mapping[str, Any]) -> dict:
         if value.get(key) is not None:
             out[key] = value[key]
     return out
+
+
+def validated_optional_lineage(value: Mapping[str, Any]) -> dict:
+    """Validate an already-established P12 lineage without needing the full bundle."""
+    out = optional_lineage(value)
+    if not out:
+        return {}
+    if "model_capability_bundle_sha256" not in out:
+        raise CapabilityBridgeError("capability lineage is missing model capability bundle SHA")
+    out["model_capability_bundle_sha256"] = _hex64(
+        "model_capability_bundle_sha256",
+        out["model_capability_bundle_sha256"],
+    )
+    target = str(out.get("capability_target_key") or "")
+    backend = str(out.get("capability_backend") or "")
+    if not target:
+        raise CapabilityBridgeError("capability lineage is missing target key")
+    if backend not in {"cpu", "mlx_metal"}:
+        raise CapabilityBridgeError(f"unsupported capability lineage backend: {backend!r}")
+    out["capability_target_key"] = target
+    out["capability_backend"] = backend
+    return out
