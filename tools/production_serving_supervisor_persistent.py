@@ -41,6 +41,13 @@ WORKER_READY_TIMEOUT_SECONDS = 120
 REQUEST_TIMEOUT_SECONDS = 60
 POLL_SECONDS = 0.01
 NEARTIE_TELEMETRY_THRESHOLD = 0.02
+ADAPTIVE_L26_ENV = "BEGLIN_ADAPTIVE_L26_ENABLED"
+ADAPTIVE_L26_ROLE = "shared_down_proj"
+ADAPTIVE_L26_LAYER = 26
+ADAPTIVE_L26_BASE_N = 5
+ADAPTIVE_L26_RECOVERY_N = 6
+ADAPTIVE_L26_MARGIN_MAX = 0.01
+ADAPTIVE_L26_EVIDENCE_SHA256 = "a142ce28b0fb83a13efc80b34e205018b0b81de4698ffbad695e3a1917d31fb4"
 LAUNCHD_PROCESS_TYPE = "Interactive"
 
 
@@ -122,6 +129,39 @@ def _read_neartie_events_since(path: Path, offset: int) -> list[dict]:
     return events
 
 
+def _policy_hash(rows: list[dict]) -> str:
+    tools = str(base.REPO / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import precision_context as pc
+    return pc.policy_hash(rows)
+
+
+def _policy_target_n(policy: list[dict], role: str, layer: int) -> int | None:
+    for row in policy:
+        if row.get("role") == role and int(row.get("layer", -1)) == int(layer):
+            return int(row["n"])
+    return None
+
+
+def _adaptive_trigger_indices(events: list[dict], request_count: int) -> list[int]:
+    triggered = set()
+    for event in events:
+        try:
+            req = int(event["req"])
+            margin = float(event["margin"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if 0 <= req < int(request_count) and margin <= ADAPTIVE_L26_MARGIN_MAX:
+            triggered.add(req)
+    return sorted(triggered)
+
+
+def _adaptive_enabled_from_env() -> bool:
+    value = os.environ.get(ADAPTIVE_L26_ENV, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def parse_persistent_result(text: str, *, request_id: str, expected_requests: int) -> dict:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not lines:
@@ -187,6 +227,9 @@ class PersistentRouteWorker:
     @property
     def route_id(self) -> str:
         return str(self.route["route_id"])
+
+    def expected_runtime_policy_hash(self) -> str:
+        return str(self.route["policy_hash"])
 
     def _prepare_files(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -254,9 +297,11 @@ class PersistentRouteWorker:
             if self.log_path.exists() and "persistent admission enabled" in self.log_path.read_text(errors="ignore"):
                 if self.ack_path.is_file():
                     ack = _read_runtime_ack(self.ack_path)
-                    if ack["active_policy_hash"] != self.route["policy_hash"]:
+                    expected_policy_hash = self.expected_runtime_policy_hash()
+                    if ack["active_policy_hash"] != expected_policy_hash:
                         raise PersistentSupervisorError(
-                            f"persistent worker {self.route_id} policy hash mismatch"
+                            f"persistent worker {self.route_id} policy hash mismatch: "
+                            f"expected={expected_policy_hash} actual={ack['active_policy_hash']}"
                         )
                     self.ack = ack
                     return self.health()
@@ -286,6 +331,11 @@ class PersistentRouteWorker:
             "alive": self.is_alive(),
             "pid": int(self.proc.pid) if self.is_alive() else None,
             "policy_hash": self.route["policy_hash"],
+            "runtime_policy_hash": (
+                self.ack.get("active_policy_hash") if self.ack
+                else self.expected_runtime_policy_hash()
+            ),
+            "runtime_policy": self.ack.get("active_policy", []) if self.ack else [],
             "weight_epoch": int(self.ack["weight_epoch"]) if self.ack else None,
             "ack_sha256": self.ack.get("ack_sha256") if self.ack else None,
             "rss_bytes": self._rss_bytes(),
@@ -381,14 +431,235 @@ class PersistentRouteWorker:
         self.log_handle = None
 
 
+class AdaptivePersistentRouteWorker(PersistentRouteWorker):
+    """Candidate worker with fail-closed L26 low-cost base + n6 recovery."""
+
+    def __init__(self, *, route: dict, root: Path):
+        super().__init__(route=route, root=root)
+        reviewed = base.candidate_route()
+        if (
+            self.route_id != reviewed["route_id"]
+            or self.route.get("role") != reviewed.get("role")
+            or int(self.route.get("layer")) != int(reviewed.get("layer"))
+            or int(self.route.get("n")) != int(reviewed.get("n"))
+        ):
+            raise PersistentSupervisorError(
+                "adaptive L26 worker is allowed only on the reviewed candidate route"
+            )
+        self.startup_policy = [
+            {
+                "role": str(self.route["role"]),
+                "layer": int(self.route["layer"]),
+                "n": int(self.route["n"]),
+            },
+            {
+                "role": ADAPTIVE_L26_ROLE,
+                "layer": ADAPTIVE_L26_LAYER,
+                "n": ADAPTIVE_L26_BASE_N,
+            },
+        ]
+        self.startup_policy_hash = _policy_hash(self.startup_policy)
+
+    def expected_runtime_policy_hash(self) -> str:
+        return self.startup_policy_hash
+
+    def _prepare_files(self) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.queue_dir.mkdir(parents=True, exist_ok=True)
+        self.requests_dir.mkdir(parents=True, exist_ok=True)
+        for stale in ("request.txt", "request.processing", "shutdown"):
+            try:
+                (self.queue_dir / stale).unlink()
+            except FileNotFoundError:
+                pass
+        self.promotion_path.write_text(
+            base._route_policy_line(self.route)
+            + f"{ADAPTIVE_L26_ROLE} {ADAPTIVE_L26_LAYER} {ADAPTIVE_L26_BASE_N}\n"
+        )
+        for path in (self.ack_path, self.txn_path):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+        self.neartie_path.write_text("")
+
+    def health(self) -> dict:
+        row = super().health()
+        row["adaptive_precision"] = {
+            "enabled": True,
+            "role": ADAPTIVE_L26_ROLE,
+            "layer": ADAPTIVE_L26_LAYER,
+            "base_n": ADAPTIVE_L26_BASE_N,
+            "recovery_n": ADAPTIVE_L26_RECOVERY_N,
+            "margin_max": ADAPTIVE_L26_MARGIN_MAX,
+            "evidence_sha256": ADAPTIVE_L26_EVIDENCE_SHA256,
+        }
+        return row
+
+    def _current_l26_n(self) -> int:
+        ack = _read_runtime_ack(self.ack_path)
+        self.ack = ack
+        n = _policy_target_n(
+            ack["active_policy"], ADAPTIVE_L26_ROLE, ADAPTIVE_L26_LAYER
+        )
+        if n not in {ADAPTIVE_L26_BASE_N, ADAPTIVE_L26_RECOVERY_N}:
+            raise PersistentSupervisorError(
+                f"adaptive L26 runtime is in unexpected state n={n}"
+            )
+        return int(n)
+
+    def _prepare_rebind(self, *, expected_n: int, target_n: int, txn_id: str) -> None:
+        tools = str(base.REPO / "tools")
+        if tools not in sys.path:
+            sys.path.insert(0, tools)
+        import gpu_runtime_control as grc
+        ack = _read_runtime_ack(self.ack_path)
+        self.ack = ack
+        grc.prepare_rebind(
+            ack_path=self.ack_path,
+            txn_path=self.txn_path,
+            txn_id=txn_id,
+            expected_epoch=int(ack["weight_epoch"]),
+            expected_policy_hash=str(ack["active_policy_hash"]),
+            role=ADAPTIVE_L26_ROLE,
+            layer=ADAPTIVE_L26_LAYER,
+            expected_n=int(expected_n),
+            target_n=int(target_n),
+        )
+
+    def _verify_rebind(self, *, txn_id: str, target_n: int) -> dict:
+        tools = str(base.REPO / "tools")
+        if tools not in sys.path:
+            sys.path.insert(0, tools)
+        import gpu_runtime_control as grc
+        ack = grc.verify_terminal_ack(
+            ack_path=self.ack_path,
+            txn_id=txn_id,
+            allowed_statuses={"REBIND_APPLIED"},
+        )
+        actual_n = _policy_target_n(
+            ack["active_policy"], ADAPTIVE_L26_ROLE, ADAPTIVE_L26_LAYER
+        )
+        if actual_n != int(target_n):
+            raise PersistentSupervisorError(
+                f"adaptive L26 rebind ACK target mismatch: expected={target_n} actual={actual_n}"
+            )
+        self.ack = ack
+        return ack
+
+    def submit_base(self, parsed: list[tuple[list[int], int]]) -> dict:
+        """Bypass adaptive rerun; used only for startup prewarm evidence."""
+        return super().submit(parsed)
+
+    def submit(self, parsed: list[tuple[list[int], int]]) -> dict:
+        if not parsed:
+            raise PersistentSupervisorError("adaptive persistent batch cannot be empty")
+
+        # A triggered request is intentionally left at n6.  The next request
+        # itself applies 6->5 at the quiescent boundary before computing its
+        # first/base pass, avoiding a third inference solely for restoration.
+        restored_from_n6 = False
+        if self._current_l26_n() == ADAPTIVE_L26_RECOVERY_N:
+            txn_id = f"adaptive-restore-{uuid.uuid4().hex}"
+            self._prepare_rebind(
+                expected_n=ADAPTIVE_L26_RECOVERY_N,
+                target_n=ADAPTIVE_L26_BASE_N,
+                txn_id=txn_id,
+            )
+            first = super().submit(parsed)
+            self._verify_rebind(txn_id=txn_id, target_n=ADAPTIVE_L26_BASE_N)
+            restored_from_n6 = True
+        else:
+            first = super().submit(parsed)
+
+        trigger_indices = _adaptive_trigger_indices(
+            first.get("neartie_events", []), len(parsed)
+        )
+        if not trigger_indices:
+            first["adaptive_precision"] = {
+                "enabled": True,
+                "action": "BASE_N5",
+                "restored_from_n6": restored_from_n6,
+                "role": ADAPTIVE_L26_ROLE,
+                "layer": ADAPTIVE_L26_LAYER,
+                "base_n": ADAPTIVE_L26_BASE_N,
+                "recovery_n": ADAPTIVE_L26_RECOVERY_N,
+                "trigger_request_indices": [],
+                "worker_left_at_n": ADAPTIVE_L26_BASE_N,
+                "evidence_sha256": ADAPTIVE_L26_EVIDENCE_SHA256,
+            }
+            return first
+
+        txn_id = f"adaptive-recover-{uuid.uuid4().hex}"
+        self._prepare_rebind(
+            expected_n=ADAPTIVE_L26_BASE_N,
+            target_n=ADAPTIVE_L26_RECOVERY_N,
+            txn_id=txn_id,
+        )
+        recovery_parsed = [parsed[idx] for idx in trigger_indices]
+        recovery = super().submit(recovery_parsed)
+        self._verify_rebind(txn_id=txn_id, target_n=ADAPTIVE_L26_RECOVERY_N)
+
+        merged_responses = [list(tokens) for tokens in first["responses"]]
+        for local_idx, original_idx in enumerate(trigger_indices):
+            merged_responses[original_idx] = recovery["responses"][local_idx]
+
+        base_events = []
+        for event in first.get("neartie_events", []):
+            row = dict(event)
+            row["phase"] = "base_n5"
+            base_events.append(row)
+        recovery_events = []
+        for event in recovery.get("neartie_events", []):
+            row = dict(event)
+            local_req = int(row.get("req", -1))
+            if 0 <= local_req < len(trigger_indices):
+                row["req"] = trigger_indices[local_req]
+            row["phase"] = "recovery_n6"
+            recovery_events.append(row)
+
+        return {
+            **first,
+            "finite_logits": bool(first["finite_logits"] and recovery["finite_logits"]),
+            "engine_wall_ms": float(first["engine_wall_ms"]) + float(recovery["engine_wall_ms"]),
+            "roundtrip_ms": float(first["roundtrip_ms"]) + float(recovery["roundtrip_ms"]),
+            "responses": merged_responses,
+            "neartie_events": base_events + recovery_events,
+            "adaptive_precision": {
+                "enabled": True,
+                "action": "RECOVERY_N6",
+                "restored_from_n6": restored_from_n6,
+                "role": ADAPTIVE_L26_ROLE,
+                "layer": ADAPTIVE_L26_LAYER,
+                "base_n": ADAPTIVE_L26_BASE_N,
+                "recovery_n": ADAPTIVE_L26_RECOVERY_N,
+                "trigger_request_indices": trigger_indices,
+                "base_event_count": len(base_events),
+                "recovery_event_count": len(recovery_events),
+                "worker_left_at_n": ADAPTIVE_L26_RECOVERY_N,
+                "evidence_sha256": ADAPTIVE_L26_EVIDENCE_SHA256,
+            },
+        }
+
+
 class PersistentWorkerPool:
-    def __init__(self, root: Path = DEFAULT_PERSISTENT_ROOT):
+    def __init__(
+        self,
+        root: Path = DEFAULT_PERSISTENT_ROOT,
+        *,
+        adaptive_l26: bool = False,
+    ):
         self.root = Path(root)
+        self.adaptive_l26 = bool(adaptive_l26)
+        candidate_cls = (
+            AdaptivePersistentRouteWorker if self.adaptive_l26
+            else PersistentRouteWorker
+        )
         self.workers = {
             base.baseline_route()["route_id"]: PersistentRouteWorker(
                 route=base.baseline_route(), root=self.root / "baseline"
             ),
-            base.candidate_route()["route_id"]: PersistentRouteWorker(
+            base.candidate_route()["route_id"]: candidate_cls(
                 route=base.candidate_route(), root=self.root / "candidate"
             ),
         }
@@ -410,7 +681,11 @@ class PersistentWorkerPool:
     def _prewarm(self, worker: PersistentRouteWorker) -> dict:
         prompt = base._read_first_certified_prompt()
         batch = [(prompt, 10) for _ in range(12)]
-        result = worker.submit(batch)
+        result = (
+            worker.submit_base(batch)
+            if isinstance(worker, AdaptivePersistentRouteWorker)
+            else worker.submit(batch)
+        )
         if not result["finite_logits"]:
             raise PersistentSupervisorError(f"prewarm non-finite logits for {worker.route_id}")
         expected = self._reference_token(worker.route)
@@ -453,6 +728,7 @@ class PersistentWorkerPool:
             "workers": rows,
             "combined_rss_bytes": sum(int(row["rss_bytes"] or 0) for row in rows.values()),
             "prewarm": self.prewarm_evidence,
+            "adaptive_l26_enabled": self.adaptive_l26,
         }
 
     def stop_all(self) -> None:
@@ -509,6 +785,9 @@ class PersistentEngineExecutor:
                 "worker_ack_sha256": h["ack_sha256"],
                 "neartie_events": result.get("neartie_events", []),
                 "neartie_event_count": len(result.get("neartie_events", [])),
+                "adaptive_precision": result.get(
+                    "adaptive_precision", {"enabled": False}
+                ),
                 "worker_epoch": h["weight_epoch"],
                 "finite_logits": True,
                 "duration_ms": max(1, int((time.monotonic() - started) * 1000)),
@@ -556,6 +835,7 @@ class PersistentHandler(base.Handler):
                 "prewarm": pool["prewarm"],
                 "uptime_seconds": int(time.time() - self.server.started_at),
                 "persistent_workers": True,
+                "adaptive_precision_enabled": pool["adaptive_l26_enabled"],
                 "external_network_exposed": False,
                 "production_write_allowed": False,
                 "auto_promotion_enabled": False,
@@ -579,7 +859,10 @@ def make_server(
     verify_persistent_artifact()
     manifest = Path(route_manifest)
     base.ensure_route_manifest(manifest)
-    pool = PersistentWorkerPool(Path(persistent_root))
+    pool = PersistentWorkerPool(
+        Path(persistent_root),
+        adaptive_l26=_adaptive_enabled_from_env(),
+    )
     pool.start_all()
     try:
         executor = PersistentEngineExecutor(manifest, pool)

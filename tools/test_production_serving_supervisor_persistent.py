@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import production_serving_supervisor as base
 import production_serving_supervisor_persistent as ps
@@ -89,6 +90,137 @@ class NearTieTelemetryTests(unittest.TestCase):
             got = worker.health()["near_tie_telemetry"]
             self.assertTrue(got["enabled"])
             self.assertEqual(got["threshold"], 0.02)
+
+
+class AdaptiveTwoPassTests(unittest.TestCase):
+    def test_trigger_indices_are_request_scoped_and_thresholded(self):
+        events = [
+            {"req": 0, "margin": 0.009},
+            {"req": 1, "margin": 0.010},
+            {"req": 2, "margin": 0.0101},
+            {"req": 1, "margin": 0.001},
+            {"req": 99, "margin": 0.0},
+            {"req": "bad", "margin": 0.0},
+        ]
+        self.assertEqual(ps._adaptive_trigger_indices(events, 3), [0, 1])
+
+    def test_adaptive_pool_is_strictly_opt_in(self):
+        normal = ps.PersistentWorkerPool()
+        adaptive = ps.PersistentWorkerPool(adaptive_l26=True)
+        rid = base.candidate_route()["route_id"]
+        self.assertIsInstance(normal.workers[rid], ps.PersistentRouteWorker)
+        self.assertNotIsInstance(normal.workers[rid], ps.AdaptivePersistentRouteWorker)
+        self.assertIsInstance(adaptive.workers[rid], ps.AdaptivePersistentRouteWorker)
+        self.assertFalse(normal.health()["adaptive_l26_enabled"])
+        self.assertTrue(adaptive.health()["adaptive_l26_enabled"])
+
+    def test_adaptive_startup_policy_is_candidate_plus_l26_base(self):
+        with tempfile.TemporaryDirectory() as td:
+            worker = ps.AdaptivePersistentRouteWorker(
+                route=base.candidate_route(), root=Path(td)
+            )
+            self.assertEqual(
+                worker.startup_policy,
+                [
+                    {"role": "shared_up_proj", "layer": 3, "n": 6},
+                    {"role": "shared_down_proj", "layer": 26, "n": 5},
+                ],
+            )
+            self.assertEqual(
+                worker.expected_runtime_policy_hash(),
+                ps._policy_hash(worker.startup_policy),
+            )
+            self.assertNotEqual(
+                worker.expected_runtime_policy_hash(),
+                worker.route["policy_hash"],
+            )
+            worker._prepare_files()
+            self.assertEqual(
+                worker.promotion_path.read_text().splitlines(),
+                ["shared_up_proj 3 6", "shared_down_proj 26 5"],
+            )
+
+    def test_triggered_request_only_is_recovered_at_n6(self):
+        with tempfile.TemporaryDirectory() as td:
+            worker = ps.AdaptivePersistentRouteWorker(
+                route=base.candidate_route(), root=Path(td)
+            )
+            first = {
+                "finite_logits": True,
+                "engine_wall_ms": 10.0,
+                "roundtrip_ms": 11.0,
+                "responses": [[100], [200]],
+                "neartie_events": [
+                    {
+                        "req": 1, "pos": 9, "predicted_token": 372,
+                        "competing_token": 1, "margin": 0.002424,
+                        "batch_size": 2,
+                    }
+                ],
+            }
+            recovery = {
+                "finite_logits": True,
+                "engine_wall_ms": 4.0,
+                "roundtrip_ms": 5.0,
+                "responses": [[999]],
+                "neartie_events": [],
+            }
+            with patch.object(
+                ps.PersistentRouteWorker, "submit",
+                side_effect=[first, recovery],
+            ), patch.object(
+                worker, "_current_l26_n", return_value=5
+            ), patch.object(
+                worker, "_prepare_rebind"
+            ) as prepare, patch.object(
+                worker, "_verify_rebind", return_value={}
+            ) as verify:
+                got = worker.submit([([1], 2), ([2], 2)])
+
+            self.assertEqual(got["responses"], [[100], [999]])
+            self.assertEqual(got["adaptive_precision"]["action"], "RECOVERY_N6")
+            self.assertEqual(
+                got["adaptive_precision"]["trigger_request_indices"], [1]
+            )
+            self.assertEqual(got["engine_wall_ms"], 14.0)
+            self.assertEqual(got["roundtrip_ms"], 16.0)
+            prepare.assert_called_once()
+            self.assertEqual(prepare.call_args.kwargs["expected_n"], 5)
+            self.assertEqual(prepare.call_args.kwargs["target_n"], 6)
+            verify.assert_called_once()
+            self.assertEqual(verify.call_args.kwargs["target_n"], 6)
+
+    def test_next_request_restores_n5_before_base_pass(self):
+        with tempfile.TemporaryDirectory() as td:
+            worker = ps.AdaptivePersistentRouteWorker(
+                route=base.candidate_route(), root=Path(td)
+            )
+            base_result = {
+                "finite_logits": True,
+                "engine_wall_ms": 3.0,
+                "roundtrip_ms": 4.0,
+                "responses": [[123]],
+                "neartie_events": [],
+            }
+            with patch.object(
+                ps.PersistentRouteWorker, "submit", return_value=base_result
+            ), patch.object(
+                worker, "_current_l26_n", return_value=6
+            ), patch.object(
+                worker, "_prepare_rebind"
+            ) as prepare, patch.object(
+                worker, "_verify_rebind", return_value={}
+            ) as verify:
+                got = worker.submit([([1], 2)])
+
+            self.assertEqual(got["responses"], [[123]])
+            self.assertEqual(got["adaptive_precision"]["action"], "BASE_N5")
+            self.assertTrue(got["adaptive_precision"]["restored_from_n6"])
+            prepare.assert_called_once()
+            self.assertEqual(prepare.call_args.kwargs["expected_n"], 6)
+            self.assertEqual(prepare.call_args.kwargs["target_n"], 5)
+            verify.assert_called_once()
+            self.assertEqual(verify.call_args.kwargs["target_n"], 5)
 
 
 class WorkerPoolContractTests(unittest.TestCase):
