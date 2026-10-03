@@ -1,81 +1,193 @@
-# P7 Precision Soak, Rotation and Fault Boundaries
+name: Certified successor regression
+# Supabase v3 reconnect revalidation: 2026-10-03
 
-P7 extends P6 observability without enabling it in production.
+on:
+  push:
+    branches:
+      - agent-e-absent-baseline-20261002
+      - agent-e-preimage-materializer-20261002
+      - agent-e-signing-prep-xox-20261002
+      - production-adapter-bridge-shadow-20261002
+      - production-routing-cutover-gate-20261002
+      - production-serving-supervisor-20261002
+      - persistent-gpu-serving-20261003
+      - persistent-serving-interactive-launchd-20261003
+      - precision-p7-certification-v1-20261003
+      - adaptive-two-pass-l26-20261003
+      - supabase-v3-evidence-reconnect-20261003
+      - quant-search-full-qng64-ladder-20261003
+      - precision-allocator-v1-20261003
+      - precision-observability-review-20261003
+    paths:
+      - ".github/workflows/certified-successor-regression.yml"
+      - "tools/manual_canary_*.py"
+      - "tools/test_manual_canary*.py"
+      - "docs/MANUAL_CANARY*.md"
+      - "tools/production_adapter_bridge*.py"
+      - "tools/test_production_adapter_bridge*.py"
+      - "tools/production_routing_cutover*.py"
+      - "tools/test_production_routing_cutover*.py"
+      - "configs/production_router_capability_20261002.json"
+      - ".github/workflows/production-routing-cutover-gate.yml"
+      - "docs/PRODUCTION_ROUTING_CUTOVER_GATE.md"
+      - "tools/production_serving_supervisor*.py"
+      - "supabase_migration_lock_down_beglin_data_api.sql"
+      - "supabase_migration_precision_context_v3.sql"
+      - "tools/test_precision_evidence_v3.py"
+      - "tools/precision_evidence_v3.py"
+      - "tools/test_gpu_autopilot_v3_persistence.py"
+      - "tools/gpu_autopilot.py"
+      - "tools/test_production_serving_supervisor*.py"
+      - "tools/production_serving_cutover_xox*.py"
+      - "tools/test_production_serving_cutover_xox*.py"
+      - "attestations/BEGLIN_PRODUCTION_CUTOVER_APPROVAL_2026-10-02.json"
+      - "attestations/BEGLIN_AGENT_E_GITHUB_OIDC_SEAL_2026-10-02.json"
+      - "qwen_infer.c"
+      - "tools/test_persistent_gpu_worker_source.py"
+      - "tools/production_serving_supervisor_persistent.py"
+      - "tools/precision_epoch_scheduler.py"
+      - "tools/precision_risk_signals.py"
+      - "tools/test_gpu_precision_risk_signals.py"
+      - "tools/precision_risk_signal_acceptance_xox.py"
+      - "mlx_moe.cpp"
+      - "mlx_moe.h"
+      - "tools/precision_closed_loop.py"
+      - "tools/precision_observability.py"
+      - "tools/test_gpu_precision_observability.py"
+      - "tools/test_gpu_precision_observability_guards.py"
+      - "tools/precision_observability_review_acceptance_xox.py"
+      - "tools/precision_observability_acceptance_xox.py"
+      - "tools/precision_e2e_cost.py"
+      - "tools/test_gpu_precision_e2e_cost.py"
+      - "tools/precision_policy_cost_optimizer.py"
+      - "tools/test_gpu_precision_policy_cost_optimizer.py"
+      - "tools/precision_cost_benchmark_xox.py"
+      - "tools/precision_e2e_cost_acceptance_xox.py"
+      - "tools/test_gpu_precision_closed_loop.py"
+      - "tools/precision_closed_loop_acceptance_xox.py"
+      - "tools/test_gpu_precision_epoch_scheduler.py"
+      - "tools/precision_epoch_acceptance_xox.py"
+      - "tools/test_production_serving_supervisor_persistent.py"
+      - "tools/test_backend_capabilities.py"
+      - "tools/backend_capabilities.py"
+      - "tools/test_gpu_isolated_preflight.py"
+      - "tools/gpu_isolated_preflight.py"
+      - "tools/test_quant_search_n_push.py"
+      - "tools/quant_search_n.py"
+      - "supabase_migration_precision_dynamic_v1.sql"
+      - "supabase_migration_precision_allocator_v1.sql"
+      - "tools/promotion_writeback.py"
+      - "tools/test_persistent_precision_benchmark.py"
+      - "tools/persistent_precision_benchmark.py"
+      - "tools/test_precision_dynamic_selector.py"
+      - "tools/precision_dynamic_selector.py"
+      - "tools/test_precision_allocator.py"
+      - "tools/precision_allocator.py"
+  workflow_dispatch:
 
-## Scope
-- accelerated repeated-admission soak on an isolated XOX worker;
-- bounded active journal rotation into immutable SHA-256 sealed segments;
-- hash-chained segment manifest;
-- restart replay across sealed segments plus the active journal;
-- duplicate admission detection across archived and active records;
-- crash recovery for the window after segment+manifest durability but before active-journal reset;
-- fault injection for manifest write failure, active reset failure, manifest tamper and segment tamper.
+permissions:
+  contents: read
 
-## Safety boundary
-Rotation defaults to unlimited segment retention. Automatic deletion is intentionally not enabled because deleting a sealed audit segment without an externally checkpointed/signed retention contract would weaken the audit chain. A future retention policy must first define a trusted checkpoint/anchor.
-
-The production generation-6 supervisor, route manifest, binary and worker processes are not modified by P7 acceptance.
-
-## P7 gates
-1. repeated admissions remain on one isolated worker PID;
-2. policy/epoch lineage remains replayable across rotations;
-3. cache materialization converges to warm hits rather than repeated cold allocation;
-4. adaptive two-pass requests remain finite and observable;
-5. restart summary equals the pre-restart aggregate;
-6. segment/manifest tamper fails closed;
-7. manifest failure leaves the active journal intact;
-8. reset failure after a durable seal is recoverable without data loss;
-9. production pre/post identity is unchanged.
-
-## Exact-source XOX acceptance
-Implementation commit: `4baf28b3745a170fa7dc36a6630b1316ac0970fe`.
-
-- native binary SHA-256: `d03f4748345195500179a6418142e1a73b2259a2e330ddcc0c28b702994d401e`
-- cost evidence: `/Users/xox/vdsp_shadow_runs/precision_e2e_cost/p7-soak-4baf28b/result.json`
-- cost evidence SHA-256: `8f969bd0b01a20a960bdf659ef9fe683cd953608b5f3286b3da597796edca30e`
-- soak result: `/Users/xox/vdsp_serving/precision-p7-soak-4baf28b/result.json`
-- soak result SHA-256: `8376c1605f2c4e8e9ac89310efadb7ed8aff396ba3631e24e916bfcaf2ab17bd`
-
-Measured 60-admission accelerated soak:
-- 60/60 successful admissions on one isolated worker PID;
-- 30 closed-loop, 20 explicit-policy and 10 adaptive admissions;
-- 40 precision-transition admissions;
-- 20 low-margin trigger admissions;
-- cache hits/misses 58/2 = 96.67% hit rate after warm materialization;
-- inference passes: 50 one-pass, 10 two-pass;
-- finite logits 60/60;
-- five sealed 10-record segments retained, manifest chain valid;
-- restart summary exactly equals the pre-restart aggregate;
-- final policy restored to startup policy.
-
-Fault/rotation tests include manifest write failure, reset failure after seal, manifest tamper and segment tamper. The reset crash window is recovered only when the active journal bytes exactly match the latest sealed segment SHA; other overlap remains fail-closed.
-
-Regression before implementation seal: GPU suite 219/219 PASS, focused precision/supervisor/fault suite 63/63 PASS, native transition 1/1 PASS.
-
-Production after acceptance remains generation 6, route manifest `c2bf7eed2788e115af0c0cb3316fceb061000013b2bfcf57710f66d291ff4221`, baseline/candidate PIDs 35481/35493, adaptive L26 enabled and automatic promotion disabled.
-
-Certified successor regression: run `37127197730` SUCCESS on `f73891411d65be15a5de9e7496828a40d2b05d27`. The only change after that implementation+evidence state is removal of the temporary P7 branch trigger from the workflow.
-
-## Extended 300-admission soak
-
-A longer post-merge isolated soak was run from source `fd05cd328b9436f495eb01401bfb7ec24ff79909` using the same certified P7 native binary and cost evidence. Production was not modified.
-
-Evidence:
-- `/Users/xox/vdsp_serving/precision-p7-soak-300-20261003/result.json`
-- SHA-256 `ed453333e55c52fdaf727a10eec4fd654ac8b5b78c4a98bac4c2edd50336a749`
-
-Measured result:
-- 300/300 successful admissions on one isolated worker PID;
-- 150 closed-loop, 100 explicit-policy and 50 adaptive admissions;
-- 200 transition admissions, 100 low-margin trigger admissions;
-- cache hits/misses 298/2 = 99.33% hit rate after warm materialization;
-- cache bytes added stayed bounded at 8,650,752 bytes;
-- resident qNg64 cache current/max stayed bounded at 17,301,504 bytes;
-- inference passes: 250 one-pass, 50 two-pass;
-- finite logits 300/300;
-- 29 sealed 10-record segments retained and replayed;
-- restart summary exactly equaled the pre-restart aggregate;
-- final scratch policy restored to startup policy;
-- production pre/post identity unchanged.
-
-This is an accelerated 300-admission soak, not a multi-hour or multi-day endurance claim. The next endurance gate should add wall-clock duration and explicit worker/ACK fault injection in addition to the already-covered journal/manifest faults.
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile precision runtime modules
+        run: |
+          python -m py_compile \
+            tools/precision_context.py \
+            tools/backend_adapters.py \
+            tools/precision_transactions.py \
+            tools/precision_planner_v3.py \
+            tools/autopilot_preflight_v3.py \
+            tools/precision_evidence_v3.py \
+            tools/quant_search_n.py \
+            tools/gpu_isolated_preflight.py \
+            tools/backend_capabilities.py \
+            tools/precision_allocator.py \
+            tools/precision_dynamic_selector.py \
+            tools/persistent_precision_benchmark.py \
+            tools/promotion_writeback.py \
+            tools/gpu_autopilot.py \
+            tools/gpu_runtime_control.py \
+            tools/precision_epoch_scheduler.py \
+            tools/precision_risk_signals.py \
+            tools/precision_risk_signal_acceptance_xox.py \
+            tools/precision_closed_loop.py \
+            tools/precision_observability.py \
+            tools/precision_observability_acceptance_xox.py \
+            tools/precision_e2e_cost.py \
+            tools/precision_policy_cost_optimizer.py \
+            tools/precision_cost_benchmark_xox.py \
+            tools/precision_e2e_cost_acceptance_xox.py \
+            tools/precision_closed_loop_acceptance_xox.py \
+            tools/precision_epoch_acceptance_xox.py \
+            tools/manual_canary_contract.py \
+            tools/manual_canary_controller.py \
+            tools/manual_canary_signature.py \
+            tools/manual_canary_production_intent.py \
+            tools/manual_canary_proposal_materializer.py \
+            tools/manual_canary_baseline_preimage_xox.py \
+            tools/production_adapter_bridge.py \
+            tools/production_adapter_bridge_xox.py \
+            tools/production_routing_cutover.py \
+            tools/production_serving_supervisor.py \
+            tools/production_serving_supervisor_persistent.py \
+            tools/production_serving_cutover_xox.py \
+            tools/test_manual_canary_proposal_materializer.py \
+            tools/test_production_adapter_bridge.py \
+            tools/test_production_routing_cutover.py \
+            tools/test_production_serving_supervisor.py \
+            tools/test_production_serving_supervisor_persistent.py \
+            tools/test_production_serving_cutover_xox.py
+      - name: Precision v3 tests
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/test_precision_evidence_v3.py
+          python tools/test_gpu_autopilot_v3_persistence.py
+          python tools/test_quant_search_n_push.py
+          python tools/test_backend_capabilities.py
+          python tools/test_precision_allocator.py
+          python tools/test_precision_dynamic_selector.py
+          python tools/test_persistent_precision_benchmark.py
+          python tools/test_precision_planner_v3.py
+          python tools/test_precision_control_state.py
+          python tools/test_precision_transactions.py
+          python tools/test_autopilot_preflight_v3.py
+          python tools/test_mlx_runtime_adapter.py
+      - name: GPU unit and guard suite
+        env:
+          PYTHONPATH: tools
+        run: python -m unittest discover -s tools -p 'test_gpu_*.py'
+      - name: Manual canary and identity regressions
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/test_manual_canary.py
+          python tools/test_manual_canary_proposal_materializer.py
+          python tools/test_production_adapter_bridge.py
+          python tools/test_production_routing_cutover.py
+          python tools/test_production_serving_supervisor.py
+          python tools/test_production_serving_supervisor_persistent.py
+          python tools/test_production_serving_cutover_xox.py
+          python tools/test_persistent_gpu_worker_source.py
+          python tools/test_checkpoint_identity.py
+          python tools/test_agent_f_gpu_coverage_xox.py
+      - name: Signature, evidence, and observer v3 regressions
+        env:
+          PYTHONPATH: tools
+        run: |
+          python tools/test_manual_canary_signature.py
+          python tools/test_manual_canary_evidence_xox.py
+          python tools/test_autopilot_observer_v3.py
+          python tools/test_backend_capabilities.py
+      - name: Full successor diff check
+        run: git diff --check 330954b27f146b8a17db2cb353c3e620968bad5e...HEAD
