@@ -23,6 +23,13 @@ def verify(root: str|Path|None=None)->dict:
             raise AssertionError(f'non-object contract: {path}')
         if 'schema' not in obj.get('required',[]):
             raise AssertionError(f'missing required schema discriminator: {path}')
+        expected_schema=f'beglin-{name}'
+        actual_schema=obj.get('properties',{}).get('schema',{}).get('const')
+        if actual_schema!=expected_schema:
+            raise AssertionError(
+                f'bad schema discriminator: {path} '
+                f'expected={expected_schema!r} actual={actual_schema!r}'
+            )
     missing=EXPECTED-found; extra=found-EXPECTED
     if missing or extra:
         raise AssertionError(f'contract set mismatch missing={sorted(missing)} extra={sorted(extra)}')
