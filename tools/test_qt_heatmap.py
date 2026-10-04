@@ -14,6 +14,8 @@ class TestQTHeatmap(unittest.TestCase):
   q,_=h.project(EVENTS); self.assertEqual(q["cells"][0]["recommended_n"],5)
  def test_t_ranks_sensitivity(self):
   _,t=h.project(EVENTS); d={x["target_key"]:x for x in t["cells"]}; self.assertGreater(d[list(d)[0]]["sensitivity"],d[list(d)[1]]["sensitivity"])
+ def test_policy_gates_are_explicit(self):
+  q,_=h.project(EVENTS,error_budget=1e-6,min_samples=99); self.assertEqual(q["cells"][0]["recommended_n"],6); self.assertEqual(q["cells"][0]["state"],"OBSERVED")
  def test_replay_is_order_deterministic(self):
   base=tuple(map(h.digest,h.project(EVENTS)))
   for ev in (list(reversed(EVENTS)),EVENTS[2:]+EVENTS[:2]):
