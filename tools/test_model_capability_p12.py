@@ -88,6 +88,7 @@ def deepseek_fixture(root: Path) -> Path:
         "n_shared_experts": 1,
         "first_k_dense_replace": 0,
     }, sort_keys=True))
+    (root / "tokenizer.json").write_text("{}")
     write_safetensors(root / "model.safetensors", {
         "model.embed_tokens.weight": ("F16", [128, 64]),
         "model.norm.weight": ("F16", [64]),
@@ -690,7 +691,7 @@ class SourceAndCompilerTests(unittest.TestCase):
 
     def test_full_eligibility_requires_matching_backend_tokenizer_and_loader_evidence(self):
         with tempfile.TemporaryDirectory() as td:
-            root = qwen_fixture(Path(td) / "m")
+            root = deepseek_fixture(Path(td) / "m")
             runtime = verification_evidence(
                 root, component="backend_runtime", backend="mlx_metal", evidence_byte="7"
             )
@@ -727,7 +728,7 @@ class SourceAndCompilerTests(unittest.TestCase):
                 tokenizer_evidence=tokenizer,
                 loader_evidence=loader,
             )
-            self.assertEqual(bundle["tokenizer_contract"]["status"], "IN_ENGINE_VERIFIED")
+            self.assertEqual(bundle["tokenizer_contract"]["status"], "EXTERNAL_VERIFIED")
             self.assertEqual(bundle["loader_contract"]["status"], "VERIFIED")
             self.assertEqual(bundle["p8_p11_eligibility"]["status"], "PARTIAL")
             self.assertIn("TEXT_IO_NOT_WIRED", bundle["p8_p11_eligibility"]["reasons"])
