@@ -432,14 +432,31 @@ def inspect_model_source(path: str | Path) -> dict:
         ggufs = sorted(src.glob("*.gguf"))
         indices = sorted(src.glob("*.safetensors.index.json"))
         sts = sorted(src.glob("*.safetensors"))
-        if len(ggufs) == 1:
-            source_format, primary = "GGUF", ggufs[0]
-        elif indices:
+        legacy = src / "manifest.json"
+        if indices:
+            # Loose *.safetensors files are expected shard payloads when one
+            # index exists. Any second index or another container family makes
+            # the directory ambiguous; callers can always select a concrete
+            # model file instead of relying on directory discovery.
+            if len(indices) != 1 or ggufs or legacy.is_file():
+                raise ModelCapabilityError(
+                    f"ambiguous model sources in directory: {src}"
+                )
             source_format, primary = "SAFETENSORS_SHARDED", indices[0]
-        elif len(sts) == 1:
+        elif ggufs:
+            if len(ggufs) != 1 or sts or legacy.is_file():
+                raise ModelCapabilityError(
+                    f"ambiguous model sources in directory: {src}"
+                )
+            source_format, primary = "GGUF", ggufs[0]
+        elif sts:
+            if len(sts) != 1 or legacy.is_file():
+                raise ModelCapabilityError(
+                    f"ambiguous model sources in directory: {src}"
+                )
             source_format, primary = "SAFETENSORS_SINGLE", sts[0]
-        elif (src / "manifest.json").is_file():
-            source_format, primary = "LEGACY_BEG_LIN", src / "manifest.json"
+        elif legacy.is_file():
+            source_format, primary = "LEGACY_BEG_LIN", legacy
         else:
             raise ModelCapabilityError(
                 f"could not select a unique model source in directory: {src}"
@@ -471,6 +488,19 @@ def inspect_model_source(path: str | Path) -> dict:
         if not isinstance(weight_map, dict) or not weight_map:
             raise ModelCapabilityError("safetensors index missing non-empty weight_map")
         shard_names = sorted({str(v) for v in weight_map.values()})
+        for shard_name in shard_names:
+            if (
+                not shard_name
+                or Path(shard_name).is_absolute()
+                or "/" in shard_name
+                or "\\" in shard_name
+                or ".." in shard_name
+                or Path(shard_name).name != shard_name
+            ):
+                raise ModelCapabilityError(
+                    "safetensors shard name must be a native-loader-compatible "
+                    f"basename: {shard_name!r}"
+                )
         shard_paths = [root / name for name in shard_names]
         missing = [str(p) for p in shard_paths if not p.is_file()]
         if missing:
