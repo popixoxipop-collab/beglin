@@ -26,61 +26,58 @@
     },
     "memory_preflight": {
       "type": "object",
-      "required": [
-        "schema",
-        "source_weight_bytes",
-        "weight_file_count",
-        "tensor_element_count",
-        "dense_f16_equivalent_bytes",
-        "load_strategy",
-        "mmap_eligible",
-        "runtime_resident_estimate_status",
-        "requires_runtime_measurement"
-      ],
+      "additionalProperties": false,
       "properties": {
-        "schema": {
-          "const": "beglin-loader-memory-preflight-v1"
+        "status": {
+          "const": "REQUIRES_RUNTIME_PROBE"
         },
-        "source_weight_bytes": {
+        "source_total_bytes": {
           "type": "integer",
           "minimum": 0
         },
-        "weight_file_count": {
+        "weight_storage_bytes": {
           "type": "integer",
           "minimum": 0
         },
-        "tensor_element_count": {
+        "storage_lower_bound_bytes": {
           "type": "integer",
           "minimum": 0
         },
-        "dense_f16_equivalent_bytes": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "load_strategy": {
-          "enum": [
-            "MMAP_PAGECACHE",
-            "SHARD_AWARE",
-            "LEGACY"
-          ]
-        },
-        "mmap_eligible": {
-          "type": "boolean"
-        },
-        "runtime_resident_bytes": {
+        "peak_resident_bytes_estimate": {
           "type": [
             "integer",
             "null"
           ],
           "minimum": 0
         },
-        "runtime_resident_estimate_status": {
-          "const": "REQUIRES_BACKEND_PROFILE"
+        "workspace_bytes_estimate": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
         },
-        "requires_runtime_measurement": {
+        "mmap_candidate": {
+          "type": "boolean"
+        },
+        "requires_runtime_probe": {
           "const": true
+        },
+        "estimate_kind": {
+          "const": "STORAGE_LOWER_BOUND_ONLY"
         }
-      }
+      },
+      "required": [
+        "status",
+        "source_total_bytes",
+        "weight_storage_bytes",
+        "storage_lower_bound_bytes",
+        "peak_resident_bytes_estimate",
+        "workspace_bytes_estimate",
+        "mmap_candidate",
+        "requires_runtime_probe",
+        "estimate_kind"
+      ]
     }
   },
   "required": [
