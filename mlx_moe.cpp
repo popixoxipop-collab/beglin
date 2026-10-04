@@ -186,6 +186,7 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
             // must exist in exactly one of g_tensors/g_dtensors at a time.
             g_tensors.erase(std::string(name));
             g_qng64_tensors.erase(std::string(name));
+            g_mixed_qng64_tensors.erase(std::string(name));
             g_dtensors.insert_or_assign(std::string(name), DTensor{w, E, out, in, bits});
             g_bound_count++;
             return 1;
@@ -214,6 +215,7 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
             // DIFFERENT map, or a caller resolving by name silently reads the wrong one.
             g_tensors.erase(std::string(name));
             g_dtensors.erase(std::string(name));
+            g_mixed_qng64_tensors.erase(std::string(name));
             g_qng64_tensors.insert_or_assign(
                 std::string(name), QNg64Tensor{planes, scales, E, out, in, ng, bits});
             g_bound_count++;
@@ -348,6 +350,7 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
         // previously bound dense must not leave a stale g_dtensors entry either.
         g_dtensors.erase(std::string(name));
         g_qng64_tensors.erase(std::string(name));
+        g_mixed_qng64_tensors.erase(std::string(name));
         g_tensors.insert_or_assign(
             std::string(name),
             QTensor{w, scales, biases, E, out, in, ng, bits});
@@ -362,12 +365,15 @@ int mlx_gpu_snapshot_binding(const char *name, uint64_t *snapshot_id) {
     if (!mlx_gpu_available() || !name || !snapshot_id) return 0;
     std::string key(name);
     int present = (int)g_tensors.count(key) + (int)g_dtensors.count(key)
-                + (int)g_qng64_tensors.count(key);
+                + (int)g_qng64_tensors.count(key) + (int)g_mixed_qng64_tensors.count(key);
     if (present != 1) return 0;  // missing or already-corrupt multi-map state
 
     BindingSnapshot snap;
     snap.name = key;
-    if (auto it = g_qng64_tensors.find(key); it != g_qng64_tensors.end()) {
+    if (auto it = g_mixed_qng64_tensors.find(key); it != g_mixed_qng64_tensors.end()) {
+        snap.kind = 4;
+        snap.mixed = it->second;
+    } else if (auto it = g_qng64_tensors.find(key); it != g_qng64_tensors.end()) {
         snap.kind = 3;
         snap.ng64 = it->second;
     } else if (auto it = g_tensors.find(key); it != g_tensors.end()) {
@@ -400,6 +406,7 @@ int mlx_gpu_restore_binding_snapshot(uint64_t snapshot_id) {
     g_tensors.erase(key);
     g_dtensors.erase(key);
     g_qng64_tensors.erase(key);
+    g_mixed_qng64_tensors.erase(key);
 
     if (snap.kind == 1 && snap.q) {
         g_tensors.insert_or_assign(key, *snap.q);
@@ -407,6 +414,8 @@ int mlx_gpu_restore_binding_snapshot(uint64_t snapshot_id) {
         g_dtensors.insert_or_assign(key, *snap.d);
     } else if (snap.kind == 3 && snap.ng64) {
         g_qng64_tensors.insert_or_assign(key, *snap.ng64);
+    } else if (snap.kind == 4 && snap.mixed) {
+        g_mixed_qng64_tensors.insert_or_assign(key, *snap.mixed);
     } else {
         return 0;
     }
@@ -460,6 +469,11 @@ int mlx_gpu_binding_kind(const char *name, int *bits_out) {
     if (bits_out) *bits_out = 0;
     if (!name) return 0;
     std::string key(name);
+    auto mixed = g_mixed_qng64_tensors.find(key);
+    if (mixed != g_mixed_qng64_tensors.end()) {
+        if (bits_out) *bits_out = 0;
+        return 4;  // mixed qNg64: bit width is cell-local, not tensor-wide
+    }
     auto ng = g_qng64_tensors.find(key);
     if (ng != g_qng64_tensors.end()) {
         if (bits_out) *bits_out = ng->second.n;
@@ -587,6 +601,21 @@ int mlx_gpu_dequant_probe(const char *name, long e, long row, long col0, int nco
 }
 
 int mlx_gpu_matvec_probe(const char *name, long e, const float *x, float *y) {
+    auto mit = g_mixed_qng64_tensors.find(name);
+    if (mit != g_mixed_qng64_tensors.end()) {
+        if (e != 0) return 0;
+        try {
+            MixedQNg64Tensor &t = mit->second;
+            mx::array xin((void *)x, {1, (int)t.in}, mx::float32, noop_deleter);
+            mx::array yout = mixed_qng64_gemv_e0(name, xin);
+            mx::eval(yout);
+            std::memcpy(y, yout.data<float>(), sizeof(float) * (size_t)t.out);
+            return 1;
+        } catch (...) {
+            return 0;
+        }
+    }
+
     auto dit = g_dtensors.find(name);
     if (dit != g_dtensors.end()) {
         // D-gpu-5: bits=16/32, plain matmul against the dense weight (transpose=true's
