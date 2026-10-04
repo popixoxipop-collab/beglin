@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "identity",
+    "candidate_n",
+    "baseline_precision",
+    "output_max_abs_error",
+    "output_rms_error",
+    "backend_parity_error",
+    "restore_diff",
+    "finite",
+    "result_status"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-qt-quant-perturbation-v1"
+    },
+    "identity": {
+      "$ref": "qt-observation-identity-v1.schema.json"
+    },
+    "candidate_n": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "baseline_precision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "delta_weight_l1": {
+      "type": "number",
+      "minimum": 0
+    },
+    "delta_weight_l2": {
+      "type": "number",
+      "minimum": 0
+    },
+    "relative_weight_error": {
+      "type": "number",
+      "minimum": 0
+    },
+    "output_max_abs_error": {
+      "type": "number",
+      "minimum": 0
+    },
+    "output_rms_error": {
+      "type": "number",
+      "minimum": 0
+    },
+    "output_relative_error": {
+      "type": "number",
+      "minimum": 0
+    },
+    "backend_parity_error": {
+      "type": "number",
+      "minimum": 0
+    },
+    "restore_diff": {
+      "type": "number",
+      "minimum": 0
+    },
+    "latency_delta": {
+      "type": "number"
+    },
+    "memory_delta": {
+      "type": "number"
+    },
+    "finite": {
+      "type": "boolean"
+    },
+    "result_status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "INCONCLUSIVE"
+      ]
+    }
+  }
+}

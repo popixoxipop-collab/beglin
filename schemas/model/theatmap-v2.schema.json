@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generation",
+    "cells"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-theatmap-v2"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target_key",
+          "sensitivity",
+          "recommended_trainable",
+          "lr_scale",
+          "confidence",
+          "state",
+          "sample_count"
+        ],
+        "properties": {
+          "target_key": {
+            "type": "string"
+          },
+          "sensitivity": {
+            "type": "number",
+            "minimum": 0
+          },
+          "recommended_trainable": {
+            "type": "boolean"
+          },
+          "lr_scale": {
+            "type": "number",
+            "minimum": 0
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "sample_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "state": {
+            "enum": [
+              "COLD",
+              "OBSERVED",
+              "CANDIDATE",
+              "EVAL_PENDING",
+              "APPROVED",
+              "REJECTED",
+              "QUARANTINED",
+              "STALE"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

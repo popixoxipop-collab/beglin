@@ -1,0 +1,50 @@
+name: QT Heatmap Foundation
+
+on:
+  push:
+    branches:
+      - qt-heatmap-v2-foundation
+    paths:
+      - "schemas/model/qt-*.schema.json"
+      - "schemas/model/qheatmap-v2.schema.json"
+      - "schemas/model/theatmap-v2.schema.json"
+      - "schemas/model/local-precision-policy-v1.schema.json"
+      - "tools/qt_heatmap.py"
+      - "tools/test_qt_heatmap.py"
+      - ".github/workflows/qt-heatmap-foundation.yml"
+  pull_request:
+    paths:
+      - "schemas/model/qt-*.schema.json"
+      - "schemas/model/qheatmap-v2.schema.json"
+      - "schemas/model/theatmap-v2.schema.json"
+      - "schemas/model/local-precision-policy-v1.schema.json"
+      - "tools/qt_heatmap.py"
+      - "tools/test_qt_heatmap.py"
+
+jobs:
+  qt-foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate JSON schemas
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          paths = [
+            "schemas/model/qt-observation-identity-v1.schema.json",
+            "schemas/model/qt-numeric-observation-v1.schema.json",
+            "schemas/model/qt-quant-perturbation-v1.schema.json",
+            "schemas/model/qt-training-sensitivity-v1.schema.json",
+            "schemas/model/qheatmap-v2.schema.json",
+            "schemas/model/theatmap-v2.schema.json",
+            "schemas/model/local-precision-policy-v1.schema.json",
+          ]
+          for p in paths:
+              with open(p, encoding="utf-8") as f:
+                  obj=json.load(f)
+              assert obj.get("$schema") == "https://json-schema.org/draft/2020-12/schema", p
+          print("QT_SCHEMA_JSON_PASS", len(paths))
+          PY
+      - name: Run deterministic Q/T heatmap tests
+        working-directory: tools
+        run: python3 -m unittest -v test_qt_heatmap.py

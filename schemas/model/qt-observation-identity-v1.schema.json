@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "checkpoint_identity_sha256",
+    "skeleton_sha256",
+    "capability_bundle_sha256",
+    "target_key",
+    "tensor_role",
+    "layer",
+    "group_size",
+    "qgroup_index",
+    "backend",
+    "weight_epoch",
+    "policy_epoch"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-qt-observation-identity-v1"
+    },
+    "checkpoint_identity_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "skeleton_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "capability_bundle_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "target_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tensor_role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "layer": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "expert_id": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "row": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "group_size": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "qgroup_index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "element_index": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "backend": {
+      "type": "string",
+      "enum": [
+        "cpu",
+        "mlx",
+        "metal"
+      ]
+    },
+    "weight_epoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "policy_epoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "observation_window_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}
