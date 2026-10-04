@@ -100,11 +100,23 @@ class GgufMetadataInspectorTests(unittest.TestCase):
             self.assertEqual(report["architecture"]["status"], "KNOWN")
             self.assertEqual(report["architecture"]["architecture_id"], "llama")
             self.assertEqual(report["model_skeleton"]["layer_count"], 2)
-            self.assertIsNone(report["tensor_role_graph"])
-            self.assertIsNone(report["model_capability_bundle"])
+            self.assertIsNotNone(report["tensor_role_graph"])
+            self.assertEqual(report["tensor_role_graph"]["unclaimed_tensor_count"], 0)
+            roles = {row["role"] for row in report["tensor_role_graph"]["nodes"]}
+            self.assertIn("EMBEDDING", roles)
+            self.assertIn("Q_PROJ", roles)
+            self.assertEqual(
+                report["model_skeleton"]["tensor_role_graph_ref"],
+                report["tensor_role_graph"]["graph_sha256"],
+            )
+            self.assertIsNotNone(report["model_capability_bundle"])
             self.assertFalse(report["inference_allowed"])
             self.assertEqual(report["p8_p11_eligibility"], "DENIED")
-            self.assertIn("tensor-role-graph-v1", report["next_required_contracts"])
+            self.assertNotIn("tensor-role-graph-v1", report["next_required_contracts"])
+            self.assertIn(
+                "checkpoint-bound-capability-evidence",
+                report["next_required_contracts"],
+            )
 
     def test_bad_magic_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
