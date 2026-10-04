@@ -32,6 +32,8 @@ const REQUIRED_ARCHIVE_FILES = [
   "tools/model_evidence_registry.py",
   "tools/p12_pipeline_bridge.py",
   "tools/p12_capability_acceptance.py",
+  "tools/p12_cpu_qng64_restart_canary.py",
+  "tools/quant_sim_n.py",
   "schemas/model/model-capability-bundle-v1.schema.json",
   "schemas/model/model-skeleton-v1.schema.json",
 ];
