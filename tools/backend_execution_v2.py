@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 import uuid
 
+import backend_adapters_v2 as planv2
 import gpu_runtime_control as grc
 import model_capability as mc
 import precision_context as pc
@@ -64,6 +65,66 @@ def _verify_plan(plan: Mapping[str, Any], *, backend: str, bundle_sha256: str) -
             f"transition plan SHA mismatch: expected={got} actual={actual}"
         )
     return value
+
+
+def _validated_bundle(value: Mapping[str, Any], *, backend: str) -> dict:
+    bundle = copy.deepcopy(dict(value))
+    if bundle.get("schema") != "beglin-model-capability-bundle-v1":
+        raise BackendExecutionError("invalid model capability bundle")
+    got = str(bundle.get("bundle_sha256") or "")
+    actual = mc.stable_identity_sha256(bundle)
+    if got != actual:
+        raise BackendExecutionError(
+            f"model capability bundle hash mismatch: expected={got} actual={actual}"
+        )
+    # Construction is also a capability-shape validation for this backend.
+    planv2.adapter_v2(backend, bundle)
+    return bundle
+
+
+def _revalidate_capability_plan(
+    plan: Mapping[str, Any],
+    *,
+    bundle: Mapping[str, Any],
+    before: Mapping[str, Any],
+) -> None:
+    backend = str(plan["backend"])
+    adapter = planv2.adapter_v2(backend, bundle)
+    bindings = {}
+    for row in plan.get("changes") or []:
+        key = (str(row["role"]), int(row["layer"]))
+        target_key = str(row.get("target_key") or "")
+        if not target_key:
+            raise BackendExecutionError(
+                f"transition change missing target_key for {key}"
+            )
+        previous = bindings.get(key)
+        if previous is not None and previous != target_key:
+            raise BackendExecutionError(
+                f"ambiguous target-key binding for {key}"
+            )
+        bindings[key] = target_key
+
+    state = planv2.BackendStateV2.build(
+        backend=backend,
+        epoch=int(before["epoch"]),
+        policy=list(before["policy"]),
+        model_capability_bundle_sha256=str(bundle["bundle_sha256"]),
+    )
+    try:
+        canonical = adapter.plan_transition(
+            state=state,
+            target_policy=list(plan["target_policy"]),
+            target_keys=bindings,
+        )
+    except planv2.BackendV2Error as exc:
+        raise BackendExecutionError(
+            f"transition plan capability revalidation failed: {exc}"
+        ) from exc
+    if canonical["transition_plan_sha256"] != plan["transition_plan_sha256"]:
+        raise BackendExecutionError(
+            "transition plan differs from capability-derived canonical plan"
+        )
 
 
 def _normalize_state(value: Mapping[str, Any], *, backend: str) -> dict:
@@ -123,13 +184,16 @@ class CpuRestartExecutionAdapterV2:
     def __init__(
         self,
         *,
-        model_capability_bundle_sha256: str,
+        model_capability_bundle: Mapping[str, Any],
         query_state: Callable[[], Mapping[str, Any]],
         restart: Callable[[list[dict]], Mapping[str, Any]],
         validate: Callable[[], Mapping[str, Any]] | None = None,
         rollback: Callable[[list[dict]], Mapping[str, Any]] | None = None,
     ):
-        self.bundle_sha = str(model_capability_bundle_sha256)
+        self.bundle = _validated_bundle(
+            model_capability_bundle, backend=self.backend
+        )
+        self.bundle_sha = str(self.bundle["bundle_sha256"])
         self.query_state_fn = query_state
         self.restart_fn = restart
         self.validate_fn = validate
@@ -145,6 +209,9 @@ class CpuRestartExecutionAdapterV2:
             raise BackendExecutionError("CPU runtime epoch drifted")
         if before["policy_hash"] != plan["expected_policy_hash"]:
             raise BackendExecutionError("CPU runtime policy preimage drifted")
+        _revalidate_capability_plan(
+            plan, bundle=self.bundle, before=before
+        )
 
         action = str(plan["action"])
         if action == "NOOP":
@@ -207,12 +274,15 @@ class MlxFileExecutionAdapterV2:
     def __init__(
         self,
         *,
-        model_capability_bundle_sha256: str,
+        model_capability_bundle: Mapping[str, Any],
         ack_path: str | Path,
         txn_path: str | Path,
         submit: Callable[[], Mapping[str, Any]],
     ):
-        self.bundle_sha = str(model_capability_bundle_sha256)
+        self.bundle = _validated_bundle(
+            model_capability_bundle, backend=self.backend
+        )
+        self.bundle_sha = str(self.bundle["bundle_sha256"])
         self.ack_path = Path(ack_path).expanduser().resolve()
         self.txn_path = Path(txn_path).expanduser().resolve()
         if _is_production_path(self.ack_path) or _is_production_path(self.txn_path):
@@ -345,6 +415,9 @@ class MlxFileExecutionAdapterV2:
             raise BackendExecutionError("MLX runtime epoch drifted")
         if before["policy_hash"] != plan["expected_policy_hash"]:
             raise BackendExecutionError("MLX runtime policy preimage drifted")
+        _revalidate_capability_plan(
+            plan, bundle=self.bundle, before=before
+        )
 
         if action == "NOOP":
             validation = dict(self.submit_fn())
