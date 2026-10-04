@@ -7,7 +7,6 @@ from pathlib import Path
 import architecture_registry as ar
 import inspect_model
 import loader_registry as lr
-import model_capability as mc
 import tokenizer_registry as tr
 
 
@@ -66,7 +65,6 @@ class ArchitectureRegistryTests(unittest.TestCase):
         graph = ar.build_operator_graph_from_config(model_id="g", descriptor=desc, config=config)
         kinds = {row["operator_type"] for row in graph["operators"]}
         self.assertIn("SLIDING_WINDOW_ATTENTION", kinds)
-        self.assertIn("ATTENTION_SINK", desc.get("facts", {}) if False else {"ATTENTION_SINK"})
         skeleton = ar.build_model_skeleton_from_config(
             model_id="g",
             model_source_sha256="b" * 64,
@@ -74,11 +72,15 @@ class ArchitectureRegistryTests(unittest.TestCase):
             config=config,
             operator_graph=graph,
         )
+        self.assertIn("ATTENTION_SINK", skeleton["required_primitives"])
         self.assertTrue(skeleton["layer_skeletons"][0]["attention"]["attention_sink"])
+        self.assertEqual(skeleton["layer_skeletons"][0]["attention"]["sliding_window"], 128)
 
     def test_unknown_architecture_has_no_invented_layers(self):
         desc = ar.compile_descriptor("brand_new_arch", {"num_hidden_layers": 32})
-        graph = ar.build_operator_graph_from_config(model_id="u", descriptor=desc, config={"num_hidden_layers": 32})
+        graph = ar.build_operator_graph_from_config(
+            model_id="u", descriptor=desc, config={"num_hidden_layers": 32}
+        )
         skeleton = ar.build_model_skeleton_from_config(
             model_id="u",
             model_source_sha256="c" * 64,
