@@ -195,6 +195,7 @@ def compile_capability_report(
     *,
     model_id: str,
     checkpoint_identity: str,
+    weight_checkpoint_identity_sha256: str | None = None,
     skeleton_sha256: str,
     architecture_status: str,
     tokenizer_status: str,
@@ -225,6 +226,7 @@ def compile_capability_report(
     bundle = mc.build_model_capability_bundle(
         model_id=model_id,
         checkpoint_identity=checkpoint_identity,
+        weight_checkpoint_identity_sha256=weight_checkpoint_identity_sha256,
         skeleton_sha256=skeleton_sha256,
         architecture_status=architecture_status,
         tokenizer_status=tokenizer_status,
