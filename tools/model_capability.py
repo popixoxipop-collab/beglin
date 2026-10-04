@@ -1137,17 +1137,6 @@ def build_operator_graph(descriptor: Mapping[str, Any]) -> dict:
 
 
 
-def _tokenizer_source_kind(source: Mapping[str, Any]) -> str:
-    names = {Path(p).name for p in source.get("tokenizer_paths", [])}
-    if {"tokenizer.model", "spiece.model"} & names:
-        return "SENTENCEPIECE"
-    if {"tokenizer.json", "vocab.json", "merges.txt"} & names:
-        return "BPE_FILES"
-    if str(source.get("source_format") or "") == "GGUF":
-        return "GGUF_EMBEDDED_OR_EXTERNAL"
-    return "NONE"
-
-
 def _tokenizer_artifact_kind(
     source: Mapping[str, Any],
 ) -> str:
