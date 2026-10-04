@@ -53,6 +53,7 @@
     "kleidiai/kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.h",
     "tools/model_capability.py",
     "tools/precision_context.py",
+    "tools/gpu_runtime_control.py",
     "tools/backend_adapters_v2.py",
     "tools/inspect_model.py",
     "tools/backend_execution_v2.py",
