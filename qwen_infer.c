@@ -19403,11 +19403,15 @@ static WT *st_register_q4g64_as(const char *name) {
     return w;
 }
 
-static float *st_dequant_logical_f32(const char *name, int *out, int *in, uint64_t *numel);
 static WT *st_register_qng64_as(const char *name, int bits) {
     if (!qng64_group_bytes(bits)) exit(1);
-    int out=0,in=0; uint64_t n=0; float *deq=st_dequant_logical_f32(name,&out,&in,&n);
-    if (in%64 || n!=(uint64_t)out*(uint64_t)in) exit(1);
+    SafetensorsFile *shard=NULL;
+    const SafetensorsInfo *t=safetensors_multi_find_tensor(g_st,name,&shard);
+    if(!t || t->n_dims<2 || !safetensors_dequant_supported(t->dtype)) exit(1);
+    int out=(int)t->shape[0], in=(int)t->shape[1];
+    if(in%64 || t->n_elements!=(uint64_t)out*(uint64_t)in) exit(1);
+    float *deq=malloc(sizeof(float)*(size_t)t->n_elements); if(!deq) exit(1);
+    safetensors_dequant_row(t->dtype,safetensors_tensor_data(shard,t),deq,t->n_elements);
     check_no_dup_name(name); int ng=in/64; size_t nb=qng64_packed_bytes(out,in,bits);
     uint8_t *packed=malloc(nb); float *scales=malloc(sizeof(float)*(size_t)out*ng);
     if(!packed||!scales||qng64_quantize_f32(deq,out,in,bits,packed,scales)!=0) exit(1);
