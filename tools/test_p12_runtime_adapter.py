@@ -19,7 +19,10 @@ import precision_context as pc
 from test_model_capability_p12 import qwen_fixture
 
 
-def verification_evidence(source, descriptor, *, component, marker, backend=None):
+def verification_evidence(
+    source, descriptor, *, component, marker, backend=None, target_key=None,
+    supported_n=None, mutation_mode=None,
+):
     row = {
         "schema": mc.VERIFICATION_EVIDENCE_SCHEMA,
         "status": "VERIFIED",
@@ -32,20 +35,48 @@ def verification_evidence(source, descriptor, *, component, marker, backend=None
     }
     if backend is not None:
         row["backend"] = backend
+    if target_key is not None:
+        row["target_key"] = str(target_key)
+    if supported_n is not None:
+        row["supported_n"] = list(supported_n)
+    if mutation_mode is not None:
+        row["mutation_mode"] = str(mutation_mode)
     return row
 
 
 def compile_verified_bundle(root: Path):
     source = mc.inspect_model_source(root)
     descriptor = mc.build_architecture_descriptor(source)
+    provisional = mc.compile_model_capabilities(root)
+    hot_targets = [
+        row["canonical_target_key"]
+        for row in provisional["tensor_role_graph"]["nodes"]
+        if row["role"] in {"Q_PROJ", "K_PROJ"} and row.get("layer") == 0
+    ]
     cpu = verification_evidence(
         source, descriptor, component="backend_runtime", marker="1", backend="cpu"
     )
     mlx = verification_evidence(
         source, descriptor, component="backend_runtime", marker="2", backend="mlx_metal"
     )
+    mlx_qng64 = [
+        verification_evidence(
+            source, descriptor, component="qng64_runtime", marker=str(3 + idx),
+            backend="mlx_metal", target_key=target, supported_n=[5, 6],
+        )
+        for idx, target in enumerate(hot_targets)
+    ]
+    mlx_mutation = [
+        verification_evidence(
+            source, descriptor, component="mutation_runtime", marker=str(5 + idx),
+            backend="mlx_metal", target_key=target, supported_n=[5, 6],
+            mutation_mode="HOT_REBIND_SINGLE",
+        )
+        for idx, target in enumerate(hot_targets)
+    ]
     bundle = mc.compile_model_capabilities(
-        root, cpu_runtime_evidence=cpu, mlx_runtime_evidence=mlx
+        root, cpu_runtime_evidence=cpu, mlx_runtime_evidence=mlx,
+        mlx_qng64_evidence=mlx_qng64, mlx_mutation_evidence=mlx_mutation,
     )
     return bundle, source, descriptor
 
@@ -198,6 +229,39 @@ class EvidenceRegistryTests(unittest.TestCase):
             self.assertEqual(resolved["mlx_runtime_evidence"]["evidence_sha256"], "2" * 64)
             self.assertEqual(resolved["tokenizer_evidence"]["evidence_sha256"], "3" * 64)
             self.assertEqual(resolved["loader_evidence"]["evidence_sha256"], "4" * 64)
+
+    def test_registry_resolves_target_scoped_qng64_and_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "model")
+            source = mc.inspect_model_source(root)
+            descriptor = mc.build_architecture_descriptor(source)
+            provisional = mc.compile_model_capabilities(root)
+            target = next(
+                row["canonical_target_key"]
+                for row in provisional["tensor_role_graph"]["nodes"]
+                if row["role"] == "Q_PROJ" and row["layer"] == 0
+            )
+            qng = verification_evidence(
+                source, descriptor, component="qng64_runtime", marker="8",
+                backend="mlx_metal", target_key=target, supported_n=[5, 6],
+            )
+            mut = verification_evidence(
+                source, descriptor, component="mutation_runtime", marker="9",
+                backend="mlx_metal", target_key=target, supported_n=[5, 6],
+                mutation_mode="HOT_REBIND_SINGLE",
+            )
+            registry = mer.VerificationEvidenceRegistry([qng, mut])
+            resolved = registry.resolve_model_set(
+                architecture_id=descriptor["architecture_id"],
+                checkpoint_identity_sha256=source["checkpoint_identity_sha256"],
+            )
+            self.assertEqual(resolved["mlx_qng64_evidence"][0]["target_key"], target)
+            self.assertEqual(resolved["mlx_qng64_evidence"][0]["supported_n"], [5, 6])
+            self.assertEqual(resolved["mlx_mutation_evidence"][0]["target_key"], target)
+            self.assertEqual(
+                resolved["mlx_mutation_evidence"][0]["mutation_mode"],
+                "HOT_REBIND_SINGLE",
+            )
 
     def test_conflicting_exact_evidence_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
