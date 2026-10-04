@@ -71,6 +71,38 @@ def qwen_fixture(root: Path) -> Path:
     return root
 
 
+def deepseek_fixture(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "config.json").write_text(json.dumps({
+        "_name_or_path": "acme/deepseek-v2-p12-fixture",
+        "model_type": "deepseek_v2",
+        "hidden_size": 64,
+        "intermediate_size": 128,
+        "num_hidden_layers": 1,
+        "num_attention_heads": 8,
+        "num_key_value_heads": 2,
+        "vocab_size": 128,
+        "max_position_embeddings": 256,
+        "n_routed_experts": 4,
+        "num_experts_per_tok": 2,
+        "n_shared_experts": 1,
+        "first_k_dense_replace": 0,
+    }, sort_keys=True))
+    write_safetensors(root / "model.safetensors", {
+        "model.embed_tokens.weight": ("F16", [128, 64]),
+        "model.norm.weight": ("F16", [64]),
+        "lm_head.weight": ("F16", [128, 64]),
+        "model.layers.0.self_attn.q_proj.weight": ("F16", [64, 64]),
+        "model.layers.0.self_attn.kv_a_proj_with_mqa.weight": ("F16", [64, 64]),
+        "model.layers.0.self_attn.kv_b_proj.weight": ("F16", [64, 64]),
+        "model.layers.0.self_attn.o_proj.weight": ("F16", [64, 64]),
+        "model.layers.0.mlp.shared_experts.gate_proj.weight": ("F16", [128, 64]),
+        "model.layers.0.mlp.shared_experts.up_proj.weight": ("F16", [128, 64]),
+        "model.layers.0.mlp.shared_experts.down_proj.weight": ("F16", [64, 128]),
+    })
+    return root
+
+
 def verification_evidence(
     root: Path,
     *,
@@ -380,7 +412,7 @@ class SourceAndCompilerTests(unittest.TestCase):
 
     def test_mutation_precisions_are_intersected_with_target_evidence(self):
         with tempfile.TemporaryDirectory() as td:
-            root = qwen_fixture(Path(td) / "m")
+            root = deepseek_fixture(Path(td) / "m")
             provisional = mc.compile_model_capabilities(root)
             target = next(
                 row["canonical_target_key"]
@@ -421,7 +453,7 @@ class SourceAndCompilerTests(unittest.TestCase):
 
     def test_backend_adapter_rejects_target_key_for_wrong_policy_role(self):
         with tempfile.TemporaryDirectory() as td:
-            root = qwen_fixture(Path(td) / "m")
+            root = deepseek_fixture(Path(td) / "m")
             provisional = mc.compile_model_capabilities(root)
             q_target = next(
                 row["canonical_target_key"]
