@@ -667,6 +667,66 @@ class SourceAndCompilerTests(unittest.TestCase):
                     root, backend="cpu", cpu_runtime_evidence=wrong_backend
                 )
 
+    def test_direct_target_evidence_requires_widths_and_mutation_mode(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "m")
+            provisional = mc.compile_model_capabilities(root, backend="mlx_metal")
+            target = next(
+                row["target_key"]
+                for row in provisional["backend_capability_matrix"]["rows"]
+                if row["backend"] == "mlx_metal"
+                and row["role"] == "Q_PROJ"
+                and row["layer"] == 0
+            )
+
+            qng = verification_evidence(
+                root, component="qng64_runtime", backend="mlx_metal",
+                evidence_byte="6", target_key=target,
+            )
+            with self.assertRaisesRegex(
+                mc.ModelCapabilityError, "requires non-empty supported_n"
+            ):
+                mc.compile_model_capabilities(
+                    root, backend="mlx_metal", mlx_qng64_evidence=[qng]
+                )
+
+            mutation_no_width = verification_evidence(
+                root, component="mutation_runtime", backend="mlx_metal",
+                evidence_byte="7", target_key=target,
+                mutation_mode="HOT_REBIND_SINGLE",
+            )
+            with self.assertRaisesRegex(
+                mc.ModelCapabilityError, "requires non-empty supported_n"
+            ):
+                mc.compile_model_capabilities(
+                    root, backend="mlx_metal",
+                    mlx_mutation_evidence=[mutation_no_width],
+                )
+
+            mutation_no_mode = verification_evidence(
+                root, component="mutation_runtime", backend="mlx_metal",
+                evidence_byte="8", target_key=target, supported_n=[5],
+            )
+            with self.assertRaisesRegex(
+                mc.ModelCapabilityError, "requires explicit supported mutation_mode"
+            ):
+                mc.compile_model_capabilities(
+                    root, backend="mlx_metal",
+                    mlx_mutation_evidence=[mutation_no_mode],
+                )
+
+            invalid_width = verification_evidence(
+                root, component="qng64_runtime", backend="mlx_metal",
+                evidence_byte="9", target_key=target, supported_n=[16],
+            )
+            with self.assertRaisesRegex(
+                mc.ModelCapabilityError, "unsupported widths"
+            ):
+                mc.compile_model_capabilities(
+                    root, backend="mlx_metal",
+                    mlx_qng64_evidence=[invalid_width],
+                )
+
     def test_full_eligibility_requires_matching_backend_tokenizer_and_loader_evidence(self):
         with tempfile.TemporaryDirectory() as td:
             root = qwen_fixture(Path(td) / "m")
