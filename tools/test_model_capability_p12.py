@@ -857,6 +857,82 @@ class SourceAndCompilerTests(unittest.TestCase):
             ):
                 mc.inspect_model_source(root)
 
+    def test_nested_safetensors_shard_name_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "config.json").write_text(json.dumps({
+                "_name_or_path": "acme/qwen2-nested-shard",
+                "model_type": "qwen2",
+            }))
+            (root / "model.safetensors.index.json").write_text(json.dumps({
+                "weight_map": {
+                    "model.embed_tokens.weight":
+                        "weights/model-00001-of-00001.safetensors"
+                }
+            }))
+            with self.assertRaisesRegex(
+                mc.ModelCapabilityError,
+                "native-loader-compatible basename",
+            ):
+                mc.inspect_model_source(root)
+
+    def test_directory_with_multiple_model_sources_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "mixed")
+            write_minimal_gguf(root / "other.gguf")
+            with self.assertRaisesRegex(
+                mc.ModelCapabilityError, "ambiguous model sources"
+            ):
+                mc.inspect_model_source(root)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            root.mkdir(exist_ok=True)
+            (root / "a.safetensors.index.json").write_text("{}")
+            (root / "b.safetensors.index.json").write_text("{}")
+            with self.assertRaisesRegex(
+                mc.ModelCapabilityError, "ambiguous model sources"
+            ):
+                mc.inspect_model_source(root)
+
+    def test_missing_required_tensor_roles_block_p11(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "config.json").write_text(json.dumps({
+                "_name_or_path": "acme/qwen2-truncated",
+                "model_type": "qwen2",
+                "hidden_size": 64,
+                "intermediate_size": 128,
+                "num_hidden_layers": 1,
+                "num_attention_heads": 8,
+                "num_key_value_heads": 2,
+                "vocab_size": 128,
+                "max_position_embeddings": 256,
+            }))
+            write_safetensors(
+                root / "model.safetensors",
+                {
+                    "model.embed_tokens.weight": ("F16", [128, 64]),
+                    "model.norm.weight": ("F16", [64]),
+                    "model.layers.0.self_attn.q_proj.weight": ("F16", [64, 64]),
+                },
+            )
+            loader = verification_evidence(
+                root, component="loader", evidence_byte="c"
+            )
+            bundle = mc.compile_model_capabilities(
+                root, loader_evidence=loader
+            )
+            graph = bundle["tensor_role_graph"]
+            self.assertGreater(graph["missing_required_tensor_count"], 0)
+            self.assertFalse(graph["structural_complete"])
+            self.assertIn("L0/K_PROJ", graph["missing_required_targets"])
+            self.assertIn(
+                "MISSING_REQUIRED_TENSORS",
+                bundle["p8_p11_eligibility"]["reasons"],
+            )
+            self.assertFalse(bundle["p8_p11_eligibility"]["p11_allowed"])
+
     def test_missing_safetensors_shard_is_rejected(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
