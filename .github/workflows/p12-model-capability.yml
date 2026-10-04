@@ -13,10 +13,12 @@ on:
       - "tools/tokenizer_registry.py"
       - "tools/loader_registry.py"
       - "tools/tensor_role_mapper.py"
+      - "tools/capability_compiler_p12.py"
       - "tools/inspect_model.py"
       - "tools/test_model_capability_p12.py"
       - "tools/test_p12_architecture_registry.py"
       - "tools/test_p12_tensor_role_mapper.py"
+      - "tools/test_p12_capability_compiler.py"
       - ".github/workflows/p12-model-capability.yml"
   pull_request:
     paths:
