@@ -11,6 +11,7 @@
     "source_format",
     "files",
     "checkpoint_identity_sha256",
+    "weight_checkpoint_identity_sha256",
     "immutable"
   ],
   "properties": {
@@ -83,6 +84,13 @@
     },
     "immutable": {
       "const": true
+    },
+    "weight_checkpoint_identity_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
     }
   }
 }
