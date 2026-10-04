@@ -1,0 +1,20 @@
+{
+  "$id":"https://beglin.local/schemas/heatmap/qt-beval-evidence-v1.schema.json",
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"qt-beval-evidence-v1","type":"object","additionalProperties":false,
+  "properties":{
+    "schema":{"const":"beglin-qt-beval-evidence-v1"},
+    "evidence_id":{"type":"string","minLength":1},
+    "kind":{"enum":["Q","T"]},
+    "target_key":{"type":"string","minLength":1},
+    "checkpoint_identity_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "skeleton_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "heatmap_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "weight_epoch":{"type":"integer","minimum":0},
+    "status":{"enum":["PASS","FAIL_QUALITY","FAIL_BACKEND_PARITY","FAIL_RUNTIME","FAIL_ROLLBACK","FAIL_PROVENANCE","FAIL_NO_GAIN","FAIL_REGRESSION","FAIL_MASK_LEAK","FAIL_NUMERIC","FAIL_LINEAGE","INCONCLUSIVE"]},
+    "metrics":{"type":"object","additionalProperties":{"type":["number","integer","boolean","string","null"]}},
+    "source_commit":{"type":"string","pattern":"^[0-9a-f]{7,64}$"},
+    "binary_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}
+  },
+  "required":["schema","evidence_id","kind","target_key","checkpoint_identity_sha256","skeleton_sha256","heatmap_sha256","weight_epoch","status","metrics","source_commit","binary_sha256"]
+}
