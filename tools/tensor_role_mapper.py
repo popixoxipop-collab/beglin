@@ -33,6 +33,7 @@ _KNOWN_SEMANTIC_ARCHITECTURES = {
 
 def read_safetensors_header(path: str | Path) -> dict[str, dict[str, Any]]:
     p = Path(path)
+    size = p.stat().st_size
     with p.open("rb") as handle:
         raw_len = handle.read(8)
         if len(raw_len) != 8:
@@ -41,6 +42,10 @@ def read_safetensors_header(path: str | Path) -> dict[str, dict[str, Any]]:
         if header_len <= 0 or header_len > _MAX_HEADER_BYTES:
             raise TensorRoleMappingError(
                 f"safetensors header size out of range: {header_len}"
+            )
+        if 8 + header_len > size:
+            raise TensorRoleMappingError(
+                f"truncated safetensors header: {p}"
             )
         raw = handle.read(header_len)
         if len(raw) != header_len:
@@ -52,6 +57,7 @@ def read_safetensors_header(path: str | Path) -> dict[str, dict[str, Any]]:
     if not isinstance(obj, dict):
         raise TensorRoleMappingError("safetensors header root must be an object")
 
+    data_bytes = size - 8 - header_len
     out: dict[str, dict[str, Any]] = {}
     for name, meta in obj.items():
         if name == "__metadata__":
@@ -72,6 +78,10 @@ def read_safetensors_header(path: str | Path) -> dict[str, dict[str, Any]]:
             or offsets[1] < offsets[0]
         ):
             raise TensorRoleMappingError(f"invalid data_offsets for {name}")
+        if offsets[1] > data_bytes:
+            raise TensorRoleMappingError(
+                f"data_offsets exceed file for {name}"
+            )
         out[name] = {
             "shape": [int(v) for v in shape],
             "dtype": dtype,
