@@ -76,7 +76,7 @@ jobs:
         env:
           PYTHONPATH: tools
         run: |
-          python -m unittest -v             tools/test_model_capability.py             tools/test_model_capability_p12.py             tools/test_model_capability_bridge_p12.py             tools/test_p12_pipeline_bridge.py             tools/test_p12_runtime_adapter.py             tools/test_p12_capability_acceptance.py             tools/test_p12_tokenizer_runtime.py             tools/test_p12_loader_runtime.py
+          python -m unittest -v             tools/test_model_capability.py             tools/test_model_capability_p12.py             tools/test_model_capability_bridge_p12.py             tools/test_p12_pipeline_bridge.py             tools/test_p12_runtime_adapter.py             tools/test_p12_capability_acceptance.py             tools/test_p12_tokenizer_runtime.py             tools/test_p12_loader_runtime.py             tools/test_p12_inspect_runtime_plans.py
 
       - name: Run full Python regression
         env:
