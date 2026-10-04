@@ -22,6 +22,88 @@ class IdentityTests(unittest.TestCase):
         )
         self.assertEqual(a["checkpoint_identity_sha256"], b["checkpoint_identity_sha256"])
 
+
+    def test_weights_identity_matches_legacy_sharded_checkpoint_manifest(self):
+        files = [
+            {
+                "logical_path": "config.json",
+                "sha256": "0" * 64,
+                "size_bytes": 10,
+                "kind": "config",
+            },
+            {
+                "logical_path": "model.safetensors.index.json",
+                "sha256": "1" * 64,
+                "size_bytes": 20,
+                "kind": "safetensors_index",
+            },
+            {
+                "logical_path": "model-00001-of-00002.safetensors",
+                "sha256": "2" * 64,
+                "size_bytes": 30,
+                "kind": "safetensors_shard",
+            },
+            {
+                "logical_path": "model-00002-of-00002.safetensors",
+                "sha256": "3" * 64,
+                "size_bytes": 40,
+                "kind": "safetensors_shard",
+            },
+            {
+                "logical_path": "tokenizer.json",
+                "sha256": "4" * 64,
+                "size_bytes": 50,
+                "kind": "tokenizer",
+            },
+        ]
+        source = mc.build_model_source_manifest(
+            model_id="m",
+            model_revision="r",
+            source_format="SAFETENSORS_SHARDED",
+            files=files,
+        )
+        legacy_manifest = {
+            "schema": "checkpoint-identity-v1",
+            "kind": "safetensors-index",
+            "index": {
+                "name": "model.safetensors.index.json",
+                "size_bytes": 20,
+                "sha256": "1" * 64,
+            },
+            "shards": [
+                {
+                    "name": "model-00001-of-00002.safetensors",
+                    "size_bytes": 30,
+                    "sha256": "2" * 64,
+                },
+                {
+                    "name": "model-00002-of-00002.safetensors",
+                    "size_bytes": 40,
+                    "sha256": "3" * 64,
+                },
+            ],
+        }
+        self.assertEqual(
+            source["weight_checkpoint_identity_sha256"],
+            mc.sha256_json(legacy_manifest),
+        )
+        changed = [dict(row) for row in files]
+        changed[-1]["sha256"] = "5" * 64
+        changed_source = mc.build_model_source_manifest(
+            model_id="m",
+            model_revision="r",
+            source_format="SAFETENSORS_SHARDED",
+            files=changed,
+        )
+        self.assertEqual(
+            source["weight_checkpoint_identity_sha256"],
+            changed_source["weight_checkpoint_identity_sha256"],
+        )
+        self.assertNotEqual(
+            source["checkpoint_identity_sha256"],
+            changed_source["checkpoint_identity_sha256"],
+        )
+
     def test_architecture_unknown_fails_closed(self):
         got = mc.identify_architecture("brand_new_arch")
         self.assertEqual(got["status"], "UNKNOWN_ARCHITECTURE")
