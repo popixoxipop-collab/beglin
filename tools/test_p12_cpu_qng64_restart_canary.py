@@ -194,7 +194,7 @@ class CanaryTests(unittest.TestCase):
             return query()
 
         runner = canary.IsolatedCpuQng64RestartCanary(
-            bundle=cap, target_key=key, role="q_proj", layer=0,
+            bundle=cap, target_key=key, role="Q_PROJ", layer=0,
             baseline_n=6, candidate_n=5,
             query_state=query, restart=restart,
             validate=validate, rollback=rollback,
