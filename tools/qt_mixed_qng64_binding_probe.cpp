@@ -4,7 +4,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <fill>
 #include <vector>
 
 static void encode_cell(std::vector<uint8_t> &planes, size_t base, int n,
