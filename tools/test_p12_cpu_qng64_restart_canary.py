@@ -42,7 +42,7 @@ def bundle(target_key: str) -> dict:
                 "role": "q_proj", "layer": 0, "expert_id": None,
             }]
         },
-        "backend_matrix": [{
+        "backend_capability_matrix": {"rows": [{
             "target_key": target_key, "backend": "cpu",
             "inference_status": "VERIFIED",
             "quant_formats": ["qNg64"],
