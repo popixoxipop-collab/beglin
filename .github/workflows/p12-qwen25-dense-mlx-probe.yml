@@ -4,6 +4,8 @@ on:
   push:
     branches: [precision-p12-model-capability-v1-20261004]
     paths:
+      - "tools/p12_qwen25_real_mlx_probe.cpp"
+      - "CMakeLists.txt"
       - "mlx_moe.cpp"
       - "mlx_moe.h"
       - "qwen_infer.c"
@@ -33,8 +35,12 @@ jobs:
           set -euo pipefail
           rm -rf build-p12-qwen25-mlx
           cmake -S . -B build-p12-qwen25-mlx -DCMAKE_BUILD_TYPE=Release             -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
-          cmake --build build-p12-qwen25-mlx --target mlx_binding_transition_test -j4
+          cmake --build build-p12-qwen25-mlx --target mlx_binding_transition_test p12_qwen25_real_mlx_probe -j4
           ./build-p12-qwen25-mlx/mlx_binding_transition_test | tee /tmp/p12-mlx-transition.txt
+            /tmp/p12-qwen25-real-mlx.txt
+          test -f /Users/xox/qwen25-p12/qwen25_l0_qproj_f32.raw
+          ./build-p12-qwen25-mlx/p12_qwen25_real_mlx_probe /Users/xox/qwen25-p12/qwen25_l0_qproj_f32.raw | tee /tmp/p12-qwen25-real-mlx.txt
+          grep -q '"status":"PASS"' /tmp/p12-qwen25-real-mlx.txt
       - name: Seal probe environment
         shell: bash
         run: |
