@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "identity",
+    "weight_abs",
+    "activation_rms",
+    "output_rms",
+    "finite",
+    "sample_count"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-qt-numeric-observation-v1"
+    },
+    "identity": {
+      "$ref": "qt-observation-identity-v1.schema.json"
+    },
+    "weight_abs": {
+      "type": "number",
+      "minimum": 0
+    },
+    "weight_rms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "weight_max_abs": {
+      "type": "number",
+      "minimum": 0
+    },
+    "activation_mean_abs": {
+      "type": "number",
+      "minimum": 0
+    },
+    "activation_rms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "activation_max_abs": {
+      "type": "number",
+      "minimum": 0
+    },
+    "output_mean_abs": {
+      "type": "number",
+      "minimum": 0
+    },
+    "output_rms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "dynamic_range_log2": {
+      "type": "number"
+    },
+    "saturation_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "clipping_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "finite": {
+      "type": "boolean"
+    },
+    "sample_count": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}
