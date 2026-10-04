@@ -1,26 +1,99 @@
 {
-  "$id":"https://beglin.local/schemas/heatmap/quant-perturbation-v1.schema.json",
-  "$schema":"https://json-schema.org/draft/2020-12/schema",
-  "title":"quant-perturbation-v1","type":"object","additionalProperties":false,
-  "properties":{
-    "schema":{"const":"beglin-quant-perturbation-v1"},
-    "identity":{"$ref":"observation-identity-v2.schema.json"},
-    "candidate_n":{"type":"integer","minimum":1,"maximum":16},
-    "baseline_precision":{"type":"string","minLength":1},
-    "quantized_precision":{"type":"string","minLength":1},
-    "delta_weight_l1":{"type":"number","minimum":0},
-    "delta_weight_l2":{"type":"number","minimum":0},
-    "relative_weight_error":{"type":"number","minimum":0},
-    "output_max_abs_error":{"type":"number","minimum":0},
-    "output_rms_error":{"type":"number","minimum":0},
-    "output_relative_error":{"type":"number","minimum":0},
-    "latency_delta":{"type":"number"},
-    "memory_delta":{"type":"number"},
-    "backend_parity_error":{"type":"number","minimum":0},
-    "restore_diff":{"type":"number","minimum":0},
-    "finite":{"type":"boolean"},
-    "result_status":{"enum":["PASS","FAIL","INCONCLUSIVE"]},
-    "sample_count":{"type":"integer","minimum":1}
+  "$id": "https://beglin.local/schemas/heatmap/quant-perturbation-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "quant-perturbation-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "beglin-quant-perturbation-v1"
+    },
+    "identity": {
+      "$ref": "observation-identity-v2.schema.json"
+    },
+    "candidate_n": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16
+    },
+    "baseline_precision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "quantized_precision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "delta_weight_l1": {
+      "type": "number",
+      "minimum": 0
+    },
+    "delta_weight_l2": {
+      "type": "number",
+      "minimum": 0
+    },
+    "relative_weight_error": {
+      "type": "number",
+      "minimum": 0
+    },
+    "output_max_abs_error": {
+      "type": "number",
+      "minimum": 0
+    },
+    "output_rms_error": {
+      "type": "number",
+      "minimum": 0
+    },
+    "output_relative_error": {
+      "type": "number",
+      "minimum": 0
+    },
+    "latency_delta": {
+      "type": "number"
+    },
+    "memory_delta": {
+      "type": "number"
+    },
+    "backend_parity_error": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "restore_diff": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "finite": {
+      "type": "boolean"
+    },
+    "result_status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "INCONCLUSIVE"
+      ]
+    },
+    "sample_count": {
+      "type": "integer",
+      "minimum": 1
+    }
   },
-  "required":["schema","identity","candidate_n","baseline_precision","quantized_precision","output_max_abs_error","backend_parity_error","restore_diff","finite","result_status","sample_count"]
+  "required": [
+    "schema",
+    "identity",
+    "candidate_n",
+    "baseline_precision",
+    "quantized_precision",
+    "output_max_abs_error",
+    "backend_parity_error",
+    "restore_diff",
+    "finite",
+    "result_status",
+    "sample_count"
+  ]
 }
