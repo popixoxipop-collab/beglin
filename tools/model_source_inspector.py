@@ -2,8 +2,7 @@
 """P12 read-only model-source inspector.
 
 Supports identity discovery for GGUF and HuggingFace safetensors layouts.
-It intentionally does not parse GGUF architecture metadata yet; unknown facts
-remain unknown rather than being guessed from filenames.
+GGUF architecture facts come from the file's own metadata, never its filename.
 """
 from __future__ import annotations
 
@@ -12,6 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import gguf_metadata_inspector as gguf
 import model_capability as mc
 
 
@@ -83,7 +83,16 @@ def inspect_model_source(path: str | Path, *, model_id: str | None = None, model
             files=[_row(root, source, "gguf")],
             root_path=str(root),
         )
-        return {"manifest": manifest, "architecture_source_name": None, "config": {}}
+        try:
+            inventory = gguf.inspect_gguf_header(source)
+        except gguf.GgufInspectionError as exc:
+            raise SourceInspectionError(str(exc)) from exc
+        return {
+            "manifest": manifest,
+            "architecture_source_name": inventory.get("architecture"),
+            "config": gguf.architecture_facts_from_gguf(inventory),
+            "gguf_inventory": inventory,
+        }
 
     if not source.is_dir():
         raise SourceInspectionError(f"model path does not exist: {source}")
@@ -138,4 +147,5 @@ def inspect_model_source(path: str | Path, *, model_id: str | None = None, model
         "manifest": manifest,
         "architecture_source_name": architecture_name_from_config(config),
         "config": config,
+        "gguf_inventory": None,
     }
