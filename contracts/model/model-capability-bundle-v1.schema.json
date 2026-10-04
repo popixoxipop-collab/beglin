@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "beglin://contracts/model/model-capability-bundle-v1",
+  "title": "Beglin Model Capability Bundle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "model_id",
+    "checkpoint_identity",
+    "skeleton_sha256",
+    "architecture_status",
+    "tokenizer_status",
+    "loader_status",
+    "backend_matrix",
+    "quant_matrix",
+    "mutation_matrix",
+    "unsupported_targets",
+    "restart_only_targets",
+    "hot_rebind_targets",
+    "precision_search_targets",
+    "p8_p11_eligibility",
+    "evidence_refs",
+    "bundle_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-model-capability-bundle-v1"
+    },
+    "model_id": {
+      "type": "string"
+    },
+    "checkpoint_identity": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "skeleton_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "architecture_status": {
+      "type": "string"
+    },
+    "tokenizer_status": {
+      "type": "string"
+    },
+    "loader_status": {
+      "type": "string"
+    },
+    "backend_matrix": {
+      "type": "array"
+    },
+    "quant_matrix": {
+      "type": "array"
+    },
+    "mutation_matrix": {
+      "type": "array"
+    },
+    "unsupported_targets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "restart_only_targets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hot_rebind_targets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "precision_search_targets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "p8_p11_eligibility": {
+      "enum": [
+        "FULL",
+        "PARTIAL",
+        "DENIED"
+      ]
+    },
+    "evidence_refs": {
+      "type": "array"
+    },
+    "bundle_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

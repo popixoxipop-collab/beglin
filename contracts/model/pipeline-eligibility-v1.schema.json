@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "beglin://contracts/model/pipeline-eligibility-v1",
+  "title": "Beglin Pipeline Eligibility v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "eligibility",
+    "reasons",
+    "capability_bundle_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-pipeline-eligibility-v1"
+    },
+    "eligibility": {
+      "enum": [
+        "FULL",
+        "PARTIAL",
+        "DENIED"
+      ]
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "capability_bundle_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

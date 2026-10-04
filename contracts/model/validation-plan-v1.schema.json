@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "beglin://contracts/model/validation-plan-v1",
+  "title": "Beglin Model Validation Plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "model_id",
+    "tiers",
+    "plan_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-validation-plan-v1"
+    },
+    "model_id": {
+      "type": "string"
+    },
+    "tiers": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "V0_STRUCTURAL",
+          "V1_FINITE",
+          "V2_REFERENCE",
+          "V3_PRECISION",
+          "V4_RUNTIME_MUTATION",
+          "V5_PRODUCTION_ELIGIBILITY"
+        ]
+      }
+    },
+    "plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

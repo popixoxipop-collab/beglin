@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "beglin://contracts/model/quant-capability-v1",
+  "title": "Beglin Quant Capability Matrix v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "model_id",
+    "cells",
+    "matrix_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-quant-capability-v1"
+    },
+    "model_id": {
+      "type": "string"
+    },
+    "cells": {
+      "type": "array"
+    },
+    "matrix_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

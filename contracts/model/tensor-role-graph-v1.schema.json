@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "beglin://contracts/model/tensor-role-graph-v1",
+  "title": "Beglin Tensor Role Graph v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "model_id",
+    "nodes",
+    "unclaimed_tensor_count",
+    "graph_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-tensor-role-graph-v1"
+    },
+    "model_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "canonical_target_key",
+          "source_tensor_name",
+          "role",
+          "mapping_status"
+        ],
+        "properties": {
+          "canonical_target_key": {
+            "type": "string"
+          },
+          "source_tensor_name": {
+            "type": "string"
+          },
+          "layer": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "expert_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "shape": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "dtype": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mapping_status": {
+            "enum": [
+              "MAPPED",
+              "IGNORE",
+              "UNSUPPORTED"
+            ]
+          }
+        }
+      }
+    },
+    "unclaimed_tensor_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "graph_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

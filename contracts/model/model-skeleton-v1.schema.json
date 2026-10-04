@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "beglin://contracts/model/model-skeleton-v1",
+  "title": "Beglin Model Skeleton v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "model_source_sha256",
+    "architecture_descriptor_sha256",
+    "architecture",
+    "layer_count",
+    "layer_skeletons",
+    "global_tensors",
+    "required_primitives",
+    "optional_primitives",
+    "unsupported_primitives",
+    "skeleton_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-model-skeleton-v1"
+    },
+    "model_source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "architecture_descriptor_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "architecture": {
+      "type": "string",
+      "minLength": 1
+    },
+    "layer_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "layer_skeletons": {
+      "type": "array"
+    },
+    "global_tensors": {
+      "type": "array"
+    },
+    "operator_graph_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tensor_role_graph_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tokenizer_contract_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "loader_contract_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "required_primitives": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "optional_primitives": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "unsupported_primitives": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "skeleton_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

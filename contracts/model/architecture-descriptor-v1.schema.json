@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "beglin://contracts/model/architecture-descriptor-v1",
+  "title": "Beglin Architecture Descriptor v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "status",
+    "architecture_id",
+    "architecture_family",
+    "dense_or_moe",
+    "attention_kind",
+    "architecture_adapter_id",
+    "architecture_adapter_version",
+    "descriptor_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-architecture-descriptor-v1"
+    },
+    "status": {
+      "enum": [
+        "KNOWN",
+        "UNKNOWN_ARCHITECTURE"
+      ]
+    },
+    "architecture_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "architecture_family": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dense_or_moe": {
+      "enum": [
+        "DENSE",
+        "MOE",
+        "UNKNOWN"
+      ]
+    },
+    "attention_kind": {
+      "enum": [
+        "MHA",
+        "GQA",
+        "MLA",
+        "SLIDING_WINDOW",
+        "HYBRID",
+        "UNKNOWN"
+      ]
+    },
+    "architecture_adapter_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "architecture_adapter_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "inference_allowed": {
+      "type": "boolean"
+    },
+    "descriptor_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

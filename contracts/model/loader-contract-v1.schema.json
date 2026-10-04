@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "beglin://contracts/model/loader-contract-v1",
+  "title": "Beglin Loader Contract v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "source_format",
+    "status",
+    "unsupported_formats",
+    "contract_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-loader-contract-v1"
+    },
+    "source_format": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "VERIFIED",
+        "IMPLEMENTED_UNVERIFIED",
+        "PARTIAL",
+        "UNSUPPORTED"
+      ]
+    },
+    "unsupported_formats": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

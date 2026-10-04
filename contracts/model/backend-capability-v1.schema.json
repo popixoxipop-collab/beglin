@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "beglin://contracts/model/backend-capability-v1",
+  "title": "Beglin Backend Capability Matrix v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "model_id",
+    "cells",
+    "matrix_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-backend-capability-v1"
+    },
+    "model_id": {
+      "type": "string"
+    },
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "target_key",
+          "backend",
+          "inference_status",
+          "mutation_mode",
+          "evidence_refs"
+        ],
+        "properties": {
+          "target_key": {
+            "type": "string"
+          },
+          "backend": {
+            "enum": [
+              "cpu",
+              "mlx_metal"
+            ]
+          },
+          "inference_status": {
+            "enum": [
+              "VERIFIED",
+              "IMPLEMENTED_UNVERIFIED",
+              "RESTART_REQUIRED",
+              "UNSUPPORTED"
+            ]
+          },
+          "mutation_mode": {
+            "enum": [
+              "HOT_REBIND_SINGLE",
+              "HOT_REBIND_MULTI",
+              "RESTART_REQUIRED",
+              "IMMUTABLE"
+            ]
+          },
+          "evidence_refs": {
+            "type": "array"
+          }
+        }
+      }
+    },
+    "matrix_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
