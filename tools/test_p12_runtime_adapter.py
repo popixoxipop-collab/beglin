@@ -323,6 +323,38 @@ class BackendExecutionTests(unittest.TestCase):
         root = qwen_fixture(Path(td.name) / "model")
         return compile_verified_bundle(root)[0]
 
+    def test_cpu_shape_change_validates_added_targets_before_restart(self):
+        bundle = self.bundle()
+        qkey = target_key(bundle, "Q_PROJ")
+
+        empty = planv2.BackendStateV2.build(
+            backend="cpu", epoch=1, policy=[],
+            model_capability_bundle_sha256=bundle["bundle_sha256"],
+        )
+        good = planv2.CpuBackendAdapterV2(bundle).plan_transition(
+            state=empty,
+            target_policy=[{"role":"Q_PROJ","layer":0,"n":5}],
+            target_keys={("Q_PROJ",0):qkey},
+        )
+        self.assertEqual(good["action"], "RESTART_REQUIRED")
+        self.assertEqual(good["reason"]["code"], "POLICY_SHAPE_CHANGE")
+        self.assertEqual(good["changes"][0]["target_key"], qkey)
+        self.assertIsNone(good["changes"][0]["expected_n"])
+
+        with self.assertRaisesRegex(planv2.BackendV2Error, "missing target-key"):
+            planv2.CpuBackendAdapterV2(bundle).plan_transition(
+                state=empty,
+                target_policy=[{"role":"BOGUS","layer":999,"n":5}],
+                target_keys={},
+            )
+
+        with self.assertRaisesRegex(planv2.BackendV2Error, "unsupported"):
+            planv2.CpuBackendAdapterV2(bundle).plan_transition(
+                state=empty,
+                target_policy=[{"role":"Q_PROJ","layer":0,"n":123}],
+                target_keys={("Q_PROJ",0):qkey},
+            )
+
     def test_cpu_restart_and_mlx_rebind_share_result_schema(self):
         bundle = self.bundle()
         qkey = target_key(bundle, "Q_PROJ")
