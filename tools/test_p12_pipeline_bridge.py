@@ -344,6 +344,31 @@ class PipelineBridgeTests(unittest.TestCase):
             self.assertEqual(
                 p11["model_capability_bundle_sha256"], bundle["bundle_sha256"]
             )
+
+            tampered_p10 = dict(p10)
+            tampered_p10["requested_n"] = 7
+            tampered_p10 = bridge._self_hash(
+                tampered_p10, "p10_binding_sha256"
+            )
+            with self.assertRaisesRegex(
+                bridge.PipelineCapabilityError, "not mutation-certified"
+            ):
+                bridge.build_p11_capability_preimage(
+                    bundle,
+                    p10_binding=tampered_p10,
+                    runtime_state={
+                        "model_capability_bundle_sha256": bundle["bundle_sha256"],
+                        "checkpoint_identity_sha256": bundle[
+                            "checkpoint_identity_sha256"
+                        ],
+                        "backend": "mlx_metal",
+                        "target_key": target,
+                        "precision_n": 7,
+                        "worker_pid": 1234,
+                        "weight_epoch": 9,
+                    },
+                )
+
             with self.assertRaisesRegex(
                 bridge.PipelineCapabilityError, "runtime precision mismatch"
             ):
@@ -425,6 +450,16 @@ class PipelineBridgeTests(unittest.TestCase):
                 "model.layers.0.mlp.shared_experts.up_proj.weight": ("F16", [128, 64]),
                 "model.layers.0.mlp.shared_experts.down_proj.weight": ("F16", [64, 128]),
             }
+            for expert_id in range(4):
+                tensors[
+                    f"model.layers.0.mlp.experts.{expert_id}.gate_proj.weight"
+                ] = ("F16", [128, 64])
+                tensors[
+                    f"model.layers.0.mlp.experts.{expert_id}.up_proj.weight"
+                ] = ("F16", [128, 64])
+                tensors[
+                    f"model.layers.0.mlp.experts.{expert_id}.down_proj.weight"
+                ] = ("F16", [64, 128])
             write_safetensors(root / "model.safetensors", tensors)
             source = mc.inspect_model_source(root)
             descriptor = mc.build_architecture_descriptor(source)
