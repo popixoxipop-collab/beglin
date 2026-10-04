@@ -83,6 +83,15 @@ def inspect(path: str, *, model_id: str | None = None, model_revision: str = "lo
             tensor_role_graph=tensor_graph,
         )
 
+    if architecture["status"] != "KNOWN":
+        structural_status = "DENIED"
+    elif tensor_graph is None:
+        structural_status = "PARTIAL"
+    elif tensor_graph["unclaimed_tensor_count"] > 0:
+        structural_status = "PARTIAL"
+    else:
+        structural_status = "COMPLETE"
+
     next_required = []
     if tensor_graph is None or tensor_graph["unclaimed_tensor_count"] > 0:
         next_required.append("tensor-role-graph-v1")
@@ -117,6 +126,7 @@ def inspect(path: str, *, model_id: str | None = None, model_revision: str = "lo
         "model_skeleton": skeleton,
         "tokenizer": tokenizer,
         "loader": loader,
+        "structural_status": structural_status,
         "backend_capability": (
             capability_report["backend_capability"]
             if capability_report is not None else None
