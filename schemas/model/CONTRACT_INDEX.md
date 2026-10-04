@@ -23,3 +23,12 @@ Identity rule: timestamps and absolute source locations are excluded from stable
 
 Verification rule: any capability reported as `VERIFIED`, `IN_ENGINE_VERIFIED`, or `EXTERNAL_VERIFIED` must carry a `beglin-verification-evidence-v1` reference whose checkpoint/architecture/backend identity matches the inspected model. A boolean flag or file presence alone is never verification.
 - `tokenizer-runtime-plan-v1.schema.json` — explicit in-engine/external tokenizer execution plan with executable hash binding
+
+## QT Heatmap v2 foundation
+
+- `qt-observation-identity-v1.schema.json` — checkpoint/skeleton/capability-bound group identity
+- `qheatmap-v2.schema.json` — precision recommendation cells; BECODER candidate only
+- `theatmap-v2.schema.json` — selective-training sensitivity cells; BECODER candidate only
+- `local-precision-policy-v1.schema.json` — BEVAL-gated local group precision policy
+
+QT invariant: BSKEL defines identity/schema only; BECODER proposes Q/T cells; runtime must not apply a local precision policy unless `approved_by_beval=true`. Initial local unit is qNg64 group64; element-level policy is out of QT-0 scope.
