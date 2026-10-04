@@ -86,6 +86,19 @@ class BackendAdapterV2:
             f"no runtime mutation capability for backend={self.name} target={target_key}"
         )
 
+    def _tensor_node(self, target_key: str) -> dict:
+        matches = [
+            dict(row)
+            for row in self.bundle["tensor_role_graph"]["nodes"]
+            if row.get("canonical_target_key") == target_key
+        ]
+        if len(matches) != 1:
+            raise BackendV2Error(
+                f"target-key binding must resolve one tensor node: "
+                f"target={target_key} matches={len(matches)}"
+            )
+        return matches[0]
+
     @staticmethod
     def _policy_map(policy: list[dict]) -> dict[tuple[str, int], int]:
         return {
@@ -128,6 +141,19 @@ class BackendAdapterV2:
                 if key not in target_keys:
                     raise BackendV2Error(f"missing target-key binding for {key}")
                 target_key = str(target_keys[key])
+                node = self._tensor_node(target_key)
+                node_layer = -1 if node.get("layer") is None else int(node["layer"])
+                if (
+                    str(node.get("role")) != key[0]
+                    or node_layer != key[1]
+                    or node.get("expert_id") is not None
+                ):
+                    raise BackendV2Error(
+                        "target-key binding does not match policy entry: "
+                        f"policy={key} target={target_key} "
+                        f"node_role={node.get('role')} node_layer={node_layer} "
+                        f"expert_id={node.get('expert_id')}"
+                    )
                 cap = self._mutation_row(target_key)
                 if after[key] not in cap.get("allowed_target_precisions", []):
                     raise BackendV2Error(
