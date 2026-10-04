@@ -167,20 +167,19 @@ class SourceAndCompilerTests(unittest.TestCase):
             bundle = mc.compile_model_capabilities(root)
             preflight = bundle["loader_contract"]["memory_preflight"]
             self.assertEqual(
-                preflight["source_weight_bytes"],
+                preflight["weight_storage_bytes"],
                 (root / "model.safetensors").stat().st_size,
             )
-            self.assertGreater(preflight["tensor_element_count"], 0)
             self.assertEqual(
-                preflight["dense_f16_equivalent_bytes"],
-                preflight["tensor_element_count"] * 2,
+                preflight["storage_lower_bound_bytes"],
+                preflight["weight_storage_bytes"],
             )
             self.assertEqual(
-                preflight["runtime_resident_estimate_status"],
-                "REQUIRES_BACKEND_PROFILE",
+                preflight["estimate_kind"], "STORAGE_LOWER_BOUND_ONLY"
             )
-            self.assertIsNone(preflight["runtime_resident_bytes"])
-            self.assertTrue(preflight["requires_runtime_measurement"])
+            self.assertIsNone(preflight["peak_resident_bytes_estimate"])
+            self.assertIsNone(preflight["workspace_bytes_estimate"])
+            self.assertTrue(preflight["requires_runtime_probe"])
 
     def test_sentencepiece_source_is_explicit_and_not_silently_bpe(self):
         with tempfile.TemporaryDirectory() as td:
@@ -189,10 +188,11 @@ class SourceAndCompilerTests(unittest.TestCase):
             (root / "tokenizer.model").write_bytes(b"sentencepiece-fixture")
             bundle = mc.compile_model_capabilities(root)
             tok = bundle["tokenizer_contract"]
-            self.assertEqual(tok["source_kind"], "SENTENCEPIECE")
+            self.assertEqual(tok["artifact_kind"], "SENTENCEPIECE_MODEL")
+            self.assertEqual(tok["tokenizer_family"], "SENTENCEPIECE")
             self.assertEqual(tok["status"], "UNSUPPORTED")
             self.assertIsNone(tok["encode_backend"])
-            self.assertEqual(tok["adapter_candidate"], "sentencepiece_external")
+            self.assertIn("SENTENCEPIECE_IN_ENGINE", tok["missing_primitives"])
             self.assertFalse(tok["text_io_supported"])
             self.assertFalse(tok["silent_fallback_allowed"])
 
@@ -220,8 +220,10 @@ class SourceAndCompilerTests(unittest.TestCase):
         )
         self.assertEqual(tok["tokenizer_family"], "DEEPSEEK_BPE")
         self.assertEqual(tok["status"], "EXTERNAL_VERIFIED")
-        self.assertEqual(tok["encode_backend"], "deepseek_external")
-        self.assertEqual(tok["adapter_candidate"], "deepseek_external")
+        self.assertEqual(tok["encode_backend"], "external_deepseek_reference")
+        self.assertIn(
+            "DEEPSEEK_PRETOKENIZER_IN_ENGINE", tok["missing_primitives"]
+        )
         self.assertFalse(tok["text_io_supported"])
         self.assertEqual(tok["text_io_mode"], "NOT_WIRED")
 
@@ -664,11 +666,21 @@ class SourceAndCompilerTests(unittest.TestCase):
                 )
                 for row in inspected["precision_search_targets"]
             ]
+            mutation = [
+                verification_evidence(
+                    root, component="mutation_runtime", backend="mlx_metal",
+                    evidence_byte="b", target_key=row["target_key"],
+                    supported_n=row["supported_n"],
+                    mutation_mode="HOT_REBIND_SINGLE",
+                )
+                for row in inspected["precision_search_targets"]
+            ]
             bundle = mc.compile_model_capabilities(
                 root,
                 backend="mlx_metal",
                 mlx_runtime_evidence=runtime,
                 mlx_qng64_evidence=qng64,
+                mlx_mutation_evidence=mutation,
                 tokenizer_evidence=tokenizer,
                 loader_evidence=loader,
             )
