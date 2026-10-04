@@ -94,6 +94,15 @@ int mlx_gpu_qng64_gather_probe(const uint8_t *planes, long E, long out, long in,
 int mlx_gpu_bind_qng64_dense_probe(const uint8_t *packed, const float *scales,
                                     const char *name, long out, long in, int n);
 
+// QT-4 probe-only mixed qNg64 GEMV. Each (row,group64) cell carries its own
+// bit width and variable-length bit-plane span: offsets has out*(in/64)+1
+// entries, bits/scales have out*(in/64) entries, and offsets[last] must equal
+// planes_bytes. This path does not mutate the runtime binding registry.
+int mlx_gpu_qng64_mixed_dense_probe(const uint8_t *planes, long planes_bytes,
+                                     const uint32_t *offsets, const uint8_t *bits,
+                                     const float *scales, long out, long in,
+                                     const float *x, int batch, float *out_buf);
+
 // Gate 4: y = quantized_matmul(x, w_e) for tensor `name`'s expert `e`,
 // against a caller-supplied dense fp32 x[in], written to y[out]. For direct
 // comparison against moe_matvec_af() on the same expert/input. Returns 1 on
