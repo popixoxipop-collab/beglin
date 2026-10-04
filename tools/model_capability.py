@@ -1059,6 +1059,90 @@ def classify_tensor(name: str, source_format: str, model_id: str) -> dict | None
     return None
 
 
+def _required_tensor_gaps(
+    descriptor: Mapping[str, Any], nodes: list[dict]
+) -> list[str]:
+    """Return architecture-aware required semantic targets missing from a model.
+
+    This is intentionally a minimum executable-structure gate, not a proof of
+    numeric correctness. Optional/tied tensors stay outside this list; numeric
+    and backend validity are handled by later P12 gates.
+    """
+    gaps: list[str] = []
+    global_roles = {
+        str(row.get("role"))
+        for row in nodes
+        if row.get("layer") is None
+    }
+    for role in ("EMBEDDING", "FINAL_NORM"):
+        if role not in global_roles:
+            gaps.append(f"global/{role}")
+
+    n_layers = int(descriptor.get("num_layers") or 0)
+    arch = str(descriptor.get("architecture_id") or "unknown")
+    dense_or_moe = str(descriptor.get("dense_or_moe") or "UNKNOWN")
+    dense_prefix = int(descriptor.get("dense_prefix_layers") or 0)
+    expert_count = int(descriptor.get("expert_count") or 0)
+    shared_count = int(descriptor.get("shared_expert_count") or 0)
+
+    by_layer: dict[int, list[dict]] = {}
+    for row in nodes:
+        if row.get("layer") is None:
+            continue
+        by_layer.setdefault(int(row["layer"]), []).append(row)
+
+    for layer in range(n_layers):
+        layer_nodes = by_layer.get(layer, [])
+        roles = {str(row.get("role")) for row in layer_nodes}
+
+        if str(descriptor.get("attention_kind")) == "MLA":
+            for role in ("KV_A_PROJ", "KV_B_PROJ", "O_PROJ"):
+                if role not in roles:
+                    gaps.append(f"L{layer}/{role}")
+            if "Q_PROJ" not in roles and not {"Q_A_PROJ", "Q_B_PROJ"}.issubset(roles):
+                gaps.append(f"L{layer}/Q_PROJECTION_PATH")
+        else:
+            for role in ("Q_PROJ", "K_PROJ", "V_PROJ", "O_PROJ"):
+                if role not in roles:
+                    gaps.append(f"L{layer}/{role}")
+
+        moe_layer = dense_or_moe == "MOE" and layer >= dense_prefix
+        if not moe_layer:
+            for role in ("DENSE_GATE", "DENSE_UP", "DENSE_DOWN"):
+                if role not in roles:
+                    gaps.append(f"L{layer}/{role}")
+            continue
+
+        if "ROUTER" not in roles:
+            gaps.append(f"L{layer}/ROUTER")
+        for role in ("EXPERT_GATE", "EXPERT_UP", "EXPERT_DOWN"):
+            role_nodes = [row for row in layer_nodes if row.get("role") == role]
+            if not role_nodes:
+                gaps.append(f"L{layer}/{role}")
+                continue
+            # GGUF stacks all experts in one tensor. Safetensors registers
+            # per-expert tensors and can therefore be checked against the
+            # configured expert count.
+            if expert_count > 0 and not any(
+                bool(row.get("stacked_experts")) for row in role_nodes
+            ):
+                present = {
+                    int(row["expert_id"])
+                    for row in role_nodes
+                    if row.get("expert_id") is not None
+                }
+                for expert_id in range(expert_count):
+                    if expert_id not in present:
+                        gaps.append(f"L{layer}/{role}/E{expert_id}")
+
+        if shared_count > 0:
+            for role in ("SHARED_GATE", "SHARED_UP", "SHARED_DOWN"):
+                if role not in roles:
+                    gaps.append(f"L{layer}/{role}")
+
+    return sorted(set(gaps))
+
+
 def build_tensor_role_graph(source: Mapping[str, Any], descriptor: Mapping[str, Any]) -> dict:
     model_id = str(source["model_id"])
     nodes = []
@@ -1094,6 +1178,7 @@ def build_tensor_role_graph(source: Mapping[str, Any], descriptor: Mapping[str, 
                 "DENSE_FFN"
             ),
         })
+    missing_required = _required_tensor_gaps(descriptor, nodes)
     graph = {
         "schema": "beglin-tensor-role-graph-v1",
         "model_id": model_id,
@@ -1101,6 +1186,9 @@ def build_tensor_role_graph(source: Mapping[str, Any], descriptor: Mapping[str, 
         "tensor_count": int(source.get("tensor_count", 0)),
         "mapped_tensor_count": len(nodes),
         "unmapped_tensor_count": len(unmapped),
+        "missing_required_targets": missing_required,
+        "missing_required_tensor_count": len(missing_required),
+        "structural_complete": len(missing_required) == 0,
         "mapping_coverage": (
             float(len(nodes)) / float(source.get("tensor_count", 1))
             if int(source.get("tensor_count", 0)) > 0 else 0.0
@@ -1747,6 +1835,7 @@ def pipeline_eligibility(
     else:
         partial = (
             tensor_graph.get("unmapped_tensor_count", 0) > 0
+            or int(tensor_graph.get("missing_required_tensor_count", 0)) > 0
             or tokenizer.get("status") in {"UNSUPPORTED", "IMPLEMENTED_UNVERIFIED"}
             or not bool(tokenizer.get("text_io_supported"))
             or loader.get("status") != "VERIFIED"
@@ -1755,6 +1844,8 @@ def pipeline_eligibility(
         status = "PARTIAL" if partial else "FULL"
         if tensor_graph.get("unmapped_tensor_count", 0) > 0:
             reasons.append("UNMAPPED_TENSORS")
+        if int(tensor_graph.get("missing_required_tensor_count", 0)) > 0:
+            reasons.append("MISSING_REQUIRED_TENSORS")
         if tokenizer.get("status") in {"UNSUPPORTED", "IMPLEMENTED_UNVERIFIED"}:
             reasons.append("TOKENIZER_NOT_FULLY_VERIFIED")
         elif not bool(tokenizer.get("text_io_supported")):
@@ -1769,6 +1860,7 @@ def pipeline_eligibility(
         precision_pipeline_allowed
         and loader.get("status") == "VERIFIED"
         and int(tensor_graph.get("unmapped_tensor_count", 0)) == 0
+        and int(tensor_graph.get("missing_required_tensor_count", 0)) == 0
     )
     return {
         "schema": "beglin-pipeline-eligibility-v1",
@@ -1799,7 +1891,12 @@ def build_validation_plan(
         {
             "stage": "V0_STRUCTURAL",
             "status": (
-                "PASS" if structural_ok and tensor_graph.get("unmapped_tensor_count", 0) == 0
+                "PASS"
+                if (
+                    structural_ok
+                    and tensor_graph.get("unmapped_tensor_count", 0) == 0
+                    and int(tensor_graph.get("missing_required_tensor_count", 0)) == 0
+                )
                 else ("PARTIAL" if structural_ok else "FAIL")
             ),
             "required_evidence": ["model_source", "model_skeleton", "tensor_role_graph", "operator_graph"],
