@@ -4,11 +4,14 @@ on:
   push:
     branches:
       - "qt-heatmap-*"
+      - "qt-selective-training-*"
     paths:
       - "schemas/heatmap/**"
       - "tools/qt_heatmap.py"
       - "tools/qt_beval.py"
       - "tools/qt_qwen25_group_perturb.py"
+      - "tools/qt_selective_training.py"
+      - "tools/test_qt_selective_training.py"
       - "tools/verify_qt_heatmap_contracts.py"
       - "tools/test_qt_heatmap.py"
       - "tools/test_qt_beval.py"
@@ -44,3 +47,5 @@ jobs:
         run: python3 tools/test_qt_beval.py
       - name: Run Qwen group perturbation tests
         run: python3 tools/test_qt_qwen25_group_perturb.py
+      - name: Run selective training primitive tests
+        run: python3 tools/test_qt_selective_training.py
