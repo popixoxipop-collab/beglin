@@ -101,7 +101,7 @@ jobs:
           assert m["backend_parity_measured"] is False
           used=[int(k) for k,v in m["bit_histogram"].items() if v]
           assert len(used)>=2,("expected genuinely mixed policy",m["bit_histogram"])
-          assert m["planes_bytes"] < m["bf16_weight_bytes"]
+          assert m["mixed_payload_bytes"] < m["bf16_weight_bytes"]
           print("BECODER_REAL_MIXED_CANDIDATE_READY",m["bit_histogram"])
           PY
 
@@ -142,6 +142,8 @@ jobs:
             "candidate_policy_approved_by_beval":manifest["policy_approved_by_beval"],
             "bit_histogram":manifest["bit_histogram"],
             "planes_bytes":manifest["planes_bytes"],
+            "mixed_payload_bytes":manifest["mixed_payload_bytes"],
+            "compression_vs_bf16":manifest["compression_vs_bf16"],
             "bf16_weight_bytes":manifest["bf16_weight_bytes"],
             "cpu_mixed_vs_bf16_max_abs_error":manifest["cpu_mixed_vs_bf16_max_abs_error"],
             "metal_probe":probe,
