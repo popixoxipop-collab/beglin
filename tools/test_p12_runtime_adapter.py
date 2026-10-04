@@ -378,7 +378,7 @@ class BackendExecutionTests(unittest.TestCase):
             target_policy=after_policy, target_keys=keys,
         )
         cpu_result = execv2.CpuRestartExecutionAdapterV2(
-            model_capability_bundle_sha256=bundle["bundle_sha256"],
+            model_capability_bundle=bundle,
             query_state=cpu_query, restart=cpu_restart,
             validate=lambda: {"finite_logits": True},
         ).execute(cpu_plan)
@@ -396,7 +396,7 @@ class BackendExecutionTests(unittest.TestCase):
                 target_policy=after_policy, target_keys=keys,
             )
             mlx_result = execv2.MlxFileExecutionAdapterV2(
-                model_capability_bundle_sha256=bundle["bundle_sha256"],
+                model_capability_bundle=bundle,
                 ack_path=ack, txn_path=txn, submit=sim,
             ).execute(mlx_plan)
 
@@ -434,7 +434,7 @@ class BackendExecutionTests(unittest.TestCase):
             write_ack(ack, epoch=4, policy=before)
             sim = SimulatedMlxRuntime(ack, txn)
             result = execv2.MlxFileExecutionAdapterV2(
-                model_capability_bundle_sha256=bundle["bundle_sha256"],
+                model_capability_bundle=bundle,
                 ack_path=ack, txn_path=txn, submit=sim,
             ).execute(plan)
             self.assertEqual(result["after"]["epoch"], 5)
@@ -458,7 +458,7 @@ class BackendExecutionTests(unittest.TestCase):
             write_ack(ack, epoch=8, policy=before)
             sim = SimulatedMlxRuntime(ack, txn, fail_once=True)
             adapter = execv2.MlxFileExecutionAdapterV2(
-                model_capability_bundle_sha256=bundle["bundle_sha256"],
+                model_capability_bundle=bundle,
                 ack_path=ack, txn_path=txn, submit=sim,
             )
             with self.assertRaisesRegex(execv2.BackendExecutionError, "rollback"):
@@ -470,7 +470,7 @@ class BackendExecutionTests(unittest.TestCase):
     def test_mlx_adapter_refuses_known_production_path(self):
         with self.assertRaisesRegex(execv2.BackendExecutionError, "refuses production"):
             execv2.MlxFileExecutionAdapterV2(
-                model_capability_bundle_sha256="a" * 64,
+                model_capability_bundle=self.bundle(),
                 ack_path="/Users/xox/vdsp_serving/persistent-workers/candidate/applied_ack.json",
                 txn_path="/Users/xox/vdsp_serving/persistent-workers/candidate/txn.cmd",
                 submit=lambda: {},
