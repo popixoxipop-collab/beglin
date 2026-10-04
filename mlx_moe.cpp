@@ -412,19 +412,18 @@ int mlx_gpu_bind_qng64_dense_probe(const uint8_t *packed, const float *scales,
     if (!packed || !scales || !name || out <= 0 || in <= 0 || (in % 64) != 0) return 0;
     if (n != 2 && n != 3 && n != 5 && n != 6) return 0;
     const long ng = in / 64;
-    const size_t group_bytes = (size_t)((64 * n + 7) / 8);
+    // IMPORTANT: this probe accepts the engine's canonical qNg64 bit-plane
+    // layout, not qng64_dense.c's compact row-major bitstream. Canonical
+    // bytes/group = n*8 (64 codes split into n bit-planes).
+    const size_t group_bytes = (size_t)n * 8u;
     const size_t packed_bytes = (size_t)out * (size_t)ng * group_bytes;
     const size_t scales_bytes = (size_t)out * (size_t)ng * sizeof(float);
-    // mlx_gpu_bind_af expects packed/scales/bias in one caller-owned blob.
-    // Build an isolated probe blob; bias is synthesized as symmetric
-    // -2^(n-1)*scale, exactly matching the existing n=2/3/5/6 repack path.
     std::vector<uint8_t> blob(packed_bytes + scales_bytes * 2, 0);
     std::memcpy(blob.data(), packed, packed_bytes);
     std::memcpy(blob.data() + packed_bytes, scales, scales_bytes);
     float *bias = reinterpret_cast<float *>(blob.data() + packed_bytes + scales_bytes);
-    for (long i = 0; i < out * ng; ++i) bias[i] = -(float)(1 << (n - 1)) * scales[i];
-    // The normal binder converts into MLX-owned arrays for native widths, so
-    // this temporary blob can die after the call returns.
+    for (long i = 0; i < out * ng; ++i)
+        bias[i] = -(float)(1 << (n - 1)) * scales[i];
     return mlx_gpu_bind_af(blob.data(), (long)blob.size(), name, 1, out, in, ng,
                            0, (long)packed_bytes,
                            (long)(packed_bytes + scales_bytes), n);
