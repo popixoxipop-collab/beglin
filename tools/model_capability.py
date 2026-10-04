@@ -60,6 +60,70 @@ def _stable_without(value: Mapping[str, Any], *fields: str) -> dict:
     return out
 
 
+
+def build_weight_checkpoint_identity(
+    *, source_format: str, files: Iterable[Mapping[str, Any]]
+) -> str | None:
+    """Reproduce checkpoint-identity-v1 for weight artifacts only.
+
+    This intentionally matches tools/checkpoint_identity.py so existing
+    production checkpoint evidence can be bound to a P12 source manifest
+    without conflating tokenizer/config identity with weight identity.
+    """
+    rows = [dict(row) for row in files]
+    if source_format == "SAFETENSORS_SHARDED":
+        index = [row for row in rows if row.get("kind") == "safetensors_index"]
+        shards = [row for row in rows if row.get("kind") == "safetensors_shard"]
+        if len(index) != 1 or not shards:
+            raise ModelCapabilityError(
+                "sharded safetensors identity requires one index and >=1 shard"
+            )
+        idx = index[0]
+        manifest = {
+            "schema": "checkpoint-identity-v1",
+            "kind": "safetensors-index",
+            "index": {
+                "name": str(idx["logical_path"]).split("/")[-1],
+                "size_bytes": int(idx["size_bytes"]),
+                "sha256": require_sha("index sha256", idx["sha256"]),
+            },
+            "shards": sorted(
+                [
+                    {
+                        "name": str(row["logical_path"]).split("/")[-1],
+                        "size_bytes": int(row["size_bytes"]),
+                        "sha256": require_sha("shard sha256", row["sha256"]),
+                    }
+                    for row in shards
+                ],
+                key=lambda row: row["name"],
+            ),
+        }
+        return sha256_json(manifest)
+
+    if source_format in {"GGUF", "SAFETENSORS_SINGLE"}:
+        allowed = {"gguf"} if source_format == "GGUF" else {"safetensors"}
+        weights = [row for row in rows if row.get("kind") in allowed]
+        if len(weights) != 1:
+            raise ModelCapabilityError(
+                f"{source_format} weight identity requires exactly one weight file"
+            )
+        row = weights[0]
+        manifest = {
+            "schema": "checkpoint-identity-v1",
+            "kind": "single-file",
+            "file": {
+                "name": str(row["logical_path"]).split("/")[-1],
+                "size_bytes": int(row["size_bytes"]),
+                "sha256": require_sha("weight sha256", row["sha256"]),
+            },
+        }
+        return sha256_json(manifest)
+
+    # Legacy Beglin packages may consist of several custom files and do not
+    # necessarily have a checkpoint-identity-v1 equivalent.
+    return None
+
 def build_model_source_manifest(
     *,
     model_id: str,
@@ -104,6 +168,10 @@ def build_model_source_manifest(
         "root_path": root_path,
         "files": normalized,
         "checkpoint_identity_sha256": sha256_json(identity),
+        "weight_checkpoint_identity_sha256": build_weight_checkpoint_identity(
+            source_format=source_format,
+            files=normalized,
+        ),
         "discovered_at": discovered_at,
         "immutable": True,
     }
