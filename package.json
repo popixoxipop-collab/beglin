@@ -56,6 +56,7 @@
     "tools/gpu_runtime_control.py",
     "tools/backend_adapters_v2.py",
     "tools/inspect_model.py",
+    "tools/tokenizer_runtime_v1.py",
     "tools/backend_execution_v2.py",
     "tools/model_evidence_registry.py",
     "tools/p12_pipeline_bridge.py",
