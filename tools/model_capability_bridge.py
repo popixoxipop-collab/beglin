@@ -152,6 +152,18 @@ def validate_p8_target(
         raise CapabilityBridgeError(
             f"runtime mutation capability missing/ambiguous for {target_key}/{backend}"
         )
+    mutation_mode = str(mut_rows[0].get("mutation_mode") or "")
+    if mutation_mode not in {
+        "HOT_REBIND_SINGLE",
+        "HOT_REBIND_MULTI",
+        "RESTART_REQUIRED",
+        "IMMUTABLE",
+        "IMPLEMENTED_UNVERIFIED",
+    }:
+        raise CapabilityBridgeError(
+            f"unknown runtime mutation mode for {target_key}/{backend}: {mutation_mode!r}"
+        )
+    mutation_requires_validation = mutation_mode == "IMPLEMENTED_UNVERIFIED"
 
     return {
         "schema": "beglin-p12-p8-capability-binding-v1",
@@ -166,8 +178,8 @@ def validate_p8_target(
         "target_n": target_n,
         "inference_status": cap.get("inference_status"),
         "qng64_status": cap.get("qng64_status"),
-        "mutation_mode": mut_rows[0].get("mutation_mode"),
-        "requires_validation": bool(cap.get("validation_required")),
+        "mutation_mode": mutation_mode,
+        "requires_validation": bool(cap.get("validation_required")) or mutation_requires_validation,
         "production_write_allowed": False,
         "automatic_live_promotion": False,
     }
