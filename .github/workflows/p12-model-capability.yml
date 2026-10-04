@@ -25,6 +25,8 @@ on:
       - "tools/test_p12_arch_semantics.py"
       - "tools/backend_runtime_probe_p12.py"
       - "tools/test_p12_backend_runtime_probe.py"
+      - "tools/precision_p12_pipeline_bridge.py"
+      - "tools/test_precision_p12_pipeline_bridge.py"
       - ".github/workflows/p12-model-capability.yml"
   pull_request:
     paths:
@@ -46,6 +48,8 @@ on:
       - "tools/test_p12_arch_semantics.py"
       - "tools/backend_runtime_probe_p12.py"
       - "tools/test_p12_backend_runtime_probe.py"
+      - "tools/precision_p12_pipeline_bridge.py"
+      - "tools/test_precision_p12_pipeline_bridge.py"
       - ".github/workflows/p12-model-capability.yml"
 
 permissions:
@@ -74,6 +78,7 @@ jobs:
             tools/loader_registry.py \
             tools/tensor_role_mapper.py \
             tools/capability_compiler_p12.py \
+            tools/precision_p12_pipeline_bridge.py \
             tools/inspect_model.py \
             tools/verify_p12_bskel.py \
             tools/test_model_capability_p12.py \
