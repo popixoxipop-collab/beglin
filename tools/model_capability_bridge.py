@@ -152,7 +152,17 @@ def validate_p8_target(
         raise CapabilityBridgeError(
             f"runtime mutation capability missing/ambiguous for {target_key}/{backend}"
         )
-    mutation_mode = str(mut_rows[0].get("mutation_mode") or "")
+    mutation = mut_rows[0]
+    allowed_target_precisions = [
+        int(n) for n in mutation.get("allowed_target_precisions", [])
+    ]
+    if target_n not in allowed_target_precisions:
+        raise CapabilityBridgeError(
+            f"precision n={target_n} is not mutation-certified for "
+            f"target={target_key} backend={backend}; "
+            f"allowed={allowed_target_precisions}"
+        )
+    mutation_mode = str(mutation.get("mutation_mode") or "")
     if mutation_mode not in {
         "HOT_REBIND_SINGLE",
         "HOT_REBIND_MULTI",
