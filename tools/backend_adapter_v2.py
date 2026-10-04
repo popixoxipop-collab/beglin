@@ -22,6 +22,7 @@ class BackendState:
     epoch: int
     policy: list[dict]
     policy_hash: str
+    model_id: str | None = None
 
 
 def normalize_policy(policy: Iterable[Mapping]) -> list[dict]:
@@ -61,6 +62,16 @@ def transition_changes(current: Iterable[Mapping], target: Iterable[Mapping]) ->
     ]
 
 
+def validate_backend_state(state: BackendState) -> None:
+    if int(state.epoch) < 0:
+        raise BackendPlanError("backend epoch must be non-negative")
+    actual = policy_hash(state.policy)
+    if str(state.policy_hash) != actual:
+        raise BackendPlanError(
+            f"backend state policy hash mismatch: expected={state.policy_hash} actual={actual}"
+        )
+
+
 class BackendAdapterV2:
     name = "abstract"
 
@@ -77,6 +88,7 @@ class CpuBackendAdapterV2(BackendAdapterV2):
     def plan_transition(self, *, state: BackendState, target_policy: Iterable[Mapping]) -> dict:
         if state.backend != self.name:
             raise BackendPlanError("CPU adapter received non-CPU state")
+        validate_backend_state(state)
         target = normalize_policy(target_policy)
         changes = transition_changes(state.policy, target)
         shape = any(c["kind"] == "POLICY_SHAPE_CHANGE" for c in changes)
@@ -104,12 +116,14 @@ class MlxMetalBackendAdapterV2(BackendAdapterV2):
         if self.max_atomic_targets <= 0:
             raise ValueError("max_atomic_targets must be positive")
 
-    def _target_key(self, role: str, layer: int) -> str:
-        return f"L{int(layer)}/{str(role)}"
+    def _target_key(self, state: BackendState, role: str, layer: int) -> str:
+        suffix = f"L{int(layer)}/{str(role).lower()}"
+        return f"{state.model_id}/{suffix}" if state.model_id else suffix
 
     def plan_transition(self, *, state: BackendState, target_policy: Iterable[Mapping]) -> dict:
         if state.backend != self.name:
             raise BackendPlanError("MLX adapter received non-MLX state")
+        validate_backend_state(state)
         target = normalize_policy(target_policy)
         changes = transition_changes(state.policy, target)
         if not changes:
@@ -118,9 +132,9 @@ class MlxMetalBackendAdapterV2(BackendAdapterV2):
             action, mode, shape = "RESTART_REQUIRED", "RESTART_REQUIRED", True
         else:
             unknown = [
-                self._target_key(c["role"], c["layer"])
+                self._target_key(state, c["role"], c["layer"])
                 for c in changes
-                if self._target_key(c["role"], c["layer"]) not in self.verified_hot_targets
+                if self._target_key(state, c["role"], c["layer"]) not in self.verified_hot_targets
             ]
             if unknown:
                 action, mode, shape = "RESTART_REQUIRED", "RESTART_REQUIRED", False
