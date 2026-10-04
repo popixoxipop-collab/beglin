@@ -116,6 +116,20 @@ class CapabilityBridgeTests(unittest.TestCase):
             mcb.validate_p8_target(
                 bundle=bundle,role="shared_up_proj",layer=3,target_n=13)
 
+    def test_mutation_certified_widths_narrow_backend_widths(self):
+        bundle=capability_bundle()
+        bundle["backend_capability_matrix"]["rows"][0]["supported_n"]=[5,6]
+        bundle["runtime_mutation_matrix"]["rows"][0]["allowed_target_precisions"]=[5]
+        bundle["bundle_sha256"]=mc.stable_identity_sha256(bundle)
+        got=mcb.validate_p8_target(
+            bundle=bundle,role="shared_up_proj",layer=3,target_n=5,
+            backend="mlx_metal")
+        self.assertEqual(got["target_n"],5)
+        with self.assertRaisesRegex(mcb.CapabilityBridgeError,"mutation-certified"):
+            mcb.validate_p8_target(
+                bundle=bundle,role="shared_up_proj",layer=3,target_n=6,
+                backend="mlx_metal")
+
     def test_p8_to_p10_lineage_is_stable(self):
         bundle=capability_bundle()
         proposal=p8.propose(
