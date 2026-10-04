@@ -93,6 +93,26 @@ class TensorRoleMapperTests(unittest.TestCase):
                 self.assertEqual(got["mapping_status"], "MAPPED")
                 self.assertEqual(got["role"], role)
 
+
+    def test_gguf_standard_names_preserve_packed_expert_semantics(self):
+        cases = {
+            "token_embd.weight": ("EMBEDDING", None),
+            "blk.4.attn_q.weight": ("Q_PROJ", 4),
+            "blk.4.ffn_gate_inp.weight": ("ROUTER", 4),
+            "blk.4.ffn_up_exps.weight": ("EXPERT_UP_PACKED", 4),
+            "blk.4.ffn_down_shexp.weight": ("SHARED_DOWN", 4),
+        }
+        for name, (role, layer) in cases.items():
+            with self.subTest(name=name):
+                got = trm.map_gguf_tensor_name("deepseek_v2", name)
+                self.assertEqual(got["mapping_status"], "MAPPED")
+                self.assertEqual(got["role"], role)
+                self.assertEqual(got.get("layer"), layer)
+
+    def test_gguf_unknown_architecture_never_guesses_from_standard_name(self):
+        got = trm.map_gguf_tensor_name("future_arch", "blk.0.attn_q.weight")
+        self.assertEqual(got["mapping_status"], "UNSUPPORTED")
+
     def test_unknown_tensor_is_explicitly_unsupported(self):
         got = trm.map_tensor_name("llama", "model.layers.0.some_new_block.weight")
         self.assertEqual(got["mapping_status"], "UNSUPPORTED")
