@@ -37,43 +37,71 @@ def bundle(target_key: str) -> dict:
         "weight_checkpoint_identity_sha256": "c" * 64,
         "skeleton_sha256": "d" * 64,
         "tensor_role_graph": {
+            "tensor_count": 1,
+            "mapped_tensor_count": 1,
+            "unmapped_tensor_count": 0,
+            "mapping_coverage": 1.0,
             "nodes": [{
                 "canonical_target_key": target_key,
-                "role": "q_proj", "layer": 0, "expert_id": None,
+                "role": "Q_PROJ",
+                "layer": 0,
+                "expert_id": None,
+            }],
+        },
+        "backend_capability_matrix": {
+            "rows": [{
+                "target_key": target_key,
+                "backend": "cpu",
+                "inference_status": "VERIFIED",
+                "quant_formats": ["qNg64"],
+                "supported_n": [5, 6],
+                "mutable": True,
+                "mutation_mode": "RESTART_REQUIRED",
+                "transition_limit": 1,
+                "validation_required": True,
+                "evidence_refs": [evidence],
+                "reason_code": "CPU_HOT_MUTATION_NOT_CERTIFIED",
             }]
         },
-        "backend_capability_matrix": {"rows": [{
-            "target_key": target_key, "backend": "cpu",
-            "inference_status": "VERIFIED",
-            "quant_formats": ["qNg64"],
-            "supported_n": [5, 6],
-            "mutable": True,
-            "mutation_mode": "RESTART_REQUIRED",
-            "transition_limit": 1,
-            "validation_required": True,
-            "evidence_refs": [evidence],
-            "reason_code": "CPU_HOT_MUTATION_NOT_CERTIFIED",
-        }],
-        "quant_matrix": [{
-            "target_key": target_key, "backend": "cpu",
-            "status": "VERIFIED", "supported_n": [5, 6],
-            "evidence_refs": [evidence],
-        }],
-        "mutation_matrix": [{
-            "target_key": target_key, "backend": "cpu",
-            "status": "VERIFIED",
-            "mutation_mode": "RESTART_REQUIRED",
-            "allowed_target_precisions": [5, 6],
-            "max_atomic_targets": 1,
-            "requires_quiesce": True,
-            "requires_snapshot": False,
-            "epoch_increment": True,
-            "rollback_supported": True,
-            "policy_shape_change_allowed": False,
-            "evidence_refs": [evidence],
-        }],
-        "precision_search_targets": [target_key],
-        "p8_p11_eligibility": "PARTIAL",
+        "quant_capability_matrix": {
+            "rows": [{
+                "target_key": target_key,
+                "backend": "cpu",
+                "status": "VERIFIED",
+                "supported_n": [5, 6],
+                "evidence_refs": [evidence],
+            }]
+        },
+        "runtime_mutation_matrix": {
+            "rows": [{
+                "target_key": target_key,
+                "backend": "cpu",
+                "status": "VERIFIED",
+                "mutation_mode": "RESTART_REQUIRED",
+                "allowed_target_precisions": [5, 6],
+                "max_atomic_targets": 1,
+                "requires_quiesce": True,
+                "requires_snapshot": False,
+                "epoch_increment": True,
+                "rollback_supported": True,
+                "policy_shape_change_allowed": False,
+                "evidence_refs": [evidence],
+            }]
+        },
+        "precision_search_space": {
+            "targets": [target_key],
+            "target_count": 1,
+        },
+        "p8_p11_eligibility": {
+            "schema": "beglin-pipeline-eligibility-v1",
+            "status": "PARTIAL",
+            "p8_allowed": True,
+            "p9_allowed": True,
+            "p10_allowed": True,
+            "p11_allowed": False,
+            "automatic_live_promotion": False,
+            "reasons": ["TEST_FIXTURE"],
+        },
     }
     out["bundle_sha256"] = mc.stable_identity_sha256(out)
     return out
@@ -107,7 +135,7 @@ class CanaryTests(unittest.TestCase):
         cap = bundle(key)
         state = {
             "epoch": 4,
-            "policy": [{"role": "q_proj", "layer": 0, "n": 6}],
+            "policy": [{"role": "Q_PROJ", "layer": 0, "n": 6}],
         }
 
         def query():
@@ -127,7 +155,7 @@ class CanaryTests(unittest.TestCase):
             return query()
 
         runner = canary.IsolatedCpuQng64RestartCanary(
-            bundle=cap, target_key=key, role="q_proj", layer=0,
+            bundle=cap, target_key=key, role="Q_PROJ", layer=0,
             baseline_n=6, candidate_n=5,
             query_state=query, restart=restart,
             validate=validate, rollback=rollback,
@@ -175,7 +203,7 @@ class CanaryTests(unittest.TestCase):
             runner.run()
         self.assertEqual(len(rollbacks), 1)
         self.assertEqual(pc.normalize_policy(rollbacks[0]),
-                         pc.normalize_policy([{"role":"q_proj","layer":0,"n":6}]))
+                         pc.normalize_policy([{"role":"Q_PROJ","layer":0,"n":6}]))
 
     def test_production_path_refused(self):
         with self.assertRaises(canary.CpuQng64CanaryError):
