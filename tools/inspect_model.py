@@ -82,6 +82,9 @@ def inspect(path: str, *, model_id: str | None = None, model_revision: str = "lo
         capability_report = capabilities.compile_capability_report(
             model_id=resolved_model_id,
             checkpoint_identity=manifest["checkpoint_identity_sha256"],
+            weight_checkpoint_identity_sha256=manifest[
+                "weight_checkpoint_identity_sha256"
+            ],
             skeleton_sha256=skeleton["skeleton_sha256"],
             architecture_status=architecture["status"],
             tokenizer_status=tokenizer["status"],
