@@ -203,9 +203,10 @@ static void load_rope_scale_cfg(const char *base) {
         path, g_rope_cfg.factor, g_rope_cfg.low_freq_factor, g_rope_cfg.high_freq_factor, g_rope_cfg.orig_max_pos);
 }
 
-enum { K_F32 = 0, K_Q4G64 = 1, K_Q8G64 = 2, K_Q4G256SF = 3 };   // Phase 2 (M36): g256sf format
+enum { K_F32 = 0, K_Q4G64 = 1, K_Q8G64 = 2, K_Q4G256SF = 3, K_QNG64 = 4 };   // Phase 2 (M36): g256sf format
 typedef struct {
     char name[96]; int kind;
+    int bits;               // K_QNG64 only; 0 for legacy kinds
     const float *f32;        // K_F32
     const uint8_t *packed;   // K_Q4G64 / K_Q4G256SF (same nibble layout)
     const float *scales;     // K_Q4G64 per-64 scales; K_Q4G256SF wsuper [out][in/256]
@@ -690,6 +691,21 @@ static void matvec_t(const WT *W, const float *x, const float *bias, float *y) {
     } else if (W->kind == K_Q8G64) {
         if (w4a8_on()) gemv_q8g64_sdot_mt(&g_pool, W->packed, W->scales, x, bias, y, W->out, W->in);
         else           gemv_q8g64_mt(&g_pool, W->packed, W->scales, x, bias, y, W->out, W->in);
+    } else if (W->kind == K_QNG64) {
+        if (bias) memcpy(y, bias, (size_t)W->out * sizeof(float)); else memset(y, 0, (size_t)W->out * sizeof(float));
+        const int bits=W->bits, bias_code=1 << (bits-1); const long row_pbytes=(long)W->ng*bits*8;
+        for (int row=0; row<W->out; row++) {
+            double acc=0.0; const uint8_t *rb=W->packed+(long)row*row_pbytes;
+            for (int g=0; g<W->ng; g++) {
+                float scale=W->scales[(long)row*W->ng+g]; const uint8_t *grp=rb+(long)g*bits*8; int col0=g*64;
+                for (int q=0; q<64; q++) {
+                    int u=0, bp=q>>3, bb=q&7;
+                    for (int j=0; j<bits; j++) if ((grp[(long)j*8+bp]>>bb)&1) u|=1<<j;
+                    acc += (double)((float)(u-bias_code)*scale)*x[col0+q];
+                }
+            }
+            y[row]+=(float)acc;
+        }
     } else if (W->kind == K_Q4G256SF) {
         // Phase 2 (M36): W4A8-only by design -- no fp32-activation fallback kernel was built
         // for this format, so refuse loudly instead of inventing a slow path nobody validated
@@ -19506,6 +19522,28 @@ static WT *st_register_q4g64_as(const char *name) {
     return w;
 }
 
+// P12 dense-model arbitrary-n group-64 registration; same packed A2 format as the proven MoE path.
+static WT *st_register_qNg64_as(const char *name, int bits) {
+    if (bits<2 || bits>15 || bits==4) { fprintf(stderr,"FATAL: unsupported dense qNg64 n=%d\\n",bits); exit(1); }
+    int out=0,in=0; uint64_t n=0; float *deq=st_dequant_logical_f32(name,&out,&in,&n);
+    if (in%64 || n!=(uint64_t)out*(uint64_t)in) { fprintf(stderr,"FATAL: invalid dense qNg64 shape for %s\\n",name); exit(1); }
+    check_no_dup_name(name); if (g_nwt>=512) { fprintf(stderr,"FATAL: >512 tensors\\n"); exit(1); }
+    int ng=in/64; size_t nb=(size_t)out*ng*bits*8; uint8_t *packed=malloc(nb); float *scales=malloc(sizeof(float)*(size_t)out*ng);
+    if(!packed||!scales){fprintf(stderr,"FATAL: dense qNg64 alloc failed\\n");exit(1);}
+    gguf_quantize_qNg64(deq,out,in,bits,packed,scales); free(deq);
+    WT *w=&g_wt[g_nwt++]; memset(w,0,sizeof *w); snprintf(w->name,sizeof w->name,"%s",name);
+    w->kind=K_QNG64; w->bits=bits; w->in=in; w->out=out; w->ng=ng; w->packed=packed; w->scales=scales;
+    fprintf(stderr,"[engine] safetensors: %s overridden with real dense qNg64(n=%d), packed=%zu bytes\\n",name,bits,nb);
+    return w;
+}
+static int dense_qng64_override_n(const char *name) {
+    const char *spec=getenv("QWEN_DENSE_QNG64_OVERRIDE"); if(!spec||!spec[0]) return 0;
+    const char *colon=strrchr(spec,':'); if(!colon||colon==spec||!colon[1]){fprintf(stderr,"FATAL: QWEN_DENSE_QNG64_OVERRIDE format\\n");exit(1);}
+    size_t nl=(size_t)(colon-spec); if(strlen(name)!=nl||strncmp(spec,name,nl)) return 0;
+    char *end=NULL; long bits=strtol(colon+1,&end,10); if(!end||*end||bits<2||bits>15||bits==4){fprintf(stderr,"FATAL: invalid dense qNg64 override %s\\n",spec);exit(1);}
+    return (int)bits;
+}
+
 // Symmetric int8 group-64 RTN, reusing gguf_quantize_q8g64() unmodified -- used only for an
 // untied lm_head, matching load_gguf_weights()'s output.weight policy exactly.
 static WT *st_register_q8g64_as(const char *name) {
@@ -19548,7 +19586,11 @@ static void load_safetensors_weights(void) {
             char name[96];
             snprintf(name, sizeof name, ROLE_PATTERN_HF[r], l);
             if (is_norm) { st_register_f32_as(name); n_f32++; }
-            else         { st_register_q4g64_as(name); n_q4++; }
+            else {
+                int qng_n=dense_qng64_override_n(name);
+                if(qng_n) st_register_qNg64_as(name,qng_n);
+                else { st_register_q4g64_as(name); n_q4++; }
+            }
         }
     }
     if (g_cfg.qkv_bias) {
