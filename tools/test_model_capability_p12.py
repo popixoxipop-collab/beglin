@@ -804,7 +804,36 @@ class BackendSymmetryTests(unittest.TestCase):
     def _bundle(self):
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
-        root = qwen_fixture(Path(td.name) / "m")
+        root = Path(td.name) / "m"
+        root.mkdir(parents=True)
+        (root / "config.json").write_text(json.dumps({
+            "_name_or_path": "acme/deepseek-p12-symmetry",
+            "model_type": "deepseek_v2",
+            "hidden_size": 16,
+            "intermediate_size": 32,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 4,
+            "num_key_value_heads": 2,
+            "head_dim": 4,
+            "vocab_size": 64,
+            "max_position_embeddings": 128,
+            "n_routed_experts": 4,
+            "num_experts_per_tok": 2,
+            "n_shared_experts": 1,
+            "first_k_dense_replace": 0,
+        }, sort_keys=True))
+        write_safetensors(root / "model.safetensors", {
+            "model.embed_tokens.weight": ("F16", [64, 16]),
+            "model.layers.0.self_attn.q_proj.weight": ("F16", [16, 16]),
+            "model.layers.0.self_attn.kv_a_proj_with_mqa.weight": ("F16", [16, 16]),
+            "model.layers.0.self_attn.kv_b_proj.weight": ("F16", [16, 16]),
+            "model.layers.0.self_attn.o_proj.weight": ("F16", [16, 16]),
+            "model.layers.0.mlp.shared_experts.gate_proj.weight": ("F16", [32, 16]),
+            "model.layers.0.mlp.shared_experts.up_proj.weight": ("F16", [32, 16]),
+            "model.layers.0.mlp.shared_experts.down_proj.weight": ("F16", [16, 32]),
+            "model.norm.weight": ("F32", [16]),
+            "lm_head.weight": ("F16", [64, 16]),
+        })
         evidence = verification_evidence(
             root, component="backend_runtime", backend="mlx_metal", evidence_byte="f"
         )
