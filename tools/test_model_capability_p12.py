@@ -953,6 +953,11 @@ class BackendSymmetryTests(unittest.TestCase):
             {"role": "Q_PROJ", "layer": 0, "n": 6},
             {"role": "K_PROJ", "layer": 0, "n": 5},
         ]
+        k = next(
+            row for row in bundle["tensor_role_graph"]["nodes"]
+            if row["role"] == "K_PROJ" and row["layer"] == 0
+        )
+        keys = {("K_PROJ", 0): k["canonical_target_key"]}
         for backend, adapter_cls in [
             ("cpu", bav2.CpuBackendAdapterV2),
             ("mlx_metal", bav2.MlxMetalBackendAdapterV2),
@@ -962,7 +967,7 @@ class BackendSymmetryTests(unittest.TestCase):
                 model_capability_bundle_sha256=bundle["bundle_sha256"],
             )
             plan = adapter_cls(bundle).plan_transition(
-                state=state, target_policy=after, target_keys={}
+                state=state, target_policy=after, target_keys=keys
             )
             self.assertEqual(plan["action"], "RESTART_REQUIRED")
             self.assertEqual(plan["reason"]["code"], "POLICY_SHAPE_CHANGE")
