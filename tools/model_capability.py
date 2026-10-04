@@ -1369,12 +1369,17 @@ def build_tokenizer_contract(
     # Current real text input/output remains the dense GGUF greedy path.
     text_io_supported = bool(
         evidence is not None
-        and source_format == "GGUF"
+        and source_format in {"GGUF", "SAFETENSORS_SINGLE", "SAFETENSORS_SHARDED"}
         and arch in {"qwen2", "llama"}
         and encode_backend == "beglin_bpe"
     )
     text_io_mode = (
-        "DENSE_GGUF_GREEDY" if text_io_supported else "NOT_WIRED"
+        (
+            "DENSE_GGUF_GREEDY"
+            if source_format == "GGUF"
+            else "DENSE_SAFETENSORS_GREEDY"
+        )
+        if text_io_supported else "NOT_WIRED"
     )
     if not text_io_supported and status in {
         "IN_ENGINE_VERIFIED", "EXTERNAL_VERIFIED"
