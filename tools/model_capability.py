@@ -1176,13 +1176,11 @@ def build_tokenizer_contract(
     source_format = str(source.get("source_format") or "")
     artifact_kind = _tokenizer_artifact_kind(source)
     sentencepiece = artifact_kind == "SENTENCEPIECE_MODEL"
-    adapter_candidate = None
     missing_primitives: list[str] = []
 
     if sentencepiece:
         family = "SENTENCEPIECE"
         encode_backend = "sentencepiece_external" if evidence is not None else None
-        adapter_candidate = "sentencepiece_external"
         status = "EXTERNAL_VERIFIED" if evidence is not None else "UNSUPPORTED"
         missing_primitives.append("SENTENCEPIECE_IN_ENGINE")
     elif arch in {"qwen2", "qwen3_moe", "llama", "olmoe"}:
@@ -1248,7 +1246,6 @@ def build_tokenizer_contract(
         "source_files": sorted(files),
         "status": status,
         "encode_backend": encode_backend,
-        "adapter_candidate": adapter_candidate,
         "decode_backend": encode_backend,
         "text_io_supported": text_io_supported,
         "text_io_mode": text_io_mode,
