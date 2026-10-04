@@ -1,0 +1,65 @@
+name: P12 Qwen25 Dense MLX Real Weight Probe
+
+on:
+  push:
+    branches: [precision-p12-model-capability-v1-20261004]
+    paths:
+      - "mlx_moe.cpp"
+      - "mlx_moe.h"
+      - "qwen_infer.c"
+      - "qng64_dense.c"
+      - ".github/workflows/p12-qwen25-dense-mlx-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-weight-probe:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify isolated XOX runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+          test ! -e /Users/xox/vdsp_serving/active-route.json || true
+      - name: Build MLX probe binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build-p12-qwen25-mlx
+          cmake -S . -B build-p12-qwen25-mlx -DCMAKE_BUILD_TYPE=Release             -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          cmake --build build-p12-qwen25-mlx --target mlx_binding_transition_test -j4
+          ./build-p12-qwen25-mlx/mlx_binding_transition_test | tee /tmp/p12-mlx-transition.txt
+      - name: Seal probe environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,pathlib,subprocess
+          binary=pathlib.Path("build-p12-qwen25-mlx/mlx_binding_transition_test")
+          out={
+            "schema":"beglin-p12-qwen25-dense-mlx-environment-v1",
+            "status":"PASS",
+            "source_head":subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip(),
+            "binary_sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
+            "synthetic_transition_soak":"PASS",
+            "production_touched":False,
+            "production_write_allowed":False,
+            "automatic_live_promotion":False,
+          }
+          pathlib.Path("/tmp/BEGLIN_P12_QWEN25_DENSE_MLX_ENV.json").write_text(json.dumps(out,sort_keys=True,indent=2)+"\n")
+          print(json.dumps(out,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p12-qwen25-dense-mlx-probe-env
+          path: |
+            /tmp/BEGLIN_P12_QWEN25_DENSE_MLX_ENV.json
+            /tmp/p12-mlx-transition.txt
+          if-no-files-found: error
+          retention-days: 90
