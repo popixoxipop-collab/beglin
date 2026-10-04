@@ -330,14 +330,31 @@ def merge_explicit_list_and_registry(
                     f"{label} {source_name} evidence missing target_key"
                 )
             previous = by_target.get(target)
-            if (
-                previous is not None
-                and previous.get("evidence_sha256") != row.get("evidence_sha256")
-            ):
-                raise EvidenceRegistryError(
-                    f"explicit and registry {label} evidence disagree for "
-                    f"target={target}: {previous.get('evidence_sha256')} != "
-                    f"{row.get('evidence_sha256')}"
+            if previous is not None:
+                capability_fields = (
+                    "schema", "status", "component", "architecture_id",
+                    "checkpoint_identity_sha256", "backend", "target_key",
+                    "evidence_sha256", "supported_n", "mutation_mode",
                 )
+                left = {
+                    key: (
+                        sorted({int(n) for n in previous.get(key) or []})
+                        if key == "supported_n" else previous.get(key)
+                    )
+                    for key in capability_fields
+                }
+                right = {
+                    key: (
+                        sorted({int(n) for n in row.get(key) or []})
+                        if key == "supported_n" else row.get(key)
+                    )
+                    for key in capability_fields
+                }
+                if left != right:
+                    raise EvidenceRegistryError(
+                        f"explicit and registry {label} evidence semantics "
+                        f"disagree for target={target}: "
+                        f"registry={left} explicit={right}"
+                    )
             by_target[target] = row
     return [by_target[key] for key in sorted(by_target)]
