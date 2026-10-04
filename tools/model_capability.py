@@ -466,6 +466,7 @@ def build_model_capability_bundle(
     *,
     model_id: str,
     checkpoint_identity: str,
+    weight_checkpoint_identity_sha256: str | None = None,
     skeleton_sha256: str,
     architecture_id: str = "unknown",
     architecture_status: str,
@@ -478,6 +479,10 @@ def build_model_capability_bundle(
     evidence_refs: Iterable[Mapping[str, Any]] = (),
 ) -> dict:
     require_sha("checkpoint identity", checkpoint_identity)
+    if weight_checkpoint_identity_sha256 is not None:
+        weight_checkpoint_identity_sha256 = require_sha(
+            "weight checkpoint identity", weight_checkpoint_identity_sha256
+        )
     require_sha("skeleton", skeleton_sha256)
     backend_rows = [validate_capability_cell(row) for row in backend_matrix]
     unsupported = sorted({str(v) for v in unsupported_targets})
@@ -507,6 +512,7 @@ def build_model_capability_bundle(
         "schema": "beglin-model-capability-bundle-v1",
         "model_id": str(model_id),
         "checkpoint_identity": checkpoint_identity,
+        "weight_checkpoint_identity_sha256": weight_checkpoint_identity_sha256,
         "skeleton_sha256": skeleton_sha256,
         "architecture_id": str(architecture_id),
         "architecture_status": architecture_status,
