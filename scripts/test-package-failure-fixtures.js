@@ -40,6 +40,7 @@ function copyFixture(dest) {
 function main() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "beglin-package-fixtures-"));
   const results = {};
+  const nativeSupported = process.platform === "darwin" && process.arch === "arm64";
 
   // Fixture 1: source/header closure must fail before packing.
   const missingRoot = path.join(temp, "missing-source");
@@ -56,15 +57,29 @@ function main() {
   results.missing_source = { status: "PASS", observed_exit: missing.status };
 
   // Fixture 2: on a supported host, no clang must be distinguishable from a native PASS.
+  // On unsupported hosts the cold-install contract must explicitly skip instead.
   const noClang = run(
     process.execPath,
     [path.join(ROOT, "scripts", "test-package-cold-install.js")],
     { cwd: ROOT, env: { ...process.env, PATH: path.join(temp, "empty-path") } }
   );
-  if (noClang.status === 0 || !((noClang.stderr || "") + (noClang.stdout || "")).includes("clang unavailable")) {
-    fail("clang-absent fixture did not fail the native verification", noClang);
+  const noClangLog = (noClang.stderr || "") + (noClang.stdout || "");
+  if (nativeSupported) {
+    if (noClang.status === 0 || !noClangLog.includes("clang unavailable")) {
+      fail("clang-absent fixture did not fail the native verification", noClang);
+    }
+    results.clang_absent = { status: "PASS", observed_exit: noClang.status };
+  } else {
+    if (noClang.status !== 0 || !noClangLog.includes("SKIP_UNSUPPORTED")) {
+      fail("clang-absent fixture did not preserve unsupported-host skip", noClang);
+    }
+    results.clang_absent = {
+      status: "SKIP_UNSUPPORTED",
+      observed_exit: noClang.status,
+      platform: process.platform,
+      arch: process.arch,
+    };
   }
-  results.clang_absent = { status: "PASS", observed_exit: noClang.status };
 
   // Fixture 3: preserve package policy: unsupported platform skips the postinstall build.
   const unsupportedCode = [
@@ -80,12 +95,15 @@ function main() {
   results.unsupported_platform = { status: "PASS", observed_exit: unsupported.status };
 
   // Fixture 4: compile can appear successful while the link step fails; postinstall must fail.
-  const fakeBin = path.join(temp, "fake-bin");
-  fs.mkdirSync(fakeBin, { recursive: true });
-  const fakeClang = path.join(fakeBin, "clang");
-  fs.writeFileSync(
-    fakeClang,
-    `#!/usr/bin/env python3
+  // The native build is intentionally skipped on unsupported platforms, so run this
+  // failure injection only where Beglin actually builds the native binary.
+  if (nativeSupported) {
+    const fakeBin = path.join(temp, "fake-bin");
+    fs.mkdirSync(fakeBin, { recursive: true });
+    const fakeClang = path.join(fakeBin, "clang");
+    fs.writeFileSync(
+      fakeClang,
+      `#!/usr/bin/env python3
 import pathlib, sys
 args=sys.argv[1:]
 if args==['--version']:
@@ -100,18 +118,25 @@ if '-c' in args:
 print('intentional fixture link failure', file=sys.stderr)
 raise SystemExit(42)
 `
-  );
-  fs.chmodSync(fakeClang, 0o755);
-  const badLink = run(
-    process.execPath,
-    [path.join(ROOT, "scripts", "postinstall-build.js")],
-    { cwd: ROOT, env: { ...process.env, PATH: fakeBin + path.delimiter + process.env.PATH } }
-  );
-  const badLinkLog = (badLink.stdout || "") + (badLink.stderr || "");
-  if (badLink.status === 0 || !badLinkLog.includes("intentional fixture link failure")) {
-    fail("bad-link fixture did not propagate linker failure", badLink);
+    );
+    fs.chmodSync(fakeClang, 0o755);
+    const badLink = run(
+      process.execPath,
+      [path.join(ROOT, "scripts", "postinstall-build.js")],
+      { cwd: ROOT, env: { ...process.env, PATH: fakeBin + path.delimiter + process.env.PATH } }
+    );
+    const badLinkLog = (badLink.stdout || "") + (badLink.stderr || "");
+    if (badLink.status === 0 || !badLinkLog.includes("intentional fixture link failure")) {
+      fail("bad-link fixture did not propagate linker failure", badLink);
+    }
+    results.link_failure = { status: "PASS", observed_exit: badLink.status };
+  } else {
+    results.link_failure = {
+      status: "SKIP_UNSUPPORTED",
+      platform: process.platform,
+      arch: process.arch,
+    };
   }
-  results.link_failure = { status: "PASS", observed_exit: badLink.status };
 
   console.log(JSON.stringify({
     schema: "beglin-package-failure-fixtures-v1",
