@@ -9,13 +9,14 @@ const args = process.argv.slice(2);
 // P12 capability front door. Keep this independent of the native engine
 // binary so unsupported models can be inspected/fail-closed even when the
 // native build is unavailable.
-if (args[0] === "inspect-model") {
-  const script = path.resolve(__dirname, "..", "tools", "inspect_model.py");
+if (args[0] === "inspect-model" || args[0] === "capability-diff") {
+  const tool = args[0] === "inspect-model" ? "inspect_model.py" : "capability_diff.py";
+  const script = path.resolve(__dirname, "..", "tools", tool);
   const python = process.env.BEGLIN_PYTHON || "python3";
   const res = spawnSync(python, [script, ...args.slice(1)], { stdio: "inherit" });
   if (res.error) {
     console.error(
-      "beglin inspect-model: failed to launch Python capability inspector: " +
+      "beglin " + args[0] + ": failed to launch Python capability tool: " +
         res.error.message
     );
     process.exit(1);
