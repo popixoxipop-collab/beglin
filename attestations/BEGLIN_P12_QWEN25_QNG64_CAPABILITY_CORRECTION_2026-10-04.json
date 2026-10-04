@@ -1,0 +1,28 @@
+{
+  "schema": "beglin-p12-capability-correction-v1",
+  "status": "CORRECTION_APPLIED",
+  "model_id": "qwen2.5-0.5b-instruct",
+  "architecture_id": "qwen2",
+  "source_format": "GGUF",
+  "corrected_component": "qng64_runtime",
+  "corrected_target": "qwen2.5-0.5b-instruct/L0/q_proj",
+  "previous_capability_report_bundle_sha256": "7168fa81d8a389dd519879b2e63bdf91b2f67358950cdf846f7a14eb63c4c501",
+  "previous_p10_binding_sha256": "1d92e4e6aa55d680f08f9bce7800861d1880a983c11e9f7ea3cf467d860d2bf8",
+  "preserved_claims": {
+    "cpu_inference_status": "VERIFIED",
+    "finite_execution": true,
+    "loader": "GGUF",
+    "tokenizer": "QWEN2_BPE"
+  },
+  "corrected_claims": {
+    "qng64_status": "UNSUPPORTED_MODEL",
+    "supported_n": [],
+    "mutation_mode": "IMMUTABLE",
+    "p8_qng64_allowed": false,
+    "p10_qng64_canary_allowed": false,
+    "reason_code": "QNG64_RUNTIME_PATH_UNAVAILABLE"
+  },
+  "rationale": "The current arbitrary-n qNg64 registrar/control path is implemented for MoE+safetensors (QWEN_MOE_PROMOTION_FILE_NQ / runtime REBIND). Dense Qwen GGUF has a separate dense F32 promotion path but no dense arbitrary-n materialization path. Generic qNg64 kernels elsewhere in the binary are not sufficient evidence for a dense model runtime capability.",
+  "production_touched": false,
+  "automatic_live_promotion": false
+}
