@@ -20,6 +20,7 @@
     "hot_rebind_targets",
     "precision_search_targets",
     "p8_p11_eligibility",
+    "eligibility_reasons",
     "evidence_refs",
     "bundle_sha256"
   ],
@@ -93,6 +94,12 @@
     "bundle_sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "eligibility_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   }
 }
