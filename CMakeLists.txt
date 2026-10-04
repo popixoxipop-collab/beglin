@@ -134,3 +134,8 @@ add_executable(safetensors_affine4_test
 )
 target_compile_options(safetensors_affine4_test PRIVATE -O2 -w)
 add_test(NAME safetensors_affine4 COMMAND safetensors_affine4_test)
+
+# P12 dense arbitrary-n qNg64 reference primitive.
+add_executable(qng64_dense_test tools/qng64_dense_test.c qng64_dense.c)
+target_link_libraries(qng64_dense_test PRIVATE m)
+add_test(NAME qng64_dense_test COMMAND qng64_dense_test)
