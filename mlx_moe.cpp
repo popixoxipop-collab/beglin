@@ -1642,6 +1642,97 @@ static mx::array qng64_gemv_e0(const char *name, const mx::array &x) {
     return outputs[0];
 }
 
+// QT-4: variable-length mixed-qNg64 GEMV probe. Unlike QTensor (one bits value per
+// tensor), every (row, group64) cell has its own n and compressed span. This is
+// intentionally probe-only: no registry insertion, no serving mutation, and therefore
+// no accidental production route before BEVAL/runtime integration is implemented.
+static std::optional<mx::fast::CustomKernelFunction> g_qng64_mixed_gemv_kernel;
+
+static mx::fast::CustomKernelFunction &qng64_mixed_gemv_kernel() {
+    if (!g_qng64_mixed_gemv_kernel) {
+        std::string source = R"(
+            uint p = thread_position_in_grid.x;
+            uint row = thread_position_in_grid.y;
+            uint z = thread_position_in_grid.z;
+            if (p >= 64) return;
+            float partial = 0.0f;
+            uint byte_in_plane = p >> 3;
+            uint bit_in_byte = p & 7;
+            for (uint g = 0; g < ng; g++) {
+                uint cell = row * ng + g;
+                uint n_local = (uint)bits[cell];
+                uint plane_base = offsets[cell];
+                int u = 0;
+                for (uint j = 0; j < n_local; j++) {
+                    uint8_t byte = planes[plane_base + j * 8u + byte_in_plane];
+                    int bit = (byte >> bit_in_byte) & 1;
+                    u |= (bit << j);
+                }
+                int bias_code = 1 << (n_local - 1u);
+                int code = u - bias_code;
+                float decoded = (float)code * scales[cell];
+                partial += decoded * x[z * (ng * 64u) + g * 64u + p];
+            }
+            threadgroup float shared_sums[2];
+            uint simd_lane = p % 32u;
+            uint simd_group = p / 32u;
+            float simd_partial = simd_sum(partial);
+            if (simd_lane == 0) shared_sums[simd_group] = simd_partial;
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            if (p == 0) {
+                out[z * (uint)out_dim + row] = shared_sums[0] + shared_sums[1];
+            }
+        )";
+        g_qng64_mixed_gemv_kernel = mx::fast::metal_kernel(
+            "qng64_mixed_gemv",
+            {"planes", "offsets", "bits", "scales", "x"},
+            {"out"}, source);
+    }
+    return *g_qng64_mixed_gemv_kernel;
+}
+
+int mlx_gpu_qng64_mixed_dense_probe(const uint8_t *planes, long planes_bytes,
+                                     const uint32_t *offsets, const uint8_t *bits,
+                                     const float *scales, long out, long in,
+                                     const float *x, int batch, float *out_buf) {
+    if (!mlx_gpu_available() || !planes || !offsets || !bits || !scales ||
+        !x || !out_buf || planes_bytes <= 0 || out <= 0 || in <= 0 ||
+        batch <= 0 || (in % 64) != 0) return 0;
+    const long ng = in / 64;
+    const size_t cells = (size_t)out * (size_t)ng;
+    if (offsets[0] != 0 || (long)offsets[cells] != planes_bytes) return 0;
+    for (size_t i = 0; i < cells; ++i) {
+        const int n_local = (int)bits[i];
+        if (n_local < 2 || n_local > 15) return 0;
+        if (offsets[i + 1] < offsets[i]) return 0;
+        if ((size_t)(offsets[i + 1] - offsets[i]) != (size_t)n_local * 8u) return 0;
+        if (!std::isfinite(scales[i]) || scales[i] <= 0.0f) return 0;
+    }
+    try {
+        mx::array planes_a((void *)planes, {(int)planes_bytes}, mx::uint8, noop_deleter);
+        mx::array offsets_a((void *)offsets, {(int)cells + 1}, mx::uint32, noop_deleter);
+        mx::array bits_a((void *)bits, {(int)cells}, mx::uint8, noop_deleter);
+        mx::array scales_a((void *)scales, {(int)out, (int)ng}, mx::float32, noop_deleter);
+        mx::array x_a((void *)x, {batch, (int)in}, mx::float32, noop_deleter);
+        auto &kernel = qng64_mixed_gemv_kernel();
+        std::vector<mx::array> inputs = {planes_a, offsets_a, bits_a, scales_a, x_a};
+        std::vector<mx::Shape> output_shapes = {{batch, (int)out}};
+        std::vector<mx::Dtype> output_dtypes = {mx::float32};
+        std::vector<std::pair<std::string, mx::fast::TemplateArg>> template_args = {
+            {"ng", (int)ng}, {"out_dim", (int)out}
+        };
+        auto outputs = kernel(inputs, output_shapes, output_dtypes,
+                              {64, (int)out, batch}, {64, 1, 1},
+                              template_args, std::nullopt, false, {});
+        mx::eval(outputs[0]);
+        std::memcpy(out_buf, outputs[0].data<float>(),
+                    sizeof(float) * (size_t)batch * (size_t)out);
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
 // D-metal-7: routed-FFN counterpart to qng64_gemv_e0() above -- same decode logic, extended
 // to a 3D grid (z = explicit (row,expert) pair index) so ffn_gather()'s new branch can serve
 // real top-K-routed MoE FFN calls, not just the single-expert attention-role scope
