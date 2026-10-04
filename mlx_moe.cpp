@@ -81,16 +81,31 @@ struct QNg64Tensor {
     int n;  // bit-width, 7 or 9..15 (2,3,4,5,6,8 use the native-kernel paths above instead)
 };
 
+// QT-4 probe-registry representation: variable-length bit-planes with one n per
+// (row,group64) cell. This is kept separate from QTensor because MLX native
+// quantized_matmul requires one tensor-wide bits value.
+struct MixedQNg64Tensor {
+    mx::array planes;   // {planes_bytes} uint8, concatenated cell-local bit-planes
+    mx::array offsets;  // {out*ng+1} uint32
+    mx::array bits;     // {out*ng} uint8
+    mx::array scales;   // {out,ng} float32
+    long out, in, ng;
+};
+
 static std::unordered_map<std::string, QTensor> g_tensors;
 static std::unordered_map<std::string, DTensor> g_dtensors;  // bits=16/32, dense (D-gpu-5)
 static std::unordered_map<std::string, QNg64Tensor> g_qng64_tensors;  // n=7,9-15 (D-metal-4)
+static std::unordered_map<std::string, MixedQNg64Tensor> g_mixed_qng64_tensors; // QT-4 probe only
+
+static mx::array mixed_qng64_gemv_e0(const char *name, const mx::array &x);
 
 struct BindingSnapshot {
     std::string name;
-    int kind = 0;  // 1=native quant, 2=dense, 3=custom qNg64
+    int kind = 0;  // 1=native quant, 2=dense, 3=custom uniform qNg64, 4=mixed qNg64
     std::optional<QTensor> q;
     std::optional<DTensor> d;
     std::optional<QNg64Tensor> ng64;
+    std::optional<MixedQNg64Tensor> mixed;
 };
 static uint64_t g_binding_snapshot_next_id = 1;
 static std::unordered_map<uint64_t, BindingSnapshot> g_binding_snapshots;
