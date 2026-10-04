@@ -19,7 +19,7 @@ from qt_selective_training import (
 class SelectiveTrainingTests(unittest.TestCase):
     def test_masked_sgd_updates_only_selected_group(self):
         out_dim,in_dim=2,128
-        master=[0.01*((i%7)-3) for i in range(out_dim*in_dim)]
+        master=[0.125*((i%7)-3) for i in range(out_dim*in_dim)]
         grad=[0.001*((i%5)+1) for i in range(out_dim*in_dim)]
         cells=[]
         for row in range(out_dim):
