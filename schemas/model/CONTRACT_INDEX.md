@@ -27,6 +27,9 @@ Verification rule: any capability reported as `VERIFIED`, `IN_ENGINE_VERIFIED`, 
 ## QT Heatmap v2 foundation
 
 - `qt-observation-identity-v1.schema.json` — checkpoint/skeleton/capability-bound group identity
+- `qt-numeric-observation-v1.schema.json` — cheap runtime numeric statistics for a canonical cell
+- `qt-quant-perturbation-v1.schema.json` — per-bit quantization perturbation and backend-parity evidence
+- `qt-training-sensitivity-v1.schema.json` — gradient/Fisher-proxy evidence for selective training
 - `qheatmap-v2.schema.json` — precision recommendation cells; BECODER candidate only
 - `theatmap-v2.schema.json` — selective-training sensitivity cells; BECODER candidate only
 - `local-precision-policy-v1.schema.json` — BEVAL-gated local group precision policy
