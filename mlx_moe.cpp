@@ -1777,6 +1777,65 @@ int mlx_gpu_qng64_mixed_dense_probe(const uint8_t *planes, long planes_bytes,
     }
 }
 
+int mlx_gpu_bind_qng64_mixed_dense_probe(const uint8_t *planes, long planes_bytes,
+                                          const uint32_t *offsets, const uint8_t *bits,
+                                          const float *scales, const char *name,
+                                          long out, long in) {
+    if (!mlx_gpu_available() || !planes || !offsets || !bits || !scales || !name ||
+        planes_bytes <= 0 || out <= 0 || in <= 0 || (in % 64) != 0) return 0;
+    const long ng = in / 64;
+    const size_t cells = (size_t)out * (size_t)ng;
+    if (offsets[0] != 0 || (long)offsets[cells] != planes_bytes) return 0;
+    for (size_t i = 0; i < cells; ++i) {
+        const int n_local = (int)bits[i];
+        if (n_local < 2 || n_local > 15) return 0;
+        if (offsets[i + 1] < offsets[i]) return 0;
+        if ((size_t)(offsets[i + 1] - offsets[i]) != (size_t)n_local * 8u) return 0;
+        if (!std::isfinite(scales[i]) || scales[i] <= 0.0f) return 0;
+    }
+    try {
+        // No noop_deleter here: these constructors own their data, so the
+        // caller may release the source buffers immediately after bind.
+        mx::array owned_planes(planes, {(int)planes_bytes}, mx::uint8);
+        mx::array owned_offsets(offsets, {(int)cells + 1}, mx::uint32);
+        mx::array owned_bits(bits, {(int)cells}, mx::uint8);
+        mx::array owned_scales(scales, {(int)out, (int)ng}, mx::float32);
+        mx::eval(owned_planes);
+        mx::eval(owned_offsets);
+        mx::eval(owned_bits);
+        mx::eval(owned_scales);
+
+        const std::string key(name);
+        g_tensors.erase(key);
+        g_dtensors.erase(key);
+        g_qng64_tensors.erase(key);
+        g_mixed_qng64_tensors.erase(key);
+        g_mixed_qng64_tensors.insert_or_assign(
+            key, MixedQNg64Tensor{owned_planes, owned_offsets, owned_bits, owned_scales,
+                                  out, in, ng});
+        g_bound_count++;
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
+static mx::array mixed_qng64_gemv_e0(const char *name, const mx::array &x) {
+    MixedQNg64Tensor &t = g_mixed_qng64_tensors.at(name);
+    auto &kernel = qng64_mixed_gemv_kernel();
+    const int A = (int)x.shape(0);
+    std::vector<mx::array> inputs = {t.planes, t.offsets, t.bits, t.scales, x};
+    std::vector<mx::Shape> output_shapes = {{A, (int)t.out}};
+    std::vector<mx::Dtype> output_dtypes = {mx::float32};
+    std::vector<std::pair<std::string, mx::fast::TemplateArg>> template_args = {
+        {"ng", (int)t.ng}, {"out_dim", (int)t.out}
+    };
+    auto outputs = kernel(inputs, output_shapes, output_dtypes,
+                          {64, (int)t.out, A}, {64, 1, 1},
+                          template_args, std::nullopt, false, {});
+    return outputs[0];
+}
+
 // D-metal-7: routed-FFN counterpart to qng64_gemv_e0() above -- same decode logic, extended
 // to a 3D grid (z = explicit (row,expert) pair index) so ffn_gather()'s new branch can serve
 // real top-K-routed MoE FFN calls, not just the single-expert attention-role scope
