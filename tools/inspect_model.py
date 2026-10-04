@@ -14,6 +14,7 @@ import argparse
 import json
 
 import architecture_registry as ar
+import capability_compiler_p12 as capabilities
 import loader_registry as loaders
 import model_source_inspector as inspector
 import tensor_role_mapper as tensor_roles
@@ -70,18 +71,45 @@ def inspect(path: str, *, model_id: str | None = None, model_revision: str = "lo
         loader_contract_ref=loader["contract_sha256"],
     )
 
-    next_required = [
-        "backend-capability-v1",
-        "quant-capability-v1",
-        "runtime-mutation-v1",
-        "model-capability-bundle-v1",
-    ]
-    if tensor_graph is None or tensor_graph["unclaimed_tensor_count"] > 0:
-        next_required.insert(0, "tensor-role-graph-v1")
+    capability_report = None
+    if tensor_graph is not None:
+        capability_report = capabilities.compile_capability_report(
+            model_id=resolved_model_id,
+            checkpoint_identity=manifest["checkpoint_identity_sha256"],
+            skeleton_sha256=skeleton["skeleton_sha256"],
+            architecture_status=architecture["status"],
+            tokenizer_status=tokenizer["status"],
+            loader_status=loader["status"],
+            tensor_role_graph=tensor_graph,
+        )
 
+    next_required = []
+    if tensor_graph is None or tensor_graph["unclaimed_tensor_count"] > 0:
+        next_required.append("tensor-role-graph-v1")
+    if capability_report is None:
+        next_required.extend([
+            "backend-capability-v1",
+            "quant-capability-v1",
+            "runtime-mutation-v1",
+            "model-capability-bundle-v1",
+        ])
+    else:
+        bundle = capability_report["model_capability_bundle"]
+        if bundle["p8_p11_eligibility"] == "DENIED":
+            next_required.append("checkpoint-bound-capability-evidence")
+        if tokenizer["status"] in {"IMPLEMENTED_UNVERIFIED", "UNSUPPORTED"}:
+            next_required.append("tokenizer-verification")
+        if loader["status"] in {"IMPLEMENTED_UNVERIFIED", "PARTIAL", "UNSUPPORTED"}:
+            next_required.append("loader-verification")
+
+    bundle = (
+        capability_report["model_capability_bundle"]
+        if capability_report is not None
+        else None
+    )
     return {
         "schema": "beglin-inspect-model-p12-v1",
-        "phase": "P12_TENSOR_IR_SLICE",
+        "phase": "P12_CAPABILITY_COMPILER_SLICE",
         "model_source": manifest,
         "architecture": architecture,
         "operator_graph": operator_graph,
@@ -89,11 +117,30 @@ def inspect(path: str, *, model_id: str | None = None, model_revision: str = "lo
         "model_skeleton": skeleton,
         "tokenizer": tokenizer,
         "loader": loader,
-        # Deliberately fail closed. Architecture/tensor recognition alone
-        # cannot authorize inference or the precision pipeline.
-        "inference_allowed": False,
-        "p8_p11_eligibility": "DENIED",
-        "next_required_contracts": next_required,
+        "backend_capability": (
+            capability_report["backend_capability"]
+            if capability_report is not None else None
+        ),
+        "quant_capability": (
+            capability_report["quant_capability"]
+            if capability_report is not None else None
+        ),
+        "runtime_mutation": (
+            capability_report["runtime_mutation"]
+            if capability_report is not None else None
+        ),
+        "model_capability_bundle": bundle,
+        # A read-only inspection never upgrades missing evidence. A known
+        # architecture therefore remains non-runnable until the capability
+        # bundle itself is evidence-backed.
+        "inference_allowed": bool(
+            bundle is not None
+            and bundle["p8_p11_eligibility"] in {"FULL", "PARTIAL"}
+        ),
+        "p8_p11_eligibility": (
+            bundle["p8_p11_eligibility"] if bundle is not None else "DENIED"
+        ),
+        "next_required_contracts": sorted(set(next_required)),
     }
 
 
