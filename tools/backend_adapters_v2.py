@@ -106,6 +106,37 @@ class BackendAdapterV2:
             for row in pc.normalize_policy(policy)
         }
 
+    def _validate_target_entry(
+        self,
+        *,
+        key: tuple[str, int],
+        target_n: int,
+        target_keys: Mapping[tuple[str, int], str],
+    ) -> tuple[str, dict]:
+        if key not in target_keys:
+            raise BackendV2Error(f"missing target-key binding for {key}")
+        target_key = str(target_keys[key])
+        node = self._tensor_node(target_key)
+        node_layer = -1 if node.get("layer") is None else int(node["layer"])
+        if (
+            str(node.get("role")) != key[0]
+            or node_layer != key[1]
+            or node.get("expert_id") is not None
+        ):
+            raise BackendV2Error(
+                "target-key binding does not match policy entry: "
+                f"policy={key} target={target_key} "
+                f"node_role={node.get('role')} node_layer={node_layer} "
+                f"expert_id={node.get('expert_id')}"
+            )
+        cap = self._mutation_row(target_key)
+        allowed = {int(n) for n in cap.get("allowed_target_precisions", [])}
+        if int(target_n) not in allowed:
+            raise BackendV2Error(
+                f"precision n={target_n} unsupported for {target_key}"
+            )
+        return target_key, cap
+
     def plan_transition(
         self,
         *,
@@ -122,9 +153,30 @@ class BackendAdapterV2:
         before = self._policy_map(state.policy)
         normalized_target = pc.normalize_policy(target_policy)
         after = self._policy_map(normalized_target)
+        changes = []
+        modes = []
+        changed_or_added = [
+            key for key in sorted(after)
+            if key not in before or before[key] != after[key]
+        ]
+        for key in changed_or_added:
+            target_key, cap = self._validate_target_entry(
+                key=key,
+                target_n=after[key],
+                target_keys=target_keys,
+            )
+            modes.append(str(cap["mutation_mode"]))
+            changes.append({
+                "target_key": target_key,
+                "role": key[0],
+                "layer": key[1],
+                "expected_n": before.get(key),
+                "target_n": after[key],
+                "capability_mode": cap["mutation_mode"],
+            })
+
         if set(before) != set(after):
             action = "RESTART_REQUIRED"
-            changes = []
             added = sorted(set(after) - set(before))
             removed = sorted(set(before) - set(after))
             reason = {
@@ -133,41 +185,6 @@ class BackendAdapterV2:
                 "removed": [list(x) for x in removed],
             }
         else:
-            changes = []
-            modes = []
-            for key in sorted(before):
-                if before[key] == after[key]:
-                    continue
-                if key not in target_keys:
-                    raise BackendV2Error(f"missing target-key binding for {key}")
-                target_key = str(target_keys[key])
-                node = self._tensor_node(target_key)
-                node_layer = -1 if node.get("layer") is None else int(node["layer"])
-                if (
-                    str(node.get("role")) != key[0]
-                    or node_layer != key[1]
-                    or node.get("expert_id") is not None
-                ):
-                    raise BackendV2Error(
-                        "target-key binding does not match policy entry: "
-                        f"policy={key} target={target_key} "
-                        f"node_role={node.get('role')} node_layer={node_layer} "
-                        f"expert_id={node.get('expert_id')}"
-                    )
-                cap = self._mutation_row(target_key)
-                if after[key] not in cap.get("allowed_target_precisions", []):
-                    raise BackendV2Error(
-                        f"precision n={after[key]} unsupported for {target_key}"
-                    )
-                modes.append(str(cap["mutation_mode"]))
-                changes.append({
-                    "target_key": target_key,
-                    "role": key[0],
-                    "layer": key[1],
-                    "expected_n": before[key],
-                    "target_n": after[key],
-                    "capability_mode": cap["mutation_mode"],
-                })
             action, reason = self._resolve_action(modes, len(changes))
         plan = {
             "schema": "beglin-backend-transition-plan-v1",
