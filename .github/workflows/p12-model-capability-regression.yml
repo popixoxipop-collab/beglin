@@ -101,6 +101,7 @@ jobs:
 
   native-xox:
     needs: p12-regression
+    if: ${{ vars.P12_NATIVE_XOX_ENABLED == 'true' }}
     runs-on: [self-hosted, eoe, macOS, ARM64]
     timeout-minutes: 30
     concurrency:
