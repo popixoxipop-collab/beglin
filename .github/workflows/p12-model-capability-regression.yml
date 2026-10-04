@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - precision-p12-model-capability-v1-20261004
+      - precision-p12-tokenizer-runtime-v1-20261004
     paths:
       - ".github/workflows/p12-model-capability-regression.yml"
       - "schemas/model/**"
@@ -12,6 +13,7 @@ on:
       - "tools/backend_adapters_v2.py"
       - "tools/backend_execution_v2.py"
       - "tools/inspect_model.py"
+      - "tools/tokenizer_runtime_v1.py"
       - "tools/p12_*.py"
       - "tools/test_model_capability*.py"
       - "tools/test_p12_*.py"
