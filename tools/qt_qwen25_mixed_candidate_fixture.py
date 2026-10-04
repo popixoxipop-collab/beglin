@@ -245,6 +245,10 @@ def build(
     file_shas["candidate_policy.json"] = sha256_file(output_dir / "candidate_policy.json")
 
     uniform_nmax_bytes = total_cells * max(candidates) * 8
+    offsets_bytes = len(payloads["offsets.bin"])
+    bits_bytes = len(payloads["bits.bin"])
+    scales_bytes = len(payloads["scales.bin"])
+    mixed_payload_bytes = len(planes) + offsets_bytes + bits_bytes + scales_bytes
     bf16_bytes = out_dim * in_dim * 2
     manifest = {
         "schema": "beglin-qt-qwen25-mixed-candidate-fixture-v1",
@@ -265,9 +269,13 @@ def build(
         "cell_count": total_cells,
         "bit_histogram": {str(k): v for k, v in sorted(bit_hist.items())},
         "planes_bytes": len(planes),
-        "uniform_max_candidate_bytes": uniform_nmax_bytes,
+        "offsets_bytes": offsets_bytes,
+        "bits_bytes": bits_bytes,
+        "scales_bytes": scales_bytes,
+        "mixed_payload_bytes": mixed_payload_bytes,
+        "uniform_max_candidate_plane_bytes": uniform_nmax_bytes,
         "bf16_weight_bytes": bf16_bytes,
-        "compression_vs_bf16": len(planes) / bf16_bytes,
+        "compression_vs_bf16": mixed_payload_bytes / bf16_bytes,
         "cpu_mixed_vs_bf16_max_abs_error": quality_max_abs,
         "cpu_mixed_vs_bf16_rms_error": quality_rms,
         "files_sha256": file_shas,
