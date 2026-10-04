@@ -28,6 +28,7 @@ const REQUIRED_ARCHIVE_FILES = [
   "tools/backend_adapters_v2.py",
   "tools/inspect_model.py",
   "tools/backend_execution_v2.py",
+  "tools/gpu_runtime_control.py",
   "tools/model_evidence_registry.py",
   "tools/p12_pipeline_bridge.py",
   "tools/p12_capability_acceptance.py",
