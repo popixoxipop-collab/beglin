@@ -306,6 +306,27 @@ def build_p11_capability_preimage(
     requested_n = p10.get("requested_n")
     if requested_n is None:
         raise PipelineCapabilityError("P11 requires an explicit requested_n")
+    try:
+        requested_n = int(requested_n)
+    except (TypeError, ValueError) as exc:
+        raise PipelineCapabilityError("P11 requested precision is invalid") from exc
+
+    search_target = _search_target(
+        bundle, target_key=target_key, backend=backend
+    )
+    mutation = _mutation_row(
+        bundle, target_key=target_key, backend=backend
+    )
+    search_widths = {int(n) for n in search_target.get("supported_n") or []}
+    mutation_widths = {
+        int(n) for n in mutation.get("allowed_target_precisions") or []
+    }
+    certified_widths = search_widths & mutation_widths
+    if requested_n not in certified_widths:
+        raise PipelineCapabilityError(
+            f"P11 requested n={requested_n} is not mutation-certified for "
+            f"{backend}:{target_key}; certified={sorted(certified_widths)}"
+        )
     runtime_n = runtime_state.get("precision_n")
     if runtime_n is not None:
         try:
@@ -314,7 +335,7 @@ def build_p11_capability_preimage(
             raise PipelineCapabilityError("runtime precision is invalid") from exc
     if runtime_n is None:
         raise PipelineCapabilityError("runtime precision is missing")
-    if runtime_n != int(requested_n):
+    if runtime_n != requested_n:
         raise PipelineCapabilityError(
             f"runtime precision mismatch: expected={requested_n} actual={runtime_n}"
         )
