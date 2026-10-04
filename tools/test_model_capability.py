@@ -58,7 +58,9 @@ class ModelCapabilityTests(unittest.TestCase):
             roles={n['role'] for n in bundle['tensor_role_graph']['nodes']}
             self.assertTrue({'EMBEDDING','Q_PROJ','K_PROJ','V_PROJ','O_PROJ','DENSE_GATE','DENSE_UP','DENSE_DOWN','LM_HEAD'} <= roles)
             self.assertEqual(bundle['tensor_role_graph']['unmapped_tensor_count'],0)
-            self.assertEqual(bundle['p8_p11_eligibility']['status'],'PARTIAL')
+            self.assertEqual(bundle['p8_p11_eligibility']['status'],'DENIED')
+            self.assertIn('NO_PRECISION_TARGETS', bundle['p8_p11_eligibility']['reasons'])
+            self.assertFalse(bundle['p8_p11_eligibility']['p8_allowed'])
             self.assertFalse(bundle['p8_p11_eligibility']['p11_allowed'])
 
     def test_architecture_registry_six_families(self):
