@@ -98,3 +98,89 @@ jobs:
 
       - name: Diff check
         run: git diff --check
+
+  native-xox:
+    needs: p12-regression
+    runs-on: [self-hosted, eoe, macOS, ARM64]
+    timeout-minutes: 30
+    concurrency:
+      group: p12-native-xox-${{ github.ref }}
+      cancel-in-progress: true
+    env:
+      REMOTE_ROOT: /Users/xox/mcp-sandbox/tailnet-commander/beglin-p12-native-${{ github.run_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Resolve XOX
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "EOE.local"
+          TARGET=""
+          for candidate in xox XOX.local; do
+            if remote_host="$(ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$candidate" hostname 2>/dev/null)"; then
+              if [ "$remote_host" = "XOX.local" ]; then
+                TARGET="$candidate"
+                break
+              fi
+            fi
+          done
+          test -n "$TARGET"
+          echo "XOX_TARGET=$TARGET" >> "$GITHUB_ENV"
+
+      - name: Stage exact PR source on XOX
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$XOX_TARGET"             "rm -rf '$REMOTE_ROOT' && mkdir -p '$REMOTE_ROOT'"
+          tar --exclude=.git -czf - .             | ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$XOX_TARGET"                 "tar -xzf - -C '$REMOTE_ROOT'"
+
+      - name: Configure and build native P12 targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$XOX_TARGET"             "REMOTE_ROOT='$REMOTE_ROOT' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$REMOTE_ROOT"
+          rm -rf build-p12-native
+          cmake -S . -B build-p12-native             -DCMAKE_BUILD_TYPE=Release             -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          cmake --build build-p12-native             --target qwen_infer_gpu mlx_binding_transition_test safetensors_affine4_test             -j4
+          file build-p12-native/qwen_infer_gpu
+          REMOTE
+
+      - name: Run native CTest gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$XOX_TARGET"             "cd '$REMOTE_ROOT' && ctest --test-dir build-p12-native --output-on-failure"
+
+      - name: Verify production remains untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$XOX_TARGET"             "python3 - <<'PY'
+          import json, urllib.request
+          with urllib.request.urlopen('http://127.0.0.1:18765/healthz', timeout=3) as r:
+              h=json.load(r)
+          assert h['production_write_allowed'] is False
+          assert h['auto_promotion_enabled'] is False
+          assert h['external_network_exposed'] is False
+          print(json.dumps({
+              'status': h['status'],
+              'route_generation': h['route_generation'],
+              'production_write_allowed': h['production_write_allowed'],
+              'auto_promotion_enabled': h['auto_promotion_enabled'],
+              'external_network_exposed': h['external_network_exposed'],
+          }, sort_keys=True))
+          PY"
+
+      - name: Cleanup staged source
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${XOX_TARGET:-}" ]; then
+            ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$XOX_TARGET"               "rm -rf '$REMOTE_ROOT'" || true
+          fi
