@@ -620,8 +620,8 @@ class SourceAndCompilerTests(unittest.TestCase):
             self.assertEqual(
                 bundle["tokenizer_contract"]["status"], "IN_ENGINE_VERIFIED"
             )
-            self.assertFalse(bundle["tokenizer_contract"]["text_io_supported"])
-            self.assertEqual(bundle["tokenizer_contract"]["text_io_mode"], "NOT_WIRED")
+            self.assertTrue(bundle["tokenizer_contract"]["text_io_supported"])
+            self.assertEqual(bundle["tokenizer_contract"]["text_io_mode"], "DENSE_SAFETENSORS_GREEDY")
             self.assertEqual(
                 bundle["tokenizer_contract"]["verification_evidence"]["evidence_sha256"],
                 "a" * 64,
@@ -768,8 +768,8 @@ class SourceAndCompilerTests(unittest.TestCase):
             )
             self.assertEqual(bundle["tokenizer_contract"]["status"], "IN_ENGINE_VERIFIED")
             self.assertEqual(bundle["loader_contract"]["status"], "VERIFIED")
-            self.assertEqual(bundle["p8_p11_eligibility"]["status"], "PARTIAL")
-            self.assertIn("TEXT_IO_NOT_WIRED", bundle["p8_p11_eligibility"]["reasons"])
+            self.assertEqual(bundle["p8_p11_eligibility"]["status"], "FULL")
+            self.assertNotIn("TEXT_IO_NOT_WIRED", bundle["p8_p11_eligibility"]["reasons"])
             self.assertTrue(bundle["p8_p11_eligibility"]["p11_allowed"])
             self.assertTrue(bundle["p8_p11_eligibility"]["p11_allowed"])
             self.assertTrue(bundle["precision_search_targets"])
