@@ -897,7 +897,7 @@ class ContractTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1] / "schemas" / "model"
         result = vmc.verify(root)
         self.assertEqual(result["status"], "PASS")
-        self.assertEqual(result["schema_count"], 16)
+        self.assertEqual(result["schema_count"], len(list(root.glob("*.schema.json"))))
 
 
 if __name__ == "__main__":
