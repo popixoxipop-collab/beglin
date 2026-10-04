@@ -312,6 +312,87 @@ class SourceAndCompilerTests(unittest.TestCase):
             self.assertEqual(parsed["tensor_count"], 4)
             self.assertEqual(parsed["metadata"]["general.architecture"], "qwen2")
 
+    def test_mutation_precisions_are_intersected_with_target_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "m")
+            provisional = mc.compile_model_capabilities(root)
+            target = next(
+                row["canonical_target_key"]
+                for row in provisional["tensor_role_graph"]["nodes"]
+                if row["role"] == "Q_PROJ" and row["layer"] == 0
+            )
+            runtime = verification_evidence(
+                root, component="backend_runtime", backend="mlx_metal",
+                evidence_byte="1",
+            )
+            qng = verification_evidence(
+                root, component="qng64_runtime", backend="mlx_metal",
+                evidence_byte="2", target_key=target, supported_n=[5, 6],
+            )
+            mutation = verification_evidence(
+                root, component="mutation_runtime", backend="mlx_metal",
+                evidence_byte="3", target_key=target, supported_n=[5],
+                mutation_mode="HOT_REBIND_SINGLE",
+            )
+            bundle = mc.compile_model_capabilities(
+                root,
+                mlx_runtime_evidence=runtime,
+                mlx_qng64_evidence=[qng],
+                mlx_mutation_evidence=[mutation],
+            )
+            row = next(
+                r for r in bundle["runtime_mutation_matrix"]["rows"]
+                if r["target_key"] == target and r["backend"] == "mlx_metal"
+            )
+            self.assertEqual(row["mutation_mode"], "HOT_REBIND_SINGLE")
+            self.assertEqual(row["allowed_target_precisions"], [5])
+
+    def test_backend_adapter_rejects_target_key_for_wrong_policy_role(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "m")
+            provisional = mc.compile_model_capabilities(root)
+            q_target = next(
+                row["canonical_target_key"]
+                for row in provisional["tensor_role_graph"]["nodes"]
+                if row["role"] == "Q_PROJ" and row["layer"] == 0
+            )
+            runtime = verification_evidence(
+                root, component="backend_runtime", backend="mlx_metal",
+                evidence_byte="4",
+            )
+            qng = verification_evidence(
+                root, component="qng64_runtime", backend="mlx_metal",
+                evidence_byte="5", target_key=q_target, supported_n=[5, 6],
+            )
+            mutation = verification_evidence(
+                root, component="mutation_runtime", backend="mlx_metal",
+                evidence_byte="6", target_key=q_target, supported_n=[5, 6],
+                mutation_mode="HOT_REBIND_SINGLE",
+            )
+            bundle = mc.compile_model_capabilities(
+                root,
+                mlx_runtime_evidence=runtime,
+                mlx_qng64_evidence=[qng],
+                mlx_mutation_evidence=[mutation],
+            )
+            adapter = bav2.MlxMetalBackendAdapterV2(bundle)
+            before = [{"role":"K_PROJ","layer":0,"n":6}]
+            after = [{"role":"K_PROJ","layer":0,"n":5}]
+            state = bav2.BackendStateV2.build(
+                backend="mlx_metal",
+                epoch=1,
+                policy=before,
+                model_capability_bundle_sha256=bundle["bundle_sha256"],
+            )
+            with self.assertRaisesRegex(
+                bav2.BackendV2Error, "target-key binding does not match policy entry"
+            ):
+                adapter.plan_transition(
+                    state=state,
+                    target_policy=after,
+                    target_keys={("K_PROJ",0): q_target},
+                )
+
     def test_cpu_runtime_is_not_verified_by_inspection_alone(self):
         with tempfile.TemporaryDirectory() as td:
             root = qwen_fixture(Path(td) / "m")
