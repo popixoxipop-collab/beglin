@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import struct
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,21 @@ import architecture_registry as ar
 import inspect_model
 import loader_registry as lr
 import tokenizer_registry as tr
+
+
+def write_safetensors(path: Path, tensors: dict) -> None:
+    header = {}
+    cursor = 0
+    for name, meta in tensors.items():
+        nbytes = int(meta.get("nbytes", 16))
+        header[name] = {
+            "dtype": meta.get("dtype", "F16"),
+            "shape": list(meta.get("shape", [2, 4])),
+            "data_offsets": [cursor, cursor + nbytes],
+        }
+        cursor += nbytes
+    raw = json.dumps(header, separators=(",", ":")).encode()
+    path.write_bytes(struct.pack("<Q", len(raw)) + raw + (b"\0" * cursor))
 
 
 class ArchitectureRegistryTests(unittest.TestCase):
@@ -122,28 +138,46 @@ class RegistryTests(unittest.TestCase):
 
 
 class InspectModelVerticalSliceTests(unittest.TestCase):
-    def test_llama_safetensors_emits_architecture_ir_contracts(self):
+    def test_llama_safetensors_emits_tensor_and_architecture_ir(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "config.json").write_text(json.dumps({
                 "model_type": "llama",
                 "hidden_size": 16,
-                "num_hidden_layers": 2,
+                "num_hidden_layers": 1,
                 "num_attention_heads": 4,
                 "num_key_value_heads": 2,
                 "vocab_size": 100,
             }))
-            (root / "model.safetensors").write_bytes(b"weights")
+            write_safetensors(root / "model.safetensors", {
+                "model.embed_tokens.weight": {"shape": [100, 16]},
+                "model.layers.0.input_layernorm.weight": {"shape": [16]},
+                "model.layers.0.self_attn.q_proj.weight": {"shape": [16, 16]},
+                "model.layers.0.self_attn.k_proj.weight": {"shape": [8, 16]},
+                "model.layers.0.self_attn.v_proj.weight": {"shape": [8, 16]},
+                "model.layers.0.self_attn.o_proj.weight": {"shape": [16, 16]},
+                "model.layers.0.post_attention_layernorm.weight": {"shape": [16]},
+                "model.layers.0.mlp.gate_proj.weight": {"shape": [32, 16]},
+                "model.layers.0.mlp.up_proj.weight": {"shape": [32, 16]},
+                "model.layers.0.mlp.down_proj.weight": {"shape": [16, 32]},
+                "model.norm.weight": {"shape": [16]},
+                "lm_head.weight": {"shape": [100, 16]},
+            })
             (root / "tokenizer.json").write_text("{}")
             report = inspect_model.inspect(str(root), model_id="fixture")
             self.assertEqual(report["architecture"]["status"], "KNOWN")
-            self.assertEqual(report["model_skeleton"]["layer_count"], 2)
+            self.assertEqual(report["model_skeleton"]["layer_count"], 1)
             self.assertEqual(report["operator_graph"]["schema"], "beglin-operator-graph-v1")
+            self.assertEqual(report["tensor_role_graph"]["unclaimed_tensor_count"], 0)
+            self.assertEqual(
+                report["model_skeleton"]["tensor_role_graph_ref"],
+                report["tensor_role_graph"]["graph_sha256"],
+            )
             self.assertEqual(report["tokenizer"]["status"], "IMPLEMENTED_UNVERIFIED")
             self.assertEqual(report["loader"]["status"], "IMPLEMENTED_UNVERIFIED")
             self.assertFalse(report["inference_allowed"])
             self.assertEqual(report["p8_p11_eligibility"], "DENIED")
-            self.assertIn("tensor-role-graph-v1", report["next_required_contracts"])
+            self.assertNotIn("tensor-role-graph-v1", report["next_required_contracts"])
             self.assertIn("backend-capability-v1", report["next_required_contracts"])
 
 
