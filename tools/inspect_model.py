@@ -3,10 +3,10 @@
 
 Current vertical slice:
 source identity -> architecture descriptor -> tokenizer/loader contracts ->
-operator graph -> model skeleton.
+operator graph -> safetensors tensor-role graph -> model skeleton.
 
-Inference and P8-P11 remain denied until tensor-role and backend capability
-contracts are compiled. No runtime mutation is performed here.
+Inference and P8-P11 remain denied until backend/quant/mutation capability
+contracts are compiled with verified evidence. No runtime mutation occurs here.
 """
 from __future__ import annotations
 
@@ -15,8 +15,9 @@ import json
 
 import architecture_registry as ar
 import loader_registry as loaders
-import tokenizer_registry as tokenizers
 import model_source_inspector as inspector
+import tensor_role_mapper as tensor_roles
+import tokenizer_registry as tokenizers
 
 
 def inspect(path: str, *, model_id: str | None = None, model_revision: str = "local") -> dict:
@@ -47,37 +48,52 @@ def inspect(path: str, *, model_id: str | None = None, model_revision: str = "lo
         descriptor=architecture,
         config=config,
     )
+
+    tensor_graph = None
+    if manifest["source_format"] in {"SAFETENSORS_SINGLE", "SAFETENSORS_SHARDED"}:
+        tensor_graph = tensor_roles.build_tensor_role_graph_from_safetensors(
+            model_id=resolved_model_id,
+            architecture_id=architecture["architecture_id"],
+            path=path,
+        )
+
     skeleton = ar.build_model_skeleton_from_config(
         model_id=resolved_model_id,
         model_source_sha256=manifest["checkpoint_identity_sha256"],
         descriptor=architecture,
         config=config,
         operator_graph=operator_graph,
+        tensor_role_graph_ref=(
+            tensor_graph["graph_sha256"] if tensor_graph is not None else None
+        ),
         tokenizer_contract_ref=tokenizer["contract_sha256"],
         loader_contract_ref=loader["contract_sha256"],
     )
 
+    next_required = [
+        "backend-capability-v1",
+        "quant-capability-v1",
+        "runtime-mutation-v1",
+        "model-capability-bundle-v1",
+    ]
+    if tensor_graph is None or tensor_graph["unclaimed_tensor_count"] > 0:
+        next_required.insert(0, "tensor-role-graph-v1")
+
     return {
         "schema": "beglin-inspect-model-p12-v1",
-        "phase": "P12_ARCHITECTURE_IR_SLICE",
+        "phase": "P12_TENSOR_IR_SLICE",
         "model_source": manifest,
         "architecture": architecture,
         "operator_graph": operator_graph,
+        "tensor_role_graph": tensor_graph,
         "model_skeleton": skeleton,
         "tokenizer": tokenizer,
         "loader": loader,
-        # Deliberately fail closed. Tensor-role and backend capability are not
-        # compiled yet, so architecture recognition alone cannot authorize
-        # inference or the precision pipeline.
+        # Deliberately fail closed. Architecture/tensor recognition alone
+        # cannot authorize inference or the precision pipeline.
         "inference_allowed": False,
         "p8_p11_eligibility": "DENIED",
-        "next_required_contracts": [
-            "tensor-role-graph-v1",
-            "backend-capability-v1",
-            "quant-capability-v1",
-            "runtime-mutation-v1",
-            "model-capability-bundle-v1",
-        ],
+        "next_required_contracts": next_required,
     }
 
 
