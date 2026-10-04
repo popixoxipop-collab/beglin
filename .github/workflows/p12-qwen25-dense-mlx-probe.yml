@@ -6,6 +6,7 @@ on:
     paths:
       - "tools/p12_qwen25_real_mlx_probe.cpp"
       - "CMakeLists.txt"
+      - "qng64_dense.h"
       - "mlx_moe.cpp"
       - "mlx_moe.h"
       - "qwen_infer.c"
