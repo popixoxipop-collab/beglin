@@ -1,5 +1,9 @@
 name: QT Qwen25 Real Mixed MLX Probe
 
+concurrency:
+  group: qt-qwen25-real-mixed-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
