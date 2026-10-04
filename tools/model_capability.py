@@ -1174,7 +1174,6 @@ def build_tokenizer_contract(
         architecture_id=arch,
     )
     source_format = str(source.get("source_format") or "")
-    source_kind = _tokenizer_source_kind(source)
     artifact_kind = _tokenizer_artifact_kind(source)
     sentencepiece = artifact_kind == "SENTENCEPIECE_MODEL"
     adapter_candidate = None
@@ -1214,8 +1213,10 @@ def build_tokenizer_contract(
     elif arch == "deepseek_v2":
         family = default_family
         status = "EXTERNAL_VERIFIED" if evidence is not None else "UNSUPPORTED"
-        encode_backend = "deepseek_external" if evidence is not None else None
-        adapter_candidate = "deepseek_external"
+        encode_backend = (
+            "external_deepseek_reference" if evidence is not None else None
+        )
+        adapter_candidate = "external_deepseek_reference"
         missing_primitives.append("DEEPSEEK_PRETOKENIZER_IN_ENGINE")
     else:
         family = default_family
@@ -1243,7 +1244,6 @@ def build_tokenizer_contract(
         "schema": "beglin-tokenizer-contract-v1",
         "architecture_id": arch,
         "tokenizer_family": family,
-        "source_kind": source_kind,
         "artifact_kind": artifact_kind,
         "source_files": sorted(files),
         "status": status,
