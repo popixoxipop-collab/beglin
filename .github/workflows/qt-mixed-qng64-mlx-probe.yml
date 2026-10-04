@@ -1,5 +1,9 @@
 name: QT Mixed qNg64 MLX Probe
 
+concurrency:
+  group: qt-mixed-qng64-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
