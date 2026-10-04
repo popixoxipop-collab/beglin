@@ -1,0 +1,12 @@
+{
+  "schema": "beglin-verification-evidence-v1",
+  "status": "VERIFIED",
+  "architecture_id": "deepseek_v2",
+  "checkpoint_identity_sha256": "2db48c4781e5816e92c0ae2c47d99370b91b33df74b4fc638fa841b936b45ee7",
+  "evidence_sha256": "1867abbe9faa3709682607db321bbee2f083486049734873e51c3d4c87950252",
+  "run_id": "p12-production-deepseek-20261004",
+  "kind": "P12_PRODUCTION_ACCEPTANCE",
+  "component": "backend_runtime",
+  "backend": "mlx_metal",
+  "binary_sha256": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9"
+}
