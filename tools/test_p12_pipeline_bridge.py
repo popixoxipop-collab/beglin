@@ -307,7 +307,7 @@ class PipelineBridgeTests(unittest.TestCase):
                 loader_evidence=evidence("loader", "6"),
             )
             self.assertEqual(bundle["p8_p11_eligibility"]["status"], "PARTIAL")
-            self.assertIn("TEXT_IO_NOT_WIRED", bundle["p8_p11_eligibility"]["reasons"])
+            self.assertNotIn("TEXT_IO_NOT_WIRED", bundle["p8_p11_eligibility"]["reasons"])
             self.assertTrue(bundle["p8_p11_eligibility"]["p11_allowed"])
             target = self.q_target(bundle)
             p8 = bridge.bind_p8_target(
