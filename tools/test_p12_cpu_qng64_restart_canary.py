@@ -172,7 +172,7 @@ class CanaryTests(unittest.TestCase):
         cap = bundle(key)
         state = {
             "epoch": 2,
-            "policy": [{"role": "q_proj", "layer": 0, "n": 6}],
+            "policy": [{"role": "Q_PROJ", "layer": 0, "n": 6}],
         }
         rollbacks = []
 
