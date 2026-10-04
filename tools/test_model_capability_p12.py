@@ -473,8 +473,11 @@ class SourceAndCompilerTests(unittest.TestCase):
             self.assertTrue(rows)
             self.assertTrue(all(r["inference_status"] == "IMPLEMENTED_UNVERIFIED" for r in rows))
             precision = [r for r in rows if r["supported_n"]]
-            self.assertTrue(precision)
-            self.assertTrue(all(r["qng64_status"] == "IMPLEMENTED_UNVERIFIED" for r in precision))
+            self.assertEqual(precision, [])
+            qng_rows = [r for r in rows if r["role"] in mc.PRECISION_ROLES]
+            self.assertTrue(qng_rows)
+            self.assertTrue(all(r["qng64_status"] == "UNSUPPORTED_MODEL" for r in qng_rows))
+            self.assertTrue(all(r["reason_code"] == "QNG64_RUNTIME_PATH_UNAVAILABLE" for r in qng_rows))
             self.assertTrue(all(r["verification_source"] == "inspection_only" for r in rows))
 
     def test_cpu_runtime_verified_requires_explicit_evidence_artifact(self):
@@ -498,7 +501,9 @@ class SourceAndCompilerTests(unittest.TestCase):
             rows = bundle["backend_capability_matrix"]["rows"]
             self.assertTrue(all(r["inference_status"] == "VERIFIED" for r in rows))
             precision = [r for r in rows if r["supported_n"]]
-            self.assertTrue(all(r["qng64_status"] == "IMPLEMENTED_UNVERIFIED" for r in precision))
+            self.assertEqual(precision, [])
+            qng_rows = [r for r in rows if r["role"] in mc.PRECISION_ROLES]
+            self.assertTrue(all(r["qng64_status"] == "UNSUPPORTED_MODEL" for r in qng_rows))
             self.assertTrue(
                 all(r["verification_source"] == "explicit_runtime_evidence" for r in rows)
             )
