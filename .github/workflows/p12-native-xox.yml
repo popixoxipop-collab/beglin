@@ -1,6 +1,7 @@
 name: P12 Native XOX Regression
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - precision-p12-model-capability-v1-20261004
