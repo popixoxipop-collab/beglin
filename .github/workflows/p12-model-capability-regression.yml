@@ -78,11 +78,13 @@ jobs:
           PYTHONPATH: tools
         run: python -m unittest discover -s tools -p 'test_*.py'
 
-      - name: Package closure and failure fixtures
-        run: |
-          npm run test:package-source-closure
-          npm run test:package-failure-fixtures
+      - name: Package source closure
+        run: npm run test:package-source-closure
 
+      # test:package-failure-fixtures asserts Darwin-native failure modes
+      # (clang/link behavior). On the hosted Linux runner the package
+      # intentionally returns SKIP_UNSUPPORTED, so those fixtures are kept
+      # in the macOS/native acceptance path rather than misclassified here.
       - name: Package cold install
         run: npm run test:package-cold-install
 
