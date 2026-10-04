@@ -1655,10 +1655,13 @@ def build_precision_search_space(
         m = mutation.get((row["target_key"], row["backend"]))
         if not m:
             continue
+        allowed_n = [int(n) for n in m.get("allowed_target_precisions", [])]
+        if not allowed_n:
+            continue
         out.append({
             "target_key": row["target_key"],
             "backend": row["backend"],
-            "supported_n": row["supported_n"],
+            "supported_n": allowed_n,
             "mutation_mode": m["mutation_mode"],
             "requires_validation": (
                 row["qng64_status"] != "VERIFIED"
