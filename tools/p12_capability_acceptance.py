@@ -136,8 +136,8 @@ def materialize(
         )
 
     state = dict(runtime_state)
-    state["model_capability_bundle_sha256"] = bundle["bundle_sha256"]
-    state["checkpoint_identity_sha256"] = bundle["checkpoint_identity_sha256"]
+    state.setdefault("model_capability_bundle_sha256", bundle["bundle_sha256"])
+    state.setdefault("checkpoint_identity_sha256", bundle["checkpoint_identity_sha256"])
     state.setdefault("backend", backend)
     state.setdefault("target_key", target_key)
     p11 = bridge.build_p11_capability_preimage(
