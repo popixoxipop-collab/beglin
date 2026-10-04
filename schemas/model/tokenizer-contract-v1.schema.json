@@ -24,20 +24,6 @@
       "pattern": "^[0-9a-f]{64}$",
       "type": "string"
     },
-    "source_kind": {
-      "enum": [
-        "SENTENCEPIECE",
-        "BPE_FILES",
-        "GGUF_EMBEDDED_OR_EXTERNAL",
-        "NONE"
-      ]
-    },
-    "adapter_candidate": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "encode_backend": {
       "type": [
         "string",
