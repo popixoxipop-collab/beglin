@@ -87,6 +87,13 @@ int mlx_gpu_qng64_gather_probe(const uint8_t *planes, long E, long out, long in,
                                 const float *scales, const float *x, int N,
                                 const int32_t *expert_idx, float *out_buf);
 
+// P12 dense real-weight probe: bind one caller-owned qNg64 packed tensor and
+// compare Metal matvec through the normal registry. The packed/scales buffers
+// remain caller-owned for the binding lifetime. n=2/3/5/6 uses native MLX
+// quantized kernels; higher custom widths follow mlx_gpu_bind_af's contract.
+int mlx_gpu_bind_qng64_dense_probe(const uint8_t *packed, const float *scales,
+                                    const char *name, long out, long in, int n);
+
 // Gate 4: y = quantized_matmul(x, w_e) for tensor `name`'s expert `e`,
 // against a caller-supplied dense fp32 x[in], written to y[out]. For direct
 // comparison against moe_matvec_af() on the same expert/input. Returns 1 on
