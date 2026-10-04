@@ -83,9 +83,9 @@ int main(int argc, char **argv) {
         "{\"status\":\"%s\",\"out\":896,\"in\":896,\"group_size\":64,"
         "\"cell_count\":%zu,\"planes_bytes\":%zu,\"bits_min\":%d,\"bits_max\":%d,"
         "\"n3\":%zu,\"n4\":%zu,\"n5\":%zu,\"n6\":%zu,\"n7\":%zu,\"n8\":%zu,"
-        "\"max_abs_error\":%.9g,\"rms_error\":%.9g}\n",
+        "\"n9\":%zu,\"n10\":%zu,\"max_abs_error\":%.9g,\"rms_error\":%.9g}\n",
         pass ? "PASS" : "FAIL", cells, planes.size(), min_bits, max_bits,
-        counts[3], counts[4], counts[5], counts[6], counts[7], counts[8],
+        counts[3], counts[4], counts[5], counts[6], counts[7], counts[8], counts[9], counts[10],
         max_abs, rms);
     return pass ? 0 : 12;
 }
