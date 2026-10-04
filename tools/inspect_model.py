@@ -5,6 +5,8 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 import model_capability as mc
 import model_evidence_registry as mer
+import loader_runtime_v1 as lrv
+import tokenizer_runtime_v1 as trv
 
 def _load_evidence(path):
     if not path:
@@ -20,6 +22,28 @@ def _load_evidence(path):
 
 def _load_evidence_list(paths):
     return [_load_evidence(path) for path in (paths or [])]
+
+def _runtime_plan_report(bundle,args):
+    report={}
+    try:
+        loader=lrv.plan_from_bundle(bundle)
+        entry={'status':'AVAILABLE','plan':loader}
+        if args.verify_loader_sources:
+            entry['source_verification']=lrv.verify_source_files(loader)
+        report['loader']=entry
+    except lrv.LoaderRuntimeError as exc:
+        report['loader']={'status':'UNAVAILABLE','error':str(exc)}
+    try:
+        tokenizer=trv.plan_from_bundle(
+            bundle,
+            external_executable=args.tokenizer_executable,
+            external_executable_sha256=args.tokenizer_executable_sha256,
+        )
+        report['tokenizer']={'status':'AVAILABLE','plan':tokenizer}
+    except trv.TokenizerRuntimeError as exc:
+        report['tokenizer']={'status':'UNAVAILABLE','error':str(exc)}
+    return report
+
 
 def main()->int:
     ap=argparse.ArgumentParser(description='Inspect a model and compile the P12 Beglin capability bundle.')
@@ -38,6 +62,10 @@ def main()->int:
     ap.add_argument('--evidence',action='append',default=[],help='verification evidence JSON file or directory; repeatable')
     ap.add_argument('--json',action='store_true')
     ap.add_argument('--target')
+    ap.add_argument('--runtime-plans',action='store_true',help='include loader/tokenizer runtime readiness outside the immutable capability bundle')
+    ap.add_argument('--verify-loader-sources',action='store_true',help='with --runtime-plans, re-hash all loader source files')
+    ap.add_argument('--tokenizer-executable',help='absolute executable for EXTERNAL_VERIFIED tokenizer runtime planning')
+    ap.add_argument('--tokenizer-executable-sha256',help='expected SHA-256 of --tokenizer-executable')
     args=ap.parse_args()
     try:
         scalar_explicit={
@@ -81,18 +109,26 @@ def main()->int:
     except (mc.ModelCapabilityError,mer.EvidenceRegistryError) as exc:
         print(json.dumps({'status':'ERROR','error':str(exc)},sort_keys=True),file=sys.stderr)
         return 2
+    runtime_plans=_runtime_plan_report(bundle,args) if args.runtime_plans else None
     if args.target:
         rows=[]
         for key in ('backend_capability_matrix','quant_capability_matrix','runtime_mutation_matrix'):
             for row in bundle[key].get('rows',[]):
                 if args.target.lower() in str(row.get('target_key','')).lower():
                     rows.append({'matrix':key,**row})
-        print(json.dumps({'target':args.target,'rows':rows,'bundle_sha256':bundle['bundle_sha256']},indent=2,sort_keys=True))
+        out={'target':args.target,'rows':rows,'bundle_sha256':bundle['bundle_sha256']}
+        if runtime_plans is not None:
+            out['runtime_plans']=runtime_plans
+        print(json.dumps(out,indent=2,sort_keys=True))
         return 0
     if args.json:
-        print(json.dumps(bundle,indent=2,sort_keys=True))
+        out=bundle if runtime_plans is None else {'bundle':bundle,'runtime_plans':runtime_plans}
+        print(json.dumps(out,indent=2,sort_keys=True))
     else:
-        print(json.dumps(mc.capability_summary(bundle),indent=2,sort_keys=True))
+        out=mc.capability_summary(bundle)
+        if runtime_plans is not None:
+            out['runtime_plans']=runtime_plans
+        print(json.dumps(out,indent=2,sort_keys=True))
     return 0
 
 if __name__=='__main__': raise SystemExit(main())
