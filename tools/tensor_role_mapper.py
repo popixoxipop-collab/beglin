@@ -197,6 +197,46 @@ _IGNORE_PATTERNS = [
     re.compile(r"^model\.layers\.\d+\.self_attn\.rotary_emb\.inv_freq$"),
 ]
 
+_GGUF_GLOBAL_PATTERNS = [
+    (re.compile(r"^token_embd\.(weight|bias)$"), "EMBEDDING"),
+    (re.compile(r"^output_norm\.(weight|bias)$"), "FINAL_NORM"),
+    (re.compile(r"^output\.(weight|bias)$"), "LM_HEAD"),
+]
+
+_GGUF_LAYER_PATTERNS = [
+    (re.compile(r"^blk\.(\d+)\.attn_norm\.(weight|bias)$"), "ATTN_NORM"),
+    (re.compile(r"^blk\.(\d+)\.ffn_norm\.(weight|bias)$"), "FFN_NORM"),
+    (re.compile(r"^blk\.(\d+)\.attn_q\.(weight|bias)$"), "Q_PROJ"),
+    (re.compile(r"^blk\.(\d+)\.attn_k\.(weight|bias)$"), "K_PROJ"),
+    (re.compile(r"^blk\.(\d+)\.attn_v\.(weight|bias)$"), "V_PROJ"),
+    (re.compile(r"^blk\.(\d+)\.attn_output\.(weight|bias)$"), "O_PROJ"),
+    (re.compile(r"^blk\.(\d+)\.attn_qkv\.(weight|bias)$"), "QKV_PROJ"),
+    (re.compile(r"^blk\.(\d+)\.attn_q_norm\.(weight|bias)$"), "Q_NORM"),
+    (re.compile(r"^blk\.(\d+)\.attn_k_norm\.(weight|bias)$"), "K_NORM"),
+    (re.compile(r"^blk\.(\d+)\.attn_q_a\.(weight|bias)$"), "Q_A_PROJ"),
+    (re.compile(r"^blk\.(\d+)\.attn_q_b\.(weight|bias)$"), "Q_B_PROJ"),
+    (re.compile(r"^blk\.(\d+)\.attn_kv_a_mqa\.(weight|bias)$"), "KV_A_PROJ"),
+    (re.compile(r"^blk\.(\d+)\.attn_kv_b\.(weight|bias)$"), "KV_B_PROJ"),
+    (re.compile(r"^blk\.(\d+)\.attn_q_a_norm\.(weight|bias)$"), "Q_A_NORM"),
+    (re.compile(r"^blk\.(\d+)\.attn_kv_a_norm\.(weight|bias)$"), "KV_A_NORM"),
+    (re.compile(r"^blk\.(\d+)\.attn_sinks\.(weight|bias)$"), "ATTN_SINKS"),
+    (re.compile(r"^blk\.(\d+)\.ffn_gate\.(weight|bias)$"), "DENSE_GATE"),
+    (re.compile(r"^blk\.(\d+)\.ffn_up\.(weight|bias)$"), "DENSE_UP"),
+    (re.compile(r"^blk\.(\d+)\.ffn_down\.(weight|bias)$"), "DENSE_DOWN"),
+    (re.compile(r"^blk\.(\d+)\.ffn_gate_inp\.(weight|bias)$"), "ROUTER"),
+    (re.compile(r"^blk\.(\d+)\.ffn_gate_exp[s]?\.(weight|bias)$"), "EXPERT_GATE_PACKED"),
+    (re.compile(r"^blk\.(\d+)\.ffn_up_exp[s]?\.(weight|bias)$"), "EXPERT_UP_PACKED"),
+    (re.compile(r"^blk\.(\d+)\.ffn_down_exp[s]?\.(weight|bias)$"), "EXPERT_DOWN_PACKED"),
+    (re.compile(r"^blk\.(\d+)\.ffn_gate_shexp\.(weight|bias)$"), "SHARED_GATE"),
+    (re.compile(r"^blk\.(\d+)\.ffn_up_shexp\.(weight|bias)$"), "SHARED_UP"),
+    (re.compile(r"^blk\.(\d+)\.ffn_down_shexp\.(weight|bias)$"), "SHARED_DOWN"),
+]
+
+_GGUF_IGNORE_PATTERNS = [
+    re.compile(r"^rope_freqs\.weight$"),
+    re.compile(r"^blk\.\d+\.rope_freqs\.weight$"),
+]
+
 
 def _with_parameter_kind(role: str, parameter: str) -> str:
     return role if parameter == "weight" else f"{role}_BIAS"
@@ -266,6 +306,65 @@ def build_tensor_role_graph_from_safetensors(
             "shape": meta["shape"],
             "dtype": meta["dtype"],
             "source_quant_format": meta["dtype"],
+            "mapping_status": mapped["mapping_status"],
+        })
+    return mc.build_tensor_role_graph(model_id=model_id, nodes=nodes)
+
+
+def map_gguf_tensor_name(architecture_id: str, name: str) -> dict[str, Any]:
+    """Map standardized GGUF tensor names without inventing architecture roles."""
+    architecture_id = str(architecture_id)
+    if architecture_id not in _KNOWN_SEMANTIC_ARCHITECTURES:
+        return {
+            "role": f"UNMAPPED_{architecture_id.upper().replace('-', '_')}",
+            "mapping_status": "UNSUPPORTED",
+        }
+
+    for pattern in _GGUF_IGNORE_PATTERNS:
+        if pattern.fullmatch(name):
+            return {"role": "NON_PARAMETER_METADATA", "mapping_status": "IGNORE"}
+
+    for pattern, role in _GGUF_GLOBAL_PATTERNS:
+        m = pattern.fullmatch(name)
+        if m:
+            return {
+                "role": _with_parameter_kind(role, m.group(1)),
+                "mapping_status": "MAPPED",
+            }
+
+    for pattern, role in _GGUF_LAYER_PATTERNS:
+        m = pattern.fullmatch(name)
+        if m:
+            return {
+                "layer": int(m.group(1)),
+                "role": _with_parameter_kind(role, m.group(2)),
+                "mapping_status": "MAPPED",
+            }
+
+    return {
+        "role": f"UNMAPPED_{architecture_id.upper().replace('-', '_')}",
+        "mapping_status": "UNSUPPORTED",
+    }
+
+
+def build_tensor_role_graph_from_gguf_inventory(
+    *,
+    model_id: str,
+    architecture_id: str,
+    inventory: Mapping[str, Any],
+) -> dict:
+    nodes = []
+    for tensor in inventory.get("tensors", []):
+        name = str(tensor["name"])
+        mapped = map_gguf_tensor_name(architecture_id, name)
+        nodes.append({
+            "source_tensor_name": name,
+            "role": mapped["role"],
+            "layer": mapped.get("layer"),
+            "expert_id": None,
+            "shape": list(tensor.get("shape", [])),
+            "dtype": tensor.get("ggml_type"),
+            "source_quant_format": tensor.get("ggml_type"),
             "mapping_status": mapped["mapping_status"],
         })
     return mc.build_tensor_role_graph(model_id=model_id, nodes=nodes)
