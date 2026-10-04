@@ -1495,11 +1495,27 @@ def build_runtime_mutation_matrix(
                 resolved_mode = "IMPLEMENTED_UNVERIFIED"
         else:
             resolved_mode = mode
+        allowed_target_precisions = sorted({
+            int(n) for n in cap.get("supported_n", [])
+        })
+        if mev is not None and mev.get("supported_n") is not None:
+            certified = {int(n) for n in mev.get("supported_n") or []}
+            allowed_target_precisions = [
+                n for n in allowed_target_precisions if n in certified
+            ]
+            if (
+                resolved_mode in {"HOT_REBIND_SINGLE", "HOT_REBIND_MULTI"}
+                and not allowed_target_precisions
+            ):
+                raise ModelCapabilityError(
+                    "verified mutation evidence has no precision overlap for "
+                    f"target={cap['target_key']} backend={cap['backend']}"
+                )
         rows.append({
             "target_key": cap["target_key"],
             "backend": cap["backend"],
             "mutation_mode": resolved_mode,
-            "allowed_target_precisions": cap.get("supported_n", []),
+            "allowed_target_precisions": allowed_target_precisions,
             "max_atomic_targets": 8 if cap["backend"] == "mlx_metal" else 0,
             "requires_quiesce": cap["backend"] == "mlx_metal" and bool(cap.get("supported_n")),
             "requires_snapshot": cap["backend"] == "mlx_metal" and bool(cap.get("supported_n")),
