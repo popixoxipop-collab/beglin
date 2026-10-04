@@ -15,10 +15,12 @@ on:
       - "tools/tensor_role_mapper.py"
       - "tools/capability_compiler_p12.py"
       - "tools/inspect_model.py"
+      - "tools/verify_p12_bskel.py"
       - "tools/test_model_capability_p12.py"
       - "tools/test_p12_architecture_registry.py"
       - "tools/test_p12_tensor_role_mapper.py"
       - "tools/test_p12_capability_compiler.py"
+      - "tools/test_p12_arch_semantics.py"
       - ".github/workflows/p12-model-capability.yml"
   pull_request:
     paths:
@@ -30,10 +32,14 @@ on:
       - "tools/tokenizer_registry.py"
       - "tools/loader_registry.py"
       - "tools/tensor_role_mapper.py"
+      - "tools/capability_compiler_p12.py"
       - "tools/inspect_model.py"
+      - "tools/verify_p12_bskel.py"
       - "tools/test_model_capability_p12.py"
       - "tools/test_p12_architecture_registry.py"
       - "tools/test_p12_tensor_role_mapper.py"
+      - "tools/test_p12_capability_compiler.py"
+      - "tools/test_p12_arch_semantics.py"
       - ".github/workflows/p12-model-capability.yml"
 
 permissions:
@@ -51,7 +57,22 @@ jobs:
 
       - name: Compile P12 Python modules
         run: |
-          python -m py_compile             tools/model_capability.py             tools/model_source_inspector.py             tools/backend_adapter_v2.py             tools/architecture_registry.py             tools/tokenizer_registry.py             tools/loader_registry.py             tools/tensor_role_mapper.py             tools/inspect_model.py
+          python -m py_compile \
+            tools/model_capability.py \
+            tools/model_source_inspector.py \
+            tools/backend_adapter_v2.py \
+            tools/architecture_registry.py \
+            tools/tokenizer_registry.py \
+            tools/loader_registry.py \
+            tools/tensor_role_mapper.py \
+            tools/capability_compiler_p12.py \
+            tools/inspect_model.py \
+            tools/verify_p12_bskel.py \
+            tools/test_model_capability_p12.py \
+            tools/test_p12_architecture_registry.py \
+            tools/test_p12_tensor_role_mapper.py \
+            tools/test_p12_capability_compiler.py \
+            tools/test_p12_arch_semantics.py
 
       - name: Validate contract JSON
         run: |
@@ -72,11 +93,17 @@ jobs:
           print(f"validated {len(files)} P12 schemas")
           PY
 
-      - name: Run P12 unit tests
+      - name: Run P12 unit tests and BSKEL gate
         env:
           PYTHONPATH: tools
         run: |
-          python -m unittest -v             tools/test_model_capability_p12.py             tools/test_p12_architecture_registry.py             tools/test_p12_tensor_role_mapper.py
+          python -m unittest -v \
+            tools/test_model_capability_p12.py \
+            tools/test_p12_architecture_registry.py \
+            tools/test_p12_tensor_role_mapper.py \
+            tools/test_p12_capability_compiler.py \
+            tools/test_p12_arch_semantics.py
+          python tools/verify_p12_bskel.py
 
       - name: Compileall P12 tools
         run: |
