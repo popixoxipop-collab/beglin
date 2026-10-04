@@ -661,6 +661,31 @@ def normalize_verification_evidence_list(
             raise ModelCapabilityError(
                 f"{component} verification evidence requires exact target_key"
             )
+        if component in {"qng64_runtime", "mutation_runtime"}:
+            supported = row.get("supported_n")
+            if not isinstance(supported, list) or not supported:
+                raise ModelCapabilityError(
+                    f"{component} verification evidence requires non-empty supported_n"
+                )
+            allowed_widths = set(
+                CPU_QNG64_WIDTHS if backend == "cpu" else MLX_QNG64_WIDTHS
+            )
+            invalid = sorted({int(n) for n in supported} - allowed_widths)
+            if invalid:
+                raise ModelCapabilityError(
+                    f"{component} verification evidence contains unsupported widths "
+                    f"for backend={backend}: {invalid}"
+                )
+        if component == "mutation_runtime":
+            mode = str(row.get("mutation_mode") or "")
+            if mode not in {
+                "HOT_REBIND_SINGLE", "HOT_REBIND_MULTI",
+                "RESTART_REQUIRED", "IMMUTABLE",
+            }:
+                raise ModelCapabilityError(
+                    "mutation_runtime verification evidence requires explicit "
+                    f"supported mutation_mode; got={mode!r}"
+                )
         key = str(row["target_key"])
         if key in seen:
             raise ModelCapabilityError(
