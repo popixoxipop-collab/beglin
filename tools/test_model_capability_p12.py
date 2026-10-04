@@ -161,6 +161,70 @@ class SourceAndCompilerTests(unittest.TestCase):
             self.assertGreater(len(first["precision_search_targets"]), 0)
             self.assertEqual(first["p8_p11_eligibility"]["status"], "PARTIAL")
 
+    def test_loader_memory_preflight_is_deterministic_and_non_claiming(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "m")
+            bundle = mc.compile_model_capabilities(root)
+            preflight = bundle["loader_contract"]["memory_preflight"]
+            self.assertEqual(
+                preflight["source_weight_bytes"],
+                (root / "model.safetensors").stat().st_size,
+            )
+            self.assertGreater(preflight["tensor_element_count"], 0)
+            self.assertEqual(
+                preflight["dense_f16_equivalent_bytes"],
+                preflight["tensor_element_count"] * 2,
+            )
+            self.assertEqual(
+                preflight["runtime_resident_estimate_status"],
+                "REQUIRES_BACKEND_PROFILE",
+            )
+            self.assertIsNone(preflight["runtime_resident_bytes"])
+            self.assertTrue(preflight["requires_runtime_measurement"])
+
+    def test_sentencepiece_source_is_explicit_and_not_silently_bpe(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "m")
+            (root / "tokenizer.json").unlink()
+            (root / "tokenizer.model").write_bytes(b"sentencepiece-fixture")
+            bundle = mc.compile_model_capabilities(root)
+            tok = bundle["tokenizer_contract"]
+            self.assertEqual(tok["source_kind"], "SENTENCEPIECE")
+            self.assertEqual(tok["status"], "UNSUPPORTED")
+            self.assertIsNone(tok["encode_backend"])
+            self.assertEqual(tok["adapter_candidate"], "sentencepiece_external")
+            self.assertFalse(tok["text_io_supported"])
+            self.assertFalse(tok["silent_fallback_allowed"])
+
+    def test_deepseek_external_tokenizer_evidence_does_not_claim_text_io(self):
+        source = {
+            "checkpoint_identity_sha256": "a" * 64,
+            "source_format": "SAFETENSORS_SHARDED",
+            "tokenizer_paths": ["/tmp/tokenizer.json"],
+        }
+        descriptor = {
+            "architecture_id": "deepseek_v2",
+        }
+        evidence = {
+            "schema": "beglin-verification-evidence-v1",
+            "status": "VERIFIED",
+            "component": "tokenizer",
+            "architecture_id": "deepseek_v2",
+            "checkpoint_identity_sha256": "a" * 64,
+            "evidence_sha256": "b" * 64,
+            "run_id": "deepseek-tokenizer-fixture",
+            "kind": "UNIT_TEST_FIXTURE",
+        }
+        tok = mc.build_tokenizer_contract(
+            source, descriptor, verification_evidence=evidence
+        )
+        self.assertEqual(tok["tokenizer_family"], "DEEPSEEK_BPE")
+        self.assertEqual(tok["status"], "EXTERNAL_VERIFIED")
+        self.assertEqual(tok["encode_backend"], "deepseek_external")
+        self.assertEqual(tok["adapter_candidate"], "deepseek_external")
+        self.assertFalse(tok["text_io_supported"])
+        self.assertEqual(tok["text_io_mode"], "NOT_WIRED")
+
     def test_content_change_changes_bundle_identity(self):
         with tempfile.TemporaryDirectory() as td:
             root = qwen_fixture(Path(td) / "m")
