@@ -142,6 +142,6 @@ add_test(NAME qng64_dense_test COMMAND qng64_dense_test)
 
 if(APPLE AND MLX_FOUND)
   add_executable(p12_qwen25_real_mlx_probe tools/p12_qwen25_real_mlx_probe.cpp qng64_dense.c mlx_moe.cpp)
-  target_include_directories(p12_qwen25_real_mlx_probe PRIVATE ${MLX_INCLUDE_DIRS})
+  target_include_directories(p12_qwen25_real_mlx_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MLX_INCLUDE_DIRS})
   target_link_libraries(p12_qwen25_real_mlx_probe PRIVATE mlx)
 endif()
