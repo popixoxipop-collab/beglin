@@ -123,9 +123,9 @@ enable_testing()
 add_test(NAME mlx_binding_transition COMMAND mlx_binding_transition_test)
 
 
-// P12 loader-format gate: exact installed-MLX affine 4-bit oracle.
-// Plain C only; no MLX link is needed because the expected packed words,
-// BF16 scale and BF16 bias are frozen from mx.quantize().
+# P12 loader-format gate: exact installed-MLX affine 4-bit oracle.
+# Plain C only; no MLX link is needed because the expected packed words,
+# BF16 scale and BF16 bias are frozen from mx.quantize().
 add_executable(safetensors_affine4_test
   safetensors_affine4_test.c
   safetensors_load.c
