@@ -424,9 +424,21 @@ int mlx_gpu_bind_qng64_dense_probe(const uint8_t *packed, const float *scales,
     float *bias = reinterpret_cast<float *>(blob.data() + packed_bytes + scales_bytes);
     for (long i = 0; i < out * ng; ++i)
         bias[i] = -(float)(1 << (n - 1)) * scales[i];
-    return mlx_gpu_bind_af(blob.data(), (long)blob.size(), name, 1, out, in, ng,
-                           0, (long)packed_bytes,
-                           (long)(packed_bytes + scales_bytes), n);
+    int ok = mlx_gpu_bind_af(blob.data(), (long)blob.size(), name, 1, out, in, ng,
+                             0, (long)packed_bytes,
+                             (long)(packed_bytes + scales_bytes), n);
+    if (!ok) return 0;
+    // The normal n=2/3/5/6 binder wraps scales from caller memory. This probe's
+    // blob is temporary, so promote scales to MLX-owned storage before return.
+    auto it = g_tensors.find(std::string(name));
+    if (it == g_tensors.end()) return 0;
+    mx::array owned_scales = mx::array(scales, {(int)1, (int)out, (int)ng}, mx::float32);
+    owned_scales = mx::array(owned_scales); // retain independent MLX value
+    mx::eval(owned_scales);
+    it->second.scales = owned_scales;
+    it->second.biases = mx::multiply(owned_scales, mx::array(-(float)(1 << (n - 1))));
+    mx::eval(it->second.biases);
+    return 1;
 }
 
 int mlx_gpu_binding_kind(const char *name, int *bits_out) {
