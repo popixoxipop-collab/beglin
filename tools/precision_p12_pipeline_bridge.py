@@ -147,6 +147,13 @@ def build_p8_capability_gate(
     requested_n: int,
 ) -> dict:
     bundle = validate_bundle(model_capability_bundle)
+    weight_checkpoint_identity = bundle.get("weight_checkpoint_identity_sha256")
+    try:
+        mc.require_sha("weight checkpoint identity", weight_checkpoint_identity)
+    except Exception as exc:
+        raise P12PipelineBridgeError(
+            "ModelCapabilityBundle lacks a bound weights checkpoint identity"
+        ) from exc
     if bundle["p8_p11_eligibility"] == "DENIED":
         raise P12PipelineBridgeError("ModelCapabilityBundle denies P8-P11 pipeline")
 
@@ -167,6 +174,7 @@ def build_p8_capability_gate(
         "model_id": bundle["model_id"],
         "model_capability_bundle_sha256": bundle["bundle_sha256"],
         "checkpoint_identity": bundle["checkpoint_identity"],
+        "weight_checkpoint_identity_sha256": weight_checkpoint_identity,
         "skeleton_sha256": bundle["skeleton_sha256"],
         "target_key": target_key,
         "backend": backend,
@@ -217,6 +225,9 @@ def bind_p9_certification(
         "model_capability_bundle_sha256"
     ]
     out["p12_capability_gate_sha256"] = gate["gate_sha256"]
+    out["p12_weight_checkpoint_identity_sha256"] = gate[
+        "weight_checkpoint_identity_sha256"
+    ]
     out["p12_target_key"] = gate["target_key"]
     out["p12_backend"] = gate["backend"]
     out["p12_requested_n"] = int(gate["requested_n"])
@@ -255,6 +266,12 @@ def select_p10_canary(
     target_key = str(p9.get("p12_target_key") or "")
     backend = str(p9.get("p12_backend") or "")
     requested_n = int(p9.get("p12_requested_n"))
+    if p9.get("p12_weight_checkpoint_identity_sha256") != bundle.get(
+        "weight_checkpoint_identity_sha256"
+    ):
+        raise P12PipelineBridgeError(
+            "P9 weights checkpoint binding is stale/missing"
+        )
     cell = _require_verified_target(
         bundle,
         target_key=target_key,
@@ -272,6 +289,9 @@ def select_p10_canary(
         "schema": "beglin-p12-p10-canary-selection-v1",
         "status": "READY_FOR_CANARY",
         "model_capability_bundle_sha256": bundle["bundle_sha256"],
+        "weight_checkpoint_identity_sha256": bundle[
+            "weight_checkpoint_identity_sha256"
+        ],
         "p12_bound_p9_sha256": p9["p12_bound_certification_sha256"],
         "target_key": target_key,
         "backend": backend,
@@ -319,6 +339,12 @@ def build_p11_capability_binding(
         raise P12PipelineBridgeError(
             "P10 selection capability binding mismatch"
         )
+    if selection.get("weight_checkpoint_identity_sha256") != bundle.get(
+        "weight_checkpoint_identity_sha256"
+    ):
+        raise P12PipelineBridgeError(
+            "P10 selection weights checkpoint binding mismatch"
+        )
 
     cell = _require_verified_target(
         bundle,
@@ -343,6 +369,9 @@ def build_p11_capability_binding(
         "model_id": bundle["model_id"],
         "model_capability_bundle_sha256": bundle["bundle_sha256"],
         "checkpoint_identity": bundle["checkpoint_identity"],
+        "weight_checkpoint_identity_sha256": bundle[
+            "weight_checkpoint_identity_sha256"
+        ],
         "skeleton_sha256": bundle["skeleton_sha256"],
         "target_key": selection["target_key"],
         "backend": selection["backend"],
