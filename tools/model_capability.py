@@ -418,13 +418,16 @@ def build_model_capability_bundle(
         backend_cells=backend_rows,
         unsupported_targets=unsupported,
     )
-    restart_only = sorted({
-        row["target_key"] for row in backend_rows if row["mutation_mode"] == "RESTART_REQUIRED"
-    })
     hot = sorted({
         row["target_key"] for row in backend_rows
         if row["mutation_mode"] in {"HOT_REBIND_SINGLE", "HOT_REBIND_MULTI"}
         and row["inference_status"] == "VERIFIED"
+    })
+    hot_set = set(hot)
+    restart_only = sorted({
+        row["target_key"] for row in backend_rows
+        if row["mutation_mode"] == "RESTART_REQUIRED"
+        and row["target_key"] not in hot_set
     })
     search = sorted({
         row["target_key"] for row in backend_rows
