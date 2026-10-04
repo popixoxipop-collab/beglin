@@ -9,6 +9,7 @@ EXPECTED={
  'backend-transition-result-v1',
  'quant-capability-v1','runtime-mutation-v1','model-capability-bundle-v1','pipeline-eligibility-v1',
  'validation-plan-v1','verification-evidence-v1','tokenizer-runtime-plan-v1',
+ 'qt-observation-identity-v1','qheatmap-v2','theatmap-v2','local-precision-policy-v1',
 }
 
 def verify(root: str|Path|None=None)->dict:
