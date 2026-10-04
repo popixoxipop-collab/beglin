@@ -14,6 +14,7 @@ on:
       - "tools/backend_execution_v2.py"
       - "tools/inspect_model.py"
       - "tools/tokenizer_runtime_v1.py"
+      - "tools/loader_runtime_v1.py"
       - "tools/p12_*.py"
       - "tools/test_model_capability*.py"
       - "tools/test_p12_*.py"
@@ -34,6 +35,8 @@ on:
       - "tools/backend_adapters_v2.py"
       - "tools/backend_execution_v2.py"
       - "tools/inspect_model.py"
+      - "tools/loader_runtime_v1.py"
+      - "tools/tokenizer_runtime_v1.py"
       - "tools/p12_*.py"
       - "tools/test_model_capability*.py"
       - "tools/test_p12_*.py"
@@ -63,7 +66,7 @@ jobs:
 
       - name: Compile P12 Python modules
         run: |
-          python -m py_compile             tools/model_capability.py             tools/model_capability_bridge.py             tools/model_evidence_registry.py             tools/backend_adapters_v2.py             tools/backend_execution_v2.py             tools/tokenizer_runtime_v1.py             tools/inspect_model.py             tools/p12_pipeline_bridge.py             tools/p12_capability_acceptance.py
+          python -m py_compile             tools/model_capability.py             tools/model_capability_bridge.py             tools/model_evidence_registry.py             tools/backend_adapters_v2.py             tools/backend_execution_v2.py             tools/tokenizer_runtime_v1.py             tools/loader_runtime_v1.py             tools/inspect_model.py             tools/p12_pipeline_bridge.py             tools/p12_capability_acceptance.py
           python -m compileall -q tools
 
       - name: Verify BSKEL contracts
@@ -73,7 +76,7 @@ jobs:
         env:
           PYTHONPATH: tools
         run: |
-          python -m unittest -v             tools/test_model_capability.py             tools/test_model_capability_p12.py             tools/test_model_capability_bridge_p12.py             tools/test_p12_pipeline_bridge.py             tools/test_p12_runtime_adapter.py             tools/test_p12_capability_acceptance.py             tools/test_p12_tokenizer_runtime.py
+          python -m unittest -v             tools/test_model_capability.py             tools/test_model_capability_p12.py             tools/test_model_capability_bridge_p12.py             tools/test_p12_pipeline_bridge.py             tools/test_p12_runtime_adapter.py             tools/test_p12_capability_acceptance.py             tools/test_p12_tokenizer_runtime.py             tools/test_p12_loader_runtime.py
 
       - name: Run full Python regression
         env:
