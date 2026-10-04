@@ -99,9 +99,15 @@ class CapabilityTests(unittest.TestCase):
 
 
 class BackendSymmetryTests(unittest.TestCase):
-    def state(self, backend):
+    def state(self, backend, model_id=None):
         policy=[{"role":"shared_down_proj","layer":26,"n":5},{"role":"shared_up_proj","layer":3,"n":6}]
-        return bav2.BackendState(backend=backend, epoch=11, policy=policy, policy_hash=bav2.policy_hash(policy))
+        return bav2.BackendState(
+            backend=backend,
+            epoch=11,
+            policy=policy,
+            policy_hash=bav2.policy_hash(policy),
+            model_id=model_id,
+        )
 
     def target(self):
         return [{"role":"shared_down_proj","layer":26,"n":5},{"role":"shared_up_proj","layer":3,"n":5}]
@@ -117,6 +123,28 @@ class BackendSymmetryTests(unittest.TestCase):
         self.assertEqual(mlx["action"], "HOT_REBIND_SINGLE")
         self.assertFalse(cpu["production_write_allowed"])
         self.assertFalse(mlx["production_write_allowed"])
+
+
+    def test_model_scoped_hot_target_uses_canonical_key(self):
+        state = self.state("mlx_metal", model_id="deepseek-v2-lite")
+        plan = bav2.MlxMetalBackendAdapterV2(
+            verified_hot_targets={"deepseek-v2-lite/L3/shared_up_proj"}
+        ).plan_transition(state=state, target_policy=self.target())
+        self.assertEqual(plan["action"], "HOT_REBIND_SINGLE")
+
+    def test_tampered_state_policy_hash_is_rejected(self):
+        policy=[{"role":"shared_up_proj","layer":3,"n":6}]
+        state=bav2.BackendState(
+            backend="cpu",
+            epoch=1,
+            policy=policy,
+            policy_hash="0"*64,
+        )
+        with self.assertRaisesRegex(bav2.BackendPlanError, "policy hash mismatch"):
+            bav2.CpuBackendAdapterV2().plan_transition(
+                state=state,
+                target_policy=[{"role":"shared_up_proj","layer":3,"n":5}],
+            )
 
     def test_policy_shape_change_requires_restart(self):
         state = self.state("mlx_metal")
