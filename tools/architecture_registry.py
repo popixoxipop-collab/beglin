@@ -256,6 +256,7 @@ def build_model_skeleton_from_config(
     descriptor: Mapping[str, Any],
     config: Mapping[str, Any],
     operator_graph: Mapping[str, Any],
+    tensor_role_graph_ref: str | None = None,
     tokenizer_contract_ref: str | None = None,
     loader_contract_ref: str | None = None,
 ) -> dict:
@@ -309,6 +310,7 @@ def build_model_skeleton_from_config(
             {"role": "LM_HEAD"},
         ] if profile else [],
         operator_graph_ref=operator_graph["graph_sha256"],
+        tensor_role_graph_ref=tensor_role_graph_ref,
         tokenizer_contract_ref=tokenizer_contract_ref,
         loader_contract_ref=loader_contract_ref,
         required_primitives=required,
