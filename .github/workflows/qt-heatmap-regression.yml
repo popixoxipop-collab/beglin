@@ -1,0 +1,34 @@
+name: Q/T Heatmap Regression
+
+on:
+  push:
+    branches:
+      - "qt-heatmap-*"
+    paths:
+      - "schemas/heatmap/**"
+      - "tools/qt_heatmap.py"
+      - "tools/verify_qt_heatmap_contracts.py"
+      - "tools/test_qt_heatmap.py"
+      - ".github/workflows/qt-heatmap-regression.yml"
+  pull_request:
+    paths:
+      - "schemas/heatmap/**"
+      - "tools/qt_heatmap.py"
+      - "tools/verify_qt_heatmap_contracts.py"
+      - "tools/test_qt_heatmap.py"
+      - ".github/workflows/qt-heatmap-regression.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qt-heatmap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Q/T BSKEL contracts
+        run: python3 tools/verify_qt_heatmap_contracts.py
+      - name: Run deterministic Q/T projector tests
+        run: python3 tools/test_qt_heatmap.py
