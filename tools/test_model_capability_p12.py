@@ -341,6 +341,22 @@ class SourceAndCompilerTests(unittest.TestCase):
             }
             self.assertNotIn("QUANT_AUX", backend_roles)
 
+    def test_integer_safetensors_dtypes_fail_closed_in_loader_contract(self):
+        source = {
+            "checkpoint_identity_sha256": "a" * 64,
+            "source_format": "SAFETENSORS_SINGLE",
+            "tensor_inventory": [
+                {"name": "model.layers.0.self_attn.q_proj.weight", "dtype": "I8"},
+                {"name": "model.layers.0.self_attn.k_proj.weight", "dtype": "U8"},
+            ],
+            "file_hashes": [],
+        }
+        descriptor = {"architecture_id": "qwen2"}
+        loader = mc.build_loader_contract(source, descriptor)
+        self.assertEqual(loader["status"], "UNSUPPORTED")
+        self.assertEqual(loader["unsupported_formats"], ["I8", "U8"])
+        self.assertFalse(loader["silent_dense_fallback_allowed"])
+
     def test_minimal_gguf_is_parsed_without_external_gguf_package(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
