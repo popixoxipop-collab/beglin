@@ -8,6 +8,7 @@ on:
       - "mlx_moe.cpp"
       - "mlx_moe.h"
       - "tools/qt_mixed_qng64_mlx_probe.cpp"
+      - "tools/qt_mixed_qng64_binding_probe.cpp"
       - "CMakeLists.txt"
       - ".github/workflows/qt-mixed-qng64-mlx-probe.yml"
   pull_request:
@@ -15,6 +16,7 @@ on:
       - "mlx_moe.cpp"
       - "mlx_moe.h"
       - "tools/qt_mixed_qng64_mlx_probe.cpp"
+      - "tools/qt_mixed_qng64_binding_probe.cpp"
       - "CMakeLists.txt"
       - ".github/workflows/qt-mixed-qng64-mlx-probe.yml"
   workflow_dispatch:
@@ -34,35 +36,46 @@ jobs:
           set -euo pipefail
           test "$(hostname)" = "XOX.local"
           test "$(id -un)" = "xox"
-      - name: Build mixed qNg64 MLX probe
+      - name: Build mixed qNg64 MLX probes
         shell: bash
         run: |
           set -euo pipefail
           rm -rf build-qt-mixed-qng64
           cmake -S . -B build-qt-mixed-qng64 -DCMAKE_BUILD_TYPE=Release \
             -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
-          cmake --build build-qt-mixed-qng64 --target qt_mixed_qng64_mlx_probe -j4
+          cmake --build build-qt-mixed-qng64 --target \
+            qt_mixed_qng64_mlx_probe qt_mixed_qng64_binding_probe -j4
       - name: Run CPU oracle vs mixed Metal matvec
         shell: bash
         run: |
           set -euo pipefail
           ./build-qt-mixed-qng64/qt_mixed_qng64_mlx_probe | tee /tmp/qt-mixed-qng64-mlx.txt
           grep -q '"status":"PASS"' /tmp/qt-mixed-qng64-mlx.txt
+      - name: Run mixed binding snapshot rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./build-qt-mixed-qng64/qt_mixed_qng64_binding_probe | tee /tmp/qt-mixed-qng64-binding.txt
+          grep -q '"status":"PASS"' /tmp/qt-mixed-qng64-binding.txt
       - name: Seal isolated evidence
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import hashlib,json,pathlib,subprocess
-          binary=pathlib.Path("build-qt-mixed-qng64/qt_mixed_qng64_mlx_probe")
-          result=json.loads(pathlib.Path("/tmp/qt-mixed-qng64-mlx.txt").read_text().splitlines()[-1])
+          direct_binary=pathlib.Path("build-qt-mixed-qng64/qt_mixed_qng64_mlx_probe")
+          binding_binary=pathlib.Path("build-qt-mixed-qng64/qt_mixed_qng64_binding_probe")
+          direct=json.loads(pathlib.Path("/tmp/qt-mixed-qng64-mlx.txt").read_text().splitlines()[-1])
+          binding=json.loads(pathlib.Path("/tmp/qt-mixed-qng64-binding.txt").read_text().splitlines()[-1])
           out={
-            "schema":"beglin-qt-mixed-qng64-mlx-probe-evidence-v1",
-            "status":result["status"],
+            "schema":"beglin-qt-mixed-qng64-mlx-probe-evidence-v2",
+            "status":"PASS" if direct["status"]=="PASS" and binding["status"]=="PASS" else "FAIL",
             "source_head":subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip(),
-            "binary_sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
-            "probe":result,
-            "registry_mutated":False,
+            "direct_binary_sha256":hashlib.sha256(direct_binary.read_bytes()).hexdigest(),
+            "binding_binary_sha256":hashlib.sha256(binding_binary.read_bytes()).hexdigest(),
+            "direct_probe":direct,
+            "binding_probe":binding,
+            "probe_registry_transition_exercised":True,
             "production_touched":False,
             "production_write_allowed":False,
             "automatic_live_promotion":False,
@@ -77,5 +90,6 @@ jobs:
           path: |
             /tmp/BEGLIN_QT_MIXED_QNG64_MLX_EVIDENCE.json
             /tmp/qt-mixed-qng64-mlx.txt
+            /tmp/qt-mixed-qng64-binding.txt
           if-no-files-found: error
           retention-days: 90
