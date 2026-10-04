@@ -412,6 +412,12 @@ class SourceAndCompilerTests(unittest.TestCase):
             )
             self.assertEqual(row["mutation_mode"], "HOT_REBIND_SINGLE")
             self.assertEqual(row["allowed_target_precisions"], [5])
+            search = next(
+                r for r in bundle["precision_search_targets"]
+                if r["target_key"] == target and r["backend"] == "mlx_metal"
+            )
+            self.assertEqual(search["supported_n"], [5])
+            self.assertFalse(search["requires_validation"])
 
     def test_backend_adapter_rejects_target_key_for_wrong_policy_role(self):
         with tempfile.TemporaryDirectory() as td:
