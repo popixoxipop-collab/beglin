@@ -67,6 +67,17 @@ int qng64_quantize_f32(
     return 0;
 }
 
+void qng64_matmul_f32(
+    const uint8_t *packed, const float *scales, int n,
+    const float *x, const float *bias, float *y,
+    int out, int in, int M) {
+    if (!packed || !scales || !x || !y || out <= 0 || in <= 0 || M <= 0 ||
+        (in % QNG64_GROUP) != 0 || !qng64_group_bytes(n)) return;
+    for (int m = 0; m < M; ++m)
+        qng64_matvec_f32(packed, scales, n, x + (size_t)m * in, bias,
+                         y + (size_t)m * out, out, in);
+}
+
 void qng64_matvec_f32(
     const uint8_t *packed, const float *scales, int n,
     const float *x, const float *bias, float *y,
