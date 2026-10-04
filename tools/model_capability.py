@@ -1136,6 +1136,18 @@ def build_operator_graph(descriptor: Mapping[str, Any]) -> dict:
     return graph
 
 
+
+def _tokenizer_source_kind(source: Mapping[str, Any]) -> str:
+    names = {Path(p).name for p in source.get("tokenizer_paths", [])}
+    if {"tokenizer.model", "spiece.model"} & names:
+        return "SENTENCEPIECE"
+    if {"tokenizer.json", "vocab.json", "merges.txt"} & names:
+        return "BPE_FILES"
+    if str(source.get("source_format") or "") == "GGUF":
+        return "GGUF_EMBEDDED_OR_EXTERNAL"
+    return "NONE"
+
+
 def build_tokenizer_contract(
     source: Mapping[str, Any],
     descriptor: Mapping[str, Any],
@@ -1152,15 +1164,27 @@ def build_tokenizer_contract(
         architecture_id=arch,
     )
     source_format = str(source.get("source_format") or "")
-    if arch in {"qwen2", "qwen3_moe", "llama", "olmoe"}:
+    source_kind = _tokenizer_source_kind(source)
+    adapter_candidate = None
+    if source_kind == "SENTENCEPIECE":
+        # SentencePiece is a distinct tokenizer primitive. Never reinterpret it
+        # as Beglin BPE merely because the architecture is otherwise supported.
+        status = "EXTERNAL_VERIFIED" if evidence is not None else "UNSUPPORTED"
+        encode_backend = "sentencepiece_external" if evidence is not None else None
+        adapter_candidate = "sentencepiece_external"
+    elif arch in {"qwen2", "qwen3_moe", "llama", "olmoe"}:
         status = "IN_ENGINE_VERIFIED" if evidence is not None else "IMPLEMENTED_UNVERIFIED"
         encode_backend = "beglin_bpe"
     elif arch == "gpt-oss":
         status = "EXTERNAL_VERIFIED" if evidence is not None else "IMPLEMENTED_UNVERIFIED"
         encode_backend = "tiktoken_o200k_harmony"
     elif arch == "deepseek_v2":
-        status = "UNSUPPORTED"
-        encode_backend = None
+        # The architecture is recognized, but its pretokenizer is not wired
+        # into Beglin text I/O. Evidence may certify an external tokenizer
+        # without silently claiming an in-engine path.
+        status = "EXTERNAL_VERIFIED" if evidence is not None else "UNSUPPORTED"
+        encode_backend = "deepseek_external" if evidence is not None else None
+        adapter_candidate = "deepseek_external"
     else:
         status = "UNSUPPORTED"
         encode_backend = None
@@ -1170,6 +1194,7 @@ def build_tokenizer_contract(
     text_io_supported = bool(
         evidence is not None
         and source_format == "GGUF"
+        and source_kind != "SENTENCEPIECE"
         and arch in {"qwen2", "llama"}
     )
     text_io_mode = "DENSE_GGUF_GREEDY" if text_io_supported else "NOT_WIRED"
@@ -1177,9 +1202,11 @@ def build_tokenizer_contract(
         "schema": "beglin-tokenizer-contract-v1",
         "architecture_id": arch,
         "tokenizer_family": family,
+        "source_kind": source_kind,
         "source_files": sorted(files),
         "status": status,
         "encode_backend": encode_backend,
+        "adapter_candidate": adapter_candidate,
         "decode_backend": encode_backend,
         "text_io_supported": text_io_supported,
         "text_io_mode": text_io_mode,
@@ -1188,6 +1215,48 @@ def build_tokenizer_contract(
     }
     contract["tokenizer_contract_sha256"] = stable_identity_sha256(contract)
     return contract
+
+
+
+def build_loader_memory_preflight(source: Mapping[str, Any]) -> dict:
+    fmt = str(source.get("source_format") or "")
+    records = {
+        str(row.get("name")): int(row.get("size_bytes") or 0)
+        for row in source.get("file_hashes", [])
+    }
+    weight_names = set()
+    primary = source.get("primary_path")
+    if primary:
+        weight_names.add(Path(str(primary)).name)
+    for path in source.get("shard_paths", []):
+        weight_names.add(Path(str(path)).name)
+    source_weight_bytes = sum(records.get(name, 0) for name in weight_names)
+
+    tensor_elements = 0
+    for row in source.get("tensor_inventory", []):
+        shape = row.get("shape") or []
+        if not shape:
+            continue
+        elements = 1
+        for dim in shape:
+            elements *= max(0, int(dim))
+        tensor_elements += elements
+
+    return {
+        "schema": "beglin-loader-memory-preflight-v1",
+        "source_weight_bytes": int(source_weight_bytes),
+        "weight_file_count": len(weight_names),
+        "tensor_element_count": int(tensor_elements),
+        "dense_f16_equivalent_bytes": int(tensor_elements * 2),
+        "load_strategy": (
+            "MMAP_PAGECACHE" if fmt == "GGUF"
+            else ("SHARD_AWARE" if fmt.startswith("SAFETENSORS") else "LEGACY")
+        ),
+        "mmap_eligible": fmt == "GGUF",
+        "runtime_resident_bytes": None,
+        "runtime_resident_estimate_status": "REQUIRES_BACKEND_PROFILE",
+        "requires_runtime_measurement": True,
+    }
 
 
 def build_loader_contract(
@@ -1280,6 +1349,7 @@ def build_loader_contract(
         "encountered_formats": encountered,
         "unsupported_formats": unsupported_formats,
         "source_quantization": source_quantization,
+        "memory_preflight": build_loader_memory_preflight(source),
         "unsupported_reason_codes": (
             ["SOURCE_QUANTIZATION_MLX_AFFINE_REQUIRES_VERIFICATION"]
             if source_quantization is not None and evidence is None else []
