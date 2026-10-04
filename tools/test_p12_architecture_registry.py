@@ -175,10 +175,23 @@ class InspectModelVerticalSliceTests(unittest.TestCase):
             )
             self.assertEqual(report["tokenizer"]["status"], "IMPLEMENTED_UNVERIFIED")
             self.assertEqual(report["loader"]["status"], "IMPLEMENTED_UNVERIFIED")
+            self.assertIsNotNone(report["backend_capability"])
+            self.assertIsNotNone(report["quant_capability"])
+            self.assertIsNotNone(report["runtime_mutation"])
+            self.assertIsNotNone(report["model_capability_bundle"])
             self.assertFalse(report["inference_allowed"])
             self.assertEqual(report["p8_p11_eligibility"], "DENIED")
+            self.assertIn(
+                "no_verified_backend_target",
+                report["model_capability_bundle"]["eligibility_reasons"],
+            )
             self.assertNotIn("tensor-role-graph-v1", report["next_required_contracts"])
-            self.assertIn("backend-capability-v1", report["next_required_contracts"])
+            self.assertIn(
+                "checkpoint-bound-capability-evidence",
+                report["next_required_contracts"],
+            )
+            self.assertIn("tokenizer-verification", report["next_required_contracts"])
+            self.assertIn("loader-verification", report["next_required_contracts"])
 
 
 if __name__ == "__main__":
