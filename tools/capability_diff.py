@@ -64,8 +64,8 @@ def _target_rows(
                 f"duplicate capability semantic key: {key!r}"
             )
         out[key] = {
-            "target_key": key[0],
-            "backend": key[1],
+            "target_key": str(row["target_key"]),
+            "backend": str(row["backend"]),
             "role": row.get("role"),
             "layer": row.get("layer"),
             "expert_id": row.get("expert_id"),
