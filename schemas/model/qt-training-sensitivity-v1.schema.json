@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "identity",
+    "grad_rms",
+    "grad_max_abs",
+    "gradient_times_quant_error",
+    "sample_count",
+    "finite"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-qt-training-sensitivity-v1"
+    },
+    "identity": {
+      "$ref": "qt-observation-identity-v1.schema.json"
+    },
+    "grad_abs_mean": {
+      "type": "number",
+      "minimum": 0
+    },
+    "grad_rms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "grad_max_abs": {
+      "type": "number",
+      "minimum": 0
+    },
+    "grad_variance_ema": {
+      "type": "number",
+      "minimum": 0
+    },
+    "update_abs_mean": {
+      "type": "number",
+      "minimum": 0
+    },
+    "update_rms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "weight_to_update_ratio": {
+      "type": "number",
+      "minimum": 0
+    },
+    "fisher_diag_ema": {
+      "type": "number",
+      "minimum": 0
+    },
+    "gradient_times_quant_error": {
+      "type": "number",
+      "minimum": 0
+    },
+    "influence_proxy": {
+      "type": "number",
+      "minimum": 0
+    },
+    "sample_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "optimizer_step": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "learning_rate": {
+      "type": "number",
+      "minimum": 0
+    },
+    "finite": {
+      "type": "boolean"
+    }
+  }
+}
