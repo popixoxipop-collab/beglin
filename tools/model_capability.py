@@ -1459,6 +1459,7 @@ def build_backend_capability_matrix(
     descriptor: Mapping[str, Any],
     *,
     requested_backend: str | None = None,
+    source_format: str | None = None,
     cpu_runtime_evidence: Mapping[str, Any] | None = None,
     mlx_runtime_evidence: Mapping[str, Any] | None = None,
     cpu_qng64_evidence: list[Mapping[str, Any]] | None = None,
@@ -1470,6 +1471,22 @@ def build_backend_capability_matrix(
     mlx_runtime_verified = mlx_runtime_evidence is not None
     cpu_qng64_by_target = {str(row["target_key"]): dict(row) for row in (cpu_qng64_evidence or [])}
     mlx_qng64_by_target = {str(row["target_key"]): dict(row) for row in (mlx_qng64_evidence or [])}
+    # The engine's arbitrary-n qNg64 registrar/control path is currently a
+    # MoE+safetensors facility (QWEN_MOE_PROMOTION_FILE_NQ / runtime REBIND).
+    # Dense GGUF/safetensors uses the separate dense F32 promotion path and
+    # must not advertise arbitrary-n support just because generic qNg64
+    # kernels exist elsewhere in the binary.
+    qng64_runtime_path_supported = (
+        descriptor.get("dense_or_moe") == "MOE"
+        and source_format in {"SAFETENSORS_SINGLE", "SAFETENSORS_SHARDED"}
+    )
+    if not qng64_runtime_path_supported and (
+        cpu_qng64_by_target or mlx_qng64_by_target
+    ):
+        raise ModelCapabilityError(
+            "qNg64 runtime evidence supplied for an architecture/source path "
+            "without a registered arbitrary-n runtime"
+        )
     rows = []
     for node in tensor_graph.get("nodes", []):
         role = str(node["role"])
@@ -1480,36 +1497,52 @@ def build_backend_capability_matrix(
         for backend in ("cpu", "mlx_metal"):
             if requested_backend and backend != requested_backend:
                 continue
+            reason_code = None
             if backend == "cpu":
                 inference_status = "VERIFIED" if cpu_runtime_verified else "IMPLEMENTED_UNVERIFIED"
-                qev = cpu_qng64_by_target.get(target) if precision_role else None
-                qng64_status = (
-                    "VERIFIED" if qev is not None
-                    else ("IMPLEMENTED_UNVERIFIED" if precision_role else "UNSUPPORTED_ROLE")
-                )
-                mutation_mode = "RESTART_REQUIRED" if precision_role else "IMMUTABLE"
-                supported_n = (
-                    list(qev.get("supported_n") or CPU_QNG64_WIDTHS)
-                    if qev is not None else (CPU_QNG64_WIDTHS if precision_role else [])
-                )
+                if not precision_role:
+                    qev = None
+                    qng64_status = "UNSUPPORTED_ROLE"
+                    mutation_mode = "IMMUTABLE"
+                    supported_n = []
+                elif not qng64_runtime_path_supported:
+                    qev = None
+                    qng64_status = "UNSUPPORTED_MODEL"
+                    mutation_mode = "IMMUTABLE"
+                    supported_n = []
+                    reason_code = "QNG64_RUNTIME_PATH_UNAVAILABLE"
+                else:
+                    qev = cpu_qng64_by_target.get(target)
+                    qng64_status = "VERIFIED" if qev is not None else "IMPLEMENTED_UNVERIFIED"
+                    mutation_mode = "RESTART_REQUIRED"
+                    supported_n = (
+                        list(qev.get("supported_n") or CPU_QNG64_WIDTHS)
+                        if qev is not None else CPU_QNG64_WIDTHS
+                    )
             else:
                 arch = str(descriptor.get("architecture_id") or "unknown")
-                qev = mlx_qng64_by_target.get(target) if precision_role else None
                 if arch == "gpt-oss":
                     inference_status = "UNSUPPORTED_MODEL"
-                    qng64_status = "UNSUPPORTED_MODEL" if precision_role else "UNSUPPORTED_ROLE"
-                    mutation_mode = "RESTART_REQUIRED"
-                    supported_n = []
                 else:
                     inference_status = "VERIFIED" if mlx_runtime_verified else "IMPLEMENTED_UNVERIFIED"
-                    qng64_status = (
-                        "VERIFIED" if qev is not None
-                        else ("IMPLEMENTED_UNVERIFIED" if precision_role else "UNSUPPORTED_ROLE")
-                    )
-                    mutation_mode = "HOT_REBIND_CANDIDATE" if precision_role else "RESTART_REQUIRED"
+                if not precision_role:
+                    qev = None
+                    qng64_status = "UNSUPPORTED_ROLE"
+                    mutation_mode = "IMMUTABLE"
+                    supported_n = []
+                elif not qng64_runtime_path_supported:
+                    qev = None
+                    qng64_status = "UNSUPPORTED_MODEL"
+                    mutation_mode = "IMMUTABLE"
+                    supported_n = []
+                    reason_code = "QNG64_RUNTIME_PATH_UNAVAILABLE"
+                else:
+                    qev = mlx_qng64_by_target.get(target)
+                    qng64_status = "VERIFIED" if qev is not None else "IMPLEMENTED_UNVERIFIED"
+                    mutation_mode = "HOT_REBIND_CANDIDATE"
                     supported_n = (
                         list(qev.get("supported_n") or MLX_QNG64_WIDTHS)
-                        if qev is not None else (MLX_QNG64_WIDTHS if precision_role else [])
+                        if qev is not None else MLX_QNG64_WIDTHS
                     )
             rows.append({
                 "target_key": target,
@@ -1522,7 +1555,7 @@ def build_backend_capability_matrix(
                 "supported_n": supported_n,
                 "mutation_mode": mutation_mode,
                 "validation_required": inference_status != "VERIFIED" or qng64_status != "VERIFIED",
-                "reason_code": None,
+                "reason_code": reason_code,
                 "evidence_refs": (
                     ([dict(cpu_runtime_evidence)] if backend == "cpu" and cpu_runtime_evidence is not None else [])
                     + ([dict(mlx_runtime_evidence)] if backend == "mlx_metal" and mlx_runtime_evidence is not None else [])
@@ -1847,6 +1880,7 @@ def compile_model_capabilities(
     backend_matrix = build_backend_capability_matrix(
         tensor_graph, descriptor,
         requested_backend=backend,
+        source_format=str(source.get("source_format") or ""),
         cpu_runtime_evidence=cpu_evidence,
         mlx_runtime_evidence=mlx_evidence,
         cpu_qng64_evidence=cpu_qng64,
