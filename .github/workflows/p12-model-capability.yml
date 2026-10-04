@@ -1,0 +1,77 @@
+name: P12 Model Capability
+
+on:
+  push:
+    branches:
+      - p12-model-capability-contract-v1-20261004
+    paths:
+      - "contracts/model/**"
+      - "tools/model_capability.py"
+      - "tools/model_source_inspector.py"
+      - "tools/backend_adapter_v2.py"
+      - "tools/architecture_registry.py"
+      - "tools/tokenizer_registry.py"
+      - "tools/loader_registry.py"
+      - "tools/inspect_model.py"
+      - "tools/test_model_capability_p12.py"
+      - "tools/test_p12_architecture_registry.py"
+      - ".github/workflows/p12-model-capability.yml"
+  pull_request:
+    paths:
+      - "contracts/model/**"
+      - "tools/model_capability.py"
+      - "tools/model_source_inspector.py"
+      - "tools/backend_adapter_v2.py"
+      - "tools/architecture_registry.py"
+      - "tools/tokenizer_registry.py"
+      - "tools/loader_registry.py"
+      - "tools/inspect_model.py"
+      - "tools/test_model_capability_p12.py"
+      - "tools/test_p12_architecture_registry.py"
+      - ".github/workflows/p12-model-capability.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  p12-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile P12 Python modules
+        run: |
+          python -m py_compile             tools/model_capability.py             tools/model_source_inspector.py             tools/backend_adapter_v2.py             tools/architecture_registry.py             tools/tokenizer_registry.py             tools/loader_registry.py             tools/inspect_model.py
+
+      - name: Validate contract JSON
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("contracts/model")
+          files = sorted(root.glob("*.schema.json"))
+          assert len(files) >= 13, len(files)
+          ids = set()
+          for path in files:
+              obj = json.loads(path.read_text())
+              assert obj["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+              assert obj["$id"] not in ids
+              ids.add(obj["$id"])
+              assert "schema" in obj["properties"]
+              assert "const" in obj["properties"]["schema"]
+          print(f"validated {len(files)} P12 schemas")
+          PY
+
+      - name: Run P12 unit tests
+        env:
+          PYTHONPATH: tools
+        run: |
+          python -m unittest -v             tools/test_model_capability_p12.py             tools/test_p12_architecture_registry.py
+
+      - name: Compileall P12 tools
+        run: |
+          python -m compileall -q tools
