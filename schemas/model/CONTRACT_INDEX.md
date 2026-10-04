@@ -6,6 +6,7 @@ Canonical contracts for the model-capability front door.
 - `backend-capability-v1.schema.json`
 - `backend-transition-result-v1.schema.json`
 - `loader-contract-v1.schema.json`
+- `loader-runtime-plan-v1.schema.json` — explicit source-file-bound loader execution plan
 - `model-capability-bundle-v1.schema.json`
 - `model-skeleton-v1.schema.json`
 - `model-source-v1.schema.json`
