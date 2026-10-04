@@ -19403,6 +19403,7 @@ static WT *st_register_q4g64_as(const char *name) {
     return w;
 }
 
+static float *st_dequant_logical_f32(const char *name, int *out, int *in, uint64_t *numel);
 static WT *st_register_qng64_as(const char *name, int bits) {
     if (!qng64_group_bytes(bits)) exit(1);
     int out=0,in=0; uint64_t n=0; float *deq=st_dequant_logical_f32(name,&out,&in,&n);
