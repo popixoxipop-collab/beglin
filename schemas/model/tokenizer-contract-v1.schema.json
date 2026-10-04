@@ -23,6 +23,38 @@
     "tokenizer_contract_sha256": {
       "pattern": "^[0-9a-f]{64}$",
       "type": "string"
+    },
+    "source_kind": {
+      "enum": [
+        "SENTENCEPIECE",
+        "BPE_FILES",
+        "GGUF_EMBEDDED_OR_EXTERNAL",
+        "NONE"
+      ]
+    },
+    "adapter_candidate": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "encode_backend": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "decode_backend": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "text_io_mode": {
+      "enum": [
+        "DENSE_GGUF_GREEDY",
+        "NOT_WIRED"
+      ]
     }
   },
   "required": [
