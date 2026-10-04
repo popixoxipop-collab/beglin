@@ -1,0 +1,31 @@
+{
+  "$id":"https://beglin.local/schemas/heatmap/observation-identity-v2.schema.json",
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"observation-identity-v2","type":"object","additionalProperties":false,
+  "properties":{
+    "schema":{"const":"beglin-observation-identity-v2"},
+    "checkpoint_identity_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "skeleton_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "capability_bundle_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "target_key":{"type":"string","minLength":1},
+    "model_id":{"type":"string","minLength":1},
+    "layer":{"type":"integer","minimum":0},
+    "tensor_role":{"type":"string","minLength":1},
+    "expert_id":{"type":["integer","null"],"minimum":0},
+    "row":{"type":["integer","null"],"minimum":0},
+    "column":{"type":["integer","null"],"minimum":0},
+    "qgroup_index":{"type":["integer","null"],"minimum":0},
+    "group_size":{"type":"integer","minimum":1},
+    "element_index":{"type":["integer","null"],"minimum":0},
+    "backend":{"type":"string","minLength":1},
+    "source_dtype":{"type":"string","minLength":1},
+    "runtime_dtype":{"type":"string","minLength":1},
+    "policy_epoch":{"type":"integer","minimum":0},
+    "weight_epoch":{"type":"integer","minimum":0},
+    "observation_window_id":{"type":"string","minLength":1},
+    "observation_seq":{"type":"integer","minimum":0},
+    "source_commit":{"type":"string","pattern":"^[0-9a-f]{7,64}$"},
+    "binary_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}
+  },
+  "required":["schema","checkpoint_identity_sha256","skeleton_sha256","capability_bundle_sha256","target_key","model_id","layer","tensor_role","group_size","backend","source_dtype","runtime_dtype","policy_epoch","weight_epoch","observation_window_id","observation_seq","source_commit","binary_sha256"]
+}
