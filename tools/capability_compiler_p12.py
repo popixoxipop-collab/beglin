@@ -191,7 +191,7 @@ def compile_mutation_matrix(*, backend_matrix: Mapping) -> list[dict]:
     ]
 
 
-def compile_model_capability_bundle(
+def compile_capability_report(
     *,
     model_id: str,
     checkpoint_identity: str,
@@ -222,7 +222,7 @@ def compile_model_capability_bundle(
         for node in tensor_role_graph.get("nodes", [])
         if node.get("mapping_status") == "UNSUPPORTED"
     })
-    return mc.build_model_capability_bundle(
+    bundle = mc.build_model_capability_bundle(
         model_id=model_id,
         checkpoint_identity=checkpoint_identity,
         skeleton_sha256=skeleton_sha256,
@@ -235,3 +235,15 @@ def compile_model_capability_bundle(
         unsupported_targets=unsupported,
         evidence_refs=bundle_evidence_refs,
     )
+    return {
+        "schema": "beglin-p12-capability-report-v1",
+        "backend_capability": backend,
+        "quant_capability": quant,
+        "runtime_mutation": mutation,
+        "model_capability_bundle": bundle,
+    }
+
+
+def compile_model_capability_bundle(**kwargs) -> dict:
+    """Compatibility wrapper returning only the canonical bundle."""
+    return compile_capability_report(**kwargs)["model_capability_bundle"]
