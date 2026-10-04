@@ -68,6 +68,7 @@ function main() {
     "gguf_write.c",
     "gguf_write_quants.c",
     "hf_config.c",
+    "qng64_dense.c",
     "safetensors_load.c",
     "safetensors_quants.c",
   ];

@@ -407,6 +407,40 @@ int mlx_gpu_binding_snapshot_count(void) {
     return (int)g_binding_snapshots.size();
 }
 
+int mlx_gpu_bind_qng64_dense_probe(const uint8_t *packed, const float *scales,
+                                    const char *name, long out, long in, int n) {
+    if (!packed || !scales || !name || out <= 0 || in <= 0 || (in % 64) != 0) return 0;
+    if (n != 2 && n != 3 && n != 5 && n != 6) return 0;
+    const long ng = in / 64;
+    // IMPORTANT: this probe accepts the engine's canonical qNg64 bit-plane
+    // layout, not qng64_dense.c's compact row-major bitstream. Canonical
+    // bytes/group = n*8 (64 codes split into n bit-planes).
+    const size_t group_bytes = (size_t)n * 8u;
+    const size_t packed_bytes = (size_t)out * (size_t)ng * group_bytes;
+    const size_t scales_bytes = (size_t)out * (size_t)ng * sizeof(float);
+    std::vector<uint8_t> blob(packed_bytes + scales_bytes * 2, 0);
+    std::memcpy(blob.data(), packed, packed_bytes);
+    std::memcpy(blob.data() + packed_bytes, scales, scales_bytes);
+    float *bias = reinterpret_cast<float *>(blob.data() + packed_bytes + scales_bytes);
+    for (long i = 0; i < out * ng; ++i)
+        bias[i] = -(float)(1 << (n - 1)) * scales[i];
+    int ok = mlx_gpu_bind_af(blob.data(), (long)blob.size(), name, 1, out, in, ng,
+                             0, (long)packed_bytes,
+                             (long)(packed_bytes + scales_bytes), n);
+    if (!ok) return 0;
+    // The normal n=2/3/5/6 binder wraps scales from caller memory. This probe's
+    // blob is temporary, so promote scales to MLX-owned storage before return.
+    auto it = g_tensors.find(std::string(name));
+    if (it == g_tensors.end()) return 0;
+    mx::array owned_scales = mx::array(scales, {(int)1, (int)out, (int)ng}, mx::float32);
+    owned_scales = mx::array(owned_scales); // retain independent MLX value
+    mx::eval(owned_scales);
+    it->second.scales = owned_scales;
+    it->second.biases = mx::multiply(owned_scales, mx::array(-(float)(1 << (n - 1))));
+    mx::eval(it->second.biases);
+    return 1;
+}
+
 int mlx_gpu_binding_kind(const char *name, int *bits_out) {
     if (bits_out) *bits_out = 0;
     if (!name) return 0;

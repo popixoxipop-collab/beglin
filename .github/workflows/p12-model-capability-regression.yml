@@ -1,0 +1,194 @@
+name: P12 Model Capability Regression
+
+on:
+  push:
+    branches:
+      - precision-p12-model-capability-v1-20261004
+      - precision-p12-tokenizer-runtime-v1-20261004
+    paths:
+      - ".github/workflows/p12-model-capability-regression.yml"
+      - "schemas/model/**"
+      - "tools/model_capability*.py"
+      - "tools/model_evidence_registry.py"
+      - "tools/backend_adapters_v2.py"
+      - "tools/backend_execution_v2.py"
+      - "tools/inspect_model.py"
+      - "tools/capability_diff.py"
+      - "tools/tokenizer_runtime_v1.py"
+      - "tools/loader_runtime_v1.py"
+      - "tools/p12_*.py"
+      - "tools/test_model_capability*.py"
+      - "tools/test_p12_*.py"
+      - "attestations/BEGLIN_P12_*.json"
+      - "package.json"
+      - "scripts/test-package-source-closure.js"
+      - "CMakeLists.txt"
+      - "safetensors_*.c"
+      - "safetensors_*.h"
+      - "qwen_infer.c"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "schemas/model/**"
+      - "tools/model_capability*.py"
+      - "tools/model_evidence_registry.py"
+      - "tools/backend_adapters_v2.py"
+      - "tools/backend_execution_v2.py"
+      - "tools/inspect_model.py"
+      - "tools/capability_diff.py"
+      - "tools/loader_runtime_v1.py"
+      - "tools/tokenizer_runtime_v1.py"
+      - "tools/p12_*.py"
+      - "tools/test_model_capability*.py"
+      - "tools/test_p12_*.py"
+      - "attestations/BEGLIN_P12_*.json"
+      - "package.json"
+      - "scripts/test-package-source-closure.js"
+      - "CMakeLists.txt"
+      - "safetensors_*.c"
+      - "safetensors_*.h"
+      - "qwen_infer.c"
+
+permissions:
+  contents: read
+
+jobs:
+  p12-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Compile P12 Python modules
+        run: |
+          python -m py_compile             tools/model_capability.py             tools/model_capability_bridge.py             tools/model_evidence_registry.py             tools/backend_adapters_v2.py             tools/backend_execution_v2.py             tools/tokenizer_runtime_v1.py             tools/loader_runtime_v1.py             tools/capability_diff.py             tools/inspect_model.py             tools/p12_pipeline_bridge.py             tools/p12_capability_acceptance.py
+          python -m compileall -q tools
+
+      - name: Verify BSKEL contracts
+        run: python tools/verify_model_contracts.py
+
+      - name: Run targeted P12 tests
+        env:
+          PYTHONPATH: tools
+        run: |
+          python -m unittest -v             tools/test_model_capability.py             tools/test_model_capability_p12.py             tools/test_model_capability_bridge_p12.py             tools/test_p12_pipeline_bridge.py             tools/test_p12_runtime_adapter.py             tools/test_p12_capability_acceptance.py             tools/test_p12_tokenizer_runtime.py             tools/test_p12_loader_runtime.py             tools/test_p12_inspect_runtime_plans.py             tools/test_p12_capability_diff.py
+
+      - name: Run full Python regression
+        env:
+          PYTHONPATH: tools
+        run: python -m unittest discover -s tools -p 'test_*.py'
+
+      - name: Package source closure
+        run: npm run test:package-source-closure
+
+      # test:package-failure-fixtures asserts Darwin-native failure modes
+      # (clang/link behavior). On the hosted Linux runner the package
+      # intentionally returns SKIP_UNSUPPORTED, so those fixtures are kept
+      # in the macOS/native acceptance path rather than misclassified here.
+      - name: Package cold install
+        run: npm run test:package-cold-install
+
+      - name: CMake syntax guard
+        shell: bash
+        run: |
+          if grep -nE '^[[:space:]]*//' CMakeLists.txt; then
+            echo "CMakeLists.txt contains C++-style comments"
+            exit 1
+          fi
+
+      - name: Diff check
+        run: git diff --check
+
+  native-xox:
+    needs: p12-regression
+    if: ${{ vars.P12_NATIVE_XOX_ENABLED == 'true' }}
+    runs-on: [self-hosted, eoe, macOS, ARM64]
+    timeout-minutes: 30
+    concurrency:
+      group: p12-native-xox-${{ github.ref }}
+      cancel-in-progress: true
+    env:
+      REMOTE_ROOT: /Users/xox/mcp-sandbox/tailnet-commander/beglin-p12-native-${{ github.run_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Resolve XOX
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "EOE.local"
+          TARGET=""
+          for candidate in xox XOX.local; do
+            if remote_host="$(ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$candidate" hostname 2>/dev/null)"; then
+              if [ "$remote_host" = "XOX.local" ]; then
+                TARGET="$candidate"
+                break
+              fi
+            fi
+          done
+          test -n "$TARGET"
+          echo "XOX_TARGET=$TARGET" >> "$GITHUB_ENV"
+
+      - name: Stage exact PR source on XOX
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$XOX_TARGET"             "rm -rf '$REMOTE_ROOT' && mkdir -p '$REMOTE_ROOT'"
+          tar --exclude=.git -czf - .             | ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$XOX_TARGET"                 "tar -xzf - -C '$REMOTE_ROOT'"
+
+      - name: Configure and build native P12 targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$XOX_TARGET"             "REMOTE_ROOT='$REMOTE_ROOT' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$REMOTE_ROOT"
+          rm -rf build-p12-native
+          cmake -S . -B build-p12-native             -DCMAKE_BUILD_TYPE=Release             -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          cmake --build build-p12-native             --target qwen_infer_gpu mlx_binding_transition_test safetensors_affine4_test             -j4
+          file build-p12-native/qwen_infer_gpu
+          REMOTE
+
+      - name: Run native CTest gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$XOX_TARGET"             "cd '$REMOTE_ROOT' && ctest --test-dir build-p12-native --output-on-failure"
+
+      - name: Verify production remains untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$XOX_TARGET"             "python3 - <<'PY'
+          import json, urllib.request
+          with urllib.request.urlopen('http://127.0.0.1:18765/healthz', timeout=3) as r:
+              h=json.load(r)
+          assert h['production_write_allowed'] is False
+          assert h['auto_promotion_enabled'] is False
+          assert h['external_network_exposed'] is False
+          print(json.dumps({
+              'status': h['status'],
+              'route_generation': h['route_generation'],
+              'production_write_allowed': h['production_write_allowed'],
+              'auto_promotion_enabled': h['auto_promotion_enabled'],
+              'external_network_exposed': h['external_network_exposed'],
+          }, sort_keys=True))
+          PY"
+
+      - name: Cleanup staged source
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${XOX_TARGET:-}" ]; then
+            ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes "$XOX_TARGET"               "rm -rf '$REMOTE_ROOT'" || true
+          fi

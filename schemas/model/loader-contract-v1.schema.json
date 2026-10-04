@@ -1,0 +1,92 @@
+{
+  "$id": "https://beglin.local/schemas/model/loader-contract-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "loader_contract_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schema": {
+      "const": "beglin-loader-contract-v1"
+    },
+    "silent_dense_fallback_allowed": {
+      "const": false
+    },
+    "status": {
+      "enum": [
+        "VERIFIED",
+        "IMPLEMENTED_UNVERIFIED",
+        "PARTIAL",
+        "UNSUPPORTED"
+      ]
+    },
+    "unsupported_formats": {
+      "type": "array"
+    },
+    "memory_preflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "REQUIRES_RUNTIME_PROBE"
+        },
+        "source_total_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "weight_storage_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "storage_lower_bound_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "peak_resident_bytes_estimate": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "workspace_bytes_estimate": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "mmap_candidate": {
+          "type": "boolean"
+        },
+        "requires_runtime_probe": {
+          "const": true
+        },
+        "estimate_kind": {
+          "const": "STORAGE_LOWER_BOUND_ONLY"
+        }
+      },
+      "required": [
+        "status",
+        "source_total_bytes",
+        "weight_storage_bytes",
+        "storage_lower_bound_bytes",
+        "peak_resident_bytes_estimate",
+        "workspace_bytes_estimate",
+        "mmap_candidate",
+        "requires_runtime_probe",
+        "estimate_kind"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "architecture_id",
+    "source_format",
+    "status",
+    "loader_contract_sha256"
+  ],
+  "title": "loader-contract-v1",
+  "type": "object"
+}

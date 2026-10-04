@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <limits.h>
 #include "q4gemv.h"
+#include "qng64_dense.h"
 #include "q4gemv_g256.h"   // Phase 2 (M36): g256sf kernels + pool glue (additive header)
 #include "sme2_kai.h"      // SME2 integration Phase 3: runtime detection + one-time repack (additive header)
 #include <arm_neon.h>
@@ -203,9 +204,10 @@ static void load_rope_scale_cfg(const char *base) {
         path, g_rope_cfg.factor, g_rope_cfg.low_freq_factor, g_rope_cfg.high_freq_factor, g_rope_cfg.orig_max_pos);
 }
 
-enum { K_F32 = 0, K_Q4G64 = 1, K_Q8G64 = 2, K_Q4G256SF = 3 };   // Phase 2 (M36): g256sf format
+enum { K_F32 = 0, K_Q4G64 = 1, K_Q8G64 = 2, K_Q4G256SF = 3, K_QNG64 = 4 };   // Phase 2 (M36): g256sf format
 typedef struct {
     char name[96]; int kind;
+    int bits;
     const float *f32;        // K_F32
     const uint8_t *packed;   // K_Q4G64 / K_Q4G256SF (same nibble layout)
     const float *scales;     // K_Q4G64 per-64 scales; K_Q4G256SF wsuper [out][in/256]
@@ -690,6 +692,8 @@ static void matvec_t(const WT *W, const float *x, const float *bias, float *y) {
     } else if (W->kind == K_Q8G64) {
         if (w4a8_on()) gemv_q8g64_sdot_mt(&g_pool, W->packed, W->scales, x, bias, y, W->out, W->in);
         else           gemv_q8g64_mt(&g_pool, W->packed, W->scales, x, bias, y, W->out, W->in);
+    } else if (W->kind == K_QNG64) {
+        qng64_matvec_f32(W->packed, W->scales, W->bits, x, bias, y, W->out, W->in);
     } else if (W->kind == K_Q4G256SF) {
         // Phase 2 (M36): W4A8-only by design -- no fp32-activation fallback kernel was built
         // for this format, so refuse loudly instead of inventing a slow path nobody validated
@@ -1605,6 +1609,8 @@ static void matmul_t(const WT *W, const float *x, const float *bias, float *y, i
     if (W->kind == K_F32) {
         for (int m=0;m<M;m++){ float *ym=y+(size_t)m*W->out; if(bias)memcpy(ym,bias,W->out*sizeof(float));
             cblas_sgemv(CblasRowMajor,CblasNoTrans,W->out,W->in,1.0f,W->f32,W->in,x+(size_t)m*W->in,1,bias?1.0f:0.0f,ym,1); }
+    } else if (W->kind == K_QNG64) {
+        qng64_matmul_f32(W->packed, W->scales, W->bits, x, bias, y, W->out, W->in, M);
     } else if (W->kind == K_Q4G256SF) {
         // Phase 2 (M36) scope boundary: spec mode's fp32-tile batched verify path is NOT wired
         // for g256sf (out of this phase's approved scope) -- refuse loudly, don't misread
@@ -18795,6 +18801,7 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
 // on quantized-transcode risk in the same step; K_Q4G64 transcoding for real SME2 throughput is
 // Phase 2 (D-gen-2 in the plan), a deliberately separate piece of work.
 static GgufFile *g_gguf = NULL;
+static GgufFile *g_tokenizer_gguf = NULL; // tokenizer-only sidecar for safetensors text I/O
 
 // D-tok Phase 5: real BPE tokenizer state for the dense GGUF path. Loaded lazily (only when
 // QWEN_PROMPT_TEXT asks for real text encoding instead of a pre-tokenized .i32 file) --
@@ -19397,6 +19404,30 @@ static WT *st_register_q4g64_as(const char *name) {
     return w;
 }
 
+static WT *st_register_qng64_as(const char *name, int bits) {
+    if (!qng64_group_bytes(bits)) exit(1);
+    SafetensorsFile *shard=NULL;
+    const SafetensorsInfo *t=safetensors_multi_find_tensor(g_st,name,&shard);
+    if(!t || t->n_dims<2 || !safetensors_dequant_supported(t->dtype)) exit(1);
+    int out=(int)t->shape[0], in=(int)t->shape[1];
+    if(in%64 || t->n_elements!=(uint64_t)out*(uint64_t)in) exit(1);
+    float *deq=malloc(sizeof(float)*(size_t)t->n_elements); if(!deq) exit(1);
+    safetensors_dequant_row(t->dtype,safetensors_tensor_data(shard,t),deq,t->n_elements);
+    check_no_dup_name(name); int ng=in/64; size_t nb=qng64_packed_bytes(out,in,bits);
+    uint8_t *packed=malloc(nb); float *scales=malloc(sizeof(float)*(size_t)out*ng);
+    if(!packed||!scales||qng64_quantize_f32(deq,out,in,bits,packed,scales)!=0) exit(1);
+    free(deq); WT *w=&g_wt[g_nwt++]; memset(w,0,sizeof *w); snprintf(w->name,sizeof w->name,"%s",name);
+    w->kind=K_QNG64; w->bits=bits; w->in=in; w->out=out; w->ng=ng; w->packed=packed; w->scales=scales;
+    fprintf(stderr,"[engine] safetensors: %s -> K_QNG64(n=%d), packed=%zu bytes\n",name,bits,nb); return w;
+}
+static int dense_qng64_override_n(const char *name) {
+    const char *spec=getenv("QWEN_DENSE_QNG64_OVERRIDE"); if(!spec||!spec[0]) return 0;
+    const char *colon=strrchr(spec,':'); if(!colon) exit(1);
+    size_t nl=(size_t)(colon-spec); if(strlen(name)!=nl||strncmp(spec,name,nl)) return 0;
+    char *end=NULL; long bits=strtol(colon+1,&end,10); if(!end||*end||!qng64_group_bytes((int)bits)) exit(1);
+    return (int)bits;
+}
+
 // Symmetric int8 group-64 RTN, reusing gguf_quantize_q8g64() unmodified -- used only for an
 // untied lm_head, matching load_gguf_weights()'s output.weight policy exactly.
 static WT *st_register_q8g64_as(const char *name) {
@@ -19447,7 +19478,11 @@ static void load_safetensors_weights(void) {
             char name[96];
             snprintf(name, sizeof name, ROLE_PATTERN_HF[r], l);
             if (is_norm) { st_register_f32_as(name); n_f32++; }
-            else         { st_register_q4g64_as(name); n_q4++; }
+            else {
+                int qng_n=dense_qng64_override_n(name);
+                if(qng_n) st_register_qng64_as(name,qng_n);
+                else { st_register_q4g64_as(name); n_q4++; }
+            }
         }
     }
     if (g_cfg.qkv_bias) {
@@ -20172,13 +20207,25 @@ int main(int argc, char **argv) {
         // GGUF-only (g_gguf is NULL for the legacy fp32/int4/safetensors dense paths, which
         // have no tokenizer.ggml.* KVs to read) -- same scope this whole Phase 6 track has had
         // since D-tok-0's real-file shape soak.
-        if (!g_gguf) {
-            fprintf(stderr, "FATAL: QWEN_PROMPT_TEXT requires a GGUF-loaded model (tokenizer.ggml.* KVs)\n");
+        GgufFile *tokenizer_src = g_gguf;
+        if (!tokenizer_src) {
+            const char *tok_gguf = getenv("QWEN_TOKENIZER_GGUF");
+            if (tok_gguf && tok_gguf[0]) {
+                if (!g_tokenizer_gguf) g_tokenizer_gguf = gguf_open(tok_gguf);
+                if (!g_tokenizer_gguf) {
+                    fprintf(stderr, "FATAL: QWEN_TOKENIZER_GGUF could not be opened: %s\n", tok_gguf);
+                    return 1;
+                }
+                tokenizer_src = g_tokenizer_gguf;
+            }
+        }
+        if (!tokenizer_src) {
+            fprintf(stderr, "FATAL: QWEN_PROMPT_TEXT requires GGUF tokenizer metadata; for safetensors set QWEN_TOKENIZER_GGUF=<matching-model.gguf>\n");
             return 1;
         }
         if (!g_bpe_ready) {
-            BpePretokType pretok = bpe_pretok_for_gguf(g_gguf);
-            if (!bpe_vocab_load(g_gguf, pretok, &g_bpe_vocab)) {
+            BpePretokType pretok = bpe_pretok_for_gguf(tokenizer_src);
+            if (!bpe_vocab_load(tokenizer_src, pretok, &g_bpe_vocab)) {
                 fprintf(stderr, "FATAL: bpe_vocab_load failed despite tokenizer.ggml.model/pre being present\n");
                 return 1;
             }

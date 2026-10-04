@@ -1,0 +1,48 @@
+{
+  "$id": "https://beglin.local/schemas/model/model-skeleton-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "architecture": {
+      "type": "string"
+    },
+    "layer_count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "layer_skeletons": {
+      "type": "array"
+    },
+    "model_id": {
+      "type": "string"
+    },
+    "required_primitives": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "const": "beglin-model-skeleton-v1"
+    },
+    "skeleton_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "unsupported_primitives": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "model_id",
+    "architecture",
+    "layer_count",
+    "skeleton_sha256"
+  ],
+  "title": "model-skeleton-v1",
+  "type": "object"
+}

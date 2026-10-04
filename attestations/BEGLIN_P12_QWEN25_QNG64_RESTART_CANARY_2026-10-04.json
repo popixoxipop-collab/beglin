@@ -1,0 +1,56 @@
+{
+  "schema": "beglin-p12-qwen25-isolated-qng64-restart-canary-v1",
+  "status": "PASS",
+  "observed_at": "2026-10-04T19:15:40+09:00",
+  "source_host": "eoe",
+  "source_commit": "163f4e4bfdf4783ec664be5a0378e01cd4e88cb0",
+  "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+  "architecture_id": "qwen2",
+  "checkpoint_file_sha256": "fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe",
+  "binary_sha256": "ba4cc74197e78d72b59ef689f765b4ff828f46fd7e8897e6a04aa3384f470dac",
+  "target": "model.layers.0.self_attn.q_proj.weight",
+  "target_shape": [
+    896,
+    896
+  ],
+  "group_size": 64,
+  "candidate_n": 5,
+  "candidate_packed_bytes": 501760,
+  "materialization_rel_l2": 0.05768611875027565,
+  "materialization_artifact_sha256": "ba342c5ebb01abdc39c176e02101fe7fbffbefadb27e8d44bdac8ad1f8558f27",
+  "baseline": {
+    "exit_code": 0,
+    "output_tokens": [
+      26194,
+      13
+    ],
+    "q4g64_tensors": 168,
+    "qng64_tensors": 0
+  },
+  "canary": {
+    "exit_code": 0,
+    "output_tokens": [
+      26194,
+      13
+    ],
+    "q4g64_tensors": 167,
+    "qng64_tensors": 1,
+    "observed_kind": "K_QNG64",
+    "observed_n": 5
+  },
+  "rollback": {
+    "exit_code": 0,
+    "output_tokens": [
+      26194,
+      13
+    ],
+    "q4g64_tensors": 168,
+    "qng64_tensors": 0
+  },
+  "exact_output_match": true,
+  "rollback_restored_baseline": true,
+  "production_touched": false,
+  "production_write_allowed": false,
+  "automatic_live_promotion": false,
+  "verdict": "QWEN25_DENSE_QNG64_N5_VERIFIED_ISOLATED_RESTART"
+}

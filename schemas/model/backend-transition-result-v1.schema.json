@@ -1,0 +1,44 @@
+{
+  "$id": "https://beglin.local/schemas/model/backend-transition-result-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "backend-transition-result-v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "status",
+    "backend",
+    "model_capability_bundle_sha256",
+    "transition_plan_sha256",
+    "action",
+    "before",
+    "after",
+    "transitioned",
+    "production_write_allowed",
+    "automatic_live_promotion",
+    "result_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "beglin-backend-transition-result-v1"},
+    "status": {"type": "string"},
+    "backend": {"enum": ["cpu", "mlx_metal"]},
+    "model_capability_bundle_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "transition_plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "action": {"type": "string"},
+    "before": {"type": "object"},
+    "after": {"type": "object"},
+    "transitioned": {"type": "boolean"},
+    "production_write_allowed": {"const": false},
+    "automatic_live_promotion": {"const": false},
+    "result_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

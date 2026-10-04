@@ -1,0 +1,27 @@
+{
+  "$id": "https://beglin.local/schemas/model/backend-capability-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "backend_capability_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "rows": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "const": "beglin-backend-capability-v1"
+    }
+  },
+  "required": [
+    "schema",
+    "rows",
+    "backend_capability_sha256"
+  ],
+  "title": "backend-capability-v1",
+  "type": "object"
+}

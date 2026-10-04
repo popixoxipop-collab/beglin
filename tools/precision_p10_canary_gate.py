@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib,json
 import manual_canary_contract as mc
 import precision_context as pc
+import model_capability_bridge as mcb
 
 SCHEMA="beglin-precision-p10-canary-gate-v1"
 class P10Error(RuntimeError): pass
@@ -38,18 +39,24 @@ def materialize_canary_template(*,p9_bundle:dict,baseline_policy:list[dict],
   "expected_epoch":0,"restart_instance_id":"P10_RUNTIME_PREIMAGE_REQUIRED",
   "kill_switch_scope":"single candidate worker only",
   "rollback_plan":"restore exact runtime preimage; fail closed on mismatch"}
- return {"schema":SCHEMA,"status":"READY_FOR_RUNTIME_PREIMAGE_MATERIALIZATION",
+ lineage=mcb.validated_optional_lineage(p9_bundle)
+ out={"schema":SCHEMA,"status":"READY_FOR_RUNTIME_PREIMAGE_MATERIALIZATION",
   "production_write_allowed":False,"automatic_live_promotion":False,
   "p9_bundle_sha256":_sha(p9_bundle),"baseline_policy":baseline,"candidate_policy":candidate,
   "manual_canary_template":template,"trusted_production_approval_present":False,
   "production_cutover_allowed":False,"required_next_action":"materialize_runtime_preimage_then_human_approval"}
+ out.update(lineage)
+ return out
 
 def final_gate(*,p9_bundle:dict,canary_pass:dict,rollback_drill:dict)->dict:
  if p9_bundle.get("status")!="MANUAL_REVIEW_CANDIDATE": raise P10Error("invalid P9 bundle")
  if canary_pass.get("state")!="CANARY_PASS_REVIEW_REQUIRED": raise P10Error("canary pass rehearsal missing")
  if rollback_drill.get("state")!="ROLLBACK_VERIFIED": raise P10Error("rollback rehearsal missing")
- return {"schema":SCHEMA,"status":"AWAITING_TRUSTED_PRODUCTION_APPROVAL",
+ lineage=mcb.validated_optional_lineage(p9_bundle)
+ out={"schema":SCHEMA,"status":"AWAITING_TRUSTED_PRODUCTION_APPROVAL",
   "production_write_allowed":False,"automatic_live_promotion":False,
   "production_cutover_allowed":False,"p9_bundle_sha256":_sha(p9_bundle),
   "canary_pass_sha256":_sha(canary_pass),"rollback_drill_sha256":_sha(rollback_drill),
   "required_next_action":"trusted_human_approval_bound_to_fresh_runtime_preimage_and_cutover_plan"}
+ out.update(lineage)
+ return out

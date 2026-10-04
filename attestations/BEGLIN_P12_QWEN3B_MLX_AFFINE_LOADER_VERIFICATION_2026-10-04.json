@@ -1,0 +1,11 @@
+{
+  "schema": "beglin-verification-evidence-v1",
+  "status": "VERIFIED",
+  "component": "loader",
+  "architecture_id": "qwen2",
+  "checkpoint_identity_sha256": "4a4523b1c479a0417b8dfa3e897d8f105e403f862dedd07c10a8c2cb5fc0b666",
+  "binary_sha256": "2138c67bbb6a071bbe25f2f66aed1e7e0f80959c836c1277ca680d4b8a187b16",
+  "evidence_sha256": "fe6a377bc976465e60056a7b0084d437b75bffdf6e90e63bd5e842fc9e2465c1",
+  "run_id": "p12-qwen3b-affine-loader-20261004",
+  "kind": "MLX_AFFINE_LOADER_ACCEPTANCE"
+}

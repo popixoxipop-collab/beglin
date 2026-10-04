@@ -1,0 +1,81 @@
+{
+  "$id": "https://beglin.local/schemas/model/verification-evidence-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "architecture_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "backend": {
+      "enum": [
+        "cpu",
+        "mlx_metal"
+      ]
+    },
+    "binary_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "checkpoint_identity_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "component": {
+      "enum": [
+        "backend_runtime",
+        "qng64_runtime",
+        "mutation_runtime",
+        "tokenizer",
+        "loader"
+      ]
+    },
+    "evidence_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "mutation_mode": {
+      "enum": [
+        "HOT_REBIND_SINGLE",
+        "HOT_REBIND_MULTI",
+        "RESTART_REQUIRED",
+        "IMMUTABLE"
+      ]
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "schema": {
+      "const": "beglin-verification-evidence-v1"
+    },
+    "status": {
+      "const": "VERIFIED"
+    },
+    "supported_n": {
+      "items": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "target_key": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "status",
+    "component",
+    "architecture_id",
+    "checkpoint_identity_sha256",
+    "evidence_sha256"
+  ],
+  "title": "verification-evidence-v1",
+  "type": "object"
+}

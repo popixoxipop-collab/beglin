@@ -121,3 +121,27 @@ target_link_libraries(mlx_binding_transition_test PRIVATE mlx)
 
 enable_testing()
 add_test(NAME mlx_binding_transition COMMAND mlx_binding_transition_test)
+
+
+# P12 loader-format gate: exact installed-MLX affine 4-bit oracle.
+# Plain C only; no MLX link is needed because the expected packed words,
+# BF16 scale and BF16 bias are frozen from mx.quantize().
+add_executable(safetensors_affine4_test
+  safetensors_affine4_test.c
+  safetensors_load.c
+  safetensors_quants.c
+  hf_config.c
+)
+target_compile_options(safetensors_affine4_test PRIVATE -O2 -w)
+add_test(NAME safetensors_affine4 COMMAND safetensors_affine4_test)
+
+# P12 dense arbitrary-n qNg64 reference primitive.
+add_executable(qng64_dense_test tools/qng64_dense_test.c qng64_dense.c)
+target_link_libraries(qng64_dense_test PRIVATE m)
+add_test(NAME qng64_dense_test COMMAND qng64_dense_test)
+
+if(APPLE AND MLX_FOUND)
+  add_executable(p12_qwen25_real_mlx_probe tools/p12_qwen25_real_mlx_probe.cpp qng64_dense.c mlx_moe.cpp)
+  target_include_directories(p12_qwen25_real_mlx_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MLX_INCLUDE_DIRS})
+  target_link_libraries(p12_qwen25_real_mlx_probe PRIVATE mlx)
+endif()

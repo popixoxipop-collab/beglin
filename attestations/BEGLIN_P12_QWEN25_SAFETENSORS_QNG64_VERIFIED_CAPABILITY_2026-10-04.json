@@ -1,0 +1,40 @@
+{
+  "architecture_id": "qwen2",
+  "automatic_live_promotion": false,
+  "backend": "cpu",
+  "canary_evidence_sha256": "620c9c4e0dc1892fbab4c5bc864eea7bd50c3147b170ed1f43c9facc393f5522",
+  "checkpoint_file_sha256": "fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe",
+  "checkpoint_identity_sha256": "538528b2cf263385d20b68a2f0ba50961d29ad7f21b21fc78c0ccd474a18c27d",
+  "eligibility": {
+    "automatic_live_promotion": false,
+    "p10_allowed": true,
+    "p11_allowed": false,
+    "p11_requires_verified_loader": true,
+    "p8_allowed": true,
+    "p9_allowed": true,
+    "pretokenized_precision_pipeline_ready": true,
+    "reasons": [
+      "BACKEND_OR_QNG64_REQUIRES_VALIDATION",
+      "LOADER_NOT_VERIFIED",
+      "TOKENIZER_NOT_FULLY_VERIFIED"
+    ],
+    "schema": "beglin-pipeline-eligibility-v1",
+    "status": "PARTIAL",
+    "text_io_ready": false
+  },
+  "model_capability_bundle_sha256": "42abdce2c9f79c20bfee4fa6943a247240cf6669e0ba580ee2b3d1a70e66a94a",
+  "model_id": "checkpoint-538528b2cf263385",
+  "model_skeleton_sha256": "b8705147bd740d151cc5ccba1e95ca31cce54c6ac8813073a0247b5fa32cc7a0",
+  "mutation_mode": "RESTART_REQUIRED",
+  "p8_status": "READY_FOR_P8_PROVENANCE",
+  "production_touched": false,
+  "production_write_allowed": false,
+  "qng64_status": "VERIFIED",
+  "report_sha256": "00c31c85927f5accb50a067c11e2f1a1b1974d553644bb680266f32360a229bf",
+  "requires_validation": false,
+  "schema": "beglin-p12-qwen25-safetensors-qng64-verified-capability-v1",
+  "status": "PASS",
+  "supported_n": [5],
+  "target_key": "checkpoint-538528b2cf263385/L0/q_proj",
+  "verdict": "QWEN25_DENSE_QNG64_N5_VERIFIED"
+}
