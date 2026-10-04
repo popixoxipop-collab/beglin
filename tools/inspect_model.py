@@ -18,6 +18,9 @@ def _load_evidence(path):
         raise mc.ModelCapabilityError(f"evidence must be a JSON object: {p}")
     return value
 
+def _load_evidence_list(paths):
+    return [_load_evidence(path) for path in (paths or [])]
+
 def main()->int:
     ap=argparse.ArgumentParser(description='Inspect a model and compile the P12 Beglin capability bundle.')
     ap.add_argument('path')
@@ -28,18 +31,28 @@ def main()->int:
     ap.add_argument('--mlx-runtime-evidence')
     ap.add_argument('--tokenizer-evidence')
     ap.add_argument('--loader-evidence')
+    ap.add_argument('--cpu-qng64-evidence',action='append',default=[])
+    ap.add_argument('--mlx-qng64-evidence',action='append',default=[])
+    ap.add_argument('--cpu-mutation-evidence',action='append',default=[])
+    ap.add_argument('--mlx-mutation-evidence',action='append',default=[])
     ap.add_argument('--evidence',action='append',default=[],help='verification evidence JSON file or directory; repeatable')
     ap.add_argument('--json',action='store_true')
     ap.add_argument('--target')
     args=ap.parse_args()
     try:
-        explicit={
+        scalar_explicit={
             'cpu_runtime_evidence':_load_evidence(args.cpu_runtime_evidence),
             'mlx_runtime_evidence':_load_evidence(args.mlx_runtime_evidence),
             'tokenizer_evidence':_load_evidence(args.tokenizer_evidence),
             'loader_evidence':_load_evidence(args.loader_evidence),
         }
-        resolved={key:None for key in explicit}
+        list_explicit={
+            'cpu_qng64_evidence':_load_evidence_list(args.cpu_qng64_evidence),
+            'mlx_qng64_evidence':_load_evidence_list(args.mlx_qng64_evidence),
+            'cpu_mutation_evidence':_load_evidence_list(args.cpu_mutation_evidence),
+            'mlx_mutation_evidence':_load_evidence_list(args.mlx_mutation_evidence),
+        }
+        resolved={**{key:None for key in scalar_explicit},**{key:[] for key in list_explicit}}
         if args.evidence:
             source=mc.inspect_model_source(args.path)
             descriptor=mc.build_architecture_descriptor(source)
@@ -50,9 +63,14 @@ def main()->int:
             )
         evidence={
             key:mer.merge_explicit_and_registry(
-                explicit[key],resolved[key],label=key)
-            for key in explicit
+                scalar_explicit[key],resolved.get(key),label=key)
+            for key in scalar_explicit
         }
+        evidence.update({
+            key:mer.merge_explicit_list_and_registry(
+                list_explicit[key],resolved.get(key,[]),label=key)
+            for key in list_explicit
+        })
         bundle=mc.compile_model_capabilities(
             args.path,
             backend=args.backend,
@@ -67,7 +85,8 @@ def main()->int:
         rows=[]
         for key in ('backend_capability_matrix','quant_capability_matrix','runtime_mutation_matrix'):
             for row in bundle[key].get('rows',[]):
-                if args.target.lower() in str(row.get('target_key','')).lower(): rows.append({'matrix':key,**row})
+                if args.target.lower() in str(row.get('target_key','')).lower():
+                    rows.append({'matrix':key,**row})
         print(json.dumps({'target':args.target,'rows':rows,'bundle_sha256':bundle['bundle_sha256']},indent=2,sort_keys=True))
         return 0
     if args.json:
