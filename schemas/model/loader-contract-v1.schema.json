@@ -23,6 +23,64 @@
     },
     "unsupported_formats": {
       "type": "array"
+    },
+    "memory_preflight": {
+      "type": "object",
+      "required": [
+        "schema",
+        "source_weight_bytes",
+        "weight_file_count",
+        "tensor_element_count",
+        "dense_f16_equivalent_bytes",
+        "load_strategy",
+        "mmap_eligible",
+        "runtime_resident_estimate_status",
+        "requires_runtime_measurement"
+      ],
+      "properties": {
+        "schema": {
+          "const": "beglin-loader-memory-preflight-v1"
+        },
+        "source_weight_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "weight_file_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tensor_element_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dense_f16_equivalent_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "load_strategy": {
+          "enum": [
+            "MMAP_PAGECACHE",
+            "SHARD_AWARE",
+            "LEGACY"
+          ]
+        },
+        "mmap_eligible": {
+          "type": "boolean"
+        },
+        "runtime_resident_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "runtime_resident_estimate_status": {
+          "const": "REQUIRES_BACKEND_PROFILE"
+        },
+        "requires_runtime_measurement": {
+          "const": true
+        }
+      }
     }
   },
   "required": [
