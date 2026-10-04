@@ -9,6 +9,7 @@
     "model_id",
     "checkpoint_identity",
     "skeleton_sha256",
+    "architecture_id",
     "architecture_status",
     "tokenizer_status",
     "loader_status",
@@ -100,6 +101,10 @@
       "items": {
         "type": "string"
       }
+    },
+    "architecture_id": {
+      "type": "string",
+      "minLength": 1
     }
   }
 }
