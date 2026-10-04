@@ -30,6 +30,7 @@ class P12PipelineBridgeTests(unittest.TestCase):
         bundle = mc.build_model_capability_bundle(
             model_id="m",
             checkpoint_identity="a" * 64,
+            weight_checkpoint_identity_sha256="c" * 64,
             skeleton_sha256="b" * 64,
             architecture_status="KNOWN",
             tokenizer_status="IN_ENGINE_VERIFIED",
@@ -85,6 +86,7 @@ class P12PipelineBridgeTests(unittest.TestCase):
         gate = self.gate()
         self.assertEqual(gate["canary_mode"], "SAME_WORKER_PRECISION_EPOCH")
         self.assertEqual(gate["requested_n"], 5)
+        self.assertEqual(gate["weight_checkpoint_identity_sha256"], "c" * 64)
         self.assertFalse(gate["production_write_allowed"])
 
     def test_restart_target_selects_isolated_restart_canary(self):
@@ -96,6 +98,18 @@ class P12PipelineBridgeTests(unittest.TestCase):
         bundle = self.bundle(eligibility="DENIED")
         with self.assertRaisesRegex(
             bridge.P12PipelineBridgeError, "denies P8-P11"
+        ):
+            self.gate(bundle)
+
+
+    def test_missing_weight_checkpoint_identity_cannot_enter_p8(self):
+        bundle = self.bundle()
+        bundle["weight_checkpoint_identity_sha256"] = None
+        bundle["bundle_sha256"] = mc.sha256_json({
+            k: v for k, v in bundle.items() if k != "bundle_sha256"
+        })
+        with self.assertRaisesRegex(
+            bridge.P12PipelineBridgeError, "weights checkpoint identity"
         ):
             self.gate(bundle)
 
@@ -166,8 +180,11 @@ class P12PipelineBridgeTests(unittest.TestCase):
             p9["model_capability_bundle_sha256"], bundle["bundle_sha256"]
         )
         self.assertEqual(p9["p12_requested_n"], 5)
+        self.assertEqual(p9["p12_weight_checkpoint_identity_sha256"], "c" * 64)
         self.assertEqual(selection["requested_n"], 5)
+        self.assertEqual(selection["weight_checkpoint_identity_sha256"], "c" * 64)
         self.assertEqual(p11["requested_n"], 5)
+        self.assertEqual(p11["weight_checkpoint_identity_sha256"], "c" * 64)
         self.assertEqual(
             selection["model_capability_bundle_sha256"], bundle["bundle_sha256"]
         )
