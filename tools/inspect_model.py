@@ -4,6 +4,7 @@ import argparse,json,sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 import model_capability as mc
+import model_evidence_registry as mer
 
 def _load_evidence(path):
     if not path:
@@ -27,21 +28,39 @@ def main()->int:
     ap.add_argument('--mlx-runtime-evidence')
     ap.add_argument('--tokenizer-evidence')
     ap.add_argument('--loader-evidence')
+    ap.add_argument('--evidence',action='append',default=[],help='verification evidence JSON file or directory; repeatable')
     ap.add_argument('--json',action='store_true')
     ap.add_argument('--target')
     args=ap.parse_args()
     try:
+        explicit={
+            'cpu_runtime_evidence':_load_evidence(args.cpu_runtime_evidence),
+            'mlx_runtime_evidence':_load_evidence(args.mlx_runtime_evidence),
+            'tokenizer_evidence':_load_evidence(args.tokenizer_evidence),
+            'loader_evidence':_load_evidence(args.loader_evidence),
+        }
+        resolved={key:None for key in explicit}
+        if args.evidence:
+            source=mc.inspect_model_source(args.path)
+            descriptor=mc.build_architecture_descriptor(source)
+            registry=mer.VerificationEvidenceRegistry.from_paths(args.evidence)
+            resolved=registry.resolve_model_set(
+                architecture_id=descriptor['architecture_id'],
+                checkpoint_identity_sha256=source['checkpoint_identity_sha256'],
+            )
+        evidence={
+            key:mer.merge_explicit_and_registry(
+                explicit[key],resolved[key],label=key)
+            for key in explicit
+        }
         bundle=mc.compile_model_capabilities(
             args.path,
             backend=args.backend,
             cpu_runtime_verified=args.cpu_runtime_verified,
             mlx_runtime_verified=args.mlx_runtime_verified,
-            cpu_runtime_evidence=_load_evidence(args.cpu_runtime_evidence),
-            mlx_runtime_evidence=_load_evidence(args.mlx_runtime_evidence),
-            tokenizer_evidence=_load_evidence(args.tokenizer_evidence),
-            loader_evidence=_load_evidence(args.loader_evidence),
+            **evidence,
         )
-    except mc.ModelCapabilityError as exc:
+    except (mc.ModelCapabilityError,mer.EvidenceRegistryError) as exc:
         print(json.dumps({'status':'ERROR','error':str(exc)},sort_keys=True),file=sys.stderr)
         return 2
     if args.target:
