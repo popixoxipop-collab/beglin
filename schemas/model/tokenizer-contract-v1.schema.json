@@ -55,6 +55,21 @@
         "DENSE_GGUF_GREEDY",
         "NOT_WIRED"
       ]
+    },
+    "artifact_kind": {
+      "enum": [
+        "SENTENCEPIECE_MODEL",
+        "TOKENIZER_JSON",
+        "BPE_FILES",
+        "GGUF_EMBEDDED",
+        "NONE"
+      ]
+    },
+    "missing_primitives": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": [
