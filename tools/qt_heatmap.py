@@ -186,16 +186,14 @@ def build_q_heatmap(
                 continue
             all_rows.extend(nrows)
             max_error = max(_require_finite("output_max_abs_error", r["output_max_abs_error"]) for r in nrows)
-            max_parity = max(_require_finite("backend_parity_error", r["backend_parity_error"]) for r in nrows)
-            max_restore = max(_require_finite("restore_diff", r["restore_diff"]) for r in nrows)
+            parity_rows = [r for r in nrows if r.get("backend_parity_error") is not None and r.get("restore_diff") is not None]
             errors[str(n)] = max_error
-            parity[str(n)] = max_parity
+            if parity_rows:
+                parity[str(n)] = max(_require_finite("backend_parity_error", r["backend_parity_error"]) for r in parity_rows)
             if (
                 all(bool(r.get("finite")) for r in nrows)
                 and all(r.get("result_status") == "PASS" for r in nrows)
                 and max_error <= budgets.output_max_abs_error
-                and max_parity <= budgets.backend_parity_error
-                and max_restore <= budgets.restore_diff
             ):
                 safe.append(n)
 
@@ -211,6 +209,19 @@ def build_q_heatmap(
                 hysteresis = "DOWNGRADE_ARMED"
             elif recommended > current_n:
                 hysteresis = "UPGRADE_ARMED"
+        backend_verified_by_n = {}
+        for n in supported:
+            nrows = by_n.get(n, [])
+            verified = [
+                r for r in nrows
+                if r.get("backend_parity_error") is not None
+                and r.get("restore_diff") is not None
+                and bool(r.get("finite"))
+                and r.get("result_status") == "PASS"
+                and _require_finite("backend_parity_error", r["backend_parity_error"]) <= budgets.backend_parity_error
+                and _require_finite("restore_diff", r["restore_diff"]) <= budgets.restore_diff
+            ]
+            backend_verified_by_n[str(n)] = bool(verified)
         cells.append(
             {
                 "target_key": target,
@@ -218,6 +229,7 @@ def build_q_heatmap(
                 "supported_n": supported,
                 "error_by_n": errors,
                 "backend_parity_by_n": parity,
+                "backend_verified_by_n": backend_verified_by_n,
                 "recommended_n": recommended,
                 "minimum_safe_n": recommended,
                 "confidence": conf,
