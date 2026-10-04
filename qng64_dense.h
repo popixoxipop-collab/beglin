@@ -5,8 +5,9 @@
 #include <stdint.h>
 
 // Dense arbitrary-n group-64 symmetric RTN reference primitive.
-// Layout: each group stores 64 signed n-bit two's-complement codes,
-// tightly bit-packed little-endian, plus one fp32 scale.
+// Layout is the canonical production A2 qNg64 format: n bit-planes of 8 bytes each
+// per group, little-endian element bits, BIASED signed codes, plus one fp32 scale.
+// Quantization uses the same per-group error-feedback recurrence as gguf_quantize_qNg64().
 size_t qng64_group_bytes(int n);
 size_t qng64_packed_bytes(int out, int in, int n);
 
