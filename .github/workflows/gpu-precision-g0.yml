@@ -37,6 +37,7 @@ jobs:
             tools/loader_registry.py \
             tools/tensor_role_mapper.py \
             tools/capability_compiler_p12.py \
+            tools/precision_p12_pipeline_bridge.py \
             tools/inspect_model.py \
             tools/verify_p12_bskel.py \
             tools/test_model_capability_p12.py \
@@ -45,6 +46,7 @@ jobs:
             tools/test_p12_capability_compiler.py \
             tools/test_p12_arch_semantics.py \
             tools/test_p12_backend_runtime_probe.py \
+            tools/test_precision_p12_pipeline_bridge.py \
             tools/test_d4_supabase_push.py \
             tools/test_autopilot_live_preflight.py \
             tools/test_backend_capabilities.py \
@@ -84,4 +86,5 @@ jobs:
           PYTHONPATH=tools python tools/test_p12_capability_compiler.py
           PYTHONPATH=tools python tools/test_p12_arch_semantics.py
           PYTHONPATH=tools python tools/test_p12_backend_runtime_probe.py
+          PYTHONPATH=tools python tools/test_precision_p12_pipeline_bridge.py
           PYTHONPATH=tools python tools/verify_p12_bskel.py
