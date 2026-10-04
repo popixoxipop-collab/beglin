@@ -81,16 +81,31 @@ struct QNg64Tensor {
     int n;  // bit-width, 7 or 9..15 (2,3,4,5,6,8 use the native-kernel paths above instead)
 };
 
+// QT-4 probe-registry representation: variable-length bit-planes with one n per
+// (row,group64) cell. This is kept separate from QTensor because MLX native
+// quantized_matmul requires one tensor-wide bits value.
+struct MixedQNg64Tensor {
+    mx::array planes;   // {planes_bytes} uint8, concatenated cell-local bit-planes
+    mx::array offsets;  // {out*ng+1} uint32
+    mx::array bits;     // {out*ng} uint8
+    mx::array scales;   // {out,ng} float32
+    long out, in, ng;
+};
+
 static std::unordered_map<std::string, QTensor> g_tensors;
 static std::unordered_map<std::string, DTensor> g_dtensors;  // bits=16/32, dense (D-gpu-5)
 static std::unordered_map<std::string, QNg64Tensor> g_qng64_tensors;  // n=7,9-15 (D-metal-4)
+static std::unordered_map<std::string, MixedQNg64Tensor> g_mixed_qng64_tensors; // QT-4 probe only
+
+static mx::array mixed_qng64_gemv_e0(const char *name, const mx::array &x);
 
 struct BindingSnapshot {
     std::string name;
-    int kind = 0;  // 1=native quant, 2=dense, 3=custom qNg64
+    int kind = 0;  // 1=native quant, 2=dense, 3=custom uniform qNg64, 4=mixed qNg64
     std::optional<QTensor> q;
     std::optional<DTensor> d;
     std::optional<QNg64Tensor> ng64;
+    std::optional<MixedQNg64Tensor> mixed;
 };
 static uint64_t g_binding_snapshot_next_id = 1;
 static std::unordered_map<uint64_t, BindingSnapshot> g_binding_snapshots;
@@ -171,6 +186,7 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
             // must exist in exactly one of g_tensors/g_dtensors at a time.
             g_tensors.erase(std::string(name));
             g_qng64_tensors.erase(std::string(name));
+            g_mixed_qng64_tensors.erase(std::string(name));
             g_dtensors.insert_or_assign(std::string(name), DTensor{w, E, out, in, bits});
             g_bound_count++;
             return 1;
@@ -199,6 +215,7 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
             // DIFFERENT map, or a caller resolving by name silently reads the wrong one.
             g_tensors.erase(std::string(name));
             g_dtensors.erase(std::string(name));
+            g_mixed_qng64_tensors.erase(std::string(name));
             g_qng64_tensors.insert_or_assign(
                 std::string(name), QNg64Tensor{planes, scales, E, out, in, ng, bits});
             g_bound_count++;
@@ -333,6 +350,7 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
         // previously bound dense must not leave a stale g_dtensors entry either.
         g_dtensors.erase(std::string(name));
         g_qng64_tensors.erase(std::string(name));
+        g_mixed_qng64_tensors.erase(std::string(name));
         g_tensors.insert_or_assign(
             std::string(name),
             QTensor{w, scales, biases, E, out, in, ng, bits});
@@ -347,12 +365,15 @@ int mlx_gpu_snapshot_binding(const char *name, uint64_t *snapshot_id) {
     if (!mlx_gpu_available() || !name || !snapshot_id) return 0;
     std::string key(name);
     int present = (int)g_tensors.count(key) + (int)g_dtensors.count(key)
-                + (int)g_qng64_tensors.count(key);
+                + (int)g_qng64_tensors.count(key) + (int)g_mixed_qng64_tensors.count(key);
     if (present != 1) return 0;  // missing or already-corrupt multi-map state
 
     BindingSnapshot snap;
     snap.name = key;
-    if (auto it = g_qng64_tensors.find(key); it != g_qng64_tensors.end()) {
+    if (auto it = g_mixed_qng64_tensors.find(key); it != g_mixed_qng64_tensors.end()) {
+        snap.kind = 4;
+        snap.mixed = it->second;
+    } else if (auto it = g_qng64_tensors.find(key); it != g_qng64_tensors.end()) {
         snap.kind = 3;
         snap.ng64 = it->second;
     } else if (auto it = g_tensors.find(key); it != g_tensors.end()) {
@@ -385,6 +406,7 @@ int mlx_gpu_restore_binding_snapshot(uint64_t snapshot_id) {
     g_tensors.erase(key);
     g_dtensors.erase(key);
     g_qng64_tensors.erase(key);
+    g_mixed_qng64_tensors.erase(key);
 
     if (snap.kind == 1 && snap.q) {
         g_tensors.insert_or_assign(key, *snap.q);
@@ -392,6 +414,8 @@ int mlx_gpu_restore_binding_snapshot(uint64_t snapshot_id) {
         g_dtensors.insert_or_assign(key, *snap.d);
     } else if (snap.kind == 3 && snap.ng64) {
         g_qng64_tensors.insert_or_assign(key, *snap.ng64);
+    } else if (snap.kind == 4 && snap.mixed) {
+        g_mixed_qng64_tensors.insert_or_assign(key, *snap.mixed);
     } else {
         return 0;
     }
@@ -445,6 +469,11 @@ int mlx_gpu_binding_kind(const char *name, int *bits_out) {
     if (bits_out) *bits_out = 0;
     if (!name) return 0;
     std::string key(name);
+    auto mixed = g_mixed_qng64_tensors.find(key);
+    if (mixed != g_mixed_qng64_tensors.end()) {
+        if (bits_out) *bits_out = 0;
+        return 4;  // mixed qNg64: bit width is cell-local, not tensor-wide
+    }
     auto ng = g_qng64_tensors.find(key);
     if (ng != g_qng64_tensors.end()) {
         if (bits_out) *bits_out = ng->second.n;
@@ -572,6 +601,21 @@ int mlx_gpu_dequant_probe(const char *name, long e, long row, long col0, int nco
 }
 
 int mlx_gpu_matvec_probe(const char *name, long e, const float *x, float *y) {
+    auto mit = g_mixed_qng64_tensors.find(name);
+    if (mit != g_mixed_qng64_tensors.end()) {
+        if (e != 0) return 0;
+        try {
+            MixedQNg64Tensor &t = mit->second;
+            mx::array xin((void *)x, {1, (int)t.in}, mx::float32, noop_deleter);
+            mx::array yout = mixed_qng64_gemv_e0(name, xin);
+            mx::eval(yout);
+            std::memcpy(y, yout.data<float>(), sizeof(float) * (size_t)t.out);
+            return 1;
+        } catch (...) {
+            return 0;
+        }
+    }
+
     auto dit = g_dtensors.find(name);
     if (dit != g_dtensors.end()) {
         // D-gpu-5: bits=16/32, plain matmul against the dense weight (transpose=true's
@@ -1639,6 +1683,156 @@ static mx::array qng64_gemv_e0(const char *name, const mx::array &x) {
     auto outputs = kernel(inputs, output_shapes, output_dtypes,
                            {64, (int)t.out, A}, {64, 1, 1},
                            template_args, std::nullopt, false, {});
+    return outputs[0];
+}
+
+// QT-4: variable-length mixed-qNg64 GEMV probe. Unlike QTensor (one bits value per
+// tensor), every (row, group64) cell has its own n and compressed span. This is
+// intentionally probe-only: no registry insertion, no serving mutation, and therefore
+// no accidental production route before BEVAL/runtime integration is implemented.
+static std::optional<mx::fast::CustomKernelFunction> g_qng64_mixed_gemv_kernel;
+
+static mx::fast::CustomKernelFunction &qng64_mixed_gemv_kernel() {
+    if (!g_qng64_mixed_gemv_kernel) {
+        std::string source = R"(
+            uint p = thread_position_in_grid.x;
+            uint row = thread_position_in_grid.y;
+            uint z = thread_position_in_grid.z;
+            if (p >= 64) return;
+            float partial = 0.0f;
+            uint byte_in_plane = p >> 3;
+            uint bit_in_byte = p & 7;
+            for (uint g = 0; g < ng; g++) {
+                uint cell = row * ng + g;
+                uint n_local = (uint)bits[cell];
+                uint plane_base = offsets[cell];
+                int u = 0;
+                for (uint j = 0; j < n_local; j++) {
+                    uint8_t byte = planes[plane_base + j * 8u + byte_in_plane];
+                    int bit = (byte >> bit_in_byte) & 1;
+                    u |= (bit << j);
+                }
+                int bias_code = 1 << (n_local - 1u);
+                int code = u - bias_code;
+                float decoded = (float)code * scales[cell];
+                partial += decoded * x[z * (ng * 64u) + g * 64u + p];
+            }
+            threadgroup float shared_sums[2];
+            uint simd_lane = p % 32u;
+            uint simd_group = p / 32u;
+            float simd_partial = simd_sum(partial);
+            if (simd_lane == 0) shared_sums[simd_group] = simd_partial;
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            if (p == 0) {
+                out[z * (uint)out_dim + row] = shared_sums[0] + shared_sums[1];
+            }
+        )";
+        g_qng64_mixed_gemv_kernel = mx::fast::metal_kernel(
+            "qng64_mixed_gemv",
+            {"planes", "offsets", "bits", "scales", "x"},
+            {"out"}, source);
+    }
+    return *g_qng64_mixed_gemv_kernel;
+}
+
+int mlx_gpu_qng64_mixed_dense_probe(const uint8_t *planes, long planes_bytes,
+                                     const uint32_t *offsets, const uint8_t *bits,
+                                     const float *scales, long out, long in,
+                                     const float *x, int batch, float *out_buf) {
+    if (!mlx_gpu_available() || !planes || !offsets || !bits || !scales ||
+        !x || !out_buf || planes_bytes <= 0 || out <= 0 || in <= 0 ||
+        batch <= 0 || (in % 64) != 0) return 0;
+    const long ng = in / 64;
+    const size_t cells = (size_t)out * (size_t)ng;
+    if (offsets[0] != 0 || (long)offsets[cells] != planes_bytes) return 0;
+    for (size_t i = 0; i < cells; ++i) {
+        const int n_local = (int)bits[i];
+        if (n_local < 2 || n_local > 15) return 0;
+        if (offsets[i + 1] < offsets[i]) return 0;
+        if ((size_t)(offsets[i + 1] - offsets[i]) != (size_t)n_local * 8u) return 0;
+        if (!std::isfinite(scales[i]) || scales[i] <= 0.0f) return 0;
+    }
+    try {
+        mx::array planes_a((void *)planes, {(int)planes_bytes}, mx::uint8, noop_deleter);
+        mx::array offsets_a((void *)offsets, {(int)cells + 1}, mx::uint32, noop_deleter);
+        mx::array bits_a((void *)bits, {(int)cells}, mx::uint8, noop_deleter);
+        mx::array scales_a((void *)scales, {(int)out, (int)ng}, mx::float32, noop_deleter);
+        mx::array x_a((void *)x, {batch, (int)in}, mx::float32, noop_deleter);
+        auto &kernel = qng64_mixed_gemv_kernel();
+        std::vector<mx::array> inputs = {planes_a, offsets_a, bits_a, scales_a, x_a};
+        std::vector<mx::Shape> output_shapes = {{batch, (int)out}};
+        std::vector<mx::Dtype> output_dtypes = {mx::float32};
+        std::vector<std::pair<std::string, mx::fast::TemplateArg>> template_args = {
+            {"ng", (int)ng}, {"out_dim", (int)out}
+        };
+        auto outputs = kernel(inputs, output_shapes, output_dtypes,
+                              {64, (int)out, batch}, {64, 1, 1},
+                              template_args, std::nullopt, false, {});
+        mx::eval(outputs[0]);
+        std::memcpy(out_buf, outputs[0].data<float>(),
+                    sizeof(float) * (size_t)batch * (size_t)out);
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
+int mlx_gpu_bind_qng64_mixed_dense_probe(const uint8_t *planes, long planes_bytes,
+                                          const uint32_t *offsets, const uint8_t *bits,
+                                          const float *scales, const char *name,
+                                          long out, long in) {
+    if (!mlx_gpu_available() || !planes || !offsets || !bits || !scales || !name ||
+        planes_bytes <= 0 || out <= 0 || in <= 0 || (in % 64) != 0) return 0;
+    const long ng = in / 64;
+    const size_t cells = (size_t)out * (size_t)ng;
+    if (offsets[0] != 0 || (long)offsets[cells] != planes_bytes) return 0;
+    for (size_t i = 0; i < cells; ++i) {
+        const int n_local = (int)bits[i];
+        if (n_local < 2 || n_local > 15) return 0;
+        if (offsets[i + 1] < offsets[i]) return 0;
+        if ((size_t)(offsets[i + 1] - offsets[i]) != (size_t)n_local * 8u) return 0;
+        if (!std::isfinite(scales[i]) || scales[i] <= 0.0f) return 0;
+    }
+    try {
+        // No noop_deleter here: these constructors own their data, so the
+        // caller may release the source buffers immediately after bind.
+        mx::array owned_planes(planes, {(int)planes_bytes}, mx::uint8);
+        mx::array owned_offsets(offsets, {(int)cells + 1}, mx::uint32);
+        mx::array owned_bits(bits, {(int)cells}, mx::uint8);
+        mx::array owned_scales(scales, {(int)out, (int)ng}, mx::float32);
+        mx::eval(owned_planes);
+        mx::eval(owned_offsets);
+        mx::eval(owned_bits);
+        mx::eval(owned_scales);
+
+        const std::string key(name);
+        g_tensors.erase(key);
+        g_dtensors.erase(key);
+        g_qng64_tensors.erase(key);
+        g_mixed_qng64_tensors.erase(key);
+        g_mixed_qng64_tensors.insert_or_assign(
+            key, MixedQNg64Tensor{owned_planes, owned_offsets, owned_bits, owned_scales,
+                                  out, in, ng});
+        g_bound_count++;
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
+static mx::array mixed_qng64_gemv_e0(const char *name, const mx::array &x) {
+    MixedQNg64Tensor &t = g_mixed_qng64_tensors.at(name);
+    auto &kernel = qng64_mixed_gemv_kernel();
+    const int A = (int)x.shape(0);
+    std::vector<mx::array> inputs = {t.planes, t.offsets, t.bits, t.scales, x};
+    std::vector<mx::Shape> output_shapes = {{A, (int)t.out}};
+    std::vector<mx::Dtype> output_dtypes = {mx::float32};
+    std::vector<std::pair<std::string, mx::fast::TemplateArg>> template_args = {
+        {"ng", (int)t.ng}, {"out_dim", (int)t.out}
+    };
+    auto outputs = kernel(inputs, output_shapes, output_dtypes,
+                          {64, (int)t.out, A}, {64, 1, 1},
+                          template_args, std::nullopt, false, {});
     return outputs[0];
 }
 

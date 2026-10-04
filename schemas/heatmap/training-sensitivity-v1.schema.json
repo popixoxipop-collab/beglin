@@ -1,0 +1,25 @@
+{
+  "$id":"https://beglin.local/schemas/heatmap/training-sensitivity-v1.schema.json",
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"training-sensitivity-v1","type":"object","additionalProperties":false,
+  "properties":{
+    "schema":{"const":"beglin-training-sensitivity-v1"},
+    "identity":{"$ref":"observation-identity-v2.schema.json"},
+    "loss_before":{"type":"number"},
+    "loss_after":{"type":["number","null"]},
+    "grad_abs_mean":{"type":"number","minimum":0},
+    "grad_rms":{"type":"number","minimum":0},
+    "grad_max_abs":{"type":"number","minimum":0},
+    "grad_norm":{"type":"number","minimum":0},
+    "grad_variance_ema":{"type":"number","minimum":0},
+    "quant_error_abs":{"type":"number","minimum":0},
+    "gradient_times_quant_error":{"type":"number","minimum":0},
+    "fisher_diag_ema":{"type":["number","null"],"minimum":0},
+    "influence_proxy":{"type":"number","minimum":0},
+    "optimizer_step":{"type":"integer","minimum":0},
+    "learning_rate":{"type":"number","minimum":0},
+    "sample_count":{"type":"integer","minimum":1},
+    "finite":{"type":"boolean"}
+  },
+  "required":["schema","identity","grad_abs_mean","grad_rms","quant_error_abs","gradient_times_quant_error","influence_proxy","optimizer_step","learning_rate","sample_count","finite"]
+}

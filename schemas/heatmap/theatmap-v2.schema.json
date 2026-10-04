@@ -1,0 +1,28 @@
+{
+  "$id":"https://beglin.local/schemas/heatmap/theatmap-v2.schema.json",
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"theatmap-v2","type":"object","additionalProperties":false,
+  "properties":{
+    "schema":{"const":"beglin-theatmap-v2"},
+    "checkpoint_identity_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "skeleton_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "weight_epoch":{"type":"integer","minimum":0},
+    "generation":{"type":"integer","minimum":0},
+    "cells":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{
+      "target_key":{"type":"string","minLength":1},
+      "grad_rms_ema":{"type":"number","minimum":0},
+      "grad_variance":{"type":"number","minimum":0},
+      "quant_error":{"type":"number","minimum":0},
+      "gradient_times_quant_error":{"type":"number","minimum":0},
+      "influence_proxy":{"type":"number","minimum":0},
+      "recommended_trainable":{"type":"boolean"},
+      "lr_scale":{"type":"number","minimum":0},
+      "weight_decay_scale":{"type":"number","minimum":0},
+      "confidence":{"type":"number","minimum":0,"maximum":1},
+      "state":{"enum":["COLD","OBSERVED","CANDIDATE","EVAL_PENDING","APPROVED","REJECTED","QUARANTINED","STALE"]},
+      "evidence_refs":{"type":"array","items":{"type":"string"}}
+    },"required":["target_key","grad_rms_ema","grad_variance","quant_error","gradient_times_quant_error","influence_proxy","recommended_trainable","lr_scale","weight_decay_scale","confidence","state","evidence_refs"]}},
+    "heatmap_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}
+  },
+  "required":["schema","checkpoint_identity_sha256","skeleton_sha256","weight_epoch","generation","cells","heatmap_sha256"]
+}

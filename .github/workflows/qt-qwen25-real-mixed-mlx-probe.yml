@@ -1,0 +1,174 @@
+name: QT Qwen25 Real Mixed MLX Probe
+
+concurrency:
+  group: qt-qwen25-real-mixed-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - "qt-heatmap-*"
+    paths:
+      - "tools/qt_qwen25_mixed_candidate_fixture.py"
+      - "tools/qt_qwen25_real_mixed_mlx_probe.cpp"
+      - "tools/qt_qwen25_group_perturb.py"
+      - "tools/qt_heatmap.py"
+      - "mlx_moe.cpp"
+      - "mlx_moe.h"
+      - "CMakeLists.txt"
+      - ".github/workflows/qt-qwen25-real-mixed-mlx-probe.yml"
+  pull_request:
+    paths:
+      - "tools/qt_qwen25_mixed_candidate_fixture.py"
+      - "tools/qt_qwen25_real_mixed_mlx_probe.cpp"
+      - "tools/qt_qwen25_group_perturb.py"
+      - "tools/qt_heatmap.py"
+      - "mlx_moe.cpp"
+      - "mlx_moe.h"
+      - "CMakeLists.txt"
+      - ".github/workflows/qt-qwen25-real-mixed-mlx-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qwen25-real-mixed:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify isolated XOX runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+
+      - name: Range-fetch canonical Qwen2.5 L0 q_proj
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/qt-qwen25-real-mixed
+          mkdir -p /tmp/qt-qwen25-real-mixed
+          curl -L --fail -r 0-2097151 \
+            -o /tmp/qt-qwen25-real-mixed/header.bin \
+            https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/model.safetensors
+          python3 - <<'PY'
+          import hashlib,json,pathlib,struct,subprocess
+          root=pathlib.Path("/tmp/qt-qwen25-real-mixed")
+          b=(root/"header.bin").read_bytes()
+          hlen=struct.unpack("<Q",b[:8])[0]
+          h=json.loads(b[8:8+hlen])
+          k="model.layers.0.self_attn.q_proj.weight"
+          e=h[k]
+          assert e["dtype"]=="BF16"
+          assert e["shape"]==[896,896],e["shape"]
+          start,end=e["data_offsets"]
+          base=8+hlen
+          subprocess.check_call([
+            "curl","-L","--fail","-r",f"{base+start}-{base+end-1}",
+            "-o",str(root/"tensor.bf16"),
+            "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/model.safetensors"
+          ])
+          raw=(root/"tensor.bf16").read_bytes()
+          assert len(raw)==896*896*2,len(raw)
+          sh=json.dumps({k:{"dtype":"BF16","shape":e["shape"],"data_offsets":[0,len(raw)]}},
+                        separators=(",",":")).encode()
+          sh += b" " * ((-len(sh)-8)%8)
+          (root/"single.safetensors").write_bytes(struct.pack("<Q",len(sh))+sh+raw)
+          print("QPROJ_TENSOR_SHA256",hashlib.sha256(raw).hexdigest())
+          PY
+
+      - name: Build BECODER mixed candidate fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(git rev-parse HEAD)"
+          python3 tools/qt_qwen25_mixed_candidate_fixture.py \
+            --checkpoint /tmp/qt-qwen25-real-mixed/single.safetensors \
+            --output-dir /tmp/qt-qwen25-real-mixed/fixture \
+            --n 4 --n 5 --n 6 --n 7 --n 8 --n 9 --n 10 \
+            --windows 2 \
+            --local-output-budget 0.005 \
+            --checkpoint-identity-sha256 538528b2cf263385d20b68a2f0ba50961d29ad7f21b21fc78c0ccd474a18c27d \
+            --skeleton-sha256 b8705147bd740d151cc5ccba1e95ca31cce54c6ac8813073a0247b5fa32cc7a0 \
+            --capability-bundle-sha256 42abdce2c9f79c20bfee4fa6943a247240cf6669e0ba580ee2b3d1a70e66a94a \
+            --model-id checkpoint-538528b2cf263385 \
+            --source-commit "$HEAD_SHA" \
+            --weight-epoch 0 | tee /tmp/qt-qwen25-real-mixed/fixture-build.txt
+          python3 - <<'PY'
+          import json
+          p="/tmp/qt-qwen25-real-mixed/fixture/manifest.json"
+          m=json.load(open(p))
+          assert m["policy_approved_by_beval"] is False
+          assert m["backend_parity_measured"] is False
+          used=[int(k) for k,v in m["bit_histogram"].items() if v]
+          assert len(used)>=2,("expected genuinely mixed policy",m["bit_histogram"])
+          assert m["mixed_payload_bytes"] < m["bf16_weight_bytes"]
+          print("BECODER_REAL_MIXED_CANDIDATE_READY",m["bit_histogram"])
+          PY
+
+      - name: Build real mixed MLX probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build-qt-qwen25-real-mixed
+          cmake -S . -B build-qt-qwen25-real-mixed -DCMAKE_BUILD_TYPE=Release \
+            -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          cmake --build build-qt-qwen25-real-mixed --target qt_qwen25_real_mixed_mlx_probe -j4
+
+      - name: Run real Qwen mixed CPU oracle vs Metal
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./build-qt-qwen25-real-mixed/qt_qwen25_real_mixed_mlx_probe \
+            /tmp/qt-qwen25-real-mixed/fixture | tee /tmp/qt-qwen25-real-mixed/probe.txt
+          grep -q '"status":"PASS"' /tmp/qt-qwen25-real-mixed/probe.txt
+
+      - name: Seal BECODER to Metal evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,pathlib,subprocess
+          root=pathlib.Path("/tmp/qt-qwen25-real-mixed")
+          manifest=json.load(open(root/"fixture/manifest.json"))
+          probe=json.loads((root/"probe.txt").read_text().splitlines()[-1])
+          binary=pathlib.Path("build-qt-qwen25-real-mixed/qt_qwen25_real_mixed_mlx_probe")
+          out={
+            "schema":"beglin-qt-qwen25-real-mixed-mlx-evidence-v1",
+            "status":"PASS" if probe["status"]=="PASS" else "FAIL",
+            "source_head":subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip(),
+            "fixture_manifest_sha256":manifest["manifest_sha256"],
+            "qheatmap_sha256":manifest["heatmap_sha256"],
+            "candidate_policy_id":manifest["policy_id"],
+            "candidate_policy_approved_by_beval":manifest["policy_approved_by_beval"],
+            "bit_histogram":manifest["bit_histogram"],
+            "planes_bytes":manifest["planes_bytes"],
+            "mixed_payload_bytes":manifest["mixed_payload_bytes"],
+            "compression_vs_bf16":manifest["compression_vs_bf16"],
+            "bf16_weight_bytes":manifest["bf16_weight_bytes"],
+            "cpu_mixed_vs_bf16_max_abs_error":manifest["cpu_mixed_vs_bf16_max_abs_error"],
+            "metal_probe":probe,
+            "binary_sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
+            "production_touched":False,
+            "production_write_allowed":False,
+            "automatic_live_promotion":False,
+          }
+          (root/"BEGLIN_QT_QWEN25_REAL_MIXED_MLX_EVIDENCE.json").write_text(
+            json.dumps(out,sort_keys=True,indent=2)+"\n")
+          print(json.dumps(out,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qt-qwen25-real-mixed-mlx-evidence
+          path: |
+            /tmp/qt-qwen25-real-mixed/BEGLIN_QT_QWEN25_REAL_MIXED_MLX_EVIDENCE.json
+            /tmp/qt-qwen25-real-mixed/fixture/manifest.json
+            /tmp/qt-qwen25-real-mixed/fixture/qheatmap.json
+            /tmp/qt-qwen25-real-mixed/fixture/candidate_policy.json
+            /tmp/qt-qwen25-real-mixed/probe.txt
+          if-no-files-found: error
+          retention-days: 90

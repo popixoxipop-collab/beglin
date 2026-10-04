@@ -144,4 +144,16 @@ if(APPLE AND MLX_FOUND)
   add_executable(p12_qwen25_real_mlx_probe tools/p12_qwen25_real_mlx_probe.cpp qng64_dense.c mlx_moe.cpp)
   target_include_directories(p12_qwen25_real_mlx_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MLX_INCLUDE_DIRS})
   target_link_libraries(p12_qwen25_real_mlx_probe PRIVATE mlx)
+
+  add_executable(qt_mixed_qng64_mlx_probe tools/qt_mixed_qng64_mlx_probe.cpp mlx_moe.cpp)
+  target_include_directories(qt_mixed_qng64_mlx_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MLX_INCLUDE_DIRS})
+  target_link_libraries(qt_mixed_qng64_mlx_probe PRIVATE mlx)
+
+  add_executable(qt_mixed_qng64_binding_probe tools/qt_mixed_qng64_binding_probe.cpp mlx_moe.cpp)
+  target_include_directories(qt_mixed_qng64_binding_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MLX_INCLUDE_DIRS})
+  target_link_libraries(qt_mixed_qng64_binding_probe PRIVATE mlx)
+
+  add_executable(qt_qwen25_real_mixed_mlx_probe tools/qt_qwen25_real_mixed_mlx_probe.cpp mlx_moe.cpp)
+  target_include_directories(qt_qwen25_real_mixed_mlx_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MLX_INCLUDE_DIRS})
+  target_link_libraries(qt_qwen25_real_mixed_mlx_probe PRIVATE mlx)
 endif()

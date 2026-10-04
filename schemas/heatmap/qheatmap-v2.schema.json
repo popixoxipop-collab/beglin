@@ -1,0 +1,147 @@
+{
+  "$id": "https://beglin.local/schemas/heatmap/qheatmap-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "qheatmap-v2",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "beglin-qheatmap-v2"
+    },
+    "checkpoint_identity_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "skeleton_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "weight_epoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "target_key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "current_n": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "supported_n": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "uniqueItems": true
+          },
+          "error_by_n": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "backend_parity_by_n": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "recommended_n": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "minimum_safe_n": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "hysteresis_state": {
+            "enum": [
+              "STABLE",
+              "DOWNGRADE_ARMED",
+              "UPGRADE_ARMED",
+              "HOLD",
+              "COOLDOWN",
+              "QUARANTINED"
+            ]
+          },
+          "state": {
+            "enum": [
+              "COLD",
+              "OBSERVED",
+              "CANDIDATE",
+              "EVAL_PENDING",
+              "APPROVED",
+              "REJECTED",
+              "QUARANTINED",
+              "STALE"
+            ]
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "backend_verified_by_n": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          }
+        },
+        "required": [
+          "target_key",
+          "supported_n",
+          "error_by_n",
+          "backend_parity_by_n",
+          "backend_verified_by_n",
+          "confidence",
+          "hysteresis_state",
+          "state",
+          "evidence_refs"
+        ]
+      }
+    },
+    "heatmap_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "schema",
+    "checkpoint_identity_sha256",
+    "skeleton_sha256",
+    "weight_epoch",
+    "generation",
+    "cells",
+    "heatmap_sha256"
+  ]
+}
