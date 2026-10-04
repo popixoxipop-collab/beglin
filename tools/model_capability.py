@@ -1359,7 +1359,6 @@ def build_loader_contract(
             q for q in encountered
             if q not in {
                 "F32", "F16", "BF16", "float32", "float16", "bfloat16",
-                "I8", "U8",
             }
         )
         if source_quantization is not None:
