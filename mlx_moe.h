@@ -48,8 +48,9 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
                      long packed_off, long scale_off, long bias_off, int bits);
 
 // Returns the active representation for a previously-bound tensor name:
-// 0=missing, 1=native MLX quantized, 2=dense fp16/fp32, 3=custom qNg64.
-// bits_out receives the active bit width. This is a G0 control-plane probe
+// 0=missing, 1=native MLX quantized, 2=dense fp16/fp32, 3=uniform custom qNg64,
+// 4=mixed qNg64. bits_out receives the tensor-wide bit width for kinds 1/2/3;
+// kind 4 writes 0 because precision is cell-local. This is a G0 control-plane probe
 // for proving requested/applied binding identity across rebind/rollback tests.
 int mlx_gpu_binding_kind(const char *name, int *bits_out);
 
@@ -102,6 +103,14 @@ int mlx_gpu_qng64_mixed_dense_probe(const uint8_t *planes, long planes_bytes,
                                      const uint32_t *offsets, const uint8_t *bits,
                                      const float *scales, long out, long in,
                                      const float *x, int batch, float *out_buf);
+
+// QT-4 probe-registry binder for the same mixed representation. Input buffers
+// are copied into MLX-owned arrays so they may be released after this returns.
+// This is not wired into production serving or automatic policy promotion.
+int mlx_gpu_bind_qng64_mixed_dense_probe(const uint8_t *planes, long planes_bytes,
+                                          const uint32_t *offsets, const uint8_t *bits,
+                                          const float *scales, const char *name,
+                                          long out, long in);
 
 // Gate 4: y = quantized_matmul(x, w_e) for tensor `name`'s expert `e`,
 // against a caller-supplied dense fp32 x[in], written to y[out]. For direct
