@@ -86,6 +86,20 @@ class CapabilityBridgeTests(unittest.TestCase):
         self.assertEqual(got["capability_target_key"],"synthetic/L3/shared_up")
         self.assertEqual(got["model_capability_bundle_sha256"],bundle["bundle_sha256"])
 
+    def test_unverified_mutation_forces_validation_even_when_backend_is_verified(self):
+        bundle=capability_bundle()
+        bundle["backend_capability_matrix"]["rows"][0].update({
+            "inference_status":"VERIFIED",
+            "qng64_status":"VERIFIED",
+            "validation_required":False,
+        })
+        bundle["bundle_sha256"]=mc.stable_identity_sha256(bundle)
+        got=mcb.validate_p8_target(
+            bundle=bundle,role="shared_up_proj",layer=3,target_n=5,
+            backend="mlx_metal")
+        self.assertEqual(got["mutation_mode"],"IMPLEMENTED_UNVERIFIED")
+        self.assertTrue(got["requires_validation"])
+
     def test_tampered_bundle_is_rejected(self):
         bundle=capability_bundle()
         bundle["model_id"]="tampered"
