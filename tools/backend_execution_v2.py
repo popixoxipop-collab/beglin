@@ -226,16 +226,22 @@ class CpuRestartExecutionAdapterV2:
                 f"CPU execution refuses non-restart transition action={action}"
             )
 
+        transitioned = False
         try:
             after = _normalize_state(
                 self.restart_fn(copy.deepcopy(plan["target_policy"])),
                 backend=self.backend,
             )
+            transitioned = True
             if after["policy_hash"] != plan["target_policy_hash"]:
                 raise BackendExecutionError("CPU restart applied wrong target policy")
             if after["epoch"] <= before["epoch"]:
                 raise BackendExecutionError("CPU restart did not advance runtime epoch")
             validation = self.validate_fn() if self.validate_fn else None
+            if validation is not None and validation.get("status") not in {None, "PASS"}:
+                raise BackendExecutionError(
+                    f"CPU restart validation failed: {validation!r}"
+                )
             return _result(
                 backend=self.backend, plan=plan, status="RESTART_VERIFIED",
                 before=before, after=after, transitioned=True,
@@ -243,7 +249,7 @@ class CpuRestartExecutionAdapterV2:
             )
         except Exception as exc:
             rollback_result = None
-            if self.rollback_fn is not None:
+            if transitioned and self.rollback_fn is not None:
                 try:
                     restored = _normalize_state(
                         self.rollback_fn(copy.deepcopy(before["policy"])),
