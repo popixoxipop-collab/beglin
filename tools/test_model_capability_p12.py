@@ -502,6 +502,88 @@ class SourceAndCompilerTests(unittest.TestCase):
                 )
             )
 
+    def test_sentencepiece_is_explicit_external_gap_not_bpe_fallback(self):
+        source = {
+            "checkpoint_identity_sha256": "a" * 64,
+            "source_format": "SAFETENSORS_SINGLE",
+            "tokenizer_paths": ["/model/tokenizer.model"],
+            "metadata": {},
+        }
+        descriptor = {"architecture_id": "llama"}
+        missing = mc.build_tokenizer_contract(source, descriptor)
+        self.assertEqual(missing["tokenizer_family"], "SENTENCEPIECE")
+        self.assertEqual(missing["artifact_kind"], "SENTENCEPIECE_MODEL")
+        self.assertEqual(missing["status"], "UNSUPPORTED")
+        self.assertIsNone(missing["encode_backend"])
+        self.assertIn("SENTENCEPIECE_IN_ENGINE", missing["missing_primitives"])
+
+        evidence = {
+            "schema": "beglin-verification-evidence-v1",
+            "status": "VERIFIED",
+            "component": "tokenizer",
+            "architecture_id": "llama",
+            "checkpoint_identity_sha256": "a" * 64,
+            "evidence_sha256": "b" * 64,
+            "run_id": "sentencepiece-reference",
+            "kind": "TOKENIZER_REFERENCE",
+        }
+        external = mc.build_tokenizer_contract(
+            source, descriptor, verification_evidence=evidence
+        )
+        self.assertEqual(external["status"], "EXTERNAL_VERIFIED")
+        self.assertEqual(external["encode_backend"], "sentencepiece_external")
+        self.assertFalse(external["text_io_supported"])
+
+    def test_deepseek_tokenizer_requires_external_evidence_and_keeps_text_io_off(self):
+        source = {
+            "checkpoint_identity_sha256": "c" * 64,
+            "source_format": "SAFETENSORS_SHARDED",
+            "tokenizer_paths": ["/model/tokenizer.json"],
+            "metadata": {},
+        }
+        descriptor = {"architecture_id": "deepseek_v2"}
+        missing = mc.build_tokenizer_contract(source, descriptor)
+        self.assertEqual(missing["status"], "UNSUPPORTED")
+        self.assertIn(
+            "DEEPSEEK_PRETOKENIZER_IN_ENGINE", missing["missing_primitives"]
+        )
+
+        evidence = {
+            "schema": "beglin-verification-evidence-v1",
+            "status": "VERIFIED",
+            "component": "tokenizer",
+            "architecture_id": "deepseek_v2",
+            "checkpoint_identity_sha256": "c" * 64,
+            "evidence_sha256": "d" * 64,
+            "run_id": "deepseek-reference",
+            "kind": "TOKENIZER_REFERENCE",
+        }
+        external = mc.build_tokenizer_contract(
+            source, descriptor, verification_evidence=evidence
+        )
+        self.assertEqual(external["status"], "EXTERNAL_VERIFIED")
+        self.assertEqual(
+            external["encode_backend"], "external_deepseek_reference"
+        )
+        self.assertFalse(external["text_io_supported"])
+        self.assertIn("MODEL_TEXT_IO_WIRING", external["missing_primitives"])
+
+    def test_loader_memory_preflight_is_storage_bound_not_peak_rss_guess(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "m")
+            bundle = mc.compile_model_capabilities(root)
+            memory = bundle["loader_contract"]["memory_preflight"]
+            self.assertEqual(memory["status"], "REQUIRES_RUNTIME_PROBE")
+            self.assertGreater(memory["source_total_bytes"], 0)
+            self.assertGreater(memory["weight_storage_bytes"], 0)
+            self.assertEqual(
+                memory["storage_lower_bound_bytes"],
+                memory["weight_storage_bytes"],
+            )
+            self.assertIsNone(memory["peak_resident_bytes_estimate"])
+            self.assertIsNone(memory["workspace_bytes_estimate"])
+            self.assertTrue(memory["requires_runtime_probe"])
+
     def test_tokenizer_verification_requires_matching_evidence(self):
         with tempfile.TemporaryDirectory() as td:
             root = qwen_fixture(Path(td) / "m")
