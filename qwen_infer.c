@@ -18801,6 +18801,7 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
 // on quantized-transcode risk in the same step; K_Q4G64 transcoding for real SME2 throughput is
 // Phase 2 (D-gen-2 in the plan), a deliberately separate piece of work.
 static GgufFile *g_gguf = NULL;
+static GgufFile *g_tokenizer_gguf = NULL; // tokenizer-only sidecar for safetensors text I/O
 
 // D-tok Phase 5: real BPE tokenizer state for the dense GGUF path. Loaded lazily (only when
 // QWEN_PROMPT_TEXT asks for real text encoding instead of a pre-tokenized .i32 file) --
@@ -20206,13 +20207,25 @@ int main(int argc, char **argv) {
         // GGUF-only (g_gguf is NULL for the legacy fp32/int4/safetensors dense paths, which
         // have no tokenizer.ggml.* KVs to read) -- same scope this whole Phase 6 track has had
         // since D-tok-0's real-file shape soak.
-        if (!g_gguf) {
-            fprintf(stderr, "FATAL: QWEN_PROMPT_TEXT requires a GGUF-loaded model (tokenizer.ggml.* KVs)\n");
+        GgufFile *tokenizer_src = g_gguf;
+        if (!tokenizer_src) {
+            const char *tok_gguf = getenv("QWEN_TOKENIZER_GGUF");
+            if (tok_gguf && tok_gguf[0]) {
+                if (!g_tokenizer_gguf) g_tokenizer_gguf = gguf_open(tok_gguf);
+                if (!g_tokenizer_gguf) {
+                    fprintf(stderr, "FATAL: QWEN_TOKENIZER_GGUF could not be opened: %s\n", tok_gguf);
+                    return 1;
+                }
+                tokenizer_src = g_tokenizer_gguf;
+            }
+        }
+        if (!tokenizer_src) {
+            fprintf(stderr, "FATAL: QWEN_PROMPT_TEXT requires GGUF tokenizer metadata; for safetensors set QWEN_TOKENIZER_GGUF=<matching-model.gguf>\n");
             return 1;
         }
         if (!g_bpe_ready) {
-            BpePretokType pretok = bpe_pretok_for_gguf(g_gguf);
-            if (!bpe_vocab_load(g_gguf, pretok, &g_bpe_vocab)) {
+            BpePretokType pretok = bpe_pretok_for_gguf(tokenizer_src);
+            if (!bpe_vocab_load(tokenizer_src, pretok, &g_bpe_vocab)) {
                 fprintf(stderr, "FATAL: bpe_vocab_load failed despite tokenizer.ggml.model/pre being present\n");
                 return 1;
             }
