@@ -57,6 +57,12 @@ def inspect(path: str, *, model_id: str | None = None, model_revision: str = "lo
             architecture_id=architecture["architecture_id"],
             path=path,
         )
+    elif manifest["source_format"] == "GGUF" and source.get("gguf_inventory") is not None:
+        tensor_graph = tensor_roles.build_tensor_role_graph_from_gguf_inventory(
+            model_id=resolved_model_id,
+            architecture_id=architecture["architecture_id"],
+            inventory=source["gguf_inventory"],
+        )
 
     skeleton = ar.build_model_skeleton_from_config(
         model_id=resolved_model_id,
