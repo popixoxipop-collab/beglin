@@ -17,7 +17,7 @@ int qng64_quantize_f32(
 
 float qng64_decode_code(const uint8_t *group, int n, int index);
 
-void qng64_matvec_f32(
+void qng64_matmul_f32(\n    const uint8_t *packed, const float *scales, int n,\n    const float *x, const float *bias, float *y,\n    int out, int in, int M);\n\nvoid qng64_matvec_f32(
     const uint8_t *packed, const float *scales, int n,
     const float *x, const float *bias, float *y,
     int out, int in);
