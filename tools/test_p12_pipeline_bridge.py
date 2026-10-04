@@ -19,7 +19,35 @@ class PipelineBridgeTests(unittest.TestCase):
     def bundle(self, *, cpu_verified=False, mlx_verified=False):
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
-        root = qwen_fixture(Path(td.name) / "qwen")
+        root = Path(td.name) / "deepseek"
+        root.mkdir(parents=True)
+        (root / "config.json").write_text(__import__("json").dumps({
+            "_name_or_path": "acme/deepseek-v2-p12-pipeline",
+            "model_type": "deepseek_v2",
+            "hidden_size": 64,
+            "intermediate_size": 128,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 8,
+            "num_key_value_heads": 2,
+            "vocab_size": 128,
+            "max_position_embeddings": 256,
+            "n_routed_experts": 4,
+            "num_experts_per_tok": 2,
+            "n_shared_experts": 1,
+            "first_k_dense_replace": 0,
+        }, sort_keys=True))
+        write_safetensors(root / "model.safetensors", {
+            "model.embed_tokens.weight": ("F16", [128, 64]),
+            "model.norm.weight": ("F16", [64]),
+            "lm_head.weight": ("F16", [128, 64]),
+            "model.layers.0.self_attn.q_proj.weight": ("F16", [64, 64]),
+            "model.layers.0.self_attn.kv_a_proj_with_mqa.weight": ("F16", [64, 64]),
+            "model.layers.0.self_attn.kv_b_proj.weight": ("F16", [64, 64]),
+            "model.layers.0.self_attn.o_proj.weight": ("F16", [64, 64]),
+            "model.layers.0.mlp.shared_experts.gate_proj.weight": ("F16", [128, 64]),
+            "model.layers.0.mlp.shared_experts.up_proj.weight": ("F16", [128, 64]),
+            "model.layers.0.mlp.shared_experts.down_proj.weight": ("F16", [64, 128]),
+        })
         source = mc.inspect_model_source(root)
         descriptor = mc.build_architecture_descriptor(source)
 
@@ -178,7 +206,7 @@ class PipelineBridgeTests(unittest.TestCase):
             self.assertEqual(p10["backend_inference_status"], "VERIFIED")
             self.assertEqual(p10["qng64_status"], "VERIFIED")
 
-    def test_qwen_cpu_p10_selects_restart_canary(self):
+    def test_deepseek_cpu_p10_selects_restart_canary(self):
         bundle = self.bundle(cpu_verified=True)
         target = self.q_target(bundle)
         p8 = bridge.bind_p8_target(
@@ -190,6 +218,40 @@ class PipelineBridgeTests(unittest.TestCase):
         p10 = bridge.select_p10_canary(bundle, p9_binding=p9)
         self.assertEqual(p10["canary_strategy"], "ISOLATED_RESTART_CANARY")
         self.assertEqual(p10["status"], "READY_FOR_P10_CANARY")
+
+    def test_qwen_dense_qng64_target_is_fail_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = qwen_fixture(Path(td) / "qwen")
+            source = mc.inspect_model_source(root)
+            descriptor = mc.build_architecture_descriptor(source)
+            runtime = {
+                "schema": mc.VERIFICATION_EVIDENCE_SCHEMA,
+                "status": "VERIFIED",
+                "component": "backend_runtime",
+                "architecture_id": descriptor["architecture_id"],
+                "checkpoint_identity_sha256": source["checkpoint_identity_sha256"],
+                "backend": "cpu",
+                "evidence_sha256": "a" * 64,
+                "run_id": "p12-qwen-dense-cpu-runtime",
+                "kind": "TEST_RUNTIME_EVIDENCE",
+            }
+            bundle = mc.compile_model_capabilities(
+                root, backend="cpu", cpu_runtime_evidence=runtime
+            )
+            target = self.q_target(bundle)
+            row = next(
+                r for r in bundle["backend_capability_matrix"]["rows"]
+                if r["target_key"] == target and r["backend"] == "cpu"
+            )
+            self.assertEqual(row["qng64_status"], "UNSUPPORTED_MODEL")
+            self.assertEqual(row["supported_n"], [])
+            self.assertEqual(row["reason_code"], "QNG64_RUNTIME_PATH_UNAVAILABLE")
+            with self.assertRaisesRegex(
+                bridge.PipelineCapabilityError, "requested n=5 unsupported"
+            ):
+                bridge.bind_p8_target(
+                    bundle, target_key=target, backend="cpu", requested_n=5
+                )
 
     def test_unverified_mlx_requires_runtime_validation_before_p10(self):
         bundle = self.bundle()
