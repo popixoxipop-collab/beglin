@@ -152,4 +152,8 @@ if(APPLE AND MLX_FOUND)
   add_executable(qt_mixed_qng64_binding_probe tools/qt_mixed_qng64_binding_probe.cpp mlx_moe.cpp)
   target_include_directories(qt_mixed_qng64_binding_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MLX_INCLUDE_DIRS})
   target_link_libraries(qt_mixed_qng64_binding_probe PRIVATE mlx)
+
+  add_executable(qt_qwen25_real_mixed_mlx_probe tools/qt_qwen25_real_mixed_mlx_probe.cpp mlx_moe.cpp)
+  target_include_directories(qt_qwen25_real_mixed_mlx_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MLX_INCLUDE_DIRS})
+  target_link_libraries(qt_qwen25_real_mixed_mlx_probe PRIVATE mlx)
 endif()
