@@ -7,15 +7,23 @@ on:
     paths:
       - "schemas/heatmap/**"
       - "tools/qt_heatmap.py"
+      - "tools/qt_beval.py"
+      - "tools/qt_qwen25_group_perturb.py"
       - "tools/verify_qt_heatmap_contracts.py"
       - "tools/test_qt_heatmap.py"
+      - "tools/test_qt_beval.py"
+      - "tools/test_qt_qwen25_group_perturb.py"
       - ".github/workflows/qt-heatmap-regression.yml"
   pull_request:
     paths:
       - "schemas/heatmap/**"
       - "tools/qt_heatmap.py"
+      - "tools/qt_beval.py"
+      - "tools/qt_qwen25_group_perturb.py"
       - "tools/verify_qt_heatmap_contracts.py"
       - "tools/test_qt_heatmap.py"
+      - "tools/test_qt_beval.py"
+      - "tools/test_qt_qwen25_group_perturb.py"
       - ".github/workflows/qt-heatmap-regression.yml"
   workflow_dispatch:
 
@@ -32,3 +40,7 @@ jobs:
         run: python3 tools/verify_qt_heatmap_contracts.py
       - name: Run deterministic Q/T projector tests
         run: python3 tools/test_qt_heatmap.py
+      - name: Run Q/T BEVAL fail-closed tests
+        run: python3 tools/test_qt_beval.py
+      - name: Run Qwen group perturbation tests
+        run: python3 tools/test_qt_qwen25_group_perturb.py
