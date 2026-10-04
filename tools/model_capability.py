@@ -1148,6 +1148,25 @@ def _tokenizer_source_kind(source: Mapping[str, Any]) -> str:
     return "NONE"
 
 
+def _tokenizer_artifact_kind(
+    source: Mapping[str, Any],
+) -> str:
+    files = {Path(p).name for p in source.get("tokenizer_paths", [])}
+    metadata = source.get("metadata") or {}
+    if {"tokenizer.model", "spiece.model"} & files:
+        return "SENTENCEPIECE_MODEL"
+    if "tokenizer.json" in files:
+        return "TOKENIZER_JSON"
+    if "vocab.json" in files or "merges.txt" in files:
+        return "BPE_FILES"
+    if source.get("source_format") == "GGUF" and any(
+        str(key).startswith("tokenizer.ggml.")
+        for key in metadata
+    ):
+        return "GGUF_EMBEDDED"
+    return "NONE"
+
+
 def build_tokenizer_contract(
     source: Mapping[str, Any],
     descriptor: Mapping[str, Any],
@@ -1156,7 +1175,9 @@ def build_tokenizer_contract(
 ) -> dict:
     arch = str(descriptor["architecture_id"])
     files = [Path(p).name for p in source.get("tokenizer_paths", [])]
-    family = ARCH_REGISTRY.get(arch, {}).get("tokenizer_family", "UNKNOWN")
+    default_family = ARCH_REGISTRY.get(arch, {}).get(
+        "tokenizer_family", "UNKNOWN"
+    )
     evidence = normalize_verification_evidence(
         verification_evidence,
         component="tokenizer",
@@ -1164,98 +1185,124 @@ def build_tokenizer_contract(
         architecture_id=arch,
     )
     source_format = str(source.get("source_format") or "")
-    source_kind = _tokenizer_source_kind(source)
-    adapter_candidate = None
-    if source_kind == "SENTENCEPIECE":
-        # SentencePiece is a distinct tokenizer primitive. Never reinterpret it
-        # as Beglin BPE merely because the architecture is otherwise supported.
-        status = "EXTERNAL_VERIFIED" if evidence is not None else "UNSUPPORTED"
+    artifact_kind = _tokenizer_artifact_kind(source)
+    sentencepiece = artifact_kind == "SENTENCEPIECE_MODEL"
+    missing_primitives: list[str] = []
+
+    if sentencepiece:
+        family = "SENTENCEPIECE"
         encode_backend = "sentencepiece_external" if evidence is not None else None
-        adapter_candidate = "sentencepiece_external"
-    elif arch in {"qwen2", "qwen3_moe", "llama", "olmoe"}:
-        status = "IN_ENGINE_VERIFIED" if evidence is not None else "IMPLEMENTED_UNVERIFIED"
-        encode_backend = "beglin_bpe"
-    elif arch == "gpt-oss":
-        status = "EXTERNAL_VERIFIED" if evidence is not None else "IMPLEMENTED_UNVERIFIED"
-        encode_backend = "tiktoken_o200k_harmony"
-    elif arch == "deepseek_v2":
-        # The architecture is recognized, but its pretokenizer is not wired
-        # into Beglin text I/O. Evidence may certify an external tokenizer
-        # without silently claiming an in-engine path.
         status = "EXTERNAL_VERIFIED" if evidence is not None else "UNSUPPORTED"
-        encode_backend = "deepseek_external" if evidence is not None else None
-        adapter_candidate = "deepseek_external"
+        missing_primitives.append("SENTENCEPIECE_IN_ENGINE")
+    elif arch in {"qwen2", "qwen3_moe", "llama", "olmoe"}:
+        family = default_family
+        has_bpe_source = (
+            artifact_kind in {"TOKENIZER_JSON", "BPE_FILES", "GGUF_EMBEDDED"}
+        )
+        if has_bpe_source:
+            status = (
+                "IN_ENGINE_VERIFIED"
+                if evidence is not None
+                else "IMPLEMENTED_UNVERIFIED"
+            )
+            encode_backend = "beglin_bpe"
+        else:
+            status = "UNSUPPORTED"
+            encode_backend = None
+            missing_primitives.append("TOKENIZER_SOURCE_MISSING")
+    elif arch == "gpt-oss":
+        family = default_family
+        status = (
+            "EXTERNAL_VERIFIED"
+            if evidence is not None
+            else "IMPLEMENTED_UNVERIFIED"
+        )
+        encode_backend = "tiktoken_o200k_harmony"
+        missing_primitives.append("GPT_OSS_TOKENIZER_IN_ENGINE")
+    elif arch == "deepseek_v2":
+        family = default_family
+        status = "EXTERNAL_VERIFIED" if evidence is not None else "UNSUPPORTED"
+        encode_backend = (
+            "external_deepseek_reference" if evidence is not None else None
+        )
+        missing_primitives.append("DEEPSEEK_PRETOKENIZER_IN_ENGINE")
     else:
+        family = default_family
         status = "UNSUPPORTED"
         encode_backend = None
+        missing_primitives.append("TOKENIZER_ADAPTER_UNKNOWN")
 
-    # Tokenizer algorithm verification is distinct from an engine text-I/O path.
-    # Today real text input/output is wired only for dense GGUF greedy mode.
+    # Algorithm verification is distinct from an engine text-I/O path.
+    # Current real text input/output remains the dense GGUF greedy path.
     text_io_supported = bool(
         evidence is not None
         and source_format == "GGUF"
-        and source_kind != "SENTENCEPIECE"
         and arch in {"qwen2", "llama"}
+        and encode_backend == "beglin_bpe"
     )
-    text_io_mode = "DENSE_GGUF_GREEDY" if text_io_supported else "NOT_WIRED"
+    text_io_mode = (
+        "DENSE_GGUF_GREEDY" if text_io_supported else "NOT_WIRED"
+    )
+    if not text_io_supported and status in {
+        "IN_ENGINE_VERIFIED", "EXTERNAL_VERIFIED"
+    }:
+        missing_primitives.append("MODEL_TEXT_IO_WIRING")
+
     contract = {
         "schema": "beglin-tokenizer-contract-v1",
         "architecture_id": arch,
         "tokenizer_family": family,
-        "source_kind": source_kind,
+        "artifact_kind": artifact_kind,
         "source_files": sorted(files),
         "status": status,
         "encode_backend": encode_backend,
-        "adapter_candidate": adapter_candidate,
         "decode_backend": encode_backend,
         "text_io_supported": text_io_supported,
         "text_io_mode": text_io_mode,
+        "missing_primitives": sorted(set(missing_primitives)),
         "verification_evidence": evidence,
         "silent_fallback_allowed": False,
     }
     contract["tokenizer_contract_sha256"] = stable_identity_sha256(contract)
     return contract
 
-
-
-def build_loader_memory_preflight(source: Mapping[str, Any]) -> dict:
+def build_loader_memory_preflight(
+    source: Mapping[str, Any],
+) -> dict:
+    records = list(source.get("file_hashes") or [])
+    total_bytes = sum(int(row.get("size_bytes") or 0) for row in records)
     fmt = str(source.get("source_format") or "")
-    records = {
-        str(row.get("name")): int(row.get("size_bytes") or 0)
-        for row in source.get("file_hashes", [])
+    primary_name = (
+        Path(str(source.get("primary_path"))).name
+        if source.get("primary_path") else None
+    )
+    shard_names = {
+        Path(str(path)).name for path in source.get("shard_paths", [])
     }
-    weight_names = set()
-    primary = source.get("primary_path")
-    if primary:
-        weight_names.add(Path(str(primary)).name)
-    for path in source.get("shard_paths", []):
-        weight_names.add(Path(str(path)).name)
-    source_weight_bytes = sum(records.get(name, 0) for name in weight_names)
-
-    tensor_elements = 0
-    for row in source.get("tensor_inventory", []):
-        shape = row.get("shape") or []
-        if not shape:
-            continue
-        elements = 1
-        for dim in shape:
-            elements *= max(0, int(dim))
-        tensor_elements += elements
-
+    if fmt == "SAFETENSORS_SHARDED":
+        weight_names = shard_names
+    elif primary_name:
+        weight_names = {primary_name}
+    else:
+        weight_names = set()
+    weight_storage_bytes = sum(
+        int(row.get("size_bytes") or 0)
+        for row in records
+        if row.get("name") in weight_names
+    )
+    # This is deliberately not presented as a peak-RSS prediction. mmap,
+    # page cache, transcode caches, KV cache and backend workspaces are
+    # runtime-dependent and must be measured by the selected backend.
     return {
-        "schema": "beglin-loader-memory-preflight-v1",
-        "source_weight_bytes": int(source_weight_bytes),
-        "weight_file_count": len(weight_names),
-        "tensor_element_count": int(tensor_elements),
-        "dense_f16_equivalent_bytes": int(tensor_elements * 2),
-        "load_strategy": (
-            "MMAP_PAGECACHE" if fmt == "GGUF"
-            else ("SHARD_AWARE" if fmt.startswith("SAFETENSORS") else "LEGACY")
-        ),
-        "mmap_eligible": fmt == "GGUF",
-        "runtime_resident_bytes": None,
-        "runtime_resident_estimate_status": "REQUIRES_BACKEND_PROFILE",
-        "requires_runtime_measurement": True,
+        "status": "REQUIRES_RUNTIME_PROBE",
+        "source_total_bytes": total_bytes,
+        "weight_storage_bytes": weight_storage_bytes,
+        "storage_lower_bound_bytes": weight_storage_bytes,
+        "peak_resident_bytes_estimate": None,
+        "workspace_bytes_estimate": None,
+        "mmap_candidate": fmt == "GGUF",
+        "requires_runtime_probe": True,
+        "estimate_kind": "STORAGE_LOWER_BOUND_ONLY",
     }
 
 
@@ -1338,6 +1385,7 @@ def build_loader_contract(
         status = "VERIFIED" if evidence is not None else "IMPLEMENTED_UNVERIFIED"
     else:
         status = "UNSUPPORTED"
+    memory_preflight = build_loader_memory_preflight(source)
     contract = {
         "schema": "beglin-loader-contract-v1",
         "architecture_id": arch,
@@ -1622,7 +1670,10 @@ def build_precision_search_space(
             "backend": row["backend"],
             "supported_n": row["supported_n"],
             "mutation_mode": m["mutation_mode"],
-            "requires_validation": row["qng64_status"] != "VERIFIED",
+            "requires_validation": (
+                row["qng64_status"] != "VERIFIED"
+                or m.get("mutation_mode") == "IMPLEMENTED_UNVERIFIED"
+            ),
         })
     return sorted(out, key=lambda r: (r["backend"], r["target_key"]))
 
