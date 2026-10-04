@@ -58,3 +58,8 @@ jobs:
       - name: G5 observer semantics tests
         run: |
           PYTHONPATH=tools python tools/test_autopilot_observer_v3.py
+
+      - name: P12 model capability contract tests
+        run: |
+          PYTHONPATH=tools python tools/test_model_capability_p12.py
+          PYTHONPATH=tools python tools/verify_p12_bskel.py
