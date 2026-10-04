@@ -127,6 +127,49 @@ class CapabilityAcceptanceTests(unittest.TestCase):
                 },
             )
 
+    def test_runtime_identity_mismatch_is_rejected_not_overwritten(self):
+        f = self.fixture()
+        common = dict(
+            model_path=str(f["root"]),
+            backend="mlx_metal",
+            runtime_evidence=f["runtime"],
+            loader_evidence=f["loader"],
+            tokenizer_evidence=f["tokenizer"],
+            qng64_evidence=[f["qng64"]],
+            mutation_evidence=[f["mutation"]],
+            target_key=f["target"],
+            requested_n=5,
+            provenance_evidence_sha256=f["provenance_sha"],
+        )
+        with self.assertRaisesRegex(
+            bridge.PipelineCapabilityError, "stale model capability bundle"
+        ):
+            acceptance.materialize(
+                **common,
+                runtime_state={
+                    "model_capability_bundle_sha256": "0" * 64,
+                    "backend": "mlx_metal",
+                    "target_key": f["target"],
+                    "precision_n": 5,
+                    "worker_pid": 123,
+                    "weight_epoch": 7,
+                },
+            )
+        with self.assertRaisesRegex(
+            bridge.PipelineCapabilityError, "checkpoint identity mismatch"
+        ):
+            acceptance.materialize(
+                **common,
+                runtime_state={
+                    "checkpoint_identity_sha256": "0" * 64,
+                    "backend": "mlx_metal",
+                    "target_key": f["target"],
+                    "precision_n": 5,
+                    "worker_pid": 123,
+                    "weight_epoch": 7,
+                },
+            )
+
     def test_missing_target_evidence_stops_before_p11(self):
         f = self.fixture()
         bundle, result = acceptance.materialize(
