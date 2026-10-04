@@ -21,6 +21,7 @@ _PROFILES = {
     "qwen2": {
         "attention_operator": "ATTENTION_GQA",
         "ffn_kind": "DENSE",
+        "qk_norm_kind": "NONE",
         "required_primitives": [
             "EMBEDDING_LOOKUP", "RMS_NORM", "ROPE", "ATTENTION_GQA",
             "DENSE_FFN", "LM_HEAD",
@@ -29,6 +30,7 @@ _PROFILES = {
     "llama": {
         "attention_operator": "ATTENTION_GQA",
         "ffn_kind": "DENSE",
+        "qk_norm_kind": "NONE",
         "required_primitives": [
             "EMBEDDING_LOOKUP", "RMS_NORM", "ROPE", "ATTENTION_GQA",
             "DENSE_FFN", "LM_HEAD",
@@ -37,6 +39,7 @@ _PROFILES = {
     "deepseek_v2": {
         "attention_operator": "ATTENTION_MLA",
         "ffn_kind": "MOE",
+        "qk_norm_kind": "NONE",
         "required_primitives": [
             "EMBEDDING_LOOKUP", "RMS_NORM", "ROPE", "ATTENTION_MLA",
             "ROUTER_TOPK", "MOE_EXPERT", "MOE_SHARED_EXPERT", "LM_HEAD",
@@ -45,6 +48,7 @@ _PROFILES = {
     "qwen3_moe": {
         "attention_operator": "ATTENTION_GQA",
         "ffn_kind": "MOE",
+        "qk_norm_kind": "PER_HEAD",
         "required_primitives": [
             "EMBEDDING_LOOKUP", "RMS_NORM", "ROPE", "ATTENTION_GQA",
             "ROUTER_TOPK", "MOE_EXPERT", "LM_HEAD",
@@ -53,6 +57,7 @@ _PROFILES = {
     "olmoe": {
         "attention_operator": "ATTENTION_GQA",
         "ffn_kind": "MOE",
+        "qk_norm_kind": "WHOLE_VECTOR",
         "required_primitives": [
             "EMBEDDING_LOOKUP", "RMS_NORM", "ROPE", "ATTENTION_GQA",
             "ROUTER_TOPK", "MOE_EXPERT", "LM_HEAD",
@@ -61,6 +66,7 @@ _PROFILES = {
     "gpt-oss": {
         "attention_operator": "ATTENTION_GQA",
         "ffn_kind": "MOE",
+        "qk_norm_kind": "NONE",
         "required_primitives": [
             "EMBEDDING_LOOKUP", "RMS_NORM", "ROPE", "ATTENTION_GQA",
             "SLIDING_WINDOW_ATTENTION", "ATTENTION_SINK", "ROUTER_TOPK",
@@ -86,6 +92,9 @@ _FACT_KEYS = (
     "num_experts_per_token",
     "n_shared_experts",
     "sliding_window",
+    "first_k_dense_replace",
+    "moe_layer_freq",
+    "norm_topk_prob",
 )
 
 
@@ -100,11 +109,23 @@ def compile_descriptor(
     *,
     adapter_version: str = "p12-v1",
 ) -> dict:
-    return mc.identify_architecture(
+    descriptor = mc.identify_architecture(
         source_name,
         facts=architecture_facts(config),
         adapter_version=adapter_version,
     )
+    profile = _PROFILES.get(str(descriptor["architecture_id"]))
+    if profile:
+        descriptor = dict(descriptor)
+        facts = dict(descriptor.get("facts") or {})
+        facts["qk_norm_kind"] = profile["qk_norm_kind"]
+        descriptor["facts"] = facts
+        descriptor["descriptor_sha256"] = mc.sha256_json({
+            key: value
+            for key, value in descriptor.items()
+            if key != "descriptor_sha256"
+        })
+    return descriptor
 
 
 def _int_fact(config: Mapping[str, Any], *names: str, default: int | None = None) -> int | None:
@@ -138,6 +159,25 @@ def _experts_per_token(config: Mapping[str, Any]) -> int | None:
     return value
 
 
+
+def _layer_ffn_kind(
+    arch: str,
+    profile: Mapping[str, Any],
+    config: Mapping[str, Any],
+    layer: int,
+) -> str:
+    """Return the real FFN topology for one layer."""
+    if profile["ffn_kind"] == "DENSE":
+        return "DENSE"
+    if arch == "deepseek_v2":
+        first_dense = int(config.get("first_k_dense_replace", 0) or 0)
+        frequency = max(int(config.get("moe_layer_freq", 1) or 1), 1)
+        if layer < first_dense:
+            return "DENSE"
+        return "MOE" if (layer - first_dense) % frequency == 0 else "DENSE"
+    return "MOE"
+
+
 def build_operator_graph_from_config(
     *,
     model_id: str,
@@ -165,6 +205,7 @@ def build_operator_graph_from_config(
     experts_per_token = _experts_per_token(config)
 
     for layer in range(_layer_count(config)):
+        ffn_kind = _layer_ffn_kind(arch, profile, config, layer)
         operators.extend([
             {
                 "operator_id": f"L{layer}/pre_attention_norm",
@@ -179,7 +220,7 @@ def build_operator_graph_from_config(
                 "precision_sensitive": True,
                 "numeric_semantics": {
                     "attention_kind": descriptor.get("attention_kind"),
-                    "qk_norm_kind": config.get("qk_norm_kind"),
+                    "qk_norm_kind": profile["qk_norm_kind"],
                 },
             },
         ])
@@ -194,7 +235,7 @@ def build_operator_graph_from_config(
                     "attention_sink": True,
                 },
             })
-        if profile["ffn_kind"] == "DENSE":
+        if ffn_kind == "DENSE":
             operators.append({
                 "operator_id": f"L{layer}/ffn",
                 "operator_type": "DENSE_FFN",
@@ -211,6 +252,9 @@ def build_operator_graph_from_config(
                     "numeric_semantics": {
                         "expert_count": expert_count,
                         "experts_per_token": experts_per_token,
+                        "normalize_top_k": bool(
+                            config.get("norm_topk_prob", False)
+                        ),
                     },
                 },
                 {
@@ -221,7 +265,7 @@ def build_operator_graph_from_config(
                     "numeric_semantics": {"expert_count": expert_count},
                 },
             ])
-            if arch == "deepseek_v2":
+            if arch == "deepseek_v2" and config.get("n_shared_experts"):
                 operators.append({
                     "operator_id": f"L{layer}/shared_experts",
                     "operator_type": "MOE_SHARED_EXPERT",
@@ -268,14 +312,16 @@ def build_model_skeleton_from_config(
 
     layers = []
     for layer in range(layer_count):
+        ffn_kind = _layer_ffn_kind(arch, profile, config, layer)
         row = {
             "layer_index": layer,
             "attention": {
                 "kind": descriptor.get("attention_kind", "UNKNOWN"),
+                "qk_norm_kind": profile["qk_norm_kind"],
                 "operator_ref": f"L{layer}/attention",
             },
             "norm": {"kind": config.get("norm_kind", "RMS_NORM")},
-            "ffn": {"kind": profile["ffn_kind"]},
+            "ffn": {"kind": ffn_kind},
             "operator_refs": [
                 f"L{layer}/pre_attention_norm",
                 f"L{layer}/attention",
@@ -288,9 +334,12 @@ def build_model_skeleton_from_config(
                 "routed_experts": expert_count,
                 "experts_per_token": experts_per_token,
                 "shared_experts": config.get("n_shared_experts"),
+                "normalize_top_k": bool(
+                    config.get("norm_topk_prob", False)
+                ),
             }
             row["operator_refs"].extend([f"L{layer}/router", f"L{layer}/experts"])
-            if arch == "deepseek_v2":
+            if arch == "deepseek_v2" and config.get("n_shared_experts"):
                 row["operator_refs"].append(f"L{layer}/shared_experts")
         if arch == "gpt-oss":
             row["attention"]["sliding_window"] = config.get("sliding_window")
