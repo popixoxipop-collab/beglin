@@ -54,7 +54,8 @@ def apply_selective_sgd(
     if not math.isfinite(base_lr) or base_lr < 0.0:
         raise ValueError("base_lr must be finite and non-negative")
 
-    before = _check_shape(master, out_dim, in_dim)
+    before_values = _check_shape(master, out_dim, in_dim)
+    before = array("f", before_values)
     grad = _check_shape(gradient, out_dim, in_dim)
     after = array("f", before)
     seen: set[tuple[int, int]] = set()
@@ -93,7 +94,7 @@ def apply_selective_sgd(
                 delta = -base_lr * lr_scale * grad[idx]
                 if not math.isfinite(delta):
                     raise ValueError(f"non-finite update: {target}")
-                after[idx] = before[idx] + delta
+                after[idx] = float(before[idx]) + delta
                 a = abs(delta)
                 selected_update_sum += a
                 selected_update_max = max(selected_update_max, a)
@@ -104,7 +105,7 @@ def apply_selective_sgd(
         else:
             for p in range(GROUP):
                 idx = start + p
-                frozen_leakage = max(frozen_leakage, abs(float(after[idx]) - before[idx]))
+                frozen_leakage = max(frozen_leakage, abs(float(after[idx]) - float(before[idx])))
                 frozen_weight_count += 1
 
     expected_cells = out_dim * (in_dim // GROUP)
