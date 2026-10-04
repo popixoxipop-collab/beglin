@@ -120,6 +120,7 @@ def identify_architecture(
     aliases = {
         "deepseek_v2": "deepseek_v2",
         "deepseekv2": "deepseek_v2",
+        "deepseek2": "deepseek_v2",
         "qwen3moe": "qwen3_moe",
         "qwen3_moe": "qwen3_moe",
         "qwen2": "qwen2",
