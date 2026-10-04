@@ -4,6 +4,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+
 size_t qng64_group_bytes(int n);
 size_t qng64_packed_bytes(int out, int in, int n);
 
