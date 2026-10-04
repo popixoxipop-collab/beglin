@@ -84,7 +84,7 @@ jobs:
           python3 tools/qt_qwen25_mixed_candidate_fixture.py \
             --checkpoint /tmp/qt-qwen25-real-mixed/single.safetensors \
             --output-dir /tmp/qt-qwen25-real-mixed/fixture \
-            --n 4 --n 5 --n 6 --n 7 --n 8 \
+            --n 4 --n 5 --n 6 --n 7 --n 8 --n 9 --n 10 \
             --windows 2 \
             --local-output-budget 0.005 \
             --checkpoint-identity-sha256 538528b2cf263385d20b68a2f0ba50961d29ad7f21b21fc78c0ccd474a18c27d \
