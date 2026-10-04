@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generation",
+    "cells"
+  ],
+  "properties": {
+    "schema": {
+      "const": "beglin-qheatmap-v2"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target_key",
+          "current_n",
+          "supported_n",
+          "recommended_n",
+          "confidence",
+          "state",
+          "sample_count"
+        ],
+        "properties": {
+          "target_key": {
+            "type": "string"
+          },
+          "current_n": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "supported_n": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "uniqueItems": true
+          },
+          "recommended_n": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minimum_safe_n": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "sample_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "state": {
+            "enum": [
+              "COLD",
+              "OBSERVED",
+              "CANDIDATE",
+              "EVAL_PENDING",
+              "APPROVED",
+              "REJECTED",
+              "QUARANTINED",
+              "STALE"
+            ]
+          },
+          "error_by_n": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}
