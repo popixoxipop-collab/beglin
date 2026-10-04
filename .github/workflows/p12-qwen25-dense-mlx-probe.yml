@@ -29,6 +29,40 @@ jobs:
           test "$(hostname)" = "XOX.local"
           test "$(id -un)" = "xox"
           test ! -e /Users/xox/vdsp_serving/active-route.json || true
+      - name: Reproduce real Qwen L0 fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/p12-qwen25-real
+          curl -L --fail -r 0-2097151 -o /tmp/p12-qwen25-real/header.bin https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/model.safetensors
+          python3 - <<'PY'
+          import json,struct,pathlib,subprocess
+          root=pathlib.Path("/tmp/p12-qwen25-real")
+          b=(root/"header.bin").read_bytes()
+          hlen=struct.unpack("<Q",b[:8])[0]; h=json.loads(b[8:8+hlen])
+          k="model.layers.0.self_attn.q_proj.weight"; e=h[k]; start,end=e["data_offsets"]; base=8+hlen
+          remote_start=base+start; remote_end=base+end-1
+          subprocess.check_call(["curl","-L","--fail","-r",f"{remote_start}-{remote_end}","-o",str(root/"tensor.bf16"),
+                                 "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/model.safetensors"])
+          raw=(root/"tensor.bf16").read_bytes()
+          sh=json.dumps({k:{"dtype":"BF16","shape":e["shape"],"data_offsets":[0,len(raw)]}},separators=(",",":")).encode()
+          sh+=b" "*((-len(sh)-8)%8)
+          (root/"single.safetensors").write_bytes(struct.pack("<Q",len(sh))+sh+raw)
+          PY
+          python3 tools/p12_qwen25_cross_backend_fixture.py --checkpoint /tmp/p12-qwen25-real/single.safetensors --output-dir /tmp/p12-qwen25-real/fixture
+          python3 - <<'PY'
+          import json
+          m=json.load(open("/tmp/p12-qwen25-real/fixture/manifest.json"))
+          expected={
+            "planes.bin":"29c7c77756f33de16aa9b4d4e6a04dd9a40111fb726bfd44b8793958720d33ac",
+            "scales.bin":"0e3bce5492d4a95cd6a0286f0a2ea78e41876cda0dd09af2daf48fcbb84ec7da",
+            "input.bin":"e2817099db46af9e7bd23706498754aef5b15865b73935a9d71be67548accf8e",
+            "cpu_expected.bin":"1ca08616a4717e159350926d81f6a6d838f3b773cf5df561a5d5ae6a83aed7e4",
+          }
+          assert m["files_sha256"]==expected,(m["files_sha256"],expected)
+          assert m["manifest_sha256"]=="b06875f99b493e010c04a9f61adbdb0d4e5f1e6a7567e096a9181d13efc94fd7"
+          print("REAL_QWEN_FIXTURE_SHA_MATCH")
+          PY
       - name: Build MLX probe binary
         shell: bash
         run: |
