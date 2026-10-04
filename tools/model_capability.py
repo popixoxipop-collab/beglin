@@ -74,9 +74,12 @@ def build_weight_checkpoint_identity(
     if source_format == "SAFETENSORS_SHARDED":
         index = [row for row in rows if row.get("kind") == "safetensors_index"]
         shards = [row for row in rows if row.get("kind") == "safetensors_shard"]
+        if not index and not shards:
+            return None
         if len(index) != 1 or not shards:
             raise ModelCapabilityError(
-                "sharded safetensors identity requires one index and >=1 shard"
+                "sharded safetensors identity is partially specified; "
+                "requires exactly one index and >=1 shard"
             )
         idx = index[0]
         manifest = {
@@ -104,6 +107,8 @@ def build_weight_checkpoint_identity(
     if source_format in {"GGUF", "SAFETENSORS_SINGLE"}:
         allowed = {"gguf"} if source_format == "GGUF" else {"safetensors"}
         weights = [row for row in rows if row.get("kind") in allowed]
+        if not weights:
+            return None
         if len(weights) != 1:
             raise ModelCapabilityError(
                 f"{source_format} weight identity requires exactly one weight file"
