@@ -2,7 +2,8 @@
 """P12 safetensors tensor inventory and semantic role mapper.
 
 The inspector reads only safetensors headers. Weight payloads are never
-materialized. Unknown tensor names remain UNSUPPORTED rather than being guessed.
+materialized. Unknown architectures and unknown tensor names remain UNSUPPORTED
+rather than being guessed from similar-looking names.
 """
 from __future__ import annotations
 
@@ -20,6 +21,14 @@ class TensorRoleMappingError(RuntimeError):
 
 
 _MAX_HEADER_BYTES = 64 * 1024 * 1024
+_KNOWN_SEMANTIC_ARCHITECTURES = {
+    "qwen2",
+    "llama",
+    "deepseek_v2",
+    "qwen3_moe",
+    "olmoe",
+    "gpt-oss",
+}
 
 
 def read_safetensors_header(path: str | Path) -> dict[str, dict[str, Any]]:
@@ -184,8 +193,14 @@ def _with_parameter_kind(role: str, parameter: str) -> str:
 
 
 def map_tensor_name(architecture_id: str, name: str) -> dict[str, Any]:
-    """Map one tensor name. Unknown names are explicit UNSUPPORTED."""
+    """Map one tensor name. Unknown architecture/name is explicit UNSUPPORTED."""
     architecture_id = str(architecture_id)
+    if architecture_id not in _KNOWN_SEMANTIC_ARCHITECTURES:
+        return {
+            "role": f"UNMAPPED_{architecture_id.upper().replace('-', '_')}",
+            "mapping_status": "UNSUPPORTED",
+        }
+
     for pattern in _IGNORE_PATTERNS:
         if pattern.fullmatch(name):
             return {"role": "NON_PARAMETER_METADATA", "mapping_status": "IGNORE"}
@@ -217,8 +232,6 @@ def map_tensor_name(architecture_id: str, name: str) -> dict[str, Any]:
                 "mapping_status": "MAPPED",
             }
 
-    # Architecture-specific fail-closed marker is retained in the role so the
-    # diagnostic is useful while still counting as unsupported.
     return {
         "role": f"UNMAPPED_{architecture_id.upper().replace('-', '_')}",
         "mapping_status": "UNSUPPORTED",
