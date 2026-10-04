@@ -8,6 +8,7 @@
     "schema",
     "model_id",
     "checkpoint_identity",
+    "weight_checkpoint_identity_sha256",
     "skeleton_sha256",
     "architecture_id",
     "architecture_status",
@@ -105,6 +106,13 @@
     "architecture_id": {
       "type": "string",
       "minLength": 1
+    },
+    "weight_checkpoint_identity_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
     }
   }
 }
