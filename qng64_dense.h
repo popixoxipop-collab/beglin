@@ -6,10 +6,6 @@
 
 #ifdef __cplusplus
 extern "C" {
-#ifdef __cplusplus
-}
-#endif
-
 #endif
 
 size_t qng64_group_bytes(int n);
@@ -30,5 +26,9 @@ void qng64_matvec_f32(
     const uint8_t *packed, const float *scales, int n,
     const float *x, const float *bias, float *y,
     int out, int in);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
