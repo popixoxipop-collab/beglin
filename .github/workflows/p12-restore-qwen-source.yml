@@ -1,0 +1,21 @@
+name: P12 Restore Qwen Source
+on:
+  push:
+    branches: [precision-p12-model-capability-v1-20261004]
+    paths: [".p12-recovery/qwen_infer.c.gz"]
+permissions:
+  contents: write
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          gzip -dc .p12-recovery/qwen_infer.c.gz > qwen_infer.c
+          test "$(wc -c < qwen_infer.c)" = "1235232"
+          test "$(wc -l < qwen_infer.c)" = "19213"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add qwen_infer.c
+          git commit -m "fix(p12): restore verified Qwen source"
+          git push
