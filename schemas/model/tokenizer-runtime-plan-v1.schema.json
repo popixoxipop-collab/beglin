@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "beglin-tokenizer-runtime-plan-v1",
+  "title": "Beglin Tokenizer Runtime Plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "execution_mode",
+    "tokenizer_contract_sha256",
+    "architecture_id",
+    "tokenizer_family",
+    "encode_backend",
+    "decode_backend",
+    "external_executable",
+    "external_executable_sha256",
+    "protocol",
+    "silent_fallback_allowed",
+    "runtime_plan_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "beglin-tokenizer-runtime-plan-v1"},
+    "status": {
+      "enum": ["READY_IN_ENGINE", "READY_EXTERNAL", "VALIDATION_REQUIRED"]
+    },
+    "execution_mode": {
+      "enum": ["ENGINE_TEXT_PATH", "EXTERNAL_JSON_STDIN"]
+    },
+    "tokenizer_contract_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "architecture_id": {"type": "string", "minLength": 1},
+    "tokenizer_family": {"type": "string", "minLength": 1},
+    "encode_backend": {"type": "string", "minLength": 1},
+    "decode_backend": {"type": "string", "minLength": 1},
+    "text_io_mode": {"type": ["string", "null"]},
+    "external_executable": {"type": ["string", "null"]},
+    "external_executable_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "protocol": {"type": ["string", "null"]},
+    "silent_fallback_allowed": {"const": false},
+    "runtime_plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

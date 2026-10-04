@@ -1,0 +1,27 @@
+{
+  "$id": "https://beglin.local/schemas/model/loader-runtime-plan-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loader-runtime-plan-v1",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "schema": {"const": "beglin-loader-runtime-plan-v1"},
+    "status": {"enum": ["READY", "VALIDATION_REQUIRED"]},
+    "execution_allowed": {"type": "boolean"},
+    "model_capability_bundle_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "loader_contract_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "checkpoint_identity_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "source_format": {"enum": ["GGUF", "SAFETENSORS_SINGLE", "SAFETENSORS_SHARDED"]},
+    "execution_mode": {"enum": ["GGUF_DIRECT", "SAFETENSORS_SINGLE", "SAFETENSORS_SHARDED"]},
+    "silent_dense_fallback_allowed": {"const": false},
+    "runtime_probe_required": {"type": "boolean"},
+    "runtime_plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "required": [
+    "schema", "status", "execution_allowed",
+    "model_capability_bundle_sha256", "loader_contract_sha256",
+    "checkpoint_identity_sha256", "source_format", "execution_mode",
+    "source_files", "silent_dense_fallback_allowed",
+    "runtime_probe_required", "runtime_plan_sha256"
+  ]
+}

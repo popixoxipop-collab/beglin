@@ -11,6 +11,7 @@ from pathlib import Path
 import precision_context as pc
 import precision_policy_refresh as p8
 import gpu_shadow_runner as shadow
+import model_capability_bridge as mcb
 
 SCHEMA="beglin-precision-p9-shadow-cert-v1"
 class P9Error(RuntimeError): pass
@@ -37,22 +38,28 @@ def validate_provenance(provenance:dict)->dict:
 def queue_item(*,proposal:dict,provenance:dict|None)->dict:
  candidate=p8.shadow_candidate(proposal)
  if provenance is None:
-  return {"schema":SCHEMA,"status":"WAITING_FOR_REPLAY_PROVENANCE","production_write_allowed":False,
-          "automatic_live_promotion":False,"proposal_id":proposal["proposal_id"],"candidate":candidate}
+  out={"schema":SCHEMA,"status":"WAITING_FOR_REPLAY_PROVENANCE","production_write_allowed":False,
+       "automatic_live_promotion":False,"proposal_id":proposal["proposal_id"],"candidate":candidate}
+  out.update(mcb.optional_lineage(proposal))
+  return out
  prov=validate_provenance(provenance)
- return {"schema":SCHEMA,"status":"READY_FOR_SHADOW","production_write_allowed":False,
-         "automatic_live_promotion":False,"proposal_id":proposal["proposal_id"],"candidate":candidate,
-         "provenance":prov,"queue_sha256":_sha({"proposal":proposal,"provenance":prov})}
+ out={"schema":SCHEMA,"status":"READY_FOR_SHADOW","production_write_allowed":False,
+      "automatic_live_promotion":False,"proposal_id":proposal["proposal_id"],"candidate":candidate,
+      "provenance":prov,"queue_sha256":_sha({"proposal":proposal,"provenance":prov})}
+ out.update(mcb.optional_lineage(proposal))
+ return out
 
 def candidate_spec(*,queue:dict,event:dict,reference:dict,cwd:str,binary:str,binary_sha256:str,
                    checkpoint_sha256:str,moe_base:str,safetensors:str)->dict:
  if queue.get("status")!="READY_FOR_SHADOW": raise P9Error("queue item is not READY_FOR_SHADOW")
  c=queue["candidate"]; p=queue["provenance"]
- return {"candidate_id":c["candidate_id"],"role":c["role"],"layer":int(c["layer"]),"n":int(c["n"]),
-         "event":event,"reference":reference,"prompt_len":int(p["prompt_len"]),
-         "g4_manifest":p["manifest"],"g6_manifest":p["manifest"],"cwd":cwd,"binary":binary,
-         "binary_sha256":binary_sha256,"checkpoint_sha256":checkpoint_sha256,"moe_base":moe_base,
-         "safetensors":safetensors,"production_write_allowed":False,"p9_queue_sha256":queue["queue_sha256"]}
+ out={"candidate_id":c["candidate_id"],"role":c["role"],"layer":int(c["layer"]),"n":int(c["n"]),
+      "event":event,"reference":reference,"prompt_len":int(p["prompt_len"]),
+      "g4_manifest":p["manifest"],"g6_manifest":p["manifest"],"cwd":cwd,"binary":binary,
+      "binary_sha256":binary_sha256,"checkpoint_sha256":checkpoint_sha256,"moe_base":moe_base,
+      "safetensors":safetensors,"production_write_allowed":False,"p9_queue_sha256":queue["queue_sha256"]}
+ out.update(mcb.optional_lineage(queue))
+ return out
 
 def run_repeated_shadow(*,queue:dict,spec:dict,shadow_root:str,autopilot:str,repeats:int=3,timeout:int=3600)->dict:
  if repeats<2 or repeats>10: raise P9Error("shadow repeats must be in [2,10]")
@@ -64,12 +71,21 @@ def run_repeated_shadow(*,queue:dict,spec:dict,shadow_root:str,autopilot:str,rep
  if any(r.get("production_write_allowed") is not False for r in runs): raise P9Error("shadow unexpectedly permits production write")
  statuses=[r.get("shadow_status") for r in runs]
  status="SHADOW_ADMITTED" if all(x=="SHADOW_ADMITTED" for x in statuses) else "SHADOW_REJECTED"
- return {"schema":SCHEMA,"status":"SHADOW_REPEATED_COMPLETE","shadow_status":status,
-         "production_write_allowed":False,"automatic_live_promotion":False,"repeats":repeats,
-         "statuses":statuses,"runs":runs,"result_sha256":_sha(runs),"candidate":queue["candidate"]}
+ out={"schema":SCHEMA,"status":"SHADOW_REPEATED_COMPLETE","shadow_status":status,
+      "production_write_allowed":False,"automatic_live_promotion":False,"repeats":repeats,
+      "statuses":statuses,"runs":runs,"result_sha256":_sha(runs),"candidate":queue["candidate"]}
+ out.update(mcb.optional_lineage(queue))
+ return out
 
 def certification_bundle(*,proposal:dict,repeated_shadow:dict)->dict:
  if repeated_shadow.get("shadow_status")!="SHADOW_ADMITTED": raise P9Error("repeated shadow is not unanimously admitted")
+ proposal_lineage=mcb.optional_lineage(proposal)
+ shadow_lineage=mcb.optional_lineage(repeated_shadow)
+ if proposal_lineage != shadow_lineage:
+  raise P9Error(
+   "capability lineage mismatch between proposal and repeated shadow: "
+   f"proposal={proposal_lineage} shadow={shadow_lineage}"
+  )
  cert=p8.certification_candidate(proposal=proposal,shadow_result={
   "shadow_status":"SHADOW_ADMITTED","production_write_allowed":False,
   "candidate":repeated_shadow["candidate"],"result_sha256":repeated_shadow["result_sha256"]})
@@ -80,4 +96,5 @@ def certification_bundle(*,proposal:dict,repeated_shadow:dict)->dict:
  cert["automatic_live_promotion"]=False
  cert["production_write_allowed"]=False
  cert["required_next_action"]="manual_review_and_separate_cutover_gate"
+ cert.update(mcb.optional_lineage(proposal))
  return cert

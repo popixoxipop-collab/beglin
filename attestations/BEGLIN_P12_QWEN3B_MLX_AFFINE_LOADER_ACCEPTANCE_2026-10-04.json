@@ -1,0 +1,32 @@
+{
+  "architecture_id": "qwen2",
+  "automatic_live_promotion": false,
+  "binary_sha256": "2138c67bbb6a071bbe25f2f66aed1e7e0f80959c836c1277ca680d4b8a187b16",
+  "checkpoint_identity_sha256": "4a4523b1c479a0417b8dfa3e897d8f105e403f862dedd07c10a8c2cb5fc0b666",
+  "component": "loader",
+  "full_forward_exit_code": 0,
+  "greedy_generated_token": 26024,
+  "greedy_prompt_ids": [
+    1
+  ],
+  "model_id": "checkpoint-4a4523b1c479a041",
+  "model_safetensors_sha256": "b8e4560e7d712377ddbe97e3cbe266477848df13b0f885dbcb825723b523031a",
+  "numeric_model_reference_verified": false,
+  "oracle_max_abs_diff_vs_mlx_core": 0.0,
+  "oracle_tensor": "model.layers.0.self_attn.q_proj.weight",
+  "production_touched": false,
+  "registered_f32": 182,
+  "registered_q4g64": 252,
+  "registered_tensors": 434,
+  "schema": "beglin-p12-loader-acceptance-evidence-v1",
+  "source_commit": "06e7acf75ae84ed1cc397d59baf7195d1f60f0f6",
+  "source_format": "SAFETENSORS_SHARDED",
+  "source_quantization": {
+    "bits": 4,
+    "group_size": 64,
+    "mode": "affine",
+    "scheme": "MLX_AFFINE"
+  },
+  "status": "VERIFIED_LOADER_FORMAT",
+  "verification_scope": "LOADER_FORMAT_AND_FORWARD_FINITE"
+}

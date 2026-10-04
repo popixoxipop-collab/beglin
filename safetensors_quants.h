@@ -30,4 +30,25 @@ int safetensors_dequant_supported(SafetensorsType dtype);
 // rather than silently producing garbage.
 void safetensors_dequant_row(SafetensorsType dtype, const void *raw, float *out, uint64_t n);
 
+// MLX affine quantization stores 4-bit unsigned codes packed eight-per-U32,
+// plus one scale and bias per (row, group).  The exact installed-MLX oracle
+// contract is: value = scale * code + bias, with code j in bits
+// [4*(j%8), 4*(j%8)+3] of the corresponding little-endian U32 word.
+int safetensors_affine4_supported(
+    SafetensorsType codes_dtype,
+    SafetensorsType scales_dtype,
+    SafetensorsType biases_dtype);
+
+void safetensors_dequant_affine4_matrix(
+    SafetensorsType codes_dtype,
+    const void *codes_raw,
+    SafetensorsType scales_dtype,
+    const void *scales_raw,
+    SafetensorsType biases_dtype,
+    const void *biases_raw,
+    float *out,
+    uint64_t rows,
+    uint64_t cols,
+    uint32_t group_size);
+
 #endif // SAFETENSORS_QUANTS_H

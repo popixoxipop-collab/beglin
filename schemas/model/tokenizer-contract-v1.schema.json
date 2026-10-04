@@ -1,0 +1,70 @@
+{
+  "$id": "https://beglin.local/schemas/model/tokenizer-contract-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "schema": {
+      "const": "beglin-tokenizer-contract-v1"
+    },
+    "silent_fallback_allowed": {
+      "const": false
+    },
+    "status": {
+      "enum": [
+        "IN_ENGINE_VERIFIED",
+        "EXTERNAL_VERIFIED",
+        "IMPLEMENTED_UNVERIFIED",
+        "UNSUPPORTED"
+      ]
+    },
+    "text_io_supported": {
+      "type": "boolean"
+    },
+    "tokenizer_contract_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "encode_backend": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "decode_backend": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "text_io_mode": {
+      "enum": [
+        "DENSE_GGUF_GREEDY",
+        "NOT_WIRED"
+      ]
+    },
+    "artifact_kind": {
+      "enum": [
+        "SENTENCEPIECE_MODEL",
+        "TOKENIZER_JSON",
+        "BPE_FILES",
+        "GGUF_EMBEDDED",
+        "NONE"
+      ]
+    },
+    "missing_primitives": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "architecture_id",
+    "tokenizer_family",
+    "status",
+    "tokenizer_contract_sha256"
+  ],
+  "title": "tokenizer-contract-v1",
+  "type": "object"
+}

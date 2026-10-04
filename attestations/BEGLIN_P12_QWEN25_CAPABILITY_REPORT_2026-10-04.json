@@ -1,0 +1,50 @@
+{
+  "bundle_sha256": "7168fa81d8a389dd519879b2e63bdf91b2f67358950cdf846f7a14eb63c4c501",
+  "checkpoint_identity_sha256": "7b278b3f35f345956bd7dbf389e02205a0de8733f6daf67342e57122331affd6",
+  "eligibility": {
+    "automatic_live_promotion": false,
+    "p10_allowed": true,
+    "p11_allowed": true,
+    "p11_requires_verified_loader": true,
+    "p8_allowed": true,
+    "p9_allowed": true,
+    "pretokenized_precision_pipeline_ready": true,
+    "reasons": [
+      "BACKEND_OR_QNG64_REQUIRES_VALIDATION"
+    ],
+    "schema": "beglin-pipeline-eligibility-v1",
+    "status": "PARTIAL",
+    "text_io_ready": true
+  },
+  "inference_status": "VERIFIED",
+  "mapping_coverage": 1.0,
+  "model_id": "qwen2.5-0.5b-instruct",
+  "model_skeleton_sha256": "eda06bb5a5cb966b1297152a72b305b424c89a9d59fcca9a7da52f82935d1e0e",
+  "p10_binding": {
+    "automatic_live_promotion": false,
+    "backend": "cpu",
+    "backend_inference_status": "VERIFIED",
+    "canary_strategy": "ISOLATED_RESTART_CANARY",
+    "checkpoint_identity_sha256": "7b278b3f35f345956bd7dbf389e02205a0de8733f6daf67342e57122331affd6",
+    "model_capability_bundle_sha256": "7168fa81d8a389dd519879b2e63bdf91b2f67358950cdf846f7a14eb63c4c501",
+    "model_id": "qwen2.5-0.5b-instruct",
+    "model_skeleton_sha256": "eda06bb5a5cb966b1297152a72b305b424c89a9d59fcca9a7da52f82935d1e0e",
+    "mutation_mode": "RESTART_REQUIRED",
+    "p10_binding_sha256": "1d92e4e6aa55d680f08f9bce7800861d1880a983c11e9f7ea3cf467d860d2bf8",
+    "p9_binding_sha256": "0050abb3c5ce24703984b96f76105fce6008bdde314c58198138e5e3b17afb1f",
+    "production_write_allowed": false,
+    "qng64_status": "IMPLEMENTED_UNVERIFIED",
+    "requested_n": 5,
+    "schema": "beglin-p12-p10-capability-binding-v1",
+    "status": "READY_FOR_P10_CANARY",
+    "target_key": "qwen2.5-0.5b-instruct/L0/q_proj"
+  },
+  "production_touched": false,
+  "qng64_status": "IMPLEMENTED_UNVERIFIED",
+  "runtime_evidence_sha256": "cdaef0ec9fbca43d33e2515a99b08ff1aaa4ed82a3fab547829505c123500d5a",
+  "schema": "beglin-p12-real-model-capability-report-v1",
+  "source_commit": "6874496a8655d42796f1a05826e6e123c43aeda6",
+  "status": "PASS",
+  "target_key": "qwen2.5-0.5b-instruct/L0/q_proj",
+  "tensor_count": 291
+}

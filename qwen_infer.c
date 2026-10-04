@@ -19182,6 +19182,11 @@ static SafetensorsMulti *g_st = NULL;
 // override block -- see that function's rope_scaling comment for why this is a separate global
 // from g_rope_cfg rather than reusing it.
 static RopeScaleCfg g_rope_cfg_st;
+// P12: optional MLX affine-4 physical safetensors layout.  This is enabled
+// only by an explicit config.json quantization object validated below; a bare
+// U32 tensor is never guessed to be quantized weights.
+static int g_st_mlx_affine4 = 0;
+static int g_st_mlx_affine_group_size = 0;
 
 // Mirrors load_gguf_arch()'s structure: populates every g_cfg.* field, but from a sibling
 // config.json (via hf_config.h) instead of GGUF KV metadata. g_st must already be open (see
@@ -19203,6 +19208,45 @@ static void load_safetensors_arch(const char *config_path) {
         exit(1);
     }
     g_rope_norm = !strcmp(model_type, "llama") ? 1 : 0;
+
+    // P12 MLX affine-4 safetensors contract. mlx_lm exports physical
+    // <role>.weight (U32 packed codes) + <role>.scales + <role>.biases.
+    // Do not infer that layout merely from U32: require the model's own
+    // config metadata to say bits=4, group_size=64, mode=affine.
+    g_st_mlx_affine4 = 0;
+    g_st_mlx_affine_group_size = 0;
+    const HfConfig *qcfg = NULL;
+    HfValType qcfg_type = hf_config_key_type(c, "quantization_config");
+    if (qcfg_type == HF_TYPE_OBJECT) qcfg = hf_config_get_object(c, "quantization_config");
+    else if (qcfg_type != HF_TYPE_ABSENT && qcfg_type != HF_TYPE_NULL) {
+        fprintf(stderr, "FATAL: %s quantization_config is neither object nor null\n", config_path); exit(1);
+    }
+    if (!qcfg) {
+        HfValType q_type = hf_config_key_type(c, "quantization");
+        if (q_type == HF_TYPE_OBJECT) qcfg = hf_config_get_object(c, "quantization");
+        else if (q_type != HF_TYPE_ABSENT && q_type != HF_TYPE_NULL) {
+            fprintf(stderr, "FATAL: %s quantization is neither object nor null\n", config_path); exit(1);
+        }
+    }
+    if (qcfg) {
+        int64_t q_bits = 0, q_group = 0;
+        const char *q_mode = NULL;
+        if (!hf_config_get_i64(qcfg, "bits", &q_bits) ||
+            !hf_config_get_i64(qcfg, "group_size", &q_group) ||
+            !hf_config_get_str(qcfg, "mode", &q_mode)) {
+            fprintf(stderr, "FATAL: %s quantization metadata requires bits/group_size/mode\n", config_path); exit(1);
+        }
+        if (q_bits != 4 || q_group != 64 || strcmp(q_mode, "affine")) {
+            fprintf(stderr, "FATAL: %s unsupported safetensors quantization bits=%lld group_size=%lld mode=%s "
+                            "(only MLX affine 4-bit group-64 is implemented)\n",
+                    config_path, (long long)q_bits, (long long)q_group, q_mode);
+            exit(1);
+        }
+        g_st_mlx_affine4 = 1;
+        g_st_mlx_affine_group_size = (int)q_group;
+        fprintf(stderr, "[engine] safetensors quantization: MLX affine bits=4 group_size=%d\n",
+                g_st_mlx_affine_group_size);
+    }
 
     // NTK-by-parts rope_scaling ("rope_scaling": {"rope_type": "llama3", ...} in the HF config,
     // e.g. Llama-3.1's config.json). Populates a SEPARATE g_rope_cfg_st (not g_rope_cfg) because
@@ -19325,37 +19369,110 @@ static void load_safetensors_arch(const char *config_path) {
     hf_config_close(c);
 }
 
-// Widens one safetensors tensor to F32 and registers it in g_wt[] under `name` -- the
-// safetensors tensor's own name IS the engine registration name here (see the header comment
-// above load_safetensors_weights() for why no name-mapping table is needed, unlike GGUF).
-static WT *st_register_f32_as(const char *name) {
+// P12: materialize one logical dense tensor as F32.  Plain F32/F16/BF16
+// uses the established widening path.  Explicit MLX affine-4 uses the model's
+// U32 packed <name>.weight plus sibling <base>.scales / <base>.biases.
+static float *st_dequant_logical_f32(const char *name, int *out_dim, int *in_dim,
+                                     uint64_t *logical_elements) {
     SafetensorsFile *shard = NULL;
     const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st, name, &shard);
     if (!t) { fprintf(stderr, "FATAL: safetensors model missing tensor '%s'\n", name); exit(1); }
-    if (!safetensors_dequant_supported(t->dtype)) {
-        fprintf(stderr, "FATAL: safetensors tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
+
+    if (safetensors_dequant_supported(t->dtype)) {
+        int out = (int)t->shape[0];
+        int in = t->n_dims >= 2 ? (int)t->shape[1] : 0;
+        float *buf = malloc(sizeof(float) * (size_t)t->n_elements);
+        if (!buf) { fprintf(stderr, "FATAL: safetensors dequant alloc failed for '%s'\n", name); exit(1); }
+        safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), buf, t->n_elements);
+        *out_dim = out; *in_dim = in; *logical_elements = t->n_elements;
+        return buf;
+    }
+
+    if (t->dtype != ST_TYPE_U32 || !g_st_mlx_affine4) {
+        fprintf(stderr, "FATAL: safetensors tensor '%s' has unsupported dtype %s\n",
+                name, safetensors_type_name(t->dtype));
         exit(1);
     }
+    if (t->n_dims != 2 || t->shape[0] == 0 || t->shape[1] == 0) {
+        fprintf(stderr, "FATAL: MLX affine4 tensor '%s' must be non-empty rank-2\n", name); exit(1);
+    }
+    size_t len = strlen(name);
+    const char *weight_suffix = ".weight";
+    size_t suffix_len = strlen(weight_suffix);
+    if (len <= suffix_len || strcmp(name + len - suffix_len, weight_suffix)) {
+        fprintf(stderr, "FATAL: MLX affine4 U32 tensor '%s' is not a .weight tensor\n", name); exit(1);
+    }
+    char scales_name[192], biases_name[192];
+    if (len - suffix_len + strlen(".scales") + 1 > sizeof scales_name ||
+        len - suffix_len + strlen(".biases") + 1 > sizeof biases_name) {
+        fprintf(stderr, "FATAL: MLX affine4 auxiliary tensor name too long for '%s'\n", name); exit(1);
+    }
+    memcpy(scales_name, name, len - suffix_len);
+    scales_name[len - suffix_len] = '\0';
+    memcpy(biases_name, scales_name, len - suffix_len + 1);
+    strcat(scales_name, ".scales");
+    strcat(biases_name, ".biases");
+
+    SafetensorsFile *scale_shard = NULL, *bias_shard = NULL;
+    const SafetensorsInfo *st = safetensors_multi_find_tensor(g_st, scales_name, &scale_shard);
+    const SafetensorsInfo *bt = safetensors_multi_find_tensor(g_st, biases_name, &bias_shard);
+    if (!st || !bt) {
+        fprintf(stderr, "FATAL: MLX affine4 '%s' missing sibling scales/biases\n", name); exit(1);
+    }
+    int out = (int)t->shape[0];
+    uint64_t logical_in_u64 = t->shape[1] * 8u;
+    if (logical_in_u64 > INT32_MAX) {
+        fprintf(stderr, "FATAL: MLX affine4 '%s' logical row too wide\n", name); exit(1);
+    }
+    int in = (int)logical_in_u64;
+    if (in % g_st_mlx_affine_group_size != 0) {
+        fprintf(stderr, "FATAL: MLX affine4 '%s' logical in=%d not divisible by group=%d\n",
+                name, in, g_st_mlx_affine_group_size); exit(1);
+    }
+    int ng = in / g_st_mlx_affine_group_size;
+    if (st->n_dims != 2 || bt->n_dims != 2 ||
+        (int)st->shape[0] != out || (int)bt->shape[0] != out ||
+        (int)st->shape[1] != ng || (int)bt->shape[1] != ng) {
+        fprintf(stderr, "FATAL: MLX affine4 '%s' auxiliary shapes disagree with out=%d groups=%d\n",
+                name, out, ng); exit(1);
+    }
+    if (!safetensors_affine4_supported(t->dtype, st->dtype, bt->dtype)) {
+        fprintf(stderr, "FATAL: MLX affine4 '%s' unsupported dtypes codes=%s scales=%s biases=%s\n",
+                name, safetensors_type_name(t->dtype), safetensors_type_name(st->dtype),
+                safetensors_type_name(bt->dtype)); exit(1);
+    }
+    uint64_t n = (uint64_t)out * (uint64_t)in;
+    float *buf = malloc(sizeof(float) * (size_t)n);
+    if (!buf) { fprintf(stderr, "FATAL: MLX affine4 dequant alloc failed for '%s'\n", name); exit(1); }
+    safetensors_dequant_affine4_matrix(
+        t->dtype, safetensors_tensor_data(shard, t),
+        st->dtype, safetensors_tensor_data(scale_shard, st),
+        bt->dtype, safetensors_tensor_data(bias_shard, bt),
+        buf, (uint64_t)out, (uint64_t)in, (uint32_t)g_st_mlx_affine_group_size);
+    *out_dim = out; *in_dim = in; *logical_elements = n;
+    return buf;
+}
+
+static WT *st_register_f32_buffer(const char *name, float *buf, int out, int in) {
     check_no_dup_name(name);
     if (g_nwt >= 512) { fprintf(stderr, "FATAL: >512 tensors loading safetensors model\n"); exit(1); }
     WT *w = &g_wt[g_nwt++];
     snprintf(w->name, sizeof w->name, "%s", name);
-    w->kind = K_F32; w->ng = 0;
-    // safetensors shape[] is [out, in] (row-major, slowest-varying-first) for a 2D weight
-    // matrix -- shape[0] = row count = this engine's "out", shape[1] = row length = "in". 1D
-    // tensors (biases, norms) have n_dims==1; "in" stays 0, harmless since those are only ever
-    // read via ->f32 directly, never through W->out/W->in in a matvec call (same convention
-    // GGUF's own 1D handling relies on).
-    w->out = (int)t->shape[0];
-    w->in = t->n_dims >= 2 ? (int)t->shape[1] : 0;
+    w->kind = K_F32; w->ng = 0; w->out = out; w->in = in;
     w->packed = NULL; w->scales = NULL; w->sub = NULL;
     w->kai_rhs = NULL; w->kai_rhs_bytes = 0; w->kai_lazy_failed = 0;
-    float *buf = malloc(sizeof(float) * (size_t)t->n_elements);
-    if (!buf) { fprintf(stderr, "FATAL: safetensors dequant alloc failed for '%s' (%llu elements)\n",
-                        name, (unsigned long long)t->n_elements); exit(1); }
-    safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), buf, t->n_elements);
     w->f32 = buf;
     return w;
+}
+
+// Widens one safetensors tensor to F32 and registers it in g_wt[] under `name` -- the
+// safetensors tensor's own name IS the engine registration name here (see the header comment
+// above load_safetensors_weights() for why no name-mapping table is needed, unlike GGUF).
+static WT *st_register_f32_as(const char *name) {
+    int out = 0, in = 0; uint64_t n = 0;
+    float *buf = st_dequant_logical_f32(name, &out, &in, &n);
+    (void)n;
+    return st_register_f32_buffer(name, buf, out, in);
 }
 
 // Widens+RTN(+EF)-transcodes one safetensors tensor to K_Q4G64, reusing
@@ -19364,31 +19481,23 @@ static WT *st_register_f32_as(const char *name) {
 // K_F32 when in%64!=0, same hard SME2 group-size requirement load_gguf_weights()'s equivalent
 // already enforces.
 static WT *st_register_q4g64_as(const char *name) {
-    SafetensorsFile *shard = NULL;
-    const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st, name, &shard);
-    if (!t) { fprintf(stderr, "FATAL: safetensors model missing tensor '%s'\n", name); exit(1); }
-    int out = (int)t->shape[0], in = (int)t->shape[1];
+    int out = 0, in = 0; uint64_t n = 0;
+    float *deq = st_dequant_logical_f32(name, &out, &in, &n);
     if (in % 64 != 0) {
         fprintf(stderr, "[engine] safetensors: %s in=%d not a multiple of 64 -> K_F32 fallback (not K_Q4G64)\n", name, in);
-        return st_register_f32_as(name);
+        return st_register_f32_buffer(name, deq, out, in);
     }
-    if (!safetensors_dequant_supported(t->dtype)) {
-        fprintf(stderr, "FATAL: safetensors tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
-        exit(1);
+    if (n != (uint64_t)out * (uint64_t)in) {
+        fprintf(stderr, "FATAL: safetensors '%s' logical element count mismatch\n", name); exit(1);
     }
     check_no_dup_name(name);
     if (g_nwt >= 512) { fprintf(stderr, "FATAL: >512 tensors loading safetensors model\n"); exit(1); }
-    float *deq = malloc(sizeof(float) * (size_t)t->n_elements);
-    if (!deq) { fprintf(stderr, "FATAL: safetensors dequant alloc failed for '%s'\n", name); exit(1); }
-    safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), deq, t->n_elements);
-
     int ng = in / 64;
     uint8_t *packed = malloc((size_t)out * (in / 2));
     float *scales = malloc(sizeof(float) * (size_t)out * ng);
     if (!packed || !scales) { fprintf(stderr, "FATAL: safetensors transcode alloc failed for '%s'\n", name); exit(1); }
     gguf_quantize_q4g64_error_feedback(deq, out, in, packed, scales);
     free(deq);
-
     WT *w = &g_wt[g_nwt++];
     snprintf(w->name, sizeof w->name, "%s", name);
     w->kind = K_Q4G64; w->in = in; w->out = out; w->ng = ng;
@@ -19400,31 +19509,23 @@ static WT *st_register_q4g64_as(const char *name) {
 // Symmetric int8 group-64 RTN, reusing gguf_quantize_q8g64() unmodified -- used only for an
 // untied lm_head, matching load_gguf_weights()'s output.weight policy exactly.
 static WT *st_register_q8g64_as(const char *name) {
-    SafetensorsFile *shard = NULL;
-    const SafetensorsInfo *t = safetensors_multi_find_tensor(g_st, name, &shard);
-    if (!t) { fprintf(stderr, "FATAL: safetensors model missing tensor '%s'\n", name); exit(1); }
-    int out = (int)t->shape[0], in = (int)t->shape[1];
+    int out = 0, in = 0; uint64_t n = 0;
+    float *deq = st_dequant_logical_f32(name, &out, &in, &n);
     if (in % 64 != 0) {
         fprintf(stderr, "[engine] safetensors: %s in=%d not a multiple of 64 -> K_F32 fallback (not K_Q8G64)\n", name, in);
-        return st_register_f32_as(name);
+        return st_register_f32_buffer(name, deq, out, in);
     }
-    if (!safetensors_dequant_supported(t->dtype)) {
-        fprintf(stderr, "FATAL: safetensors tensor '%s' has unsupported dtype %s\n", name, safetensors_type_name(t->dtype));
-        exit(1);
+    if (n != (uint64_t)out * (uint64_t)in) {
+        fprintf(stderr, "FATAL: safetensors '%s' logical element count mismatch\n", name); exit(1);
     }
     check_no_dup_name(name);
     if (g_nwt >= 512) { fprintf(stderr, "FATAL: >512 tensors loading safetensors model\n"); exit(1); }
-    float *deq = malloc(sizeof(float) * (size_t)t->n_elements);
-    if (!deq) { fprintf(stderr, "FATAL: safetensors dequant alloc failed for '%s'\n", name); exit(1); }
-    safetensors_dequant_row(t->dtype, safetensors_tensor_data(shard, t), deq, t->n_elements);
-
     int ng = in / 64;
     int8_t *codes = malloc((size_t)out * in);
     float *scales = malloc(sizeof(float) * (size_t)out * ng);
     if (!codes || !scales) { fprintf(stderr, "FATAL: safetensors transcode alloc failed for '%s'\n", name); exit(1); }
     gguf_quantize_q8g64(deq, out, in, codes, scales);
     free(deq);
-
     WT *w = &g_wt[g_nwt++];
     snprintf(w->name, sizeof w->name, "%s", name);
     w->kind = K_Q8G64; w->in = in; w->out = out; w->ng = ng;

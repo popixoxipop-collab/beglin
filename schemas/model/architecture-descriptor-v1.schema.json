@@ -1,0 +1,41 @@
+{
+  "$id": "https://beglin.local/schemas/model/architecture-descriptor-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "architecture_descriptor_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "architecture_id": {
+      "type": "string"
+    },
+    "attention_kind": {
+      "type": "string"
+    },
+    "dense_or_moe": {
+      "enum": [
+        "DENSE",
+        "MOE",
+        "UNKNOWN"
+      ]
+    },
+    "schema": {
+      "const": "beglin-architecture-descriptor-v1"
+    },
+    "status": {
+      "enum": [
+        "VERIFIED_ADAPTER",
+        "UNKNOWN_ARCHITECTURE"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "architecture_id",
+    "status",
+    "architecture_descriptor_sha256"
+  ],
+  "title": "architecture-descriptor-v1",
+  "type": "object"
+}

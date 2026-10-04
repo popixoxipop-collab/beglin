@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib, json
 import precision_allocator as pa
 import precision_context as pc
+import model_capability_bridge as mcb
 
 SCHEMA="beglin-precision-policy-refresh-v1"
 CERT_SCHEMA="beglin-precision-policy-certification-candidate-v1"
@@ -15,7 +16,7 @@ def _sha(v):
 
 def propose(*, candidates, current_policy, lineage_summary, p7_certification,
             memory_weight=1.0, latency_weight=0.0, rss_weight=0.0,
-            e2e_weight=0.0, min_admissions=100):
+            e2e_weight=0.0, min_admissions=100, model_capability_bundle=None):
     if int(lineage_summary.get("admissions",0)) < int(min_admissions):
         raise PolicyRefreshError("insufficient P6/P7 admission evidence")
     if float(lineage_summary.get("finite_logits_rate",0.0)) != 1.0:
@@ -45,20 +46,40 @@ def propose(*, candidates, current_policy, lineage_summary, p7_certification,
     ranked.sort(key=lambda r:(float("inf") if r["objective_score"] is None else r["objective_score"],
                               r["role"],r["layer"]))
     selected=ranked[0] if ranked else None
-    proposal_id=_sha({"current":current,"proposed":proposed,"selected":selected,
-                      "lineage_head":lineage_summary.get("lineage_head_sha256"),
-                      "p7":p7_certification.get("result_sha256")})[:24]
-    return {"schema":SCHEMA,"status":"PROPOSAL_ONLY","production_write_allowed":False,
-            "automatic_live_promotion":False,"proposal_id":proposal_id,
-            "current_policy":current,"current_policy_hash":pc.policy_hash(current),
-            "proposed_policy":proposed,"proposed_policy_hash":pc.policy_hash(proposed),
-            "changes":ranked,"selected_shadow_target":selected,
-            "allocator_decision_sha256":_sha(allocation),
-            "lineage_head_sha256":lineage_summary.get("lineage_head_sha256"),
-            "lineage_admissions":int(lineage_summary["admissions"]),
-            "p7_result_sha256":p7_certification.get("result_sha256"),
-            "shadow_required":selected is not None,
-            "manual_review_required":True}
+    capability_binding=None
+    if model_capability_bundle is not None and selected is not None:
+        try:
+            capability_binding=mcb.validate_p8_target(
+                bundle=model_capability_bundle,
+                role=selected["role"],layer=int(selected["layer"]),
+                target_n=int(selected["new_n"]),backend="mlx_metal")
+        except mcb.CapabilityBridgeError as exc:
+            raise PolicyRefreshError(f"model capability gate rejected target: {exc}") from exc
+    proposal_identity={"current":current,"proposed":proposed,"selected":selected,
+                       "lineage_head":lineage_summary.get("lineage_head_sha256"),
+                       "p7":p7_certification.get("result_sha256")}
+    if capability_binding is not None:
+        proposal_identity["model_capability_bundle_sha256"]=capability_binding["model_capability_bundle_sha256"]
+    proposal_id=_sha(proposal_identity)[:24]
+    out={"schema":SCHEMA,"status":"PROPOSAL_ONLY","production_write_allowed":False,
+         "automatic_live_promotion":False,"proposal_id":proposal_id,
+         "current_policy":current,"current_policy_hash":pc.policy_hash(current),
+         "proposed_policy":proposed,"proposed_policy_hash":pc.policy_hash(proposed),
+         "changes":ranked,"selected_shadow_target":selected,
+         "allocator_decision_sha256":_sha(allocation),
+         "lineage_head_sha256":lineage_summary.get("lineage_head_sha256"),
+         "lineage_admissions":int(lineage_summary["admissions"]),
+         "p7_result_sha256":p7_certification.get("result_sha256"),
+         "shadow_required":selected is not None,
+         "manual_review_required":True}
+    if capability_binding is not None:
+        out.update({
+            "model_capability_bundle_sha256":capability_binding["model_capability_bundle_sha256"],
+            "capability_target_key":capability_binding["capability_target_key"],
+            "capability_backend":capability_binding["backend"],
+            "capability_binding_sha256":_sha(capability_binding),
+        })
+    return out
 
 def shadow_candidate(proposal: dict) -> dict:
     if proposal.get("schema") != SCHEMA or proposal.get("status") != "PROPOSAL_ONLY":
@@ -66,7 +87,7 @@ def shadow_candidate(proposal: dict) -> dict:
     target = proposal.get("selected_shadow_target")
     if target is None:
         raise PolicyRefreshError("proposal has no changed shadow target")
-    return {
+    out={
         "candidate_id": "p8-" + proposal["proposal_id"],
         "status": "READY",
         "backend": "mlx_metal",
@@ -81,6 +102,8 @@ def shadow_candidate(proposal: dict) -> dict:
         "production_write_allowed": False,
         "requires_replay_provenance": True,
     }
+    out.update(mcb.optional_lineage(proposal))
+    return out
 
 
 def certification_candidate(*, proposal, shadow_result):
@@ -101,10 +124,12 @@ def certification_candidate(*, proposal, shadow_result):
     if int(candidate.get("n",-1))!=int(target["new_n"]):
         raise PolicyRefreshError("shadow candidate n mismatch")
     shadow_sha=shadow_result.get("result_sha256") or _sha(shadow_result)
-    return {"schema":CERT_SCHEMA,"status":"MANUAL_REVIEW_CANDIDATE",
-            "production_write_allowed":False,"automatic_live_promotion":False,
-            "proposal_id":proposal["proposal_id"],
-            "proposal_sha256":_sha(proposal),"shadow_result_sha256":shadow_sha,
-            "target":target,"proposed_policy":proposal["proposed_policy"],
-            "proposed_policy_hash":proposal["proposed_policy_hash"],
-            "required_next_action":"manual_review_and_separate_cutover_gate"}
+    out={"schema":CERT_SCHEMA,"status":"MANUAL_REVIEW_CANDIDATE",
+         "production_write_allowed":False,"automatic_live_promotion":False,
+         "proposal_id":proposal["proposal_id"],
+         "proposal_sha256":_sha(proposal),"shadow_result_sha256":shadow_sha,
+         "target":target,"proposed_policy":proposal["proposed_policy"],
+         "proposed_policy_hash":proposal["proposed_policy_hash"],
+         "required_next_action":"manual_review_and_separate_cutover_gate"}
+    out.update(mcb.optional_lineage(proposal))
+    return out

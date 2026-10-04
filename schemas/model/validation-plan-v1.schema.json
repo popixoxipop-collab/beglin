@@ -1,0 +1,27 @@
+{
+  "$id": "https://beglin.local/schemas/model/validation-plan-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "schema": {
+      "const": "beglin-validation-plan-v1"
+    },
+    "stages": {
+      "type": "array"
+    },
+    "status": {
+      "type": "string"
+    },
+    "validation_plan_sha256": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "status",
+    "stages",
+    "validation_plan_sha256"
+  ],
+  "title": "validation-plan-v1",
+  "type": "object"
+}

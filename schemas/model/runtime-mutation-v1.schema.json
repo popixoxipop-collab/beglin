@@ -1,0 +1,27 @@
+{
+  "$id": "https://beglin.local/schemas/model/runtime-mutation-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "rows": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "runtime_mutation_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schema": {
+      "const": "beglin-runtime-mutation-v1"
+    }
+  },
+  "required": [
+    "schema",
+    "rows",
+    "runtime_mutation_sha256"
+  ],
+  "title": "runtime-mutation-v1",
+  "type": "object"
+}

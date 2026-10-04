@@ -1,0 +1,25 @@
+{
+  "architecture_id": "qwen2",
+  "automatic_live_promotion": false,
+  "binary_sha256": "34c663abd4103f4485e0d7537f5bfaa9525d1935cfdd5b106abbb0c77ad7eaeb",
+  "checkpoint_file_sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+  "checkpoint_identity_sha256": "7b278b3f35f345956bd7dbf389e02205a0de8733f6daf67342e57122331affd6",
+  "finite_execution": true,
+  "generated_text": "greedy: Paris.\nParis\n",
+  "loader_observed": "GGUF",
+  "model_id": "qwen2.5-0.5b-instruct",
+  "production_touched": false,
+  "prompt_text": "The capital of France is",
+  "schema": "beglin-p12-real-runtime-validation-v1",
+  "source_commit": "6874496a8655d42796f1a05826e6e123c43aeda6",
+  "source_host": "bob",
+  "status": "PASS",
+  "stderr_tail": [
+    "[engine] gguf arch config (<MODEL>/qwen2.5-0.5b-instruct-q4_k_m.gguf, architecture=qwen2): NL=24 NH=14 NKV=2 D=896 HD=64 IM=4864 VOCAB=151936 THETA=1000000.0 EPS=1e-06 MAXSEQ=2048 QKV_BIAS=1 GROUP=7",
+    "[engine] gguf cache: loaded 291 tensors from <MODEL>/qwen2.5-0.5b-instruct-q4_k_m.gguf.beglin (mmap, zero transcode)",
+    "[engine] gguf Q4_THREADS=10, lm_head=int8",
+    "[engine] dispatch tiers: 168 SME2-eligible, 0 NEON-q4g64, 1 NEON-q8g64, 122 BLAS-f32 (SME2-eligible tensors still fall back to NEON per-call below the kernel's row-tile minimum, e.g. M=1 decode)",
+    "[engine] qkv bias: loaded (per-layer tensors)"
+  ],
+  "tokenizer_observed": "QWEN2_BPE"
+}

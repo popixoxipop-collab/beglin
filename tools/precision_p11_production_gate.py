@@ -7,6 +7,7 @@ import json
 from typing import Any, Mapping
 
 import precision_context as pc
+import model_capability_bridge as mcb
 
 PREIMAGE_SCHEMA = "beglin-precision-p11-production-preimage-v1"
 PLAN_SCHEMA = "beglin-precision-p11-production-cutover-plan-v1"
@@ -80,13 +81,23 @@ def validate_p10(result: Mapping[str, Any], result_sha256: str) -> dict:
         raise P11Error("P10 rollback baseline mismatch")
     if rollback.get("responses") != [[55222, 372]]:
         raise P11Error("P10 rollback reference response mismatch")
-    return {
+    out = {
         "p10_result_sha256": result_sha256,
         "p9_bundle_sha256": require_sha("p9 bundle", result.get("p9_bundle_sha256")),
         "canary_pass_sha256": require_sha("canary", final.get("canary_pass_sha256")),
         "rollback_drill_sha256": require_sha("rollback", final.get("rollback_drill_sha256")),
         "raw_token_sha256": require_sha("raw token", result.get("raw_token_sha256")),
     }
+    final_lineage = mcb.optional_lineage(final)
+    result_lineage = mcb.optional_lineage(result)
+    if final_lineage and result_lineage and final_lineage != result_lineage:
+        raise P11Error("P10 capability lineage mismatch between result and final gate")
+    try:
+        lineage = mcb.validated_optional_lineage(final if final_lineage else result)
+    except mcb.CapabilityBridgeError as exc:
+        raise P11Error(f"invalid P10 capability lineage: {exc}") from exc
+    out.update(lineage)
+    return out
 
 
 def build_preimage(
@@ -254,6 +265,9 @@ def build_plan(
             "expected_reference_after_rollback": [55222, 372],
         },
     }
+    lineage = mcb.optional_lineage(p10)
+    if lineage:
+        plan.update(lineage)
     plan["cutover_plan_sha256"] = sha256_json(plan)
     return plan
 
@@ -284,5 +298,8 @@ def build_approval_request(plan: Mapping[str, Any]) -> dict:
         "candidate_policy_hash": target["runtime_policy_hash"],
         "requested_capability": "ONE_SHOT_PRECISION_EPOCH_CUTOVER",
     }
+    lineage = mcb.optional_lineage(plan)
+    if lineage:
+        req.update(lineage)
     req["approval_request_sha256"] = sha256_json(req)
     return req
