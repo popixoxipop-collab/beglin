@@ -8,9 +8,12 @@ on:
   push:
     branches:
       - "qt-heatmap-*"
+      - "qt-mixed-runtime-*"
     paths:
       - "tools/qt_qwen25_mixed_candidate_fixture.py"
       - "tools/qt_qwen25_real_mixed_mlx_probe.cpp"
+      - "tools/qt_incumbent_mixed_benchmark.cpp"
+      - "tools/qt_incumbent_map.py"
       - "tools/qt_qwen25_group_perturb.py"
       - "tools/qt_heatmap.py"
       - "mlx_moe.cpp"
@@ -116,7 +119,7 @@ jobs:
           rm -rf build-qt-qwen25-real-mixed
           cmake -S . -B build-qt-qwen25-real-mixed -DCMAKE_BUILD_TYPE=Release \
             -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
-          cmake --build build-qt-qwen25-real-mixed --target qt_qwen25_real_mixed_mlx_probe -j4
+          cmake --build build-qt-qwen25-real-mixed --target qt_qwen25_real_mixed_mlx_probe qt_incumbent_mixed_benchmark -j4
 
       - name: Run real Qwen mixed CPU oracle vs Metal
         shell: bash
@@ -126,6 +129,23 @@ jobs:
             /tmp/qt-qwen25-real-mixed/fixture | tee /tmp/qt-qwen25-real-mixed/probe.txt
           grep -q '"status":"PASS"' /tmp/qt-qwen25-real-mixed/probe.txt
 
+      - name: Run sealed incumbent mixed q_proj benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAP=/Users/xox/mcp-sandbox/tailnet-commander/qt_runtime_v2/incumbent_map.json
+          test "$(shasum -a 256 "$MAP" | awk '{print $1}')" = "a87ed7d350b1152545c46ad25c662e7560008727928624eab4b3241e17c951ba"
+          PYTHONPATH=tools python3 - <<'PY'
+          from qt_incumbent_map import load_incumbent
+          x=load_incumbent("/Users/xox/mcp-sandbox/tailnet-commander/qt_runtime_v2/incumbent_map.json",tensor_name="model.layers.0.self_attn.q_proj.weight",out_dim=896,in_dim=896)
+          open("/tmp/qt-qwen25-real-mixed/incumbent_bits.bin","wb").write(bytes(x["bits"]))
+          print("SEALED_INCUMBENT_READY",x["average_bits"])
+          PY
+          cp /tmp/qt-qwen25-real-mixed/fixture/{planes.bin,offsets.bin,scales.bin,input.bin} /tmp/qt-qwen25-real-mixed/
+          cp /tmp/qt-qwen25-real-mixed/incumbent_bits.bin /tmp/qt-qwen25-real-mixed/bits.bin
+          python3 tools/qt_qwen25_mixed_candidate_fixture.py --help >/dev/null
+          ./build-qt-qwen25-real-mixed/qt_incumbent_mixed_benchmark /tmp/qt-qwen25-real-mixed | tee /tmp/qt-qwen25-real-mixed/incumbent-benchmark.txt
+          grep -q '"status":"PASS"' /tmp/qt-qwen25-real-mixed/incumbent-benchmark.txt
       - name: Seal BECODER to Metal evidence
         shell: bash
         run: |
