@@ -14,7 +14,10 @@ on:
       - "tools/qt_qwen25_observe.py"
       - "tools/test_qt_qwen25_observe.py"
       - "tools/qt_build_qpolicy.py"
-      - "tools/test_qt_build_qpolicy.py"
+      - "tools/test_qt_build_qpolicy.py test_qt_qwen25_uniform_fixture.py"
+      - "tools/p12_qwen25_real_mlx_probe.cpp"
+      - "tools/test_qt_qwen25_uniform_fixture.py"
+      - "tools/qt_qwen25_uniform_fixture.py"
       - "tools/test_qt_heatmap.py"
       - ".github/workflows/qt-heatmap-foundation.yml"
   pull_request:
