@@ -1,0 +1,50 @@
+{
+  "schema": "beglin-qt-fixture/2",
+  "fixture_version": "qt-fixture-v2",
+  "automatic_live_promotion": false,
+  "production_mutation": false,
+  "files": {
+    "tools/qt_active_observe.py": "ea66fac2b10224e6982fb4bdc42ed1d77428065e",
+    "tools/qt_calibrate_beval.py": "5b867f8030cee308ee5174afea7b0fc20dc7059f",
+    "tools/qt_uncertainty.py": "4e0d5f3bc8ad48ee14b21c3e31b3b8a987d3974a"
+  },
+  "actions": {
+    "uncertainty": {
+      "script": "tools/qt_uncertainty.py",
+      "args": [
+        "--qheatmap",
+        "qt_runtime/qheatmap.json",
+        "--output",
+        "qt_runtime/uncertainty.json",
+        "--summary-output",
+        "qt_runtime/uncertainty_summary.json"
+      ]
+    },
+    "active_observe": {
+      "script": "tools/qt_active_observe.py",
+      "args": [
+        "--checkpoint",
+        "qt_runtime/qwen-l0-qproj.safetensors",
+        "--uncertainty",
+        "qt_runtime/uncertainty.json",
+        "--output",
+        "qt_runtime/active_observations.json",
+        "--contexts",
+        "16",
+        "--top-k",
+        "256"
+      ]
+    },
+    "calibrate_beval": {
+      "script": "tools/qt_calibrate_beval.py",
+      "args": [
+        "--observations",
+        "qt_runtime/active_observations.json",
+        "--output",
+        "qt_runtime/calibrated_beval.json",
+        "--approve-lcb",
+        "0.95"
+      ]
+    }
+  }
+}
