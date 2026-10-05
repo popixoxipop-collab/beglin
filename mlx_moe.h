@@ -94,6 +94,16 @@ int mlx_gpu_qng64_gather_probe(const uint8_t *planes, long E, long out, long in,
 int mlx_gpu_bind_qng64_dense_probe(const uint8_t *packed, const float *scales,
                                     const char *name, long out, long in, int n);
 
+// QT-4 mixed local-precision probe: one dense matrix whose qNg64 bit-width
+// varies independently per (row, group64) cell. packed contains concatenated
+// canonical qNg64 plane groups; offsets/bits/scales each have out*(in/64)
+// entries in row-major cell order. The binder owns copies of all inputs.
+// Initial verified scope is n in {4,5,6}. Returns 1 on success.
+int mlx_gpu_bind_qng64_mixed_dense_probe(const uint8_t *packed, long packed_bytes,
+                                          const float *scales, const uint8_t *bits,
+                                          const uint32_t *offsets, const char *name,
+                                          long out, long in);
+
 // Gate 4: y = quantized_matmul(x, w_e) for tensor `name`'s expert `e`,
 // against a caller-supplied dense fp32 x[in], written to y[out]. For direct
 // comparison against moe_matvec_af() on the same expert/input. Returns 1 on
