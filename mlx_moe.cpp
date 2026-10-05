@@ -1706,11 +1706,33 @@ static mx::fast::CustomKernelFunction &qng64_mixed_gemv_kernel() {
                 uint cell = row * ng + g;
                 uint n_local = (uint)bits[cell];
                 uint plane_base = offsets[cell];
+                // Fast path for the production incumbent's n4/n5/n6 cells.
+                // n_local is uniform across all 64 lanes for this cell, so this switch
+                // has no SIMD divergence. Explicit loads remove the dynamic inner loop.
                 int u = 0;
-                for (uint j = 0; j < n_local; j++) {
-                    uint8_t byte = planes[plane_base + j * 8u + byte_in_plane];
-                    int bit = (byte >> bit_in_byte) & 1;
-                    u |= (bit << j);
+                if (n_local == 4u) {
+                    u  = ((planes[plane_base +  0u + byte_in_plane] >> bit_in_byte) & 1);
+                    u |= ((planes[plane_base +  8u + byte_in_plane] >> bit_in_byte) & 1) << 1;
+                    u |= ((planes[plane_base + 16u + byte_in_plane] >> bit_in_byte) & 1) << 2;
+                    u |= ((planes[plane_base + 24u + byte_in_plane] >> bit_in_byte) & 1) << 3;
+                } else if (n_local == 5u) {
+                    u  = ((planes[plane_base +  0u + byte_in_plane] >> bit_in_byte) & 1);
+                    u |= ((planes[plane_base +  8u + byte_in_plane] >> bit_in_byte) & 1) << 1;
+                    u |= ((planes[plane_base + 16u + byte_in_plane] >> bit_in_byte) & 1) << 2;
+                    u |= ((planes[plane_base + 24u + byte_in_plane] >> bit_in_byte) & 1) << 3;
+                    u |= ((planes[plane_base + 32u + byte_in_plane] >> bit_in_byte) & 1) << 4;
+                } else if (n_local == 6u) {
+                    u  = ((planes[plane_base +  0u + byte_in_plane] >> bit_in_byte) & 1);
+                    u |= ((planes[plane_base +  8u + byte_in_plane] >> bit_in_byte) & 1) << 1;
+                    u |= ((planes[plane_base + 16u + byte_in_plane] >> bit_in_byte) & 1) << 2;
+                    u |= ((planes[plane_base + 24u + byte_in_plane] >> bit_in_byte) & 1) << 3;
+                    u |= ((planes[plane_base + 32u + byte_in_plane] >> bit_in_byte) & 1) << 4;
+                    u |= ((planes[plane_base + 40u + byte_in_plane] >> bit_in_byte) & 1) << 5;
+                } else {
+                    for (uint j = 0; j < n_local; j++) {
+                        uint8_t byte = planes[plane_base + j * 8u + byte_in_plane];
+                        u |= (((byte >> bit_in_byte) & 1) << j);
+                    }
                 }
                 int bias_code = 1 << (n_local - 1u);
                 int code = u - bias_code;
