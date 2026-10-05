@@ -1,0 +1,33 @@
+{
+  "schema": "beglin-qt-qwen25-qheatmap-attestation-v1",
+  "status": "PASS",
+  "observed_at": "2026-10-05T03:45:23.006Z",
+  "source_head": "30d9ca2e53037db700a53e120e0fb5098f244e27",
+  "tailnet_release": "g6-0.8.0-operator.7",
+  "tensor_name": "model.layers.0.self_attn.q_proj.weight",
+  "tensor_sha256": "7af566022f07072d911a22135d8835121b1fe44e05e2d9a009c1263cba98fdef",
+  "shape": [
+    896,
+    896
+  ],
+  "group_size": 64,
+  "bits": [
+    4,
+    5,
+    6
+  ],
+  "current_n": 5,
+  "error_budget": 0.0005,
+  "event_count": 37632,
+  "group_cells": 12544,
+  "observations_sha256": "0fea8174366d774ec03387c7e9ae82289a9b5333d46a0e2eeef32497b22cbf39",
+  "heatmap_sha256": "b12c6c92ea8365687065d740f25d740ca6e060e3a93340c30a7515df29949ff5",
+  "recommended_n_distribution": {
+    "4": 848,
+    "5": 1627,
+    "6": 10069
+  },
+  "production_touched": false,
+  "automatic_live_promotion": false,
+  "beval_status": "PENDING"
+}
