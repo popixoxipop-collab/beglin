@@ -85,6 +85,7 @@ def build(
     model_id: str,
     source_commit: str,
     weight_epoch: int,
+    incumbent_map: Path | None = None,
 ):
     vals, out_dim, in_dim, dtype = read_tensor(checkpoint, TENSOR)
     if in_dim % GROUP:
@@ -187,6 +188,18 @@ def build(
         raise RuntimeError(f"{missing} cells have no eligible candidate; examples={bad}")
 
     selected_n = {c["target_key"]: int(c["n"]) for c in policy["cells"]}
+    incumbent_sha = None
+    if incumbent_map is not None:
+        from qt_incumbent_map import load_incumbent
+        sealed = load_incumbent(incumbent_map, tensor_name=TENSOR, out_dim=out_dim, in_dim=in_dim)
+        incumbent_sha = sealed["incumbent_sha256"]
+        ordered = sealed["bits"]
+        selected_n = {}
+        idx = 0
+        for row in range(out_dim):
+            for g in range(ng):
+                target = f"{model_id}/L0/q_proj/row={row}/group64={g}"
+                selected_n[target] = int(ordered[idx]); idx += 1
     bit_hist = Counter(selected_n.values())
 
     planes = bytearray()
@@ -282,6 +295,7 @@ def build(
         "backend_parity_measured": False,
         "production_touched": False,
         "production_write_allowed": False,
+        "incumbent_map_sha256": incumbent_sha,
         "automatic_live_promotion": False,
     }
     raw = canonical_bytes(manifest)
@@ -303,6 +317,7 @@ def main() -> int:
     ap.add_argument("--model-id", required=True)
     ap.add_argument("--source-commit", required=True)
     ap.add_argument("--weight-epoch", type=int, default=0)
+    ap.add_argument("--incumbent-map")
     a = ap.parse_args()
     build(
         checkpoint=Path(a.checkpoint).expanduser().resolve(),
@@ -316,6 +331,7 @@ def main() -> int:
         model_id=a.model_id,
         source_commit=a.source_commit,
         weight_epoch=a.weight_epoch,
+        incumbent_map=Path(a.incumbent_map).expanduser().resolve() if a.incumbent_map else None,
     )
     return 0
 
