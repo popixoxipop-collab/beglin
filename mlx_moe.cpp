@@ -1921,9 +1921,9 @@ static mx::array mixed_qng64_gemv_e0(const char *name, const mx::array &x) {
     std::vector<std::pair<std::string, mx::fast::TemplateArg>> template_args = {
         {"ng", (int)t.ng}, {"out_dim", (int)t.out}
     };
-    mx::Shape grid = t.fast456 ? mx::Shape{64, ((int)t.out + 1) / 2, A} : mx::Shape{64, (int)t.out, A};
-    auto outputs = kernel(inputs, output_shapes, output_dtypes,
-                          grid, {64, 1, 1}, template_args, std::nullopt, false, {});
+    auto outputs = t.fast456
+        ? kernel(inputs, output_shapes, output_dtypes, {64, ((int)t.out + 1) / 2, A}, {64, 1, 1}, template_args, std::nullopt, false, {})
+        : kernel(inputs, output_shapes, output_dtypes, {64, (int)t.out, A}, {64, 1, 1}, template_args, std::nullopt, false, {});
     return outputs[0];
 }
 
