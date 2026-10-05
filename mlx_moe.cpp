@@ -90,6 +90,7 @@ struct MixedQNg64Tensor {
     mx::array bits;     // {out*ng} uint8
     mx::array scales;   // {out,ng} float32
     long out, in, ng;
+    bool fast456 = false;
 };
 
 static std::unordered_map<std::string, QTensor> g_tensors;
@@ -1839,7 +1840,7 @@ int mlx_gpu_bind_qng64_mixed_dense_probe(const uint8_t *planes, long planes_byte
         g_mixed_qng64_tensors.erase(key);
         g_mixed_qng64_tensors.insert_or_assign(
             key, MixedQNg64Tensor{owned_planes, owned_offsets, owned_bits, owned_scales,
-                                  out, in, ng});
+                                  out, in, ng, [&](){ for (size_t i=0;i<cells;++i) if (bits[i] < 4 || bits[i] > 6) return false; return true; }()});
         g_bound_count++;
         return 1;
     } catch (...) {
