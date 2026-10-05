@@ -1999,6 +1999,9 @@ static mx::array lazy_matvec_e0(const char *name, const mx::array &x) {
     // D-gpu-7-fix already established for g_tensors/g_dtensors -- a name bound into
     // g_qng64_tensors would otherwise throw on g_tensors.at() below instead of dispatching
     // through the custom kernel.
+    // QT-runtime-1: mixed group64 bindings are first-class attention-role bindings.
+    // Binders erase stale representations, so feature OFF/no mixed binding preserves the old path.
+    if (g_mixed_qng64_tensors.count(name)) return mixed_qng64_gemv_e0(name, x);
     if (g_qng64_tensors.count(name)) return qng64_gemv_e0(name, x);
     QTensor &t = g_tensors.at(name);
     mx::array w_e = mx::take(t.w, 0, 0);
