@@ -129,22 +129,25 @@ jobs:
             /tmp/qt-qwen25-real-mixed/fixture | tee /tmp/qt-qwen25-real-mixed/probe.txt
           grep -q '"status":"PASS"' /tmp/qt-qwen25-real-mixed/probe.txt
 
-      - name: Run sealed incumbent mixed q_proj benchmark
+      - name: Build and benchmark sealed incumbent mixed q_proj
         shell: bash
         run: |
           set -euo pipefail
           MAP=/Users/xox/mcp-sandbox/tailnet-commander/qt_runtime_v2/incumbent_map.json
           test "$(shasum -a 256 "$MAP" | awk '{print $1}')" = "a87ed7d350b1152545c46ad25c662e7560008727928624eab4b3241e17c951ba"
-          PYTHONPATH=tools python3 - <<'PY'
-          from qt_incumbent_map import load_incumbent
-          x=load_incumbent("/Users/xox/mcp-sandbox/tailnet-commander/qt_runtime_v2/incumbent_map.json",tensor_name="model.layers.0.self_attn.q_proj.weight",out_dim=896,in_dim=896)
-          open("/tmp/qt-qwen25-real-mixed/incumbent_bits.bin","wb").write(bytes(x["bits"]))
-          print("SEALED_INCUMBENT_READY",x["average_bits"])
-          PY
-          cp /tmp/qt-qwen25-real-mixed/fixture/{planes.bin,offsets.bin,scales.bin,input.bin} /tmp/qt-qwen25-real-mixed/
-          cp /tmp/qt-qwen25-real-mixed/incumbent_bits.bin /tmp/qt-qwen25-real-mixed/bits.bin
-          python3 tools/qt_qwen25_mixed_candidate_fixture.py --help >/dev/null
-          ./build-qt-qwen25-real-mixed/qt_incumbent_mixed_benchmark /tmp/qt-qwen25-real-mixed | tee /tmp/qt-qwen25-real-mixed/incumbent-benchmark.txt
+          HEAD_SHA="$(git rev-parse HEAD)"
+          python3 tools/qt_qwen25_mixed_candidate_fixture.py \
+            --checkpoint /tmp/qt-qwen25-real-mixed/single.safetensors \
+            --output-dir /tmp/qt-qwen25-real-mixed/incumbent-fixture \
+            --n 4 --n 5 --n 6 --windows 2 --local-output-budget 0.005 \
+            --checkpoint-identity-sha256 538528b2cf263385d20b68a2f0ba50961d29ad7f21b21fc78c0ccd474a18c27d \
+            --skeleton-sha256 b8705147bd740d151cc5ccba1e95ca31cce54c6ac8813073a0247b5fa32cc7a0 \
+            --capability-bundle-sha256 42abdce2c9f79c20bfee4fa6943a247240cf6669e0ba580ee2b3d1a70e66a94a \
+            --model-id checkpoint-538528b2cf263385 --source-commit "$HEAD_SHA" --weight-epoch 0 \
+            --incumbent-map "$MAP" | tee /tmp/qt-qwen25-real-mixed/incumbent-build.txt
+          ./build-qt-qwen25-real-mixed/qt_qwen25_real_mixed_mlx_probe /tmp/qt-qwen25-real-mixed/incumbent-fixture | tee /tmp/qt-qwen25-real-mixed/incumbent-probe.txt
+          grep -q '"status":"PASS"' /tmp/qt-qwen25-real-mixed/incumbent-probe.txt
+          ./build-qt-qwen25-real-mixed/qt_incumbent_mixed_benchmark /tmp/qt-qwen25-real-mixed/incumbent-fixture | tee /tmp/qt-qwen25-real-mixed/incumbent-benchmark.txt
           grep -q '"status":"PASS"' /tmp/qt-qwen25-real-mixed/incumbent-benchmark.txt
       - name: Seal BECODER to Metal evidence
         shell: bash
