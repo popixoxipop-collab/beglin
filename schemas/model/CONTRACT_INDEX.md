@@ -36,3 +36,5 @@ Verification rule: any capability reported as `VERIFIED`, `IN_ENGINE_VERIFIED`, 
 - `qpolicy-candidate-v1.schema.json` — deterministic BECODER output; hard-unapproved until BEVAL
 
 QT invariant: BSKEL defines identity/schema only; BECODER proposes Q/T cells; runtime must not apply a local precision policy unless `approved_by_beval=true`. Initial local unit is qNg64 group64; element-level policy is out of QT-0 scope.
+
+- `q-uncertainty-v1.schema.json` — uncertainty-aware QT-3 BEVAL evidence: safe/boundary/non-monotonic/unsatisfied classification and active-observation priority. `safe_probability` is an evidence score until calibration evidence upgrades it to a posterior.
