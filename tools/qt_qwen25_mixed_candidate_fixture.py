@@ -86,6 +86,7 @@ def build(
     source_commit: str,
     weight_epoch: int,
     incumbent_map: Path | None = None,
+    uniform_n: int | None = None,
 ):
     vals, out_dim, in_dim, dtype = read_tensor(checkpoint, TENSOR)
     if in_dim % GROUP:
@@ -183,7 +184,10 @@ def build(
     )
     total_cells = out_dim * ng
     incumbent_sha = None
-    if incumbent_map is None:
+    if uniform_n is not None:
+        if int(uniform_n) not in candidates: raise ValueError("uniform-n must be in candidates")
+        selected_n = {f"{model_id}/L0/q_proj/row={r}/group64={g}": int(uniform_n) for r in range(out_dim) for g in range(ng)}
+    elif incumbent_map is None:
         if len(policy["cells"]) != total_cells:
             missing = total_cells - len(policy["cells"])
             bad = [c for c in heatmap["cells"] if c["state"] != "CANDIDATE"][:20]
@@ -327,6 +331,7 @@ def main() -> int:
     ap.add_argument("--source-commit", required=True)
     ap.add_argument("--weight-epoch", type=int, default=0)
     ap.add_argument("--incumbent-map")
+    ap.add_argument("--uniform-n", type=int)
     a = ap.parse_args()
     build(
         checkpoint=Path(a.checkpoint).expanduser().resolve(),
@@ -341,6 +346,7 @@ def main() -> int:
         source_commit=a.source_commit,
         weight_epoch=a.weight_epoch,
         incumbent_map=Path(a.incumbent_map).expanduser().resolve() if a.incumbent_map else None,
+        uniform_n=a.uniform_n,
     )
     return 0
 
