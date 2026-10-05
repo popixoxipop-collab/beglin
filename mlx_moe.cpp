@@ -1848,34 +1848,6 @@ int mlx_gpu_bind_qng64_mixed_dense_probe(const uint8_t *planes, long planes_byte
     }
 }
 
-static std::optional<mx::fast::CustomKernelFunction> g_qng64_mixed456_2row_kernel;
-static mx::fast::CustomKernelFunction &qng64_mixed456_2row_kernel() {
-    if (!g_qng64_mixed456_2row_kernel) {
-        std::string source = R"(
-            uint p=thread_position_in_grid.x, pair=thread_position_in_grid.y, z=thread_position_in_grid.z;
-            if(p>=64)return; uint sg=p>>5, lane=p&31u, row=pair*2u+sg;
-            if(row>=(uint)out_dim)return;
-            uint cell0=row*ng, bytep=lane>>3, bitp=lane&7u;
-            uint bs=lane==0u?offsets[cell0]:0u; uint base=simd_broadcast(bs,0u); float partial=0.0f;
-            for(uint g=0;g<ng;g++){
-                uint cell=cell0+g; uint ns=lane==0u?(uint)bits[cell]:0u; uint n=simd_broadcast(ns,0u); int u=0;
-                u=((planes[base+bytep]>>bitp)&1);
-                u|=((planes[base+8u+bytep]>>bitp)&1)<<1;
-                u|=((planes[base+16u+bytep]>>bitp)&1)<<2;
-                u|=((planes[base+24u+bytep]>>bitp)&1)<<3;
-                if(n>=5u)u|=((planes[base+32u+bytep]>>bitp)&1)<<4;
-                if(n==6u)u|=((planes[base+40u+bytep]>>bitp)&1)<<5;
-                float ss=lane==0u?scales[cell]:0.0f; float scale=simd_broadcast(ss,0u);
-                partial+=(float)(u-(1<<(n-1u)))*scale*x[z*(ng*64u)+g*64u+lane];
-                base+=n*8u;
-            }
-            float sum=simd_sum(partial); if(lane==0u)out[z*(uint)out_dim+row]=sum;
-        )";
-        g_qng64_mixed456_2row_kernel=mx::fast::metal_kernel(
-            "qng64_mixed456_2row", {"planes","offsets","bits","scales","x"}, {"out"}, source);
-    }
-    return *g_qng64_mixed456_2row_kernel;
-}
 static std::optional<mx::fast::CustomKernelFunction> g_qng64_mixed456_gemv_kernel;
 static mx::fast::CustomKernelFunction &qng64_mixed456_gemv_kernel() {
     if (!g_qng64_mixed456_gemv_kernel) {
@@ -1913,7 +1885,7 @@ static mx::fast::CustomKernelFunction &qng64_mixed456_gemv_kernel() {
 
 static mx::array mixed_qng64_gemv_e0(const char *name, const mx::array &x) {
     MixedQNg64Tensor &t = g_mixed_qng64_tensors.at(name);
-    auto &kernel = t.fast456 ? qng64_mixed456_2row_kernel() : qng64_mixed_gemv_kernel();
+    auto &kernel = t.fast456 ? qng64_mixed456_gemv_kernel() : qng64_mixed_gemv_kernel();
     const int A = (int)x.shape(0);
     std::vector<mx::array> inputs = {t.planes, t.offsets, t.bits, t.scales, x};
     std::vector<mx::Shape> output_shapes = {{A, (int)t.out}};
@@ -1921,9 +1893,9 @@ static mx::array mixed_qng64_gemv_e0(const char *name, const mx::array &x) {
     std::vector<std::pair<std::string, mx::fast::TemplateArg>> template_args = {
         {"ng", (int)t.ng}, {"out_dim", (int)t.out}
     };
-    auto outputs = t.fast456
-        ? kernel(inputs, output_shapes, output_dtypes, {64, ((int)t.out + 1) / 2, A}, {64, 1, 1}, template_args, std::nullopt, false, {})
-        : kernel(inputs, output_shapes, output_dtypes, {64, (int)t.out, A}, {64, 1, 1}, template_args, std::nullopt, false, {});
+    auto outputs = kernel(inputs, output_shapes, output_dtypes,
+                          {64, (int)t.out, A}, {64, 1, 1},
+                          template_args, std::nullopt, false, {});
     return outputs[0];
 }
 
