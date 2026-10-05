@@ -149,6 +149,35 @@ jobs:
           grep -q '"status":"PASS"' /tmp/qt-qwen25-real-mixed/incumbent-probe.txt
           ./build-qt-qwen25-real-mixed/qt_incumbent_mixed_benchmark /tmp/qt-qwen25-real-mixed/incumbent-fixture | tee /tmp/qt-qwen25-real-mixed/incumbent-benchmark.txt
           grep -q '"status":"PASS"' /tmp/qt-qwen25-real-mixed/incumbent-benchmark.txt
+      - name: Run uniform n6 vs sealed incumbent A/B
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(git rev-parse HEAD)"
+          python3 tools/qt_qwen25_mixed_candidate_fixture.py \
+            --checkpoint /tmp/qt-qwen25-real-mixed/single.safetensors \
+            --output-dir /tmp/qt-qwen25-real-mixed/uniform-n6 \
+            --n 4 --n 5 --n 6 --uniform-n 6 --windows 2 --local-output-budget 0.005 \
+            --checkpoint-identity-sha256 538528b2cf263385d20b68a2f0ba50961d29ad7f21b21fc78c0ccd474a18c27d \
+            --skeleton-sha256 b8705147bd740d151cc5ccba1e95ca31cce54c6ac8813073a0247b5fa32cc7a0 \
+            --capability-bundle-sha256 42abdce2c9f79c20bfee4fa6943a247240cf6669e0ba580ee2b3d1a70e66a94a \
+            --model-id checkpoint-538528b2cf263385 --source-commit "$HEAD_SHA" --weight-epoch 0 >/tmp/qt-qwen25-real-mixed/uniform-build.txt
+          ./build-qt-qwen25-real-mixed/qt_qwen25_real_mixed_mlx_probe /tmp/qt-qwen25-real-mixed/uniform-n6 | tee /tmp/qt-qwen25-real-mixed/uniform-probe.txt
+          ./build-qt-qwen25-real-mixed/qt_incumbent_mixed_benchmark /tmp/qt-qwen25-real-mixed/uniform-n6 | tee /tmp/qt-qwen25-real-mixed/uniform-benchmark.txt
+          python3 - <<'PY'
+          import json,pathlib
+          r=pathlib.Path("/tmp/qt-qwen25-real-mixed")
+          u=json.loads((r/"uniform-benchmark.txt").read_text().splitlines()[-1])
+          m=json.loads((r/"incumbent-benchmark.txt").read_text().splitlines()[-1])
+          um=json.load(open(r/"uniform-n6/manifest.json")); mm=json.load(open(r/"incumbent-fixture/manifest.json"))
+          out={"schema":"beglin-qt-qwen25-incumbent-ab-v1","status":"PASS","uniform_n6":u,"incumbent":m,
+               "speed_ratio_incumbent_over_n6":m["matvec_per_second"]/u["matvec_per_second"],
+               "payload_ratio_incumbent_over_n6":mm["mixed_payload_bytes"]/um["mixed_payload_bytes"],
+               "payload_bytes_saved":um["mixed_payload_bytes"]-mm["mixed_payload_bytes"],
+               "production_write_allowed":False,"automatic_live_promotion":False}
+          (r/"INCUMBENT_AB.json").write_text(json.dumps(out,sort_keys=True,indent=2)+"\n")
+          print(json.dumps(out,sort_keys=True))
+          PY
       - name: Seal BECODER to Metal evidence
         shell: bash
         run: |
