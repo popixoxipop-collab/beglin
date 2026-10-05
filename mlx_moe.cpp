@@ -410,30 +410,83 @@ int mlx_gpu_binding_snapshot_count(void) {
 int mlx_gpu_bind_qng64_dense_probe(const uint8_t *packed, const float *scales,
                                     const char *name, long out, long in, int n) {
     if (!packed || !scales || !name || out <= 0 || in <= 0 || (in % 64) != 0) return 0;
-    if (n != 2 && n != 3 && n != 5 && n != 6) return 0;
+    if (n != 2 && n != 3 && n != 4 && n != 5 && n != 6) return 0;
     const long ng = in / 64;
     // IMPORTANT: this probe accepts the engine's canonical qNg64 bit-plane
-    // layout, not qng64_dense.c's compact row-major bitstream. Canonical
-    // bytes/group = n*8 (64 codes split into n bit-planes).
+    // layout. MLX's native quantized kernels consume a flat LSB-first bitstream.
+    // n={2,3,5,6} are repacked by mlx_gpu_bind_af(); n=4 normally means the
+    // legacy native-q4 input format there, so the probe must first perform the
+    // same lossless plane->flat code repack itself.
     const size_t group_bytes = (size_t)n * 8u;
     const size_t packed_bytes = (size_t)out * (size_t)ng * group_bytes;
     const size_t scales_bytes = (size_t)out * (size_t)ng * sizeof(float);
+
+    std::vector<uint8_t> native_q4;
+    const uint8_t *bind_packed = packed;
+    if (n == 4) {
+        native_q4.assign(packed_bytes, 0);
+        for (long row = 0; row < out; ++row) {
+            const uint8_t *row_src = packed + (size_t)row * (size_t)ng * group_bytes;
+            uint8_t *row_dst = native_q4.data() + (size_t)row * (size_t)ng * group_bytes;
+            for (long g = 0; g < ng; ++g) {
+                const uint8_t *grp_src = row_src + (size_t)g * group_bytes;
+                uint8_t *grp_dst = row_dst + (size_t)g * group_bytes;
+                long bitpos = 0;
+                for (int p = 0; p < 64; ++p) {
+                    const int byte_in_plane = p >> 3;
+                    const int bit_in_byte = p & 7;
+                    int u = 0;
+                    for (int j = 0; j < n; ++j) {
+                        const uint8_t pbyte = grp_src[j * 8 + byte_in_plane];
+                        if ((pbyte >> bit_in_byte) & 1) u |= (1 << j);
+                    }
+                    for (int b = 0; b < n; ++b) {
+                        if ((u >> b) & 1) {
+                            const long bp = bitpos + b;
+                            grp_dst[bp / 8] |= (uint8_t)(1u << (bp % 8));
+                        }
+                    }
+                    bitpos += n;
+                }
+            }
+        }
+        bind_packed = native_q4.data();
+    }
+
     std::vector<uint8_t> blob(packed_bytes + scales_bytes * 2, 0);
-    std::memcpy(blob.data(), packed, packed_bytes);
+    std::memcpy(blob.data(), bind_packed, packed_bytes);
     std::memcpy(blob.data() + packed_bytes, scales, scales_bytes);
     float *bias = reinterpret_cast<float *>(blob.data() + packed_bytes + scales_bytes);
     for (long i = 0; i < out * ng; ++i)
         bias[i] = -(float)(1 << (n - 1)) * scales[i];
+
     int ok = mlx_gpu_bind_af(blob.data(), (long)blob.size(), name, 1, out, in, ng,
                              0, (long)packed_bytes,
                              (long)(packed_bytes + scales_bytes), n);
     if (!ok) return 0;
-    // The normal n=2/3/5/6 binder wraps scales from caller memory. This probe's
-    // blob is temporary, so promote scales to MLX-owned storage before return.
+
     auto it = g_tensors.find(std::string(name));
     if (it == g_tensors.end()) return 0;
+
+    // n=4's native binder wraps the supplied packed bytes zero-copy. The blob
+    // above is probe-local, so replace that transient view with an owning copy
+    // before returning. n={2,3,5,6} already allocate owned repacked storage in
+    // mlx_gpu_bind_af().
+    if (n == 4) {
+        uint8_t *owned_bytes = new uint8_t[packed_bytes];
+        std::memcpy(owned_bytes, bind_packed, packed_bytes);
+        const long row_words = in / 8;
+        mx::array owned_w(owned_bytes, {(int)1, (int)out, (int)row_words}, mx::uint32,
+                          [](void *p) { delete[] (uint8_t *)p; });
+        it->second.w = owned_w;
+    }
+
+    // The normal binder wraps scales from caller memory. The real-weight probe
+    // keeps its input vector alive for the full run; retain an MLX value and
+    // synthesize biases from the same canonical scale to keep snapshot/restore
+    // semantics identical across n=4/5/6.
     mx::array owned_scales = mx::array(scales, {(int)1, (int)out, (int)ng}, mx::float32);
-    owned_scales = mx::array(owned_scales); // retain independent MLX value
+    owned_scales = mx::array(owned_scales);
     mx::eval(owned_scales);
     it->second.scales = owned_scales;
     it->second.biases = mx::multiply(owned_scales, mx::array(-(float)(1 << (n - 1))));
