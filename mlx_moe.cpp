@@ -1848,9 +1848,38 @@ int mlx_gpu_bind_qng64_mixed_dense_probe(const uint8_t *planes, long planes_byte
     }
 }
 
+static std::optional<mx::fast::CustomKernelFunction> g_qng64_mixed456_gemv_kernel;
+static mx::fast::CustomKernelFunction &qng64_mixed456_gemv_kernel() {
+    if (!g_qng64_mixed456_gemv_kernel) {
+        std::string source = R"(
+            uint p=thread_position_in_grid.x,row=thread_position_in_grid.y,z=thread_position_in_grid.z;
+            if(p>=64)return; uint bytep=p>>3, bitp=p&7, cell0=row*ng;
+            uint base=offsets[cell0]; float partial=0.0f;
+            for(uint g=0;g<ng;g++){
+                uint cell=cell0+g; uint n=(uint)bits[cell]; int u=0;
+                u  = ((planes[base+ 0u+bytep]>>bitp)&1);
+                u |= ((planes[base+ 8u+bytep]>>bitp)&1)<<1;
+                u |= ((planes[base+16u+bytep]>>bitp)&1)<<2;
+                u |= ((planes[base+24u+bytep]>>bitp)&1)<<3;
+                if(n>=5u) u|=((planes[base+32u+bytep]>>bitp)&1)<<4;
+                if(n==6u) u|=((planes[base+40u+bytep]>>bitp)&1)<<5;
+                int code=u-(1<<(n-1u));
+                partial+=(float)code*scales[cell]*x[z*(ng*64u)+g*64u+p];
+                base+=n*8u;
+            }
+            threadgroup float ss[2]; uint lane=p%32u,sg=p/32u; float q=simd_sum(partial);
+            if(lane==0)ss[sg]=q; threadgroup_barrier(mem_flags::mem_threadgroup);
+            if(p==0)out[z*(uint)out_dim+row]=ss[0]+ss[1];
+        )";
+        g_qng64_mixed456_gemv_kernel=mx::fast::metal_kernel(
+            "qng64_mixed456_gemv",{"planes","offsets","bits","scales","x"},{"out"},source);
+    }
+    return *g_qng64_mixed456_gemv_kernel;
+}
+
 static mx::array mixed_qng64_gemv_e0(const char *name, const mx::array &x) {
     MixedQNg64Tensor &t = g_mixed_qng64_tensors.at(name);
-    auto &kernel = qng64_mixed_gemv_kernel();
+    auto &kernel = t.fast456 ? qng64_mixed456_gemv_kernel() : qng64_mixed_gemv_kernel();
     const int A = (int)x.shape(0);
     std::vector<mx::array> inputs = {t.planes, t.offsets, t.bits, t.scales, x};
     std::vector<mx::Shape> output_shapes = {{A, (int)t.out}};
