@@ -9,9 +9,12 @@ on:
       - "schemas/model/qheatmap-v2.schema.json"
       - "schemas/model/theatmap-v2.schema.json"
       - "schemas/model/local-precision-policy-v1.schema.json"
+      - "schemas/model/qpolicy-candidate-v1.schema.json"
       - "tools/qt_heatmap.py"
       - "tools/qt_qwen25_observe.py"
       - "tools/test_qt_qwen25_observe.py"
+      - "tools/qt_build_qpolicy.py"
+      - "tools/test_qt_build_qpolicy.py"
       - "tools/test_qt_heatmap.py"
       - ".github/workflows/qt-heatmap-foundation.yml"
   pull_request:
@@ -40,6 +43,7 @@ jobs:
             "schemas/model/qheatmap-v2.schema.json",
             "schemas/model/theatmap-v2.schema.json",
             "schemas/model/local-precision-policy-v1.schema.json",
+            "schemas/model/qpolicy-candidate-v1.schema.json",
           ]
           for p in paths:
               with open(p, encoding="utf-8") as f:
@@ -49,4 +53,4 @@ jobs:
           PY
       - name: Run deterministic Q/T heatmap tests
         working-directory: tools
-        run: python3 -m unittest -v test_qt_heatmap.py
+        run: python3 -m unittest -v test_qt_heatmap.py test_qt_qwen25_observe.py test_qt_build_qpolicy.py
