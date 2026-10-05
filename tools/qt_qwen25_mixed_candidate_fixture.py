@@ -182,24 +182,33 @@ def build(
         default_precision=dtype,
     )
     total_cells = out_dim * ng
-    if len(policy["cells"]) != total_cells:
-        missing = total_cells - len(policy["cells"])
-        bad = [c for c in heatmap["cells"] if c["state"] != "CANDIDATE"][:20]
-        raise RuntimeError(f"{missing} cells have no eligible candidate; examples={bad}")
-
-    selected_n = {c["target_key"]: int(c["n"]) for c in policy["cells"]}
     incumbent_sha = None
-    if incumbent_map is not None:
+    if incumbent_map is None:
+        if len(policy["cells"]) != total_cells:
+            missing = total_cells - len(policy["cells"])
+            bad = [c for c in heatmap["cells"] if c["state"] != "CANDIDATE"][:20]
+            raise RuntimeError(f"{missing} cells have no eligible candidate; examples={bad}")
+        selected_n = {c["target_key"]: int(c["n"]) for c in policy["cells"]}
+    else:
+        # A downstream-certified incumbent is authoritative for selection.
+        # The local absolute-error heatmap remains diagnostic evidence only;
+        # it must not re-quarantine a SHA-pinned map already certified by the
+        # downstream hidden-state budget. Runtime parity below is still mandatory.
         from qt_incumbent_map import load_incumbent
-        sealed = load_incumbent(incumbent_map, tensor_name=TENSOR, out_dim=out_dim, in_dim=in_dim)
+        sealed = load_incumbent(
+            incumbent_map, tensor_name=TENSOR, out_dim=out_dim, in_dim=in_dim
+        )
         incumbent_sha = sealed["incumbent_sha256"]
         ordered = sealed["bits"]
+        if len(ordered) != total_cells:
+            raise RuntimeError("sealed incumbent cell count mismatch")
         selected_n = {}
         idx = 0
         for row in range(out_dim):
             for g in range(ng):
                 target = f"{model_id}/L0/q_proj/row={row}/group64={g}"
-                selected_n[target] = int(ordered[idx]); idx += 1
+                selected_n[target] = int(ordered[idx])
+                idx += 1
     bit_hist = Counter(selected_n.values())
 
     planes = bytearray()
