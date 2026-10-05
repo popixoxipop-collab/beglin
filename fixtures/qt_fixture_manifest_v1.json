@@ -1,0 +1,27 @@
+{
+  "schema": "beglin-qt-fixture/1",
+  "fixture_version": "qt-fixture-v1",
+  "automatic_live_promotion": false,
+  "production_mutation": false,
+  "files": {
+    "tools/qt_uncertainty.py": "f68c47c79e06da2c17f24c00ca21edfcc92918f2856ec8ff2f6892392ab99f24"
+  },
+  "inputs": {
+    "qheatmap_sha256": "b12c6c92ea8365687065d740f25d740ca6e060e3a93340c30a7515df29949ff5",
+    "tensor_sha256": "7af566022f07072d911a22135d8835121b1fe44e05e2d9a009c1263cba98fdef"
+  },
+  "actions": {
+    "uncertainty": {
+      "script": "tools/qt_uncertainty.py",
+      "args": [
+        "--qheatmap",
+        "qt_runtime/qheatmap.json",
+        "--output",
+        "qt_runtime/uncertainty.json",
+        "--summary-output",
+        "qt_runtime/uncertainty_summary.json"
+      ],
+      "timeout_seconds": 600
+    }
+  }
+}
