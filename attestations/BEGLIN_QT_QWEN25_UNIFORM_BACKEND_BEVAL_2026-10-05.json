@@ -1,0 +1,45 @@
+{
+  "schema": "beglin-qt-qwen25-uniform-backend-beval-v1",
+  "status": "PASS",
+  "observed_at": "2026-10-05T04:04:00Z",
+  "source_head": "6343c40a4a4ace75655818d633f0e610d16d269c",
+  "tailnet_release": "g6-0.8.0-operator.10",
+  "tensor_name": "model.layers.0.self_attn.q_proj.weight",
+  "tensor_sha256": "7af566022f07072d911a22135d8835121b1fe44e05e2d9a009c1263cba98fdef",
+  "shape": [
+    896,
+    896
+  ],
+  "group_size": 64,
+  "error_budget": 0.0005,
+  "results": {
+    "4": {
+      "status": "PASS",
+      "max_abs_error": 0.00000464916229,
+      "max_rel_error": 0.00175324769,
+      "restore_max_abs_diff": 0,
+      "manifest_sha256": "5b84591b34d630b0b3646b1ef93375efa3e3bfad38b7e906a3d608ede7a0a126"
+    },
+    "5": {
+      "status": "PASS",
+      "max_abs_error": 0.0000101327896,
+      "max_rel_error": 0.00268108763,
+      "restore_max_abs_diff": 0,
+      "manifest_sha256": "a29975fdbb1fe3baf5617d17fa94a0e4c354fa92f1760b20d538bbaaa3f70239"
+    },
+    "6": {
+      "status": "PASS",
+      "max_abs_error": 0.00000274181366,
+      "max_rel_error": 0.000146174256,
+      "restore_max_abs_diff": 0,
+      "manifest_sha256": "6923cde560ea3fa8dcd3a978a3c22184b6f127969399526e1ed066ccabf39879"
+    }
+  },
+  "qpolicy_candidate": {
+    "policy_id": "qpc_732757284aff288f",
+    "candidate_sha256": "732757284aff288f85b95548134260e47524f1eef13e1d1495add2c1b39e42a9",
+    "approved_for_mixed_runtime": false
+  },
+  "production_touched": false,
+  "automatic_live_promotion": false
+}
