@@ -1852,15 +1852,15 @@ static std::optional<mx::fast::CustomKernelFunction> g_qng64_mixed456_gemv_kerne
 static mx::fast::CustomKernelFunction &qng64_mixed456_gemv_kernel() {
     if (!g_qng64_mixed456_gemv_kernel) {
         std::string source = R"(
-            uint p=thread_position_in_grid.x,row=thread_position_in_grid.y,z=thread_position_in_grid.z;
-            if(p>=64)return; uint bytep=p>>3, bitp=p&7, cell0=row*ng;
+            int p=(int)thread_position_in_grid.x,row=(int)thread_position_in_grid.y,z=(int)thread_position_in_grid.z;
+            if(p>=64)return; int bytep=p>>3, bitp=p&7, cell0=row*ng;
             uint simd_lane=thread_index_in_simdgroup;
             uint base_src=simd_lane==0u ? offsets[cell0] : 0u;
-            uint base=simd_broadcast(base_src,0u); float partial=0.0f;
-            for(uint g=0;g<ng;g++){
-                uint cell=cell0+g;
+            int base=(int)simd_broadcast(base_src,0u); float partial=0.0f;
+            for(int g=0;g<ng;g++){
+                int cell=cell0+g;
                 uint n_src=simd_lane==0u ? (uint)bits[cell] : 0u;
-                uint n=simd_broadcast(n_src,0u); int u=0;
+                int n=(int)simd_broadcast(n_src,0u); int u=0;
                 u  = ((planes[base+ 0u+bytep]>>bitp)&1);
                 u |= ((planes[base+ 8u+bytep]>>bitp)&1)<<1;
                 u |= ((planes[base+16u+bytep]>>bitp)&1)<<2;
@@ -1871,7 +1871,7 @@ static mx::fast::CustomKernelFunction &qng64_mixed456_gemv_kernel() {
                 float scale_src=simd_lane==0u ? scales[cell] : 0.0f;
                 float scale=simd_broadcast(scale_src,0u);
                 partial+=(float)code*scale*x[z*(ng*64u)+g*64u+p];
-                base+=n*8u;
+                base+=n*8;
             }
             threadgroup float ss[2]; uint lane=p%32u,sg=p/32u; float q=simd_sum(partial);
             if(lane==0)ss[sg]=q; threadgroup_barrier(mem_flags::mem_threadgroup);
