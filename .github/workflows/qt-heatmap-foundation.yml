@@ -11,6 +11,7 @@ on:
       - "schemas/model/local-precision-policy-v1.schema.json"
       - "tools/qt_heatmap.py"
       - "tools/qt_qwen25_observe.py"
+      - "tools/test_qt_qwen25_observe.py"
       - "tools/test_qt_heatmap.py"
       - ".github/workflows/qt-heatmap-foundation.yml"
   pull_request:
