@@ -33,5 +33,6 @@ Verification rule: any capability reported as `VERIFIED`, `IN_ENGINE_VERIFIED`, 
 - `qheatmap-v2.schema.json` — precision recommendation cells; BECODER candidate only
 - `theatmap-v2.schema.json` — selective-training sensitivity cells; BECODER candidate only
 - `local-precision-policy-v1.schema.json` — BEVAL-gated local group precision policy
+- `qpolicy-candidate-v1.schema.json` — deterministic BECODER output; hard-unapproved until BEVAL
 
 QT invariant: BSKEL defines identity/schema only; BECODER proposes Q/T cells; runtime must not apply a local precision policy unless `approved_by_beval=true`. Initial local unit is qNg64 group64; element-level policy is out of QT-0 scope.
