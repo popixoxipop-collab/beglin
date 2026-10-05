@@ -6,7 +6,8 @@
   "files": {
     "tools/qt_active_observe.py": "ea66fac2b10224e6982fb4bdc42ed1d77428065e",
     "tools/qt_calibrate_beval.py": "5b867f8030cee308ee5174afea7b0fc20dc7059f",
-    "tools/qt_uncertainty.py": "4e0d5f3bc8ad48ee14b21c3e31b3b8a987d3974a"
+    "tools/qt_uncertainty.py": "4e0d5f3bc8ad48ee14b21c3e31b3b8a987d3974a",
+    "tools/qt_materialize_tensor.py": "d737f660ca54971f6ad9955055f9def0930ac0da"
   },
   "actions": {
     "uncertainty": {
@@ -45,6 +46,14 @@
         "--approve-lcb",
         "0.95"
       ]
+    },
+    "materialize_tensor": {
+      "script": "tools/qt_materialize_tensor.py",
+      "args": [
+        "--output",
+        "qt_runtime/qwen-l0-qproj.safetensors"
+      ],
+      "timeout_seconds": 600
     }
   }
 }
