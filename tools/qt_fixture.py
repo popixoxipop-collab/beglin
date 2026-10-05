@@ -9,7 +9,7 @@ def sha(p):
   for b in iter(lambda:f.read(1<<20),b""):h.update(b)
  return h.hexdigest()
 def main():
- p=argparse.ArgumentParser();p.add_argument("--action",required=True,choices=["uncertainty","active_observe","calibrate_beval"]);a=p.parse_args();m=json.loads(MANIFEST.read_text())
+ p=argparse.ArgumentParser();p.add_argument("--action",required=True,choices=["uncertainty","materialize_tensor","active_observe","calibrate_beval"]);a=p.parse_args();m=json.loads(MANIFEST.read_text())
  if m["schema"]!="beglin-qt-fixture/2" or m.get("automatic_live_promotion") is not False:raise SystemExit("BAD_MANIFEST")
  for rel,want in m["files"].items():
   if sha(ROOT/rel)!=want:raise SystemExit("HASH_MISMATCH:"+rel)
