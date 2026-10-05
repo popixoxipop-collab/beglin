@@ -1702,10 +1702,14 @@ static mx::fast::CustomKernelFunction &qng64_mixed_gemv_kernel() {
             float partial = 0.0f;
             uint byte_in_plane = p >> 3;
             uint bit_in_byte = p & 7;
+            // Compute the row's packed-plane base once. Within a row each cell span is
+            // exactly bits[cell]*8 bytes, so subsequent offsets are a cheap running prefix.
+            // This removes one global uint32 offsets[] load per group from the hot loop.
+            uint cell0 = row * ng;
+            uint plane_base = offsets[cell0];
             for (uint g = 0; g < ng; g++) {
-                uint cell = row * ng + g;
+                uint cell = cell0 + g;
                 uint n_local = (uint)bits[cell];
-                uint plane_base = offsets[cell];
                 // Fast path for the production incumbent's n4/n5/n6 cells.
                 // n_local is uniform across all 64 lanes for this cell, so this switch
                 // has no SIMD divergence. Explicit loads remove the dynamic inner loop.
@@ -1738,6 +1742,7 @@ static mx::fast::CustomKernelFunction &qng64_mixed_gemv_kernel() {
                 int code = u - bias_code;
                 float decoded = (float)code * scales[cell];
                 partial += decoded * x[z * (ng * 64u) + g * 64u + p];
+                plane_base += n_local * 8u;
             }
             threadgroup float shared_sums[2];
             uint simd_lane = p % 32u;
