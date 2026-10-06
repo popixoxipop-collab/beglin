@@ -11,6 +11,7 @@ on:
       - "tools/qt_build_full_attention_maps.py"
       - "tools/qt_make_cumulative_manifest.py"
       - "tools/qt_collect_attention_sweep.py"
+      - "tools/qt_transformer_cell_promotion_search.py"
   workflow_dispatch:
 jobs:
   shard0:
@@ -141,6 +142,15 @@ jobs:
               x=json.load(open('/tmp/qt-fullmaps/'+r+'.json'))
               print('QT_L0_ROLE',r,'status='+x['status'],'max='+str(x['max_relative_l2']),'margin='+str(x['margin']))
           PY
+      - name: L0 real Transformer cell promotion search
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qt-fullmaps/search
+          for role in q_proj k_proj v_proj o_proj; do
+            python3 tools/qt_transformer_cell_promotion_search.py --checkpoint /tmp/qt-fullmaps/model.safetensors --config /tmp/qt-fullmaps/config.json --prompt /tmp/qt-fullmaps/prompt.i32 --engine ./build-qt-l0/qwen_infer_gpu --maps /tmp/qt-fullmaps/maps --tensor model.layers.0.self_attn.${role}.weight --baseline /tmp/qt-fullmaps/baseline.bin --work /tmp/qt-fullmaps/search/${role} --budget 0.0025 --max-rounds 24
+          done
+          for role in q_proj k_proj v_proj o_proj; do cat /tmp/qt-fullmaps/search/${role}/SEARCH.json; done
       - uses: actions/upload-artifact@v4
         with:
           name: qt-fullmaps
