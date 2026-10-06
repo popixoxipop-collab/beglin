@@ -28,6 +28,12 @@ jobs:
           set -euo pipefail
           python3 tools/qt_qwen25_attention_inventory.py --safetensors /tmp/qt-attn-inventory/header.safetensors --output /tmp/qt-attn-inventory/ATTENTION_INVENTORY.json | tee /tmp/qt-attn-inventory/summary.json
           cat /tmp/qt-attn-inventory/summary.json
+      - name: Build balanced certification shard plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qt_attention_shard_plan.py --inventory /tmp/qt-attn-inventory/ATTENTION_INVENTORY.json --shards 8 --output-dir /tmp/qt-attn-inventory/shards | tee /tmp/qt-attn-inventory/shard-summary.json
+          cat /tmp/qt-attn-inventory/shards/SHARD_PLAN.json
       - uses: actions/upload-artifact@v4
         with:
           name: qt-qwen25-attention-inventory
