@@ -72,6 +72,7 @@ find_package(MLX CONFIG REQUIRED PATHS ${MLX_CMAKE_DIR})
 # The *_verify.c files are deliberately excluded: each carries its own main().
 add_library(qwen_infer_obj OBJECT
   qwen_infer.c
+  qng64_dense.c
   hf_config.c
   safetensors_load.c
   safetensors_quants.c
