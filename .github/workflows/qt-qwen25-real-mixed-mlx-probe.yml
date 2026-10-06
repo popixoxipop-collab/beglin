@@ -119,7 +119,7 @@ jobs:
           rm -rf build-qt-qwen25-real-mixed
           cmake -S . -B build-qt-qwen25-real-mixed -DCMAKE_BUILD_TYPE=Release \
             -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
-          cmake --build build-qt-qwen25-real-mixed --target qt_qwen25_real_mixed_mlx_probe qt_incumbent_mixed_benchmark -j4
+          cmake --build build-qt-qwen25-real-mixed --target qt_qwen25_real_mixed_mlx_probe qt_incumbent_mixed_benchmark qt_incumbent_interleaved_ab -j4
 
       - name: Run real Qwen mixed CPU oracle vs Metal
         shell: bash
@@ -178,6 +178,12 @@ jobs:
           (r/"INCUMBENT_AB.json").write_text(json.dumps(out,sort_keys=True,indent=2)+"\n")
           print(json.dumps(out,sort_keys=True))
           PY
+      - name: Run same-process interleaved A/B
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./build-qt-qwen25-real-mixed/qt_incumbent_interleaved_ab /tmp/qt-qwen25-real-mixed/uniform-n6 /tmp/qt-qwen25-real-mixed/incumbent-fixture | tee /tmp/qt-qwen25-real-mixed/interleaved-ab.txt
+          grep -q '"status":"PASS"' /tmp/qt-qwen25-real-mixed/interleaved-ab.txt
       - name: Seal BECODER to Metal evidence
         shell: bash
         run: |
