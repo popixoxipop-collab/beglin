@@ -1,0 +1,54 @@
+name: QT Dense Hidden A-B
+on:
+  workflow_dispatch:
+jobs:
+  hidden-ab:
+    runs-on: [self-hosted, macOS, ARM64, xox]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bootstrap and apply dense mixed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/bootstrap_qwen_mixed_adapter_patch.py
+          git diff -- qwen_infer.c > /tmp/qt_dense.patch
+          git checkout -- qwen_infer.c
+          git apply --check /tmp/qt_dense.patch
+          git apply /tmp/qt_dense.patch
+          cmake -S . -B build-qt-ab -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-qt-ab --target qwen_infer_gpu -j4
+      - name: Prepare checkpoint and L4 maps
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qt-ab/model /tmp/qt-ab/maps
+          curl -L --fail --retry 3 -o /tmp/qt-ab/model/model.safetensors https://huggingface.co/Qwen/Qwen2.5-0.5B/resolve/main/model.safetensors
+          curl -L --fail --retry 3 -o /tmp/qt-ab/model/config.json https://huggingface.co/Qwen/Qwen2.5-0.5B/resolve/main/config.json
+          python3 tools/qt_attention_heatmap.py --checkpoint /tmp/qt-ab/model/model.safetensors --output-dir /tmp/qt-ab/heatmap --shard-index 0 --shard-count 8
+          cp /tmp/qt-ab/heatmap/model_layers_4_self_attn_k_proj_weight.bits /tmp/qt-ab/maps/model_layers_4_self_attn_k_proj_weight.bits
+          cp /tmp/qt-ab/heatmap/model_layers_4_self_attn_o_proj_weight.bits /tmp/qt-ab/maps/model_layers_4_self_attn_o_proj_weight.bits
+      - name: Baseline hidden dump
+        shell: bash
+        run: |
+          set -euo pipefail
+          QWEN_SAFETENSORS=/tmp/qt-ab/model/model.safetensors QWEN_HF_CONFIG=/tmp/qt-ab/model/config.json QWEN_MOE_DEBUG_LAYERDUMP=/tmp/qt-ab/baseline.bin QWEN_MOE_DEBUG_LAYERDUMP_POS=0 ./build-qt-ab/qwen_infer_gpu greedy 1 >/tmp/qt-ab/baseline.log 2>&1
+          test -s /tmp/qt-ab/baseline.bin
+      - name: Mixed hidden dump
+        shell: bash
+        run: |
+          set -euo pipefail
+          QWEN_SAFETENSORS=/tmp/qt-ab/model/model.safetensors QWEN_HF_CONFIG=/tmp/qt-ab/model/config.json QWEN_QT_MIXED_MANIFEST=/tmp/qt-ab/maps QWEN_MOE_DEBUG_LAYERDUMP=/tmp/qt-ab/mixed.bin QWEN_MOE_DEBUG_LAYERDUMP_POS=0 ./build-qt-ab/qwen_infer_gpu greedy 1 >/tmp/qt-ab/mixed.log 2>&1
+          grep -q '\[qt mixed dense\] registered model.layers.4.self_attn.k_proj.weight' /tmp/qt-ab/mixed.log
+          grep -q '\[qt mixed dense\] registered model.layers.4.self_attn.o_proj.weight' /tmp/qt-ab/mixed.log
+          test -s /tmp/qt-ab/mixed.bin
+      - name: Hidden-state BEVAL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qt_hidden_dump_beval.py --baseline /tmp/qt-ab/baseline.bin --candidate /tmp/qt-ab/mixed.bin --layers 24 --hidden 896 --start-layer 4 --budget 0.0025 | tee /tmp/qt-ab/hidden_beval.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qt-dense-hidden-ab
+          path: /tmp/qt-ab
