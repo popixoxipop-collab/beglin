@@ -41,6 +41,8 @@ jobs:
           assert x['tensor_count']==12 and x['total_cells']==86016
           assert x['selection_status']=='PILOT_NOT_DOWNSTREAM_CERTIFIED'
           print('QT_SHARD0_HEATMAP_PASS')
+          for t in x['tensors']:
+              print('QT_TENSOR',t['layer'],t['role'],'cells='+str(t['cell_count']),'avg_bits='+format(t['average_bits'],'.6f'),'unc='+format(t['uncertainty_mean_spread'],'.9g'),'hist='+json.dumps(t['bit_histogram'],sort_keys=True))
           PY
       - uses: actions/upload-artifact@v4
         with:
