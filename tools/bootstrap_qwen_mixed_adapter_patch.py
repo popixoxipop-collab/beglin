@@ -89,8 +89,14 @@ dense_ins=r'''
 static int qt_dense_mixed_target(const char *name) {
     const char *m=getenv("QWEN_QT_MIXED_MANIFEST");
     if (!m || !m[0]) return 0;
-    return !strcmp(name,"model.layers.4.self_attn.k_proj.weight") ||
-           !strcmp(name,"model.layers.4.self_attn.o_proj.weight");
+    int layer=-1; char role[16]={0};
+    if (sscanf(name,"model.layers.%d.self_attn.%15[^.].weight",&layer,role)!=2) return 0;
+    if (layer<0) return 0;
+    if (strcmp(role,"q_proj") && strcmp(role,"k_proj") && strcmp(role,"v_proj") && strcmp(role,"o_proj")) return 0;
+    char bp[1024],safe[256]; size_t n=strlen(name); if(n>=sizeof safe) return 0;
+    for(size_t i=0;i<=n;i++) safe[i]=(name[i]=='.')?'_':name[i];
+    snprintf(bp,sizeof bp,"%s/%s.bits",m,safe);
+    FILE *f=fopen(bp,"rb"); if(!f) return 0; fclose(f); return 1;
 }
 '''
 if s.count(dense_anchor)!=1: raise SystemExit("dense register anchor mismatch")
