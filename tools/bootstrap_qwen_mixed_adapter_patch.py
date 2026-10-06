@@ -131,6 +131,15 @@ dense_quant=r'''    int ng = in / 64;
         if(!bits || fread(bits,1,cells,bf)!=cells || fgetc(bf)!=EOF){fprintf(stderr,"FATAL: QT mixed bits size %s\n",bp);exit(1);}
         fclose(bf);
         float *mix=malloc(sizeof(float)*(size_t)out*in); if(!mix){fprintf(stderr,"FATAL: QT mixed alloc\n");exit(1);}
+        const char *pass=getenv("QWEN_QT_FP32_PASSTHROUGH");
+        if(pass && pass[0] && strcmp(pass,"0")){
+            memcpy(mix,deq,sizeof(float)*(size_t)out*in); free(bits); free(deq);
+            WT *w=&g_wt[g_nwt++]; snprintf(w->name,sizeof w->name,"%s",name);
+            w->kind=K_F32;w->in=in;w->out=out;w->ng=ng;w->f32=mix;w->packed=NULL;w->scales=NULL;w->sub=NULL;
+            w->kai_rhs=NULL;w->kai_rhs_bytes=0;w->kai_lazy_failed=0;
+            fprintf(stderr,"[qt mixed dense] fp32-passthrough %s source=original-safetensors\\n",name);
+            return w;
+        }
         for(int r=0;r<out;r++) for(int g=0;g<ng;g++){
             int nb=bits[(size_t)r*ng+g]; if(nb<4||nb>8){fprintf(stderr,"FATAL: QT mixed bit=%d\n",nb);exit(1);}
             int qmax=(1<<(nb-1))-1,qmin=-(1<<(nb-1)); const float *src=deq+(size_t)r*in+g*64;
