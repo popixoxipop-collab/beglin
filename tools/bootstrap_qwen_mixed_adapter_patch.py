@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import subprocess
 p=Path("qwen_infer.c");s=p.read_text()
 a='static double (*g_moe_row_fn)(const uint8_t *, MoeAFTensor *, long, long, const float *) = moe_matvec_af_row;\n'
 ins=r'''
@@ -147,3 +148,4 @@ if tail.count(dense_quant_anchor)<1: raise SystemExit("dense quant anchor mismat
 tail=tail.replace(dense_quant_anchor,dense_quant,1);s=s[:pos]+tail
 
 p.write_text(s.replace(old,new,1))
+subprocess.run(["python3","tools/patch_dense_layerdump.py"],check=True)
