@@ -1,6 +1,15 @@
 name: QT Dense Hidden A-B
 on:
   workflow_dispatch:
+  push:
+    branches: [qt-mixed-runtime-hotpath]
+    paths:
+      - '.github/workflows/qt-dense-hidden-ab.yml'
+      - 'tools/bootstrap_qwen_mixed_adapter_patch.py'
+      - 'tools/qt_hidden_dump_beval.py'
+      - 'tools/qt_attention_heatmap.py'
+      - 'qng64_dense.c'
+      - 'CMakeLists.txt'
 jobs:
   hidden-ab:
     runs-on: [self-hosted, macOS, ARM64, xox]
