@@ -80,8 +80,8 @@ jobs:
           mkdir -p /tmp/qt-shard0/maps
           cp /tmp/qt-shard0/heatmap/model_layers_4_self_attn_k_proj_weight.bits /tmp/qt-shard0/maps/
           cp /tmp/qt-shard0/heatmap/model_layers_4_self_attn_o_proj_weight.bits /tmp/qt-shard0/maps/
-          QWEN_SAFETENSORS=/tmp/qt-shard0/model.safetensors QWEN_HF_CONFIG=/tmp/qt-shard0/config.json QWEN_MOE_DEBUG_LAYERDUMP=/tmp/qt-shard0/baseline-hidden.bin QWEN_MOE_DEBUG_LAYERDUMP_POS=0 ./build-qt-hidden/qwen_infer_gpu greedy 1 > /tmp/qt-shard0/baseline-forward.log 2>&1
-          QWEN_SAFETENSORS=/tmp/qt-shard0/model.safetensors QWEN_HF_CONFIG=/tmp/qt-shard0/config.json QWEN_QT_MIXED_MANIFEST=/tmp/qt-shard0/maps QWEN_MOE_DEBUG_LAYERDUMP=/tmp/qt-shard0/mixed-hidden.bin QWEN_MOE_DEBUG_LAYERDUMP_POS=0 ./build-qt-hidden/qwen_infer_gpu greedy 1 > /tmp/qt-shard0/mixed-forward.log 2>&1
+          QWEN_SAFETENSORS=/tmp/qt-shard0/model.safetensors QWEN_HF_CONFIG=/tmp/qt-shard0/config.json QWEN_DEBUG_LAYERDUMP=/tmp/qt-shard0/baseline-hidden.bin QWEN_DEBUG_LAYERDUMP_POS=0 ./build-qt-hidden/qwen_infer_gpu greedy 1 > /tmp/qt-shard0/baseline-forward.log 2>&1 || { cat /tmp/qt-shard0/baseline-forward.log; exit 1; }
+          QWEN_SAFETENSORS=/tmp/qt-shard0/model.safetensors QWEN_HF_CONFIG=/tmp/qt-shard0/config.json QWEN_QT_MIXED_MANIFEST=/tmp/qt-shard0/maps QWEN_DEBUG_LAYERDUMP=/tmp/qt-shard0/mixed-hidden.bin QWEN_DEBUG_LAYERDUMP_POS=0 ./build-qt-hidden/qwen_infer_gpu greedy 1 > /tmp/qt-shard0/mixed-forward.log 2>&1
           grep -q '\[qt mixed dense\] registered model.layers.4.self_attn.k_proj.weight' /tmp/qt-shard0/mixed-forward.log
           grep -q '\[qt mixed dense\] registered model.layers.4.self_attn.o_proj.weight' /tmp/qt-shard0/mixed-forward.log
           python3 tools/qt_hidden_dump_beval.py --baseline /tmp/qt-shard0/baseline-hidden.bin --candidate /tmp/qt-shard0/mixed-hidden.bin --layers 24 --hidden 896 --start-layer 4 --budget 0.0025 | tee /tmp/qt-shard0/TRANSFORMER_HIDDEN_BEVAL.json
