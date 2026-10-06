@@ -142,6 +142,22 @@ jobs:
               x=json.load(open('/tmp/qt-fullmaps/'+r+'.json'))
               print('QT_L0_ROLE',r,'status='+x['status'],'max='+str(x['max_relative_l2']),'margin='+str(x['margin']))
           PY
+      - name: L0 FP32 passthrough control
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qt-fullmaps/fp32-control
+          for role in q_proj k_proj v_proj o_proj; do
+            QWEN_SAFETENSORS=/tmp/qt-fullmaps/model.safetensors QWEN_HF_CONFIG=/tmp/qt-fullmaps/config.json QWEN_PROMPT=/tmp/qt-fullmaps/prompt.i32 QWEN_QT_MIXED_MANIFEST=/tmp/qt-fullmaps/map-"$role" QWEN_QT_FP32_PASSTHROUGH=1 QWEN_DEBUG_LAYERDUMP=/tmp/qt-fullmaps/fp32-control/"$role".bin QWEN_DEBUG_LAYERDUMP_POS=15 ./build-qt-l0/qwen_infer_gpu greedy 1 > /tmp/qt-fullmaps/fp32-control/"$role".log 2>&1
+            grep -q "\[qt mixed dense\] fp32-passthrough model.layers.0.self_attn.${role}.weight" /tmp/qt-fullmaps/fp32-control/"$role".log
+            python3 tools/qt_hidden_dump_beval.py --baseline /tmp/qt-fullmaps/baseline.bin --candidate /tmp/qt-fullmaps/fp32-control/"$role".bin --layers 24 --hidden 896 --start-layer 0 --budget 0.0025 > /tmp/qt-fullmaps/fp32-control/"$role".json || true
+          done
+          python3 - <<'PY'
+          import json
+          for r in ('q_proj','k_proj','v_proj','o_proj'):
+              x=json.load(open('/tmp/qt-fullmaps/fp32-control/'+r+'.json'))
+              print('QT_FP32_CONTROL',r,'status='+x['status'],'max='+str(x['max_relative_l2']),'margin='+str(x['margin']))
+          PY
       - name: L0 real Transformer cell promotion search
         shell: bash
         run: |
