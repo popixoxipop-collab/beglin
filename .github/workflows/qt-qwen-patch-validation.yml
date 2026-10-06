@@ -13,28 +13,31 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - name: Validate base and patch identity
+      - name: Bootstrap canonical patch from clean base
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/qt-patch-evidence
           BASE="$(git rev-parse HEAD)"
-          PATCH=patches/qwen_mixed_cell_adapter.patch
-          PATCH_SHA="$(shasum -a 256 "$PATCH" | awk '{print $1}')"
           printf '%s\n' "$BASE" > /tmp/qt-patch-evidence/base_sha.txt
+          python3 tools/bootstrap_qwen_mixed_adapter_patch.py
+          git diff -- qwen_infer.c > /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch
+          test -s /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch
+          test "$(grep -c '^diff --git ' /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch)" -eq 1
+          grep -q '^diff --git a/qwen_infer.c b/qwen_infer.c$' /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch
+          PATCH_SHA="$(shasum -a 256 /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch | awk '{print $1}')"
           printf '%s\n' "$PATCH_SHA" > /tmp/qt-patch-evidence/patch_sha256.txt
-          test "$(grep -c '^diff --git ' "$PATCH")" -eq 1
-          grep -q '^diff --git a/qwen_infer.c b/qwen_infer.c$' "$PATCH"
-          git apply --check "$PATCH"
-      - name: Apply only validated patch
+          git checkout -- qwen_infer.c
+          git apply --check /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch
+      - name: Apply generated patch only
         shell: bash
         run: |
           set -euo pipefail
-          git apply patches/qwen_mixed_cell_adapter.patch
-          CHANGED="$(git diff --name-only)"
-          test "$CHANGED" = "qwen_infer.c"
+          git apply /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch
+          test "$(git diff --name-only)" = "qwen_infer.c"
           git diff --check
           git diff -- qwen_infer.c > /tmp/qt-patch-evidence/applied.diff
+          cmp /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch /tmp/qt-patch-evidence/applied.diff
           shasum -a 256 /tmp/qt-patch-evidence/applied.diff > /tmp/qt-patch-evidence/applied_diff_sha256.txt
       - name: Compile patched qwen
         shell: bash
