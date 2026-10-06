@@ -16,7 +16,7 @@ def main():
  p=Path(a.checkpoint)
  with p.open("rb") as f:n=struct.unpack("<Q",f.read(8))[0];h=json.loads(f.read(n));e=h[a.tensor];s,z=e["data_offsets"];f.seek(8+n+s);v=bf16(f.read(z-s))
  O,I=map(int,e["shape"]);ng=I//G;bits=Path(a.bits).read_bytes()
- if len(bits)!=O*ng or any(x not in (4,5,6) for x in bits):raise SystemExit("invalid bits map")
+ if len(bits)!=O*ng or any(x not in (4,5,6,7,8) for x in bits):raise SystemExit("invalid bits map")
  qv=array.array("f",[0.0])*(O*I);k=0
  for r in range(O):
   for g in range(ng):
