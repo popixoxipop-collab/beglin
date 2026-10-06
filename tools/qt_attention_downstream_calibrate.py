@@ -26,7 +26,7 @@ def main():
  for r in range(O):
   for g in range(ng):
    k=r*ng+g;orig=[float(v[r*I+g*G+i]) for i in range(G)]
-   for nb in (4,5,6):
+   for nb in (4,5,6,7,8):
     dq=q(orig,nb);delta[(k,nb)]=[sum((dq[i]-orig[i])*xs[w][g*G+i] for i in range(G)) for w in range(a.windows)]
  def metric(bs):
   vals=[]
@@ -39,16 +39,16 @@ def main():
  # Rank promotion benefit by reduction in squared window deltas, deterministic tie by cell.
  def score(k):
   n=bits[k]
-  if n>=6:return -1.
+  if n>=8:return -1.
   a0=delta[(k,n)];a1=delta[(k,n+1)]
   return sum(x*x-y*y for x,y in zip(a0,a1))
  history=[];mx,mean=metric(bits);history.append({"step":0,"max":mx,"mean":mean,"avg_bits":sum(bits)/len(bits)})
  batch=max(1,len(bits)//32);step=0
- while mx>a.budget and any(n<6 for n in bits):
-  cand=[k for k,n in enumerate(bits) if n<6];cand.sort(key=lambda k:(-score(k),k))
+ while mx>a.budget and any(n<8 for n in bits):
+  cand=[k for k,n in enumerate(bits) if n<8];cand.sort(key=lambda k:(-score(k),k))
   for k in cand[:batch]:bits[k]+=1
   step+=1;mx,mean=metric(bits);history.append({"step":step,"max":mx,"mean":mean,"avg_bits":sum(bits)/len(bits)})
  out=bytes(bits);Path(a.output).write_bytes(out);ok=mx<=a.budget
- print(json.dumps({"schema":"beglin-qt-downstream-calibration-v1","status":"PASS" if ok else "FAIL","tensor_name":a.tensor,"cell_count":len(bits),"budget":a.budget,"relative_l2_max":mx,"relative_l2_mean":mean,"average_bits":sum(bits)/len(bits),"histogram":{str(n):bits.count(n) for n in (4,5,6)},"steps":step,"history":history,"bits_sha256":hashlib.sha256(out).hexdigest(),"production_write_allowed":False,"automatic_live_promotion":False},sort_keys=True))
+ print(json.dumps({"schema":"beglin-qt-downstream-calibration-v1","status":"PASS" if ok else "FAIL","tensor_name":a.tensor,"cell_count":len(bits),"budget":a.budget,"relative_l2_max":mx,"relative_l2_mean":mean,"average_bits":sum(bits)/len(bits),"histogram":{str(n):bits.count(n) for n in (4,5,6,7,8)},"steps":step,"history":history,"bits_sha256":hashlib.sha256(out).hexdigest(),"production_write_allowed":False,"automatic_live_promotion":False},sort_keys=True))
  raise SystemExit(0 if ok else 1)
 if __name__=="__main__":main()
