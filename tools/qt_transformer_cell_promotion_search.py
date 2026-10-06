@@ -29,5 +29,5 @@ for rd in range(a.max_rounds+1):
  batch=max(1,len(bits)//32)
  for i in cand[:batch]: bits[i]+=1
 (work/"FINAL.bits").write_bytes(bits)
-(work/"SEARCH.json").write_text(json.dumps({"schema":"beglin-qt-transformer-promotion-search-v1","tensor":a.tensor,"budget":a.budget,"history":hist,"final_status":hist[-1]["status"],"final_average_bits":sum(bits)/len(bits)},sort_keys=True,indent=2)+"\n")
+(work/"SEARCH.json").write_text(json.dumps({"schema":"beglin-qt-transformer-promotion-search-v1","requires_fp32_control":True,"tensor":a.tensor,"budget":a.budget,"history":hist,"final_status":hist[-1]["status"],"final_average_bits":sum(bits)/len(bits)},sort_keys=True,indent=2)+"\n")
 print(json.dumps(hist[-1],sort_keys=True))
