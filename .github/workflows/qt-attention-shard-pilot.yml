@@ -114,3 +114,48 @@ jobs:
         with:
           name: qt-fullmaps
           path: /tmp/qt-fullmaps
+
+  sweep:
+    needs: fullmaps
+    runs-on: [self-hosted, macOS, ARM64, xox]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: qt-fullmaps
+          path: /tmp/qt-sweep/source
+      - name: Build engine and baseline
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/qt-sweep/run && mkdir -p /tmp/qt-sweep/run
+          curl -L --fail -o /tmp/qt-sweep/run/model.safetensors https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/model.safetensors
+          curl -L --fail -o /tmp/qt-sweep/run/config.json https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json
+          python3 - <<'PY'
+          import struct
+          open('/tmp/qt-sweep/run/prompt.i32','wb').write(struct.pack('<i',0))
+          PY
+          python3 tools/bootstrap_qwen_mixed_adapter_patch.py
+          git diff -- qwen_infer.c > /tmp/qt-sweep/run/patch.diff
+          git checkout -- qwen_infer.c
+          git apply --check /tmp/qt-sweep/run/patch.diff
+          git apply /tmp/qt-sweep/run/patch.diff
+          cmake -S . -B build-qt-sweep -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-qt-sweep --target qwen_infer_gpu -j4
+          QWEN_SAFETENSORS=/tmp/qt-sweep/run/model.safetensors QWEN_HF_CONFIG=/tmp/qt-sweep/run/config.json QWEN_PROMPT=/tmp/qt-sweep/run/prompt.i32 QWEN_DEBUG_LAYERDUMP=/tmp/qt-sweep/run/baseline.bin QWEN_DEBUG_LAYERDUMP_POS=0 ./build-qt-sweep/qwen_infer_gpu greedy 1
+      - name: Cumulative hidden sweep
+        run: |
+          set -euo pipefail
+          MAPS=/tmp/qt-sweep/source/maps
+          for end in 0 3 7 11 15 19 23; do
+            python3 tools/qt_make_cumulative_manifest.py --source "$MAPS" --end-layer "$end" --output /tmp/qt-sweep/run/maps-L"$end"
+            QWEN_SAFETENSORS=/tmp/qt-sweep/run/model.safetensors QWEN_HF_CONFIG=/tmp/qt-sweep/run/config.json QWEN_PROMPT=/tmp/qt-sweep/run/prompt.i32 QWEN_QT_MIXED_MANIFEST=/tmp/qt-sweep/run/maps-L"$end" QWEN_DEBUG_LAYERDUMP=/tmp/qt-sweep/run/mixed-L"$end".bin QWEN_DEBUG_LAYERDUMP_POS=0 ./build-qt-sweep/qwen_infer_gpu greedy 1
+            python3 tools/qt_hidden_dump_beval.py --baseline /tmp/qt-sweep/run/baseline.bin --candidate /tmp/qt-sweep/run/mixed-L"$end".bin --layers 24 --hidden 896 --start-layer 0 --budget 0.0025 > /tmp/qt-sweep/run/beval-L"$end".json || true
+          done
+          python3 tools/qt_collect_attention_sweep.py --root /tmp/qt-sweep/run --output /tmp/qt-sweep/run/SWEEP.json
+          cat /tmp/qt-sweep/run/SWEEP.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qt-full-attention-sweep
+          path: /tmp/qt-sweep/run
