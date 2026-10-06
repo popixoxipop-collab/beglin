@@ -3,7 +3,7 @@ from pathlib import Path
 p=Path("qwen_infer.c")
 s=p.read_text()
 old="        vDSP_vadd(xbuf,1,mlpout,1,xbuf,1,g_cfg.d);\n"
-new="""        vDSP_vadd(xbuf,1,mlp_out,1,xbuf,1,g_cfg.d);
+new="""        vDSP_vadd(xbuf,1,mlpout,1,xbuf,1,g_cfg.d);
         {
             const char *dp=getenv("QWEN_DEBUG_LAYERDUMP");
             int target=0;
