@@ -1,0 +1,34 @@
+name: QT Qwen25 Attention Inventory
+on:
+  pull_request:
+    paths:
+      - "tools/qt_qwen25_attention_inventory.py"
+      - "tools/qt_qwen25_mixed_candidate_fixture.py"
+  workflow_dispatch:
+jobs:
+  inventory:
+    runs-on: [self-hosted, macOS, ARM64, xox]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch safetensors header
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/qt-attn-inventory && mkdir -p /tmp/qt-attn-inventory
+          curl -L --fail -r 0-2097151 -o /tmp/qt-attn-inventory/header.bin https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/model.safetensors
+          python3 - <<'PY'
+          import json,struct,pathlib
+          b=pathlib.Path("/tmp/qt-attn-inventory/header.bin").read_bytes(); n=struct.unpack("<Q",b[:8])[0]
+          pathlib.Path("/tmp/qt-attn-inventory/header.safetensors").write_bytes(b[:8+n])
+          PY
+      - name: Seal attention inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qt_qwen25_attention_inventory.py --safetensors /tmp/qt-attn-inventory/header.safetensors --output /tmp/qt-attn-inventory/ATTENTION_INVENTORY.json | tee /tmp/qt-attn-inventory/summary.json
+          cat /tmp/qt-attn-inventory/summary.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qt-qwen25-attention-inventory
+          path: /tmp/qt-attn-inventory
