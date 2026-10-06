@@ -115,7 +115,13 @@ jobs:
         run: |
           set -euo pipefail
           curl -L --fail -o /tmp/qt-fullmaps/config.json https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json
-          python3 -c "import struct;open('/tmp/qt-fullmaps/prompt.i32','wb').write(struct.pack('<i',0))"
+          python3 - <<'PY'
+          import hashlib,struct
+          ids=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+          raw=struct.pack('<16i',*ids)
+          open('/tmp/qt-fullmaps/prompt.i32','wb').write(raw)
+          print('QT_PROMPT16_SHA256',hashlib.sha256(raw).hexdigest())
+          PY
           python3 tools/bootstrap_qwen_mixed_adapter_patch.py
           git diff -- qwen_infer.c > /tmp/qt-fullmaps/patch.diff
           git checkout -- qwen_infer.c
@@ -123,10 +129,10 @@ jobs:
           git apply /tmp/qt-fullmaps/patch.diff
           cmake -S . -B build-qt-l0 -DCMAKE_BUILD_TYPE=Release
           cmake --build build-qt-l0 --target qwen_infer_gpu -j4
-          QWEN_SAFETENSORS=/tmp/qt-fullmaps/model.safetensors QWEN_HF_CONFIG=/tmp/qt-fullmaps/config.json QWEN_PROMPT=/tmp/qt-fullmaps/prompt.i32 QWEN_DEBUG_LAYERDUMP=/tmp/qt-fullmaps/baseline.bin QWEN_DEBUG_LAYERDUMP_POS=0 ./build-qt-l0/qwen_infer_gpu greedy 1
+          QWEN_SAFETENSORS=/tmp/qt-fullmaps/model.safetensors QWEN_HF_CONFIG=/tmp/qt-fullmaps/config.json QWEN_PROMPT=/tmp/qt-fullmaps/prompt.i32 QWEN_DEBUG_LAYERDUMP=/tmp/qt-fullmaps/baseline.bin QWEN_DEBUG_LAYERDUMP_POS=15 ./build-qt-l0/qwen_infer_gpu greedy 1
           for role in q_proj k_proj v_proj o_proj; do
             python3 tools/qt_make_single_attention_manifest.py --source /tmp/qt-fullmaps/maps --layer 0 --role "$role" --output /tmp/qt-fullmaps/map-"$role"
-            QWEN_SAFETENSORS=/tmp/qt-fullmaps/model.safetensors QWEN_HF_CONFIG=/tmp/qt-fullmaps/config.json QWEN_PROMPT=/tmp/qt-fullmaps/prompt.i32 QWEN_QT_MIXED_MANIFEST=/tmp/qt-fullmaps/map-"$role" QWEN_DEBUG_LAYERDUMP=/tmp/qt-fullmaps/"$role".bin QWEN_DEBUG_LAYERDUMP_POS=0 ./build-qt-l0/qwen_infer_gpu greedy 1
+            QWEN_SAFETENSORS=/tmp/qt-fullmaps/model.safetensors QWEN_HF_CONFIG=/tmp/qt-fullmaps/config.json QWEN_PROMPT=/tmp/qt-fullmaps/prompt.i32 QWEN_QT_MIXED_MANIFEST=/tmp/qt-fullmaps/map-"$role" QWEN_DEBUG_LAYERDUMP=/tmp/qt-fullmaps/"$role".bin QWEN_DEBUG_LAYERDUMP_POS=15 ./build-qt-l0/qwen_infer_gpu greedy 1
             python3 tools/qt_hidden_dump_beval.py --baseline /tmp/qt-fullmaps/baseline.bin --candidate /tmp/qt-fullmaps/"$role".bin --layers 24 --hidden 896 --start-layer 0 --budget 0.0025 > /tmp/qt-fullmaps/"$role".json || true
           done
           python3 - <<'PY'
