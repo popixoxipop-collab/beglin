@@ -5,6 +5,9 @@ on:
       - "tools/qt_attention_shard_materialize.py"
       - "tools/qt_attention_shard_plan.py"
       - "tools/qt_qwen25_attention_inventory.py"
+      - "tools/bootstrap_qwen_mixed_adapter_patch.py"
+      - "tools/qt_hidden_dump_beval.py"
+      - ".github/workflows/qt-attention-shard-pilot.yml"
   workflow_dispatch:
 jobs:
   shard0:
@@ -62,6 +65,26 @@ jobs:
           python3 tools/qt_attention_downstream_calibrate.py --checkpoint /tmp/qt-shard0/model.safetensors --tensor model.layers.4.self_attn.o_proj.weight --bits "$BITS" --output "$CAL" --windows 8 --budget 0.0025 | tee /tmp/qt-shard0/L4_OPROJ_CALIBRATION.json
           python3 tools/qt_attention_downstream_beval.py --checkpoint /tmp/qt-shard0/model.safetensors --tensor model.layers.4.self_attn.o_proj.weight --bits "$CAL" --windows 8 --budget 0.0025 | tee /tmp/qt-shard0/L4_OPROJ_BEVAL.json
           grep -q '"status": "PASS"' /tmp/qt-shard0/L4_OPROJ_BEVAL.json
+      - name: Real dense Transformer hidden-state A-B
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail -o /tmp/qt-shard0/config.json https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json
+          python3 tools/bootstrap_qwen_mixed_adapter_patch.py
+          git diff -- qwen_infer.c > /tmp/qt-shard0/qwen_mixed_adapter.patch
+          git checkout -- qwen_infer.c
+          git apply --check /tmp/qt-shard0/qwen_mixed_adapter.patch
+          git apply /tmp/qt-shard0/qwen_mixed_adapter.patch
+          cmake -S . -B build-qt-hidden -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-qt-hidden --target qwen_infer_gpu -j4
+          mkdir -p /tmp/qt-shard0/maps
+          cp /tmp/qt-shard0/heatmap/model_layers_4_self_attn_k_proj_weight.bits /tmp/qt-shard0/maps/
+          cp /tmp/qt-shard0/heatmap/model_layers_4_self_attn_o_proj_weight.bits /tmp/qt-shard0/maps/
+          QWEN_SAFETENSORS=/tmp/qt-shard0/model.safetensors QWEN_HF_CONFIG=/tmp/qt-shard0/config.json QWEN_MOE_DEBUG_LAYERDUMP=/tmp/qt-shard0/baseline-hidden.bin QWEN_MOE_DEBUG_LAYERDUMP_POS=0 ./build-qt-hidden/qwen_infer_gpu greedy 1 > /tmp/qt-shard0/baseline-forward.log 2>&1
+          QWEN_SAFETENSORS=/tmp/qt-shard0/model.safetensors QWEN_HF_CONFIG=/tmp/qt-shard0/config.json QWEN_QT_MIXED_MANIFEST=/tmp/qt-shard0/maps QWEN_MOE_DEBUG_LAYERDUMP=/tmp/qt-shard0/mixed-hidden.bin QWEN_MOE_DEBUG_LAYERDUMP_POS=0 ./build-qt-hidden/qwen_infer_gpu greedy 1 > /tmp/qt-shard0/mixed-forward.log 2>&1
+          grep -q '\[qt mixed dense\] registered model.layers.4.self_attn.k_proj.weight' /tmp/qt-shard0/mixed-forward.log
+          grep -q '\[qt mixed dense\] registered model.layers.4.self_attn.o_proj.weight' /tmp/qt-shard0/mixed-forward.log
+          python3 tools/qt_hidden_dump_beval.py --baseline /tmp/qt-shard0/baseline-hidden.bin --candidate /tmp/qt-shard0/mixed-hidden.bin --layers 24 --hidden 896 --start-layer 4 --budget 0.0025 | tee /tmp/qt-shard0/TRANSFORMER_HIDDEN_BEVAL.json
       - uses: actions/upload-artifact@v4
         with:
           name: qt-attention-shard0-pilot
