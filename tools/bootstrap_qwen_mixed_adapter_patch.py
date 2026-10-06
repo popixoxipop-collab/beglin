@@ -107,4 +107,43 @@ pos=s.index(dense_anchor); tail=s[pos:];
 if tail.count(probe)<1: raise SystemExit("dense local shape anchor mismatch")
 tail=tail.replace(probe,probe+guard,1);s=s[:pos]+tail
 
+
+# Dense correctness implementation: when QWEN_QT_MIXED_MANIFEST points to a
+# directory containing <sanitized_tensor>.bits, build a K_F32 WT from the SAME
+# original safetensors dequant buffer after per-cell n4..n8 EF quant/dequant.
+dense_quant_anchor='    int ng = in / 64;\n    uint8_t *packed = malloc((size_t)out * (in / 2));\n'
+dense_quant=r'''    int ng = in / 64;
+    if (qt_dense_mixed_target(name)) {
+        const char *dir=getenv("QWEN_QT_MIXED_MANIFEST");
+        char bp[1024], safe[256]; size_t sn=strlen(name);
+        if (sn>=sizeof safe) { fprintf(stderr,"FATAL: QT mixed tensor name too long\n"); exit(1); }
+        for(size_t i=0;i<=sn;i++) safe[i]=(name[i]=='.')?'_':name[i];
+        snprintf(bp,sizeof bp,"%s/%s.bits",dir,safe);
+        FILE *bf=fopen(bp,"rb"); if(!bf){perror(bp);exit(1);}
+        size_t cells=(size_t)out*ng; uint8_t *bits=malloc(cells);
+        if(!bits || fread(bits,1,cells,bf)!=cells || fgetc(bf)!=EOF){fprintf(stderr,"FATAL: QT mixed bits size %s\n",bp);exit(1);}
+        fclose(bf);
+        float *mix=malloc(sizeof(float)*(size_t)out*in); if(!mix){fprintf(stderr,"FATAL: QT mixed alloc\n");exit(1);}
+        for(int r=0;r<out;r++) for(int g=0;g<ng;g++){
+            int nb=bits[(size_t)r*ng+g]; if(nb<4||nb>8){fprintf(stderr,"FATAL: QT mixed bit=%d\n",nb);exit(1);}
+            int qmax=(1<<(nb-1))-1,qmin=-(1<<(nb-1)); const float *src=deq+(size_t)r*in+g*64;
+            float mx=0.f;for(int i=0;i<64;i++){float a=fabsf(src[i]);if(a>mx)mx=a;}
+            float sc=mx>1e-12f?mx/qmax:1.f,inv=1.f/sc,res=0.f;float *dst=mix+(size_t)r*in+g*64;
+            for(int i=0;i<64;i++){float z=src[i]+res;int q=(int)lrintf(z*inv);if(q<qmin)q=qmin;if(q>qmax)q=qmax;dst[i]=q*sc;res=z-dst[i];}
+        }
+        free(bits); free(deq);
+        WT *w=&g_wt[g_nwt++]; snprintf(w->name,sizeof w->name,"%s",name);
+        w->kind=K_F32;w->in=in;w->out=out;w->ng=ng;w->f32=mix;w->packed=NULL;w->scales=NULL;w->sub=NULL;
+        w->kai_rhs=NULL;w->kai_rhs_bytes=0;w->kai_lazy_failed=0;
+        fprintf(stderr,"[qt mixed dense] registered %s cells=%zu source=original-safetensors\n",name,cells);
+        return w;
+    }
+    uint8_t *packed = malloc((size_t)out * (in / 2));
+'''
+# replace only inside st_register_q4g64_as by selecting after its function anchor
+pos=s.index('static WT *st_register_q4g64_as(const char *name) {')
+tail=s[pos:]
+if tail.count(dense_quant_anchor)<1: raise SystemExit("dense quant anchor mismatch")
+tail=tail.replace(dense_quant_anchor,dense_quant,1);s=s[:pos]+tail
+
 p.write_text(s.replace(old,new,1))
