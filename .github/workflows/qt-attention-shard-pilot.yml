@@ -8,6 +8,9 @@ on:
       - "tools/bootstrap_qwen_mixed_adapter_patch.py"
       - "tools/qt_hidden_dump_beval.py"
       - ".github/workflows/qt-attention-shard-pilot.yml"
+      - "tools/qt_build_full_attention_maps.py"
+      - "tools/qt_make_cumulative_manifest.py"
+      - "tools/qt_collect_attention_sweep.py"
   workflow_dispatch:
 jobs:
   shard0:
@@ -93,3 +96,21 @@ jobs:
         with:
           name: qt-attention-shard0-pilot
           path: /tmp/qt-shard0
+
+  fullmaps:
+    runs-on: [self-hosted, macOS, ARM64, xox]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare full inventory
+        run: |
+          rm -rf /tmp/qt-fullmaps && mkdir -p /tmp/qt-fullmaps
+          curl -L --fail -o /tmp/qt-fullmaps/model.safetensors https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/model.safetensors
+          python3 tools/qt_qwen25_attention_inventory.py --safetensors /tmp/qt-fullmaps/model.safetensors --output /tmp/qt-fullmaps/inventory.json
+          python3 tools/qt_attention_shard_plan.py --inventory /tmp/qt-fullmaps/inventory.json --shards 8 --output-dir /tmp/qt-fullmaps/shards
+      - name: Build 96 maps
+        run: python3 tools/qt_build_full_attention_maps.py --checkpoint /tmp/qt-fullmaps/model.safetensors --shards-dir /tmp/qt-fullmaps/shards --output-dir /tmp/qt-fullmaps/maps
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qt-fullmaps
+          path: /tmp/qt-fullmaps
