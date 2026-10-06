@@ -44,13 +44,14 @@ jobs:
           for t in x['tensors']:
               print('QT_TENSOR',t['layer'],t['role'],'cells='+str(t['cell_count']),'avg_bits='+format(t['average_bits'],'.6f'),'unc='+format(t['uncertainty_mean_spread'],'.9g'),'hist='+json.dumps(t['bit_histogram'],sort_keys=True))
           PY
-      - name: Downstream BEVAL L4 k_proj canary
+      - name: Calibrate and BEVAL L4 k_proj canary
         shell: bash
         run: |
           set -euo pipefail
           BITS=/tmp/qt-shard0/heatmap/model_layers_4_self_attn_k_proj_weight.bits
-          test -f "$BITS"
-          python3 tools/qt_attention_downstream_beval.py --checkpoint /tmp/qt-shard0/model.safetensors --tensor model.layers.4.self_attn.k_proj.weight --bits "$BITS" --windows 8 --budget 0.0025 | tee /tmp/qt-shard0/L4_KPROJ_BEVAL.json
+          CAL=/tmp/qt-shard0/L4_KPROJ_CALIBRATED.bits
+          python3 tools/qt_attention_downstream_calibrate.py --checkpoint /tmp/qt-shard0/model.safetensors --tensor model.layers.4.self_attn.k_proj.weight --bits "$BITS" --output "$CAL" --windows 8 --budget 0.0025 | tee /tmp/qt-shard0/L4_KPROJ_CALIBRATION.json
+          python3 tools/qt_attention_downstream_beval.py --checkpoint /tmp/qt-shard0/model.safetensors --tensor model.layers.4.self_attn.k_proj.weight --bits "$CAL" --windows 8 --budget 0.0025 | tee /tmp/qt-shard0/L4_KPROJ_BEVAL.json
           grep -q '"status": "PASS"' /tmp/qt-shard0/L4_KPROJ_BEVAL.json
       - uses: actions/upload-artifact@v4
         with:
