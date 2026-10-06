@@ -85,8 +85,13 @@ def build(
     model_id: str,
     source_commit: str,
     weight_epoch: int,
+    incumbent_map: Path | None = None,
+    uniform_n: int | None = None,
+    tensor: str = TENSOR,
+    layer: int = 0,
+    role: str = "q_proj",
 ):
-    vals, out_dim, in_dim, dtype = read_tensor(checkpoint, TENSOR)
+    vals, out_dim, in_dim, dtype = read_tensor(checkpoint, tensor)
     if in_dim % GROUP:
         raise ValueError("input dimension must be divisible by 64")
     ng = in_dim // GROUP
@@ -107,7 +112,7 @@ def build(
     for row in range(out_dim):
         row_off = row * in_dim
         for g in range(ng):
-            target = f"{model_id}/L0/q_proj/row={row}/group64={g}"
+            target = f"{model_id}/L{layer}/{role}/row={row}/group64={g}"
             group = [float(vals[row_off + g * GROUP + p]) for p in range(GROUP)]
             current_n[target] = 5
             supported[target] = candidates
@@ -127,8 +132,8 @@ def build(
                         "capability_bundle_sha256": capability_bundle_sha256,
                         "target_key": target,
                         "model_id": model_id,
-                        "layer": 0,
-                        "tensor_role": "q_proj",
+                        "layer": layer,
+                        "tensor_role": role,
                         "expert_id": None,
                         "row": row,
                         "column": None,
@@ -181,12 +186,36 @@ def build(
         default_precision=dtype,
     )
     total_cells = out_dim * ng
-    if len(policy["cells"]) != total_cells:
-        missing = total_cells - len(policy["cells"])
-        bad = [c for c in heatmap["cells"] if c["state"] != "CANDIDATE"][:20]
-        raise RuntimeError(f"{missing} cells have no eligible candidate; examples={bad}")
-
-    selected_n = {c["target_key"]: int(c["n"]) for c in policy["cells"]}
+    incumbent_sha = None
+    if uniform_n is not None:
+        if int(uniform_n) not in candidates: raise ValueError("uniform-n must be in candidates")
+        selected_n = {f"{model_id}/L{layer}/{role}/row={r}/group64={g}": int(uniform_n) for r in range(out_dim) for g in range(ng)}
+    elif incumbent_map is None:
+        if len(policy["cells"]) != total_cells:
+            missing = total_cells - len(policy["cells"])
+            bad = [c for c in heatmap["cells"] if c["state"] != "CANDIDATE"][:20]
+            raise RuntimeError(f"{missing} cells have no eligible candidate; examples={bad}")
+        selected_n = {c["target_key"]: int(c["n"]) for c in policy["cells"]}
+    else:
+        # A downstream-certified incumbent is authoritative for selection.
+        # The local absolute-error heatmap remains diagnostic evidence only;
+        # it must not re-quarantine a SHA-pinned map already certified by the
+        # downstream hidden-state budget. Runtime parity below is still mandatory.
+        from qt_incumbent_map import load_incumbent
+        sealed = load_incumbent(
+            incumbent_map, tensor_name=tensor, out_dim=out_dim, in_dim=in_dim
+        )
+        incumbent_sha = sealed["incumbent_sha256"]
+        ordered = sealed["bits"]
+        if len(ordered) != total_cells:
+            raise RuntimeError("sealed incumbent cell count mismatch")
+        selected_n = {}
+        idx = 0
+        for row in range(out_dim):
+            for g in range(ng):
+                target = f"{model_id}/L{layer}/{role}/row={row}/group64={g}"
+                selected_n[target] = int(ordered[idx])
+                idx += 1
     bit_hist = Counter(selected_n.values())
 
     planes = bytearray()
@@ -197,7 +226,7 @@ def build(
 
     for row in range(out_dim):
         for g in range(ng):
-            target = f"{model_id}/L0/q_proj/row={row}/group64={g}"
+            target = f"{model_id}/L{layer}/{role}/row={row}/group64={g}"
             n = selected_n[target]
             codes, group_deq, scale = quant_cache[(row, g, n)]
             planes.extend(encode_codes(codes, n))
@@ -253,7 +282,7 @@ def build(
     manifest = {
         "schema": "beglin-qt-qwen25-mixed-candidate-fixture-v1",
         "model_id": model_id,
-        "tensor_name": TENSOR,
+        "tensor_name": tensor,
         "shape": [out_dim, in_dim],
         "dtype": dtype,
         "checkpoint_identity_sha256": checkpoint_identity_sha256,
@@ -282,6 +311,7 @@ def build(
         "backend_parity_measured": False,
         "production_touched": False,
         "production_write_allowed": False,
+        "incumbent_map_sha256": incumbent_sha,
         "automatic_live_promotion": False,
     }
     raw = canonical_bytes(manifest)
@@ -303,6 +333,11 @@ def main() -> int:
     ap.add_argument("--model-id", required=True)
     ap.add_argument("--source-commit", required=True)
     ap.add_argument("--weight-epoch", type=int, default=0)
+    ap.add_argument("--incumbent-map")
+    ap.add_argument("--uniform-n", type=int)
+    ap.add_argument("--tensor", default=TENSOR)
+    ap.add_argument("--layer", type=int, default=0)
+    ap.add_argument("--role", default="q_proj", choices=["q_proj","k_proj","v_proj","o_proj"])
     a = ap.parse_args()
     build(
         checkpoint=Path(a.checkpoint).expanduser().resolve(),
@@ -316,6 +351,11 @@ def main() -> int:
         model_id=a.model_id,
         source_commit=a.source_commit,
         weight_epoch=a.weight_epoch,
+        incumbent_map=Path(a.incumbent_map).expanduser().resolve() if a.incumbent_map else None,
+        uniform_n=a.uniform_n,
+        tensor=a.tensor,
+        layer=a.layer,
+        role=a.role,
     )
     return 0
 

@@ -90,6 +90,7 @@ struct MixedQNg64Tensor {
     mx::array bits;     // {out*ng} uint8
     mx::array scales;   // {out,ng} float32
     long out, in, ng;
+    bool fast456 = false;
 };
 
 static std::unordered_map<std::string, QTensor> g_tensors;
@@ -1702,20 +1703,47 @@ static mx::fast::CustomKernelFunction &qng64_mixed_gemv_kernel() {
             float partial = 0.0f;
             uint byte_in_plane = p >> 3;
             uint bit_in_byte = p & 7;
+            // Compute the row's packed-plane base once. Within a row each cell span is
+            // exactly bits[cell]*8 bytes, so subsequent offsets are a cheap running prefix.
+            // This removes one global uint32 offsets[] load per group from the hot loop.
+            uint cell0 = row * ng;
+            uint plane_base = offsets[cell0];
             for (uint g = 0; g < ng; g++) {
-                uint cell = row * ng + g;
+                uint cell = cell0 + g;
                 uint n_local = (uint)bits[cell];
-                uint plane_base = offsets[cell];
+                // Fast path for the production incumbent's n4/n5/n6 cells.
+                // n_local is uniform across all 64 lanes for this cell, so this switch
+                // has no SIMD divergence. Explicit loads remove the dynamic inner loop.
                 int u = 0;
-                for (uint j = 0; j < n_local; j++) {
-                    uint8_t byte = planes[plane_base + j * 8u + byte_in_plane];
-                    int bit = (byte >> bit_in_byte) & 1;
-                    u |= (bit << j);
+                if (n_local == 4u) {
+                    u  = ((planes[plane_base +  0u + byte_in_plane] >> bit_in_byte) & 1);
+                    u |= ((planes[plane_base +  8u + byte_in_plane] >> bit_in_byte) & 1) << 1;
+                    u |= ((planes[plane_base + 16u + byte_in_plane] >> bit_in_byte) & 1) << 2;
+                    u |= ((planes[plane_base + 24u + byte_in_plane] >> bit_in_byte) & 1) << 3;
+                } else if (n_local == 5u) {
+                    u  = ((planes[plane_base +  0u + byte_in_plane] >> bit_in_byte) & 1);
+                    u |= ((planes[plane_base +  8u + byte_in_plane] >> bit_in_byte) & 1) << 1;
+                    u |= ((planes[plane_base + 16u + byte_in_plane] >> bit_in_byte) & 1) << 2;
+                    u |= ((planes[plane_base + 24u + byte_in_plane] >> bit_in_byte) & 1) << 3;
+                    u |= ((planes[plane_base + 32u + byte_in_plane] >> bit_in_byte) & 1) << 4;
+                } else if (n_local == 6u) {
+                    u  = ((planes[plane_base +  0u + byte_in_plane] >> bit_in_byte) & 1);
+                    u |= ((planes[plane_base +  8u + byte_in_plane] >> bit_in_byte) & 1) << 1;
+                    u |= ((planes[plane_base + 16u + byte_in_plane] >> bit_in_byte) & 1) << 2;
+                    u |= ((planes[plane_base + 24u + byte_in_plane] >> bit_in_byte) & 1) << 3;
+                    u |= ((planes[plane_base + 32u + byte_in_plane] >> bit_in_byte) & 1) << 4;
+                    u |= ((planes[plane_base + 40u + byte_in_plane] >> bit_in_byte) & 1) << 5;
+                } else {
+                    for (uint j = 0; j < n_local; j++) {
+                        uint8_t byte = planes[plane_base + j * 8u + byte_in_plane];
+                        u |= (((byte >> bit_in_byte) & 1) << j);
+                    }
                 }
                 int bias_code = 1 << (n_local - 1u);
                 int code = u - bias_code;
                 float decoded = (float)code * scales[cell];
                 partial += decoded * x[z * (ng * 64u) + g * 64u + p];
+                plane_base += n_local * 8u;
             }
             threadgroup float shared_sums[2];
             uint simd_lane = p % 32u;
@@ -1812,7 +1840,7 @@ int mlx_gpu_bind_qng64_mixed_dense_probe(const uint8_t *planes, long planes_byte
         g_mixed_qng64_tensors.erase(key);
         g_mixed_qng64_tensors.insert_or_assign(
             key, MixedQNg64Tensor{owned_planes, owned_offsets, owned_bits, owned_scales,
-                                  out, in, ng});
+                                  out, in, ng, [&](){ for (size_t i=0;i<cells;++i) if (bits[i] < 4 || bits[i] > 6) return false; return true; }()});
         g_bound_count++;
         return 1;
     } catch (...) {
@@ -1820,9 +1848,44 @@ int mlx_gpu_bind_qng64_mixed_dense_probe(const uint8_t *planes, long planes_byte
     }
 }
 
+static std::optional<mx::fast::CustomKernelFunction> g_qng64_mixed456_gemv_kernel;
+static mx::fast::CustomKernelFunction &qng64_mixed456_gemv_kernel() {
+    if (!g_qng64_mixed456_gemv_kernel) {
+        std::string source = R"(
+            uint p=thread_position_in_grid.x,row=thread_position_in_grid.y,z=thread_position_in_grid.z;
+            if(p>=64)return; uint bytep=p>>3, bitp=p&7, cell0=row*ng;
+            uint simd_lane=thread_index_in_simdgroup;
+            uint base_src=simd_lane==0u ? offsets[cell0] : 0u;
+            uint base=simd_broadcast(base_src,0u); float partial=0.0f;
+            for(uint g=0;g<ng;g++){
+                uint cell=cell0+g;
+                uint n_src=simd_lane==0u ? (uint)bits[cell] : 0u;
+                uint n=simd_broadcast(n_src,0u); int u=0;
+                u  = ((planes[base+ 0u+bytep]>>bitp)&1);
+                u |= ((planes[base+ 8u+bytep]>>bitp)&1)<<1;
+                u |= ((planes[base+16u+bytep]>>bitp)&1)<<2;
+                u |= ((planes[base+24u+bytep]>>bitp)&1)<<3;
+                if(n>=5u) u|=((planes[base+32u+bytep]>>bitp)&1)<<4;
+                if(n==6u) u|=((planes[base+40u+bytep]>>bitp)&1)<<5;
+                int code=u-(1<<(n-1u));
+                float scale_src=simd_lane==0u ? scales[cell] : 0.0f;
+                float scale=simd_broadcast(scale_src,0u);
+                partial+=(float)code*scale*x[z*(ng*64u)+g*64u+p];
+                base+=n*8u;
+            }
+            threadgroup float ss[2]; uint lane=p%32u,sg=p/32u; float q=simd_sum(partial);
+            if(lane==0)ss[sg]=q; threadgroup_barrier(mem_flags::mem_threadgroup);
+            if(p==0)out[z*(uint)out_dim+row]=ss[0]+ss[1];
+        )";
+        g_qng64_mixed456_gemv_kernel=mx::fast::metal_kernel(
+            "qng64_mixed456_gemv",{"planes","offsets","bits","scales","x"},{"out"},source);
+    }
+    return *g_qng64_mixed456_gemv_kernel;
+}
+
 static mx::array mixed_qng64_gemv_e0(const char *name, const mx::array &x) {
     MixedQNg64Tensor &t = g_mixed_qng64_tensors.at(name);
-    auto &kernel = qng64_mixed_gemv_kernel();
+    auto &kernel = t.fast456 ? qng64_mixed456_gemv_kernel() : qng64_mixed_gemv_kernel();
     const int A = (int)x.shape(0);
     std::vector<mx::array> inputs = {t.planes, t.offsets, t.bits, t.scales, x};
     std::vector<mx::Shape> output_shapes = {{A, (int)t.out}};
@@ -1999,6 +2062,9 @@ static mx::array lazy_matvec_e0(const char *name, const mx::array &x) {
     // D-gpu-7-fix already established for g_tensors/g_dtensors -- a name bound into
     // g_qng64_tensors would otherwise throw on g_tensors.at() below instead of dispatching
     // through the custom kernel.
+    // QT-runtime-1: mixed group64 bindings are first-class attention-role bindings.
+    // Binders erase stale representations, so feature OFF/no mixed binding preserves the old path.
+    if (g_mixed_qng64_tensors.count(name)) return mixed_qng64_gemv_e0(name, x);
     if (g_qng64_tensors.count(name)) return qng64_gemv_e0(name, x);
     QTensor &t = g_tensors.at(name);
     mx::array w_e = mx::take(t.w, 0, 0);
