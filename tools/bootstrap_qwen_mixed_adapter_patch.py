@@ -29,4 +29,55 @@ s=s.replace(a,a+ins,1)
 old='for (long r = r0; r < r1; r++) j->y[r] = (float)g_moe_row_fn(j->blob, j->t, j->e, r, j->x);'
 new='for (long r = r0; r < r1; r++) j->y[r] = (float)moe_row_dispatch(j->blob, j->t, j->e, r, j->x);'
 if s.count(old)!=1: raise SystemExit("dispatch anchor mismatch")
+
+# Phase 2 is intentionally correctness-first: the side-registry plumbing above is
+# independently compile-gated before this loader is promoted. Packed Metal remains separate.
+anchor='typedef struct { char name[128]; long off, numel; } MoeF32Tensor;\n'
+loader=r'''
+typedef struct {
+    int out, in, ng;
+    float *dequant;
+    uint8_t *bits;
+} MoeMixedDenseCtx;
+
+static double moe_mixed_dense_row(const uint8_t *blob, MoeAFTensor *t, long e, long row,
+                                  const float *x, const void *opaque) {
+    (void)blob; (void)t; (void)e;
+    const MoeMixedDenseCtx *m=(const MoeMixedDenseCtx *)opaque;
+    const float *w=m->dequant+(size_t)row*m->in;
+    double acc=0.0;
+    for (int i=0;i<m->in;i++) acc+=(double)w[i]*x[i];
+    return acc;
+}
+static void moe_mixed_dense_register_dequant(MoeAFTensor *t, const float *weights,
+                                             const uint8_t *bits, int out, int in) {
+    if (!t || t->out!=out || t->in!=in || in%64) {
+        fprintf(stderr,"FATAL: QT mixed dense shape mismatch\n"); exit(1);
+    }
+    int ng=in/64; size_t cells=(size_t)out*ng;
+    MoeMixedDenseCtx *m=calloc(1,sizeof(*m));
+    m->out=out; m->in=in; m->ng=ng;
+    m->bits=malloc(cells); m->dequant=malloc((size_t)out*in*sizeof(float));
+    if (!m->bits || !m->dequant) { fprintf(stderr,"FATAL: QT mixed alloc\n"); exit(1); }
+    memcpy(m->bits,bits,cells);
+    for (int r=0;r<out;r++) for (int g=0;g<ng;g++) {
+        int nb=m->bits[(size_t)r*ng+g];
+        if (nb<4 || nb>8) { fprintf(stderr,"FATAL: QT mixed bits[%d,%d]=%d\n",r,g,nb); exit(1); }
+        int qmax=(1<<(nb-1))-1, qmin=-(1<<(nb-1));
+        const float *src=weights+(size_t)r*in+g*64;
+        float mx=0.f; for(int i=0;i<64;i++){float a=fabsf(src[i]);if(a>mx)mx=a;}
+        float sc=mx>1e-12f?mx/qmax:1.f, inv=1.f/sc, residual=0.f;
+        float *dst=m->dequant+(size_t)r*in+g*64;
+        for(int i=0;i<64;i++){
+            float z=src[i]+residual; int q=(int)lrintf(z*inv);
+            if(q<qmin)q=qmin;if(q>qmax)q=qmax;
+            dst[i]=q*sc; residual=z-dst[i];
+        }
+    }
+    moe_mixed_override_register(t,moe_mixed_dense_row,m);
+}
+'''
+if s.count(anchor)!=1: raise SystemExit("loader anchor mismatch")
+s=s.replace(anchor,loader+anchor,1)
+
 p.write_text(s.replace(old,new,1))
