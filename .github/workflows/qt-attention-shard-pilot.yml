@@ -30,6 +30,18 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/qt_attention_shard_materialize.py --checkpoint /tmp/qt-shard0/model.safetensors --shard /tmp/qt-shard0/shards/shard-00.json --output-dir /tmp/qt-shard0/materialized | tee /tmp/qt-shard0/materialize-summary.json
+      - name: Build shard-0 n4 n5 n6 heatmap and uncertainty
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qt_attention_shard_heatmap.py --checkpoint /tmp/qt-shard0/model.safetensors --shard /tmp/qt-shard0/shards/shard-00.json --output-dir /tmp/qt-shard0/heatmap --windows 4 | tee /tmp/qt-shard0/heatmap-summary.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/qt-shard0/heatmap/HEATMAP_PILOT.json'))
+          assert x['tensor_count']==12 and x['total_cells']==86016
+          assert x['selection_status']=='PILOT_NOT_DOWNSTREAM_CERTIFIED'
+          print('QT_SHARD0_HEATMAP_PASS')
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: qt-attention-shard0-pilot
