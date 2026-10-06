@@ -148,7 +148,7 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/qt-fullmaps/search
           for role in q_proj k_proj v_proj o_proj; do
-            python3 tools/qt_transformer_cell_promotion_search.py --checkpoint /tmp/qt-fullmaps/model.safetensors --config /tmp/qt-fullmaps/config.json --prompt /tmp/qt-fullmaps/prompt.i32 --engine ./build-qt-l0/qwen_infer_gpu --maps /tmp/qt-fullmaps/maps --tensor model.layers.0.self_attn.${role}.weight --baseline /tmp/qt-fullmaps/baseline.bin --work /tmp/qt-fullmaps/search/${role} --budget 0.0025 --max-rounds 24
+            python3 tools/qt_transformer_cell_promotion_search.py --checkpoint /tmp/qt-fullmaps/model.safetensors --config /tmp/qt-fullmaps/config.json --prompt /tmp/qt-fullmaps/prompt.i32 --engine ./build-qt-l0/qwen_infer_gpu --maps /tmp/qt-fullmaps/maps --tensor model.layers.0.self_attn.${role}.weight --baseline /tmp/qt-fullmaps/baseline.bin --work /tmp/qt-fullmaps/search/${role} --budget 0.0025 --max-rounds 256
           done
           for role in q_proj k_proj v_proj o_proj; do cat /tmp/qt-fullmaps/search/${role}/SEARCH.json; done
       - uses: actions/upload-artifact@v4
