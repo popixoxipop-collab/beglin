@@ -110,6 +110,31 @@ jobs:
           python3 tools/qt_attention_shard_plan.py --inventory /tmp/qt-fullmaps/inventory.json --shards 8 --output-dir /tmp/qt-fullmaps/shards
       - name: Build 96 maps
         run: python3 tools/qt_build_full_attention_maps.py --checkpoint /tmp/qt-fullmaps/model.safetensors --shards-dir /tmp/qt-fullmaps/shards --output-dir /tmp/qt-fullmaps/maps
+      - name: L0 role isolation in-place
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail -o /tmp/qt-fullmaps/config.json https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json
+          python3 -c "import struct;open('/tmp/qt-fullmaps/prompt.i32','wb').write(struct.pack('<i',0))"
+          python3 tools/bootstrap_qwen_mixed_adapter_patch.py
+          git diff -- qwen_infer.c > /tmp/qt-fullmaps/patch.diff
+          git checkout -- qwen_infer.c
+          git apply --check /tmp/qt-fullmaps/patch.diff
+          git apply /tmp/qt-fullmaps/patch.diff
+          cmake -S . -B build-qt-l0 -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-qt-l0 --target qwen_infer_gpu -j4
+          QWEN_SAFETENSORS=/tmp/qt-fullmaps/model.safetensors QWEN_HF_CONFIG=/tmp/qt-fullmaps/config.json QWEN_PROMPT=/tmp/qt-fullmaps/prompt.i32 QWEN_DEBUG_LAYERDUMP=/tmp/qt-fullmaps/baseline.bin QWEN_DEBUG_LAYERDUMP_POS=0 ./build-qt-l0/qwen_infer_gpu greedy 1
+          for role in q_proj k_proj v_proj o_proj; do
+            python3 tools/qt_make_single_attention_manifest.py --source /tmp/qt-fullmaps/maps --layer 0 --role "$role" --output /tmp/qt-fullmaps/map-"$role"
+            QWEN_SAFETENSORS=/tmp/qt-fullmaps/model.safetensors QWEN_HF_CONFIG=/tmp/qt-fullmaps/config.json QWEN_PROMPT=/tmp/qt-fullmaps/prompt.i32 QWEN_QT_MIXED_MANIFEST=/tmp/qt-fullmaps/map-"$role" QWEN_DEBUG_LAYERDUMP=/tmp/qt-fullmaps/"$role".bin QWEN_DEBUG_LAYERDUMP_POS=0 ./build-qt-l0/qwen_infer_gpu greedy 1
+            python3 tools/qt_hidden_dump_beval.py --baseline /tmp/qt-fullmaps/baseline.bin --candidate /tmp/qt-fullmaps/"$role".bin --layers 24 --hidden 896 --start-layer 0 --budget 0.0025 > /tmp/qt-fullmaps/"$role".json || true
+          done
+          python3 - <<'PY'
+          import json
+          for r in ('q_proj','k_proj','v_proj','o_proj'):
+              x=json.load(open('/tmp/qt-fullmaps/'+r+'.json'))
+              print('QT_L0_ROLE',r,'status='+x['status'],'max='+str(x['max_relative_l2']),'margin='+str(x['margin']))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: qt-fullmaps
@@ -159,48 +184,3 @@ jobs:
         with:
           name: qt-full-attention-sweep
           path: /tmp/qt-sweep/run
-
-  l0roles:
-    needs: fullmaps
-    runs-on: [self-hosted, macOS, ARM64, xox]
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: qt-fullmaps
-          path: /tmp/qt-l0/source
-      - name: Build engine and baseline
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/qt-l0/run
-          curl -L --fail -o /tmp/qt-l0/run/model.safetensors https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/model.safetensors
-          curl -L --fail -o /tmp/qt-l0/run/config.json https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json
-          python3 -c "import struct;open('/tmp/qt-l0/run/prompt.i32','wb').write(struct.pack('<i',0))"
-          python3 tools/bootstrap_qwen_mixed_adapter_patch.py
-          git diff -- qwen_infer.c > /tmp/qt-l0/run/patch.diff
-          git checkout -- qwen_infer.c
-          git apply --check /tmp/qt-l0/run/patch.diff
-          git apply /tmp/qt-l0/run/patch.diff
-          cmake -S . -B build-qt-l0 -DCMAKE_BUILD_TYPE=Release
-          cmake --build build-qt-l0 --target qwen_infer_gpu -j4
-          QWEN_SAFETENSORS=/tmp/qt-l0/run/model.safetensors QWEN_HF_CONFIG=/tmp/qt-l0/run/config.json QWEN_PROMPT=/tmp/qt-l0/run/prompt.i32 QWEN_DEBUG_LAYERDUMP=/tmp/qt-l0/run/baseline.bin QWEN_DEBUG_LAYERDUMP_POS=0 ./build-qt-l0/qwen_infer_gpu greedy 1
-      - name: L0 role isolation
-        run: |
-          set -euo pipefail
-          for role in q_proj k_proj v_proj o_proj; do
-            python3 tools/qt_make_single_attention_manifest.py --source /tmp/qt-l0/source/maps --layer 0 --role "$role" --output /tmp/qt-l0/run/map-"$role"
-            QWEN_SAFETENSORS=/tmp/qt-l0/run/model.safetensors QWEN_HF_CONFIG=/tmp/qt-l0/run/config.json QWEN_PROMPT=/tmp/qt-l0/run/prompt.i32 QWEN_QT_MIXED_MANIFEST=/tmp/qt-l0/run/map-"$role" QWEN_DEBUG_LAYERDUMP=/tmp/qt-l0/run/"$role".bin QWEN_DEBUG_LAYERDUMP_POS=0 ./build-qt-l0/qwen_infer_gpu greedy 1
-            python3 tools/qt_hidden_dump_beval.py --baseline /tmp/qt-l0/run/baseline.bin --candidate /tmp/qt-l0/run/"$role".bin --layers 24 --hidden 896 --start-layer 0 --budget 0.0025 > /tmp/qt-l0/run/"$role".json || true
-          done
-          python3 - <<'PY'
-          import json
-          for r in ('q_proj','k_proj','v_proj','o_proj'):
-              x=json.load(open('/tmp/qt-l0/run/'+r+'.json'))
-              print('QT_L0_ROLE',r,'status='+x['status'],'max='+str(x['max_relative_l2']),'margin='+str(x['margin']))
-          PY
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: qt-l0-role-isolation
-          path: /tmp/qt-l0/run
