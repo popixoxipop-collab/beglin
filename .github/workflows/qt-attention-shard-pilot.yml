@@ -1,0 +1,36 @@
+name: QT Attention Shard Pilot
+on:
+  pull_request:
+    paths:
+      - "tools/qt_attention_shard_materialize.py"
+      - "tools/qt_attention_shard_plan.py"
+      - "tools/qt_qwen25_attention_inventory.py"
+  workflow_dispatch:
+jobs:
+  shard0:
+    runs-on: [self-hosted, macOS, ARM64, xox]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/qt-shard0 && mkdir -p /tmp/qt-shard0
+          curl -L --fail -o /tmp/qt-shard0/model.safetensors https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/model.safetensors
+      - name: Inventory and shard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qt_qwen25_attention_inventory.py --safetensors /tmp/qt-shard0/model.safetensors --output /tmp/qt-shard0/inventory.json
+          python3 tools/qt_attention_shard_plan.py --inventory /tmp/qt-shard0/inventory.json --shards 8 --output-dir /tmp/qt-shard0/shards
+          test "$(python3 -c 'import json;print(json.load(open("/tmp/qt-shard0/shards/SHARD_PLAN.json"))["shards"][0]["total_cells"])')" = "86016"
+      - name: Materialize shard 0
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qt_attention_shard_materialize.py --checkpoint /tmp/qt-shard0/model.safetensors --shard /tmp/qt-shard0/shards/shard-00.json --output-dir /tmp/qt-shard0/materialized | tee /tmp/qt-shard0/materialize-summary.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qt-attention-shard0-pilot
+          path: /tmp/qt-shard0
