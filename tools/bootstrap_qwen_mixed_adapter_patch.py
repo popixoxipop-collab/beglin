@@ -80,4 +80,31 @@ static void moe_mixed_dense_register_dequant(MoeAFTensor *t, const float *weight
 if s.count(anchor)!=1: raise SystemExit("loader anchor mismatch")
 s=s.replace(anchor,loader+anchor,1)
 
+
+# Dense Qwen correctness hook: mark st_register_q4g64_as() as the only legal
+# source point for mixed-cell construction, before canonical Q4 transcode.
+dense_anchor='static WT *st_register_q4g64_as(const char *name) {\n'
+dense_ins=r'''
+static int qt_dense_mixed_target(const char *name) {
+    const char *m=getenv("QWEN_QT_MIXED_MANIFEST");
+    if (!m || !m[0]) return 0;
+    return !strcmp(name,"model.layers.4.self_attn.k_proj.weight") ||
+           !strcmp(name,"model.layers.4.self_attn.o_proj.weight");
+}
+'''
+if s.count(dense_anchor)!=1: raise SystemExit("dense register anchor mismatch")
+s=s.replace(dense_anchor,dense_ins+dense_anchor,1)
+# Fail closed for now unless the actual original-float registration path is wired;
+# this proves the env gate reaches exactly the intended two tensors without silently
+# double-quantizing. The next hunk replaces this guard with the real loader.
+probe='    int out = (int)t->shape[0], in = (int)t->shape[1];\n'
+guard=r'''    if (qt_dense_mixed_target(name)) {
+        fprintf(stderr,"[qt mixed dense] target=%s source=original-safetensors\n",name);
+    }
+'''
+if s.count(probe)<1: raise SystemExit("dense shape anchor mismatch")
+pos=s.index(dense_anchor); tail=s[pos:]; 
+if tail.count(probe)<1: raise SystemExit("dense local shape anchor mismatch")
+tail=tail.replace(probe,probe+guard,1);s=s[:pos]+tail
+
 p.write_text(s.replace(old,new,1))
