@@ -1,0 +1,49 @@
+diff --git a/qwen_infer.c b/qwen_infer.c
+--- a/qwen_infer.c
++++ b/qwen_infer.c
+@@
+ static double (*g_moe_row_fn)(const uint8_t *, MoeAFTensor *, long, long, const float *) = moe_matvec_af_row;
++
++// QT mixed-cell experiment adapter.  Kept as a side registry so the canonical
++// MoeAFTensor layout and every existing AF registration path remain unchanged.
++// Empty by default: production/baseline dispatch is byte-for-byte the existing
++// g_moe_row_fn path unless an explicit CI-only experiment registers a tensor.
++typedef double (*MoeMixedRowFn)(const uint8_t *, MoeAFTensor *, long, long, const float *, const void *);
++typedef struct {
++    MoeAFTensor *tensor;
++    MoeMixedRowFn row_fn;
++    const void *ctx;
++} MoeMixedOverride;
++#define MOE_MIXED_OVERRIDE_MAX 128
++static MoeMixedOverride g_moe_mixed_overrides[MOE_MIXED_OVERRIDE_MAX];
++static int g_moe_mixed_override_count = 0;
++
++static const MoeMixedOverride *moe_mixed_override_find(const MoeAFTensor *t) {
++    for (int i = 0; i < g_moe_mixed_override_count; i++)
++        if (g_moe_mixed_overrides[i].tensor == t) return &g_moe_mixed_overrides[i];
++    return NULL;
++}
++
++static void moe_mixed_override_register(MoeAFTensor *t, MoeMixedRowFn row_fn, const void *ctx) {
++    if (!t || !row_fn) { fprintf(stderr, "FATAL: invalid QT mixed override registration\n"); exit(1); }
++    if (moe_mixed_override_find(t)) { fprintf(stderr, "FATAL: duplicate QT mixed override\n"); exit(1); }
++    if (g_moe_mixed_override_count >= MOE_MIXED_OVERRIDE_MAX) {
++        fprintf(stderr, "FATAL: >%d QT mixed overrides\n", MOE_MIXED_OVERRIDE_MAX); exit(1);
++    }
++    g_moe_mixed_overrides[g_moe_mixed_override_count++] = (MoeMixedOverride){t, row_fn, ctx};
++}
++
++static inline double moe_row_dispatch(const uint8_t *blob, MoeAFTensor *t, long e, long row, const float *x) {
++    const MoeMixedOverride *ov = moe_mixed_override_find(t);
++    return ov ? ov->row_fn(blob, t, e, row, x, ov->ctx) : g_moe_row_fn(blob, t, e, row, x);
++}
+ 
+ typedef struct { char name[128]; long off, numel; } MoeF32Tensor;
+@@
+ static void moe_scalar_run_range(MoeScalarPool *p, int wi) {
+     MoeScalarJob *j = &p->job;
+     long per = (j->t->out + p->nthreads - 1) / p->nthreads;
+     long r0 = (long)wi * per, r1 = r0 + per; if (r1 > j->t->out) r1 = j->t->out;
+-    for (long r = r0; r < r1; r++) j->y[r] = (float)g_moe_row_fn(j->blob, j->t, j->e, r, j->x);
++    for (long r = r0; r < r1; r++) j->y[r] = (float)moe_row_dispatch(j->blob, j->t, j->e, r, j->x);
+ }
