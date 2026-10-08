@@ -1,0 +1,113 @@
+name: QT V-Focus Natural Heldout (Frozen)
+
+on:
+  push:
+    branches:
+      - experiment/qt-vfocus-natural-20261008
+    paths:
+      - tools/qt_natural_vfocus_validation.py
+      - .github/workflows/qt-vfocus-natural-heldout.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qt-vfocus-natural-heldout-20261008
+  cancel-in-progress: false
+
+jobs:
+  natural-heldout:
+    runs-on: [self-hosted, macOS, ARM64, xox]
+    timeout-minutes: 120
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      HF_HUB_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify pinned tokenizer, fixed map, model and engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+          test "$(shasum -a 256 tools/qt_natural_vfocus_validation.py | awk '{print $1}')" = "e3361b61c357b282becba31b0fb4a4294dd51cfe2a38e56652b8d22ece286e9c"
+          /Users/xox/.venv-vllm-metal/bin/python - <<'PY'
+          import importlib.util, pathlib, tempfile
+          source=pathlib.Path('tools/qt_natural_vfocus_validation.py')
+          spec=importlib.util.spec_from_file_location('qt_natural_frozen',source)
+          m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+          for path,sha in [(m.MODEL,m.MODEL_SHA),(m.CONFIG,m.CONFIG_SHA),(m.ENGINE,m.ENGINE_SHA)]:
+              m.verify_file(path,sha)
+          tok=m.tokenizer()
+          prompts=[]
+          for case in m.SCENARIOS:
+              raw,meta=m.encode_case(tok,case)
+              assert len(raw)==meta['target_tokens']*4
+              assert meta['target_tokens'] in (128,512,1024)
+              assert case['expected']==meta['expected_answer']
+              prompts.append(meta)
+          assert len(prompts)==5
+          assert {p['target_tokens'] for p in prompts}=={128,512,1024}
+          assert sum(len(p['positions']) for p in prompts)==8
+          with tempfile.TemporaryDirectory(prefix='qt-vfocus-maps-') as t:
+              _,_,maps=m.pin_maps(pathlib.Path(t))
+          assert sum(x['n5'] for x in maps.values())==128
+          print('QT_NATURAL_SOURCE_AND_PROMPTS_SHA_PASS')
+          for p in prompts:print('PROMPT_PIN',p['case'],p['prompt_sha256'],p['target_tokens'],p['positions'])
+          PY
+
+      - name: Natural language holdout runs with sealed V-focus map
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python -u tools/qt_natural_vfocus_validation.py | tee "$RUNNER_TEMP/qt-natural-vfocus.log"
+
+      - name: Verify full evidence SHA and preserve artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python - <<'PY'
+          import hashlib,json,os,pathlib
+          temp=pathlib.Path(os.environ['RUNNER_TEMP'])
+          lines=(temp/'qt-natural-vfocus.log').read_text().splitlines()
+          matches=[x[len('QT_NATURAL_VFOCUS_RESULT='):] for x in lines if x.startswith('QT_NATURAL_VFOCUS_RESULT=')]
+          assert len(matches)==1,'MISSING_RESULT_LINE'
+          summary=json.loads(matches[0])
+          assert summary['status']=='SUCCEEDED'
+          assert summary['automatic_live_promotion'] is False
+          assert summary['fixture_sha256']=='e3361b61c357b282becba31b0fb4a4294dd51cfe2a38e56652b8d22ece286e9c'
+          path=pathlib.Path(summary['result_path']).resolve()
+          allowed=pathlib.Path('/Users/xox/mcp-sandbox/tailnet-commander/qt-natural-vfocus-results').resolve()
+          assert path.parent==allowed and path.is_file(),str(path)
+          raw=path.read_bytes()
+          assert hashlib.sha256(raw).hexdigest()==summary['result_sha256']
+          data=json.loads(raw)
+          assert data['schema']=='beglin-qt-vfocus-natural-heldout/1'
+          assert data['production_write_allowed'] is False
+          assert data['automatic_live_promotion'] is False
+          assert len(data['prompt_cases'])==5
+          assert len(data['runs'])==8
+          assert data['strategy']=={'q_proj':16,'k_proj':16,'v_proj':64,'o_proj':32}
+          assert data['tokenizer_sha256']=='c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539'
+          target=temp/'qt-natural-vfocus-evidence.json'
+          target.write_bytes(raw)
+          compact=temp/'qt-natural-vfocus-summary.json'
+          compact.write_text(json.dumps(summary,ensure_ascii=False,sort_keys=True,indent=2)+'\n')
+          print('QT_NATURAL_FULL_EVIDENCE_SHA256',summary['result_sha256'])
+          print('QT_NATURAL_MODEL_GATE_PASS',data['strict_hidden_non_worse_plus_quality_gate_pass'])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qt-vfocus-natural-heldout-20261008
+          path: |
+            ${{ runner.temp }}/qt-natural-vfocus.log
+            ${{ runner.temp }}/qt-natural-vfocus-summary.json
+            ${{ runner.temp }}/qt-natural-vfocus-evidence.json
+          if-no-files-found: warn
+          retention-days: 90
