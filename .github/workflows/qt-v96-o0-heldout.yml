@@ -1,0 +1,122 @@
+name: QT V96 O0 Equal-Budget New Heldout (Frozen)
+
+on:
+  push:
+    branches:
+      - experiment/qt-v96-o0-heldout-20261008
+    paths:
+      - .github/workflows/qt-v96-o0-heldout.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qt-v96-o0-heldout-20261008
+  cancel-in-progress: false
+
+jobs:
+  equal-budget-heldout:
+    runs-on: [self-hosted, macOS, ARM64, xox]
+    timeout-minutes: 120
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      HF_HUB_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify frozen source, Qwen identity, new heldout and both 128-cell maps
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+          test "$(shasum -a 256 tools/qt_v96_o0_new_heldout.py | awk '{print $1}')" = "866827339cb79eec63e41c2f54c0acb63f535dde43721465b7851e69deb9c350"
+          test "$(shasum -a 256 tools/qt_role_downstream_grid.py | awk '{print $1}')" = "ff33df5e1af3d412f2312c6e5adf2507ff02c219fc3956b543384c1ffb62be6f"
+          /Users/xox/.venv-vllm-metal/bin/python - <<'PY'
+          import hashlib,importlib.util,json,pathlib,tempfile
+          p=pathlib.Path('tools/qt_v96_o0_new_heldout.py')
+          spec=importlib.util.spec_from_file_location('qt_frozen_heldout',p)
+          m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+          for path,sha in ((m.MODEL,m.MODEL_SHA),(m.CONFIG,m.CONFIG_SHA),(m.ENGINE,m.ENGINE_SHA)):
+              m.sha_file(path,sha)
+          tok=m.get_tokenizer()
+          expected=set()
+          seen=set()
+          for doc in m.CORPUS:
+              raw,meta=m.encode_doc(tok,doc)
+              assert len(raw)==doc['length']*4
+              assert doc['length'] in (128,512,1024)
+              assert meta['answer']==doc['answer']
+              assert meta['answer'] not in m.OLD_IDENTIFIERS
+              expected.add(doc['length'])
+              sha=hashlib.sha256(raw).hexdigest()
+              assert sha not in seen
+              seen.add(sha)
+              print('NEW_HELDOUT_PROMPT_PIN',doc['id'],sha,doc['length'],meta['positions'])
+          assert len(m.CORPUS)==9 and len(seen)==9 and expected=={128,512,1024}
+          assert sum(2 if 'mid' in d['positions'] else 1 for d in m.CORPUS)==15
+          with tempfile.TemporaryDirectory(prefix='qt-v96-pin-') as td:
+              _,info=m.prep_maps(pathlib.Path(td))
+          assert info['new_v96_sha256']==m.V96_SHA
+          assert sum(v['n5'] for v in info['prior'].values())==128
+          assert sum(v['n5'] for v in info['candidate'].values())==128
+          assert [info['candidate'][r]['n5'] for r in m.ROLE_ORDER]==[16,16,96,0]
+          print('QT_V96_O0_PREREGISTERED_TEST_GATE_PASS')
+          PY
+
+      - name: Run Q4 vs original V-focus vs O0 V96 same 128-bit-budget heldout
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python -u tools/qt_v96_o0_new_heldout.py | tee "$RUNNER_TEMP/qt-v96-o0-run.log"
+
+      - name: Verify immutable experiment evidence and store SHA-pinned artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python - <<'PY'
+          import hashlib,json,os,pathlib
+          temp=pathlib.Path(os.environ['RUNNER_TEMP'])
+          log=temp/'qt-v96-o0-run.log'
+          lines=log.read_text().splitlines()
+          final=[x[len('QT_V96_O0_FINAL='):] for x in lines if x.startswith('QT_V96_O0_FINAL=')]
+          assert len(final)==1,'SINGLE_SUCCESS_RECEIPT_MISSING'
+          summary=json.loads(final[0])
+          assert summary['state']=='SUCCEEDED'
+          assert summary['automatic_live_promotion'] is False
+          assert summary['fixture_sha256']=='866827339cb79eec63e41c2f54c0acb63f535dde43721465b7851e69deb9c350'
+          result=pathlib.Path(summary['result_path']).resolve()
+          safe=pathlib.Path('/Users/xox/mcp-sandbox/tailnet-commander/qt-v96-o0-new-heldout-results').resolve()
+          assert result.parent==safe and result.is_file()
+          raw=result.read_bytes()
+          assert hashlib.sha256(raw).hexdigest()==summary['result_sha256']
+          assert len(raw)==summary['result_bytes']
+          data=json.loads(raw)
+          assert data['schema']=='beglin-qt-v96-o0-frozen-natural-heldout/1'
+          assert data['automatic_live_promotion'] is False
+          assert data['production_write_allowed'] is False
+          assert len(data['prompts'])==9 and len(data['qa'])==9
+          assert len(data['runs'])==15 and data['summary']['cases']==15
+          assert data['budgets']['candidate']=={'q_proj':16,'k_proj':16,'v_proj':96,'o_proj':0}
+          assert data['budgets']['prior']=={'q_proj':16,'k_proj':16,'v_proj':64,'o_proj':32}
+          assert data['maps']['new_v96_sha256']=='46bbbe0a7f12b0c04c7ab4e7e229ab1de2996fba402b620000e83bfefd829819'
+          (temp/'QT_V96_O0_HELDOUT_EVIDENCE.json').write_bytes(raw)
+          (temp/'QT_V96_O0_HELDOUT_SUMMARY.json').write_text(json.dumps(summary,ensure_ascii=False,sort_keys=True,indent=2)+'\n')
+          print('QT_V96_O0_RESULT_SHA256',summary['result_sha256'])
+          print('QT_V96_O0_QUALITY_GATE',data['quality_strict_gate_pass'])
+          print('QT_V96_O0_QA_REGRESSIONS_Q4',data['qa_regressions_vs_q4'])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qt-v96-o0-frozen-new-heldout-20261008
+          path: |
+            ${{ runner.temp }}/qt-v96-o0-run.log
+            ${{ runner.temp }}/QT_V96_O0_HELDOUT_SUMMARY.json
+            ${{ runner.temp }}/QT_V96_O0_HELDOUT_EVIDENCE.json
+          if-no-files-found: warn
+          retention-days: 90
