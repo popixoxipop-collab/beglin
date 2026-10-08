@@ -1,0 +1,91 @@
+name: QT L0 Downstream Role Grid (Frozen)
+
+on:
+  push:
+    branches:
+      - experiment/qt-role-downstream-20261008
+    paths:
+      - tools/qt_role_downstream_grid.py
+      - .github/workflows/qt-role-downstream-grid.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qt-role-downstream-grid-20261008
+  cancel-in-progress: false
+
+jobs:
+  role-grid:
+    runs-on: [self-hosted, macOS, ARM64, xox]
+    timeout-minutes: 90
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify frozen source and XOX dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+          test "$(shasum -a 256 tools/qt_role_downstream_grid.py | awk '{print $1}')" = "ff33df5e1af3d412f2312c6e5adf2507ff02c219fc3956b543384c1ffb62be6f"
+          test -s /tmp/qt-l0-fp32-cache/model.safetensors
+          test -s /tmp/qt-l0-fp32-cache/config.json
+          test -x /tmp/beglin-qt-l0-fp32-control/build-qt-l0-fp32/qwen_infer_gpu
+          python3 -m py_compile tools/qt_role_downstream_grid.py
+          python3 - <<'PY'
+          import importlib.util
+          import pathlib
+          p=pathlib.Path('tools/qt_role_downstream_grid.py')
+          spec=importlib.util.spec_from_file_location('role_grid',p)
+          m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+          assert m.check_no_overlap()
+          assert m.validate_counts({r:32 for r in m.ROLE_ORDER})
+          assert len(m.TRAIN)==4 and len(m.HOLDOUT)==4
+          print('QT_ROLE_GRID_PREFLIGHT_PASS')
+          PY
+
+      - name: Run frozen training and heldout validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -u tools/qt_role_downstream_grid.py | tee "$RUNNER_TEMP/qt-role-grid-summary.json"
+
+      - name: Verify result SHA and materialize CI artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib
+          summary=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'qt-role-grid-summary.json').read_text())
+          assert summary['status']=='SUCCEEDED'
+          source=pathlib.Path(summary['result_path']).resolve()
+          expected=pathlib.Path('/Users/xox/mcp-sandbox/tailnet-commander/qt-role-grid-results').resolve()
+          assert source.parent==expected and source.is_file(), source
+          raw=source.read_bytes()
+          assert hashlib.sha256(raw).hexdigest()==summary['result_sha256']
+          data=json.loads(raw)
+          assert data['schema']=='beglin-qt-downstream-role-grid/1'
+          assert data['production_write_allowed'] is False
+          assert data['automatic_live_promotion'] is False
+          assert data['winner_selected_on_train_only'] in data['train_results']
+          assert len(data['prompts']['train'])==4 and len(data['prompts']['holdout'])==4
+          target=pathlib.Path(os.environ['RUNNER_TEMP'])/'qt-role-grid-evidence.json'
+          target.write_bytes(raw)
+          print('QT_ROLE_GRID_EVIDENCE_SHA256',hashlib.sha256(raw).hexdigest())
+          print('QT_ROLE_GRID_WINNER',data['winner_selected_on_train_only'])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qt-role-downstream-grid-20261008
+          path: |
+            ${{ runner.temp }}/qt-role-grid-summary.json
+            ${{ runner.temp }}/qt-role-grid-evidence.json
+          if-no-files-found: error
+          retention-days: 90
