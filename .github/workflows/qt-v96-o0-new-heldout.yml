@@ -1,0 +1,122 @@
+name: QT V96 O0 Equal-Budget Natural Heldout (Frozen)
+
+on:
+  push:
+    branches:
+      - experiment/qt-v96-o0-new-heldout-20261008
+    paths:
+      - tools/qt_v96_o0_new_heldout.py
+      - .github/workflows/qt-v96-o0-new-heldout.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qt-v96-o0-new-heldout-20261008
+  cancel-in-progress: false
+
+jobs:
+  equal-budget-natural:
+    runs-on: [self-hosted, macOS, ARM64, xox]
+    timeout-minutes: 90
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      HF_HUB_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Frozen source maps tokenizer model engine and 9 heldout prompts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+          test "$(shasum -a 256 tools/qt_v96_o0_new_heldout.py | awk '{print $1}')" = "866827339cb79eec63e41c2f54c0acb63f535dde43721465b7851e69deb9c350"
+          test "$(shasum -a 256 tools/qt_role_downstream_grid.py | awk '{print $1}')" = "ff33df5e1af3d412f2312c6e5adf2507ff02c219fc3956b543384c1ffb62be6f"
+          /Users/xox/.venv-vllm-metal/bin/python - <<'PY'
+          import importlib.util,pathlib,hashlib,json,tempfile
+          source=pathlib.Path("tools/qt_v96_o0_new_heldout.py")
+          s=importlib.util.spec_from_file_location("qt_frozen_v96_o0",source)
+          m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+          for p,h in [(m.MODEL,m.MODEL_SHA),(m.CONFIG,m.CONFIG_SHA),(m.ENGINE,m.ENGINE_SHA)]:
+              m.sha_file(p,h)
+          tokenizer=m.get_tokenizer()
+          assert len(m.CORPUS)==9
+          frozen={
+           "en-128-air":"1a5bc2309d5e45c2899e174da769dbcd80de5b661ecc03a4133ded25219fd9b8",
+           "en-128-ocean":"1588f2d9bf5c44172a95dc375974bee16db8d12422acac3a54c654bcf792da12",
+           "ko-128-energy":"68277d1061793895d6bac50c067c09cbb6c788b869e6c3277634b016597d9871",
+           "en-512-medical":"6dbafa19d6654d6271feb3272f30816fe1ef056c6c091b4d025aecde3bae31ac",
+           "en-512-satellite":"cb1fdf2a0185b1b5da4341fe83322b5f68219e052360ac7612c555b47ef8a922",
+           "ko-512-robot":"48f297c0e6b8567a7852363f117ec590430e347161df6e3d2410a5dc7c2b9fe8",
+           "en-1024-disaster":"6ac8a4310cdcb4ac0f0b8b7291f430223a0a5dd69fb86d12925d03bf0bf979a3",
+           "en-1024-data":"0532664784cdbe50564d133c92ec80dbe1932ee2457e454a63d107a0654e3025",
+           "ko-1024-water":"b1b6e9f3f54cfa1e4d02f03ffc06f4e51c19a9d8733c3023ee9565489b6365d8"}
+          cases=[]
+          for d in m.CORPUS:
+              ids,meta=m.encode_doc(tokenizer,d)
+              assert len(ids)==d["length"]*4
+              assert hashlib.sha256(ids).hexdigest()==frozen[d["id"]]
+              cases.append(meta)
+          assert sum(len(x["positions"]) for x in cases)==15
+          with tempfile.TemporaryDirectory(prefix="qt-o0-frozen-preflight-") as tmp:
+              _,maps=m.prep_maps(pathlib.Path(tmp))
+          assert sum(v["n5"] for v in maps["prior"].values())==128
+          assert sum(v["n5"] for v in maps["candidate"].values())==128
+          assert maps["candidate"]["o_proj"]["n5"]==0
+          assert maps["candidate"]["v_proj"]["n5"]==96
+          print("QT_O0_EQUAL_128_BUDGET_AND_15_PROMPTS_SHA_PASS")
+          PY
+
+      - name: Run strictly heldout 15-position baseline/prior/O0 equal-budget comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python -u tools/qt_v96_o0_new_heldout.py | tee "$RUNNER_TEMP/qt-v96-o0-heldout.log"
+
+      - name: Verify evidence original SHA QA and no automatic promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python - <<'PY'
+          import hashlib,json,os,pathlib
+          temp=pathlib.Path(os.environ["RUNNER_TEMP"])
+          lines=(temp/"qt-v96-o0-heldout.log").read_text().splitlines()
+          matches=[line[len("QT_V96_O0_FINAL="):] for line in lines if line.startswith("QT_V96_O0_FINAL=")]
+          assert len(matches)==1,"MISSING_EXACT_FINAL_RECEIPT"
+          summary=json.loads(matches[0])
+          assert summary["state"]=="SUCCEEDED"
+          assert summary["automatic_live_promotion"] is False
+          assert summary["fixture_sha256"]=="866827339cb79eec63e41c2f54c0acb63f535dde43721465b7851e69deb9c350"
+          path=pathlib.Path(summary["result_path"]).resolve()
+          parent=pathlib.Path("/Users/xox/mcp-sandbox/tailnet-commander/qt-v96-o0-new-heldout-results").resolve()
+          assert path.parent==parent and path.is_file()
+          raw=path.read_bytes()
+          assert hashlib.sha256(raw).hexdigest()==summary["result_sha256"]
+          assert len(raw)==summary["result_bytes"]
+          data=json.loads(raw)
+          assert data["schema"]=="beglin-qt-v96-o0-frozen-natural-heldout/1"
+          assert data["production_write_allowed"] is False and data["automatic_live_promotion"] is False
+          assert data["budgets"]["prior"]=={"q_proj":16,"k_proj":16,"v_proj":64,"o_proj":32}
+          assert data["budgets"]["candidate"]=={"q_proj":16,"k_proj":16,"v_proj":96,"o_proj":0}
+          assert len(data["prompts"])==9 and len(data["runs"])==15 and len(data["qa"])==9
+          assert data["maps"]["new_v96_sha256"]=="46bbbe0a7f12b0c04c7ab4e7e229ab1de2996fba402b620000e83bfefd829819"
+          (temp/"QT_V96_O0_HELDOUT_EVIDENCE.json").write_bytes(raw)
+          (temp/"QT_V96_O0_HELDOUT_SUMMARY.json").write_text(json.dumps(summary,sort_keys=True,indent=2,ensure_ascii=False)+"\n")
+          print("QT_O0_HELDOUT_EVIDENCE_SHA256",summary["result_sha256"])
+          print("QT_O0_HELDOUT_MODEL_GATE",summary["quality_strict_gate_pass"])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qt-v96-o0-natural-heldout-20261008
+          path: |
+            ${{ runner.temp }}/qt-v96-o0-heldout.log
+            ${{ runner.temp }}/QT_V96_O0_HELDOUT_EVIDENCE.json
+            ${{ runner.temp }}/QT_V96_O0_HELDOUT_SUMMARY.json
+          if-no-files-found: warn
+          retention-days: 90
