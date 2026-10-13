@@ -1,0 +1,59 @@
+name: Beglin HCP P4 Long-Context and Policy Cost Preflight
+on:
+  push:
+    branches: [research/hcp-p4-longcontext-costquality-20261014]
+    paths: [".github/workflows/hcp-p4-length-contract-preflight.yml"]
+permissions:
+  contents: read
+jobs:
+  inspect-readonly:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify XOX and inspect only source contracts without model execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          python3 - <<'PY'
+          import hashlib,json,pathlib,re
+          c=pathlib.Path("qwen_infer.c").read_text(errors="replace").splitlines()
+          patterns=[
+            r"^\s*#define MOE_MAXPOS",
+            r"^\s*#define MOE_CBATCH_MAXPOS",
+            r"QWEN_MOE_PROMPT_IDS",
+            r"MOE_MAXPOS",
+            r"QWEN_MOE_RISK_SIGNALS",
+            r"QWEN_MOE_BASE",
+            r"moe3a_c_logits.bin"
+          ]
+          for pat in patterns:
+              hits=[(i,s) for i,s in enumerate(c) if re.search(pat,s)]
+              print("P4_SOURCE_CONTRACT",json.dumps({"pattern":pat,"count":len(hits),
+                  "lines":[{"line":i+1,"source":s.strip()[:190]} for i,s in hits[:22]]},sort_keys=True))
+          for keyword in ("QWEN_MOE_PROMPT_IDS","MOE_MAXPOS"):
+              spots=[i for i,s in enumerate(c) if keyword in s]
+              for i in spots[-4:]:
+                  print("P4_SOURCE_REGION",json.dumps({"keyword":keyword,"start":max(1,i-12),
+                    "fragment":[str(j+1)+":"+c[j][:235] for j in range(max(0,i-12),min(len(c),i+24))]}))
+          files=["tools/production_serving_supervisor_persistent.py",
+                 "tools/precision_cost_benchmark_xox.py",
+                 "tools/production_serving_supervisor.py"]
+          for name in files:
+              p=pathlib.Path(name)
+              if not p.is_file():continue
+              rows=p.read_text(errors="replace").splitlines()
+              print("P4_PY_SOURCE_EXISTS",json.dumps({"path":name,"sha256":hashlib.sha256(p.read_bytes()).hexdigest(),"lines":len(rows)}))
+              for i,line in enumerate(rows):
+                  if ("def submit_with_precision_policy" in line or
+                      "def submit_base" in line or
+                      "def _read_first_certified_prompt" in line or
+                      "PERSISTENT_BINARY" in line or
+                      "def candidate_route" in line):
+                      print("P4_PY_CALL_CONTRACT",json.dumps({"path":name,"line":i+1,
+                          "excerpt":rows[i:min(len(rows),i+34)]}))
+          print("P4_LENGTH_PREFLIGHT_INSPECTION_DONE")
+          PY
