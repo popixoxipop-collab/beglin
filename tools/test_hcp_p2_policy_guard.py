@@ -60,6 +60,16 @@ class PolicyEvidenceSafetyTests(unittest.TestCase):
         self.assertEqual(v["status"],"HOLD_UNCERTIFIED")
     def test_triggered_change_requires_exact_trigger_evidence(self):
         a,s,c=bundle()
+        # Real trigger alternates must differ from their allocator's base n.
+        a["proposed_policy"]=BASE
+        a["targets"][0]["selected_n"]=5
+        a["targets"][0]["dynamic_escalation"]={"candidate_alternates":[{"n":6}]}
+        a["targets"][1]["selected_n"]=6
+        s["targets"][1]["selected_n"]=6
+        target=[{"role":"shared_down_proj","layer":26,"n":6},
+                {"role":"shared_up_proj","layer":3,"n":6}]
+        c[0]["policy"]=target
+        c[0]["policy_hash"]=pc.policy_hash(target)
         s["signal"]["active_triggers"]=["low_margin"]
         s["targets"][0]["status"]="TRIGGER_CONDITIONED_ALTERNATE"
         s["targets"][0]["evidence"]={"status":"PASS","pass":True,
