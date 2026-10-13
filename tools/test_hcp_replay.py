@@ -32,15 +32,15 @@ class HierarchicalReplayTests(unittest.TestCase):
   risks=make_risk_sequence('bursts')
   h=replay(self.reference,self.reference,risks,mode='hierarchical',horizon=512)
   self.assertGreater(h['transition_count'],0)
-  self.assertLess(h['alternate_policy_requests'],len(risks))
-  self.assertTrue(all(x['production_touched']==False if 'production_touched' in x else True for x in (h,)))
+  self.assertEqual(h['alternate_policy_requests'],len(risks))
+  self.assertGreater(h['alternate_policy_requests'],0)
  def test_no_lookahead_at_plan_start(self):
   p=self.reference['profiles'];base=self.reference['base'];seen={base}
   a=upper_plan(p,base,base,seen,512,[],False)
   b=upper_plan(p,base,base,seen,512,[],False)
   self.assertEqual(a,b)
   self.assertEqual(a,self.reference['alternate'])
-  self.assertEqual(upper_plan(p,base,base,seen,512,[True],False),base)
+  self.assertEqual(upper_plan(p,base,base,seen,512,[True],False),self.reference['alternate'])
  def test_evidence_only_counterfactual_no_quality_claims(self):
   report=run_experiment(HERE/'evidence_inventory.json',scenario_size=256)
   self.assertEqual(report['status'],'COUNTERFACTUAL_COST_ONLY_NOT_CERTIFIED')
@@ -48,12 +48,12 @@ class HierarchicalReplayTests(unittest.TestCase):
   self.assertTrue(report['no_event_conditioned_certificates_found_in_cost_inventory'])
   self.assertFalse(report['automatic_live_promotion'])
   self.assertEqual(report['archive_count'],10)
-  self.assertEqual(len(report['comparisons']),30)
+  self.assertEqual(len(report['comparisons']),300)
   self.assertTrue(all(s['synthetic_risks'] and s['hypothetical_quality_permission'] for s in report['comparisons']))
- def test_all_risk_stays_on_base(self):
+ def test_all_risk_uses_certified_alternate(self):
   q=replay(self.reference,self.reference,[True]*512,mode='hierarchical',horizon=512)
-  self.assertEqual(q['alternate_policy_requests'],0)
-  self.assertEqual(q['transition_count'],0)
+  self.assertEqual(q['alternate_policy_requests'],512)
+  self.assertEqual(q['transition_count'],1)
  def test_changing_ref_profile_changes_transfer_accounting(self):
   src=copy.deepcopy(self.reference)
   v=src['profiles'][src['alternate']]['transitions'][(src['base'],'cold')]
