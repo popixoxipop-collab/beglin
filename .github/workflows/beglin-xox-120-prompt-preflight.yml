@@ -1,0 +1,46 @@
+name: Beglin XOX 120 Prompt Preregistration Preflight
+on:
+  push:
+    branches: [research/trainable-micro-router-120prompt-20261014]
+    paths: [".github/workflows/beglin-xox-120-prompt-preflight.yml"]
+permissions:
+  contents: read
+jobs:
+  prompt-source-check:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify source, prompt registry and offline tokenizer
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local" && test "$(id -un)" = "xox"
+          PY=/Users/xox/.venv-vllm-metal/bin/python3
+          test -x "$PY"
+          cd experiments/hierarchical_tupper_moe
+          "$PY" -m py_compile capture_prompt_suite.py test_prompt_bank_120.py
+          "$PY" -m unittest test_prompt_bank_120.py test_prompt_holdout_micro_eval.py -v
+          "$PY" - <<'PY'
+          from capture_prompt_suite import preregistered_prompts
+          from transformers import AutoTokenizer
+          from pathlib import Path
+          import hashlib,json
+          b=Path("prompt_bank")
+          prompts=preregistered_prompts(b)
+          root="/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors"
+          t=AutoTokenizer.from_pretrained(root,local_files_only=True,trust_remote_code=False,use_fast=True)
+          seen=set(); lengths=[]
+          for split,text,domain in prompts:
+              ids=t.encode(text,add_special_tokens=True)[:24]
+              assert len(ids)>=8 and all(0<=int(x)<102400 for x in ids)
+              encoded=",".join(map(str,ids))
+              assert len(encoded)<900 and encoded not in seen
+              seen.add(encoded);lengths.append(len(ids))
+          print("OFFLINE_PREREGISTERED_PROMPTS_PASS",json.dumps({"count":len(prompts),"min_tokens":min(lengths),"max_tokens":max(lengths),"total_tokens":sum(lengths)},sort_keys=True))
+          PY
