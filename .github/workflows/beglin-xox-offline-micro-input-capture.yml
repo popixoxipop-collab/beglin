@@ -43,7 +43,12 @@ jobs:
           p=pathlib.Path(os.environ["SCRATCH"])/"src"/"qwen_infer.c"
           s=p.read_text()
           needle="        float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);\n        moe_rmsnorm(x, w_postln, h2, MOE_HIDDEN);"
-          if s.count(needle)!=1:raise SystemExit(f"BLOCKED: source anchor occurred {s.count(needle)} times")
+          import re
+          possible=[m.start() for m in re.finditer(re.escape(needle),s)]
+          qualified=[i for i in possible
+                     if "float *mlp_out = g_mft_mlp_out;" in s[i+len(needle):i+len(needle)+160]
+                     and "moe_attention(af, t, l, pos, h, x)" in s[max(0,i-5000):i]]
+          if len(qualified)!=1:raise SystemExit(f"BLOCKED: verified pre-FFN anchor count={len(qualified)}, total={len(possible)}")
           insert="""
           // Research-only activation capture in isolated temp worktree.
           // Exact h2 is the pre-router, pre-gate/up input, not post-residual x.
@@ -61,7 +66,8 @@ jobs:
               }
           }
           """
-          s=s.replace(needle,needle+"\n"+insert)
+          at=qualified[0]+len(needle)
+          s=s[:at]+"\n"+insert+s[at:]
           p.write_text(s)
           print("ISOLATED_PRE_FFN_HOOK_INSERTED",p.name, "occurrences",s.count("BEGLIN_CAPTURE_PRE_FFN_INPUT"))
           PY
