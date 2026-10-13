@@ -1,0 +1,171 @@
+name: Beglin XOX Independent Prompt Micro Router Holdout
+on:
+  push:
+    branches: [research/trainable-micro-router-20261013]
+    paths: [".github/workflows/beglin-xox-prompt-holdout.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: beglin-xox-trainable-micro-isolated
+  cancel-in-progress: false
+jobs:
+  separate-prompt-evidence:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate host, checkpoint identity and prepare scratch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          SCRATCH="$RUNNER_TEMP/beglin-micro-prompts-$GITHUB_RUN_ID"
+          mkdir -p "$SCRATCH/src" "$SCRATCH/upload"
+          echo "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          INDEX=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json
+          TOKENIZER_ROOT=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors
+          MODEL_ROOT=/Users/xox/vdsp_local_data/moe_base_deepseek
+          test -f "$INDEX" && test ! -L "$INDEX"
+          test -f "$TOKENIZER_ROOT/tokenizer.json" && test -f "$TOKENIZER_ROOT/tokenizer_config.json"
+          test -f "$MODEL_ROOT/weights_moe/arch_config_moe.txt"
+          test -f "$MODEL_ROOT/weights_moe/deepseek_moe_af.bin"
+          echo "INDEX=$INDEX" >> "$GITHUB_ENV"
+          echo "TOKENIZER_ROOT=$TOKENIZER_ROOT" >> "$GITHUB_ENV"
+          echo "MODEL_ROOT=$MODEL_ROOT" >> "$GITHUB_ENV"
+          echo "PYBIN=/Users/xox/.venv-vllm-metal/bin/python3" >> "$GITHUB_ENV"
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import hashlib,pathlib
+          p=pathlib.Path("/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json")
+          digest=hashlib.sha256(p.read_bytes()).hexdigest()
+          assert digest == "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf", "checkpoint index identity changed"
+          print("REAL_CHECKPOINT_INDEX_PINNED",digest)
+          PY
+          rsync -a --exclude=.git --exclude=.github --exclude=results --exclude=attestations --exclude=build --exclude=build-persistent ./ "$SCRATCH/src/"
+      - name: Execute unit tests before any real capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=1 "$PYBIN" -m unittest test_prompt_holdout_micro_eval.py -v
+      - name: Instrument scratch copy at the previously certified pre-FFN h2 hook only
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PYBIN" - <<'PY'
+          from pathlib import Path
+          import os,re
+          root=Path(os.environ["SCRATCH"])/"src"
+          p=root/"qwen_infer.c"
+          source=p.read_text()
+          needle="        float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);\n        moe_rmsnorm(x, w_postln, h2, MOE_HIDDEN);"
+          sites=[m.start() for m in re.finditer(re.escape(needle),source)]
+          candidates=[i for i in sites if "float *mlp_out = g_mft_mlp_out;" in source[i+len(needle):i+len(needle)+160]
+                      and "moe_attention(af, t, l, pos, h, x)" in source[max(0,i-5000):i]]
+          assert len(candidates)==1,"BLOCKED: h2 capture anchor changed"
+          insert='''
+          // Isolated research-only h2 capture, not a production modification.
+          if (l == 1 && pos >= 0 && pos < 40) {
+              const char *cap = getenv("BEGLIN_CAPTURE_PRE_FFN_INPUT");
+              if (cap && cap[0]) {
+                  FILE *fp = fopen(cap, "ab");
+                  if (!fp) { fprintf(stderr,"CAPTURE_OPEN_FAIL\\n"); exit(2); }
+                  int hdr[3] = {pos, l, MOE_HIDDEN};
+                  if (fwrite(hdr,sizeof(int),3,fp)!=3 || fwrite(h2,sizeof(float),MOE_HIDDEN,fp)!=(size_t)MOE_HIDDEN) {
+                      fclose(fp); fprintf(stderr,"CAPTURE_WRITE_FAIL\\n"); exit(2);
+                  }
+                  if (fclose(fp)!=0) exit(2);
+              }
+          }
+          '''
+          at=candidates[0]+len(needle)
+          p.write_text(source[:at]+"\n"+insert+source[at:])
+          assert p.read_text().count("BEGLIN_CAPTURE_PRE_FFN_INPUT")==1
+          cmake=root/"CMakeLists.txt"
+          original=cmake.read_text()
+          anchor="add_library(qwen_infer_obj OBJECT\n  qwen_infer.c\n"
+          assert original.count(anchor)==1,"BLOCKED: qNg64 build anchor changed"
+          cmake.write_text(original.replace(anchor,anchor+"  qng64_dense.c\n"))
+          print("SCRATCH_INSTRUMENTATION_PASS")
+          PY
+      - name: Compile isolated DeepSeek research binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          nice -n 10 cmake --build "$SCRATCH/build" --target qwen_infer_gpu -j2
+          shasum -a 256 "$SCRATCH/build/qwen_infer_gpu"
+      - name: Capture 24 distinct offline tokenizer prompts with fresh processes
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          cd experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" capture_prompt_suite.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" \
+            --checkpoint-index "$INDEX" \
+            --tokenizer-dir "$TOKENIZER_ROOT" \
+            --model-root "$MODEL_ROOT" \
+            --max-positions 24 --out "$SCRATCH/prompts"
+      - name: Evaluate training / validation / independent prompt holdout
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" prompt_holdout_micro_eval.py \
+            --checkpoint-index "$INDEX" \
+            --prompt-suite "$SCRATCH/prompts" --layer 1 \
+            --hidden 2048 --intermediate 1408 --widths 16 64 \
+            --fractions 0.25 0.5 0.75 \
+            --output "$SCRATCH/upload/prompt_holdout_result.json"
+      - name: Seal safe evidence, excluding raw input traces and prompt IDs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SCRATCH:-}" ] || [ ! -d "$SCRATCH" ]; then exit 0; fi
+          "$PYBIN" - <<'PY'
+          import os,hashlib,json,pathlib
+          root=pathlib.Path(os.environ["SCRATCH"])
+          result=root/"upload/prompt_holdout_result.json"
+          receipt={'schema':'beglin-24-prompt-isolated-holdout-receipt-v1',
+                   'source_head':os.environ.get('GITHUB_SHA'),
+                   'production_touched':False,'automatic_live_promotion':False,
+                   'raw_hidden_uploaded':False,'raw_prompt_tokens_uploaded':False,
+                   'model_artifact_uploaded':False,
+                   'model_index_sha256':hashlib.sha256(pathlib.Path(os.environ['INDEX']).read_bytes()).hexdigest()}
+          if result.is_file():
+              d=json.loads(result.read_text())
+              assert d.get('production_touched') is False and d.get('raw_hidden_uploaded') is False
+              receipt.update({'status':'COMPLETED_NOT_PROMOTABLE',
+                              'result_sha256':hashlib.sha256(result.read_bytes()).hexdigest(),
+                              'prompt_count':d['prompt_count'],
+                              'split_counts':d['prompt_split_counts']})
+          else:
+              receipt['status']='FAILED_NO_PROMPT_HOLDOUT_RESULT'
+          (root/'upload/receipt.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          print('CAPTURE_HOLDOUT_RECEIPT',json.dumps(receipt,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beglin-xox-independent-prompt-micro-router-holdout
+          path: ${{ runner.temp }}/beglin-micro-prompts-${{ github.run_id }}/upload/*.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove only this run's scratch build and raw activations
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import os,pathlib,shutil
+          base=pathlib.Path(os.environ['RUNNER_TEMP']).resolve()
+          p=base/('beglin-micro-prompts-'+os.environ['GITHUB_RUN_ID'])
+          if p.is_dir() and p.resolve().parent==base:
+              shutil.rmtree(p)
+              print('SCRATCH_REMOVED',p.name)
+          PY
