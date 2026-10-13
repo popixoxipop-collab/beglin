@@ -40,8 +40,11 @@ def run(*,bank,tokenizer,index,root,output,sample_count=12):
         raise ValueError("domain diversity lost")
     root=pathlib.Path(root)
     runner=pathlib.Path(os.environ["RUNNER_TEMP"]).resolve(strict=True)
-    if root.exists() or root.parent.resolve()!=runner:
-        raise ValueError("worker workspace must be new and directly under RUNNER_TEMP")
+    owned=runner/("hcp-p4-native-short-"+os.environ["GITHUB_RUN_ID"])
+    if (root.exists() or not owned.is_dir() or
+        root.parent.resolve()!=owned.resolve() or
+        root.name not in ("smoke_worker","measure_worker")):
+        raise ValueError("worker workspace must be new and inside exact owned run root")
     # Only isolated worker Python state; no live supervisor config changes.
     ps.REQUEST_TIMEOUT_SECONDS=max(int(ps.REQUEST_TIMEOUT_SECONDS),180)
     worker=ps.AdaptivePersistentRouteWorker(route=base.candidate_route(),root=root)
