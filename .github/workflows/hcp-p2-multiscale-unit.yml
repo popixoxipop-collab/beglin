@@ -12,19 +12,21 @@ permissions:
   contents: read
 jobs:
   unit:
-    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install numpy
       - name: Validate offline latent, split and real-source contracts
         shell: bash
         run: |
           set -euo pipefail
-          test "$(hostname)" = "XOX.local" && test "$(id -un)" = "xox"
-          PY=/Users/xox/.venv-vllm-metal/bin/python3
-          test -x "$PY"
+          PY=python3
           OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PY" -m py_compile tools/hcp_p2_real_feature_builder.py tools/hcp_p2_multiscale.py
           cd tools
           OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PY" -m unittest test_hcp_p2_multiscale.py test_hcp_p2_policy_guard.py -v
