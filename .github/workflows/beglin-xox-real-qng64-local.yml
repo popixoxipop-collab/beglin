@@ -1,0 +1,82 @@
+name: Beglin XOX Real QNg64 Local Projection
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: beglin-xox-real-qng64-local-cpu
+  cancel-in-progress: false
+jobs:
+  isolated-qng64:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Pin model and compile scratch-only native qNg64 kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          INDEX=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json
+          test -f "$INDEX" && test ! -L "$INDEX"
+          SCRATCH="$RUNNER_TEMP/beglin-qng64-real-$GITHUB_RUN_ID"
+          mkdir -p "$SCRATCH/upload"
+          echo "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          echo "INDEX=$INDEX" >> "$GITHUB_ENV"
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import hashlib,pathlib
+          src=pathlib.Path("/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json")
+          assert hashlib.sha256(src.read_bytes()).hexdigest()=="d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+          print("REAL_INDEX_PINNED")
+          PY
+          clang -O3 -dynamiclib -fPIC -I. qng64_dense.c -o "$SCRATCH/libqng64_dense.dylib"
+          shasum -a 256 "$SCRATCH/libqng64_dense.dylib"
+      - name: Run actual DeepSeek layer1 expert0 qNg64 CPU projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 /Users/xox/.venv-vllm-metal/bin/python3 native_qng64_real_projection_probe.py \
+            --checkpoint-index "$INDEX" \
+            --library "$SCRATCH/libqng64_dense.dylib" \
+            --output "$SCRATCH/upload/native_qng64_real_projection.json"
+      - name: Seal read-only cost evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SCRATCH:-}" ] || [ ! -d "$SCRATCH/upload" ]; then exit 0; fi
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import hashlib,json,os,pathlib
+          p=pathlib.Path(os.environ["SCRATCH"])/"upload"
+          f=p/"native_qng64_real_projection.json"
+          manifest={"schema":"beglin-local-native-qng64-cpu-evidence-v1","source_head":os.environ.get("GITHUB_SHA"),
+                    "real_checkpoint_index_sha256":hashlib.sha256(pathlib.Path(os.environ["INDEX"]).read_bytes()).hexdigest(),
+                    "production_touched":False,"token_accuracy_tested":False,"native_micro_inference_used":False,
+                    "result_present":f.is_file(),
+                    "result_sha256":hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else None}
+          (p/"receipt.json").write_text(json.dumps(manifest,indent=2,sort_keys=True)+"\n")
+          print("QNG64_LOCAL_RECEIPT",json.dumps(manifest,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beglin-real-qng64-local-projection
+          path: ${{ runner.temp }}/beglin-qng64-real-${{ github.run_id }}/upload/*.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Clean only own scratch
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import pathlib,os,shutil
+          base=pathlib.Path(os.environ["RUNNER_TEMP"]).resolve()
+          p=base/("beglin-qng64-real-"+os.environ["GITHUB_RUN_ID"])
+          if p.is_dir() and p.resolve().parent==base:
+              shutil.rmtree(p)
+              print("QNG64_SCRATCH_CLEANED")
+          PY
