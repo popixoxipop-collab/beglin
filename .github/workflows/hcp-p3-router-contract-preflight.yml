@@ -1,0 +1,50 @@
+name: Beglin HCP P3 Router Boundary Contract Preflight
+on:
+  push:
+    branches: [research/hcp-p3-true-topk-margin-20261014]
+    paths: [".github/workflows/hcp-p3-router-contract-preflight.yml"]
+permissions:
+  contents: read
+jobs:
+  inspect-xox:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Audit true selected-topK boundary and source binding (no execution)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local" && test "$(id -un)" = "xox"
+          python3 - <<'PY'
+          import pathlib,re,hashlib,json
+          source=pathlib.Path("qwen_infer.c").read_text()
+          lines=source.splitlines()
+          marks=[
+              "void moe_forward_token(",
+              "static void moe_forward_token(",
+              "moe_forward_token(",
+              "router_scores[",
+              "top_idx[",
+              "moe3a_c_routing.txt",
+          ]
+          positions={}
+          for mark in marks:
+              found=[i for i,s in enumerate(lines) if mark in s]
+              positions[mark]=found
+              print("P3_ROUTER_CONTRACT_MATCH",json.dumps({"term":mark,"count":len(found),
+                 "positions":[i+1 for i in found[:35]]},sort_keys=True))
+          window=set()
+          for mark in ("router_scores[","top_idx["):
+              for i in positions[mark]:
+                  if 3500<=i<=4700:
+                      window.update(range(max(0,i-12),min(len(lines),i+19)))
+          for i in positions["moe_forward_token("]:
+              if 3500<=i<=4700:
+                  window.update(range(max(0,i),min(len(lines),i+55)))
+          for i in sorted(window):
+              print("P3_SOURCE_LINE",i+1,lines[i][:290])
+          print("P3_REAL_ROUTER_SOURCE_SHA256",hashlib.sha256(source.encode()).hexdigest())
+          PY
