@@ -48,6 +48,39 @@ PROMPTS=[
   ('holdout', 'Describe how friction changes the motion of a rolling wheel.'),
 ]
 
+
+PROMPT_BANK_FILES=(
+ "astronomy_physics_chemistry.json","biology_mathematics_computing.json",
+ "ml_robotics_energy.json","economics_history_language.json")
+
+def preregistered_prompts(prompt_bank_dir:Path):
+    if not prompt_bank_dir or not Path(prompt_bank_dir).is_dir():
+        raise ValueError("missing preregistered prompt bank")
+    entries=[]
+    names=set()
+    for filename in PROMPT_BANK_FILES:
+        p=Path(prompt_bank_dir)/filename
+        if not p.is_file() or p.is_symlink(): raise ValueError("missing or symlinked prompt bank: "+filename)
+        groups=json.loads(p.read_text())
+        if not isinstance(groups,dict) or len(groups)!=3:raise ValueError("wrong category count")
+        for category,items in groups.items():
+            if not isinstance(items,list) or len(items)!=10: raise ValueError("10 unique prompts required per category")
+            if category in names: raise ValueError("duplicate domain")
+            names.add(category)
+            for i,prompt in enumerate(items):
+                if not isinstance(prompt,str) or len(prompt)<35 or "\\n" in prompt:
+                    raise ValueError("invalid prompt text")
+                split="train" if i<6 else ("validation" if i<8 else "holdout")
+                entries.append((split,prompt,category))
+    if len(entries)!=120 or len(names)!=12:
+        raise ValueError("preregistered corpus must have 120 questions across 12 domains")
+    if len({p[1].casefold() for p in entries})!=120:
+        raise ValueError("duplicated prompt text")
+    counts={key:sum(x[0]==key for x in entries) for key in ("train","validation","holdout")}
+    if counts!={"train":72,"validation":24,"holdout":24}:
+        raise ValueError("unexpected split size")
+    return entries
+
 def sha256_bytes(buf:bytes)->str:return hashlib.sha256(buf).hexdigest()
 def sha256_file(path:Path)->str:
     h=hashlib.sha256()
@@ -57,21 +90,22 @@ def sha256_file(path:Path)->str:
 
 def run_suite(binary:Path,index:Path,tokenizer_dir:Path,model_root:Path,out:Path,
               *,layer:int=1, hidden:int=2048, max_positions:int=24, limit_prompts:int|None=None,
-              capture_env:str='BEGLIN_CAPTURE_PRE_FFN_INPUT'):
+              capture_env:str='BEGLIN_CAPTURE_PRE_FFN_INPUT',prompt_bank_dir:Path|None=None):
     assert binary.is_file() and index.is_file() and model_root.is_dir()
     if capture_env!='BEGLIN_CAPTURE_PRE_FFN_INPUT':raise ValueError('unsafe capture variable')
     tok=AutoTokenizer.from_pretrained(str(tokenizer_dir),local_files_only=True,
                                       trust_remote_code=False,use_fast=True)
     assert 1<=max_positions<=40
-    items=PROMPTS[:limit_prompts] if limit_prompts is not None else PROMPTS
+    bank=preregistered_prompts(prompt_bank_dir) if prompt_bank_dir is not None else [(split,prompt,"legacy") for split,prompt in PROMPTS]
+    items=bank[:limit_prompts] if limit_prompts is not None else bank
     assert len(items)>=1
     text_shas=set();id_shas=set()
     out.mkdir(parents=True,exist_ok=True)
     index_sha=sha256_file(index)
     rows=[]
     t0=time.monotonic()
-    for i,(split,prompt) in enumerate(items):
-        prompt_id=f'p{i:02d}'
+    for i,(split,prompt,category) in enumerate(items):
+        prompt_id=f'p{i:03d}'
         rawids=tok.encode(prompt,add_special_tokens=True)
         ids=[int(z) for z in rawids[:max_positions]]
         if len(ids)<8 or any(not 0<=z<102400 for z in ids):
@@ -98,17 +132,19 @@ def run_suite(binary:Path,index:Path,tokenizer_dir:Path,model_root:Path,out:Path
         expected_bytes=len(ids)*(12+hidden*4)
         if cap.stat().st_size!=expected_bytes:
             raise RuntimeError(f'capture count mismatch for {prompt_id}: {cap.stat().st_size}!={expected_bytes}')
-        rows.append({'prompt_id':prompt_id,'split':split,'position_count':len(ids),
+        rows.append({'prompt_id':prompt_id,'split':split,'domain':category,'position_count':len(ids),
                      'input_ids_sha256':ih,'prompt_text_sha256':th,
                      'capture_sha256':sha256_file(cap),'routing_sha256':sha256_file(route)})
         print('PROMPT_CAPTURE_PASS',prompt_id,split,'positions',len(ids),
               'elapsed_s',round(time.monotonic()-t0,1),flush=True)
-    if len(items)==len(PROMPTS):
-        assert [sum(v['split']==s for v in rows) for s in ('train','validation','holdout')]==[12,6,6]
+    if len(items)==len(bank):
+        expected=[72,24,24] if prompt_bank_dir is not None else [12,6,6]
+        assert [sum(v['split']==s for v in rows) for s in ('train','validation','holdout')]==expected
     payload={'schema':SCHEMA,'model_id':'DeepSeek-V2-Lite','layer':layer,'hidden':hidden,
              'tokenizer_root_basename':tokenizer_dir.name,
              'checkpoint_index_sha256':index_sha,
-             'macro_top_k':6,'prompt_count':len(rows),
+             'macro_top_k':6,'prompt_count':len(rows),'bank_type':("preregistered_120" if prompt_bank_dir else "legacy_24"),
+             'bank_file_sha256':({fn:sha256_file(Path(prompt_bank_dir)/fn) for fn in PROMPT_BANK_FILES} if prompt_bank_dir else None),
              'source_model':'quantized AF DeepSeek-V2-Lite scratch forward',
              'fresh_process_per_prompt':True,'raw_activation_uploaded':False,
              'raw_token_ids_uploaded':False,'production_touched':False,
@@ -128,5 +164,6 @@ if __name__=='__main__':
     ap.add_argument('--model-root',required=True,type=Path)
     ap.add_argument('--out',required=True,type=Path)
     ap.add_argument('--max-positions',type=int,default=24)
+    ap.add_argument('--prompt-bank-dir',type=Path,default=None)
     a=ap.parse_args()
-    run_suite(a.binary,a.checkpoint_index,a.tokenizer_dir,a.model_root,a.out,max_positions=a.max_positions)
+    run_suite(a.binary,a.checkpoint_index,a.tokenizer_dir,a.model_root,a.out,max_positions=a.max_positions,prompt_bank_dir=a.prompt_bank_dir)
