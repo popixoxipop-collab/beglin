@@ -37,7 +37,15 @@ def propose(*,current_policy,context_hash,learned_prediction,
             current_policy=current,allocation=allocation,selection=selection,
             combined_policy_evidence=combined_evidence)
     except (ValueError,KeyError,TypeError,pcl.PrecisionClosedLoopError) as err:
-        return hold(current,"EXISTING_BEGLLIN_PRECISION_CONTRACT_REJECTED")
+        return hold(current,"EXISTING_BEGLIN_PRECISION_CONTRACT_REJECTED")
+    active=set((selection.get("signal") or {}).get("active_triggers") or [])
+    for row in selection.get("targets",[]):
+        if row.get("status")=="TRIGGER_CONDITIONED_ALTERNATE":
+            e=row.get("evidence") or {}
+            if (e.get("status")!="PASS" or e.get("pass") is not True
+                or e.get("context_hash")!=context_hash
+                or e.get("trigger_type") not in active):
+                return hold(current,"MISSING_EXACT_CONTEXT_TRIGGER_EVIDENCE")
     ph=decision["selected_policy_hash"]
     if ph==pc.policy_hash(current):
         return {"schema":SCHEMA,"status":"SHADOW_HOLD_EXACT_INCUMBENT",
