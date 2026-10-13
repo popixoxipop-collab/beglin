@@ -1,0 +1,32 @@
+name: Beglin HCP P4 Long Context Data and Precision Cost Contracts
+on:
+  push:
+    branches: [research/hcp-p4-longcontext-costquality-20261014]
+    paths: [".github/workflows/hcp-p4-source-unit.yml"]
+permissions:
+  contents: read
+jobs:
+  source-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install numpy transformers
+      - name: Verify strict XOX scratch instrument, disjoint prompts, native A/B immutable baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tools/hcp_p4_long_prompt_registry.py tools/hcp_p4_long_router_instrument.py \
+            tools/hcp_p4_long_trace_capture.py tools/hcp_p4_native_policies_ab.py
+          cd tools
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 python -m unittest \
+            test_hcp_p4_long_contracts.py \
+            test_hcp_p3_true_boundary.py \
+            test_hcp_p3_quality_gate.py \
+            test_hcp_p2_policy_guard.py -v
+          echo P4_SAFE_LONG_CONTEXT_SOURCE_TEST_PASS
