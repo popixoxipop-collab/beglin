@@ -1,0 +1,88 @@
+name: Beglin XOX Real MoE Neuron Alignment Readonly
+on:
+  push:
+    branches: [research/hierarchical-tupper-moe-20261013]
+    paths: [".github/workflows/beglin-xox-neuron-alignment.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: beglin-hierarchical-neuron-alignment-xox
+  cancel-in-progress: false
+jobs:
+  real-weight-alignment:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify XOX and known checkpoint digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local
+          test "$(id -un)" = xox
+          echo "PYBIN=/Users/xox/.venv-vllm-metal/bin/python3" >> "$GITHUB_ENV"
+          echo "INDEX=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json" >> "$GITHUB_ENV"
+          echo "SCRATCH=$RUNNER_TEMP/beglin-alignment-$GITHUB_RUN_ID" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/beglin-alignment-$GITHUB_RUN_ID"
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import numpy,scipy,hashlib,pathlib
+          idx=pathlib.Path("/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json")
+          assert idx.is_file() and not idx.is_symlink()
+          index_sha=hashlib.sha256(idx.read_bytes()).hexdigest()
+          assert index_sha=="d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+          shard=idx.parent/"model-00001-of-000004.safetensors"
+          assert shard.is_file() and not shard.is_symlink()
+          before=shard.stat()
+          sha=hashlib.sha256()
+          with shard.open("rb") as f:
+            for chunk in iter(lambda:f.read(8*1024*1024),b""):sha.update(chunk)
+          after=shard.stat()
+          assert (before.st_dev,before.st_ino,before.st_size,before.st_mtime_ns,before.st_ctime_ns)==(after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns)
+          assert sha.hexdigest()=="a314b79a30810b1038f9db08345178e16fb5742aa266c4a3dc05054c59800082"
+          print("EXPERT_SHARD_SHA_VERIFIED",sha.hexdigest())
+          PY
+      - name: Test exact SwiGLU and coordinate holdout contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PYBIN" -m unittest discover -v
+      - name: Real 8-expert aligned, original and random controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" permutation_alignment_probe.py --checkpoint-index "$INDEX" --layer 1 --experts 8 --train-experts 4 --rank 2 --hidden 2048 --intermediate 1408 --widths 16 64 --signature-width 64 --validation-width 64 --output "$SCRATCH/aligned_real_8.json"
+      - name: Real 16-expert aligned, original and random controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" permutation_alignment_probe.py --checkpoint-index "$INDEX" --layer 1 --experts 16 --train-experts 8 --rank 2 --hidden 2048 --intermediate 1408 --widths 16 64 --signature-width 64 --validation-width 64 --output "$SCRATCH/aligned_real_16.json"
+      - name: Seal independent read-only evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCRATCH="$RUNNER_TEMP/beglin-alignment-$GITHUB_RUN_ID"
+          test -d "$SCRATCH" || exit 0
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import hashlib,json,pathlib,os
+          p=pathlib.Path(os.getenv("RUNNER_TEMP"))/("beglin-alignment-"+os.getenv("GITHUB_RUN_ID"))
+          files={x.name:hashlib.sha256(x.read_bytes()).hexdigest() for x in sorted(p.glob("aligned_real_*.json"))}
+          info={"schema":"beglin-xox-neuron-alignment-receipt-v1","files_sha256":files,"commit":os.getenv("GITHUB_SHA"),
+                "source_shard_sha256":"a314b79a30810b1038f9db08345178e16fb5742aa266c4a3dc05054c59800082",
+                "production_touched":False,"promotion_allowed":False,"real_hidden_activations":False}
+          (p/"receipt.json").write_text(json.dumps(info,sort_keys=True,indent=2)+"\n")
+          print("ALIGNMENT_RECEIPT",json.dumps(info,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beglin-xox-neuron-alignment
+          path: ${{ runner.temp }}/beglin-alignment-${{ github.run_id }}/*.json
+          if-no-files-found: error
+          retention-days: 30
