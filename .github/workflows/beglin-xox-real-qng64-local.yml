@@ -1,5 +1,8 @@
 name: Beglin XOX Real QNg64 Local Projection
 on:
+  push:
+    branches: [research/trainable-micro-router-120prompt-20261014]
+    paths: [".github/workflows/beglin-xox-real-qng64-local.yml"]
   workflow_dispatch:
 permissions:
   contents: read
