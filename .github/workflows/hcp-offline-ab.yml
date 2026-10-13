@@ -1,4 +1,4 @@
-name: Beglin Hierarchical Compute Planner Offline A-B
+name: Beglin HCP Corrected Risk-Contract Cross-Archive A-B
 on:
   push:
     branches: [research/hierarchical-compute-planner-20261014]
@@ -26,7 +26,7 @@ jobs:
           python3 - <<'PY'
           import json
           r=json.load(open("/tmp/beglin_hcp_offline_ab.json"))
-          assert r["archive_count"]==10 and len(r["comparisons"])==30
+          assert r["archive_count"]==10 and len(r["comparisons"])==300
           assert r["status"]=="COUNTERFACTUAL_COST_ONLY_NOT_CERTIFIED"
           assert r["quality_and_promotion_gate"]=="BLOCKED"
           assert r["automatic_live_promotion"] is False and r["production_touched"] is False
@@ -60,7 +60,7 @@ jobs:
           p=pathlib.Path(os.environ["RUNNER_TEMP"])/("hcp-ab-"+os.environ["GITHUB_RUN_ID"])/"hcp_modelled_cost_ab.json"
           d=json.loads(p.read_text())
           assert d["quality_and_promotion_gate"]=="BLOCKED"
-          assert d["archive_count"]==10 and len(d["comparisons"])==30
+          assert d["archive_count"]==10 and len(d["comparisons"])==300
           print("XOX_HCP_RESEARCH_ONLY_PASS")
           PY
       - uses: actions/upload-artifact@v4
