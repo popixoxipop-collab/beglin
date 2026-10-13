@@ -6,6 +6,7 @@ on:
       - ".github/workflows/hcp-p2-multiscale-unit.yml"
       - "tools/hcp_p2_policy_guard.py"
       - "tools/test_hcp_p2_policy_guard.py"
+      - "tools/test_hcp_p2_real_feature_builder.py"
       - "tools/hcp_p2_multiscale.py"
       - "tools/test_hcp_p2_multiscale.py"
 permissions:
@@ -29,5 +30,5 @@ jobs:
           PY=python3
           OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PY" -m py_compile tools/hcp_p2_real_feature_builder.py tools/hcp_p2_multiscale.py
           cd tools
-          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PY" -m unittest test_hcp_p2_multiscale.py test_hcp_p2_policy_guard.py -v
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PY" -m unittest test_hcp_p2_multiscale.py test_hcp_p2_policy_guard.py test_hcp_p2_real_feature_builder.py -v
           echo "HCP_P2_SPLIT_AND_LATENT_UNIT_PASS"
