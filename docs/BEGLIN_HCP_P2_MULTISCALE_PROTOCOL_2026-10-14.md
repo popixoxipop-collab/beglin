@@ -40,6 +40,12 @@ The new `tools/hcp_p2_policy_guard.py` delegates to the existing `precision_clos
 
 [XOX regression + contract tests #38448276361](https://github.com/popixoxipop-collab/beglin/actions/runs/38448276361) ran 15 tests, all PASS.
 
+## Critical time-scale mismatch: representation versus economic policy horizon
+
+P2's 4-token slow target is only a **representation learnability test**. A precision-policy switch in the historical P7 example cost ~615 ms cold A→B and ~307 ms for warm B→A, while policy B saved only ~1.51 ms per 10-token request in that particular archived snapshot. Its illustrative switch+restore break-even is roughly 612 **requests**, not four tokens. Thus a positive 4-token proxy forecasting score cannot by itself justify any live precision switching or cost claim.
+
+To establish a useful H-JEPA-style hierarchical *compute* planner, future data must cover long, independently sourced requests and their genuine condition-bucket labels, with amortization beyond switching overhead and per-token/runtime quality proof. Even a successful P2 slow latent predictor is far short of this contract.
+
 ## Quality and deployment gates
 
 Any prospective followup requires substantial real predictive performance beyond flat; positive lower endpoint of the paired prompt-bootstrap confidence interval; multi-layer and multiple independent long sequences; actual native Top-K boundary risk labels rather than selected-top6 entropy proxy; verified condition-specific combined-policy evidence and binary/checkpoint identities; matched native qNg64 full-model token/logit comparisons; actual p50/p95 full inference cost, planner overhead, cache transitions and RSS under same backend.
