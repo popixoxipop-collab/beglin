@@ -84,6 +84,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: beglin-hcp-cost-evidence-inventory
-          path: \${{ runner.temp }}/hcp-preflight-\${{ github.run_id }}/evidence_inventory.json
+          path: ${{ runner.temp }}/hcp-preflight-${{ github.run_id }}/evidence_inventory.json
           if-no-files-found: error
           retention-days: 30
