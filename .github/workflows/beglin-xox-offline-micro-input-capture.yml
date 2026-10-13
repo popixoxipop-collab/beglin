@@ -75,6 +75,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Include qng64_dense.c only in scratch build; never patch production CMake.
+          python3 - <<'PY'
+          import os,pathlib
+          p=pathlib.Path(os.environ["SCRATCH"])/"src"/"CMakeLists.txt"
+          s=p.read_text()
+          anchor="add_library(qwen_infer_obj OBJECT\n  qwen_infer.c\n"
+          if s.count(anchor)!=1:raise SystemExit("BLOCKED: qng64 target anchor mismatch")
+          p.write_text(s.replace(anchor,anchor+"  qng64_dense.c\n"))
+          print("ISOLATED_QNG64_LINK_SOURCE_ADDED")
+          PY
           cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
           nice -n 10 cmake --build "$SCRATCH/build" --target qwen_infer_gpu -j2
           shasum -a 256 "$SCRATCH/build/qwen_infer_gpu"
