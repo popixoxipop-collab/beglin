@@ -1,0 +1,71 @@
+name: Beglin Hierarchical Compute Planner Offline A-B
+on:
+  push:
+    branches: [research/hierarchical-compute-planner-20261014]
+    paths: [".github/workflows/hcp-offline-ab.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit-and-modelled-ab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Unit suite, contract checks and historical modelled A-B
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tools -p test_hcp_replay.py -v
+          python3 tools/hcp_replay.py --inventory tools/evidence_inventory.json --output /tmp/beglin_hcp_offline_ab.json
+          python3 - <<'PY'
+          import json
+          r=json.load(open("/tmp/beglin_hcp_offline_ab.json"))
+          assert r["archive_count"]==10 and len(r["comparisons"])==30
+          assert r["status"]=="COUNTERFACTUAL_COST_ONLY_NOT_CERTIFIED"
+          assert r["quality_and_promotion_gate"]=="BLOCKED"
+          assert r["automatic_live_promotion"] is False and r["production_touched"] is False
+          assert all(row["synthetic_risks"] and row["hypothetical_quality_permission"] for row in r["comparisons"])
+          print("BEGLIN_HCP_OFFLINE_CERTIFICATION_BOUNDARY_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-hcp-modelled-ab-ubuntu
+          path: /tmp/beglin_hcp_offline_ab.json
+          if-no-files-found: error
+          retention-days: 30
+  xox-readonly-replay:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run read-only archived cost replay on XOX, not native inference
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local" && test "$(id -un)" = "xox"
+          python3 -m unittest discover -s tools -p test_hcp_replay.py -v
+          SCRATCH="$RUNNER_TEMP/hcp-ab-$GITHUB_RUN_ID"
+          mkdir -p "$SCRATCH"
+          python3 tools/hcp_replay.py --inventory tools/evidence_inventory.json --output "$SCRATCH/hcp_modelled_cost_ab.json"
+          python3 - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/("hcp-ab-"+os.environ["GITHUB_RUN_ID"])/"hcp_modelled_cost_ab.json"
+          d=json.loads(p.read_text())
+          assert d["quality_and_promotion_gate"]=="BLOCKED"
+          assert d["archive_count"]==10 and len(d["comparisons"])==30
+          print("XOX_HCP_RESEARCH_ONLY_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-hcp-modelled-ab-xox
+          path: ${{ runner.temp }}/hcp-ab-${{ github.run_id }}/hcp_modelled_cost_ab.json
+          if-no-files-found: error
+          retention-days: 30
