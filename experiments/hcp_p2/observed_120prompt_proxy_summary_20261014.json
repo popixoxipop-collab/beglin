@@ -1,0 +1,103 @@
+{
+  "schema": "beglin-hcp-p2-multiscale-predictor-v1",
+  "status": "REAL_SURROGATE_EVALUATED_NATIVE_POLICY_BLOCKED",
+  "origin": "DERIVED_REDACTED_METRIC_SUBSET_FROM_SHA_VERIFIED_GITHUB_ACTIONS_ARTIFACT",
+  "source_run_url": "https://github.com/popixoxipop-collab/beglin/actions/runs/38447529097",
+  "source_result_sha256": "0b52fe34581af52a57ff99a3f37c51c82444f3f85173071301c8e73d64b44b5c",
+  "source_feature_sha256": "9c2dfb404ba117029c588b78b6fa32b3f6f6903be1e9b39b295c97e6a8c6c77a",
+  "pinned_corpus_commit": "1b4606eef596e10f3003f7d9f07b607616e990d6",
+  "train_prompt_count": 72,
+  "validation_prompt_count": 24,
+  "holdout_prompt_count": 24,
+  "train_token_positions": 873,
+  "validation_token_positions": 284,
+  "holdout_token_positions": 278,
+  "source_proxy_is_certified_precision_risk": false,
+  "exact_context_certificates_verified": false,
+  "native_policy_rebinding_allowed": false,
+  "production_touched": false,
+  "automatic_live_promotion": false,
+  "trained_method": "PCA and supervised Ridge; NOT H-JEPA joint training",
+  "validation_hyperparameter_selection": {
+    "static": {
+      "ridge_lambda": 1,
+      "slow_alpha": 1,
+      "validation_proxy_rmse": 0.019101525499367736
+    },
+    "flat": {
+      "ridge_lambda": 0.01,
+      "slow_alpha": 1,
+      "validation_proxy_rmse": 0.01906086861220923
+    },
+    "shared_twolevel": {
+      "ridge_lambda": 10,
+      "slow_alpha": 1,
+      "validation_proxy_rmse": 0.018996639159596207
+    },
+    "separate_twolevel": {
+      "ridge_lambda": 10,
+      "slow_alpha": 0.75,
+      "validation_proxy_rmse": 0.018998469796692764
+    }
+  },
+  "final_heldout": {
+    "static": {
+      "prompt_macro_rmse": 0.020069544831991627,
+      "rmse": 0.020223306143491788,
+      "mae": 0.016885351934038315,
+      "sample_count": 278,
+      "prompt_count": 24
+    },
+    "flat": {
+      "prompt_macro_rmse": 0.020025209859047165,
+      "rmse": 0.020203163343089144,
+      "mae": 0.01692930661842653,
+      "sample_count": 278,
+      "prompt_count": 24
+    },
+    "shared_twolevel": {
+      "prompt_macro_rmse": 0.020061478658022266,
+      "rmse": 0.020279504625641525,
+      "mae": 0.01697149609974002,
+      "sample_count": 278,
+      "prompt_count": 24
+    },
+    "separate_twolevel": {
+      "prompt_macro_rmse": 0.020013255113333087,
+      "rmse": 0.020207995034307244,
+      "mae": 0.016886445192608127,
+      "sample_count": 278,
+      "prompt_count": 24
+    }
+  },
+  "paired_improvement_vs_flat": {
+    "shared_twolevel": {
+      "bootstrap_draws": 500,
+      "improvement_vs_flat_prompt_rmse": -0.0018111569981233977,
+      "paired_prompt_bootstrap_95ci": [
+        -0.018463445255411597,
+        0.01658911793845357
+      ]
+    },
+    "separate_twolevel": {
+      "bootstrap_draws": 500,
+      "improvement_vs_flat_prompt_rmse": 0.0005969847905826775,
+      "paired_prompt_bootstrap_95ci": [
+        -0.013207711155435564,
+        0.016652200439887455
+      ]
+    }
+  },
+  "estimated_predictor_parameter_bytes": {
+    "static": 1,
+    "flat": 296,
+    "shared_twolevel": 240,
+    "separate_twolevel": 336
+  },
+  "offline_python_training_plus_prediction_ms": {
+    "flat": 0.962208,
+    "shared_twolevel": 1.790792,
+    "separate_twolevel": 1.757125
+  },
+  "full_model_latency_measured": false
+}
