@@ -1,0 +1,38 @@
+{
+  "astronomy": [
+    "Explain why a lunar eclipse can only occur near a full moon.",
+    "How does stellar parallax help astronomers estimate distances to nearby stars?",
+    "Compare how a rocky planet and a gas giant retain their atmospheres.",
+    "Why can a telescope with a larger mirror detect fainter distant galaxies?",
+    "Describe how a rotating galaxy produces different Doppler shifts across its disk.",
+    "How do scientists infer the presence of exoplanets from periodic stellar dimming?",
+    "What makes a neutron star much denser than an ordinary main sequence star?",
+    "Explain the sequence of stages when a low mass star becomes a white dwarf.",
+    "Why do different wavelengths reveal different features of a nebula?",
+    "How does the apparent retrograde motion of Mars arise from orbital geometry?"
+  ],
+  "physics": [
+    "What changes when a pendulum is moved from Earth to a lower gravity moon?",
+    "Explain why a bicycle wheel resists rapid changes to its spin axis.",
+    "How does friction convert moving mechanical energy into internal thermal energy?",
+    "Compare a standing wave on a string with a traveling wave on the same string.",
+    "Explain the relationship between electric field strength and the force on a charge.",
+    "Why can a bridge resonate when periodic loads align with a structural mode?",
+    "Describe how a capacitor stores energy without requiring a continuous current.",
+    "How can a prism separate white light into different wavelengths?",
+    "Explain conservation of angular momentum for a spinning skater pulling in their arms.",
+    "What physical quantity determines the buoyant force on a submerged block?"
+  ],
+  "chemistry": [
+    "Why does raising temperature often increase the rate of a chemical reaction?",
+    "Explain how a buffer solution resists large changes in acidity.",
+    "What is the difference between ionic and covalent bonding in solids?",
+    "How does an electrochemical cell convert chemical potential into electrical work?",
+    "Describe why ice has a lower density than liquid water.",
+    "How do catalysts accelerate reactions without changing the final equilibrium constant?",
+    "Explain why some molecules are polar even when each bond has a small polarity.",
+    "How does chromatography separate a mixture with components of different affinities?",
+    "Why does adding a solute usually lower the freezing point of water?",
+    "Compare the roles of oxidation and reduction during corrosion of iron."
+  ]
+}
