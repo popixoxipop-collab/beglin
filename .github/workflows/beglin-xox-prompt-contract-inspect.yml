@@ -1,0 +1,38 @@
+name: Beglin XOX Prompt Contract Inspection
+on:
+  push:
+    branches: [research/trainable-micro-router-20261013]
+    paths: [".github/workflows/beglin-xox-prompt-contract-inspect.yml"]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Locate fixed token input and isolation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local
+          test "$(id -un)" = xox
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("qwen_infer.c").read_text(errors="replace").splitlines()
+          terms=("MoE-3a production-binary forward complete", "[moe verify]", "100000", "moe3a_c_routing.txt", "MoE-3a", "verify] pos")
+          snippets=set()
+          for term in terms:
+              positions=[i for i,line in enumerate(s) if term in line]
+              print("TOKEN_CONTRACT_TERM",repr(term),"matches",len(positions))
+              for pos in positions[-5:]:
+                  lo=max(0,pos-18)
+                  hi=min(len(s),pos+15)
+                  for k in range(lo,hi):
+                      if k not in snippets:
+                          snippets.add(k)
+                          print("C_SOURCE_LINE",k+1,s[k][:260])
+          print("SOURCE_SCAN_SUCCESS")
+          PY
