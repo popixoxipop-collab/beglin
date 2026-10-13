@@ -48,8 +48,8 @@ def stats(values):
 def check_manifest(feature_path,refs_path):
     raw=pathlib.Path(feature_path).read_bytes()
     d=json.loads(raw)
-    if d.get("schema")!="beglin-hcp-p4-long-actual-af-risk-dataset-v1" or
-        d.get("status")!="ACTUAL_DEEPSEEK_LONGISH_CONTEXT_RISK_TRACES_ONLY":
+    if (d.get("schema")!="beglin-hcp-p4-long-actual-af-risk-dataset-v1" or
+        d.get("status")!="ACTUAL_DEEPSEEK_LONGISH_CONTEXT_RISK_TRACES_ONLY"):
         raise ValueError("missing actual P4 36-prompt source")
     if d.get("record_count")!=36 or d.get("train_val_holdout")!={"train":12,"validation":12,"holdout":12}:
         raise ValueError("wrong independent prompt coverage")
