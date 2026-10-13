@@ -65,7 +65,7 @@ jobs:
             --tokenizer "$TOKENIZER_ROOT" --index "$INDEX" \
             --root "$SCRATCH/smoke_worker" \
             --output "$SCRATCH/upload/p4_native_short_smoke.json" --sample-count 2
-      - name: Native 12-domain matched policy A/B: compatible 24 input and four new tokens
+      - name: "Native 12-domain matched policy A/B: compatible 24 input and four new tokens"
         shell: bash
         env:
           HF_HUB_OFFLINE: "1"
