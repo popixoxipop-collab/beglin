@@ -79,9 +79,10 @@ jobs:
         run: |
           set -euo pipefail
           OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" - <<'PY'
-          import os,pathlib,shutil
-          from tools.hcp_p4_long_prompt_registry import prepare
-          from tools.hcp_p4_long_trace_capture import run_one,trace_to_features
+          import os,pathlib,shutil,sys
+          sys.path.insert(0,str(pathlib.Path("tools").resolve()))
+          from hcp_p4_long_prompt_registry import prepare
+          from hcp_p4_long_trace_capture import run_one,trace_to_features
           root=pathlib.Path(os.environ["SCRATCH"])
           data=prepare(
             "frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank",
