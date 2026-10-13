@@ -1,0 +1,59 @@
+name: Beglin DeepSeek checkpoint identity XOX (isolated)
+on:
+  push:
+    branches: [research/hierarchical-tupper-moe-20261013]
+    paths: [".github/workflows/beglin-xox-checkpoint-identity.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: beglin-xox-shard-identity-readonly
+  cancel-in-progress: false
+jobs:
+  verify-all-shards:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Assert fixed XOX source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+          INDEX=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json
+          test -f "$INDEX"
+          test ! -L "$INDEX"
+          echo "INDEX=$INDEX" >> "$GITHUB_ENV"
+          echo "SCRATCH=$RUNNER_TEMP/beglin-identity-$GITHUB_RUN_ID" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/beglin-identity-$GITHUB_RUN_ID"
+          /usr/bin/shasum -a 256 "$INDEX"
+          test "$(/usr/bin/shasum -a 256 "$INDEX" | awk '{print $1}')" = "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+      - name: SHA256 each checkpoint shard twice, stable file-stat gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYBIN=/Users/xox/.venv-vllm-metal/bin/python3
+          test -x "$PYBIN"
+          OPENBLAS_NUM_THREADS=1 nice -n 10 "$PYBIN" tools/checkpoint_identity.py \
+            --checkpoint "$INDEX" \
+            --allowed-root /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors \
+            --passes 2 \
+            --output "$SCRATCH/verified_identity.json"
+          "$PYBIN" - <<'PY'
+          import json,os,pathlib
+          d=json.loads((pathlib.Path(os.environ['SCRATCH'])/'verified_identity.json').read_text())
+          assert d["status"]=="VERIFIED" and len(d["verification_passes"])==2
+          assert d["identity_manifest"]["index"]["sha256"]=="d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+          print("CHECKPOINT_SHA_VERIFIED",d["checkpoint_sha256"],"SHARDS",len(d["identity_manifest"]["shards"]))
+          PY
+      - name: Upload small SHA-only evidence, no model tensors
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beglin-xox-checkpoint-identity-sha
+          path: ${{ runner.temp }}/beglin-identity-${{ github.run_id }}/verified_identity.json
+          if-no-files-found: warn
+          retention-days: 30
