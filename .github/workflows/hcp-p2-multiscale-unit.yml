@@ -2,7 +2,12 @@ name: Beglin HCP P2 Slow Fast Latent Unit
 on:
   push:
     branches: [research/hierarchical-compute-planner-p2-20261014]
-    paths: [".github/workflows/hcp-p2-multiscale-unit.yml"]
+    paths:
+      - ".github/workflows/hcp-p2-multiscale-unit.yml"
+      - "tools/hcp_p2_policy_guard.py"
+      - "tools/test_hcp_p2_policy_guard.py"
+      - "tools/hcp_p2_multiscale.py"
+      - "tools/test_hcp_p2_multiscale.py"
 permissions:
   contents: read
 jobs:
@@ -22,5 +27,5 @@ jobs:
           test -x "$PY"
           OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PY" -m py_compile tools/hcp_p2_real_feature_builder.py tools/hcp_p2_multiscale.py
           cd tools
-          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PY" -m unittest test_hcp_p2_multiscale.py -v
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PY" -m unittest test_hcp_p2_multiscale.py test_hcp_p2_policy_guard.py -v
           echo "HCP_P2_SPLIT_AND_LATENT_UNIT_PASS"
