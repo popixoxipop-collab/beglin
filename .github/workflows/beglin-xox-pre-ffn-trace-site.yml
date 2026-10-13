@@ -1,0 +1,37 @@
+name: Beglin XOX Pre-FFN Site Readonly
+on:
+  push:
+    branches: [research/hierarchical-tupper-moe-20261013]
+    paths: [".github/workflows/beglin-xox-pre-ffn-trace-site.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect-only:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Inspect micro-input site, existing standalone mode and actual local weight layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local
+          test "$(id -un)" = xox
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import pathlib
+          lines=pathlib.Path("qwen_infer.c").read_text(errors="replace").splitlines()
+          for a,b in [(4010,4140),(4270,4330)]:
+              print("PRE_FFN_SECTION",a,b)
+              for i in range(a-1,b): print(f"SRC:{i+1}:{lines[i][:190]}")
+          for base in ("/Users/xox/vdsp_local_data/moe_base_deepseek",
+                      "/Users/xox/vdsp-engine/weights_moe",
+                      "/Users/xox/vdsp_local_data/moe_base_deepseek/weights_moe"):
+              p=pathlib.Path(base)
+              print("LOCAL_LAYOUT",base,"is_dir",p.is_dir())
+              if p.is_dir():
+                  for q in sorted(p.iterdir()):
+                      if q.is_file(): print("MODEL_FILE",q.name,"bytes",q.stat().st_size)
+          PY
