@@ -1,0 +1,412 @@
+{
+  "all_rows_processed": true,
+  "complete_intermediate_rows": 1408,
+  "heldout_expert_count": 48,
+  "limitations": [
+    "NO REAL CHECKPOINT: cannot establish pretrained LLM weight law",
+    "Synthetic inputs and weights are not trained transformer distributions",
+    "Q2/Q4 numeric proxy is not native Beglin qNg64 with error feedback",
+    "Full-dimension input does not imply full pre-trained model execution",
+    "Storage estimates omit cache alignment, kernel code, and runtime buffers",
+    "Sparse-channel quality is tested on synthetic holdout activation only; no LLM task evaluation",
+    "Oracle routing evaluates all channel outputs first, and offers NO runtime speedup",
+    "Smaller channels require new grouped GPU/CPU kernels for runtime gain",
+    "Heldout experts expose calibration coordinates for coefficient fitting; not zero-shot unseen expert prediction"
+  ],
+  "model_equivalent_shape": {
+    "base_lane_width": 16,
+    "experts_per_layer": 64,
+    "hidden": 2048,
+    "intermediate": 1408,
+    "total_physical_swiglu_parameters_per_layer": 553648128
+  },
+  "partial_expert_calibration_fraction": 0.2,
+  "processed_intermediate_rows": 1408,
+  "runtime": {
+    "numpy": "2.3.5",
+    "production_touched": false,
+    "python": "3.13.5",
+    "seconds": 115.924
+  },
+  "schema": "beglin-hierarchical-microexpert-synthetic-v1",
+  "shared_rank": 2,
+  "source": {
+    "first_row_slice_sha256": "a364bbff617d05c1d8bd0808ecc0ccc40210b0dd8b1094881852fe21cbf165bc",
+    "implementation_sha256": "17105a3c9794d743307ab02b60b6d2b5a0ef56a3c80f77c02b395bc20ab1a7ff",
+    "seed": 20261013,
+    "type": "SYNTHETIC_ONLY"
+  },
+  "synthetic_mode": "structured",
+  "top_k_macro_experts_for_assembly": 6,
+  "train_expert_count": 16,
+  "widths": {
+    "128": {
+      "channel_width": 128,
+      "full_tested_weight_hybrid_q2_squared_error": 31632.157135784317,
+      "full_tested_weight_q4_squared_error": 8730.350018801924,
+      "grid_full": [
+        11,
+        64
+      ],
+      "grid_tested": [
+        11,
+        64
+      ],
+      "heldout_evaluated_parameters": 332189088,
+      "metric_explained_vs_shared_mean_mse": 0.12870367588260434,
+      "metric_holdout_relative_l2": 0.2991026578512205,
+      "metric_proxy_law_plus_q2_full_weight_relative_l2": 0.20512768924675825,
+      "metric_proxy_q4_full_weight_relative_l2": 0.10776449820170947,
+      "routing": {
+        "0.25": {
+          "activated_micro_experts": 18,
+          "full_micro_experts_for_selected_macros": 66,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.7609980751945091,
+          "retained_per_macro_expert": 3,
+          "static_calibration_relative_l2": 0.8608408082340867,
+          "theoretical_macro_ffn_compute_fraction": 0.2727272727272727,
+          "tupper_mask_raw_bytes": 88,
+          "tupper_mask_shape": [
+            11,
+            64
+          ],
+          "tupper_roundtrip": true
+        },
+        "0.5": {
+          "activated_micro_experts": 36,
+          "full_micro_experts_for_selected_macros": 66,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.5594043628895349,
+          "retained_per_macro_expert": 6,
+          "static_calibration_relative_l2": 0.6651798330154342,
+          "theoretical_macro_ffn_compute_fraction": 0.5454545454545454,
+          "tupper_mask_raw_bytes": 88,
+          "tupper_mask_shape": [
+            11,
+            64
+          ],
+          "tupper_roundtrip": true
+        },
+        "0.75": {
+          "activated_micro_experts": 54,
+          "full_micro_experts_for_selected_macros": 66,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.3186263422710625,
+          "retained_per_macro_expert": 9,
+          "static_calibration_relative_l2": 0.4118573406028213,
+          "theoretical_macro_ffn_compute_fraction": 0.8181818181818182,
+          "tupper_mask_raw_bytes": 88,
+          "tupper_mask_shape": [
+            11,
+            64
+          ],
+          "tupper_roundtrip": true
+        },
+        "1.0": {
+          "activated_micro_experts": 66,
+          "full_micro_experts_for_selected_macros": 66,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.0,
+          "retained_per_macro_expert": 11,
+          "static_calibration_relative_l2": 0.0,
+          "theoretical_macro_ffn_compute_fraction": 1.0,
+          "tupper_mask_raw_bytes": 88,
+          "tupper_mask_shape": [
+            11,
+            64
+          ],
+          "tupper_roundtrip": true
+        }
+      },
+      "storage_full_layer_projection": {
+        "channel_descriptor_bytes": 11264,
+        "coeff_fp16_bytes": 2816,
+        "dictionary_fp16_bytes": 51904512,
+        "hybrid_over_q4": 0.7228461371527778,
+        "parameters": 553648128,
+        "permutation_table_bytes": 180224,
+        "q2_residual_proxy_bytes": 173015040,
+        "q4_proxy_bytes": 311427072,
+        "total_hybrid_proxy_bytes": 225113856
+      },
+      "tested_parameter_fraction": 1.0
+    },
+    "16": {
+      "channel_width": 16,
+      "full_tested_weight_hybrid_q2_squared_error": 320.9581052303284,
+      "full_tested_weight_q4_squared_error": 8730.350018801924,
+      "grid_full": [
+        88,
+        64
+      ],
+      "grid_tested": [
+        88,
+        64
+      ],
+      "heldout_evaluated_parameters": 332192256,
+      "metric_explained_vs_shared_mean_mse": 0.9911888738655166,
+      "metric_holdout_relative_l2": 0.030082202754399115,
+      "metric_proxy_law_plus_q2_full_weight_relative_l2": 0.020662556627851474,
+      "metric_proxy_q4_full_weight_relative_l2": 0.10776449820170947,
+      "routing": {
+        "0.25": {
+          "activated_micro_experts": 132,
+          "full_micro_experts_for_selected_macros": 528,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.6128873717426787,
+          "retained_per_macro_expert": 22,
+          "static_calibration_relative_l2": 0.8254618391870892,
+          "theoretical_macro_ffn_compute_fraction": 0.25,
+          "tupper_mask_raw_bytes": 704,
+          "tupper_mask_shape": [
+            88,
+            64
+          ],
+          "tupper_roundtrip": true
+        },
+        "0.5": {
+          "activated_micro_experts": 264,
+          "full_micro_experts_for_selected_macros": 528,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.3915133061286954,
+          "retained_per_macro_expert": 44,
+          "static_calibration_relative_l2": 0.70092714094469,
+          "theoretical_macro_ffn_compute_fraction": 0.5,
+          "tupper_mask_raw_bytes": 704,
+          "tupper_mask_shape": [
+            88,
+            64
+          ],
+          "tupper_roundtrip": true
+        },
+        "0.75": {
+          "activated_micro_experts": 396,
+          "full_micro_experts_for_selected_macros": 528,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.20919620163946143,
+          "retained_per_macro_expert": 66,
+          "static_calibration_relative_l2": 0.4867628453056146,
+          "theoretical_macro_ffn_compute_fraction": 0.75,
+          "tupper_mask_raw_bytes": 704,
+          "tupper_mask_shape": [
+            88,
+            64
+          ],
+          "tupper_roundtrip": true
+        },
+        "1.0": {
+          "activated_micro_experts": 528,
+          "full_micro_experts_for_selected_macros": 528,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.0,
+          "retained_per_macro_expert": 88,
+          "static_calibration_relative_l2": 0.0,
+          "theoretical_macro_ffn_compute_fraction": 1.0,
+          "tupper_mask_raw_bytes": 704,
+          "tupper_mask_shape": [
+            88,
+            64
+          ],
+          "tupper_roundtrip": true
+        }
+      },
+      "storage_full_layer_projection": {
+        "channel_descriptor_bytes": 90112,
+        "coeff_fp16_bytes": 22528,
+        "dictionary_fp16_bytes": 51904512,
+        "hybrid_over_q4": 0.7231626157407407,
+        "parameters": 553648128,
+        "permutation_table_bytes": 180224,
+        "q2_residual_proxy_bytes": 173015040,
+        "q4_proxy_bytes": 311427072,
+        "total_hybrid_proxy_bytes": 225212416
+      },
+      "tested_parameter_fraction": 1.0
+    },
+    "32": {
+      "channel_width": 32,
+      "full_tested_weight_hybrid_q2_squared_error": 17405.343246311306,
+      "full_tested_weight_q4_squared_error": 8730.350018801924,
+      "grid_full": [
+        44,
+        64
+      ],
+      "grid_tested": [
+        44,
+        64
+      ],
+      "heldout_evaluated_parameters": 332190144,
+      "metric_explained_vs_shared_mean_mse": 0.5015934824401027,
+      "metric_holdout_relative_l2": 0.22620855966457631,
+      "metric_proxy_law_plus_q2_full_weight_relative_l2": 0.1521602381142055,
+      "metric_proxy_q4_full_weight_relative_l2": 0.10776449820170947,
+      "routing": {
+        "0.25": {
+          "activated_micro_experts": 66,
+          "full_micro_experts_for_selected_macros": 264,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.6896627539526866,
+          "retained_per_macro_expert": 11,
+          "static_calibration_relative_l2": 0.8343090219148477,
+          "theoretical_macro_ffn_compute_fraction": 0.25,
+          "tupper_mask_raw_bytes": 352,
+          "tupper_mask_shape": [
+            44,
+            64
+          ],
+          "tupper_roundtrip": true
+        },
+        "0.5": {
+          "activated_micro_experts": 132,
+          "full_micro_experts_for_selected_macros": 264,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.4737463176718942,
+          "retained_per_macro_expert": 22,
+          "static_calibration_relative_l2": 0.6957484727557968,
+          "theoretical_macro_ffn_compute_fraction": 0.5,
+          "tupper_mask_raw_bytes": 352,
+          "tupper_mask_shape": [
+            44,
+            64
+          ],
+          "tupper_roundtrip": true
+        },
+        "0.75": {
+          "activated_micro_experts": 198,
+          "full_micro_experts_for_selected_macros": 264,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.2748227829062606,
+          "retained_per_macro_expert": 33,
+          "static_calibration_relative_l2": 0.4813685967197334,
+          "theoretical_macro_ffn_compute_fraction": 0.75,
+          "tupper_mask_raw_bytes": 352,
+          "tupper_mask_shape": [
+            44,
+            64
+          ],
+          "tupper_roundtrip": true
+        },
+        "1.0": {
+          "activated_micro_experts": 264,
+          "full_micro_experts_for_selected_macros": 264,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.0,
+          "retained_per_macro_expert": 44,
+          "static_calibration_relative_l2": 0.0,
+          "theoretical_macro_ffn_compute_fraction": 1.0,
+          "tupper_mask_raw_bytes": 352,
+          "tupper_mask_shape": [
+            44,
+            64
+          ],
+          "tupper_roundtrip": true
+        }
+      },
+      "storage_full_layer_projection": {
+        "channel_descriptor_bytes": 45056,
+        "coeff_fp16_bytes": 11264,
+        "dictionary_fp16_bytes": 51904512,
+        "hybrid_over_q4": 0.7229817708333334,
+        "parameters": 553648128,
+        "permutation_table_bytes": 180224,
+        "q2_residual_proxy_bytes": 173015040,
+        "q4_proxy_bytes": 311427072,
+        "total_hybrid_proxy_bytes": 225156096
+      },
+      "tested_parameter_fraction": 1.0
+    },
+    "64": {
+      "channel_width": 64,
+      "full_tested_weight_hybrid_q2_squared_error": 26839.46739675469,
+      "full_tested_weight_q4_squared_error": 8730.350018801924,
+      "grid_full": [
+        22,
+        64
+      ],
+      "grid_tested": [
+        22,
+        64
+      ],
+      "heldout_evaluated_parameters": 332189088,
+      "metric_explained_vs_shared_mean_mse": 0.2504500887313422,
+      "metric_holdout_relative_l2": 0.27747890484479026,
+      "metric_proxy_law_plus_q2_full_weight_relative_l2": 0.18894997107694808,
+      "metric_proxy_q4_full_weight_relative_l2": 0.10776449820170947,
+      "routing": {
+        "0.25": {
+          "activated_micro_experts": 36,
+          "full_micro_experts_for_selected_macros": 132,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.731356439377304,
+          "retained_per_macro_expert": 6,
+          "static_calibration_relative_l2": 0.8271431976915998,
+          "theoretical_macro_ffn_compute_fraction": 0.2727272727272727,
+          "tupper_mask_raw_bytes": 176,
+          "tupper_mask_shape": [
+            22,
+            64
+          ],
+          "tupper_roundtrip": true
+        },
+        "0.5": {
+          "activated_micro_experts": 66,
+          "full_micro_experts_for_selected_macros": 132,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.5517232539688667,
+          "retained_per_macro_expert": 11,
+          "static_calibration_relative_l2": 0.685211337011144,
+          "theoretical_macro_ffn_compute_fraction": 0.5,
+          "tupper_mask_raw_bytes": 176,
+          "tupper_mask_shape": [
+            22,
+            64
+          ],
+          "tupper_roundtrip": true
+        },
+        "0.75": {
+          "activated_micro_experts": 102,
+          "full_micro_experts_for_selected_macros": 132,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.32182132264551394,
+          "retained_per_macro_expert": 17,
+          "static_calibration_relative_l2": 0.4792277690678316,
+          "theoretical_macro_ffn_compute_fraction": 0.7727272727272727,
+          "tupper_mask_raw_bytes": 176,
+          "tupper_mask_shape": [
+            22,
+            64
+          ],
+          "tupper_roundtrip": true
+        },
+        "1.0": {
+          "activated_micro_experts": 132,
+          "full_micro_experts_for_selected_macros": 132,
+          "note": "Oracle computes all channel outputs first; cannot yield runtime speedup.",
+          "oracle_test_relative_l2_upper_bound": 0.0,
+          "retained_per_macro_expert": 22,
+          "static_calibration_relative_l2": 0.0,
+          "theoretical_macro_ffn_compute_fraction": 1.0,
+          "tupper_mask_raw_bytes": 176,
+          "tupper_mask_shape": [
+            22,
+            64
+          ],
+          "tupper_roundtrip": true
+        }
+      },
+      "storage_full_layer_projection": {
+        "channel_descriptor_bytes": 22528,
+        "coeff_fp16_bytes": 5632,
+        "dictionary_fp16_bytes": 51904512,
+        "hybrid_over_q4": 0.7228913483796297,
+        "parameters": 553648128,
+        "permutation_table_bytes": 180224,
+        "q2_residual_proxy_bytes": 173015040,
+        "q4_proxy_bytes": 311427072,
+        "total_hybrid_proxy_bytes": 225127936
+      },
+      "tested_parameter_fraction": 1.0
+    }
+  }
+}

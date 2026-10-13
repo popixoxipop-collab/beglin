@@ -1,0 +1,50 @@
+{
+  "files": {
+    "README.md": {
+      "sha256": "71f2330d883b6bd32adce0cf82c94b072d7709c24564c4d55ebee283a367aa71",
+      "size": 3072
+    },
+    "RESULTS_2026-10-13.md": {
+      "sha256": "ee537e8dec8b9c116a90c1cf377430a9a3f574cc55e4c5dd57eee4dc08c97309",
+      "size": 8244
+    },
+    "fullshape_exact_swiglu.json": {
+      "sha256": "1f25e01b6d8306682cd18e288a30f4b16970a0ddc7e4d12f30f6b0f2eca1838f",
+      "size": 579
+    },
+    "fullshape_independent_22tiles.json": {
+      "sha256": "9df60e17b975d40e11afe7bfab318290c813ee2a0054e7b89d1ac7fa3e79a3c1",
+      "size": 15806
+    },
+    "fullshape_structured_22tiles.json": {
+      "sha256": "fd5872e1ccc050697cf8486a813c79e4b2c62144b716974dd3fad95a3e1d2683",
+      "size": 15790
+    },
+    "hierarchical_moe_probe.py": {
+      "sha256": "d1829e360e325c6a3928c54729597c220e23803b704c364f3e41b662b7d9c8b2",
+      "size": 23112
+    },
+    "hierarchical_moe_probe_v1_synthetic.py": {
+      "sha256": "17105a3c9794d743307ab02b60b6d2b5a0ef56a3c80f77c02b395bc20ab1a7ff",
+      "size": 21365
+    },
+    "real_checkpoint_reader.py": {
+      "sha256": "267c48000924824912c65ad1476b73048738fb1573aec81a4cf467112c25d3eb",
+      "size": 5927
+    },
+    "test_hierarchical_moe_probe.py": {
+      "sha256": "573f639c8db8466a2c0969b1709f38e38b81cfe4c277b020318119d9cd2a4f56",
+      "size": 3443
+    },
+    "test_real_checkpoint_reader.py": {
+      "sha256": "517b8829e61be2ba86035614b31532224825f1ee8788e5ba5c498d2217567daa",
+      "size": 3872
+    },
+    "unit_tests.log": {
+      "sha256": "29f7811a5628907d6f19fed997d5fa6d4a38a871eb17ccf81c499a1b2684366a",
+      "size": 1400
+    }
+  },
+  "schema": "beglin-hierarchical-moe-artifact-manifest-v1",
+  "source_commit_note": "Published result JSONs pin the original synthetic-only implementation_sha256; successor real-mode source remains separate."
+}

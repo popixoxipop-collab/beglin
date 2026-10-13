@@ -1,0 +1,16 @@
+test_arbitrary_tupper (test_hierarchical_moe_probe.HierarchicalMoETests.test_arbitrary_tupper) ... ok
+test_independent_control (test_hierarchical_moe_probe.HierarchicalMoETests.test_independent_control) ... ok
+test_q_storage_formula (test_hierarchical_moe_probe.HierarchicalMoETests.test_q_storage_formula) ... ok
+test_quant_role_alignment (test_hierarchical_moe_probe.HierarchicalMoETests.test_quant_role_alignment) ... ok
+test_structured_generation_is_deterministic (test_hierarchical_moe_probe.HierarchicalMoETests.test_structured_generation_is_deterministic) ... ok
+test_structured_tiny (test_hierarchical_moe_probe.HierarchicalMoETests.test_structured_tiny) ... ok
+test_swiglu_multi_width_and_permutation (test_hierarchical_moe_probe.HierarchicalMoETests.test_swiglu_multi_width_and_permutation) ... ok
+test_tupper_invalid (test_hierarchical_moe_probe.HierarchicalMoETests.test_tupper_invalid) ... ok
+test_end_to_end_real_mode_on_fake_safetensors (test_real_checkpoint_reader.ReaderTests.test_end_to_end_real_mode_on_fake_safetensors) ... ok
+test_reader_f32_f16_bf16_and_down_transpose (test_real_checkpoint_reader.ReaderTests.test_reader_f32_f16_bf16_and_down_transpose) ... ok
+test_reader_rejects_invalid_index (test_real_checkpoint_reader.ReaderTests.test_reader_rejects_invalid_index) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.086s
+
+OK
