@@ -1,6 +1,8 @@
 """Regression for high-retention true channel-count and strict research gates."""
 import copy
 import unittest
+import numpy as np
+from prompt_holdout_micro_eval import paired_improvement_ci
 from high_retention_gate import keep_count,inspect_result,FRACTIONS,WIDTHS
 
 def fixture():
@@ -54,6 +56,15 @@ class HighRetentionTests(unittest.TestCase):
         payload["results"]["64"]["0.9"]["tupper_roundtrip"]=False
         with self.assertRaisesRegex(ValueError,"Tupper"):
             inspect_result(payload)
+    def test_99_percent_noop_has_undefined_not_100pct_improvement(self):
+        keys=[("test_A",0),("test_B",0),("test_C",0),("test_D",0)]
+        full=np.array([[1.,2.],[3.,4.],[2.,1.],[1.,3.]],dtype=np.float64)
+        r=paired_improvement_ci(keys,full,full.copy(),full.copy())
+        self.assertIsNone(r["relative_l2_reduction"])
+        self.assertIsNone(r["prompt_block_bootstrap_95ci"])
+        self.assertEqual(r["status"],"UNDEFINED_ZERO_BASELINE_ERROR")
+        self.assertEqual(r["bootstrap_draws"],0)
+
     def test_robust_quality_gate_uses_holdout_ci(self):
         payload=fixture()
         payload["results"]["16"]["0.9"]["locked_holdout"]["prompt_bootstrap_95ci"]=[.024,.06]
