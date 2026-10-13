@@ -2,7 +2,13 @@ name: Beglin HCP P3 True TopK Boundary Unit
 on:
   push:
     branches: [research/hcp-p3-true-topk-margin-20261014]
-    paths: [".github/workflows/hcp-p3-true-boundary-unit.yml"]
+    paths:
+      - ".github/workflows/hcp-p3-true-boundary-unit.yml"
+      - "tools/hcp_p3_router_instrument.py"
+      - "tools/hcp_p3_boundary_features.py"
+      - "tools/hcp_p3_real_capture.py"
+      - "tools/hcp_p3_true_boundary_eval.py"
+      - "tools/test_hcp_p3_true_boundary.py"
 permissions:
   contents: read
 jobs:
