@@ -1,7 +1,7 @@
 name: Beglin Hierarchical MoE Real Checkpoint XOX Readonly
 on:
   push:
-    branches: [research/hierarchical-tupper-moe-20261013]
+    branches: [research/hierarchical-sparse-calibration-20261013]
     paths:
       - ".github/workflows/beglin-hierarchical-real-xox.yml"
       - "experiments/hierarchical_tupper_moe/**"
@@ -79,7 +79,7 @@ jobs:
           for w, row in d["widths"].items():
               for f in ("0.25","0.5","0.75"):
                   c=row["routing"][f]
-                  print("REAL_WEIGHT_SPARSE",w,f,"static_relative_l2",round(c["static_calibration_relative_l2"],6),"test_informed_magnitude_l2",round(c["oracle_test_relative_l2_upper_bound"],6))
+                  print("REAL_WEIGHT_SPARSE",w,f,"static_relative_l2",round(c["static_calibration_relative_l2"],6),"greedy_calibration_l2",round(c["calibration_residual_greedy_relative_l2"],6),"test_informed_magnitude_l2",round(c["oracle_test_relative_l2_upper_bound"],6))
           PY
       - name: Seal safe evidence metadata
         if: always()
