@@ -1,0 +1,49 @@
+name: Beglin XOX Offline Layer-1 Activation Hook Review
+on:
+  push:
+    branches: [research/hierarchical-tupper-moe-20261013]
+    paths: [".github/workflows/beglin-xox-layerdump-hook-review.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  review-only:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Inspect actual hook and offline input/output contracts without executing inference
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local
+          test "$(id -un)" = xox
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import pathlib,re,json
+          f=pathlib.Path("qwen_infer.c")
+          lines=f.read_text(errors="replace").splitlines()
+          queries=[
+              r"QWEN_MOE_DEBUG_LAYERDUMP",
+              r"moe_forward_token\(",
+              r"moe_ffn",
+              r"QWEN_MOE_BASE",
+              r"moe_layerdump",
+              r"run_moe_.*main",
+              r"QWEN_MOE_RAW",
+          ]
+          for name in queries:
+              matches=[i for i,v in enumerate(lines) if re.search(name,v,re.I)]
+              print("SOURCE_QUERY",name,"total",len(matches))
+              for i in matches[:6]:
+                  for j in range(max(0,i-7),min(len(lines),i+11)):
+                      print(f"SRC:{j+1}:{lines[j][:190]}")
+          print("AVAILABLE_TOOLS")
+          for f in ["qwen_infer","qwen_infer_gpu","qwen_infer.c","CMakeLists.txt"]:
+              p=pathlib.Path("/Users/xox/vdsp-engine")/f
+              print("TOOL",str(p),"file",p.is_file(),"size",p.stat().st_size if p.is_file() else 0)
+          for f in ["moe_base_deepseek/manifest.json","moe_base_deepseek/arch_config.txt"]:
+              p=pathlib.Path("/Users/xox/vdsp_local_data")/f
+              print("WEIGHTS_METADATA",str(p),"exists",p.is_file())
+          PY
