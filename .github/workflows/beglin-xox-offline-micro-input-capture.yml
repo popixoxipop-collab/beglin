@@ -1,0 +1,132 @@
+name: Beglin XOX Offline True Pre-MoE Input Capture
+on:
+  push:
+    branches: [research/hierarchical-tupper-moe-20261013]
+    paths: [".github/workflows/beglin-xox-offline-micro-input-capture.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: beglin-xox-isolated-micro-capture
+  cancel-in-progress: false
+jobs:
+  isolated-pre-ffn-capture:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify XOX, pin source and prepare independent scratch source copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          SCRATCH="$RUNNER_TEMP/beglin-micro-capture-$GITHUB_RUN_ID"
+          echo "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          mkdir -p "$SCRATCH/src"
+          rsync -a --exclude=.git --exclude=.github --exclude=results --exclude=attestations --exclude=build --exclude=build-persistent ./ "$SCRATCH/src/"
+          test -f /Users/xox/vdsp_local_data/moe_base_deepseek/weights_moe/arch_config_moe.txt
+          test -f /Users/xox/vdsp_local_data/moe_base_deepseek/weights_moe/deepseek_moe_af.bin
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import hashlib,pathlib
+          i=pathlib.Path("/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json")
+          assert hashlib.sha256(i.read_bytes()).hexdigest()=="d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+          print("CHECKPOINT_INDEX_PINNED",i.name)
+          PY
+      - name: Instrument only local scratch C copy at real post-attention RMSNorm h2 input
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib,os
+          p=pathlib.Path(os.environ["SCRATCH"])/"src"/"qwen_infer.c"
+          s=p.read_text()
+          needle="        float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);\n        moe_rmsnorm(x, w_postln, h2, MOE_HIDDEN);"
+          if s.count(needle)!=1:raise SystemExit(f"BLOCKED: source anchor occurred {s.count(needle)} times")
+          insert="""
+        // Research-only activation capture in isolated temp worktree.
+        // Exact h2 is the pre-router, pre-gate/up input, not post-residual x.
+        if (l == 1 && pos >= 0 && pos < 8) {
+            const char *cap = getenv("BEGLIN_CAPTURE_PRE_FFN_INPUT");
+            if (cap && cap[0]) {
+                FILE *fp = fopen(cap, "ab");
+                if (!fp) { fprintf(stderr, "CAPTURE_OPEN_FAIL\\n"); exit(2); }
+                int hdr[3] = {pos, l, MOE_HIDDEN};
+                if (fwrite(hdr, sizeof(int), 3, fp) != 3 ||
+                    fwrite(h2, sizeof(float), MOE_HIDDEN, fp) != (size_t)MOE_HIDDEN) {
+                    fclose(fp); fprintf(stderr, "CAPTURE_WRITE_FAIL\\n"); exit(2);
+                }
+                if (fclose(fp) != 0) exit(2);
+            }
+        }
+"""
+          s=s.replace(needle,needle+"\n"+insert)
+          p.write_text(s)
+          print("ISOLATED_PRE_FFN_HOOK_INSERTED",p.name, "occurrences",s.count("BEGLIN_CAPTURE_PRE_FFN_INPUT"))
+          PY
+      - name: Compile independent research binary (no live binary replacement)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          nice -n 10 cmake --build "$SCRATCH/build" --target qwen_infer_gpu -j2
+          shasum -a 256 "$SCRATCH/build/qwen_infer_gpu"
+      - name: Execute scratch process only and capture 8 true layer-1 pre-FFN inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import os,pathlib,subprocess,hashlib
+          p=pathlib.Path(os.environ["SCRATCH"])
+          env={k:os.environ[k] for k in ("PATH","HOME","TMPDIR","LANG") if k in os.environ}
+          env.update({
+            "QWEN_MOE_BASE":"/Users/xox/vdsp_local_data/moe_base_deepseek",
+            "BEGLIN_CAPTURE_PRE_FFN_INPUT":str(p/"pre_ffn_layer1.bin"),
+            "QWEN_MOE_NEARTIE_CORRECT":"0",
+          })
+          program=[str(p/"build/qwen_infer_gpu")]
+          result=subprocess.run(program,cwd=p,env=env,capture_output=True,text=True,timeout=180)
+          (p/"run_exit.txt").write_text("exit_code="+str(result.returncode)+"\nstdout_tail="+result.stdout[-400:]+"\nstderr_tail="+result.stderr[-1800:]+"\n")
+          print("SCRATCH_INFERENCE_EXIT",result.returncode,"stdout_tail",result.stdout[-300:].replace("\n"," "))
+          print("SCRATCH_INFERENCE_STDERR_TAIL",result.stderr[-700:].replace("\n"," "))
+          if result.returncode!=0:raise SystemExit("BLOCKED: scratch inference failed")
+          PY
+      - name: Verify true activation records and seal non-sensitive receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import pathlib,os,struct,hashlib,json,numpy as np
+          p=pathlib.Path(os.environ["SCRATCH"])
+          src=p/"pre_ffn_layer1.bin"
+          if not src.is_file():raise SystemExit("BLOCKED: no pre-FFN output")
+          data=src.read_bytes()
+          stride=12+2048*4
+          if len(data)==0 or len(data)%stride:raise SystemExit("BLOCKED: malformed pre-FFN record length")
+          records=[]
+          for i in range(0,len(data),stride):
+              pos,layer,hidden=struct.unpack_from("<iii",data,i)
+              h=np.frombuffer(data,dtype="<f4",count=2048,offset=i+12)
+              if layer!=1 or hidden!=2048 or not np.all(np.isfinite(h)) or np.linalg.norm(h)==0:
+                  raise SystemExit("BLOCKED: wrong layer or nonfinite hidden state")
+              records.append({"position":pos,"l2_norm":round(float(np.linalg.norm(h)),5)})
+          routes=list(p.glob("*routing*"))
+          o={"schema":"beglin-real-pre-ffn-capture-v1","source_commit":os.environ["GITHUB_SHA"],
+              "capture_point":"layer_1/post_attn_norm/h2, before router/FFN",
+              "capture_sha256":hashlib.sha256(data).hexdigest(),"record_count":len(records),
+              "records":records,"route_files":[{"basename":f.name,"bytes":f.stat().st_size} for f in routes if f.is_file()],
+              "checkpoint_source":"quantized AF DeepSeek-V2-Lite; NOT BF16 forward",
+              "pretrained_forward_executed":True,"actual_token_activations":True,
+              "raw_activation_bytes_uploaded":False,"production_touched":False,
+              "automatic_promotion":False}
+          (p/"micro_capture_receipt.json").write_text(json.dumps(o,indent=2,sort_keys=True)+"\n")
+          print("REAL_PRE_FFN_CAPTURE",json.dumps(o,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beglin-pre-ffn-capture-receipt-only
+          path: ${{ runner.temp }}/beglin-micro-capture-${{ github.run_id }}/micro_capture_receipt.json
+          if-no-files-found: warn
+          retention-days: 30
