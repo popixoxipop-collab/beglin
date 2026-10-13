@@ -129,6 +129,6 @@ jobs:
         if: always()
         with:
           name: beglin-xox-real-rank-ablation
-          path: ${{ runner.temp }}/beglin-hierarchical-${{ github.run_id }}/*.json
+          path: ${{ runner.temp }}/beglin-hierarchical-rank-${{ github.run_id }}/*.json
           if-no-files-found: warn
           retention-days: 30
