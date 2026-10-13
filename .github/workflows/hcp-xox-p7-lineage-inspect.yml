@@ -1,0 +1,60 @@
+name: Beglin HCP P7 Existing Lineage Readonly Inspect
+on:
+  push:
+    branches: [research/hierarchical-compute-planner-20261014]
+    paths: [".github/workflows/hcp-xox-p7-lineage-inspect.yml"]
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Inspect immutable long P7 request lineage only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          python3 - <<'PY'
+          import hashlib,json,pathlib,statistics
+          root=pathlib.Path("/Users/xox/vdsp_serving/precision-p7-soak-long600-4baf28b")
+          result=root/"result.json"
+          expected="ebc6c8c52759e7164b555d19e7e330bf933835be2b32073cef634c13ef332c94"
+          manifest={"schema":"beglin-hcp-existing-p7-lineage-preflight-v1",
+                    "directory_exists":root.is_dir(),"result_valid":False,
+                    "lineage_files":[],"sample_event_summaries":[],
+                    "no_writes_to_source":True,"production_touched":False}
+          if result.is_file() and hashlib.sha256(result.read_bytes()).hexdigest()==expected:
+              r=json.loads(result.read_text())
+              if r.get("status")=="PASS" and r.get("production_touched") is False:
+                  manifest["result_valid"]=True
+                  manifest["expected_admissions"]=int(r.get("summary",{}).get("admissions",0))
+                  manifest["observed_finite_logits_rate"]=r.get("summary",{}).get("finite_logits_rate")
+          if root.is_dir():
+              for p in sorted(root.rglob("*")):
+                  if not p.is_file() or p.is_symlink():continue
+                  if "lineage" not in p.name or p.suffix not in (".jsonl",".json"):continue
+                  if p.stat().st_size>20000000:continue
+                  b=p.read_bytes()
+                  details={"name":str(p.relative_to(root)),
+                       "bytes":len(b),"sha256":hashlib.sha256(b).hexdigest()}
+                  if p.suffix==".jsonl":
+                      rows=[]
+                      for line in b.splitlines():
+                          try:x=json.loads(line)
+                          except (ValueError,UnicodeDecodeError):continue
+                          if x.get("schema")=="beglin-precision-lineage-v1":
+                              rows.append(x)
+                      details["parsed_event_records"]=len(rows)
+                      if rows:
+                          details["triggered"]=sum(bool(x.get("active_triggers")) for x in rows)
+                          details["transitions"]=sum(bool(x.get("transitioned")) for x in rows)
+                          details["risk_ids_operator_generated"]=sum("-risk" in str(x.get("admission_id","")) for x in rows)
+                          details["last_record_hash"]=rows[-1].get("record_sha256")
+                  manifest["lineage_files"].append(details)
+          manifest["parsed_event_total"]=sum(int(x.get("parsed_event_records",0)) for x in manifest["lineage_files"])
+          print("P7_LINEAGE_READONLY_SUMMARY",json.dumps(manifest,sort_keys=True))
+          PY
