@@ -1,0 +1,26 @@
+name: Beglin HCP P2 Slow Fast Latent Unit
+on:
+  push:
+    branches: [research/hierarchical-compute-planner-p2-20261014]
+    paths: [".github/workflows/hcp-p2-multiscale-unit.yml"]
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate offline latent, split and real-source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local" && test "$(id -un)" = "xox"
+          PY=/Users/xox/.venv-vllm-metal/bin/python3
+          test -x "$PY"
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PY" -m py_compile tools/hcp_p2_real_feature_builder.py tools/hcp_p2_multiscale.py
+          cd tools
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PY" -m unittest test_hcp_p2_multiscale.py -v
+          echo "HCP_P2_SPLIT_AND_LATENT_UNIT_PASS"
