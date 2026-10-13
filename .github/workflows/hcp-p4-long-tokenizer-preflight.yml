@@ -1,0 +1,51 @@
+name: Beglin HCP P4 Long-Prompt Offline Tokenizer Preflight
+on:
+  push:
+    branches: [research/hcp-p4-longcontext-costquality-20261014]
+    paths: [".github/workflows/hcp-p4-long-tokenizer-preflight.yml"]
+permissions:
+  contents: read
+jobs:
+  tokenizer-length:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 1b4606eef596e10f3003f7d9f07b607616e990d6
+          path: frozen_prompt_source
+          persist-credentials: false
+      - name: Assert exact independent 80-112 real-token corpus; no downloads
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          SCRATCH="$RUNNER_TEMP/hcp-p4-tokenizer-$GITHUB_RUN_ID"
+          mkdir -p "$SCRATCH"
+          PY=/Users/xox/.venv-vllm-metal/bin/python3
+          "$PY" tools/hcp_p4_long_prompt_registry.py \
+            --bank-dir frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer-dir /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors \
+            --public-output "$SCRATCH/manifest.json"
+          "$PY" - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/("hcp-p4-tokenizer-"+os.environ["GITHUB_RUN_ID"])/"manifest.json"
+          d=json.loads(p.read_text())
+          assert d["distinct_tokenized_input_count"]==36
+          assert d["prompt_splits"]=={"train":12,"validation":12,"holdout":12}
+          assert 80<=d["minimum_tokens"]<=d["actual_max_tokens"]<=112
+          assert all("token_ids" not in x for x in d["prompts"])
+          print("P4_SAFE_LENGTH_AND_DATA_SPLIT_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-p4-long-prompt-registry-safe
+          path: ${{ runner.temp }}/hcp-p4-tokenizer-${{ github.run_id }}/manifest.json
+          if-no-files-found: error
+          retention-days: 30
