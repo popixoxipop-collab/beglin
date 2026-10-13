@@ -1,0 +1,156 @@
+name: Beglin HCP P3 Real FullSoftmax Kth/7th Boundary
+on:
+  push:
+    branches: [research/hcp-p3-true-topk-margin-20261014]
+    paths: [".github/workflows/hcp-p3-real-topk-boundary-120.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: beglin-xox-hcp-p3-120-isolated
+  cancel-in-progress: false
+jobs:
+  separate-prompt-evidence:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 1b4606eef596e10f3003f7d9f07b607616e990d6
+          path: preregistered_corpus_source
+          persist-credentials: false
+      - name: Validate host, checkpoint identity and prepare scratch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          SCRATCH="$RUNNER_TEMP/hcp-p3-true-rank7-$GITHUB_RUN_ID"
+          mkdir -p "$SCRATCH/src" "$SCRATCH/upload"
+          echo "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          INDEX=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json
+          TOKENIZER_ROOT=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors
+          MODEL_ROOT=/Users/xox/vdsp_local_data/moe_base_deepseek
+          test -f "$INDEX" && test ! -L "$INDEX"
+          test -f "$TOKENIZER_ROOT/tokenizer.json" && test -f "$TOKENIZER_ROOT/tokenizer_config.json"
+          test -f "$MODEL_ROOT/weights_moe/arch_config_moe.txt"
+          test -f "$MODEL_ROOT/weights_moe/deepseek_moe_af.bin"
+          echo "INDEX=$INDEX" >> "$GITHUB_ENV"
+          echo "TOKENIZER_ROOT=$TOKENIZER_ROOT" >> "$GITHUB_ENV"
+          echo "MODEL_ROOT=$MODEL_ROOT" >> "$GITHUB_ENV"
+          echo "PYBIN=/Users/xox/.venv-vllm-metal/bin/python3" >> "$GITHUB_ENV"
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import hashlib,pathlib
+          p=pathlib.Path("/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json")
+          digest=hashlib.sha256(p.read_bytes()).hexdigest()
+          assert digest == "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf", "checkpoint index identity changed"
+          print("REAL_CHECKPOINT_INDEX_PINNED",digest)
+          PY
+          rsync -a --exclude=.git --exclude=.github --exclude=preregistered_corpus_source --exclude=results --exclude=attestations --exclude=build --exclude=build-persistent ./ "$SCRATCH/src/"
+      - name: Execute unit tests before any real capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd tools
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PYBIN" -m unittest test_hcp_p3_true_boundary.py test_hcp_p2_policy_guard.py -v
+      - name: Instrument only scratch C pre-renorm true rank6/7 boundary and h2
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PYBIN" tools/hcp_p3_router_instrument.py --scratch-source "$SCRATCH/src"
+      - name: Compile isolated DeepSeek research binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          nice -n 10 cmake --build "$SCRATCH/build" --target qwen_infer_gpu -j2
+          shasum -a 256 "$SCRATCH/build/qwen_infer_gpu"
+      - name: Capture true full-softmax Top6/7 for all 26 routed layers in 120 fresh model processes
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" tools/hcp_p3_real_capture.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" \
+            --checkpoint-index "$INDEX" \
+            --tokenizer-dir "$TOKENIZER_ROOT" \
+            --model-root "$MODEL_ROOT" \
+            --prompt-bank-dir preregistered_corpus_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --output "$SCRATCH/prompts"
+      - name: Verify real rank-7 IDs and construct future causal margin labels
+        shell: bash
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" tools/hcp_p3_boundary_features.py \
+            --suite "$SCRATCH/prompts" --output "$SCRATCH/data/p3_boundary_features.json"
+      - name: Compare five risk-forecast arms with independent prompt final holdout
+        shell: bash
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" tools/hcp_p3_true_boundary_eval.py \
+            --features "$SCRATCH/data/p3_boundary_features.json" \
+            --output "$SCRATCH/upload/p3_true_boundary_eval.json"
+      - name: Seal strictly nonpromotable actual 26-layer rank-7 observation receipt
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$SCRATCH/upload"
+          "$PYBIN" - <<'PY'
+          import os,json,hashlib,pathlib
+          root=pathlib.Path(os.environ["SCRATCH"])
+          result=root/"upload"/"p3_true_boundary_eval.json"
+          if not result.is_file():raise SystemExit("BLOCKED: no true boundary evidence")
+          raw=result.read_bytes();r=json.loads(raw)
+          assert r["schema"]=="beglin-hcp-p3-real-topk-boundary-forecast-v1"
+          assert r["status"]=="TRUE_ROUTER_RISK_FORECAST_EVALUATED_RESEARCH_ONLY"
+          assert r["true_K_vs_Kplus1_measured"] and r["full_64_expert_probabilities_before_renormalization"]
+          assert (r["train_prompts"],r["validation_prompts"],r["holdout_prompts"])==(72,24,24)
+          assert not r["native_policy_rebind_allowed"] and not r["production_touched"]
+          assert set(r["heldout"])=={"static","persistence","flat","shared_twolevel","separate_twolevel"}
+          manifest=root/"prompts/runs_p3.json"
+          d=json.loads(manifest.read_text())
+          assert d["prompt_count"]==120 and d["causal_fresh_process_per_prompt"]
+          receipt={
+            "schema":"beglin-hcp-p3-real-topk-boundary-receipt-v1",
+            "status":"PASS_MEASURED_REAL_BOUNDARY_NO_NATIVE_AUTHORITY",
+            "source_head":os.environ["GITHUB_SHA"],
+            "pinned_corpus_commit":"1b4606eef596e10f3003f7d9f07b607616e990d6",
+            "model_index_sha256":d["source_index_sha256"],
+            "scratch_binary_sha256":d["source_binary_sha256"],
+            "manifest_sha256":hashlib.sha256(manifest.read_bytes()).hexdigest(),
+            "result_sha256":hashlib.sha256(raw).hexdigest(),
+            "full_top6_top7_before_renorm":True,
+            "routed_layers_per_position":26,
+            "hook_logits_and_macro_route_exact_parity":True,
+            "raw_hidden_uploaded":False,"raw_router_scores_uploaded":False,
+            "full_logits_uploaded":False,"model_weights_uploaded":False,
+            "native_precision_policy_changed":False,"production_touched":False,
+            "automatic_live_promotion":False
+          }
+          (root/"upload"/"receipt.json").write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\n")
+          print("HCP_P3_REAL_TOPK_RECEIPT",json.dumps(receipt,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hcp-p3-true-rank7-real-multiscale-proxy
+          path: ${{ runner.temp }}/hcp-p3-true-rank7-${{ github.run_id }}/upload/*.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove only this run's scratch build and raw activations
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import os,pathlib,shutil
+          base=pathlib.Path(os.environ['RUNNER_TEMP']).resolve()
+          p=base/('hcp-p3-true-rank7-'+os.environ['GITHUB_RUN_ID'])
+          if p.is_dir() and p.resolve().parent==base:
+              shutil.rmtree(p)
+              print('SCRATCH_REMOVED',p.name)
+          PY
