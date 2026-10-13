@@ -1,0 +1,38 @@
+{
+  "machine_learning": [
+    "Why can a model achieve low training loss but poor performance on unseen examples?",
+    "Explain the difference between calibration and discrimination in probabilistic predictions.",
+    "How does dropout change the learning behavior of a neural network during training?",
+    "When should cross validation be grouped by patient rather than by individual measurement?",
+    "Describe why gradient clipping can stabilize optimization of deep sequence models.",
+    "Compare knowledge distillation with ordinary supervised learning from labeled examples.",
+    "How does class imbalance change the interpretation of accuracy and precision?",
+    "Why can a quantized model choose different experts near a routing score tie?",
+    "Explain the distinction between weight compression and reducing executed operations.",
+    "How does data leakage during feature selection bias the final test metric?"
+  ],
+  "robotics": [
+    "How can wheel odometry drift while a robot drives through a long corridor?",
+    "Explain why an inertial measurement unit and a camera provide complementary motion signals.",
+    "What does a proportional integral derivative controller change in motor speed regulation?",
+    "Why should a robot verify free space before planning a sharp turn?",
+    "Describe how simultaneous localization and mapping handles uncertain landmark positions.",
+    "How can a robot arm estimate joint torques from link masses and accelerations?",
+    "Explain the difference between open loop and closed loop control of a mobile robot.",
+    "Why can a wheel slip cause systematic errors in dead reckoning?",
+    "How does a Kalman filter combine a noisy prediction with a new measurement?",
+    "What safety checks belong in a simulation before testing a robot near people?"
+  ],
+  "energy": [
+    "Why does a heat pump move heat efficiently even when outdoor air feels cold?",
+    "Explain how a wind turbine converts air momentum into rotating shaft power.",
+    "How does a lithium ion battery store and release usable electrical energy?",
+    "Compare a solar thermal collector with a photovoltaic panel.",
+    "Why does a power grid require balancing generation with consumption in real time?",
+    "Describe how insulation reduces conductive heat losses through a wall.",
+    "What makes a pumped hydro reservoir useful for storing intermittent renewable energy?",
+    "Explain how a transformer changes voltage without creating extra power.",
+    "Why can excess resistive losses heat an electrical transmission line?",
+    "How do engineers estimate efficiency for a combined cycle power plant?"
+  ]
+}
