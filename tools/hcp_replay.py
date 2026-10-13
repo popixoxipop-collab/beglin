@@ -22,7 +22,7 @@ import precision_context as pc
 
 SCHEMA = 'beglin-hcp-offline-cost-replay-v1'
 FIXTURE_RISKS = ('calm', 'bursts', 'alternating')
-MODES = ('incumbent', 'flat', 'hierarchical')
+MODES = ('static_risk_compatible', 'flat', 'hierarchical')
 HORIZONS = (4, 16, 64, 256, 512)
 
 class HCPError(ValueError): pass
@@ -105,7 +105,7 @@ def transition_price(profiles,cur,to,seen):
     return tr
 
 def chosen_if_one_request(profiles,base,cur,seen,risk):
-    options=[base] if risk else list(profiles)
+    options=[next(k for k in profiles if k != base)] if risk else list(profiles)
     ranked=[]
     for p in options:
         tr=transition_price(profiles,cur,p,seen)
@@ -115,7 +115,7 @@ def chosen_if_one_request(profiles,base,cur,seen,risk):
 
 def upper_plan(profiles,base,cur,seen,horizon,past_risks,current_risk):
     """No future risk labels are accessible: only current and past observations."""
-    if current_risk or any(past_risks[-16:]):return base
+    if current_risk or any(past_risks[-16:]):return next(k for k in profiles if k!=base)
     scored=[]
     for policy in profiles:
         tr=transition_price(profiles,cur,policy,seen)
@@ -129,33 +129,34 @@ def replay(model,measured,risks,*,mode,horizon=1):
     if mode not in MODES or horizon<1:raise HCPError('invalid comparison arm')
     if (model['base'],model['alternate'])!=(measured['base'],measured['alternate']):
         raise HCPError('policy identity mismatch between plan and evaluation')
-    base=model['base'];ref=model['profiles'];actual=measured['profiles']
+    base=model['base'];risk_policy=model['alternate'];ref=model['profiles'];actual=measured['profiles']
     cur=base;seen={base};planned=base;valid_until=0; history=[]
     transitions=0;upper_calls=0;guards=0;alt_requests=0
     total_ms=0.0;decision_ns=0
     for t,risk in enumerate(risks):
         if type(risk) is not bool:raise HCPError('risk records must be boolean synthetic flags')
-        if mode=='incumbent':desired=base
+        if mode=='static_risk_compatible':desired=risk_policy
         elif mode=='flat':
             t0=time.perf_counter_ns()
             desired=chosen_if_one_request(ref,base,cur,seen,risk)
             decision_ns+=time.perf_counter_ns()-t0
             upper_calls+=1
         else:
-            if t>=valid_until or (risk and planned!=base):
+            if t>=valid_until or (risk and planned!=risk_policy):
                 t0=time.perf_counter_ns()
                 planned=upper_plan(ref,base,cur,seen,horizon,history,risk)
                 valid_until=t+horizon
                 decision_ns+=time.perf_counter_ns()-t0
                 upper_calls+=1
             desired=planned
-            if risk and desired!=base:
-                desired=base;guards+=1
+            if risk and desired!=risk_policy:
+                desired=risk_policy;guards+=1
                 valid_until=t+1
-        if risk and desired!=base:raise HCPError('risk guard violated')
+        if risk and desired!=risk_policy:raise HCPError('risk policy evidence guard violated')
         tr=transition_price(actual,cur,desired,seen)
         if tr is None:
-            # The replay cannot claim a missing-cost transition is free.
+            # Missing-cost transitions cannot be priced; never bypass a risk rule.
+            if risk:raise HCPError('required risk transition lacks cost evidence')
             desired=base
             tr=transition_price(actual,cur,base,seen)
             if tr is None:raise HCPError('no measured rollback transition')
@@ -175,37 +176,50 @@ def run_experiment(inventory,*,model_path=None,scenario_size=2048):
     records,inv_sha=load_inventory(inventory)
     # Original first-archive calibration vs chronological/experimental holdout is
     # descriptive only; binary, cache and load differ between archived snapshots.
-    model=next((r for r in records if r['file'].startswith('p7-soak-precommit/')),records[0])
-    results=[]
-    for record in records:
-        for scenario in FIXTURE_RISKS:
-            risks=make_risk_sequence(scenario,scenario_size)
-            base=replay(model,record,risks,mode='incumbent')
-            rows=[base,replay(model,record,risks,mode='flat')]
-            for horizon in HORIZONS:rows.append(replay(model,record,risks,mode='hierarchical',horizon=horizon))
-            for row in rows:
-                row['modeled_delta_vs_incumbent_percent']=round(100*(row['modeled_sum_of_archived_p50_ms']/base['modeled_sum_of_archived_p50_ms']-1),6)
-            results.append({'cost_file':record['file'],'cost_file_sha256':record['evidence_sha'],
-              'scenario':scenario,'synthetic_risks':True,
-              'hypothetical_quality_permission':True,'arms':rows})
-    deltas=[row['modeled_delta_vs_incumbent_percent'] for item in results for row in item['arms'] if row['mode']=='hierarchical' and row['horizon']==512]
+    comparisons=[]
+    for planning_reference in records:
+        for evaluation_record in records:
+            for scenario in FIXTURE_RISKS:
+                risks=make_risk_sequence(scenario,scenario_size)
+                baseline=replay(planning_reference,evaluation_record,risks,mode='static_risk_compatible')
+                rows=[baseline,replay(planning_reference,evaluation_record,risks,mode='flat')]
+                for horizon in HORIZONS:
+                    rows.append(replay(planning_reference,evaluation_record,risks,mode='hierarchical',horizon=horizon))
+                for row in rows:
+                    row['modeled_delta_vs_static_risk_compatible_percent']=round(
+                        100*(row['modeled_sum_of_archived_p50_ms']/baseline['modeled_sum_of_archived_p50_ms']-1),6)
+                comparisons.append({
+                    'planning_cost_file':planning_reference['file'],
+                    'planning_cost_sha256':planning_reference['evidence_sha'],
+                    'evaluation_cost_file':evaluation_record['file'],
+                    'evaluation_cost_sha256':evaluation_record['evidence_sha'],
+                    'same_archive':planning_reference['evidence_sha']==evaluation_record['evidence_sha'],
+                    'scenario':scenario,'synthetic_risks':True,
+                    'hypothetical_quality_permission':True,'arms':rows})
+    oos=[item for item in comparisons if not item['same_archive']]
+    changes=[row['modeled_delta_vs_static_risk_compatible_percent'] for item in oos
+             for row in item['arms'] if row['mode']=='hierarchical' and row['horizon']==512]
+    summary={'h512_oos_modeled_delta_percent_min':round(min(changes),6),
+             'h512_oos_modeled_delta_percent_median':round(statistics.median(changes),6),
+             'h512_oos_modeled_delta_percent_max':round(max(changes),6),
+             'h512_oos_scenarios_improved':sum(x<0 for x in changes),
+             'h512_oos_scenarios_worsened':sum(x>0 for x in changes),
+             'h512_oos_scenarios_equal':sum(x==0 for x in changes)}
     return {'schema':SCHEMA,'status':'COUNTERFACTUAL_COST_ONLY_NOT_CERTIFIED',
       'source':'XOX archived measured cost p50 profiles + SYNTHETIC risk sequences',
-      'inventory_sha256':inv_sha,'planning_reference_file':model['file'],
-      'planning_reference_sha256':model['evidence_sha'],
+      'inventory_sha256':inv_sha,'planning_reference_design':'all ordered pairs of 10 archived cost snapshots, descriptive simulation',
       'archive_count':len(records),'risk_scenarios':list(FIXTURE_RISKS),
       'requests_per_scenario':scenario_size,
-      'policies':[model['base'],model['alternate']],
+      'policies':[records[0]['base'],records[0]['alternate']],
       'models_by_horizon':list(HORIZONS),
       'uncertainty':'Different archived runs use different binaries/cache conditions; summing p50 is a modeled scenario, not real measured multi-request speedup.',
       'no_event_conditioned_certificates_found_in_cost_inventory':True,
+      'hypothetical_event_rule':'risk requires alternate B, based on Beglin low_margin selector code; NOT per-event evidence in input trace',
       'no_actual_token_trajectories_or_logits':True,
       'quality_and_promotion_gate':'BLOCKED',
       'production_touched':False,'automatic_live_promotion':False,
-      'summary':{'h512_modeled_delta_percent_min':round(min(deltas),6),
-                 'h512_modeled_delta_percent_median':round(statistics.median(deltas),6),
-                 'h512_modeled_delta_percent_max':round(max(deltas),6)},
-      'comparisons':results}
+      'summary':summary,
+      'comparisons':comparisons}
 
 def main():
     p=argparse.ArgumentParser()
@@ -217,5 +231,5 @@ def main():
     args.output.write_text(json.dumps(x,sort_keys=True,indent=2)+'\n')
     print('HCP_REPLAY',json.dumps({**x['summary'],'status':x['status'],
          'archive_count':x['archive_count'],'scenario_count':len(x['comparisons']),
-         'reference':x['planning_reference_file']},sort_keys=True))
+         'planning_reference_design':x['planning_reference_design']},sort_keys=True))
 if __name__=='__main__':main()
