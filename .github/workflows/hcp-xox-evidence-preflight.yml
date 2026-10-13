@@ -1,0 +1,89 @@
+name: Beglin Hierarchical Compute Planner XOX Evidence Preflight
+on:
+  push:
+    branches: [research/hierarchical-compute-planner-20261014]
+    paths: [".github/workflows/hcp-xox-evidence-preflight.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  readonly-evidence:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Confirm device and inspect exact local benchmark evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local" && test "$(id -un)" = "xox"
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import hashlib,json,os,pathlib,sys
+          sys.path.insert(0,str(pathlib.Path.cwd()/"tools"))
+          import precision_context as pc
+          base=pathlib.Path("/Users/xox/vdsp_shadow_runs/precision_e2e_cost")
+          candidates=[
+              base/"p4-20261003"/"result.json",
+              base/"p4"/"result.json",
+              base/"result.json",
+          ]
+          if base.is_dir():
+              for p in sorted(base.glob("*/result.json"))[:32]:
+                  if p not in candidates:candidates.append(p)
+          results=[]
+          for p in candidates:
+              if not p.is_file() or p.is_symlink():continue
+              if p.stat().st_size>5000000:continue
+              raw=p.read_bytes()
+              try:d=json.loads(raw)
+              except Exception:continue
+              if d.get("schema")!="beglin-precision-e2e-cost-v1":continue
+              profiles=d.get("accepted_policy_profiles",[])
+              sanitized=[]
+              for entry in profiles:
+                  try:
+                      pol=pc.normalize_policy(entry["policy"])
+                      ph=pc.policy_hash(pol)
+                      if ph!=entry.get("policy_hash"):raise ValueError("policy hash mismatch")
+                      transitions=[]
+                      for tr in entry.get("transitions",[]):
+                          transitions.append({"from_policy_hash":tr["from_policy_hash"],
+                             "cache_state":tr["cache_state"],
+                             "p50_transition_ms":float(tr["p50_transition_ms"]),
+                             "cache_bytes_added":int(tr.get("cache_bytes_added",0))})
+                      sanitized.append({"policy":pol,"policy_hash":ph,
+                         "steady_roundtrip_p50_ms":float(entry["steady_roundtrip_p50_ms"]),
+                         "steady_engine_p50_ms":float(entry["steady_engine_p50_ms"]),
+                         "expected_inference_passes":int(entry.get("expected_inference_passes",1)),
+                         "transitions":transitions})
+                  except (TypeError,KeyError,ValueError) as e:
+                      raise RuntimeError("cost evidence malformed") from e
+              results.append({"source":"XOX_MEASURED_ARCHIVED_COST","file_basename":p.name,
+                 "relative_to_cost_root":str(p.relative_to(base)),
+                 "file_sha256":hashlib.sha256(raw).hexdigest(),
+                 "source_head":str(d.get("source_head","")),
+                 "source_binary_sha256":str(d.get("binary_sha256","")),
+                 "source_status":d.get("status"),
+                 "production_touched":d.get("production_touched"),
+                 "startup_policy_hash":pc.policy_hash(d["startup_policy"]),
+                 "accepted_policy_profiles":sanitized,
+                 "has_risk_event_stream":False,"has_combined_policy_acceptance_records":False})
+          info={"schema":"beglin-hcp-xox-evidence-preflight-v1",
+                "evidence_files_found":len(results),
+                "results":results,"production_touched":False,
+                "source_head":os.getenv("GITHUB_SHA"),
+                "no_policy_writes":True,"no_model_load":True,
+                "no_network":True}
+          scratch=pathlib.Path(os.environ["RUNNER_TEMP"])/("hcp-preflight-"+os.environ["GITHUB_RUN_ID"])
+          scratch.mkdir(parents=True,exist_ok=False)
+          (scratch/"evidence_inventory.json").write_text(json.dumps(info,sort_keys=True,indent=2)+"\n")
+          print("HCP_XOX_READONLY_PREFLIGHT",json.dumps(info,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-hcp-cost-evidence-inventory
+          path: \${{ runner.temp }}/hcp-preflight-\${{ github.run_id }}/evidence_inventory.json
+          if-no-files-found: error
+          retention-days: 30
