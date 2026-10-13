@@ -8,7 +8,7 @@ The label is never an authorized precision trigger by itself.
 from __future__ import annotations
 import argparse,hashlib,json,math,pathlib,re
 import numpy as np
-from hcp_p2_real_feature_builder import read_hidden,read_route,logits_entropy_file,sha as sha_file
+from hcp_p2_real_feature_builder import read_hidden,read_route,logits_entropy_file,digest as sha_file
 
 SCHEMA="beglin-hcp-p3-true-router-boundary-features-v1"
 P3_RE=re.compile(r"^pos (\d+) layer (\d+) kth (\d+) runnerup (\d+) p6 ([\d.eE+-]+) p7 ([\d.eE+-]+) relgap ([\d.eE+-]+) logratio ([\d.eE+-]+) entropy ([\d.eE+-]+)$")
