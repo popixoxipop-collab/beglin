@@ -1,0 +1,40 @@
+name: Beglin HCP P2 Actual Lineage Signal Survey
+on:
+  push:
+    branches: [research/hierarchical-compute-planner-p2-20261014]
+    paths: [".github/workflows/hcp-p2-lineage-signal-survey.yml"]
+permissions:
+  contents: read
+jobs:
+  p7-verified-readonly:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify P7 SHA lineage and summarize numeric signals read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local" && test "$(id -un)" = "xox"
+          python3 tools/hcp_p2_lineage_survey.py \
+            --source-root /Users/xox/vdsp_serving/precision-p7-soak-long600-4baf28b \
+            --output "$RUNNER_TEMP/p2_verified_signal_coverage.json"
+          python3 - <<'PY'
+          import json,os,pathlib
+          path=pathlib.Path(os.environ['RUNNER_TEMP'])/'p2_verified_signal_coverage.json'
+          z=json.loads(path.read_text())
+          assert z['event_count']==600 and z['operator_injected_risk'] is True
+          assert z['real_multidomain_latent_training_suitable'] is False
+          assert z['native_policy_execution_allowed'] is False
+          assert z['production_touched'] is False
+          print('P2_LINEAGE_FAIL_CLOSED_PASS')
+          PY
+      - name: Upload sanitized observation survey
+        uses: actions/upload-artifact@v4
+        with:
+          name: beglin-hcp-p2-verified-p7-signal-coverage
+          path: ${{ runner.temp }}/p2_verified_signal_coverage.json
+          if-no-files-found: error
+          retention-days: 30
