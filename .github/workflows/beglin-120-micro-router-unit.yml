@@ -1,0 +1,25 @@
+name: Beglin 120 Prompt Micro Router and Lowrank Unit
+on:
+  push:
+    branches: [research/trainable-micro-router-120prompt-20261014]
+    paths: [".github/workflows/beglin-120-micro-router-unit.yml"]
+permissions:
+  contents: read
+jobs:
+  isolated-unit:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate new lowrank and real-evidence reader without weights or production
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local" && test "$(id -un)" = "xox"
+          cd experiments/hierarchical_tupper_moe
+          export OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2
+          /Users/xox/.venv-vllm-metal/bin/python3 -m py_compile trainable_micro_router.py prompt_holdout_micro_eval.py capture_prompt_suite.py
+          /Users/xox/.venv-vllm-metal/bin/python3 -m unittest test_trainable_micro_lowrank.py test_trainable_micro_router.py test_prompt_holdout_micro_eval.py test_prompt_bank_120.py -v
+          echo "LOWRANK_MICRO_UNIT_PASS"
