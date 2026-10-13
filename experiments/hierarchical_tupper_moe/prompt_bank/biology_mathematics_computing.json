@@ -1,0 +1,38 @@
+{
+  "biology": [
+    "How does the cell membrane regulate the movement of ions across its surface?",
+    "Explain how ribosomes convert messenger RNA instructions into a protein chain.",
+    "Why do plants close stomata during prolonged drought conditions?",
+    "Describe how antibodies distinguish familiar pathogens from new molecular targets.",
+    "What is the function of mitochondria during aerobic cellular respiration?",
+    "Explain the role of natural selection when an environment changes across generations.",
+    "How do neurons transmit an electrical impulse along an axon?",
+    "Why do enzymes have different preferred ranges of temperature and acidity?",
+    "Compare how seeds disperse by wind and by animal transport.",
+    "How can feedback loops maintain stable blood glucose concentrations?"
+  ],
+  "mathematics": [
+    "Why does a proof by induction require both a base case and an inductive step?",
+    "Explain the geometric interpretation of the determinant of a square matrix.",
+    "When does the law of large numbers apply to repeated random measurements?",
+    "How does a Fourier series approximate a periodic waveform with simple harmonics?",
+    "Describe the difference between a local minimum and a global minimum in optimization.",
+    "Why does a noninvertible matrix have a zero determinant?",
+    "Explain how Bayes theorem updates a prior probability after observing evidence.",
+    "How does an eigenvector differ from an arbitrary direction under a linear map?",
+    "What conditions are needed for a continuous function to attain a maximum?",
+    "Explain why correlation alone does not establish a causal relationship."
+  ],
+  "computing": [
+    "Explain how a cache hierarchy changes the cost of repeated memory accesses.",
+    "Why can a hash collision occur even with a carefully chosen hash function?",
+    "How does a database transaction prevent partially completed updates from becoming visible?",
+    "Compare the behavior of a stack and a queue when processing requests.",
+    "Why can two threads produce a race condition when incrementing the same counter?",
+    "Describe how virtual memory separates process address spaces from physical storage.",
+    "How does an index improve a database query while making writes more expensive?",
+    "Explain why a cryptographic signature differs from an ordinary checksum.",
+    "What problem does backpressure solve in a streaming data pipeline?",
+    "How does beam search differ from greedy decoding in a language model?"
+  ]
+}
