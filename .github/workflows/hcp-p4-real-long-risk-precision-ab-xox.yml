@@ -1,0 +1,195 @@
+name: Beglin HCP P4 Real 112 Token 26-Layer Risk and Precision AB
+on:
+  push:
+    branches: [research/hcp-p4-longcontext-costquality-20261014]
+    paths: [".github/workflows/hcp-p4-real-long-risk-precision-ab-xox.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: beglin-hcp-p4-xox-long-risk-precision-ab
+  cancel-in-progress: false
+jobs:
+  measure:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 1b4606eef596e10f3003f7d9f07b607616e990d6
+          path: frozen_prompt_source
+          persist-credentials: false
+      - name: Strict XOX identity, model hashes, scratch and disk guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local" && test "$(id -un)" = "xox"
+          INDEX=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json
+          TOKENIZER_DIR=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors
+          MOE_BASE=/Users/xox/vdsp_local_data/moe_base_deepseek
+          PY=/Users/xox/.venv-vllm-metal/bin/python3
+          SCRATCH="$RUNNER_TEMP/hcp-p4-real-112-$GITHUB_RUN_ID"
+          test -x "$PY" && test -f "$INDEX" && test ! -L "$INDEX"
+          test -f "$TOKENIZER_DIR/tokenizer.json"
+          test -f "$MOE_BASE/weights_moe/deepseek_moe_af.bin"
+          test ! -e "$SCRATCH"
+          mkdir -p "$SCRATCH/src" "$SCRATCH/upload"
+          echo "INDEX=$INDEX" >> "$GITHUB_ENV"
+          echo "TOKENIZER_DIR=$TOKENIZER_DIR" >> "$GITHUB_ENV"
+          echo "MOE_BASE=$MOE_BASE" >> "$GITHUB_ENV"
+          echo "PY=$PY" >> "$GITHUB_ENV"
+          echo "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          "$PY" - <<'PY'
+          import hashlib,os,pathlib,shutil
+          p=pathlib.Path(os.environ["INDEX"])
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=="d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+          free=shutil.disk_usage(os.environ["RUNNER_TEMP"]).free
+          if free<3*1024**3:raise SystemExit("BLOCKED: need at least 3 GiB free runner scratch")
+          print("P4_XOX_SAFE_PRECHECK_PASS",{"free_gib":round(free/1024**3,2)})
+          PY
+          rsync -a --exclude=.git --exclude=.github --exclude=frozen_prompt_source --exclude=results --exclude=attestations --exclude=build --exclude=build-persistent ./ "$SCRATCH/src/"
+      - name: Validate exact 36-prompt source and independent-safe data contract
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PY" -m py_compile \
+            tools/hcp_p4_long_trace_capture.py tools/hcp_p4_native_policies_ab.py tools/hcp_p4_long_router_instrument.py
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 "$PY" tools/hcp_p4_long_prompt_registry.py \
+            --bank-dir frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer-dir "$TOKENIZER_DIR" --public-output "$SCRATCH/upload/registry_safe.json"
+      - name: Patch scratch C source only and compile exact original DeepSeek AF
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PY" tools/hcp_p4_long_router_instrument.py --scratch-source "$SCRATCH/src"
+          cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          nice -n 10 cmake --build "$SCRATCH/build" --target qwen_infer_gpu -j2
+          shasum -a 256 "$SCRATCH/build/qwen_infer_gpu"
+      - name: First 112token actual C logits/routing hook on-off parity, all h2 positions
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" - <<'PY'
+          import os,pathlib,shutil
+          from tools.hcp_p4_long_prompt_registry import prepare
+          from tools.hcp_p4_long_trace_capture import run_one,trace_to_features
+          root=pathlib.Path(os.environ["SCRATCH"])
+          data=prepare(
+            "frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank",
+            os.environ["TOKENIZER_DIR"])
+          ids=data["prompts"][0]["token_ids"]
+          binary=root/"build/qwen_infer_gpu"
+          model_root=pathlib.Path(os.environ["MOE_BASE"])
+          on=run_one(binary,model_root,ids,root/"smoke_on",instrument=True)
+          off=run_one(binary,model_root,ids,root/"smoke_off",instrument=False)
+          for key in ("moe3a_c_logits.bin","moe3a_c_routing.txt"):
+              assert on["sha256"][key]==off["sha256"][key],f"INSTRUMENTATION_CHANGED_{key}"
+          seq,ref,meta=trace_to_features(root/"smoke_on",len(ids))
+          assert len(seq)==len(ids)-1 and meta["rank7_observation_count"]==len(ids)*26
+          assert meta["complete_future_32_labels"]>=48
+          print("P4_ACTUAL_112TOKEN_SMOKE_PASS",{"tokens":len(ids),
+             "actual_fullsoftmax_rank7":meta["rank7_observation_count"],
+             "identical_original_logits_and_routes":True})
+          for p in (root/"smoke_on",root/"smoke_off"):shutil.rmtree(p)
+          PY
+      - name: Capture 36 independent longer model prompts with actual 26-layer routing gaps
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" tools/hcp_p4_long_trace_capture.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" \
+            --checkpoint-index "$INDEX" \
+            --tokenizer-dir "$TOKENIZER_DIR" \
+            --model-root "$MOE_BASE" \
+            --bank-dir frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --scratch "$SCRATCH/capture"
+          cp "$SCRATCH/capture/derived_features.json" "$SCRATCH/upload/p4_derived_long_features.json"
+      - name: Smoke real isolated qNg64 precision policies A and B on matched 112-token input
+        shell: bash
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" tools/hcp_p4_native_policies_ab.py \
+            --features "$SCRATCH/capture/derived_features.json" \
+            --scratch-only-reference "$SCRATCH/capture/references_INTERNAL_ONLY.json" \
+            --worker-root "$SCRATCH/native_smoke_worker" \
+            --output "$SCRATCH/native_ab_smoke_only.json" \
+            --limit 2 --new-tokens 4
+      - name: Measure matched native qNg64 A/B full-model tokens, cost, switches and resident RSS
+        shell: bash
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" tools/hcp_p4_native_policies_ab.py \
+            --features "$SCRATCH/capture/derived_features.json" \
+            --scratch-only-reference "$SCRATCH/capture/references_INTERNAL_ONLY.json" \
+            --worker-root "$SCRATCH/native_all_worker" \
+            --output "$SCRATCH/upload/p4_native_precision_ab.json" \
+            --limit 36 --new-tokens 4
+      - name: Seal source identity and safe complete-or-blocked audit receipt
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$SCRATCH/upload"
+          "$PY" - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path(os.environ["SCRATCH"])
+          up=root/"upload"
+          files={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(up.glob("*.json"))}
+          full=up/"p4_derived_long_features.json"
+          native=up/"p4_native_precision_ab.json"
+          approved=False
+          if full.is_file() and native.is_file():
+              a=json.loads(full.read_text());b=json.loads(native.read_text())
+              assert a["schema"]=="beglin-hcp-p4-long-actual-af-risk-dataset-v1"
+              assert a["record_count"]==36 and a["token_position_count"]>3500
+              assert a["production_touched"] is False and a["raw_prompt_token_ids_exported"] is False
+              assert b["schema"]=="beglin-hcp-p4-matched-native-qng64-ab-v1"
+              assert b["sample_pairs"]==36 and b["reference_feature_sha256"]==files["p4_derived_long_features.json"]
+              assert b["active_route_sha_before_after_equal"] is True
+              assert b["production_touched"] is False and b["native_accuracy_vs_human_reference_measured"] is False
+              approved=True
+          receipt={"schema":"beglin-hcp-p4-context-costquality-safe-evidence-v1",
+              "status":"COMPLETE_RESEARCH_ONLY" if approved else "PARTIAL_BLOCKED_NOT_EVALUATED",
+              "source_commit":os.environ["GITHUB_SHA"],
+              "frozen_prompt_source_commit":"1b4606eef596e10f3003f7d9f07b607616e990d6",
+              "checkpoint_index_sha256":"d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+              "artifact_sha256":files,
+              "complete_risk_and_native_ab":approved,
+              "raw_hidden_uploaded":False,"raw_token_ids_uploaded":False,
+              "full_logits_uploaded":False,"raw_router_scores_uploaded":False,
+              "production_touched":False,"active_precision_policy_changed":False,
+              "auto_live_promotion":False}
+          (up/"receipt.json").write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\n")
+          print("P4_COMPLETENESS_AND_AUTHORITY_RECEIPT",json.dumps(receipt,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beglin-hcp-p4-112token-actual-risk-and-native-policy-ab
+          path: ${{ runner.temp }}/hcp-p4-real-112-${{ github.run_id }}/upload/*.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Clean only this run root, including tokens, logits, AF model scratch and native worker
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import pathlib,os,shutil
+          base=pathlib.Path(os.environ["RUNNER_TEMP"]).resolve()
+          root=base/("hcp-p4-real-112-"+os.environ["GITHUB_RUN_ID"])
+          if root.is_dir() and root.resolve().parent==base:
+              shutil.rmtree(root)
+              print("P4_ONLY_OWN_SCRATCH_CLEANED",root.name)
+          PY
