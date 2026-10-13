@@ -1,0 +1,741 @@
+{
+  "evidence_files_found": 10,
+  "no_model_load": true,
+  "no_network": true,
+  "no_policy_writes": true,
+  "production_touched": false,
+  "results": [
+    {
+      "accepted_policy_profiles": [
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 5,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 6,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+          "steady_engine_p50_ms": 168.059,
+          "steady_roundtrip_p50_ms": 191.80770800448954,
+          "transitions": [
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+              "p50_transition_ms": 318.15
+            }
+          ]
+        },
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 6,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 5,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+          "steady_engine_p50_ms": 168.02,
+          "steady_roundtrip_p50_ms": 179.82420802582055,
+          "transitions": [
+            {
+              "cache_bytes_added": 8650752,
+              "cache_state": "cold",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 627.953
+            },
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 316.855
+            }
+          ]
+        }
+      ],
+      "file_basename": "result.json",
+      "file_sha256": "9d21155da1a1c17a0082784c41196f2700ec3b8777e96209c03ca81120eca692",
+      "has_combined_policy_acceptance_records": false,
+      "has_risk_event_stream": false,
+      "production_touched": false,
+      "relative_to_cost_root": "p4-20261003/result.json",
+      "source": "XOX_MEASURED_ARCHIVED_COST",
+      "source_binary_sha256": "a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028",
+      "source_head": "4faab46dc6a44c5f41df2745d03976e16e05b305",
+      "source_status": "PASS",
+      "startup_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1"
+    },
+    {
+      "accepted_policy_profiles": [
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 5,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 6,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+          "steady_engine_p50_ms": 167.316,
+          "steady_roundtrip_p50_ms": 183.4175000000009,
+          "transitions": [
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+              "p50_transition_ms": 306.902
+            }
+          ]
+        },
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 6,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 5,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+          "steady_engine_p50_ms": 167.212,
+          "steady_roundtrip_p50_ms": 186.09899999999868,
+          "transitions": [
+            {
+              "cache_bytes_added": 8650752,
+              "cache_state": "cold",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 616.72
+            },
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 307.046
+            }
+          ]
+        }
+      ],
+      "file_basename": "result.json",
+      "file_sha256": "e4e5ed9cc05a5d85b565b0accbae4df90143b9703d54aac4c3a52404b3c463b4",
+      "has_combined_policy_acceptance_records": false,
+      "has_risk_event_stream": false,
+      "production_touched": false,
+      "relative_to_cost_root": "p4-5c9e111/result.json",
+      "source": "XOX_MEASURED_ARCHIVED_COST",
+      "source_binary_sha256": "b7dbe0fe768f53ed22dd2ec88d44d61a52d647a93509af9f57d63f98fa2d4c86",
+      "source_head": "5c9e111bfd3ff12e1274864cb7fe47fa287d7e11",
+      "source_status": "PASS",
+      "startup_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1"
+    },
+    {
+      "accepted_policy_profiles": [
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 5,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 6,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+          "steady_engine_p50_ms": 167.265,
+          "steady_roundtrip_p50_ms": 187.11754099999922,
+          "transitions": [
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+              "p50_transition_ms": 306.628
+            }
+          ]
+        },
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 6,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 5,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+          "steady_engine_p50_ms": 168.278,
+          "steady_roundtrip_p50_ms": 187.3042500000004,
+          "transitions": [
+            {
+              "cache_bytes_added": 8650752,
+              "cache_state": "cold",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 616.0
+            },
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 307.49
+            }
+          ]
+        }
+      ],
+      "file_basename": "result.json",
+      "file_sha256": "9647217bf707741fdbf11c7ff0f32bbf719fd090b61060c016bf9e8f4b923871",
+      "has_combined_policy_acceptance_records": false,
+      "has_risk_event_stream": false,
+      "production_touched": false,
+      "relative_to_cost_root": "p4-pass-metrics-78740c0/result.json",
+      "source": "XOX_MEASURED_ARCHIVED_COST",
+      "source_binary_sha256": "b7dbe0fe768f53ed22dd2ec88d44d61a52d647a93509af9f57d63f98fa2d4c86",
+      "source_head": "78740c0209d4f0483de9b85b47fdb99767c2c7f4",
+      "source_status": "PASS",
+      "startup_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1"
+    },
+    {
+      "accepted_policy_profiles": [
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 5,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 6,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+          "steady_engine_p50_ms": 167.954,
+          "steady_roundtrip_p50_ms": 181.09783299999904,
+          "transitions": [
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+              "p50_transition_ms": 306.687
+            }
+          ]
+        },
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 6,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 5,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+          "steady_engine_p50_ms": 168.652,
+          "steady_roundtrip_p50_ms": 186.727249999997,
+          "transitions": [
+            {
+              "cache_bytes_added": 8650752,
+              "cache_state": "cold",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 620.999
+            },
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 307.497
+            }
+          ]
+        }
+      ],
+      "file_basename": "result.json",
+      "file_sha256": "3faf5269632e030811b0e5e51ce7e7720066cb14eb82a8c0c505025b42bcae5b",
+      "has_combined_policy_acceptance_records": false,
+      "has_risk_event_stream": false,
+      "production_touched": false,
+      "relative_to_cost_root": "p4-policy-20261003/result.json",
+      "source": "XOX_MEASURED_ARCHIVED_COST",
+      "source_binary_sha256": "b7dbe0fe768f53ed22dd2ec88d44d61a52d647a93509af9f57d63f98fa2d4c86",
+      "source_head": "",
+      "source_status": "PASS",
+      "startup_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1"
+    },
+    {
+      "accepted_policy_profiles": [
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 5,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 6,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+          "steady_engine_p50_ms": 170.847,
+          "steady_roundtrip_p50_ms": 192.09633300000206,
+          "transitions": [
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+              "p50_transition_ms": 316.806
+            }
+          ]
+        },
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 6,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 5,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+          "steady_engine_p50_ms": 175.699,
+          "steady_roundtrip_p50_ms": 203.5130840000008,
+          "transitions": [
+            {
+              "cache_bytes_added": 8650752,
+              "cache_state": "cold",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 641.401
+            },
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 315.739
+            }
+          ]
+        }
+      ],
+      "file_basename": "result.json",
+      "file_sha256": "3983373ac86d1e9da32bb03e7d4fcb8a1084a81c4c4929e9b42869990db0c60f",
+      "has_combined_policy_acceptance_records": false,
+      "has_risk_event_stream": false,
+      "production_touched": false,
+      "relative_to_cost_root": "p6-observability-0c62f0f/result.json",
+      "source": "XOX_MEASURED_ARCHIVED_COST",
+      "source_binary_sha256": "a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028",
+      "source_head": "0c62f0fb38875a15d9c89559f836c43ad1e2bedc",
+      "source_status": "PASS",
+      "startup_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1"
+    },
+    {
+      "accepted_policy_profiles": [
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 5,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 6,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+          "steady_engine_p50_ms": 168.632,
+          "steady_roundtrip_p50_ms": 183.50062500000064,
+          "transitions": [
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+              "p50_transition_ms": 318.213
+            }
+          ]
+        },
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 6,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 5,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+          "steady_engine_p50_ms": 184.072,
+          "steady_roundtrip_p50_ms": 199.01308300000053,
+          "transitions": [
+            {
+              "cache_bytes_added": 8650752,
+              "cache_state": "cold",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 629.242
+            },
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 318.862
+            }
+          ]
+        }
+      ],
+      "file_basename": "result.json",
+      "file_sha256": "d0a7f12d58a9b18090717b75a16669364927f7bb39e8724106cb178b400754ff",
+      "has_combined_policy_acceptance_records": false,
+      "has_risk_event_stream": false,
+      "production_touched": false,
+      "relative_to_cost_root": "p6-observability-4faab46/result.json",
+      "source": "XOX_MEASURED_ARCHIVED_COST",
+      "source_binary_sha256": "a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028",
+      "source_head": "4faab46dc6a44c5f41df2745d03976e16e05b305",
+      "source_status": "PASS",
+      "startup_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1"
+    },
+    {
+      "accepted_policy_profiles": [
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 5,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 6,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+          "steady_engine_p50_ms": 168.062,
+          "steady_roundtrip_p50_ms": 182.64020800000225,
+          "transitions": [
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+              "p50_transition_ms": 314.611
+            }
+          ]
+        },
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 6,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 5,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+          "steady_engine_p50_ms": 167.546,
+          "steady_roundtrip_p50_ms": 184.63866699999798,
+          "transitions": [
+            {
+              "cache_bytes_added": 8650752,
+              "cache_state": "cold",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 628.651
+            },
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 315.649
+            }
+          ]
+        }
+      ],
+      "file_basename": "result.json",
+      "file_sha256": "13cac65d375cf9ef2cb59d17a7f2b8204ce7ca9ae58c24426aac0955cce7c270",
+      "has_combined_policy_acceptance_records": false,
+      "has_risk_event_stream": false,
+      "production_touched": false,
+      "relative_to_cost_root": "p6-observability-d506e25/result.json",
+      "source": "XOX_MEASURED_ARCHIVED_COST",
+      "source_binary_sha256": "a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028",
+      "source_head": "d506e251f751a20eb0160edc46eb7de461257921",
+      "source_status": "PASS",
+      "startup_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1"
+    },
+    {
+      "accepted_policy_profiles": [
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 5,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 6,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+          "steady_engine_p50_ms": 168.216,
+          "steady_roundtrip_p50_ms": 223.66225000000028,
+          "transitions": [
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+              "p50_transition_ms": 317.077
+            }
+          ]
+        },
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 6,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 5,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+          "steady_engine_p50_ms": 166.194,
+          "steady_roundtrip_p50_ms": 183.47720799999934,
+          "transitions": [
+            {
+              "cache_bytes_added": 8650752,
+              "cache_state": "cold",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 632.702
+            },
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 316.753
+            }
+          ]
+        }
+      ],
+      "file_basename": "result.json",
+      "file_sha256": "eda23b8d594cd80a935975994d9b61f9882f4cc76a8ec7479efabe971d441336",
+      "has_combined_policy_acceptance_records": false,
+      "has_risk_event_stream": false,
+      "production_touched": false,
+      "relative_to_cost_root": "p6-review-f1f8307/result.json",
+      "source": "XOX_MEASURED_ARCHIVED_COST",
+      "source_binary_sha256": "a9b35e4e62480899962c6d3dc2890f5042c9a893abbae313b8366becb44cb028",
+      "source_head": "f1f8307048e92bbfa3467e2bb6dfe65a73eb2ed6",
+      "source_status": "PASS",
+      "startup_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1"
+    },
+    {
+      "accepted_policy_profiles": [
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 5,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 6,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+          "steady_engine_p50_ms": 167.49,
+          "steady_roundtrip_p50_ms": 184.62137499999898,
+          "transitions": [
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+              "p50_transition_ms": 313.445
+            }
+          ]
+        },
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 6,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 5,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+          "steady_engine_p50_ms": 168.051,
+          "steady_roundtrip_p50_ms": 183.1364999999998,
+          "transitions": [
+            {
+              "cache_bytes_added": 8650752,
+              "cache_state": "cold",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 625.098
+            },
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 314.727
+            }
+          ]
+        }
+      ],
+      "file_basename": "result.json",
+      "file_sha256": "8f969bd0b01a20a960bdf659ef9fe683cd953608b5f3286b3da597796edca30e",
+      "has_combined_policy_acceptance_records": false,
+      "has_risk_event_stream": false,
+      "production_touched": false,
+      "relative_to_cost_root": "p7-soak-4baf28b/result.json",
+      "source": "XOX_MEASURED_ARCHIVED_COST",
+      "source_binary_sha256": "d03f4748345195500179a6418142e1a73b2259a2e330ddcc0c28b702994d401e",
+      "source_head": "4baf28b3745a170fa7dc36a6630b1316ac0970fe",
+      "source_status": "PASS",
+      "startup_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1"
+    },
+    {
+      "accepted_policy_profiles": [
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 5,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 6,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+          "steady_engine_p50_ms": 169.014,
+          "steady_roundtrip_p50_ms": 183.1025000000004,
+          "transitions": [
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+              "p50_transition_ms": 306.777
+            }
+          ]
+        },
+        {
+          "expected_inference_passes": 1,
+          "policy": [
+            {
+              "layer": 26,
+              "n": 6,
+              "role": "shared_down_proj"
+            },
+            {
+              "layer": 3,
+              "n": 5,
+              "role": "shared_up_proj"
+            }
+          ],
+          "policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+          "steady_engine_p50_ms": 168.269,
+          "steady_roundtrip_p50_ms": 181.5964579999978,
+          "transitions": [
+            {
+              "cache_bytes_added": 8650752,
+              "cache_state": "cold",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 615.009
+            },
+            {
+              "cache_bytes_added": 0,
+              "cache_state": "warm",
+              "from_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+              "p50_transition_ms": 307.418
+            }
+          ]
+        }
+      ],
+      "file_basename": "result.json",
+      "file_sha256": "d830b33dc43c775cab52cfa20f419dd0dc020ccf8e0579b666abf94ad707aa19",
+      "has_combined_policy_acceptance_records": false,
+      "has_risk_event_stream": false,
+      "production_touched": false,
+      "relative_to_cost_root": "p7-soak-precommit/result.json",
+      "source": "XOX_MEASURED_ARCHIVED_COST",
+      "source_binary_sha256": "d03f4748345195500179a6418142e1a73b2259a2e330ddcc0c28b702994d401e",
+      "source_head": "e8615ecc8ff2c7abf49aaf10b4968428b7820fc2",
+      "source_status": "PASS",
+      "startup_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1"
+    }
+  ],
+  "schema": "beglin-hcp-xox-evidence-preflight-v1",
+  "source_head": "b7b6920461e3665c471ecb4543daad59cc1afe7b"
+}
