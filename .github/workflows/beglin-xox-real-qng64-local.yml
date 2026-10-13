@@ -42,6 +42,13 @@ jobs:
             --checkpoint-index "$INDEX" \
             --library "$SCRATCH/libqng64_dense.dylib" \
             --output "$SCRATCH/upload/native_qng64_real_projection.json"
+      - name: Measure correction prediction CPU cost at DeepSeek hidden dimension
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 /Users/xox/.venv-vllm-metal/bin/python3 benchmark_residual_predictors.py \
+            --output "$SCRATCH/upload/corrector_prediction_cpu_cost.json" --repeats 250
       - name: Seal read-only cost evidence
         if: always()
         shell: bash
@@ -56,6 +63,7 @@ jobs:
                     "real_checkpoint_index_sha256":hashlib.sha256(pathlib.Path(os.environ["INDEX"]).read_bytes()).hexdigest(),
                     "production_touched":False,"token_accuracy_tested":False,"native_micro_inference_used":False,
                     "result_present":f.is_file(),
+                    "cost_benchmark_present":(p/"corrector_prediction_cpu_cost.json").is_file(),
                     "result_sha256":hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else None}
           (p/"receipt.json").write_text(json.dumps(manifest,indent=2,sort_keys=True)+"\n")
           print("QNG64_LOCAL_RECEIPT",json.dumps(manifest,sort_keys=True))
