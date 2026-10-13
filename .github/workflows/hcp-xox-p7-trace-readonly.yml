@@ -104,9 +104,56 @@ jobs:
           (out/"p7_temporal_summary.json").write_text(json.dumps(result_out,indent=2,sort_keys=True)+"\n")
           print("HCP_P7_VERIFIED_TEMPORAL",json.dumps({k:v for k,v in result_out.items() if k!="active_low_margin_flags"},sort_keys=True))
           PY
+      - name: Cost-only A-B replay using verified 600 operator-injected risk flags
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,pathlib,statistics,sys
+          sys.path.insert(0,str(pathlib.Path.cwd()/"tools"))
+          import hcp_replay as h
+          d=pathlib.Path(os.environ["RUNNER_TEMP"])/("hcp-temporal-"+os.environ["GITHUB_RUN_ID"])
+          observed=json.loads((d/"p7_temporal_summary.json").read_text())
+          assert observed["status"]=="PASS" and observed["admission_count"]==600
+          flags=observed["active_low_margin_flags"]
+          assert len(flags)==600 and sum(flags)==200
+          historical,origin=h.load_inventory(pathlib.Path("tools")/"evidence_inventory.json")
+          table=[]
+          for training in historical:
+              for evaluation in historical:
+                  static=h.replay(training,evaluation,flags,mode="static_risk_compatible")
+                  alternatives=[h.replay(training,evaluation,flags,mode="flat")]
+                  alternatives.extend(h.replay(training,evaluation,flags,mode="hierarchical",horizon=H) for H in h.HORIZONS)
+                  for z in alternatives:
+                      z["delta_to_static_synthetic_cost_percent"]=round(
+                           100*(z["modeled_sum_of_archived_p50_ms"]/static["modeled_sum_of_archived_p50_ms"]-1),6)
+                  table.append({"training_cost_sha256":training["evidence_sha"],
+                     "evaluation_cost_sha256":evaluation["evidence_sha"],
+                     "same_cost_archive":training["evidence_sha"]==evaluation["evidence_sha"],
+                     "arms":alternatives})
+          vals=[v["delta_to_static_synthetic_cost_percent"] for item in table
+                for v in item["arms"] if not item["same_cost_archive"] and v["mode"]=="hierarchical" and v["horizon"]==512]
+          out={"schema":"beglin-hcp-p7-temporal-cost-replay-v1",
+               "status":"COUNTERFACTUAL_COST_ONLY_NOT_CERTIFIED",
+               "observed_p7_result_sha256":observed["source_result_sha256"],
+               "risk_flags":"REAL_P7_OPERATOR_INJECTED_SCHEDULE",
+               "observed_admissions":600,"observed_low_margin_injections":200,
+               "observed_actual_original_policy_hashes":len(observed["policies_after_hash_counts"]),
+               "modelled_policy_hashes":2,
+               "warning":"Third observed P7 policy absent from P4 two-policy cost profiles; this is NOT a native replay of actual P7 decisions",
+               "training_evaluation_cost_pairs":len(table),
+               "h512_out_of_archive_cost_delta_min":min(vals),
+               "h512_out_of_archive_cost_delta_median":statistics.median(vals),
+               "h512_out_of_archive_cost_delta_max":max(vals),
+               "no_native_counterfactual_tokens":True,
+               "production_touched":False,"promotion_allowed":False,
+               "comparisons":table}
+          (d/"p7_cost_counterfactual.json").write_text(json.dumps(out,indent=2,sort_keys=True)+"\n")
+          print("HCP_P7_COST_ONLY_RESULT",json.dumps({k:v for k,v in out.items() if k!="comparisons"},sort_keys=True))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: beglin-hcp-p7-real-temporal-observation
-          path: ${{ runner.temp }}/hcp-temporal-${{ github.run_id }}/p7_temporal_summary.json
+          path: ${{ runner.temp }}/hcp-temporal-${{ github.run_id }}/*.json
           if-no-files-found: error
           retention-days: 30
