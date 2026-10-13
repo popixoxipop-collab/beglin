@@ -38,8 +38,11 @@ def load(path):
         if not isinstance(rows,list) or len(rows)<96:
             raise ValueError("not a genuine 104-112-token sequence")
         for i in range(len(rows)):
-            if i+STRIDE>=len(rows):break
             cur=rows[i]
+            # The last observed h2 vector is at n-2 but its future-16 label
+            # may include the final token n-1. Only future-label presence,
+            # not the number of feature rows, determines horizon coverage.
+            if cur["true_future_gap_min"][str(STRIDE)] is None:break
             if int(cur.get("position",-1))!=i:raise ValueError("noncausal temporal alignment")
             fast=np.asarray(cur["fast"],dtype=float);slow=np.asarray(cur["slow16"],dtype=float)
             y=float(cur["true_future_gap_min"][str(STRIDE)])
