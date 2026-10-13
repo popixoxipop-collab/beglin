@@ -45,22 +45,22 @@ jobs:
           needle="        float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);\n        moe_rmsnorm(x, w_postln, h2, MOE_HIDDEN);"
           if s.count(needle)!=1:raise SystemExit(f"BLOCKED: source anchor occurred {s.count(needle)} times")
           insert="""
-        // Research-only activation capture in isolated temp worktree.
-        // Exact h2 is the pre-router, pre-gate/up input, not post-residual x.
-        if (l == 1 && pos >= 0 && pos < 8) {
-            const char *cap = getenv("BEGLIN_CAPTURE_PRE_FFN_INPUT");
-            if (cap && cap[0]) {
-                FILE *fp = fopen(cap, "ab");
-                if (!fp) { fprintf(stderr, "CAPTURE_OPEN_FAIL\\n"); exit(2); }
-                int hdr[3] = {pos, l, MOE_HIDDEN};
-                if (fwrite(hdr, sizeof(int), 3, fp) != 3 ||
-                    fwrite(h2, sizeof(float), MOE_HIDDEN, fp) != (size_t)MOE_HIDDEN) {
-                    fclose(fp); fprintf(stderr, "CAPTURE_WRITE_FAIL\\n"); exit(2);
-                }
-                if (fclose(fp) != 0) exit(2);
-            }
-        }
-"""
+          // Research-only activation capture in isolated temp worktree.
+          // Exact h2 is the pre-router, pre-gate/up input, not post-residual x.
+          if (l == 1 && pos >= 0 && pos < 8) {
+              const char *cap = getenv("BEGLIN_CAPTURE_PRE_FFN_INPUT");
+              if (cap && cap[0]) {
+                  FILE *fp = fopen(cap, "ab");
+                  if (!fp) { fprintf(stderr, "CAPTURE_OPEN_FAIL\\n"); exit(2); }
+                  int hdr[3] = {pos, l, MOE_HIDDEN};
+                  if (fwrite(hdr, sizeof(int), 3, fp) != 3 ||
+                      fwrite(h2, sizeof(float), MOE_HIDDEN, fp) != (size_t)MOE_HIDDEN) {
+                      fclose(fp); fprintf(stderr, "CAPTURE_WRITE_FAIL\\n"); exit(2);
+                  }
+                  if (fclose(fp) != 0) exit(2);
+              }
+          }
+          """
           s=s.replace(needle,needle+"\n"+insert)
           p.write_text(s)
           print("ISOLATED_PRE_FFN_HOOK_INSERTED",p.name, "occurrences",s.count("BEGLIN_CAPTURE_PRE_FFN_INPUT"))
