@@ -2,7 +2,10 @@ name: Beglin High Retention Strict Gate Unit
 on:
   push:
     branches: [research/micro-retention-90-95-99-20261014]
-    paths: [".github/workflows/beglin-high-retention-unit.yml"]
+    paths:
+      - ".github/workflows/beglin-high-retention-unit.yml"
+      - "experiments/hierarchical_tupper_moe/prompt_holdout_micro_eval.py"
+      - "experiments/hierarchical_tupper_moe/test_high_retention_gate.py"
 permissions:
   contents: read
 jobs:
