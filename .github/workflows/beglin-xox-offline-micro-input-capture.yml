@@ -108,6 +108,18 @@ jobs:
           print("SCRATCH_INFERENCE_STDERR_TAIL",result.stderr[-700:].replace("\n"," "))
           if result.returncode!=0:raise SystemExit("BLOCKED: scratch inference failed")
           PY
+      - name: Validate micro-channel assembly against real pre-FFN h2 and true top-K routing
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$SCRATCH/pre_ffn_layer1.bin"
+          test -s "$SCRATCH/moe3a_c_routing.txt"
+          cd experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 /Users/xox/.venv-vllm-metal/bin/python3 real_activation_micro_router.py \
+            --checkpoint-index /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json \
+            --capture "$SCRATCH/pre_ffn_layer1.bin" --routing "$SCRATCH/moe3a_c_routing.txt" \
+            --layer 1 --hidden 2048 --intermediate 1408 \
+            --output "$SCRATCH/actual_micro_router.json"
       - name: Verify true activation records and seal non-sensitive receipt
         shell: bash
         run: |
@@ -136,6 +148,9 @@ jobs:
               "pretrained_forward_executed":True,"actual_token_activations":True,
               "raw_activation_bytes_uploaded":False,"production_touched":False,
               "automatic_promotion":False}
+          checked=p/"actual_micro_router.json"
+          if not checked.is_file():raise SystemExit("BLOCKED: true-activation micro-router metrics missing")
+          o["real_micro_router_evaluation_sha256"]=hashlib.sha256(checked.read_bytes()).hexdigest()
           (p/"micro_capture_receipt.json").write_text(json.dumps(o,indent=2,sort_keys=True)+"\n")
           print("REAL_PRE_FFN_CAPTURE",json.dumps(o,sort_keys=True))
           PY
@@ -143,6 +158,6 @@ jobs:
         if: always()
         with:
           name: beglin-pre-ffn-capture-receipt-only
-          path: ${{ runner.temp }}/beglin-micro-capture-${{ github.run_id }}/micro_capture_receipt.json
+          path: ${{ runner.temp }}/beglin-micro-capture-${{ github.run_id }}/*.json
           if-no-files-found: warn
           retention-days: 30
