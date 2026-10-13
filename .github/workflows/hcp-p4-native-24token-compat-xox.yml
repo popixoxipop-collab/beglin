@@ -1,0 +1,131 @@
+name: Beglin HCP P4 Native GPU 24 Token Policy Compat Only
+on:
+  push:
+    branches: [research/hcp-p4-longcontext-costquality-20261014]
+    paths: [".github/workflows/hcp-p4-native-24token-compat-xox.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: beglin-hcp-p4-gpu-native-compatible-short
+  cancel-in-progress: false
+jobs:
+  native-short-a-b:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 1b4606eef596e10f3003f7d9f07b607616e990d6
+          path: frozen_prompt_source
+          persist-credentials: false
+      - name: Verify XOX identity, checkpoint and native cbatch32 source cap
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local" && test "$(id -un)" = "xox"
+          PY=/Users/xox/.venv-vllm-metal/bin/python3
+          INDEX=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json
+          TOKENIZER_ROOT=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors
+          SCRATCH="$RUNNER_TEMP/hcp-p4-native-short-$GITHUB_RUN_ID"
+          test ! -e "$SCRATCH" && test -x "$PY" && test -f "$INDEX"
+          test -f "$TOKENIZER_ROOT/tokenizer.json"
+          mkdir -p "$SCRATCH/upload"
+          echo "PY=$PY" >> "$GITHUB_ENV"
+          echo "INDEX=$INDEX" >> "$GITHUB_ENV"
+          echo "TOKENIZER_ROOT=$TOKENIZER_ROOT" >> "$GITHUB_ENV"
+          echo "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          "$PY" - <<'PY'
+          import pathlib,hashlib,sys
+          sys.path.insert(0,str(pathlib.Path("tools").resolve()))
+          import production_serving_supervisor_persistent as ps
+          import hcp_p4_native_24token_compat as p4
+          c=pathlib.Path("qwen_infer.c").read_text()
+          assert "#define MOE_CBATCH_MAXPOS 32" in c
+          assert "if (plen[r] >= MOE_CBATCH_MAXPOS)" in c
+          assert p4.PREFIX+p4.GEN<=p4.MAX_C_BATCH_POS-1
+          path=pathlib.Path(ps.PERSISTENT_BINARY)
+          assert path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest()==ps.EXPECTED_PERSISTENT_BINARY_SHA
+          print("P4_NATIVE_REAL_QNG64_SHORT_CONTEXT_CAP_VERIFIED")
+          PY
+      - name: Two matched prompts strict compatibility smoke
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" tools/hcp_p4_native_24token_compat.py \
+            --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer "$TOKENIZER_ROOT" --index "$INDEX" \
+            --root "$SCRATCH/smoke_worker" \
+            --output "$SCRATCH/upload/p4_native_short_smoke.json" --sample-count 2
+      - name: Native 12-domain matched policy A/B: compatible 24 input and four new tokens
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" tools/hcp_p4_native_24token_compat.py \
+            --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer "$TOKENIZER_ROOT" --index "$INDEX" \
+            --root "$SCRATCH/measure_worker" \
+            --output "$SCRATCH/upload/p4_native_short_12domain.json" --sample-count 12
+      - name: Seal compatible-only result and no long-context inference claim
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$SCRATCH/upload"
+          "$PY" - <<'PY'
+          import pathlib,json,hashlib,os
+          d=pathlib.Path(os.environ["SCRATCH"])/"upload"
+          p=d/"p4_native_short_12domain.json"
+          ok=False
+          if p.is_file():
+              result=json.loads(p.read_text())
+              assert result["schema"]=="beglin-hcp-p4-24token-native-compat-v1"
+              assert result["sample_pairs"]==12 and result["context_tokens"]==24
+              assert result["original_AF_reference_for_same_24token_prefix"] is False
+              assert result["long_112token_native_support"] is False
+              assert result["production_route_hash_unchanged"] is True
+              assert result["native_qng64_quality_certification"] is False
+              assert result["production_touched"] is False
+              ok=True
+          out={"schema":"beglin-hcp-p4-24token-native-compat-receipt-v1",
+                "status":"REAL_NATIVE_SHORT24_PAIRED_ONLY" if ok else "BLOCKED_NO_FULL_RESULT",
+                "source_head":os.environ["GITHUB_SHA"],
+                "model_binary_sha256":result["persistent_binary_sha256"] if ok else None,
+                "real_qng64_24token_12domain_done":ok,
+                "full_112token_native_compatibility":False,
+                "result_sha256":hashlib.sha256(p.read_bytes()).hexdigest() if ok else None,
+                "production_touched":False,"automatic_live_promotion":False}
+          (d/"receipt.json").write_text(json.dumps(out,sort_keys=True,indent=2)+"\n")
+          print("P4_NATIVE_SHORT24_EXPLICIT_LIMIT_RECEIPT",json.dumps(out,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beglin-hcp-p4-real-native-24token-compatible-ab
+          path: ${{ runner.temp }}/hcp-p4-native-short-${{ github.run_id }}/upload/*.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove only transient research workers and sensitive scratch prompt tokens
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import pathlib,os,shutil
+          runner=pathlib.Path(os.environ["RUNNER_TEMP"]).resolve()
+          target=runner/("hcp-p4-native-short-"+os.environ["GITHUB_RUN_ID"])
+          if target.is_dir() and target.resolve().parent==runner:
+              shutil.rmtree(target)
+              print("P4_COMPAT_ONLY_SCRATCH_REMOVED")
+          PY
