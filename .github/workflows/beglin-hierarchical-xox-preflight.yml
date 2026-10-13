@@ -1,0 +1,60 @@
+name: Beglin Hierarchical XOX Offline Preflight
+on:
+  push:
+    branches: [research/hierarchical-tupper-moe-20261013]
+    paths: [".github/workflows/beglin-hierarchical-xox-preflight.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: beglin-hierarchical-xox-preflight
+  cancel-in-progress: false
+jobs:
+  inspect-readonly:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify host and inspect offline trace availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local" && test "$(id -un)" = "xox"
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import importlib.util,json,os,pathlib,hashlib,re
+          p=pathlib.Path("/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json")
+          result={"schema":"beglin-hierarchical-preflight-v1","index_exists":p.is_file(),
+             "installed_modules":{m:importlib.util.find_spec(m) is not None for m in ("numpy","scipy","torch","transformers","mlx")},
+             "trace_candidates":[],"source_matches":[],"read_only":True,"production_touched":False}
+          if p.is_file():result["index_sha256"]=hashlib.sha256(p.read_bytes()).hexdigest()
+          for root in ("/Users/xox/vdsp_serving","/Users/xox/vdsp_shadow_runs","/Users/xox/vdsp-engine","/Users/xox/vdsp-engine-gpu-precision"):
+              rp=pathlib.Path(root)
+              if not rp.is_dir():continue
+              n=0
+              for parent,dirs,files in os.walk(root):
+                  rel=pathlib.Path(parent).relative_to(root)
+                  if len(rel.parts)>4:
+                      dirs[:]=[]
+                      continue
+                  dirs[:]=[d for d in dirs if not d.startswith(".") and d not in ("node_modules",".git","build","__pycache__")]
+                  for fn in files:
+                      if re.search(r"hidden|activat|layer.?1|trace.*(npy|npz)",fn,re.I) and fn.lower().endswith((".npy",".npz",".json",".jsonl",".bin",".txt",".safetensors")) and n<60:
+                          fp=pathlib.Path(parent)/fn
+                          try:
+                              st=fp.stat()
+                              if st.st_size > 0:
+                                  result["trace_candidates"].append({"root":rp.name,"path":str(fp),"size_bytes":st.st_size})
+                                  n+=1
+                          except OSError:pass
+                  if n>=60:break
+          for fn in ("qwen_infer.c","mlx_moe.cpp","RESULTS.md"):
+              fp=pathlib.Path(fn)
+              if not fp.is_file():continue
+              for i,line in enumerate(fp.open(errors="replace"),1):
+                  if re.search(r"hidden.?state.*dump|dump.*hidden|activation.*(dump|trace)|QWEN_.*(HIDDEN|ACTIVATION).*",line,re.I):
+                      result["source_matches"].append({"file":fn,"line":i,"snippet":line.strip()[:200]})
+                      if len(result["source_matches"])>=55:break
+          print("XOX_PREFLIGHT_RESULT",json.dumps(result,sort_keys=True))
+          PY
