@@ -1,0 +1,45 @@
+name: Beglin XOX Offline Tokenizer Preflight
+on:
+  push:
+    branches: [research/trainable-micro-router-20261013]
+    paths: [".github/workflows/beglin-xox-tokenizer-preflight.yml"]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Inspect local DeepSeek tokenizer without downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import pathlib,json,importlib
+          from transformers import AutoTokenizer
+          roots=[
+            pathlib.Path("/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors"),
+            pathlib.Path("/Users/xox/vdsp_local_data/moe_base_deepseek"),
+            pathlib.Path("/Users/xox/.cache/huggingface/hub")
+          ]
+          for root in roots:
+              if not root.is_dir():continue
+              print("ROOT_EXISTS",str(root))
+              if "hub" not in str(root):
+                  names=sorted(p.name for p in root.iterdir() if p.is_file() and ("token" in p.name.lower() or p.name in ("config.json","special_tokens_map.json")))
+                  print("TOKENIZER_FILES",root.name,names)
+              else:
+                  names=sorted(p.name for p in root.glob("models--deepseek-ai--*"))
+                  print("CACHE_MODEL_DIRS",names[:20])
+          for root in roots[:2]:
+              if (root/"tokenizer_config.json").is_file() and (root/"tokenizer.json").is_file():
+                  try:
+                      tok=AutoTokenizer.from_pretrained(str(root),local_files_only=True,trust_remote_code=False,use_fast=True)
+                      sample=tok.encode("The planet Earth has one moon.",add_special_tokens=True)
+                      print("TOKENIZER_OFFLINE_PASS",str(root),"vocab",tok.vocab_size,"sample_length",len(sample),"ids_in_range",all(0<=i<102400 for i in sample))
+                  except Exception as e:print("TOKENIZER_OFFLINE_ERROR",type(e).__name__,str(e)[:300])
+          PY
