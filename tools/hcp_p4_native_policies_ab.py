@@ -87,6 +87,9 @@ def matched_ab(feature_path,refs_path,workspace,output,*,limit=36,new_tokens=4):
     # The only native writes are new per-run worker queue files and runtime ACK
     # below RUNNER_TEMP; source policies, main repo and live route never changed.
     workspace.parent.mkdir(parents=True,exist_ok=True)
+    # 112-token pilot may exceed the legacy 60s request budget. Override only
+    # this script's in-memory imported module, not live process configuration.
+    ps.REQUEST_TIMEOUT_SECONDS=max(int(ps.REQUEST_TIMEOUT_SECONDS),180)
     worker=ps.AdaptivePersistentRouteWorker(route=base.candidate_route(),root=workspace)
     records=[];summaries=[]
     started=time.monotonic()
