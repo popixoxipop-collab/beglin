@@ -232,12 +232,25 @@ def tupper_routing_and_sparsity(expert_lanes_cal: np.ndarray,
             mask=np.zeros((ng,total_experts),np.uint8)
             static_recon=np.zeros((E,hidden),np.float64)
             oracle_recon=np.zeros((E,hidden),np.float64)
+            greedy_recon=np.zeros((E,hidden),np.float64)
             for i,eid in enumerate(top_ids):
                 stat=np.argsort(static_score[i],kind='stable')[-retained:]
                 best=np.argsort(oracle_score[i],kind='stable')[-retained:]
                 mask[stat,eid]=1
                 static_recon[i]=a_test[i,stat].sum(axis=0)
                 oracle_recon[i]=a_test[i,best].sum(axis=0)
+                # Greedy fit on the calibration output residual only.
+                # Compensates for cancellation and does not see test input.
+                residual=a_cal[i].sum(axis=0).copy()
+                sq=np.einsum('gh,gh->g',a_cal[i],a_cal[i])
+                picked=np.zeros(ng,dtype=bool)
+                for _ in range(retained):
+                    improvement=2.0*(a_cal[i]@residual)-sq
+                    improvement[picked]=-np.inf
+                    best_channel=int(np.argmax(improvement))
+                    residual-=a_cal[i,best_channel]
+                    picked[best_channel]=True
+                greedy_recon[i]=a_test[i,picked].sum(axis=0)
             packed=tupper_encode(mask)
             if not np.array_equal(mask,tupper_decode(packed['k'],ng,total_experts)):
                 raise AssertionError('generalized Tupper routing mask failed to round-trip')
@@ -247,12 +260,13 @@ def tupper_routing_and_sparsity(expert_lanes_cal: np.ndarray,
                 'activated_micro_experts':retained*E,
                 'full_micro_experts_for_selected_macros':ng*E,
                 'static_calibration_relative_l2':float(np.linalg.norm(full_expert-static_recon)/denom),
+                'calibration_residual_greedy_relative_l2':float(np.linalg.norm(full_expert-greedy_recon)/denom),
                 'oracle_test_relative_l2_upper_bound':float(np.linalg.norm(full_expert-oracle_recon)/denom),
                 'theoretical_macro_ffn_compute_fraction':retained/ng,
                 'tupper_mask_shape':[ng,total_experts],
                 'tupper_mask_raw_bytes':math.ceil(ng*total_experts/8),
                 'tupper_roundtrip':True,
-                'note':'Oracle computes all channel outputs first; cannot yield runtime speedup.',
+                'note':'Test-informed magnitude ranking is not deployable or an optimal-subset bound; greedy only sees calibration input.',
             }
         result[str(width)]=by_frac
     return result
