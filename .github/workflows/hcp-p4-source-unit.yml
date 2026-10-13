@@ -2,7 +2,11 @@ name: Beglin HCP P4 Long Context Data and Precision Cost Contracts
 on:
   push:
     branches: [research/hcp-p4-longcontext-costquality-20261014]
-    paths: [".github/workflows/hcp-p4-source-unit.yml"]
+    paths:
+      - ".github/workflows/hcp-p4-source-unit.yml"
+      - "tools/hcp_p4_evidence_gate.py"
+      - "tools/test_hcp_p4_evidence_gate.py"
+      - "tools/hcp_p4_native_policies_ab.py"
 permissions:
   contents: read
 jobs:
@@ -22,10 +26,10 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile tools/hcp_p4_long_prompt_registry.py tools/hcp_p4_long_router_instrument.py \
-            tools/hcp_p4_long_trace_capture.py tools/hcp_p4_native_policies_ab.py
+            tools/hcp_p4_long_trace_capture.py tools/hcp_p4_native_policies_ab.py tools/hcp_p4_evidence_gate.py
           cd tools
           OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 python -m unittest \
-            test_hcp_p4_long_contracts.py \
+            test_hcp_p4_long_contracts.py test_hcp_p4_evidence_gate.py \
             test_hcp_p3_true_boundary.py \
             test_hcp_p3_quality_gate.py \
             test_hcp_p2_policy_guard.py -v
