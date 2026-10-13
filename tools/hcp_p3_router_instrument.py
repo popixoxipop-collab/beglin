@@ -10,8 +10,9 @@ import argparse,hashlib,pathlib,re
 HOOK = r'''
             // P3 RESEARCH ONLY: complete-softmax rank-K and first unselected
             // score. Runs AFTER TopK selection and BEFORE TopK normalization.
-            if (getenv("BEGLIN_P3_ROUTER_BOUNDARY")) {
+            {
                 const char *boundary_file = getenv("BEGLIN_P3_ROUTER_BOUNDARY");
+                if (boundary_file && boundary_file[0]) {
                 if (MOE_N_EXPERTS != 64 || MOE_TOP_K != 6)
                     { fprintf(stderr,"P3_BAD_ROUTE_TOPOLOGY\n"); exit(2); }
                 float kth_score = 2.0f, next_score = -1.0f;
@@ -51,6 +52,7 @@ HOOK = r'''
                     relative_gap, log_ratio, (float)(ent/log((double)MOE_N_EXPERTS)));
                 if (w < 10 || fclose(evidence) != 0)
                     { fprintf(stderr,"P3_CAPTURE_WRITE_FAILED\n"); exit(2); }
+                }
             }
 '''
 
