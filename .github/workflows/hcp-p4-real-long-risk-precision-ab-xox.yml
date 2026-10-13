@@ -36,6 +36,7 @@ jobs:
           test -f "$MOE_BASE/weights_moe/deepseek_moe_af.bin"
           test ! -e "$SCRATCH"
           mkdir -p "$SCRATCH/src" "$SCRATCH/upload"
+          export INDEX TOKENIZER_DIR MOE_BASE PY SCRATCH
           echo "INDEX=$INDEX" >> "$GITHUB_ENV"
           echo "TOKENIZER_DIR=$TOKENIZER_DIR" >> "$GITHUB_ENV"
           echo "MOE_BASE=$MOE_BASE" >> "$GITHUB_ENV"
