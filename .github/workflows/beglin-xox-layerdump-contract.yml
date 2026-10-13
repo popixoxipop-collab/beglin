@@ -1,0 +1,41 @@
+name: Beglin XOX Layerdump Source Contract Readonly
+on:
+  push:
+    branches: [research/hierarchical-tupper-moe-20261013]
+    paths: [".github/workflows/beglin-xox-layerdump-contract.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect-offline-trace-contract:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read-only review of existing trace switches and executables
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local" && test "$(id -un)" = "xox"
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import pathlib,re,json
+          for filename, ranges in [
+             ("qwen_infer.c",[(15235,15285),(18580,18640)]),
+             ("RESULTS.md",[(2410,2455),(2948,3015),(5695,5735)])]:
+              file=pathlib.Path(filename)
+              if not file.is_file():continue
+              lines=file.read_text(errors="replace").splitlines()
+              for a,b in ranges:
+                  print("SOURCE_CONTRACT_SECTION",filename,a,b)
+                  for i in range(a-1,min(b,len(lines))):
+                      print(f"TRACE_SRC {filename}:{i+1}: {lines[i][:250]}")
+          for p in ["/Users/xox/vdsp-engine","/Users/xox/vdsp-engine-gpu-precision","/Users/xox/vdsp_serving"]:
+              path=pathlib.Path(p)
+              print("WORKSPACE_METADATA",str(path),"exists",path.is_dir())
+              if path.is_dir():
+                  for name in ("qwen_infer_gpu","qwen_infer","build/qwen_infer_gpu","build/qwen_infer"):
+                      a=path/name
+                      print("OFFLINE_BINARY",str(a),"is_file",a.is_file())
+          PY
