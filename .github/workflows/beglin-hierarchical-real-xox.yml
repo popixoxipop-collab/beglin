@@ -1,0 +1,90 @@
+name: Beglin Hierarchical MoE Real Checkpoint XOX Readonly
+on:
+  push:
+    branches: [research/hierarchical-tupper-moe-20261013]
+    paths:
+      - ".github/workflows/beglin-hierarchical-real-xox.yml"
+      - "experiments/hierarchical_tupper_moe/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: beglin-hierarchical-xox-real-checkpoint
+  cancel-in-progress: false
+jobs:
+  readonly-real-weights:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Assert real XOX host and local checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local"
+          test "$(id -un)" = "xox"
+          INDEX=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json
+          test -f "$INDEX"
+          test ! -L "$INDEX"
+          if [ -x /Users/xox/.venv-vllm-metal/bin/python3 ] && /Users/xox/.venv-vllm-metal/bin/python3 -c 'import numpy' 2>/dev/null; then
+            PYBIN=/Users/xox/.venv-vllm-metal/bin/python3
+          elif python3 -c 'import numpy' 2>/dev/null; then
+            PYBIN="$(command -v python3)"
+          else
+            echo "BLOCKED: preinstalled NumPy interpreter missing; no environment modification" >&2
+            exit 2
+          fi
+          echo "PYBIN=$PYBIN" >> "$GITHUB_ENV"
+          echo "INDEX=$INDEX" >> "$GITHUB_ENV"
+          echo "SCRATCH=$RUNNER_TEMP/beglin-hierarchical-$GITHUB_RUN_ID" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/beglin-hierarchical-$GITHUB_RUN_ID"
+          "$PYBIN" - <<'PY'
+          import hashlib,json,pathlib
+          p=pathlib.Path("/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json")
+          m=json.loads(p.read_text())["weight_map"]
+          keys=[f"model.layers.1.mlp.experts.{e}.{r}.weight" for e in range(8) for r in ("gate_proj","up_proj","down_proj")]
+          assert all(k in m for k in keys),"BLOCKED: expected unfused expert keys absent"
+          print("REAL_INDEX_SHA256",hashlib.sha256(p.read_bytes()).hexdigest(),"SELECTED_SHARDS",len(set(m[k] for k in keys)))
+          print("CHECKPOINT_FULL_SHA_NOT_VERIFIED")
+          PY
+      - name: Run 11+ tests without installing packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=1 "$PYBIN" -m unittest discover -v
+      - name: Real 8 expert first tile I/O smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" hierarchical_moe_probe.py --checkpoint-index "$INDEX" --layer 1 --experts 8 --train-experts 4 --top-k 3 --hidden 2048 --intermediate 1408 --groups 16 32 64 128 --tiles 1 --output "$SCRATCH/real_8e_first_tile.json"
+      - name: Real 8 expert full 1408 intermediate rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" hierarchical_moe_probe.py --checkpoint-index "$INDEX" --layer 1 --experts 8 --train-experts 4 --top-k 3 --hidden 2048 --intermediate 1408 --groups 16 32 64 128 --output "$SCRATCH/real_8e_full_rows.json"
+      - name: Seal safe evidence metadata
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SCRATCH:-}" ] || [ ! -d "$SCRATCH" ]; then exit 0; fi
+          "$PYBIN" - <<'PY'
+          import hashlib,json,os,pathlib
+          p=pathlib.Path(os.environ['SCRATCH'])
+          files={x.name:hashlib.sha256(x.read_bytes()).hexdigest() for x in sorted(p.glob("*.json"))}
+          receipt={"schema":"beglin-xox-hierarchical-real-v1","files_sha256":files,"source_head":os.getenv("GITHUB_SHA"),"full_checkpoint_content_verified":False,"actual_hidden_activations_verified":False,"production_touched":False,"promotion_allowed":False,"interpretation":"real weights, synthetic hidden vectors; not task-quality evidence"}
+          (p/"receipt.json").write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\n")
+          print(json.dumps(receipt,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beglin-xox-real-weight-probe-proposal
+          path: ${{ runner.temp }}/beglin-hierarchical-${{ github.run_id }}/*.json
+          if-no-files-found: warn
+          retention-days: 30
