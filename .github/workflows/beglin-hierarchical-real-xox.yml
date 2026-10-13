@@ -67,6 +67,20 @@ jobs:
           set -euo pipefail
           cd experiments/hierarchical_tupper_moe
           OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" hierarchical_moe_probe.py --checkpoint-index "$INDEX" --layer 1 --experts 8 --train-experts 4 --top-k 3 --hidden 2048 --intermediate 1408 --groups 16 32 64 128 --output "$SCRATCH/real_8e_full_rows.json"
+      - name: Real 64 expert full 1408 intermediate rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" hierarchical_moe_probe.py --checkpoint-index "$INDEX" --layer 1 --experts 64 --train-experts 16 --top-k 6 --hidden 2048 --intermediate 1408 --groups 16 32 64 128 --output "$SCRATCH/real_64e_full_rows.json"
+          "$PYBIN" - <<'PY'
+          import json,os,pathlib
+          d=json.loads((pathlib.Path(os.environ["SCRATCH"])/"real_64e_full_rows.json").read_text())
+          for w, row in d["widths"].items():
+              for f in ("0.25","0.5","0.75"):
+                  c=row["routing"][f]
+                  print("REAL_WEIGHT_SPARSE",w,f,"static_relative_l2",round(c["static_calibration_relative_l2"],6),"test_informed_magnitude_l2",round(c["oracle_test_relative_l2_upper_bound"],6))
+          PY
       - name: Seal safe evidence metadata
         if: always()
         shell: bash
