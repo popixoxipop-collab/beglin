@@ -2,7 +2,9 @@ name: Beglin HCP P4 Native GPU 24 Token Policy Compat Only
 on:
   push:
     branches: [research/hcp-p4-longcontext-costquality-20261014]
-    paths: [".github/workflows/hcp-p4-native-24token-compat-xox.yml"]
+    paths:
+      - ".github/workflows/hcp-p4-native-24token-compat-xox.yml"
+      - "tools/hcp_p4_native_24token_compat.py"
 permissions:
   contents: read
 concurrency:
