@@ -24,7 +24,7 @@ from trainable_micro_router import fit_one_expert
 from hierarchical_moe_probe import tupper_encode, tupper_decode
 
 SCHEMA="beglin-prompt-holdout-micro-router-v1"
-METHODS=("static","static_mean_residual","dynamic","dynamic_mean_residual","dynamic_ridge_residual")
+METHODS=("static","static_mean_residual","dynamic","dynamic_mean_residual","dynamic_ridge_residual","dynamic_rank8_residual")
 SPLITS=("train","validation","holdout")
 
 
@@ -122,6 +122,25 @@ def _metric(keys, target, guess, *,bootstrap_seed=101, bootstrap_draws=300):
             'prompt_bootstrap_95ci':list(map(float,np.quantile(boots,[.025,.975]))) if boots else None}
 
 
+def paired_improvement_ci(keys, target, baseline, proposed, *, draws=500, seed=20261014):
+    """Prompt-block paired bootstrap for 1 - (proposed relative L2)/(baseline relative L2)."""
+    a=_sums_by_prompt(keys,target,baseline)
+    b=_sums_by_prompt(keys,target,proposed)
+    if sorted(a)!=sorted(b):raise ValueError("mismatched prompt blocks")
+    groups=sorted(a)
+    if len(groups)<3:raise ValueError("too few independent evaluation prompts")
+    def improvement(chosen):
+        se_base=sum(a[k][1] for k in chosen)
+        se_alt=sum(b[k][1] for k in chosen)
+        return 1.0-math.sqrt(se_alt/max(se_base,1e-30))
+    rng=np.random.default_rng(seed)
+    values=[improvement(rng.choice(groups,size=len(groups),replace=True)) for _ in range(draws)]
+    ci=np.quantile(values,[.025,.975])
+    return {"relative_l2_reduction":float(improvement(groups)),
+            "prompt_block_bootstrap_95ci":[float(ci[0]),float(ci[1])],
+            "bootstrap_draws":draws,
+            "bootstrap_probability_positive":float(np.mean(np.array(values)>0))}
+
 def evaluate(index:Path, suite:Path, *,layer:int=1,hidden:int=2048, intermediate:int=1408,
              widths=(16,64),fractions=(.25,.5,.75), min_train_examples=4, bootstrap_draws=300):
     index=Path(index)
@@ -151,6 +170,7 @@ def evaluate(index:Path, suite:Path, *,layer:int=1,hidden:int=2048, intermediate
         fallback_counts={f:0 for f in fractions}
         trained_pairs={f:0 for f in fractions}
         parameter_bytes={f:0 for f in fractions}
+        method_bytes={f:{method:0 for method in METHODS} for f in fractions}
         train_sample_sizes={}
         for eid in seen_experts:
             train_k=train_routes.get(eid,[])
@@ -181,6 +201,11 @@ def evaluate(index:Path, suite:Path, *,layer:int=1,hidden:int=2048, intermediate
                 for m in METHODS:
                     guesses[f][m][indices]+=weights[:,None]*fit[m]
                 parameter_bytes[f]+=4*fit.get('stored_router_floats_per_expert',fit.get('trained_coefficients',0)+fit.get('trained_feature_floats',0))
+                for method,bytes_used in fit.get("estimated_fp32_storage_by_method",{}).items():
+                    method_bytes[f][method]+=int(bytes_used)
+                n_groups=ng
+                method_bytes[f]["static"]+=4*n_groups
+                method_bytes[f]["static_mean_residual"]+=4*(n_groups+hidden)
                 chosen_count=max(1,math.ceil(ng*f))
                 activation_executions[f]+=len(eval_k)*chosen_count
                 trained_pairs[f]+=len(eval_k)
@@ -208,9 +233,13 @@ def evaluate(index:Path, suite:Path, *,layer:int=1,hidden:int=2048, intermediate
                     'full_channel_fallback_pair_count':fallback_counts[f],
                     'trained_pair_count_val_plus_test':trained_pairs[f],
                     'approx_router_resident_fp32_bytes':parameter_bytes[f],
+                    'estimated_fp32_storage_bytes_by_method':method_bytes[f],
                     'idealized_channel_compute_fraction_excluding_gate_and_corrector':activation_executions[f]/max(ng*sum(len(routes[k]) for k in eval_keys),1),
                     'tupper_grid':[ng,64], 'tupper_roundtrip':True}
             report['locked_holdout']=report['holdout_methods'][locked]
+            report["paired_improvement_vs_static"]={m:paired_improvement_ci(
+                test,full[nval:],guesses[f]["static"][nval:],guesses[f][m][nval:])
+                for m in METHODS if m!="static"}
             results.setdefault(str(width),{})[str(f)]=report
     return {'schema':SCHEMA,'status':'EVALUATED_NOT_PROMOTABLE',
             'source':'actual independent textual prompts, actual quantized AF pre-FFN h2 and macro TopK, BF16 expert checkpoint',
