@@ -132,14 +132,34 @@ def paired_improvement_ci(keys, target, baseline, proposed, *, draws=500, seed=2
     def improvement(chosen):
         se_base=sum(a[k][1] for k in chosen)
         se_alt=sum(b[k][1] for k in chosen)
-        return 1.0-math.sqrt(se_alt/max(se_base,1e-30))
+        ref_energy=sum(a[k][0] for k in chosen)
+        if se_base <= max(1e-30,1e-24*ref_energy):
+            # Both identical full-execution reference and static baseline give
+            # ~zero error. A ratio of two zero errors is NOT 100% improvement.
+            return None
+        return 1.0-math.sqrt(se_alt/se_base)
+    point=improvement(groups)
+    if point is None:
+        return {"relative_l2_reduction":None,
+                "prompt_block_bootstrap_95ci":None,
+                "bootstrap_draws":0,
+                "bootstrap_probability_positive":None,
+                "status":"UNDEFINED_ZERO_BASELINE_ERROR"}
     rng=np.random.default_rng(seed)
     values=[improvement(rng.choice(groups,size=len(groups),replace=True)) for _ in range(draws)]
-    ci=np.quantile(values,[.025,.975])
-    return {"relative_l2_reduction":float(improvement(groups)),
+    valid=[v for v in values if v is not None]
+    if len(valid)<max(30,int(.75*draws)):
+        return {"relative_l2_reduction":float(point),
+                "prompt_block_bootstrap_95ci":None,
+                "bootstrap_draws":len(valid),
+                "bootstrap_probability_positive":None,
+                "status":"INSUFFICIENT_NONZERO_BASELINE_BOOTSTRAP"}
+    ci=np.quantile(valid,[.025,.975])
+    return {"relative_l2_reduction":float(point),
             "prompt_block_bootstrap_95ci":[float(ci[0]),float(ci[1])],
-            "bootstrap_draws":draws,
-            "bootstrap_probability_positive":float(np.mean(np.array(values)>0))}
+            "bootstrap_draws":len(valid),
+            "bootstrap_probability_positive":float(np.mean(np.array(valid)>0)),
+            "status":"DEFINED"}
 
 def evaluate(index:Path, suite:Path, *,layer:int=1,hidden:int=2048, intermediate:int=1408,
              widths=(16,64),fractions=(.25,.5,.75), min_train_examples=4, bootstrap_draws=300):
