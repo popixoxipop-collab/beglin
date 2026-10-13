@@ -1,0 +1,203 @@
+name: Beglin HCP P2 Real 120 Prompt Slow-Fast Latents
+on:
+  push:
+    branches: [research/hierarchical-compute-planner-p2-20261014]
+    paths: [".github/workflows/hcp-p2-real-slowfast-120.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: beglin-xox-hcp-p2-120-isolated
+  cancel-in-progress: false
+jobs:
+  separate-prompt-evidence:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 1b4606eef596e10f3003f7d9f07b607616e990d6
+          path: preregistered_corpus_source
+          persist-credentials: false
+      - name: Validate host, checkpoint identity and prepare scratch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          SCRATCH="$RUNNER_TEMP/beglin-hcp-p2-$GITHUB_RUN_ID"
+          mkdir -p "$SCRATCH/src" "$SCRATCH/upload"
+          echo "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          INDEX=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json
+          TOKENIZER_ROOT=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors
+          MODEL_ROOT=/Users/xox/vdsp_local_data/moe_base_deepseek
+          test -f "$INDEX" && test ! -L "$INDEX"
+          test -f "$TOKENIZER_ROOT/tokenizer.json" && test -f "$TOKENIZER_ROOT/tokenizer_config.json"
+          test -f "$MODEL_ROOT/weights_moe/arch_config_moe.txt"
+          test -f "$MODEL_ROOT/weights_moe/deepseek_moe_af.bin"
+          echo "INDEX=$INDEX" >> "$GITHUB_ENV"
+          echo "TOKENIZER_ROOT=$TOKENIZER_ROOT" >> "$GITHUB_ENV"
+          echo "MODEL_ROOT=$MODEL_ROOT" >> "$GITHUB_ENV"
+          echo "PYBIN=/Users/xox/.venv-vllm-metal/bin/python3" >> "$GITHUB_ENV"
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import hashlib,pathlib
+          p=pathlib.Path("/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json")
+          digest=hashlib.sha256(p.read_bytes()).hexdigest()
+          assert digest == "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf", "checkpoint index identity changed"
+          print("REAL_CHECKPOINT_INDEX_PINNED",digest)
+          PY
+          rsync -a --exclude=.git --exclude=.github --exclude=preregistered_corpus_source --exclude=results --exclude=attestations --exclude=build --exclude=build-persistent ./ "$SCRATCH/src/"
+      - name: Execute unit tests before any real capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd tools
+          OPENBLAS_NUM_THREADS=1 "$PYBIN" -m unittest test_hcp_p2_multiscale.py -v
+      - name: Instrument scratch copy at the previously certified pre-FFN h2 hook only
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PYBIN" - <<'PY'
+          from pathlib import Path
+          import os,re
+          root=Path(os.environ["SCRATCH"])/"src"
+          p=root/"qwen_infer.c"
+          source=p.read_text()
+          needle="        float *w_postln = (float *)(g_moe_f32_blob + t->post_attn_ln->off);\n        moe_rmsnorm(x, w_postln, h2, MOE_HIDDEN);"
+          sites=[m.start() for m in re.finditer(re.escape(needle),source)]
+          candidates=[i for i in sites if "float *mlp_out = g_mft_mlp_out;" in source[i+len(needle):i+len(needle)+160]
+                      and "moe_attention(af, t, l, pos, h, x)" in source[max(0,i-5000):i]]
+          assert len(candidates)==1,"BLOCKED: h2 capture anchor changed"
+          insert='''
+          // Isolated research-only h2 capture, not a production modification.
+          if (l == 1 && pos >= 0 && pos < 40) {
+              const char *cap = getenv("BEGLIN_CAPTURE_PRE_FFN_INPUT");
+              if (cap && cap[0]) {
+                  FILE *fp = fopen(cap, "ab");
+                  if (!fp) { fprintf(stderr,"CAPTURE_OPEN_FAIL\\n"); exit(2); }
+                  int hdr[3] = {pos, l, MOE_HIDDEN};
+                  if (fwrite(hdr,sizeof(int),3,fp)!=3 || fwrite(h2,sizeof(float),MOE_HIDDEN,fp)!=(size_t)MOE_HIDDEN) {
+                      fclose(fp); fprintf(stderr,"CAPTURE_WRITE_FAIL\\n"); exit(2);
+                  }
+                  if (fclose(fp)!=0) exit(2);
+              }
+          }
+          '''
+          at=candidates[0]+len(needle)
+          p.write_text(source[:at]+"\n"+insert+source[at:])
+          assert p.read_text().count("BEGLIN_CAPTURE_PRE_FFN_INPUT")==1
+          cmake=root/"CMakeLists.txt"
+          original=cmake.read_text()
+          anchor="add_library(qwen_infer_obj OBJECT\n  qwen_infer.c\n"
+          assert original.count(anchor)==1,"BLOCKED: qNg64 build anchor changed"
+          cmake.write_text(original.replace(anchor,anchor+"  qng64_dense.c\n"))
+          print("SCRATCH_INSTRUMENTATION_PASS")
+          PY
+      - name: Compile isolated DeepSeek research binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          nice -n 10 cmake --build "$SCRATCH/build" --target qwen_infer_gpu -j2
+          shasum -a 256 "$SCRATCH/build/qwen_infer_gpu"
+      - name: Fail-closed one-prompt new-corpus inference smoke
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          cd preregistered_corpus_source/experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" - <<'PY'
+          import os,pathlib
+          from capture_prompt_suite import run_suite
+          root=pathlib.Path(os.environ["SCRATCH"])
+          out=run_suite(root/"build/qwen_infer_gpu",pathlib.Path(os.environ["INDEX"]),
+                        pathlib.Path(os.environ["TOKENIZER_ROOT"]),
+                        pathlib.Path(os.environ["MODEL_ROOT"]),root/"smoke",
+                        prompt_bank_dir=pathlib.Path("prompt_bank"),max_positions=24,
+                        limit_prompts=1)
+          assert out["prompt_count"]==1 and out["fresh_process_per_prompt"]
+          print("ONE_PROMPT_REAL_SHADOW_PASS")
+          PY
+      - name: Capture 120 independent preregistered offline tokenizer prompts with fresh processes
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          cd preregistered_corpus_source/experiments/hierarchical_tupper_moe
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" capture_prompt_suite.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" \
+            --checkpoint-index "$INDEX" \
+            --tokenizer-dir "$TOKENIZER_ROOT" \
+            --model-root "$MODEL_ROOT" \
+            --max-positions 24 --prompt-bank-dir prompt_bank --out "$SCRATCH/prompts"
+      - name: Extract causal fast/slow features from true DeepSeek h2 and top-6 scores
+        shell: bash
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" tools/hcp_p2_real_feature_builder.py \
+            --prompt-suite "$SCRATCH/prompts" --output "$SCRATCH/data/p2_trace_features.json"
+      - name: Train and compare static, flat, shared and separate slow-fast latents
+        shell: bash
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PYBIN" tools/hcp_p2_multiscale.py \
+            --features "$SCRATCH/data/p2_trace_features.json" \
+            --output "$SCRATCH/upload/p2_multiscale_metrics.json"
+      - name: Require sealed research-only evidence before artifact creation
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SCRATCH:-}" && test -d "$SCRATCH/upload"
+          "$PYBIN" - <<'PY'
+          import os,json,hashlib,pathlib
+          root=pathlib.Path(os.environ["SCRATCH"])
+          p=root/"upload"/"p2_multiscale_metrics.json"
+          if not p.is_file():raise SystemExit("BLOCKED: real-signal evaluation is missing")
+          r=json.loads(p.read_text())
+          assert r["status"]=="REAL_SURROGATE_EVALUATED_NATIVE_POLICY_BLOCKED"
+          assert r["source"]=="REAL_QUANTIZED_AF_H2_TOP6_ROUTING"
+          assert (r["train_prompt_count"],r["validation_prompt_count"],r["holdout_prompt_count"])==(72,24,24)
+          assert r["native_policy_rebinding_allowed"] is False
+          assert r["source_proxy_is_certified_precision_risk"] is False
+          assert r["production_touched"] is False
+          assert set(r["final_heldout"])=={"static","flat","shared_twolevel","separate_twolevel"}
+          manifest=root/"prompts"/"runs.json"
+          d=json.loads(manifest.read_text())
+          assert d["prompt_count"]==120 and d["fresh_process_per_prompt"] is True
+          out={"schema":"beglin-hcp-p2-xox-real-h2-receipt-v1","status":"PASS_SHADOW_PROPOSAL_ONLY",
+               "source_head":os.environ.get("GITHUB_SHA"),
+               "pinned_corpus_source_commit":"1b4606eef596e10f3003f7d9f07b607616e990d6",
+               "manifest_sha256":hashlib.sha256(manifest.read_bytes()).hexdigest(),
+               "result_sha256":hashlib.sha256(p.read_bytes()).hexdigest(),
+               "feature_raw_exported":False,"prompt_token_ids_exported":False,
+               "full_logits_exported":False,"native_precision_policy_changed":False,
+               "production_touched":False,"automatic_live_promotion":False}
+          (root/"upload"/"receipt.json").write_text(json.dumps(out,sort_keys=True,indent=2)+"\n")
+          print("HCP_P2_REAL_MULTISCALE_RECEIPT",json.dumps(out,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beglin-hcp-p2-real-multiscale-proxy
+          path: ${{ runner.temp }}/beglin-hcp-p2-${{ github.run_id }}/upload/*.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove only this run's scratch build and raw activations
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import os,pathlib,shutil
+          base=pathlib.Path(os.environ['RUNNER_TEMP']).resolve()
+          p=base/('beglin-hcp-p2-'+os.environ['GITHUB_RUN_ID'])
+          if p.is_dir() and p.resolve().parent==base:
+              shutil.rmtree(p)
+              print('SCRATCH_REMOVED',p.name)
+          PY
