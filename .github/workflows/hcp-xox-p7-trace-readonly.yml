@@ -1,0 +1,112 @@
+name: Beglin HCP Verified P7 Temporal Trace Readonly
+on:
+  push:
+    branches: [research/hierarchical-compute-planner-20261014]
+    paths: [".github/workflows/hcp-xox-p7-trace-readonly.yml"]
+permissions:
+  contents: read
+jobs:
+  verify-existing-lineage:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read and verify full 600-admission archived lineage; no host writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "XOX.local" && test "$(id -un)" = "xox"
+          python3 - <<'PY'
+          import hashlib,json,math,os,pathlib,statistics,sys
+          sys.path.insert(0,str(pathlib.Path.cwd()/"tools"))
+          import precision_context as pc
+          import precision_observability as po
+          root=pathlib.Path("/Users/xox/vdsp_serving/precision-p7-soak-long600-4baf28b")
+          result=root/"result.json"
+          expected="ebc6c8c52759e7164b555d19e7e330bf933835be2b32073cef634c13ef332c94"
+          if hashlib.sha256(result.read_bytes()).hexdigest()!=expected:
+              raise SystemExit("BLOCKED P7 certified receipt mismatch")
+          report=json.loads(result.read_text())
+          if not(report.get("status")=="PASS" and report.get("production_touched") is False
+                 and report.get("summary",{}).get("admissions")==600):
+              raise SystemExit("BLOCKED P7 result not PASS / 600 admissions")
+          segment_dir=root/"lineage.jsonl.segments"
+          manifest=segment_dir/"manifest.jsonl"
+          if not manifest.is_file():raise SystemExit("BLOCKED missing sealed lineage manifest")
+          previous_manifest=None;all_rows=[];proofs=[];sequences=set()
+          for index,line in enumerate(manifest.read_bytes().splitlines(keepends=True)):
+              if not line.endswith(b"\n"):raise SystemExit("incomplete manifest")
+              e=json.loads(line)
+              body=dict(e);given=body.pop("manifest_sha256",None)
+              calculated=pc.sha256_json(body)
+              if given!=calculated or e.get("prev_manifest_sha256")!=previous_manifest:
+                  raise SystemExit("BLOCKED broken manifest hash chain")
+              previous_manifest=given
+              if int(e["sequence"]) in sequences:raise SystemExit("duplicate segment number")
+              sequences.add(int(e["sequence"]))
+              p=(segment_dir/e["segment_file"]).resolve(strict=True)
+              if not p.is_relative_to(segment_dir.resolve()) or not p.is_file():
+                  raise SystemExit("BLOCKED unsafe lineage segment")
+              raw=p.read_bytes()
+              if hashlib.sha256(raw).hexdigest()!=e["segment_sha256"]:
+                  raise SystemExit("BLOCKED sealed segment hash mismatch")
+              rows=[json.loads(ln) for ln in raw.splitlines() if ln.strip()]
+              po.verify_records(rows)
+              if not rows or len(rows)!=e["records"] or rows[0]["record_sha256"]!=e["first_record_sha256"] or rows[-1]["record_sha256"]!=e["last_record_sha256"]:
+                  raise SystemExit("BLOCKED sealed segment content mismatch")
+              all_rows.extend(rows)
+              proofs.append({"segment_sha256":e["segment_sha256"],"record_count":len(rows)})
+          active=root/"lineage.jsonl"
+          active_bytes=active.read_bytes()
+          active_rows=[json.loads(ln) for ln in active_bytes.splitlines() if ln.strip()]
+          po.verify_records(active_rows)
+          all_rows.extend(active_rows)
+          if len(all_rows)!=600 or len({r["admission_id"] for r in all_rows})!=600:
+              raise SystemExit("BLOCKED incomplete 600 admission history")
+          trigger_types={};actual_engine=[];actual_roundtrip=[];transitions=[];observed_route=[]
+          for row in all_rows:
+              active_set=set(row.get("active_triggers") or [])
+              if active_set - {"low_margin","near_tie","high_entropy","routing_ambiguity"}:
+                  raise SystemExit("unknown trigger type")
+              for v in active_set:trigger_types[v]=trigger_types.get(v,0)+1
+              cost=row.get("actual_cost") or {}
+              if cost.get("roundtrip_ms") is not None:actual_roundtrip.append(float(cost["roundtrip_ms"]))
+              if cost.get("engine_wall_ms") is not None:actual_engine.append(float(cost["engine_wall_ms"]))
+              transitions.append(bool(row.get("transitioned")))
+              observed_route.append(str(row.get("after_policy_hash","")))
+              if row.get("outcome",{}).get("finite_logits") is not True:
+                  raise SystemExit("BLOCKED P7 non-finite logit event")
+          def med(x):return statistics.median(x) if x else None
+          result_out={
+            "schema":"beglin-hcp-p7-verified-temporal-readonly-v1",
+            "status":"PASS",
+            "source_result_sha256":expected,
+            "source_manifest_head_sha256":previous_manifest,
+            "source_active_lineage_sha256":hashlib.sha256(active_bytes).hexdigest(),
+            "sealed_segment_count":len(proofs),"sealed_record_count":sum(x["record_count"] for x in proofs),
+            "active_record_count":len(active_rows),"admission_count":len(all_rows),
+            "active_triggers":trigger_types,
+            "operator_injected_signal_pattern":True,
+            "all_admissions_same_reference_prompt":True,
+            "policies_after_hash_counts":{h:observed_route.count(h) for h in sorted(set(observed_route))},
+            "actual_transition_count":sum(transitions),
+            "actual_engine_p50_ms":med(actual_engine),
+            "actual_roundtrip_p50_ms":med(actual_roundtrip),
+            "active_low_margin_flags":[bool("low_margin" in (row.get("active_triggers") or [])) for row in all_rows],
+            "original_own_execution_actual_tokens_finite":True,
+            "counterfactual_hierarchical_model_executed":False,
+            "no_token_ids_or_raw_responses_uploaded":True,
+            "no_policy_writes":True,"production_touched":False}
+          out=pathlib.Path(os.environ["RUNNER_TEMP"])/("hcp-temporal-"+os.environ["GITHUB_RUN_ID"])
+          out.mkdir(parents=True,exist_ok=False)
+          (out/"p7_temporal_summary.json").write_text(json.dumps(result_out,indent=2,sort_keys=True)+"\n")
+          print("HCP_P7_VERIFIED_TEMPORAL",json.dumps({k:v for k,v in result_out.items() if k!="active_low_margin_flags"},sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-hcp-p7-real-temporal-observation
+          path: ${{ runner.temp }}/hcp-temporal-${{ github.run_id }}/p7_temporal_summary.json
+          if-no-files-found: error
+          retention-days: 30
