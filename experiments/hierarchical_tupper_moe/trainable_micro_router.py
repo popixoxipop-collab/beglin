@@ -35,6 +35,31 @@ def predict(model, xtest):
     x, mu, a = model
     return mu + features(xtest) @ x.T @ a
 
+def lowrank_residual_model(xcal, missing, *, rank=8, lam=2.0):
+    """Fit a rank-limited omitted-output correction without peeking at holdout."""
+    y=np.asarray(missing,dtype=np.float64)
+    if y.ndim!=2 or len(y)!=len(xcal) or rank<1:
+        raise ValueError("invalid low-rank residual inputs")
+    offset=np.mean(y,axis=0)
+    centered=y-offset
+    # Economy left-Gram decomposition: never form a hidden*hidden covariance.
+    gram=centered@centered.T
+    gram=(gram+gram.T)*.5
+    vals,vecs=np.linalg.eigh(gram)
+    keep=np.argsort(vals)[::-1][:min(rank,len(y)-1,y.shape[1])]
+    keep=keep[vals[keep]>1e-12]
+    if not len(keep):
+        return {"offset":offset,"basis":np.zeros((0,y.shape[1])),"model":None}
+    basis=(vecs[:,keep].T@centered)/np.sqrt(vals[keep])[:,None]
+    coeff=centered@basis.T
+    return {"offset":offset,"basis":basis,"model":fit_kernel(xcal,coeff,lam)}
+
+def predict_lowrank_residual(model, xtest):
+    base=np.broadcast_to(model["offset"],(len(xtest),len(model["offset"])))
+    if model["model"] is None:
+        return base.copy()
+    return base+predict(model["model"],xtest)@model["basis"]
+
 def mask_for(scores, keep):
     s = np.asarray(scores, dtype=np.float64)
     if s.ndim != 2 or keep < 1 or keep > s.shape[1] or not np.all(np.isfinite(s)):
@@ -69,6 +94,7 @@ def fit_one_expert(xcal, cal, xval, val, fraction, score_lam=.25, residual_lam=2
     missing = ycal_full - masked_output(cal, gate_cal)
     offset = missing.mean(axis=0)
     residual_model = fit_kernel(xcal, missing, residual_lam)
+    lowrank_model = lowrank_residual_model(xcal, missing, rank=8, lam=residual_lam)
     static_y = masked_output(val, fixed_test)
     dynamic_y = masked_output(val, gate_test)
     return {
@@ -78,9 +104,16 @@ def fit_one_expert(xcal, cal, xval, val, fraction, score_lam=.25, residual_lam=2
         "dynamic": dynamic_y,
         "dynamic_mean_residual": dynamic_y + offset,
         "dynamic_ridge_residual": dynamic_y + predict(residual_model, xval),
+        "dynamic_rank8_residual": dynamic_y + predict_lowrank_residual(lowrank_model, xval),
         "oracle_magnitude": masked_output(val, mask_for(np.linalg.norm(val, axis=2), k)),
         "static_mask": fixed_test, "dynamic_mask": gate_test,
         "stored_router_floats_per_expert": int(n * (ng + hidden * 2) + ng + hidden * 2),
+        "estimated_fp32_storage_by_method": {
+            "dynamic":4*(n*hidden+n*ng+ng),
+            "dynamic_mean_residual":4*(n*hidden+n*ng+ng+hidden),
+            "dynamic_ridge_residual":4*(2*n*hidden+n*ng+ng+n*hidden+hidden),
+            "dynamic_rank8_residual":4*(n*hidden+n*ng+ng+len(lowrank_model["basis"])*hidden+n*len(lowrank_model["basis"])+len(lowrank_model["basis"])+hidden+n*hidden)
+        },
     }
 
 def evaluate(index, capture, routing, layer=1, hidden=2048, intermediate=1408,
