@@ -1,0 +1,106 @@
+name: Beglin HCP P4 Archived Real Long Risk Forecast Ablation
+on:
+  push:
+    branches: [research/hcp-p4-longcontext-costquality-20261014]
+    paths: [".github/workflows/hcp-p4-replay-real-long-risks.yml"]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  eval-original-immutable-risk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install numpy
+      - name: Download completed real DeepSeek source artifact, no model/worker execution
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 11852505311
+          run-id: 38467501959
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ github.token }}
+          path: evidence
+      - name: Verify exact failed-run source and separation of complete routing from absent A/B
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,pathlib
+          root=pathlib.Path("evidence")
+          report=json.loads((root/"receipt.json").read_text())
+          assert report["schema"]=="beglin-hcp-p4-context-costquality-safe-evidence-v1"
+          assert report["status"]=="PARTIAL_BLOCKED_NOT_EVALUATED"
+          assert report["complete_risk_and_native_ab"] is False
+          assert report["source_commit"]=="524c2998ec2bdbae4770a594abd64c18792b847d"
+          assert report["active_precision_policy_changed"] is False
+          p=root/"p4_derived_long_features.json"
+          h=hashlib.sha256(p.read_bytes()).hexdigest()
+          assert h=="c3b54b1ebe41d9a85ed94ddd0da87cde0de86ecf0af56d2e621733e439944f53"
+          assert h==report["artifact_sha256"][p.name]
+          data=json.loads(p.read_text())
+          assert data["record_count"]==36 and data["token_position_count"]==3933
+          assert data["train_val_holdout"]=={"train":12,"validation":12,"holdout":12}
+          assert data["real_routing_layers_per_token"]==26
+          assert data["native_precision_changed"] is False
+          assert all("token_ids" not in x and "hidden_vector" not in x
+                     for doc in data["sequences"] for x in doc["rows"])
+          assert not (root/"p4_native_precision_ab.json").exists()
+          print("P4_SHA_VERIFIED_REAL_RISK_3933_TOKENS_NO_NATIVE_POLICY_AB")
+          PY
+      - name: Test independent 16-step horizon and no final-holdout tuning
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd tools
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 python -m unittest test_hcp_p4_multihorizon_eval.py -v
+      - name: Train and evaluate 5 real-risk arms, 12 prompt group holdout
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/hcp-p4-archive-result"
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 python tools/hcp_p4_multihorizon_eval.py \
+            --features evidence/p4_derived_long_features.json \
+            --output "$RUNNER_TEMP/hcp-p4-archive-result/real_16future_predictive_ablation.json"
+      - name: Fail closed and seal independent lineage and non-native receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,json,hashlib,pathlib
+          src=pathlib.Path("evidence/p4_derived_long_features.json")
+          folder=pathlib.Path(os.environ["RUNNER_TEMP"])/"hcp-p4-archive-result"
+          p=folder/"real_16future_predictive_ablation.json"
+          z=json.loads(p.read_text())
+          assert z["schema"]=="beglin-hcp-p4-112token-future16-hierarchy-v1"
+          assert z["status"]=="REAL_MEDIUM_CONTEXT_RISK_PREDICTION_ONLY"
+          assert z["source_sha256"]==hashlib.sha256(src.read_bytes()).hexdigest()
+          assert (z["train_prompts"],z["validation_prompts"],z["holdout_prompts"])==(12,12,12)
+          assert z["native_precision_policy_change_allowed"] is False
+          assert z["automatic_live_promotion"] is False
+          assert z["genuine_JEPA_training_performed"] is False
+          out={"schema":"beglin-hcp-p4-independent-real-risk-only-receipt-v1",
+             "status":"REAL_36_LONG_PROMPTS_PREDICTIVE_EVALUATED_NATIVE_AB_BLOCKED",
+             "source_run":38467501959,
+             "source_artifact_id":11852505311,
+             "source_input_sha256":z["source_sha256"],
+             "evaluated_metrics_sha256":hashlib.sha256(p.read_bytes()).hexdigest(),
+             "source_predictor_head":os.environ.get("GITHUB_SHA"),
+             "provenance_verified":True,
+             "native_policy_A_B_missing":True,
+             "model_quality_improvement_claim":False,
+             "production_touched":False,"automatic_live_promotion":False}
+          (folder/"receipt.json").write_text(json.dumps(out,sort_keys=True,indent=2)+"\n")
+          print("P4_REAL_16TOKEN_RISK_FORECAST_RECEIPT",json.dumps(out,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beglin-p4-36prompt-real-future16-forecast
+          path: ${{ runner.temp }}/hcp-p4-archive-result/*.json
+          if-no-files-found: error
+          retention-days: 30
