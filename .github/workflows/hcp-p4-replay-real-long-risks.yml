@@ -26,6 +26,7 @@ jobs:
           repository: popixoxipop-collab/beglin
           github-token: ${{ github.token }}
           path: evidence
+          merge-multiple: true
       - name: Verify exact failed-run source and separation of complete routing from absent A/B
         shell: bash
         run: |
