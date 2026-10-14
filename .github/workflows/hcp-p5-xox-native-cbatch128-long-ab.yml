@@ -80,11 +80,11 @@ jobs:
           rsync -a --exclude=.git --exclude=.github --exclude=frozen_prompt_source \
             --exclude=archived_safe_p4 --exclude=results --exclude=attestations \
             --exclude=build --exclude=build-persistent ./ "$SCRATCH/src/"
-      - name: "Modify exactly one native CB macro 32 to 128 inside scratch C source only"
+      - name: "Widen both exact scratch native C CB32 and MLX MLA32 KV bounds to 128"
         shell: bash
         run: |
           set -euo pipefail
-          "$PY" tools/hcp_p5_scratch_capacity128.py --source-root "$SCRATCH/src"
+          "$PY" tools/hcp_p5_scratch_pair_capacity.py --source-root "$SCRATCH/src"
           "$PY" - <<'PY'
           import os,pathlib
           root=pathlib.Path(os.environ["SCRATCH"])/"src"
@@ -93,7 +93,11 @@ jobs:
           assert "#define MOE_MAXPOS 160" in c
           assert "REBIND_SET_APPLIED" in c
           assert "moe_cb4b_admit_guard" in c
-          print("P5_SCRATCH_CB128_NO_QNG64_POLICY_OR_ROUTER_MATH_CHANGE")
+          mlx=(root/"mlx_moe.cpp").read_text()
+          assert "#define MLA_L0_MAXPOS 128" in mlx
+          assert "#define GQA_L0_MAXPOS 32" in mlx
+          assert "spos[i] >= MLA_L0_MAXPOS" in mlx
+          print("P5_C_AND_MLX_128_KV_CAPACITY_MATCH_REBIND_SET_PRESERVED")
           PY
       - name: "Compile scratch-only GPU binary with reviewed CB128 buffers"
         shell: bash
