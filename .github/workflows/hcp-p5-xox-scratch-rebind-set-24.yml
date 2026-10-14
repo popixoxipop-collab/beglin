@@ -1,0 +1,146 @@
+name: Beglin HCP P5 Shadow Atomic REBIND SET XOX
+on:
+  push:
+    branches: [research/hcp-p5-isolated-rebind-capacity-20261014]
+    paths: [".github/workflows/hcp-p5-xox-scratch-rebind-set-24.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: beglin-hcp-p5-scratch-atomic-shadow
+  cancel-in-progress: false
+jobs:
+  atomic-24:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 1b4606eef596e10f3003f7d9f07b607616e990d6
+          path: frozen_prompt_source
+          persist-credentials: false
+      - name: Verify old stage immutable and prepare fresh shadow source
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          SCRATCH="$RUNNER_TEMP/hcp-p4-native-short-$GITHUB_RUN_ID"
+          test ! -e "$SCRATCH"
+          mkdir -p "$SCRATCH/src" "$SCRATCH/upload"
+          echo "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          export SCRATCH
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import hashlib,json,os,pathlib,sys,shutil
+          sys.path.insert(0,str(pathlib.Path("tools").resolve()))
+          import production_serving_supervisor_persistent as ps
+          assert ps.EXPECTED_PERSISTENT_SOURCE_SHA=="8b46cdd38f5b39dcaeaa9d1c5dfbd9642601a30a"
+          stage=pathlib.Path(ps.PERSISTENT_BINARY)
+          assert stage.is_file()
+          assert hashlib.sha256(stage.read_bytes()).hexdigest()==ps.EXPECTED_PERSISTENT_BINARY_SHA
+          source=pathlib.Path("qwen_infer.c").read_text()
+          assert 'if (!strcmp(op, "REBIND_SET"))' in source
+          assert "REBIND_SET_APPLIED" in source
+          assert "#define MOE_CBATCH_MAXPOS 32" in source
+          assert shutil.disk_usage(os.environ["RUNNER_TEMP"]).free>3*1024**3
+          route=pathlib.Path("/Users/xox/vdsp_serving/active-route.json")
+          safe={"old_stage_sha256":ps.EXPECTED_PERSISTENT_BINARY_SHA,
+            "live_route_sha256":hashlib.sha256(route.read_bytes()).hexdigest() if route.is_file() else None,
+            "source_head":os.environ["GITHUB_SHA"],"production_touched":False}
+          (pathlib.Path(os.environ["SCRATCH"])/"before.json").write_text(json.dumps(safe,sort_keys=True)+"\n")
+          print("P5_REBIND_SET_SOURCE_MISMATCH_IDENTIFIED_AND_STAGE_PINNED")
+          PY
+          rsync -a --exclude=.git --exclude=.github --exclude=frozen_prompt_source --exclude=results --exclude=attestations --exclude=build --exclude=build-persistent ./ "$SCRATCH/src/"
+      - name: Compile new native multi-target transaction parser only in scratch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          nice -n 10 cmake --build "$SCRATCH/build" --target qwen_infer_gpu -j2
+          shasum -a 256 "$SCRATCH/build/qwen_infer_gpu"
+      - name: Two prompt A-B atomic ACK and runtime policy smoke
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 /Users/xox/.venv-vllm-metal/bin/python3 tools/hcp_p5_scratch_binary_adapter.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" --source "$SCRATCH/src/qwen_infer.c" --owner "$SCRATCH" \
+            --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors \
+            --index /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json \
+            --sample-count 2 --output "$SCRATCH/upload/p5_native_scratch_smoke.json"
+      - name: Twelve domain native A-B pairs with original exact ACK verifier
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 /Users/xox/.venv-vllm-metal/bin/python3 tools/hcp_p5_scratch_binary_adapter.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" --source "$SCRATCH/src/qwen_infer.c" --owner "$SCRATCH" \
+            --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors \
+            --index /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json \
+            --sample-count 12 --output "$SCRATCH/upload/p5_native_scratch_12domain.json"
+      - name: Seal exact stage/route comparison even on study failure
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import os,pathlib,sys,hashlib,json
+          sys.path.insert(0,str(pathlib.Path("tools").resolve()))
+          import production_serving_supervisor_persistent as ps
+          owner=pathlib.Path(os.environ["RUNNER_TEMP"])/("hcp-p4-native-short-"+os.environ["GITHUB_RUN_ID"])
+          if not (owner/"before.json").is_file():raise SystemExit("P5_NO_VALID_PRECHECK")
+          old=json.loads((owner/"before.json").read_text())
+          stage=pathlib.Path(ps.PERSISTENT_BINARY)
+          stage_ok=hashlib.sha256(stage.read_bytes()).hexdigest()==old["old_stage_sha256"]
+          route=pathlib.Path("/Users/xox/vdsp_serving/active-route.json")
+          route_sha=hashlib.sha256(route.read_bytes()).hexdigest() if route.is_file() else None
+          route_ok=route_sha==old["live_route_sha256"]
+          test=owner/"upload/p5_native_scratch_12domain.json"
+          passed=test.is_file() and stage_ok and route_ok
+          if passed:
+              d=json.loads(test.read_text())
+              passed=(d.get("sample_pairs")==12 and d.get("production_touched") is False and
+                      d.get("long_112token_native_support") is False)
+          receipt={"schema":"beglin-hcp-p5-atomic-shadow-only-v1",
+              "status":"REAL_SHORT24_SHADOW_REBIND_SET_PASS" if passed else "BLOCKED_NO_NATIVE_AB_CERTIFICATE",
+              "source_head":old["source_head"],"old_stage_sha256":old["old_stage_sha256"],
+              "old_stage_untouched":stage_ok,"production_route_untouched":route_ok,
+              "shadow_binary_sha256":hashlib.sha256((owner/"build/qwen_infer_gpu").read_bytes()).hexdigest()
+                                  if (owner/"build/qwen_infer_gpu").is_file() else None,
+              "sample_pairs":12 if passed else 0,"full_112token_native_tested":False,
+              "native_result_sha256":hashlib.sha256(test.read_bytes()).hexdigest() if passed else None,
+              "production_touched":False,"automatic_live_promotion":False}
+          (owner/"upload/receipt.json").write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\n")
+          print("P5_ATOMIC_SHADOW_ONLY_RECEIPT",json.dumps(receipt,sort_keys=True))
+          assert stage_ok and route_ok,"UNAUTHORIZED_STAGE_OR_ROUTE_MUTATION"
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beglin-p5-native-atomic-rebind-set-scratch-24
+          path: ${{ runner.temp }}/hcp-p4-native-short-${{ github.run_id }}/upload/*.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Delete only P5-run scratch C, binary, shadow worker and token IDs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import pathlib,os,shutil
+          base=pathlib.Path(os.environ["RUNNER_TEMP"]).resolve()
+          owned=base/("hcp-p4-native-short-"+os.environ["GITHUB_RUN_ID"])
+          if owned.is_dir() and owned.resolve().parent==base:
+              shutil.rmtree(owned)
+              print("P5_COMPLETE_SHADOW_SCRATCH_CLEANED")
+          PY
