@@ -43,7 +43,7 @@ def patch(root):
        "MOE_NEARTIE_LANES*MOE_CBATCH_MAXPOS*MOE_KROW",
        "MOE_NEARTIE_LANES*MOE_CBATCH_MAXPOS*MOE_VROW",
        "static int mf_ids[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS]",
-       "static int rq_out[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS]",
+       "rq_out[MOE_CB4B_RMAX][MOE_CBATCH_MAXPOS]",
        "if (plen[r] >= MOE_CBATCH_MAXPOS)",
        "if (plen[r] + maxnew[r] > MOE_CBATCH_MAXPOS)",
        "float scores[MOE_CBATCH_MAXPOS]",
