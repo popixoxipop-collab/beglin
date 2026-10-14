@@ -1,0 +1,19 @@
+{
+  "arithmetic": "BF16",
+  "finite_logit_values": 102400,
+  "independent_full_model_resident_forward_repeated": false,
+  "layers": 27,
+  "logits_sha256": "9022e1866f0cfd0713aafe45c2e5946770a0048112e8e8165e5986489314203e",
+  "native_quantized_AB_quality_compared": false,
+  "promotion_allowed": false,
+  "prompt_id": "p15-engineering-0",
+  "real_next_token_argmax_verified": true,
+  "resident_toy_numerical_equivalence_tests": 18,
+  "resource_RSS_peak_bytes": 2660745216,
+  "schema": "beglin-p15-independent-full-logits-and-provenance-audit-v1",
+  "source_BF16_weights": true,
+  "source_tensor_count": 5291,
+  "status": "COMPLETE_FULL_VOCAB_ARRAY_AND_27_LAYER_5291_TENSOR_PROVENANCE_VERIFIED",
+  "teacher_report_sha256": "ef6e82351d799b93451c113a521c3da04799fb7fafbaaa25643874a86cca9c0e",
+  "vocabulary_logits": 102400
+}

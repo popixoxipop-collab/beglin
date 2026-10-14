@@ -1,0 +1,15 @@
+{
+  "errors": 0,
+  "failures": 0,
+  "original_computational_source_sha256": "7d8e5221095286eea991137760893fd7ba52727c0b4ebf48ec09e8bc56b45b9c",
+  "schema": "beglin-p15-original-streaming-resident-numerical-tests-v1",
+  "seconds": 2.148027209099382,
+  "source_sha256": {
+    "hcp_p15_run_teacher.py": "1dbaa7e59d4e42e059c4c88dc3c2e735d1e5b740b971aca408cb52f218e961e2",
+    "hcp_p15_streamed_teacher.py": "46510526dbaf21884bca30a85ad3d1131099ccf8a1d41063064c1b1fd6683f56",
+    "test_hcp_p15_streamed_teacher.py": "ac29ee917315ef21e76d3af2a8a34d973b2f0c5b0805b59d500fcadd6e9f4889"
+  },
+  "successful": true,
+  "test_log_sha256": "ec770fe7844b001ca43830df5b407d19b7dd6b687e7a55f0c52fff548a785f05",
+  "tests": 18
+}

@@ -1,0 +1,14 @@
+{
+  "BF16_max_probability": 0.279448540423147,
+  "FP32_max_probability": 0.26472634095848147,
+  "KL_BF16_to_FP32": 0.003563811957145536,
+  "argmax_agrees": false,
+  "logit_rmse": 0.14749281034257508,
+  "max_abs_logit_difference": 1.0220260620117188,
+  "native_quantized_A_B_comparison": false,
+  "same_BF16_weights_different_arithmetic": true,
+  "same_input": true,
+  "schema": "beglin-p15-BF16-versus-FP32-arithmetic-comparison-v1",
+  "source_weight_hashes_identical": true,
+  "total_variation": 0.038405622719647856
+}

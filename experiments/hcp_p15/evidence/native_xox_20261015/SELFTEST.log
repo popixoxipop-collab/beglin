@@ -1,0 +1,23 @@
+test_01_original_source_all_18_definition_pins (test_hcp_p15_streamed_teacher.P15StreamTests.test_01_original_source_all_18_definition_pins) ... ok
+test_02_fp32_stream_equals_resident_full_logits (test_hcp_p15_streamed_teacher.P15StreamTests.test_02_fp32_stream_equals_resident_full_logits) ... ok
+test_03_bf16_stream_equals_resident_full_logits (test_hcp_p15_streamed_teacher.P15StreamTests.test_03_bf16_stream_equals_resident_full_logits) ... ok
+test_04_all_original_weights_consumed_once (test_hcp_p15_streamed_teacher.P15StreamTests.test_04_all_original_weights_consumed_once) ... ok
+test_05_layer0_dense_exact (test_hcp_p15_streamed_teacher.P15StreamTests.test_05_layer0_dense_exact) ... ok
+test_06_first_MoE_layer_exact (test_hcp_p15_streamed_teacher.P15StreamTests.test_06_first_MoE_layer_exact) ... ok
+test_07_second_run_repeats_full_logits (test_hcp_p15_streamed_teacher.P15StreamTests.test_07_second_run_repeats_full_logits) ... ok
+test_08_source_mutation_after_headers_denied (test_hcp_p15_streamed_teacher.P15StreamTests.test_08_source_mutation_after_headers_denied) ... ok
+test_09_non_BF16_source_rejected (test_hcp_p15_streamed_teacher.P15StreamTests.test_09_non_BF16_source_rejected) ... ok
+test_10_missing_parameter_index_rejected (test_hcp_p15_streamed_teacher.P15StreamTests.test_10_missing_parameter_index_rejected) ... ok
+test_11_source_code_tamper_rejected (test_hcp_p15_streamed_teacher.P15StreamTests.test_11_source_code_tamper_rejected) ... ok
+test_12_out_of_vocabulary_rejected (test_hcp_p15_streamed_teacher.P15StreamTests.test_12_out_of_vocabulary_rejected) ... ok
+test_13_oversized_context_rejected (test_hcp_p15_streamed_teacher.P15StreamTests.test_13_oversized_context_rejected) ... ok
+test_14_padding_batch_not_silently_supported (test_hcp_p15_streamed_teacher.P15StreamTests.test_14_padding_batch_not_silently_supported) ... ok
+test_15_yarn_softmax_factor_preserved (test_hcp_p15_streamed_teacher.P15StreamTests.test_15_yarn_softmax_factor_preserved) ... ok
+test_16_source_weights_not_rounded_when_widened (test_hcp_p15_streamed_teacher.P15StreamTests.test_16_source_weights_not_rounded_when_widened) ... ok
+test_17_parameter_set_shape_mismatch_rejected (test_hcp_p15_streamed_teacher.P15StreamTests.test_17_parameter_set_shape_mismatch_rejected) ... ok
+test_18_shorter_sequence_exact (test_hcp_p15_streamed_teacher.P15StreamTests.test_18_shorter_sequence_exact) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 2.147s
+
+OK
