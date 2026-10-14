@@ -2,7 +2,10 @@ name: Beglin P5 Native REBIND_SET Scratch Source and Capacity128 Unit
 on:
   push:
     branches: [research/hcp-p5-scratch-rebind-set-20261014]
-    paths: [".github/workflows/hcp-p5-native-source-unit.yml"]
+    paths:
+      - ".github/workflows/hcp-p5-native-source-unit.yml"
+      - "tools/hcp_p5_scratch_pair_capacity.py"
+      - "tools/test_hcp_p5_native_source_capacity.py"
 permissions:
   contents: read
 jobs:
@@ -23,7 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile tools/hcp_p5_scratch_rebind_ab.py tools/hcp_p5_scratch_capacity128.py \
-            tools/hcp_p5_capacity128_long_ab.py
+            tools/hcp_p5_capacity128_long_ab.py tools/hcp_p5_scratch_pair_capacity.py
           cd tools
           OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 python -m unittest \
             test_hcp_p5_native_source_capacity.py \
