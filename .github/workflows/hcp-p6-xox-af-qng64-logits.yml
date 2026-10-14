@@ -1,5 +1,6 @@
 name: Beglin P6 XOX Isolated Actual AF vs qNg64 Logit Fidelity
 on:
+  workflow_dispatch:
   push:
     branches: [research/hcp-p6-af-qng64-logits-20261014]
     paths: [".github/workflows/hcp-p6-xox-af-qng64-logits.yml"]
