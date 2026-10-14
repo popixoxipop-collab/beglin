@@ -81,9 +81,27 @@ def run(binary,source,bank,tokenizer,index,model_root,owner,output,*,count=1):
     live=pathlib.Path("/Users/xox/vdsp_serving/active-route.json")
     before_live=file_sha(live) if live.is_file() else None
     corpus=prepare(bank,tokenizer)
-    selected=[corpus["prompts"][3*i+i%3] for i in range(count)]
-    if len({x["domain"] for x in selected})!=count:
-        raise ValueError("independent topic domains lost")
+    prompts=corpus["prompts"]
+    if count==1:
+        # The single smoke now verifies the actual maximum allowed by the
+        # preregistered 36-question tokenizer set, not an arbitrary middle.
+        selected=[min(prompts,key=lambda x:(-x["tokens"],x["id"]))]
+    else:
+        # Cover the ACTUAL minimum and maximum corpus lengths from different
+        # domains, plus a third independent intermediate-length prompt.
+        lo=corpus["minimum_tokens"]
+        hi=corpus["actual_max_tokens"]
+        extremes=[(p,q) for p in prompts if p["tokens"]==lo
+                  for q in prompts if q["tokens"]==hi and p["domain"]!=q["domain"]]
+        if not extremes:raise ValueError("cannot cover full 104-112 tokenizer bounds across domains")
+        a,b=min(extremes,key=lambda xy:(xy[0]["id"],xy[1]["id"]))
+        middle=min((p for p in prompts if p["domain"] not in {a["domain"],b["domain"]}),
+                   key=lambda p:(abs(p["tokens"]-(lo+hi)/2),p["id"]))
+        selected=[a,middle,b]
+    if (len({x["domain"] for x in selected})!=count or
+        (count==3 and (min(x["tokens"] for x in selected)!=corpus["minimum_tokens"]
+                       or max(x["tokens"] for x in selected)!=corpus["actual_max_tokens"]))):
+        raise ValueError("independent input-length range coverage lost")
     # Same-process shadow override, never rewriting ps.PERSISTENT_BINARY itself
     # or the immutable stage or any shared authority.
     ps.PERSISTENT_BINARY=binary
