@@ -2,7 +2,9 @@ name: Beglin HCP P5 Scratch 128 Position Long qNg64 Atomic Native AB
 on:
   push:
     branches: [research/hcp-p5-isolated-rebind-capacity-20261014]
-    paths: [".github/workflows/hcp-p5-xox-scratch-kv128-long.yml"]
+    paths:
+      - ".github/workflows/hcp-p5-xox-scratch-kv128-long.yml"
+      - "tools/hcp_p5_native_long128_shadow.py"
 permissions:
   contents: read
 concurrency:
