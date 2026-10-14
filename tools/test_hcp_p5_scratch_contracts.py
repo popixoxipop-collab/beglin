@@ -20,6 +20,19 @@ MANDATORY=(
  "float scores[MOE_CBATCH_MAXPOS]",
  "REBIND_SET_APPLIED")
 
+def mock_mlx():
+    return "\n".join([
+        "#define MLA_L0_MAXPOS 32", "#define GQA_L0_MAXPOS 32",
+        "if (spos[i] < 0 || spos[i] >= MLA_L0_MAXPOS)",
+        "mask_bytes[(size_t)m * MLA_L0_MAXPOS + j]",
+        "g_fused_K.push_back(mx::zeros({B, H, MLA_L0_MAXPOS, QHD}",
+        "g_fused_V.push_back(mx::zeros({B, H, MLA_L0_MAXPOS, VHD}",
+        "if (spos[i] < 0 || spos[i] >= GQA_L0_MAXPOS)",
+        "mask_bytes[(size_t)m * GQA_L0_MAXPOS + j]",
+        "g_fused_gqa_cK.push_back(mx::zeros({B, KVH, GQA_L0_MAXPOS, HD}",
+        "g_fused_gqa_cV.push_back(mx::zeros({B, KVH, GQA_L0_MAXPOS, HD}",
+    ])+"\n"
+
 def source():
     return ("#define MOE_MAXPOS 160\n#define MOE_CBATCH_MAXPOS 32\n"
             "#define MOE_CB4C_LANES 8\n#define MOE_NEARTIE_LANES 8\n"
@@ -32,6 +45,7 @@ class P5ScratchContracts(unittest.TestCase):
             src=root/"my-run/src";src.mkdir(parents=True)
             (src/"qwen_infer.c").write_text(source())
             (src/"qng64_dense.c").write_text("/* fake, build not executed */")
+            (src/"mlx_moe.cpp").write_text(mock_mlx())
             (src/"CMakeLists.txt").write_text(CMAKE_START+")\n")
             with patch.dict(os.environ,{"RUNNER_TEMP":str(root)}):
                 outcome=patch_c(src)
@@ -41,6 +55,9 @@ class P5ScratchContracts(unittest.TestCase):
             self.assertNotEqual(outcome["original_C_sha256"],outcome["revised_C_sha256"])
             self.assertIn("#define MOE_CBATCH_MAXPOS 128",(src/"qwen_infer.c").read_text())
             self.assertIn("qng64_dense.c",(src/"CMakeLists.txt").read_text())
+            self.assertIn("#define MLA_L0_MAXPOS 128",(src/"mlx_moe.cpp").read_text())
+            self.assertIn("#define GQA_L0_MAXPOS 128",(src/"mlx_moe.cpp").read_text())
+            self.assertTrue(outcome["all_reviewed_MLX_device_KV_and_attention_masks_use_same_cap"])
     def test_unreviewed_native_mirror_blocks_without_mutation(self):
         with tempfile.TemporaryDirectory() as td:
             root=pathlib.Path(td)
@@ -49,6 +66,7 @@ class P5ScratchContracts(unittest.TestCase):
                                     "MOE_NEARTIE_LANES*32*MOE_KROW")
             (src/"qwen_infer.c").write_text(unsafe)
             (src/"qng64_dense.c").write_text("/* fake */")
+            (src/"mlx_moe.cpp").write_text(mock_mlx())
             (src/"CMakeLists.txt").write_text(CMAKE_START+")\n")
             with patch.dict(os.environ,{"RUNNER_TEMP":str(root)}):
                 with self.assertRaisesRegex(ValueError,"unreviewed long KV"):
