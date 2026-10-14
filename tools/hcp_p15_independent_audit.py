@@ -39,6 +39,11 @@ def audit(root,label):
         raise ValueError('Teacher source implementation/provenance changed')
     for forbidden in ('production_touched','automatic_live_promotion','GPU_used','quantized_native_A_B_compared','quality_noninferiority_certified'):
         if r.get(forbidden) is not False:raise ValueError('Unsupported teacher promotion/quality claim')
+    if (r.get('original_resident_full_model_bitwise_comparison_performed') is not False or
+        r.get('native_KV_cache_enabled') is not False or
+        r.get('source_parameters_modified') is not False or
+        r.get('source_checkpoint_metadata_unchanged') is not True):
+        raise ValueError('Unsupported full-model parity/parameter/cache or checkpoint integrity claim')
     if not (0<r['process_rss_peak_bytes']<=6*1024**3 and r['cpu_threads']==2):
         raise ValueError('Execution exceeded registered resource scope')
     layer_ids=[z['layer'] for z in r['per_layer']]

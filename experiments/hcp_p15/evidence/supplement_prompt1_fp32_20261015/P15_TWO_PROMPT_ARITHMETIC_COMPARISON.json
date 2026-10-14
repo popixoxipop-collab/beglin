@@ -1,0 +1,42 @@
+{
+  "full_model_logits_measured_in_all_cells": true,
+  "native_quantized_AB_comparison": false,
+  "not_an_accuracy_benchmark": true,
+  "original_reference_arithmetics": [
+    "BF16",
+    "FP32"
+  ],
+  "production_promotion_allowed": false,
+  "records": [
+    {
+      "JS_divergence_nats": 0.0008864769161254266,
+      "mean_abs_logit_delta": 0.12464673595415661,
+      "next_token_top1_bf16": 207,
+      "next_token_top1_fp32": 15092,
+      "prompt_id": "p15-engineering-0",
+      "relative_l2_logits": 0.03208170688640115,
+      "rmse_logits": 0.14749281034257508,
+      "teacher_BF16_file_sha256": "9022e1866f0cfd0713aafe45c2e5946770a0048112e8e8165e5986489314203e",
+      "teacher_FP32_file_sha256": "3598245173f95fa7f2a5611eae2be2e58bb5ac4aaecb997ea5df208dfee0e3fe",
+      "top10_overlap": 10,
+      "top1_same": false,
+      "top5_overlap": 5
+    },
+    {
+      "JS_divergence_nats": 0.0004388585889870476,
+      "mean_abs_logit_delta": 0.1272574325808091,
+      "next_token_top1_bf16": 51536,
+      "next_token_top1_fp32": 51536,
+      "prompt_id": "p15-engineering-1",
+      "relative_l2_logits": 0.028291400852253405,
+      "rmse_logits": 0.15878755299742398,
+      "teacher_BF16_file_sha256": "7261448911fe14927195d603eeb90bc86ace2dd98209eb3c800e834eaf49558d",
+      "teacher_FP32_file_sha256": "74979f5a4a16e6df98e5ac9860b6166bf1afa8e150a37bccec8bd35ab45ad593",
+      "top10_overlap": 9,
+      "top1_same": true,
+      "top5_overlap": 5
+    }
+  ],
+  "schema": "beglin-hcp-p15-two-prompt-compute-dtype-consistency-v1",
+  "source_weight_checkpoint_dtype": "BF16"
+}

@@ -1,0 +1,64 @@
+{
+  "P15_additional_real_evidence_adversarial_tests": 28,
+  "P15_earlier_evidence_negative_tests_rerun_now": 12,
+  "P15_original_3run_tamper_tests": 12,
+  "P15_original_preregistered_commit": "1cd75c4668b700f3b1d6a2b008a64a02f2048366",
+  "P15_original_stream_vs_resident_miniature_numerical_tests": 18,
+  "additional_full_vocab_logits": 102400,
+  "additional_job_id": "job_589a5331544f1abe51bee61bcc1c2dab",
+  "additional_job_result": "SUCCEEDED exit_code=0",
+  "additional_original_layers_computed": 27,
+  "additional_original_parameter_tensors_read": 5291,
+  "additional_real_full_model_forward": "prompt1_fp32",
+  "all_original_logits_in_git_private_repo_research_branch_only": true,
+  "automatic_live_promotion": false,
+  "cumulative_full_model_forwards": 4,
+  "cumulative_independent_full_vocab_audits": 4,
+  "cumulative_verified_BF16_forwards": 2,
+  "cumulative_verified_FP32_forwards": 2,
+  "end_to_end_quality_noninferiority_certified": false,
+  "files_SHA256": {
+    "P15_ADVERSARIAL_AUDIT_28_PASS.log": {
+      "bytes": 2944,
+      "sha256": "245d1f36f3f8b0552629da49ae5c920c1f78429a8da7c0da4e0bf28dcbc3132e"
+    },
+    "P15_EXISTING_EVIDENCE_REGRESSION_12_PASS.log": {
+      "bytes": 1186,
+      "sha256": "f1d0cb5b24c75242ec9a043eee8300d780c8e11c11aec23f6e3947de5e8d8ae3"
+    },
+    "P15_TWO_PROMPT_ARITHMETIC_COMPARISON.json": {
+      "bytes": 1572,
+      "sha256": "dccff95432fea0bb8c2bd8e3fb8f4ffb230585127545a07e0fb94eb74122e1c2"
+    },
+    "prompt1_fp32.INDEPENDENT_AUDIT.json": {
+      "bytes": 821,
+      "sha256": "474396092c83c084bf0de70d0215c419d7503335691a02373d38b6a97c80e0d0"
+    },
+    "prompt1_fp32.json": {
+      "bytes": 11337,
+      "sha256": "4dcbb972531fbf6b15b530d87c4ca89d993534c612d94f14626e2ced750444b3"
+    },
+    "prompt1_fp32.logits.npy": {
+      "bytes": 409728,
+      "sha256": "74979f5a4a16e6df98e5ac9860b6166bf1afa8e150a37bccec8bd35ab45ad593"
+    },
+    "prompt1_fp32.source_hashes.json": {
+      "bytes": 633291,
+      "sha256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda"
+    }
+  },
+  "native_quantized_AB_logits_compared": false,
+  "new_original_source_hashes_match_previous_3_runs": true,
+  "new_reference_arithmetic": "FP32_with_original_BF16_checkpoint_weights",
+  "no_original_checkpoint_weight_bytes_committed": true,
+  "original_immutable_3run_manifest_sha256": "4b2020d6b6955a1bd2c8174c051bf00ff005686f35ccdd38cf3b37080f68b0d5",
+  "original_immutable_3run_report_sha256": "811a26c5a854a841c000e641c480fda9bb834504193828d97f86197dbc972c0c",
+  "production_touched": false,
+  "schema": "beglin-hcp-p15-supplement-4th-complete-fullteacher-provenance-v1",
+  "source_prior_verified_commit": "110cefa0d44d09f1d07d5137705369920a652928",
+  "sources_SHA256": {
+    "additional_tamper_tests": "63b7f209fc5e902d2d9a340af12e7c0f58f293d983e0b4c4ca5b1d136965b7f3",
+    "independent_auditor": "8563d81cef1aba09839f560f79d9042599ee17a151f24f1c2a071e130a89617d"
+  },
+  "total_EOE_adversarial_tests_rerun_on_P15_4run_branch": 40
+}
