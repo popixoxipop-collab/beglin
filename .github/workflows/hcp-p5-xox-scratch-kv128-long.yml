@@ -1,0 +1,161 @@
+name: Beglin HCP P5 Scratch 128 Position Long qNg64 Atomic Native AB
+on:
+  push:
+    branches: [research/hcp-p5-isolated-rebind-capacity-20261014]
+    paths: [".github/workflows/hcp-p5-xox-scratch-kv128-long.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: beglin-hcp-p5-scratch-kv128-native
+  cancel-in-progress: false
+jobs:
+  shadow-cap128:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 1b4606eef596e10f3003f7d9f07b607616e990d6
+          path: frozen_prompt_source
+          persist-credentials: false
+      - name: Verify original stage, context-specific memory budget, immutable route and scratch source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          SCRATCH="$RUNNER_TEMP/hcp-p5-long128-$GITHUB_RUN_ID"
+          test ! -e "$SCRATCH"
+          mkdir -p "$SCRATCH/src" "$SCRATCH/upload"
+          echo "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          export SCRATCH
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import hashlib,json,os,pathlib,re,subprocess,sys,shutil
+          sys.path.insert(0,str(pathlib.Path("tools").resolve()))
+          import production_serving_supervisor_persistent as ps
+          assert ps.EXPECTED_PERSISTENT_SOURCE_SHA=="8b46cdd38f5b39dcaeaa9d1c5dfbd9642601a30a"
+          stage=pathlib.Path(ps.PERSISTENT_BINARY)
+          stage_sha=hashlib.sha256(stage.read_bytes()).hexdigest()
+          assert stage_sha==ps.EXPECTED_PERSISTENT_BINARY_SHA
+          phys=int(subprocess.check_output(["/usr/sbin/sysctl","-n","hw.memsize"],text=True).strip())
+          if phys<48*1024**3:raise RuntimeError("KV128 research model requires 48GiB total memory minimum")
+          mem=subprocess.check_output(["/usr/bin/vm_stat"],text=True)
+          size=int(re.search(r"page size of (\d+) bytes",mem).group(1))
+          pages={}
+          for line in mem.splitlines():
+              match=re.search(r"^(Pages free|Pages inactive|Pages speculative):\s+(\d+)\.",line)
+              if match:pages[match.group(1)]=int(match.group(2))
+          free=(sum(pages.values())*size)
+          if free<8*1024**3:raise RuntimeError("KV128 scratch VM free+inactive+speculative less than 8GiB")
+          if shutil.disk_usage(os.environ["RUNNER_TEMP"]).free<5*1024**3:
+              raise RuntimeError("KV128 scratch disk below 5GiB")
+          route=pathlib.Path("/Users/xox/vdsp_serving/active-route.json")
+          receipt={"schema":"beglin-hcp-p5-kv128-preflight-v1",
+            "old_stage_sha256":stage_sha,
+            "route_sha256":hashlib.sha256(route.read_bytes()).hexdigest() if route.is_file() else None,
+            "RAM_bytes":phys,"vm_available_bytes":free,
+            "source_head":os.environ["GITHUB_SHA"],
+            "production_touched":False}
+          (pathlib.Path(os.environ["SCRATCH"])/"before.json").write_text(json.dumps(receipt,sort_keys=True)+"\n")
+          print("P5_SCRATCH_KV128_MEMORY_STAGE_PREFLIGHT_PASS",json.dumps({
+             "total_gib":round(phys/1024**3,1),"free_inactive_gib":round(free/1024**3,1),
+             "old_stage_untouched":True},sort_keys=True))
+          PY
+          rsync -a --exclude=.git --exclude=.github --exclude=frozen_prompt_source --exclude=results --exclude=attestations --exclude=build --exclude=build-persistent ./ "$SCRATCH/src/"
+      - name: Patch only scratch native C buffer dimensions and qNg64 linkage
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 tools/hcp_p5_scratch_128_patch.py --scratch-src "$SCRATCH/src"
+          cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          nice -n 10 cmake --build "$SCRATCH/build" --target qwen_infer_gpu -j2
+          shasum -a 256 "$SCRATCH/build/qwen_infer_gpu"
+      - name: Scratch 104-112 token original AF and qNg64 2-target transaction smoke
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 /Users/xox/.venv-vllm-metal/bin/python3 tools/hcp_p5_native_long128_shadow.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" --source "$SCRATCH/src/qwen_infer.c" \
+            --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors \
+            --index /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json \
+            --model-root /Users/xox/vdsp_local_data/moe_base_deepseek \
+            --owner "$SCRATCH" --sample-count 1 --output "$SCRATCH/upload/p5_long128_oneprompt.json"
+      - name: Three domain distinct 104-112 token actual AF versus shadow-native qNg64 A/B
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 /Users/xox/.venv-vllm-metal/bin/python3 tools/hcp_p5_native_long128_shadow.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" --source "$SCRATCH/src/qwen_infer.c" \
+            --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors \
+            --index /Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json \
+            --model-root /Users/xox/vdsp_local_data/moe_base_deepseek \
+            --owner "$SCRATCH" --sample-count 3 --output "$SCRATCH/upload/p5_long128_threeprompts.json"
+      - name: Seal exact result or blocked status, stage and active route must match
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import os,pathlib,hashlib,json,sys
+          sys.path.insert(0,str(pathlib.Path("tools").resolve()))
+          import production_serving_supervisor_persistent as ps
+          base=pathlib.Path(os.environ["RUNNER_TEMP"])/("hcp-p5-long128-"+os.environ["GITHUB_RUN_ID"])
+          if not (base/"before.json").is_file():
+              print("P5_KV128_NO_VALID_PRECHECK");raise SystemExit(0)
+          old=json.loads((base/"before.json").read_text())
+          stage_sha=hashlib.sha256(pathlib.Path(ps.PERSISTENT_BINARY).read_bytes()).hexdigest()
+          route=pathlib.Path("/Users/xox/vdsp_serving/active-route.json")
+          route_sha=hashlib.sha256(route.read_bytes()).hexdigest() if route.is_file() else None
+          stage_ok=stage_sha==old["old_stage_sha256"]
+          route_ok=route_sha==old["route_sha256"]
+          f=base/"upload/p5_long128_threeprompts.json"
+          body=json.loads(f.read_text()) if f.is_file() else {}
+          success=bool(body.get("schema")=="beglin-hcp-p5-native-scratch-kv128-real-long-ab-v1"
+                   and body.get("data_points")==3 and body.get("cbatch_maxpos")==128
+                   and body.get("no_original_stage_or_active_route_mutation") is True
+                   and body.get("production_touched") is False and stage_ok and route_ok)
+          report={"schema":"beglin-hcp-p5-kv128-real-scratch-receipt-v1",
+                  "status":"REAL_104_112_TOKEN_SHADOW_AB_COMPLETE" if success else "BLOCKED_NO_KV128_NATIVE_RESULT",
+                  "source_head":old["source_head"],
+                  "long_native_first_three_domains_verified":success,
+                  "old_stage_unchanged":stage_ok,"active_route_unchanged":route_ok,
+                  "built_binary_sha256":hashlib.sha256((base/"build/qwen_infer_gpu").read_bytes()).hexdigest()
+                                        if (base/"build/qwen_infer_gpu").is_file() else None,
+                  "original_stage_sha256":old["old_stage_sha256"],
+                  "native_result_sha256":hashlib.sha256(f.read_bytes()).hexdigest() if success else None,
+                  "precision_live_change_approved":False,
+                  "production_touched":False,"automatic_live_promotion":False}
+          (base/"upload/receipt.json").write_text(json.dumps(report,sort_keys=True,indent=2)+"\n")
+          print("P5_128POSITION_NATIVE_SHADOW_RECEIPT",json.dumps(report,sort_keys=True))
+          assert stage_ok and route_ok,"UNAUTHORIZED_SOURCE_ROUTE_MODIFICATION"
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beglin-hcp-p5-shadow-kv128-matched-long-af-qng64
+          path: ${{ runner.temp }}/hcp-p5-long128-${{ github.run_id }}/upload/*.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Clean only P5-owned KV128 research C, binary, AF logits and native queues
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import os,pathlib,shutil
+          runner=pathlib.Path(os.environ["RUNNER_TEMP"]).resolve()
+          owned=runner/("hcp-p5-long128-"+os.environ["GITHUB_RUN_ID"])
+          if owned.is_dir() and owned.resolve().parent==runner:
+              shutil.rmtree(owned)
+              print("P5_KV128_OWN_SCRATCH_REMOVED")
+          PY
