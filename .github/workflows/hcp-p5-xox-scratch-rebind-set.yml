@@ -1,0 +1,188 @@
+name: Beglin P5 XOX Scratch REBIND_SET Native ACK Contract
+on:
+  push:
+    branches: [research/hcp-p5-scratch-rebind-set-20261014]
+    paths: [".github/workflows/hcp-p5-xox-scratch-rebind-set.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: beglin-p5-xox-scratch-rebind-set
+  cancel-in-progress: false
+jobs:
+  scratch-native-ack:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 38
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 1b4606eef596e10f3003f7d9f07b607616e990d6
+          path: frozen_prompt_source
+          persist-credentials: false
+      - name: "Pin actual XOX checkpoint, original stage binary, latest REBIND_SET source"
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          PY=/Users/xox/.venv-vllm-metal/bin/python3
+          INDEX=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json
+          TOKENIZER=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors
+          SCRATCH="$RUNNER_TEMP/hcp-p4-native-short-$GITHUB_RUN_ID"
+          test ! -e "$SCRATCH" && test -x "$PY" && test -f "$INDEX" && test -f "$TOKENIZER/tokenizer.json"
+          mkdir -p "$SCRATCH/src" "$SCRATCH/upload"
+          export PY INDEX TOKENIZER SCRATCH
+          echo "PY=$PY" >> "$GITHUB_ENV"
+          echo "INDEX=$INDEX" >> "$GITHUB_ENV"
+          echo "TOKENIZER=$TOKENIZER" >> "$GITHUB_ENV"
+          echo "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          "$PY" - <<'PY'
+          import hashlib,os,pathlib,shutil,sys
+          sys.path.insert(0,str(pathlib.Path("tools").resolve()))
+          import production_serving_supervisor_persistent as ps
+          idx=pathlib.Path(os.environ["INDEX"])
+          assert hashlib.sha256(idx.read_bytes()).hexdigest()=="d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+          stage=pathlib.Path(ps.PERSISTENT_BINARY)
+          assert stage.is_file() and hashlib.sha256(stage.read_bytes()).hexdigest()==ps.EXPECTED_PERSISTENT_BINARY_SHA
+          source=pathlib.Path("qwen_infer.c").read_text()
+          assert "REBIND_SET" in source and "REBIND_SET_APPLIED" in source
+          assert "static int moe_gpu_txn_read(" in source and "moe_gpu_rebind_set_apply_quiescent" in source
+          assert "#define MOE_CBATCH_MAXPOS 32" in source
+          assert shutil.disk_usage(os.environ["RUNNER_TEMP"]).free>3*1024**3
+          print("P5_SOURCE_STAGE_PINNED",{ "original_stage_sha256":ps.EXPECTED_PERSISTENT_BINARY_SHA,
+              "source_sha256":hashlib.sha256(source.encode()).hexdigest(),
+              "verified_REBIND_SET":True,"native_cbatch_pos":32,"production_touched":False})
+          PY
+          rsync -a --exclude=.git --exclude=.github --exclude=frozen_prompt_source --exclude=results --exclude=attestations --exclude=build --exclude=build-persistent ./ "$SCRATCH/src/"
+      - name: "Compile REBIND_SET worker: modify only scratch CMake, not C source"
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PY" - <<'PY'
+          import os,pathlib
+          root=pathlib.Path(os.environ["SCRATCH"])/"src"
+          p=root/"CMakeLists.txt"
+          source=p.read_text()
+          anchor="add_library(qwen_infer_obj OBJECT\n  qwen_infer.c\n"
+          assert source.count(anchor)==1
+          p.write_text(source.replace(anchor,anchor+"  qng64_dense.c\n"))
+          print("P5_QNG64_CMAKE_ONLY_SCRATCH_PATCH")
+          PY
+          cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          nice -n 10 cmake --build "$SCRATCH/build" --target qwen_infer_gpu -j2
+          test -x "$SCRATCH/build/qwen_infer_gpu"
+          C_SHA=$(shasum -a 256 "$SCRATCH/src/qwen_infer.c" | cut -d' ' -f1)
+          BIN_SHA=$(shasum -a 256 "$SCRATCH/build/qwen_infer_gpu" | cut -d' ' -f1)
+          echo "C_SHA=$C_SHA" >> "$GITHUB_ENV"
+          echo "BIN_SHA=$BIN_SHA" >> "$GITHUB_ENV"
+          echo "P5_SCRATCH_NEW_BINARY_SHA256 $BIN_SHA"
+          echo "P5_SOURCE_C_SHA256 $C_SHA"
+      - name: "Test two 24+4 prompt pairs with exact native AB/BA ACK and epoch checks"
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" tools/hcp_p5_scratch_rebind_ab.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" \
+            --source "$SCRATCH/src/qwen_infer.c" --source-c-sha "$C_SHA" \
+            --root "$SCRATCH" \
+            --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer "$TOKENIZER" --index "$INDEX" \
+            --output "$SCRATCH/upload/p5_smoke_2prompt.json" --sample-count 2
+      - name: "Compare 12 domain-paired native policies under unchanged cbatch32 cap"
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" tools/hcp_p5_scratch_rebind_ab.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" \
+            --source "$SCRATCH/src/qwen_infer.c" --source-c-sha "$C_SHA" \
+            --root "$SCRATCH" \
+            --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer "$TOKENIZER" --index "$INDEX" \
+            --output "$SCRATCH/upload/p5_12domain_ab.json" --sample-count 12
+      - name: "Capture sanitized native ACK failure markers, never prompt/response bytes"
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -d "$RUNNER_TEMP/hcp-p4-native-short-$GITHUB_RUN_ID/upload" ]; then exit 0; fi
+          "$PY" - <<'PY'
+          import json,os,pathlib,re
+          root=pathlib.Path(os.environ["SCRATCH"])
+          markers=("moe gpu txn","moe gpu rebind set","REBIND_SET","GPU demotion committed","ACK")
+          sanitized=[]
+          for dirname in ("smoke_worker","measure_worker"):
+              p=root/dirname/"worker.log"
+              if not p.is_file():continue
+              for line in p.read_text(errors="replace").splitlines()[-350:]:
+                  if any(m.lower() in line.lower() for m in markers):
+                      line=re.sub(r'txn=[A-Za-z0-9-]+',"txn=[redacted]",line)
+                      line=re.sub(r'/Users/[^ ]+',"[host-path]",line)
+                      line=re.sub(r'\b\d{7,}\b',"N",line)
+                      sanitized.append({"worker":dirname,"signal":line.strip()[:240]})
+          out={"schema":"beglin-hcp-p5-sanitized-ack-diagnostics-v1",
+              "signals_last":sanitized[-35:],
+              "original_worker_tokens_not_uploaded":True,"production_touched":False}
+          (root/"upload"/"sanitized_ack_diagnostics.json").write_text(json.dumps(out,sort_keys=True,indent=2)+"\n")
+          print("P5_SANITIZED_ACK_SIGNAL_COUNT",len(out["signals_last"]))
+          PY
+      - name: "Seal exact binary/source and successful or blocked native transaction proof"
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -d "$RUNNER_TEMP/hcp-p4-native-short-$GITHUB_RUN_ID/upload" ]; then exit 0; fi
+          "$PY" - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path(os.environ["SCRATCH"])
+          p=root/"upload";f=p/"p5_12domain_ab.json"
+          good=False
+          if f.is_file():
+              d=json.loads(f.read_text())
+              assert d["schema"]=="beglin-hcp-p4-24token-native-compat-v1"
+              assert d["sample_pairs"]==12 and d["context_tokens"]==24
+              assert d["production_touched"] is False and d["auto_live_promotion"] is False
+              assert d["long_112token_native_support"] is False
+              assert d["production_route_hash_unchanged"] is True
+              good=True
+          digests={x.name:hashlib.sha256(x.read_bytes()).hexdigest() for x in p.glob("*.json")}
+          receipt={"schema":"beglin-hcp-p5-rebind-set-scratch-native-v1",
+            "status":"REBIND_SET_ACK_12DOMAIN_VERIFIED" if good else "BLOCKED_REBIND_SET_NOT_VERIFIED",
+            "source_head":os.getenv("GITHUB_SHA"),
+            "exact_original_cpp_source_sha256":os.getenv("C_SHA"),
+            "native_scratch_binary_sha256":os.getenv("BIN_SHA"),
+            "data_file_sha256":digests,
+            "old_production_stage_binary_read_only":True,
+            "cbatch32_original_capacity_unchanged":True,
+            "native_112_token_validated":False,
+            "native_policy_change_allowed_in_production":False,
+            "production_touched":False,"auto_live_promotion":False}
+          (p/"receipt.json").write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\n")
+          print("P5_SCRATCH_REBIND_SET_COMPLETE_RECEIPT",json.dumps(receipt,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beglin-p5-scratch-native-rebind-set-ack
+          path: ${{ runner.temp }}/hcp-p4-native-short-${{ github.run_id }}/upload/*.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: "Remove only P5 own scratch binary and owned worker roots"
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import os,pathlib,shutil
+          base=pathlib.Path(os.environ["RUNNER_TEMP"]).resolve()
+          p=base/("hcp-p4-native-short-"+os.environ["GITHUB_RUN_ID"])
+          if p.is_dir() and p.resolve().parent==base:
+              shutil.rmtree(p)
+              print("P5_ONLY_OWN_SCRATCH_REMOVED")
+          PY
