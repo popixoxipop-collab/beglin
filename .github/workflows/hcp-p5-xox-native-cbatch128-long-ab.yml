@@ -1,0 +1,189 @@
+name: Beglin P5 XOX Scratch CB128 Long Context Native Precision AB
+on:
+  push:
+    branches: [research/hcp-p5-scratch-rebind-set-20261014]
+    paths: [".github/workflows/hcp-p5-xox-native-cbatch128-long-ab.yml"]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: beglin-p5-xox-scratch-native-cbatch128
+  cancel-in-progress: false
+jobs:
+  bounded-long-cbatch:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 52
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 1b4606eef596e10f3003f7d9f07b607616e990d6
+          path: frozen_prompt_source
+          persist-credentials: false
+      - name: "Import only SHA-sealed original 36 prompt AF routing-derived features"
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 11852505311
+          run-id: 38467501959
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: archived_safe_p4
+      - name: "Guard source SHA, stage binary, checkpoint, 64 GiB machine, disk space"
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          PY=/Users/xox/.venv-vllm-metal/bin/python3
+          TOKENIZER=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors
+          INDEX="$TOKENIZER/model.safetensors.index.json"
+          SCRATCH="$RUNNER_TEMP/hcp-p5-cbatch128-$GITHUB_RUN_ID"
+          test -x "$PY" && test -f "$INDEX" && test ! -e "$SCRATCH"
+          test -f "archived_safe_p4/p4_derived_long_features.json"
+          mkdir -p "$SCRATCH/src" "$SCRATCH/upload"
+          export PY TOKENIZER INDEX SCRATCH
+          echo "PY=$PY" >> "$GITHUB_ENV"
+          echo "TOKENIZER=$TOKENIZER" >> "$GITHUB_ENV"
+          echo "INDEX=$INDEX" >> "$GITHUB_ENV"
+          echo "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          "$PY" - <<'PY'
+          import pathlib,hashlib,subprocess,shutil,json,os,sys
+          sys.path.insert(0,str(pathlib.Path("tools").resolve()))
+          import production_serving_supervisor_persistent as ps
+          import hcp_p5_scratch_capacity128 as cap
+          idx=pathlib.Path(os.environ["INDEX"])
+          stage=pathlib.Path(ps.PERSISTENT_BINARY)
+          data=pathlib.Path("archived_safe_p4/p4_derived_long_features.json")
+          sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+          assert sha(idx)=="d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+          assert stage.is_file() and sha(stage)==ps.EXPECTED_PERSISTENT_BINARY_SHA
+          assert sha(data)=="c3b54b1ebe41d9a85ed94ddd0da87cde0de86ecf0af56d2e621733e439944f53"
+          doc=json.loads(data.read_text())
+          assert doc["record_count"]==36 and doc["token_position_count"]==3933
+          assert sha(pathlib.Path("qwen_infer.c"))==cap.ALLOWED_SOURCE_HASH
+          physical=int(subprocess.check_output(["sysctl","-n","hw.memsize"],text=True).strip())
+          free=shutil.disk_usage(os.environ["RUNNER_TEMP"]).free
+          if physical<40*1024**3 or free<3*1024**3:
+              raise SystemExit("BLOCKED: hardware memory/disk below pre-registered 40GiB/3GiB gate")
+          print("P5_CB128_HARDWARE_AND_ORIGINAL_AF_SOURCE_PINNED",json.dumps({
+              "ram_gib":round(physical/1024**3,2),"scratch_free_gib":round(free/1024**3,2),
+              "original_AF_positions":3933,"original_AF_prompts":36,
+              "source_checkpoint_sha256":sha(idx),
+              "old_stage_binary_sha256":sha(stage),
+              "old_stage_bytes_preserved":True,"production_touched":False},sort_keys=True))
+          PY
+          rsync -a --exclude=.git --exclude=.github --exclude=frozen_prompt_source \
+            --exclude=archived_safe_p4 --exclude=results --exclude=attestations \
+            --exclude=build --exclude=build-persistent ./ "$SCRATCH/src/"
+      - name: "Modify exactly one native CB macro 32 to 128 inside scratch C source only"
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PY" tools/hcp_p5_scratch_capacity128.py --source-root "$SCRATCH/src"
+          "$PY" - <<'PY'
+          import os,pathlib
+          root=pathlib.Path(os.environ["SCRATCH"])/"src"
+          c=(root/"qwen_infer.c").read_text()
+          assert c.count("#define MOE_CBATCH_MAXPOS 128")==1
+          assert "#define MOE_MAXPOS 160" in c
+          assert "REBIND_SET_APPLIED" in c
+          assert "moe_cb4b_admit_guard" in c
+          print("P5_SCRATCH_CB128_NO_QNG64_POLICY_OR_ROUTER_MATH_CHANGE")
+          PY
+      - name: "Compile scratch-only GPU binary with reviewed CB128 buffers"
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release \
+            -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          nice -n 10 cmake --build "$SCRATCH/build" --target qwen_infer_gpu -j2
+          test -x "$SCRATCH/build/qwen_infer_gpu"
+          echo "P5_NEW_CB128_C_SHA256 $(shasum -a 256 "$SCRATCH/src/qwen_infer.c" | cut -d' ' -f1)"
+          echo "P5_NEW_CB128_GPU_BINARY_SHA256 $(shasum -a 256 "$SCRATCH/build/qwen_infer_gpu" | cut -d' ' -f1)"
+      - name: "First two exact 104-112 token paired A/B inputs, native ACK, RSS below 14 GiB"
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" tools/hcp_p5_capacity128_long_ab.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" --source "$SCRATCH/src/qwen_infer.c" \
+            --root "$SCRATCH" \
+            --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer "$TOKENIZER" --index "$INDEX" \
+            --risk-evidence archived_safe_p4/p4_derived_long_features.json \
+            --output "$SCRATCH/upload/p5_cb128_smoke_2prompt.json" --count 2
+      - name: "Twelve-domain matched long 104-112 token native A/B, same original AF prompts"
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" tools/hcp_p5_capacity128_long_ab.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" --source "$SCRATCH/src/qwen_infer.c" \
+            --root "$SCRATCH" \
+            --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer "$TOKENIZER" --index "$INDEX" \
+            --risk-evidence archived_safe_p4/p4_derived_long_features.json \
+            --output "$SCRATCH/upload/p5_cb128_12domain.json" --count 12
+      - name: "Seal original-source 112token capacity/ACK evidence and fail closed on missing proof"
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -d "$RUNNER_TEMP/hcp-p5-cbatch128-$GITHUB_RUN_ID/upload" ]; then exit 0; fi
+          "$PY" - <<'PY'
+          import os,pathlib,json,hashlib
+          root=pathlib.Path(os.environ["SCRATCH"])
+          directory=root/"upload"
+          p=directory/"p5_cb128_12domain.json"
+          passed=False
+          if p.is_file():
+              z=json.loads(p.read_text())
+              assert z["schema"]=="beglin-hcp-p5-native-cbatch128-long-ab-v1"
+              assert z["sample_pairs"]==12 and 104<=z["input_tokens_min"]<=z["input_tokens_max"]<=112
+              assert z["actual_binary_capacity_112token_tested"] is True
+              assert z["native_rebind_set_ack_not_mocked"] is True
+              assert z["live_route_unchanged"] is True and z["old_persistent_stage_unchanged"] is True
+              assert z["production_touched"] is False
+              passed=True
+          manifest={x.name:hashlib.sha256(x.read_bytes()).hexdigest() for x in directory.glob("*.json")}
+          rec={"schema":"beglin-hcp-p5-cbatch128-actual-long-native-receipt-v1",
+            "status":"SCRATCH_CB128_12DOMAIN_NATIVE_AB_VERIFIED" if passed else "BLOCKED_NO_FULL_12DOMAIN_EVIDENCE",
+            "head_sha":os.getenv("GITHUB_SHA"),
+            "pinned_original_AF_risk_sha256":"c3b54b1ebe41d9a85ed94ddd0da87cde0de86ecf0af56d2e621733e439944f53",
+            "source_binary_sha256":z["scratch_binary_sha256"] if passed else None,
+            "files_sha256":manifest,
+            "original_stage_binary_unchanged":True,
+            "run_local_buffer_extension_only":True,
+            "production_touched":False,"automatic_live_promotion":False}
+          (directory/"receipt.json").write_text(json.dumps(rec,sort_keys=True,indent=2)+"\n")
+          print("P5_REAL_NATIVE_CB128_SAFE_RECEIPT",json.dumps(rec,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beglin-p5-scratch-native-cbatch128-long-12domain
+          path: ${{ runner.temp }}/hcp-p5-cbatch128-${{ github.run_id }}/upload/*.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: "Remove only run-specific compiled GPU binary, KV buffers, and worker scratch"
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import os,pathlib,shutil
+          temp=pathlib.Path(os.environ["RUNNER_TEMP"]).resolve()
+          p=temp/("hcp-p5-cbatch128-"+os.environ["GITHUB_RUN_ID"])
+          if p.is_dir() and p.resolve().parent==temp:
+              shutil.rmtree(p)
+              print("P5_CB128_SCRATCH_REMOVED")
+          PY
