@@ -1,0 +1,124 @@
+{
+  "automatic_live_promotion": false,
+  "bank_sha256": "7523f8e8ef5d2dea21391ad18ab575606b5804299386bf715a9647c815758083",
+  "count": 12,
+  "first_use_only_relative_to_original_P4": true,
+  "full_BF16_reference_not_measured": true,
+  "model": "DeepSeek-V2-Lite",
+  "not_external_independent_benchmark": true,
+  "raw_token_ids_exported": false,
+  "records": [
+    {
+      "domain": "astronomy",
+      "generation_budget": 12,
+      "id": "p10-new-00",
+      "prompt_text_sha256": "78b57840e94731b8d9eb3b9815fe412ca9b00eacfc16d9cce78e0ddffce6d145",
+      "reference_answer_sha256": "a8c73912fdf29f389a4b917c542a9400bacac884530bca0238e87e11043226ce",
+      "token_sha256": "3d28f41c86aa8ebabc218fa7beda4d392d394e15b742b2218996572c231b6d9e",
+      "tokens": 48
+    },
+    {
+      "domain": "biology",
+      "generation_budget": 12,
+      "id": "p10-new-01",
+      "prompt_text_sha256": "632d0028eb9922f786dff5e39f7c1ba44692f0d8c0de5f9dcec579876a3796bf",
+      "reference_answer_sha256": "81acaafba961bb831ec40eb965155e3486392c60cfb8c75150beaf2caffc244a",
+      "token_sha256": "a37c468397858bb7c59c6618beaca5b642003c6cc5c2f63cda9db3b0b8e46749",
+      "tokens": 48
+    },
+    {
+      "domain": "chemistry",
+      "generation_budget": 12,
+      "id": "p10-new-02",
+      "prompt_text_sha256": "edbb3032041f03d8bda51a6c3dfc0573837a181e03931f3acca683470601d5c9",
+      "reference_answer_sha256": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+      "token_sha256": "1df4dab8f354f2d8dc9905f7f3717021d6526309b7480cc5b3b0f9f4c8719b5b",
+      "tokens": 52
+    },
+    {
+      "domain": "computing",
+      "generation_budget": 12,
+      "id": "p10-new-03",
+      "prompt_text_sha256": "0705bb56d2cfc7c2d5344695375f06e8d3839a2a4103174fac08043f6d3392b5",
+      "reference_answer_sha256": "811786ad1ae74adfdd20dd0372abaaebc6246e343aebd01da0bfc4c02bf0106c",
+      "token_sha256": "30b322015e86ea0c4a6fcb2d25f50842d77849eaa515d08f6826eca065424a6c",
+      "tokens": 42
+    },
+    {
+      "domain": "economics",
+      "generation_budget": 12,
+      "id": "p10-new-04",
+      "prompt_text_sha256": "f6fcc0bdbe5d8d3a68cd2ea4f7b5ef5906755e31ce5caea9c9badf97f6ba54c0",
+      "reference_answer_sha256": "a8def3a67a10820362d0fe8a8aff3887ebc445e79c386064b5d76b587e2703b0",
+      "token_sha256": "efee657eaa0047af27db9daaeeec6816560f78590ece9c1caed8e074b5e24450",
+      "tokens": 49
+    },
+    {
+      "domain": "energy",
+      "generation_budget": 12,
+      "id": "p10-new-05",
+      "prompt_text_sha256": "787782bdfe063f60676523b428eef77e82c91fdb0f692c7c7da4d2c9922df2ed",
+      "reference_answer_sha256": "7414f639f5e5fca975fb8c163ed876ebc40a4a975cf4311af43772005e2c9429",
+      "token_sha256": "817de6fb81961bf8126b453bb22bc53e03aeee891eeca22fa1504b1b93231201",
+      "tokens": 51
+    },
+    {
+      "domain": "history",
+      "generation_budget": 12,
+      "id": "p10-new-06",
+      "prompt_text_sha256": "6119ac750de1d32c940eeb3af1002aa2cb88ebdfc7a7398ef9cff92def57271f",
+      "reference_answer_sha256": "9113b98df80f877c7a2ee5d865a04c9514b4e9bf25a49d315b0b15f115d2f0d2",
+      "token_sha256": "15e272609b64ac6976f79ff429b1b886df8f6f77b82adbae34b3d9e5fc8d4ae9",
+      "tokens": 33
+    },
+    {
+      "domain": "language",
+      "generation_budget": 12,
+      "id": "p10-new-07",
+      "prompt_text_sha256": "a8821b486f8cfe2bd0a531157a15ca8d94d1edc93e23f3162421827787bab8cb",
+      "reference_answer_sha256": "bd7e83102fa3e6aa125f3b4c7d6fb561871f02c476cee0ee3fe26c8afe7f3058",
+      "token_sha256": "acc6b2c9a5f820b49bb7452a9f921e19564d4a482107cdf45ec8fb9830d3ebd2",
+      "tokens": 38
+    },
+    {
+      "domain": "machine_learning",
+      "generation_budget": 12,
+      "id": "p10-new-08",
+      "prompt_text_sha256": "0d6c8699c14a7ad813f948e12cd32961e2f6264e0b79f9619201d8785f5cadfb",
+      "reference_answer_sha256": "ce5d3aa79ae56155078af52e8fac68eb2d0a78489f82bc26c1e1bbc667ba9fde",
+      "token_sha256": "037e78a420c5a68a3c02debb0efe741f9ab70a979037868dbc37788537d5039d",
+      "tokens": 48
+    },
+    {
+      "domain": "mathematics",
+      "generation_budget": 12,
+      "id": "p10-new-09",
+      "prompt_text_sha256": "f14cbe46271a60bb7d96c399d922079780f6a19311a66e5ecdecff582e57f13f",
+      "reference_answer_sha256": "31489056e0916d59fe3add79e63f095af3ffb81604691f21cad442a85c7be617",
+      "token_sha256": "f891ac4d34d85c126b8697a0dbf182a8b44a2d896c6acb990faf44f95c8133a9",
+      "tokens": 32
+    },
+    {
+      "domain": "physics",
+      "generation_budget": 12,
+      "id": "p10-new-10",
+      "prompt_text_sha256": "cf651a42fd33942f9674eab0f0f8ccb15b70e72da2646f8a48000264ddc57806",
+      "reference_answer_sha256": "d37a19e7c4570082d5402f3372454308559112f50b983a8e0ebb21a73f0f637f",
+      "token_sha256": "7e47c1219298b3a136497ce7aebf9a7e6216a99aa2300dce35c9fbaf4ced7be2",
+      "tokens": 56
+    },
+    {
+      "domain": "robotics",
+      "generation_budget": 12,
+      "id": "p10-new-11",
+      "prompt_text_sha256": "b2f9726c76ed1ddcae30ec299545d985f253441a4addb3a1c19a8b889de54a1a",
+      "reference_answer_sha256": "2a424875a8475a99175f543fa6fc65964e53e87efc161f7b1f9e370efe6ddd16",
+      "token_sha256": "7c3786e15596640eeb2109a3ccb23af36a6444552d4390339be0ef84626e1cc4",
+      "tokens": 54
+    }
+  ],
+  "reference_P4_sha256": "c3b54b1ebe41d9a85ed94ddd0da87cde0de86ecf0af56d2e621733e439944f53",
+  "schema": "beglin-hcp-p10-new-heldout-token-manifest-v1",
+  "seed": 20261014,
+  "tokenizer_index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+}
