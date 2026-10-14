@@ -1,0 +1,173 @@
+name: Beglin P6 XOX Isolated Actual AF vs qNg64 Logit Fidelity
+on:
+  push:
+    branches: [research/hcp-p6-af-qng64-logits-20261014]
+    paths: [".github/workflows/hcp-p6-xox-af-qng64-logits.yml"]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: beglin-p6-xox-af-qng64-logits
+  cancel-in-progress: false
+jobs:
+  actual-same-input:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 1b4606eef596e10f3003f7d9f07b607616e990d6
+          path: frozen_prompt_source
+          persist-credentials: false
+      - name: Exact P4 safe AF prompt lineage
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 11852505311
+          run-id: 38467501959
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: archived_safe_p4
+      - name: Check exact source, stage, model, hardware and only new scratch
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          PY=/Users/xox/.venv-vllm-metal/bin/python3
+          TOKENIZER=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors
+          INDEX="$TOKENIZER/model.safetensors.index.json"
+          MOE_BASE=/Users/xox/vdsp_local_data/moe_base_deepseek
+          FEATURE=archived_safe_p4/p4_derived_long_features.json
+          SCRATCH="$RUNNER_TEMP/hcp-p6-af-qng64-$GITHUB_RUN_ID"
+          test -x "$PY" && test -f "$INDEX" && test -f "$MOE_BASE/weights_moe/deepseek_moe_af.bin"
+          test -f "$FEATURE" && test ! -e "$SCRATCH"
+          "$PY" - <<'PY'
+          import hashlib,json,os,pathlib,shutil,subprocess,sys
+          sys.path.insert(0,str(pathlib.Path("tools").resolve()))
+          import production_serving_supervisor_persistent as ps
+          from hcp_p5_scratch_capacity128 import ALLOWED_SOURCE_HASH
+          h=lambda p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
+          assert h("qwen_infer.c")==ALLOWED_SOURCE_HASH
+          assert h("/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json")=="d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+          assert h("archived_safe_p4/p4_derived_long_features.json")=="c3b54b1ebe41d9a85ed94ddd0da87cde0de86ecf0af56d2e621733e439944f53"
+          assert json.loads(pathlib.Path("archived_safe_p4/p4_derived_long_features.json").read_text())["record_count"]==36
+          assert h(ps.PERSISTENT_BINARY)==ps.EXPECTED_PERSISTENT_BINARY_SHA
+          assert int(subprocess.check_output(["sysctl","-n","hw.memsize"]))>=40*1024**3
+          assert shutil.disk_usage(os.environ["RUNNER_TEMP"]).free>=3*1024**3
+          print("P6_PINNED_HARDWARE_SOURCE_STAGE_GATES_PASS")
+          PY
+          mkdir -p "$SCRATCH/src" "$SCRATCH/upload"
+          printf '%s\n' "PY=$PY" "TOKENIZER=$TOKENIZER" "INDEX=$INDEX" \
+            "MOE_BASE=$MOE_BASE" "FEATURE=$FEATURE" "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          rsync -a --exclude=.git --exclude=.github --exclude=frozen_prompt_source \
+            --exclude=archived_safe_p4 --exclude=results --exclude=attestations \
+            --exclude=build --exclude=build-persistent ./ "$SCRATCH/src/"
+      - name: P5 invariants and P6 isolated hook regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd tools
+          "$PY" -m unittest test_hcp_p5_native_source_capacity.py test_hcp_p6_scratch_logit_hook.py -v
+      - name: Patch ONLY this run's C and MLX KV128 and first-logit readout
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PY" tools/hcp_p5_scratch_pair_capacity.py --source-root "$SCRATCH/src"
+          "$PY" tools/hcp_p6_scratch_logit_hook.py --scratch-source "$SCRATCH/src"
+          "$PY" - <<'PY'
+          import os,pathlib
+          p=pathlib.Path(os.environ["SCRATCH"])/"src"
+          c=(p/"qwen_infer.c").read_text();m=(p/"mlx_moe.cpp").read_text()
+          assert c.count("BEGLIN_HCP_P6_LOGITS_OUTPUT")==1
+          assert "#define MOE_CBATCH_MAXPOS 128" in c
+          assert "#define MLA_L0_MAXPOS 128" in m and "#define GQA_L0_MAXPOS 32" in m
+          assert "REBIND_SET_APPLIED" in c
+          print("P6_SOURCE_AND_ACK_GUARDS_PASS")
+          PY
+      - name: Compile isolated native GPU model
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release \
+            -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          nice -n 10 cmake --build "$SCRATCH/build" --target qwen_infer_gpu -j2
+          test -x "$SCRATCH/build/qwen_infer_gpu"
+          shasum -a 256 "$SCRATCH/build/qwen_infer_gpu"
+      - name: Real 2-prompt AF versus A/B GPU full logits smoke
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" tools/hcp_p6_af_qng64_logits.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" --source "$SCRATCH/src/qwen_infer.c" \
+            --root "$SCRATCH" --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer "$TOKENIZER" --index "$INDEX" --moe-base "$MOE_BASE" \
+            --feature "$FEATURE" --output "$SCRATCH/upload/p6_2prompt.json" --count 2
+      - name: Real 12-domain AF versus A/B native logits
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" tools/hcp_p6_af_qng64_logits.py \
+            --binary "$SCRATCH/build/qwen_infer_gpu" --source "$SCRATCH/src/qwen_infer.c" \
+            --root "$SCRATCH" --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer "$TOKENIZER" --index "$INDEX" --moe-base "$MOE_BASE" \
+            --feature "$FEATURE" --output "$SCRATCH/upload/p6_12domain.json" --count 12
+      - name: Hash-seal safe fidelity-only source and result
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PY" - <<'PY'
+          import hashlib,json,os,pathlib
+          p=pathlib.Path(os.environ["SCRATCH"])/"upload"
+          h=lambda path:hashlib.sha256(path.read_bytes()).hexdigest()
+          for name,count in [("p6_2prompt.json",2),("p6_12domain.json",12)]:
+              d=json.loads((p/name).read_text())
+              assert d["schema"]=="beglin-hcp-p6-actual-af-qng64-matched-logit-fidelity-v1"
+              assert d["prompt_count"]==len(d["records"])==count
+              assert d["raw_logits_exported"] is False and d["raw_generated_token_ids_exported"] is False
+              assert d["production_touched"] is False and d["speed_improvement_claim_allowed"] is False
+          receipt={"schema":"beglin-hcp-p6-fidelity-receipt-v1",
+            "source_commit":os.environ["GITHUB_SHA"],
+            "p5_sealed_base":"b5cf761089153a6326855f267f1381fadb3f414e",
+            "input_af_feature_sha256":"c3b54b1ebe41d9a85ed94ddd0da87cde0de86ecf0af56d2e621733e439944f53",
+            "results_sha256":{name:h(p/name) for name in ("p6_2prompt.json","p6_12domain.json")},
+            "not_BF16_teacher":True,"not_supervised_accuracy":True,
+            "raw_logits_or_tokens_uploaded":False,
+            "production_touched":False,"automatic_live_promotion":False}
+          (p/"receipt.json").write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\n")
+          print("P6_ACTUAL_FIDELITY_SEALED",json.dumps(receipt,sort_keys=True))
+          PY
+      - name: Upload only aggregate metrics and content hashes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beglin-p6-af-vs-qng64-logits
+          path: ${{ runner.temp }}/hcp-p6-af-qng64-${{ github.run_id }}/upload/*.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Securely clean only the unique P6 temp root
+        if: always()
+        shell: bash
+        run: |
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import os,pathlib,shutil
+          base=pathlib.Path(os.environ["RUNNER_TEMP"]).resolve(strict=True)
+          run_id=os.environ.get("GITHUB_RUN_ID","")
+          if not run_id.isdecimal():raise SystemExit("MISSING_RUN_ID_NO_DELETE")
+          root=base/("hcp-p6-af-qng64-"+run_id)
+          if root.is_symlink() or root.parent!=base:raise SystemExit("UNSAFE_ROOT_NO_DELETE")
+          if root.is_dir():
+              shutil.rmtree(root)
+              print("P6_ONLY_OWNED_RUN_DELETED")
+          PY
