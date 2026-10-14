@@ -1,0 +1,28 @@
+{
+  "alienware_GPU_free_GiB": 9.4833984375,
+  "alternatives_for_later": "dedicated host with >=40 GiB free for exact BF16, or independently validated streamed CPU/GPU offload path with memory guard",
+  "automatic_live_promotion": false,
+  "available_memory_GB_before_teacher": {
+    "alienware": 20.063526153564453,
+    "eoe": 21.537,
+    "xox": 23.575
+  },
+  "checkpoint_index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "date": "2026-10-14",
+  "full_bf16_teacher_started": false,
+  "model": "DeepSeek-V2-Lite original BF16 4 x safetensors",
+  "model_staging_gpu_headroom_sufficient": false,
+  "observed_utc": "2026-10-14T05:23:18.044Z",
+  "production_touched": false,
+  "quality_noninferiority_certified": false,
+  "raw_weight_gib": 29.2562,
+  "reason": "model raw 29.26 GiB exceeds XOX readily available RAM; large swap already used, EOE insufficient headroom, Alienware GPU free too small. Avoid swapping/thrashing or interfering with active infrastructure.",
+  "schema": "beglin-hcp-p10-full-bf16-teacher-resource-gate-v1",
+  "single_worker_production_stopped": false,
+  "swap_used_GB": {
+    "eoe": 17.61,
+    "xox": 21.84
+  },
+  "total_checkpoint_bytes": 31413626576,
+  "xox_available_memory_enough_for_raw_weights_plus_activation": false
+}

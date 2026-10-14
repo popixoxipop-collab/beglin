@@ -1,0 +1,35 @@
+{
+  "P6_original_sequences_match": true,
+  "automatic_promotion": false,
+  "inflight_txn_crash_not_tested": true,
+  "live_unchanged": true,
+  "postrestart_cache_events": {
+    "BUDGET_SKIP": 0,
+    "HIT name=": 4,
+    "SOURCE_MISMATCH": 0,
+    "STORE name=": 4,
+    "STORE_SKIPPED": 0
+  },
+  "production_touched": false,
+  "real_ACKs_verified": true,
+  "restart_records": [
+    {
+      "event": "crash_and_restart",
+      "new_process": true,
+      "new_runtime_epoch": 2,
+      "old_policy_epoch": 5,
+      "policy_reset_to_A": true,
+      "stale_request_refused": true
+    },
+    {
+      "event": "graceful_restart",
+      "new_process": true,
+      "policy_reset_to_A": true,
+      "recovered_BAB_requests": 3
+    }
+  ],
+  "schema": "beglin-hcp-p10-worker-restart-recovery-v1",
+  "single_owned_pid_killed_after_complete_request": true,
+  "status": "IDLE_CRASH_AND_GRACEFUL_NATIVE_RESTART_COMPLETED",
+  "successfully_recovered_requests": 9
+}

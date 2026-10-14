@@ -1,0 +1,121 @@
+{
+  "all_exact_P6_one_slot_reference_sequences": true,
+  "automatic_promotion": false,
+  "batch_admissions": 8,
+  "cache_on_off_both_tested": true,
+  "inferred_sequences": 16,
+  "live_unchanged": true,
+  "max_worker_rss_bytes": 4292591616,
+  "multi_worker_or_arbitrary_concurrency_not_certified": true,
+  "production_touched": false,
+  "records": [
+    {
+      "admission_ms": 7090.180083,
+      "batch_reqs": 2,
+      "both_outputs_match_P6": true,
+      "cache_enabled": false,
+      "input_tokens": [
+        109,
+        109
+      ],
+      "policy": "A",
+      "rss_bytes": 4034691072,
+      "switched": false
+    },
+    {
+      "admission_ms": 1709.828125,
+      "batch_reqs": 2,
+      "both_outputs_match_P6": true,
+      "cache_enabled": false,
+      "input_tokens": [
+        109,
+        109
+      ],
+      "policy": "B",
+      "rss_bytes": 4074520576,
+      "switched": true
+    },
+    {
+      "admission_ms": 1373.041208,
+      "batch_reqs": 2,
+      "both_outputs_match_P6": true,
+      "cache_enabled": false,
+      "input_tokens": [
+        109,
+        109
+      ],
+      "policy": "A",
+      "rss_bytes": 4086841344,
+      "switched": true
+    },
+    {
+      "admission_ms": 1353.556042,
+      "batch_reqs": 2,
+      "both_outputs_match_P6": true,
+      "cache_enabled": false,
+      "input_tokens": [
+        109,
+        109
+      ],
+      "policy": "B",
+      "rss_bytes": 4086939648,
+      "switched": true
+    },
+    {
+      "admission_ms": 5720.97375,
+      "batch_reqs": 2,
+      "both_outputs_match_P6": true,
+      "cache_enabled": true,
+      "input_tokens": [
+        109,
+        109
+      ],
+      "policy": "A",
+      "rss_bytes": 4292591616,
+      "switched": false
+    },
+    {
+      "admission_ms": 1683.65125,
+      "batch_reqs": 2,
+      "both_outputs_match_P6": true,
+      "cache_enabled": true,
+      "input_tokens": [
+        109,
+        109
+      ],
+      "policy": "B",
+      "rss_bytes": 4176986112,
+      "switched": true
+    },
+    {
+      "admission_ms": 1089.1945,
+      "batch_reqs": 2,
+      "both_outputs_match_P6": true,
+      "cache_enabled": true,
+      "input_tokens": [
+        109,
+        109
+      ],
+      "policy": "A",
+      "rss_bytes": 4004888576,
+      "switched": true
+    },
+    {
+      "admission_ms": 1044.956209,
+      "batch_reqs": 2,
+      "both_outputs_match_P6": true,
+      "cache_enabled": true,
+      "input_tokens": [
+        109,
+        109
+      ],
+      "policy": "B",
+      "rss_bytes": 3946758144,
+      "switched": true
+    }
+  ],
+  "requests_per_batch": 2,
+  "schema": "beglin-hcp-p10-two-slot-real-native-mla-v1",
+  "slots": 2,
+  "status": "TWO_SLOT_BATCH_PASS"
+}

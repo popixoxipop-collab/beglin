@@ -1,0 +1,17 @@
+{
+  "automatic_promotion": false,
+  "bank_source_sha256": "7523f8e8ef5d2dea21391ad18ab575606b5804299386bf715a9647c815758083",
+  "frozen_manifest_sha256": "93f6f9f21983cb0c93e78b813b2972724aff45501b773943be2020574ada3b9f",
+  "live_preimage": {
+    "route": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+    "stage": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9"
+  },
+  "one_GPU_worker_at_a_time": true,
+  "production_modified": false,
+  "reference_p5_mlx_source_sha256": "daded3c0e4bf7cc2a86e0fab8c1f73322b5b0ffea0002d9b2d38857d2e9591ae",
+  "run_root": "/Users/xox/mcp-sandbox/tailnet-commander/.tailnet-tmp/hcp-p10-qualification-20261014-1410",
+  "schema": "beglin-hcp-p10-xox-native-preflight-v1",
+  "source_checkout": "b551237fb976e65447e6eb0e82b880cc57626caa",
+  "source_p5_cb128_C_sha256": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612",
+  "source_p9_cached_mlx_sha256": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f"
+}

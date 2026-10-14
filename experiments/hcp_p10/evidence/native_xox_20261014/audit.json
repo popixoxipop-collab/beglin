@@ -1,0 +1,35 @@
+{
+  "BF16_teacher_not_run": true,
+  "automatic_live_promotion": false,
+  "elementary_rubric_substring_match_A": 9,
+  "elementary_rubric_substring_match_B": 9,
+  "exploratory_rubric_not_external_accuracy": true,
+  "frozen_token_manifest_sha256": "93f6f9f21983cb0c93e78b813b2972724aff45501b773943be2020574ada3b9f",
+  "idle_crash_and_graceful_restart_success": true,
+  "independent_raw_two_slot_tokens_not_available": true,
+  "inflight_rollback_not_retested_by_P10": true,
+  "main_merged": false,
+  "new_heldout_cache_parity_pairs": 24,
+  "new_heldout_native_admissions": 48,
+  "result_sha256": {
+    "new_holdout": "b0d8c83c05caed8d9f7b2699c8fa68c4e89e69fd53d437fbc65691f89b6d8ec4",
+    "restart": "5f386dbcfb0dd6c372e484bbb5db121bd20d285dca859a4446ba04fca1df748c",
+    "steady_tail": "193e44ab5f1b69c8a1b491d81292b323f77b3db10571e3235da13ecfa46e3f35",
+    "two_slots": "1d88d6b8379b027a7c45f7a9add58984b882151de2b743d4993d7cc9aaa1ccb8"
+  },
+  "schema": "beglin-hcp-p10-independent-integrity-audit-v1",
+  "separate_new_domains": 12,
+  "source_holdout_sha256": "7523f8e8ef5d2dea21391ad18ab575606b5804299386bf715a9647c815758083",
+  "status": "P10_SCOPE_RESEARCH_EVIDENCE_INDEPENDENTLY_RECALCULATED",
+  "steady_block_ci95_ms": [
+    -11.004192604166672,
+    4.465209145833346
+  ],
+  "steady_mean_on_minus_off_ms": -3.4871310833333338,
+  "steady_p95_off_ms": 585.16402675,
+  "steady_p95_on_ms": 583.0778829,
+  "steady_tail_repeated_blocks": 4,
+  "steady_tail_requests": 96,
+  "two_slot_native_batch_admissions": 8,
+  "two_slot_source_sha_matched_claimed_by_runner": true
+}

@@ -1,0 +1,42 @@
+{
+  "XOX_original_active_route_sha256": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+  "XOX_original_stage_sha256": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9",
+  "based_on_P9_sealed_commit": "c7d4d5fb46f5cb57abb1a1e7054a1294955a69d9",
+  "created": "2026-10-14",
+  "document_sha256": "78478aaebb10e93c49e70a9f4f3307cc5244e8e532c349f7dc24edd57779232a",
+  "frozen_token_sha256": "93f6f9f21983cb0c93e78b813b2972724aff45501b773943be2020574ada3b9f",
+  "full_quality_noninferiority_proven": false,
+  "full_teacher_BF16_execution": 0,
+  "input_raw_token_ids_and_GPU_logits_exported": false,
+  "native_runtime_autopromotion": false,
+  "new_bank_preflight_commit": "b551237fb976e65447e6eb0e82b880cc57626caa",
+  "new_token_manifest_frozen_GitHub_commit": "72a645e",
+  "production_modified": false,
+  "real_new_heldout_admissions": 48,
+  "real_recovered_requests": 9,
+  "real_steady_state_requests": 96,
+  "real_two_slot_batches": 8,
+  "result_files_sha256": {
+    "audit.json": "752a71d3fcbca7954c4631c0228464cedbc5094ac30ec7ba125ea72974383a4d",
+    "bf16_resource_gate.json": "d4399f954e6d6cce7be864836a1515641f46e728fffe54b160db173538c4be0f",
+    "new_holdout.json": "b0d8c83c05caed8d9f7b2699c8fa68c4e89e69fd53d437fbc65691f89b6d8ec4",
+    "p10_evidence.log": "94e9bbbd40a2904ba941d12c5fcb27c5de8e699be1cedfd6637686744999a7b6",
+    "p8_boundary.log": "52cd503bf72e741682c3458767821200d644f88df9dffc6f2b7e728352c4125c",
+    "p9_boundary.log": "03d9192e0658cf3cace8fe6534908964140a66379cba2a1ce96508283377019f",
+    "preflight.json": "a42be7c765d51721b106d4723f22457861c64bd80be32457fe8d6ebc29eba011",
+    "restart.json": "5f386dbcfb0dd6c372e484bbb5db121bd20d285dca859a4446ba04fca1df748c",
+    "steady_tail.json": "193e44ab5f1b69c8a1b491d81292b323f77b3db10571e3235da13ecfa46e3f35",
+    "two_slots.json": "1d88d6b8379b027a7c45f7a9add58984b882151de2b743d4993d7cc9aaa1ccb8"
+  },
+  "schema": "beglin-hcp-p10-xox-runtime-qualification-evidence-manifest-v1",
+  "source_auditor_sha256": "aace4293e2ae24463f03fadc7b8b5d1d5131d9f2fc36a744e2a4e938d4056be2",
+  "source_bank_sha256": "7523f8e8ef5d2dea21391ad18ab575606b5804299386bf715a9647c815758083",
+  "source_git_checkout_in_XOX": "b551237fb976e65447e6eb0e82b880cc57626caa",
+  "source_runner_sha256": "6ea134b22db52eb45b4cd0f11d136e4534988d92448df415b8944d6583ea0fe2",
+  "test_groups": {
+    "p10_evidence": 10,
+    "p8_boundary": 48,
+    "p9_boundary": 21
+  },
+  "total_regression_passes": 79
+}
