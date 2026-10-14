@@ -48,7 +48,7 @@ class ScratchP5NativeTests(unittest.TestCase):
             root=pathlib.Path(td)
             (root/"qwen_infer.c").write_bytes(SOURCE.read_bytes())
             (root/"mlx_moe.cpp").write_bytes(ml)
-            (root/"CMakeLists.txt").write_text("add_library(qwen_infer_obj OBJECT\\n  qwen_infer.c\\n)\\n")
+            (root/"CMakeLists.txt").write_text("add_library(qwen_infer_obj OBJECT\n  qwen_infer.c\n)\n")
             result=patch_both(root)
             self.assertEqual(result["gpu_mla_KV_capacity"],128)
             self.assertEqual(result["native_c_capacity"],128)
