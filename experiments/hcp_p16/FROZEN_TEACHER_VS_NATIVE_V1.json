@@ -1,0 +1,89 @@
+{
+  "P15_original_frozen_inputs_SHA": "c85d16c113780d73692fd0bdb9b1afaacb40bda9a998876420f361899d3cbb8b",
+  "P5_CB128_C_source_SHA": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612",
+  "P9_MLX_KV128_source_SHA": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f",
+  "automatic_live_promotion": false,
+  "date": "2026-10-15",
+  "full_teacher_refs": [
+    {
+      "length": 7,
+      "prompt_id": "p15-engineering-0",
+      "teacher_ref_full_logit_NPY_SHA": {
+        "bf16": "9022e1866f0cfd0713aafe45c2e5946770a0048112e8e8165e5986489314203e",
+        "fp32": "3598245173f95fa7f2a5611eae2be2e58bb5ac4aaecb997ea5df208dfee0e3fe"
+      },
+      "teacher_ref_logit_report_SHA": {
+        "bf16": "ef6e82351d799b93451c113a521c3da04799fb7fafbaaa25643874a86cca9c0e",
+        "fp32": "d2c3016379b9b6e254e8fa0f5170f2560d782836e15c5fdf529f3a3dfab0e24a"
+      },
+      "token_sha256": "f3b3029dbb5ecfe92bba4fd4922b6b4557b90aff65eaadc3e9bd34c485866ff4"
+    },
+    {
+      "length": 9,
+      "prompt_id": "p15-engineering-1",
+      "teacher_ref_full_logit_NPY_SHA": {
+        "bf16": "7261448911fe14927195d603eeb90bc86ace2dd98209eb3c800e834eaf49558d",
+        "fp32": "74979f5a4a16e6df98e5ac9860b6166bf1afa8e150a37bccec8bd35ab45ad593"
+      },
+      "teacher_ref_logit_report_SHA": {
+        "bf16": "4fead6c29ab643c361d13b10adfbfce62c70d4bf889584eb082b98e050f2bf48",
+        "fp32": "4dcbb972531fbf6b15b530d87c4ca89d993534c612d94f14626e2ced750444b3"
+      },
+      "token_sha256": "ee9f8b6e784080ed0150ae0979b46051675e77234bc6661ef5b13e7bd5566238"
+    }
+  ],
+  "main_merged": false,
+  "native_binary_expected_preimage_SHA": "103549b7f7f4a3d142be883013956b4f1437759c8be76bff31f2451956df37fd",
+  "native_capture": "exact final prefill position immediately before first greedy argmax; pass=1; R=1; maxnew=1",
+  "native_order": [
+    {
+      "policy": "A",
+      "prompt_index": 0,
+      "request_seq": 0
+    },
+    {
+      "policy": "B",
+      "prompt_index": 0,
+      "request_seq": 1
+    },
+    {
+      "policy": "A",
+      "prompt_index": 1,
+      "request_seq": 2
+    },
+    {
+      "policy": "B",
+      "prompt_index": 1,
+      "request_seq": 3
+    },
+    {
+      "policy": "B",
+      "prompt_index": 0,
+      "request_seq": 4
+    },
+    {
+      "policy": "A",
+      "prompt_index": 0,
+      "request_seq": 5
+    },
+    {
+      "policy": "B",
+      "prompt_index": 1,
+      "request_seq": 6
+    },
+    {
+      "policy": "A",
+      "prompt_index": 1,
+      "request_seq": 7
+    }
+  ],
+  "noninferiority_not_certifiable_from_just_two_engineering_inputs": true,
+  "original_bf16_teacher_full_model_index_SHA": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "output_vocabulary": 102400,
+  "parent_P15_commit": "fb8e4bea935f7f0b3511e1fac3b87c1bf54f604d",
+  "production_touched": false,
+  "quality_noninferiority_decision_preregistered": false,
+  "schema": "beglin-hcp-p16-frozen-exact-two-teacher-prompts-and-both-native-policies-v1",
+  "startup_reference": "original BF16 weights, BF16 and FP32 CPU arithmetic explicitly distinct",
+  "tensor_binary_dtype": "float32 little-endian"
+}
