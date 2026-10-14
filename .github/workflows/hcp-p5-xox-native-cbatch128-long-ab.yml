@@ -133,6 +133,43 @@ jobs:
             --tokenizer "$TOKENIZER" --index "$INDEX" \
             --risk-evidence archived_safe_p4/p4_derived_long_features.json \
             --output "$SCRATCH/upload/p5_cb128_12domain.json" --count 12
+      - name: "On any outcome, preserve sanitized scratch native fatal/CB/KV diagnostic"
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -d "$RUNNER_TEMP/hcp-p5-cbatch128-$GITHUB_RUN_ID/upload" ]; then exit 0; fi
+          "$PY" - <<'PY'
+          import json,os,pathlib,re
+          root=pathlib.Path(os.environ["SCRATCH"])
+          markers=("FATAL:","CHECK FAIL","WARNING:","failed","out of memory","allocation",
+                   "GPU demotion","moe gpu rebind set","moe gpu txn","moe gpu cb online",
+                   "MOE_CBATCH_MAXPOS","metal error","CBATCH","GPU_VALIDATION_V1")
+          lines=[]
+          for workername in ("smoke_worker","measure_worker"):
+              path=root/workername/"worker.log"
+              if not path.is_file():continue
+              raw=path.read_text(errors="replace").splitlines()
+              for t in raw[-650:]:
+                  if "tokens:" in t or "ids:" in t or "prompt ids" in t:continue
+                  if not any(word.lower() in t.lower() for word in markers):continue
+                  t=re.sub(r'/Users/[^ \t]+',"HOST_PATH",t)
+                  t=re.sub(r'\b\d{5,}\b',"NUM",t)
+                  t=re.sub(r'txn=[A-Za-z0-9\-]+',"txn=redacted",t)
+                  t=re.sub(r'(?i)(token=|id=)\d+',r'\1redacted',t)
+                  lines.append({"worker":workername,"event":t.strip()[:240]})
+          result={"schema":"beglin-p5-scratch-cbatch128-sanitized-runtime-diagnostic-v1",
+             "last_80_events":lines[-80:],
+             "scratch_worker_log_present":bool(lines),
+             "original_full_log_not_uploaded":True,
+             "raw_hidden_or_generated_tokens_uploaded":False,
+             "production_touched":False}
+          out=root/"upload"/"p5_cb128_sanitized_native_diagnostic.json"
+          out.write_text(json.dumps(result,sort_keys=True,indent=2)+"\n")
+          print("P5_CB128_SANITIZED_NATIVE_DIAG",json.dumps({
+             "events":len(result["last_80_events"]),
+             "workers":sorted(set(x["worker"] for x in result["last_80_events"]))},sort_keys=True))
+          PY
       - name: "Seal original-source 112token capacity/ACK evidence and fail closed on missing proof"
         if: always()
         shell: bash
