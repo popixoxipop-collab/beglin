@@ -1,0 +1,52 @@
+{
+  "constraints": {
+    "max_generated_tokens": 4,
+    "max_prompt_tokens": 112,
+    "max_worker_rss_gib": 14,
+    "min_free_disk_gib": 3,
+    "no_main_or_release_or_live_changes": true,
+    "no_other_process_stopping": true,
+    "raw_token_or_logit_publication": false,
+    "slots": 1
+  },
+  "metrics": [
+    "RMSE",
+    "relative L2",
+    "KL(AF||candidate)",
+    "top1 agreement",
+    "prompt next-token NLL and accuracy",
+    "AF free-generation agreement"
+  ],
+  "p5_base": "b5cf761089153a6326855f267f1381fadb3f414e",
+  "policies": {
+    "A": {
+      "shared_down_proj/L26": 5,
+      "shared_up_proj/L3": 6
+    },
+    "B": {
+      "shared_down_proj/L26": 6,
+      "shared_up_proj/L3": 5
+    }
+  },
+  "quality": "full 102400-vocabulary logits at all matched prefill positions, last prompt position, and four-token free generation",
+  "reference": "original AF GPU bindings; not BF16 or human ground truth",
+  "schema": "beglin-hcp-p6-preregistered-protocol-v1",
+  "scope": "same original P5 12-domain prompts; exploratory extension, not new holdout",
+  "speed": {
+    "blocks": 6,
+    "bootstrap": "crossed prompt/block resampling, 20000 draws",
+    "design": "random balanced AABB/BBAA; opposite-policy preconditioning outside measurement; switch and steady strata",
+    "logit_dump_enabled": false,
+    "no_optional_stopping": true,
+    "primary": "full admission wall time including Python scheduler and native transition",
+    "prompts_per_block": 12,
+    "requests_per_prompt": 4,
+    "secondary": [
+      "native engine wall",
+      "request roundtrip",
+      "recorded transition component"
+    ],
+    "seed": 20261014,
+    "transition_not_added_twice": true
+  }
+}

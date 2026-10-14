@@ -1,0 +1,38 @@
+{
+  "automatic_live_promotion": false,
+  "bounds": {
+    "gpu_mla_KV_capacity": 128,
+    "live_promotion": false,
+    "native_c_capacity": 128,
+    "original_mlx_blob_sha": "b6cbc1c98cfedcd0f3c99f437d1f6c5978f2ce5a",
+    "patched_mlx_sha256": "daded3c0e4bf7cc2a86e0fab8c1f73322b5b0ffea0002d9b2d38857d2e9591ae",
+    "production_touched": false,
+    "schema": "beglin-p5-dual-c-mlx-128-scratch-v1",
+    "separate_gqa_capacity_left_unchanged": 32,
+    "source_c_receipt": {
+      "C_math_and_router_logic_unchanged": true,
+      "REBIND_SET_remains_compiled": true,
+      "auto_live_promotion": false,
+      "bounds_checks_not_removed": true,
+      "native_cbatch_maxpos_from": 32,
+      "native_cbatch_maxpos_to": 128,
+      "native_single_sequence_maxpos_unchanged": 160,
+      "original_qwen_sha256": "dd73b7c7f997aa66d0a2217f9b0f3ab74c5db28b8dba1b586d4f182352bbcee1",
+      "patched_qwen_sha256": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612",
+      "production_touched": false,
+      "schema": "beglin-hcp-p5-scratch-capacity128-source-v1",
+      "status": "SCRATCH_ONLY_C_AND_CMAKE_PATCH"
+    }
+  },
+  "dump_default": "disabled",
+  "instrumented_source_sha256": {
+    "CMakeLists.txt": "b597d7ea0ec54fd394eb69b8e918ed733c2eea657425d8810cf60b4266a78c28",
+    "mlx_moe.cpp": "daded3c0e4bf7cc2a86e0fab8c1f73322b5b0ffea0002d9b2d38857d2e9591ae",
+    "qwen_infer.c": "601f98aef1e0fa6c9dc5a24d08b52267488d8d35cfb020bee8ae1dcd9b09134e"
+  },
+  "mathematics_and_ack_unchanged": true,
+  "p5_base_commit": "b5cf761089153a6326855f267f1381fadb3f414e",
+  "production_touched": false,
+  "schema": "beglin-hcp-p6-build-source-v1",
+  "source_commit": "8a81db7724d7c8e4fde41ddf87a92e25079311f1"
+}

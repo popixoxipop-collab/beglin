@@ -1,0 +1,13 @@
+{
+  "cpu": "Apple M1 Max",
+  "gpu_exclusive_access": false,
+  "mlx": "0.32.0",
+  "notes": "Single additional research worker; existing production workers and user applications not stopped. No network/HTTP timing measured.",
+  "numpy": "2.3.5",
+  "observed_at_utc": "2026-10-14T02:16:04.041683+00:00",
+  "physical_memory_bytes": 68719476736,
+  "platform": "macOS-26.6.1-arm64-arm-64bit",
+  "python": "3.12.2",
+  "schema": "beglin-hcp-p6-execution-environment-v1",
+  "thermal_readout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+}

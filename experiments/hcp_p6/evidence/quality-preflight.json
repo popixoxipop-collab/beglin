@@ -1,0 +1,132 @@
+{
+  "af_binding_source": "original AF loaded by the identical GPU online path; empty promotion map",
+  "automatic_live_promotion": false,
+  "before": {
+    "active_route_sha256": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+    "live_stage_worker_pids": [
+      35481,
+      35493
+    ],
+    "stage_sha256": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9"
+  },
+  "checkpoint_shards_rehashed_this_run": false,
+  "index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "instrumented_binary_sha256": "45bb3b04c621a25af27b312797e2054847764c061302cc6a3876f772e079ab25",
+  "metrics_source_sha256": "790300c98f8e90b333e011f10f51a7ddc98fdbcd34fc17209a30f26e4ae70c03",
+  "mode": "quality",
+  "production_touched": false,
+  "prompts": [
+    {
+      "domain": "astronomy",
+      "id": "p000",
+      "source_text_sha256": "00a9d2e0f00d5cd724f2c8ceba5f10ba46d322677ea0e300e855b2cfd2becec5",
+      "split": "train",
+      "token_sha256": "278fe01b57299e96d7d52b84acb365c2de3cd3397ea3c9fd7aa4f3dae2326f88",
+      "tokens": 109,
+      "truncated_from_tokens": 109
+    },
+    {
+      "domain": "biology",
+      "id": "p004",
+      "source_text_sha256": "a1fb9c78d6bf7b3ddb1f9cb3cb70ce3a878210b9a4ecde12a4f3113f958bdf36",
+      "split": "validation",
+      "token_sha256": "211c5b389929b7e38c79bb41acfbbcbbd5de8c018278bf0173cf7bbe1ae0f0cb",
+      "tokens": 109,
+      "truncated_from_tokens": 109
+    },
+    {
+      "domain": "chemistry",
+      "id": "p008",
+      "source_text_sha256": "12867b450131048186bc2889cdc0cd4b0c2af750bb19fc9734ff8bb21009cbb6",
+      "split": "holdout",
+      "token_sha256": "558747f165cee35ae53f31b849fd2cac98a105a2d7ef915199c096082481fa1b",
+      "tokens": 109,
+      "truncated_from_tokens": 109
+    },
+    {
+      "domain": "computing",
+      "id": "p009",
+      "source_text_sha256": "ebdb660aeba825e465c1a7e241456f0793451e50a7e954171756292a4a2226f1",
+      "split": "train",
+      "token_sha256": "346c7d42718dae3757d987b4ffb493d32d060d69a3ab6c9aef2c3fb7e6671372",
+      "tokens": 110,
+      "truncated_from_tokens": 110
+    },
+    {
+      "domain": "economics",
+      "id": "p013",
+      "source_text_sha256": "8f337ed93268b4d65509809662d6ac59f82f0bf69247c4f4035de122e33c0647",
+      "split": "validation",
+      "token_sha256": "82fcc5c844b87454e933421d95fa596301b39b72a7273e92a7670394aa35a4d7",
+      "tokens": 109,
+      "truncated_from_tokens": 109
+    },
+    {
+      "domain": "energy",
+      "id": "p017",
+      "source_text_sha256": "a31bb699c0d2633296099238143c23b6f245cfd45e487dc43a2680a836b0cdbb",
+      "split": "holdout",
+      "token_sha256": "9ff0ebf5083a6b0467e3859db2d40cf98013a450f196219640afca120f1a93e3",
+      "tokens": 106,
+      "truncated_from_tokens": 106
+    },
+    {
+      "domain": "history",
+      "id": "p018",
+      "source_text_sha256": "bc1595c44ad27ebe3406e1641bed82c8bade2660a9eeca97ea02b1b87ea323b3",
+      "split": "train",
+      "token_sha256": "b0cad83dea981ab8b371d8202ce3cf7c33e9064453093a63f328a073260bb180",
+      "tokens": 111,
+      "truncated_from_tokens": 111
+    },
+    {
+      "domain": "language",
+      "id": "p022",
+      "source_text_sha256": "700e7fd00b312853923bfb62ac4508debd6f7316dcb9b28c3327e08f86851bfe",
+      "split": "validation",
+      "token_sha256": "dfd588e26b363b18bc53d4844368ac2141a9a8c447e1f78ab25f8dd32253d113",
+      "tokens": 109,
+      "truncated_from_tokens": 109
+    },
+    {
+      "domain": "machine_learning",
+      "id": "p026",
+      "source_text_sha256": "3bb3088ab2db2a7ede4d058e02dd4cf2bfdac96c20980101bfbf2ff9bdaf81a5",
+      "split": "holdout",
+      "token_sha256": "127773953abaae3c4378157a9ebed352ad5a089d1cd25421e61e6fbbac4be853",
+      "tokens": 109,
+      "truncated_from_tokens": 109
+    },
+    {
+      "domain": "mathematics",
+      "id": "p027",
+      "source_text_sha256": "c41b2fbfdcd06ec8edc2d7df079f455c4e2011793219a4a6c421262ae17b07b4",
+      "split": "train",
+      "token_sha256": "324c5ea7c32e0ab0f2a5cdc5e69d96d694a2b76f20f8c5c842e4964b83e2a6a7",
+      "tokens": 111,
+      "truncated_from_tokens": 111
+    },
+    {
+      "domain": "physics",
+      "id": "p031",
+      "source_text_sha256": "325838915823bb8e18e831c62952ab283e694fc6b4dc22fc930de3e019724ef6",
+      "split": "validation",
+      "token_sha256": "d56bb1dfe3c92eee0289711af5755eaa39b2470580b08778e8ff8d89182ff105",
+      "tokens": 111,
+      "truncated_from_tokens": 111
+    },
+    {
+      "domain": "robotics",
+      "id": "p035",
+      "source_text_sha256": "25f345755ce6b244fc80ba4ba1ac178de32e58dc7739c68048f5a442b4be329e",
+      "split": "holdout",
+      "token_sha256": "a4e9436fc23ed0beb66940661dda860de567c05ce8f91ae5e72157c2414249c7",
+      "tokens": 112,
+      "truncated_from_tokens": 112
+    }
+  ],
+  "protocol_sha256": "443176640579b0911d5f1a1d8436e84e5f560a8be3631e783b37810d3e4a7a4e",
+  "research_commit": "ef8e4a906f46c25c9e9a6404fe3d4a0393e5b324",
+  "runner_source_sha256": "70e3a674a3d5876c4148ed677a694fe0f7b937f9bd22327e5b9d45ae2d8ca622",
+  "schema": "beglin-hcp-p6-preflight-v1"
+}

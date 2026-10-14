@@ -1,0 +1,7 @@
+{
+  "MLX_backend_is_exact_P5_KV128": true,
+  "observer_removal_exactly_recovers_reviewed_P5_CB128_source": true,
+  "production_touched": false,
+  "restored_C_sha256": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612",
+  "schema": "beglin-hcp-p6-source-observer-audit-v1"
+}

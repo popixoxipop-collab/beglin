@@ -1,0 +1,18 @@
+{
+  "native_P5_base_commit": "b5cf761089153a6326855f267f1381fadb3f414e",
+  "observation": "The CI checkout changed to 0a025b932f6c7563a18a737f64a8f10b189f78e7 during this study. Existing research source/evidence bytes survived; this independent clone restores durable Git ownership. This is content-hash provenance, not proof that the original transient commit objects remain available.",
+  "old_linked_worktree_metadata_present": false,
+  "preflight_driver_metrics_and_protocol_hashes_match_preserved_bytes": true,
+  "preserved_files_sha256": {
+    "experiments/hcp_p6/protocol.json": "443176640579b0911d5f1a1d8436e84e5f560a8be3631e783b37810d3e4a7a4e",
+    "tools/hcp_p6_metrics.py": "790300c98f8e90b333e011f10f51a7ddc98fdbcd34fc17209a30f26e4ae70c03",
+    "tools/hcp_p6_probe_build.py": "c98187a76b7e3e261b9e64835cc3f3ae54d12c7183800ae10bb9090d0b52d42e",
+    "tools/hcp_p6_run.py": "70e3a674a3d5876c4148ed677a694fe0f7b937f9bd22327e5b9d45ae2d8ca622",
+    "tools/test_hcp_p6_metrics.py": "e7dd287fb6e2de9f3226583cbb2e3f55052a3e766c11a721dfae2d9b729cbd1d"
+  },
+  "production_touched": false,
+  "schema": "beglin-hcp-p6-source-preservation-v1",
+  "transient_commit_objects_available_at_preservation": false,
+  "transient_native_build_commit": "8a81db7724d7c8e4fde41ddf87a92e25079311f1",
+  "transient_pre_run_driver_commit": "ef8e4a906f46c25c9e9a6404fe3d4a0393e5b324"
+}
