@@ -1,0 +1,86 @@
+{
+  "schema": "beglin-hcp-p10-preregistered-new-short-answer-v1",
+  "seed": 20261014,
+  "selection": "Predefined hand-written tasks, frozen before native evaluation; not independent external benchmark",
+  "scope": "12 domain, 12 first-use questions, disjoint token hash from P4/P6; correctness exploratory only",
+  "instruction": "Answer the question briefly. Use only its stated premises. Provide no extra discussion.",
+  "items": [
+    {
+      "id": "p10-new-00",
+      "domain": "astronomy",
+      "question": "If a nearby star has annual parallax of 0.1 arcseconds, what is its distance in parsecs?",
+      "expected_short_answer": "10 parsecs"
+    },
+    {
+      "id": "p10-new-01",
+      "domain": "biology",
+      "question": "Cross homozygous AA with homozygous aa. What genotype do all F1 offspring have?",
+      "expected_short_answer": "Aa"
+    },
+    {
+      "id": "p10-new-02",
+      "domain": "chemistry",
+      "question": "What is the pH of a solution whose hydrogen ion concentration is 0.001 mol per liter at 25 C?",
+      "expected_short_answer": "3"
+    },
+    {
+      "id": "p10-new-03",
+      "domain": "computing",
+      "question": "What is the decimal value of the binary number 101101?",
+      "expected_short_answer": "45"
+    },
+    {
+      "id": "p10-new-04",
+      "domain": "economics",
+      "question": "A price rises by ten percent then falls by ten percent relative to the new price. What is its overall percentage change?",
+      "expected_short_answer": "1% decrease"
+    },
+    {
+      "id": "p10-new-05",
+      "domain": "energy",
+      "question": "A constant 100 watt device operates for 3 hours. How much energy does it consume in kilowatt hours?",
+      "expected_short_answer": "0.3 kWh"
+    },
+    {
+      "id": "p10-new-06",
+      "domain": "history",
+      "question": "Which year did the Berlin Wall fall?",
+      "expected_short_answer": "1989"
+    },
+    {
+      "id": "p10-new-07",
+      "domain": "language",
+      "question": "What is the English simple past tense of the irregular verb go?",
+      "expected_short_answer": "went"
+    },
+    {
+      "id": "p10-new-08",
+      "domain": "machine_learning",
+      "question": "A binary classifier has 30 true positives and 10 false positives. What is its precision?",
+      "expected_short_answer": "0.75"
+    },
+    {
+      "id": "p10-new-09",
+      "domain": "mathematics",
+      "question": "Compute seven times eight minus nine.",
+      "expected_short_answer": "47"
+    },
+    {
+      "id": "p10-new-10",
+      "domain": "physics",
+      "question": "By Newton's second law, what force in newtons is needed for a 2 kilogram mass to accelerate at 3 meters per second squared?",
+      "expected_short_answer": "6 N"
+    },
+    {
+      "id": "p10-new-11",
+      "domain": "robotics",
+      "question": "A differential drive robot has two wheels with equal radius, turning forward at the same angular speed. Does its ideal planar path curve or stay straight?",
+      "expected_short_answer": "straight"
+    }
+  ],
+  "expected_total": 12,
+  "temperature": 0,
+  "decode": "native_greedy",
+  "token_budget": 12,
+  "production_touched": false
+}
