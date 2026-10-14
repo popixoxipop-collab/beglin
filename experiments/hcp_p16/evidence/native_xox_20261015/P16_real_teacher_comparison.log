@@ -1,0 +1,29 @@
+test_01_original_real_native_and_original_teachers_pass (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_02_wrong_actual_native_logits_bytes (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_03_nonfinite_native_logits (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_04_missing_native_logits_array (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_05_wrong_generated_token (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_06_wrong_frozen_token_SHA (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_07_wrong_policy_runtime_SHA (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_08_wrong_worker_original_release_SHA (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_09_wrong_request_cell_order (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_10_wrong_original_binary_SHA (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_11_false_native_quality_noninferiority_certification (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_12_missing_native_repeated_source_row (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_13_C_native_trace_input_SHA_mutated (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_14_C_actual_prefill_position_forged (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_15_wrong_teacher_BF16_original_array (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_16_wrong_teacher_FP32_original_array (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_17_original_teacher_report_corrupted (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_18_frozen_teacher_reference_corrupted (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_19_original_C_record_Capture_SHA_forged (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_20_raw_copy_manifest_mismatch (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_21_duplicate_source_log_capture_id (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_22_run_observer_claims_production_mutation (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_23_wrong_first_prompt_policy_cell (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+test_24_wrong_checkpoint_index_under_preregister (test_hcp_p16_evidence.P16EvidenceTests) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 0.519s
+
+OK

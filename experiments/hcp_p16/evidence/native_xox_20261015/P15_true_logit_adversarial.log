@@ -1,0 +1,33 @@
+test_01_actual_complete_original_full_vocabulary_passes (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_02_false_model_completed (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_03_26_instead_of_27_layers (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_04_out_of_order_layer_records (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_05_missing_last_checkpoint_parameter (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_06_wrong_number_of_checkpoint_tensors (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_07_exported_logits_file_tampered (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_08_logits_not_finite (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_09_wrong_logits_shape (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_10_fake_vocabulary_size (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_11_source_implementation_changed (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_12_wrong_model_index (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_13_wrong_frozen_inputs (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_14_bad_source_tensor_hash_receipt (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_15_fake_quantized_A_B_accuracy_proven (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_16_fake_promotion_approved (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_17_fake_GPU_executed (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_18_wrong_native_production_route (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_19_forged_argmax_token (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_20_forged_reported_logits_norm (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_21_resource_limit_exceeded (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_22_selftest_failed (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_23_unsupported_compute_dtype (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_24_token_manifest_hash_mismatch (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_25_false_resident_full_model_parity_claim (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_26_original_parameters_modified_flag (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_27_original_source_checkpoint_modified_flag (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+test_28_native_KV_cache_wrongly_enabled (test_hcp_p15_independent_audit.P15IndependentTamperTests) ... ok
+
+----------------------------------------------------------------------
+Ran 28 tests in 0.132s
+
+OK

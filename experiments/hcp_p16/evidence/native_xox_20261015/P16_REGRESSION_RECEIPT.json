@@ -1,0 +1,102 @@
+{
+  "P15_original_miniature_streaming_18_verified_prior_not_reexecuted_here": true,
+  "automatic_live_promotion": false,
+  "failures": 0,
+  "group_results": {
+    "P10_original_audit": {
+      "log_SHA256": "7604d815b98ee7114ccf5d62729e13536596dda18f9dd41d1d9eec23d52e781c",
+      "pass": 10,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P11_evidence": {
+      "log_SHA256": "f983991fbcb857406739b7980fb6b79361c69212a26f76e0673b258da4306bb4",
+      "pass": 12,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P11_forensic": {
+      "log_SHA256": "2bee76f6d80da6d1df0993ee8c5168ac9b6f7cabd049b9f0b87af0143d9e2b67",
+      "pass": 16,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P11_inflight": {
+      "log_SHA256": "1053a24aae26ad4008c9a7516792ca0c1b4292e5ffa5ff23d8f385396c1f72e9",
+      "pass": 18,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P12_native_audit": {
+      "log_SHA256": "88d6fdf223c49080ab283c10c6e1986940a6404dea99a0af8c2fd63338b46669",
+      "pass": 20,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P12_prestart": {
+      "log_SHA256": "8160b0b4adb731c06d15954e93feb4588a04626169e9a45b6baba7fcc2fb04c0",
+      "pass": 24,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P13_native_hash": {
+      "log_SHA256": "481ce6e5b60b47affa1753acfec79eaf464f8fb82ddb081fb07b3c2197797844",
+      "pass": 16,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P13_strict_ACK": {
+      "log_SHA256": "0e7a8aee25807a361466e7bdfc0e59984a4c0e346c491636e8c2d3198bfe4660",
+      "pass": 12,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P14_dual_worker_audit": {
+      "log_SHA256": "fef0e0554dccd06d338d6b842e21a10554ed7cad3a118304c11fec6d0f05f2ca",
+      "pass": 16,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P15_original_evidence": {
+      "log_SHA256": "877c6529f8a93ce10396f1c1b8e1516a549fcfefcce84f8b3017c90d870bec8e",
+      "pass": 12,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P15_true_logit_adversarial": {
+      "log_SHA256": "57913384f43d5c4ea9ce00fc45504f8e904fcfe95c0bb93d46dbd4f9fb07fa0d",
+      "pass": 28,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P16_native_source": {
+      "log_SHA256": "8a56a8f60d7eea9e7515dcefd3db260e1012218d71032eb6edb7992ad8081a21",
+      "pass": 15,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P16_real_teacher_comparison": {
+      "log_SHA256": "510e8d4b76410a54be4a54c3158a818761b8d7c126a68a60e18c6f67a1e2b70a",
+      "pass": 24,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P8_source_governor": {
+      "log_SHA256": "d0e6c4698e36ab905014c878e4b091ab4bcefa7b0655974554fbed7392f3c585",
+      "pass": 48,
+      "source_checkout": "repository",
+      "status": "PASS"
+    },
+    "P9_source_cache_fault": {
+      "log_SHA256": "7b14fc9c370439d99e9a7d111bcde95a350e863062c468091efcb8e55d5ba587",
+      "pass": 21,
+      "source_checkout": "repository",
+      "status": "PASS"
+    }
+  },
+  "groups": 15,
+  "production_touched": false,
+  "schema": "beglin-hcp-p16-whole-P8-to-P16-EOE-reexecuted-regression-v1",
+  "source_pre_p16_git_commit": "f2ed4b49541db2cdedc2103fcf1aade09a9997c7",
+  "test_cases": 292
+}

@@ -1,0 +1,12 @@
+{
+  "P16_C_observer_only_SHA256": "aedb3f915c532b7e454515598b6d9836a4962e23391e2e304980cde64bc7c1af",
+  "P5_CB128_original_SHA256": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612",
+  "P9_MLX_KV128_SHA256": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f",
+  "automatic_promotion": false,
+  "frozen_P15_teacher_native_manifest_SHA256": "0ea208ca6b6bf9fa404fd291679e164f63217c91b1d6e15756d331261998c36e",
+  "original_route_sha256": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+  "original_stage_sha256": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9",
+  "production_touched": false,
+  "schema": "beglin-hcp-p16-original-teacher-native-exact-source-preflight-v1",
+  "source_commit": "f2ed4b49541db2cdedc2103fcf1aade09a9997c7"
+}

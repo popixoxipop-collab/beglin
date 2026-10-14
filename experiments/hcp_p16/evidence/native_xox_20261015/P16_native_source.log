@@ -1,0 +1,20 @@
+test_01_exact_original_p5_CB128 (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_02_full_byte_reversibility (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_03_reject_duplicate_patch (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_04_reject_unpinned_original_C32 (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_05_only_matched_last_prefill_logits_source (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_06_require_original_prompt_token_sha (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_07_explicit_env_optin (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_08_no_warmup_capture (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_09_exact_one_request_one_new_token (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_10_exact_last_position (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_11_exclusive_nofollow_output (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_12_checksum_real_float32_and_token_ascii (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_13_bytewise_math_unchanged (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_14_reject_nonfinite (test_hcp_p16_patch.P16ObserverTests) ... ok
+test_15_claims_invalid_scope_die (test_hcp_p16_patch.P16ObserverTests) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.031s
+
+OK

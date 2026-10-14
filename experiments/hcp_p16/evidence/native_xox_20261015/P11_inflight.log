@@ -1,0 +1,23 @@
+test_08_live_worker_quarantine_forbidden (test_hcp_p11_inflight.ReconcileTests) ... ok
+test_09_real_ambiguous_preimage_inspection (test_hcp_p11_inflight.ReconcileTests) ... ok
+test_10_atomic_quarantine_retains_unreplayed_command (test_hcp_p11_inflight.ReconcileTests) ... ok
+test_11_duplicate_quarantine_blocked (test_hcp_p11_inflight.ReconcileTests) ... ok
+test_12_missing_verified_receipt_failclosed (test_hcp_p11_inflight.ReconcileTests) ... ok
+test_13_durable_command_hash_corruption_rejected (test_hcp_p11_inflight.ReconcileTests) ... ok
+test_14_marker_wrong_transaction_rejected (test_hcp_p11_inflight.ReconcileTests) ... ok
+test_15_stale_ACK_wrong_epoch_rejected (test_hcp_p11_inflight.ReconcileTests) ... ok
+test_16_invalid_policy_transition_rejected (test_hcp_p11_inflight.ReconcileTests) ... ok
+test_17_foreign_workspace_rejected (test_hcp_p11_inflight.ReconcileTests) ... ok
+test_18_tampered_final_receipt_rejected (test_hcp_p11_inflight.ReconcileTests) ... ok
+test_01_pin_sealed_source (test_hcp_p11_inflight.SourceTests) ... ok
+test_02_source_reversible (test_hcp_p11_inflight.SourceTests) ... ok
+test_03_double_patch_blocked (test_hcp_p11_inflight.SourceTests) ... ok
+test_04_unsealed_original_blocked (test_hcp_p11_inflight.SourceTests) ... ok
+test_05_two_crash_windows_inside_rebind_set (test_hcp_p11_inflight.SourceTests) ... ok
+test_06_bounded_test_gate_failclosed (test_hcp_p11_inflight.SourceTests) ... ok
+test_07_production_math_and_rollback_unchanged (test_hcp_p11_inflight.SourceTests) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 0.057s
+
+OK
