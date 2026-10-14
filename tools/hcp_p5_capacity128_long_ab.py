@@ -40,6 +40,14 @@ def require_authority(binary,source,root,model_index):
         raise ValueError("scratch binary's source lacks 128/160 capacity")
     if "REBIND_SET_APPLIED" not in c or "moe_cb4b_admit_guard(" not in c:
         raise ValueError("scratch source lacks native rebind or input guard")
+    gpu_file=root/"src/mlx_moe.cpp"
+    if not gpu_file.is_file() or gpu_file.is_symlink():
+        raise ValueError("scratched GPU backend missing")
+    mlx=gpu_file.read_text()
+    if ("#define MLA_L0_MAXPOS 128" not in mlx or
+        "#define GQA_L0_MAXPOS 32" not in mlx or
+        "spos[i] >= MLA_L0_MAXPOS" not in mlx):
+        raise ValueError("MLX fused GPU KV positional bound does not match C cbatch128")
     if sha(model_index)!=INDEX_SHA:
         raise ValueError("DeepSeek checkpoint is not the study's pinned source")
     stage=pathlib.Path(ps.PERSISTENT_BINARY)
