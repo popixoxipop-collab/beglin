@@ -63,11 +63,10 @@ jobs:
           import pathlib,os
           path=pathlib.Path(os.environ["SCRATCH"])/"src/CMakeLists.txt"
           text=path.read_text()
-          anchor="add_library(qwen_infer_obj OBJECT\\n  qwen_infer.c\\n"
-          anchor=anchor.replace("\\\\n","\\n")
+          anchor="add_library(qwen_infer_obj OBJECT"+chr(10)+"  qwen_infer.c"+chr(10)
           assert text.count(anchor)==1
           assert (path.parent/"qng64_dense.c").is_file()
-          path.write_text(text.replace(anchor,anchor+"  qng64_dense.c\\n".replace("\\\\n","\\n")))
+          path.write_text(text.replace(anchor,anchor+"  qng64_dense.c"+chr(10)))
           print("P5_SCRATCH_QNG64_SYMBOL_LINKAGE_DECLARED")
           PY
           cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
