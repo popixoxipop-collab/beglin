@@ -1,0 +1,37 @@
+{
+  "entries": [
+    {
+      "id": "p15-engineering-0",
+      "text": "The result of seven times eight is",
+      "token_ids": [
+        549,
+        1230,
+        280,
+        7960,
+        2602,
+        6524,
+        317
+      ],
+      "token_sha256": "f3b3029dbb5ecfe92bba4fd4922b6b4557b90aff65eaadc3e9bd34c485866ff4"
+    },
+    {
+      "id": "p15-engineering-1",
+      "text": "Complete the sentence: The capital of France is",
+      "token_ids": [
+        22900,
+        254,
+        4976,
+        25,
+        429,
+        6077,
+        280,
+        7239,
+        317
+      ],
+      "token_sha256": "ee9f8b6e784080ed0150ae0979b46051675e77234bc6661ef5b13e7bd5566238"
+    }
+  ],
+  "schema": "beglin-p15-preforward-inputs-v1",
+  "source_model_index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "task_accuracy_benchmark": false
+}
