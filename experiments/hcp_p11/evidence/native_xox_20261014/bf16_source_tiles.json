@@ -1,0 +1,63 @@
+{
+  "BF16_reference_logits_measured": false,
+  "RSS_peak_bytes": 213532672,
+  "automatic_live_promotion": false,
+  "device": "cpu",
+  "production_modified": false,
+  "quality_certified": false,
+  "quantized_A_or_B_noninferiority_proven": false,
+  "sample_count": 2,
+  "samples": [
+    {
+      "full_model_loaded": false,
+      "full_weight_tensor_loaded": false,
+      "original_shard_bytes": 8594887408,
+      "shard": "model-00001-of-000004.safetensors",
+      "slice_bytes_read_for_values": 8192,
+      "source_dtype": "BF16",
+      "source_weight_shape": [
+        2816,
+        2048
+      ],
+      "tensor_key": "model.layers.3.mlp.shared_experts.up_proj.weight",
+      "test_vector": "deterministic linspace(-1,1,256) in FP32",
+      "tile_dtype": "BF16",
+      "tile_matvec_max_abs": 0.1882622092962265,
+      "tile_matvec_mean": 0.03181447461247444,
+      "tile_matvec_result_sha256": "04ae149af10bc86763c6131052e6a06fb508f36bb163427c35e4a677185ca577",
+      "tile_shape": [
+        16,
+        256
+      ],
+      "tile_weight_sha256": "8e088047990cb17a47087b65ab0567e8bede673f7a9cb5eee5147abb294b55a1"
+    },
+    {
+      "full_model_loaded": false,
+      "full_weight_tensor_loaded": false,
+      "original_shard_bytes": 5636263200,
+      "shard": "model-00004-of-000004.safetensors",
+      "slice_bytes_read_for_values": 8192,
+      "source_dtype": "BF16",
+      "source_weight_shape": [
+        2048,
+        2816
+      ],
+      "tensor_key": "model.layers.26.mlp.shared_experts.down_proj.weight",
+      "test_vector": "deterministic linspace(-1,1,256) in FP32",
+      "tile_dtype": "BF16",
+      "tile_matvec_max_abs": 0.17520232498645782,
+      "tile_matvec_mean": 0.003937220200896263,
+      "tile_matvec_result_sha256": "35625164d7fda5fea7cbc6d089eba48e4881bb5fb58e9e3ca309b42cb2e04b95",
+      "tile_shape": [
+        16,
+        256
+      ],
+      "tile_weight_sha256": "191897a0d2b98cc754b07d747b23b76ca14961a873b942d50975799af025df67"
+    }
+  ],
+  "schema": "beglin-hcp-p11-readonly-bf16-weight-slice-oracle-v1",
+  "source_index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "status": "ORIGINAL_BF16_TILE_PROJECTION_ONLY",
+  "total_BF16_tile_value_bytes": 16384,
+  "whole_BF16_model_forward_executed": false
+}

@@ -1,0 +1,69 @@
+{
+  "automatic_live_promotion": false,
+  "controlled_PID_kill_after_fsynced_marker": true,
+  "crashed_admission_thread_error_types": [
+    "PrecisionEpochSchedulerError"
+  ],
+  "fresh_B_A_B_accepted_with_P6_output_SHA": true,
+  "fresh_recovery": [
+    {
+      "after_epoch": 3,
+      "policy": "B",
+      "sequence_sha256": "13e708ca6f960c83ac6f0311db786ad3fa5e70677ca2ab13bcf070beab494e26",
+      "txn_id_sha256": "7cb4ff82e219d9e526bfb2c7e849b0447452e2327d954f760af31be427928e70",
+      "worker_pid_stable": true
+    },
+    {
+      "after_epoch": 4,
+      "policy": "A",
+      "sequence_sha256": "13e708ca6f960c83ac6f0311db786ad3fa5e70677ca2ab13bcf070beab494e26",
+      "txn_id_sha256": "1b26f8ec8cb57a78128058f0f35007625d033225bc7ba26bb4db117dcf71b064",
+      "worker_pid_stable": true
+    },
+    {
+      "after_epoch": 5,
+      "policy": "B",
+      "sequence_sha256": "13e708ca6f960c83ac6f0311db786ad3fa5e70677ca2ab13bcf070beab494e26",
+      "txn_id_sha256": "a126f94fc23cfeb0e742786fba05c7161a4944ae9ae062b7b312fe161908e03d",
+      "worker_pid_stable": true
+    }
+  ],
+  "isolated_binary_sha256": "a5fd3f590ad6bbddcb69e690ccf738b711b8f7ceb3319f99ee933123f5ac7e78",
+  "native_cmd_SHA256": "3e2322e05d7beded8f393faf793f831d691a3899bca64ee443ed7eef85e33564",
+  "native_crash_marker_sha256": "6981dba2c7133102da65bc3a89be3e3b773974f701058991cc9dda7a042dbef6",
+  "native_old_terminal_ack_for_txn": false,
+  "old_policy_A_preimage_retained": true,
+  "old_transaction_never_replayed": true,
+  "old_transaction_outcome": "UNKNOWN_CRASHED_BEFORE_DURABLE_ACK",
+  "old_transaction_retained_in_fsynced_quarantine": true,
+  "original_stage_route_pids_unchanged": true,
+  "phase": "before_ack",
+  "production_automatic_reconciler_installed": false,
+  "production_touched": false,
+  "quarantine_receipt": {
+    "command_remains_retained_for_inspection": true,
+    "expected_epoch": 2,
+    "journaled_fsynced": true,
+    "next_restart_requires_fresh_STARTUP_ACK_and_policy_A": true,
+    "no_automatic_retry": true,
+    "old_native_worker_verified_dead": true,
+    "original_txn_file": "/Users/xox/mcp-sandbox/tailnet-commander/.tailnet-tmp/hcp-p11-inflight-20261014-1816/workers/p11-midtxn-before_ack/txn.cmd",
+    "preimage_ack_sha256": "ca3d58aee92d626a179fc4f10ffc5987dbc095d8b3146b7b2ec253ab769a24e2",
+    "preimage_epoch": 2,
+    "preimage_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+    "production_touched": false,
+    "quarantine_cmd_path": "/Users/xox/mcp-sandbox/tailnet-commander/.tailnet-tmp/hcp-p11-inflight-20261014-1816/workers/p11-midtxn-before_ack/quarantine/epoch-f6bfcc0db4084acbaef2050144a750b9.3e2322e05d7beded8f393faf793f831d691a3899bca64ee443ed7eef85e33564.cmd",
+    "schema": "beglin-p11-crash-ambiguous-command-preimage-v1",
+    "source_command_sha256": "3e2322e05d7beded8f393faf793f831d691a3899bca64ee443ed7eef85e33564",
+    "source_marker_sha256": "6981dba2c7133102da65bc3a89be3e3b773974f701058991cc9dda7a042dbef6",
+    "status": "CRASH_AMBIGUOUS_UNCOMMITTED_TRANSACTION_QUARANTINED",
+    "terminal_ACK_for_interrupted_transaction": false,
+    "txn_id": "epoch-f6bfcc0db4084acbaef2050144a750b9",
+    "window": "before_ack"
+  },
+  "schema": "beglin-hcp-p11-real-midtxn-crash-reconcile-v1",
+  "source_commit": "6a3790590321b35e353f0b06978517e5407dcce9",
+  "startup_fresh_pid": true,
+  "startup_fresh_policy_A": true,
+  "status": "TRUE_INFLIGHT_WINDOW_WITNESSED_AND_QUARANTINED"
+}

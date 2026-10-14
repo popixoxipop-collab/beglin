@@ -1,0 +1,14 @@
+{
+  "expected_epoch": 2,
+  "old_native_worker_verified_dead": true,
+  "original_txn_file": "/Users/xox/mcp-sandbox/tailnet-commander/.tailnet-tmp/hcp-p11-inflight-20261014-1816/workers/p11-midtxn-first_bind/txn.cmd",
+  "preimage_ack_sha256": "ca3d58aee92d626a179fc4f10ffc5987dbc095d8b3146b7b2ec253ab769a24e2",
+  "preimage_epoch": 2,
+  "preimage_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+  "schema": "beglin-p11-crash-ambiguous-command-preimage-v1",
+  "source_command_sha256": "648a07529a73203130e2f16513e63f824f95384416637e3167dd35d758c8c7ec",
+  "source_marker_sha256": "e0e0d28a1a1d253a1c61fa4866f827817c65e1ecafcc9f3a9e4f6f8dc90788c4",
+  "terminal_ACK_for_interrupted_transaction": false,
+  "txn_id": "epoch-8f8c023d8c32413997bdb1404f4deed5",
+  "window": "first_bind"
+}

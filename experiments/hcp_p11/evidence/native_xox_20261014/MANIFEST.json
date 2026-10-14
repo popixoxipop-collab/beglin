@@ -1,0 +1,145 @@
+{
+  "BF16_full_teacher_forward_executed": false,
+  "BF16_noninferiority_gate_passed": false,
+  "BF16_repeated_tile_SHA_projection_match": true,
+  "BF16_shard_tiles_checked": 2,
+  "BF16_tile_bytes_read": 16384,
+  "P10_parent_commit": "645e2eba85680f33f8f2148ce574935c279b07c4",
+  "P11_preregistered_commit": "6a3790590321b35e353f0b06978517e5407dcce9",
+  "P9_prepared_MLX_KV128_sha256": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f",
+  "automatic_live_promotion": false,
+  "copied_evidence": {
+    "before_ack.json": {
+      "bytes": 3432,
+      "sha256": "39d272c4b94d0120d2b3a90c6aa65371017efbe6899e61571533bad3ee50c519"
+    },
+    "before_ack.marker": {
+      "bytes": 50,
+      "sha256": "6981dba2c7133102da65bc3a89be3e3b773974f701058991cc9dda7a042dbef6"
+    },
+    "before_ack_quarantined_transaction.cmd": {
+      "bytes": 164,
+      "sha256": "3e2322e05d7beded8f393faf793f831d691a3899bca64ee443ed7eef85e33564"
+    },
+    "bf16_source_tiles.json": {
+      "bytes": 2261,
+      "sha256": "49af27431fe9e672ea5783a0bc0112f2b412fe655ea3f769467bbfad13983090"
+    },
+    "bf16_tile_reread.json": {
+      "bytes": 1165,
+      "sha256": "9d0efc226106bba46be862e2268755abd03aaf4c9802bef2a90861eed87d71d4"
+    },
+    "first_bind.json": {
+      "bytes": 3432,
+      "sha256": "656db4280567702d2af7c0eab388bf9615935e538b51c5a8c091d95327a54fb4"
+    },
+    "first_bind.marker": {
+      "bytes": 50,
+      "sha256": "e0e0d28a1a1d253a1c61fa4866f827817c65e1ecafcc9f3a9e4f6f8dc90788c4"
+    },
+    "first_bind_attempt1_unmarked.json": {
+      "bytes": 542,
+      "sha256": "f5f3ac0ac61aeb6f98275ed8a57c01777dd5ad7c510ecb18ac3e5ae6045b0850"
+    },
+    "first_bind_quarantined_transaction.cmd": {
+      "bytes": 164,
+      "sha256": "648a07529a73203130e2f16513e63f824f95384416637e3167dd35d758c8c7ec"
+    },
+    "forensic/before_ack_INTENT.json": {
+      "bytes": 812,
+      "sha256": "e20b0684644dbe3ee12511c9980dd0b635543a3402fd16bae63720ec8f9cb3af"
+    },
+    "forensic/before_ack_VERIFIED.json": {
+      "bytes": 1346,
+      "sha256": "ddffd926e9baf616de29df673dcce3ccec4613c0f73efa7a08c9bd3f85c28e93"
+    },
+    "forensic/first_bind_INTENT.json": {
+      "bytes": 812,
+      "sha256": "28ed1c6b9473b0179343e269b14f417c184b3bd103d1c217e3c4108c9ce73d78"
+    },
+    "forensic/first_bind_VERIFIED.json": {
+      "bytes": 1346,
+      "sha256": "b6c8c3585939d10b538ae46d2f3983f11b29e4f2255adb21eeb8f94945c635d5"
+    },
+    "forensic_supplement.json": {
+      "bytes": 1874,
+      "sha256": "6bb09b649da6f68972b1b60ca66e131d905694bd334cff2d21f056f0b72676bd"
+    },
+    "independent_audit.json": {
+      "bytes": 1556,
+      "sha256": "4106dae76e0140402558578ca2d9db251c0e9541a7424ca4ee4d8e3955c48c74"
+    },
+    "independent_audit_v2.json": {
+      "bytes": 1731,
+      "sha256": "e69ff3932e67011652cfba226197ef8b9c44fac172d64aea5a0f74ec6ef91c8f"
+    },
+    "p10_independent_audit.log": {
+      "bytes": 959,
+      "sha256": "ab46dd97169ac9124f349d63b896311426d01aeb413ef0a8778a5f1c187838d1"
+    },
+    "p11_crash_quarantine.log": {
+      "bytes": 1615,
+      "sha256": "64e795737c259966c8c64e8259de38cc13adf46b397490f39b7032dce6b9dcd1"
+    },
+    "p11_forensic_tamper.log": {
+      "bytes": 1497,
+      "sha256": "c1a48a927727b0f8a6a9425c11bcebd7165c9cc6c9a587f26d6403a5aed710a4"
+    },
+    "p8_source_governor.log": {
+      "bytes": 2904,
+      "sha256": "d0e6c4698e36ab905014c878e4b091ab4bcefa7b0655974554fbed7392f3c585"
+    },
+    "p9_repack_fault.log": {
+      "bytes": 2176,
+      "sha256": "1f9c48229fdbaad7a41c69322e1a637ab863d24356d6d51afc3d725273a212f4"
+    },
+    "preflight.json": {
+      "bytes": 1161,
+      "sha256": "b2fbc0a2f262467d9cfda926f2fddb11ae3cd61d32314ac449478590654a0863"
+    }
+  },
+  "durable_unreplayed_command_quarantine_verified": true,
+  "forensic_original_INTENT_and_VERIFIED_journal_copies": 4,
+  "initial_unmarked_timing_attempt_disclosed": true,
+  "main_modified": false,
+  "model_index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "original_P5_C128_sha256": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612",
+  "original_P6_quality_source_sha256": "2ad68622fcfe4e8f2d16e0abb1c24e010618fd14ab40917f4dd4278167e59104",
+  "original_failed_C_string_compile_disclosed": true,
+  "original_live_route_SHA256": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+  "original_serving_stage_SHA256": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9",
+  "original_worker_PIDs": [
+    35481,
+    35493
+  ],
+  "outcome_of_both_original_crashed_admissions": "UNKNOWN",
+  "production_automatic_reconciler_installed": false,
+  "production_touched": false,
+  "real_native_crash_count": 2,
+  "research_branch": "research/hcp-p11-inflight-reconcile-bf16-20261014",
+  "schema": "beglin-hcp-p11-native-inflight-independent-evidence-manifest-v1",
+  "separate_fresh_native_recovered_requests": 6,
+  "test_groups": {
+    "p10_independent_audit": 10,
+    "p11_crash_quarantine": 18,
+    "p11_forensic_tamper": 16,
+    "p8_source_governor": 48,
+    "p9_repack_fault": 21
+  },
+  "test_only_fault_C_sha256": "3d5a6d9f2f63d53e960c14a88dc4892ffa27cfd67b6d15258b6c930a7c17f2bd",
+  "test_only_native_binary_sha256": "a5fd3f590ad6bbddcb69e690ccf738b711b8f7ceb3319f99ee933123f5ac7e78",
+  "tested_P11_reconciliation_scope": "run-owned scratch only, not live",
+  "tool_sources_sha256": {
+    "hcp_p11_bf16_slice_probe.py": "63e60019d6b6e71ff551ccdd03a82b1559a68da99a2b135584986bb515984203",
+    "hcp_p11_evidence_audit.py": "01172a1ce1eed30427ea06637f57bc1cbc8f120f0e4dba1b50a832d201528c7c",
+    "hcp_p11_forensic_audit.py": "85e1ee7d2279b3c87c3e036510b758d04180081380a56843ac0eaa5634afaa48",
+    "hcp_p11_inflight_patch.py": "c1572f94d411b1246efca443cc9b7a384fb19e298c0e0871eed91088d49b984f",
+    "hcp_p11_inflight_trial.py": "cb087d7d6d8c5f39c296b62054b8812006516b7e27620361e4ab4c5bf1783e1e",
+    "hcp_p11_quarantine.py": "7944039802200a653c8a8ba09d031670f8da04f64c5aca5534ce67a9d188e9e1"
+  },
+  "total_python_regression_passes": 113,
+  "windows": [
+    "first_bind",
+    "before_ack"
+  ]
+}

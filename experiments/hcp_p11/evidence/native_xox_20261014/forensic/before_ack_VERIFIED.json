@@ -1,0 +1,21 @@
+{
+  "command_remains_retained_for_inspection": true,
+  "expected_epoch": 2,
+  "journaled_fsynced": true,
+  "next_restart_requires_fresh_STARTUP_ACK_and_policy_A": true,
+  "no_automatic_retry": true,
+  "old_native_worker_verified_dead": true,
+  "original_txn_file": "/Users/xox/mcp-sandbox/tailnet-commander/.tailnet-tmp/hcp-p11-inflight-20261014-1816/workers/p11-midtxn-before_ack/txn.cmd",
+  "preimage_ack_sha256": "ca3d58aee92d626a179fc4f10ffc5987dbc095d8b3146b7b2ec253ab769a24e2",
+  "preimage_epoch": 2,
+  "preimage_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+  "production_touched": false,
+  "quarantine_cmd_path": "/Users/xox/mcp-sandbox/tailnet-commander/.tailnet-tmp/hcp-p11-inflight-20261014-1816/workers/p11-midtxn-before_ack/quarantine/epoch-f6bfcc0db4084acbaef2050144a750b9.3e2322e05d7beded8f393faf793f831d691a3899bca64ee443ed7eef85e33564.cmd",
+  "schema": "beglin-p11-crash-ambiguous-command-preimage-v1",
+  "source_command_sha256": "3e2322e05d7beded8f393faf793f831d691a3899bca64ee443ed7eef85e33564",
+  "source_marker_sha256": "6981dba2c7133102da65bc3a89be3e3b773974f701058991cc9dda7a042dbef6",
+  "status": "CRASH_AMBIGUOUS_UNCOMMITTED_TRANSACTION_QUARANTINED",
+  "terminal_ACK_for_interrupted_transaction": false,
+  "txn_id": "epoch-f6bfcc0db4084acbaef2050144a750b9",
+  "window": "before_ack"
+}

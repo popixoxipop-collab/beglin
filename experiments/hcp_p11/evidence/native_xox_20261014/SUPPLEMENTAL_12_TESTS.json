@@ -1,0 +1,12 @@
+{
+  "additional_independent_original_evidence_tests": 12,
+  "combined_distinct_test_cases_run": 125,
+  "original_immutable_manifest_preserved": true,
+  "original_immutable_manifest_sha256": "bac8d375fe8c43b42223c9261f8dbcb1e726a282763a612a6ff38cee1535ded2",
+  "original_test_count": 113,
+  "production_touched": false,
+  "schema": "beglin-hcp-p11-additional-original-evidence-audit-regression-v1",
+  "supplementary_run_log_sha256": "001d14818350ea96304728436cc794c3909ccb2566c457e777c16eb07aa13130",
+  "supplementary_test_file_SHA256": "a79aa2a0d43eb048bac81176244a5b6b5a3dc6f2e7408a82acb78b14d9ec44ce",
+  "supplementary_tests_result": "12/12 PASS"
+}

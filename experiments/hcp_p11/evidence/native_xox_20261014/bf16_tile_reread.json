@@ -1,0 +1,25 @@
+{
+  "BF16_model_logits_measured": false,
+  "full_teacher_inference": false,
+  "max_rss_bytes": 212336640,
+  "original_probe_sha256": "49af27431fe9e672ea5783a0bc0112f2b412fe655ea3f769467bbfad13983090",
+  "per_tensor_recheck": [
+    {
+      "matching": true,
+      "readback_projection_sha256": "04ae149af10bc86763c6131052e6a06fb508f36bb163427c35e4a677185ca577",
+      "readback_tile_weight_sha256": "8e088047990cb17a47087b65ab0567e8bede673f7a9cb5eee5147abb294b55a1",
+      "tensor_key": "model.layers.3.mlp.shared_experts.up_proj.weight"
+    },
+    {
+      "matching": true,
+      "readback_projection_sha256": "35625164d7fda5fea7cbc6d089eba48e4881bb5fb58e9e3ca309b42cb2e04b95",
+      "readback_tile_weight_sha256": "191897a0d2b98cc754b07d747b23b76ca14961a873b942d50975799af025df67",
+      "tensor_key": "model.layers.26.mlp.shared_experts.down_proj.weight"
+    }
+  ],
+  "production_touched": false,
+  "raw_BF16_tile_bytes_covered": 16384,
+  "schema": "beglin-hcp-p11-independent-original-BF16-source-tile-reread-v1",
+  "source_index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "two_independent_reads_from_original_shards": true
+}

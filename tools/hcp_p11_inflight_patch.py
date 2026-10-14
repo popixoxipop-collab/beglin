@@ -22,21 +22,21 @@ static void p11_test_gate(const MoeGpuTxnCommand *cmd, const char *phase) {
     const char *file=getenv("BEGLIN_P11_CRASH_MARKER");
     if (!cmd || !cmd->valid || !file || file[0]!='/' || strstr(file,"..") ||
         !strstr(file,"/hcp-p11-inflight-")) {
-        fprintf(stderr,"P11_GUARD_REJECTED_INVALID_CRASH_MARKER\n");
+        fprintf(stderr,"P11_GUARD_REJECTED_INVALID_CRASH_MARKER\\n");
         _exit(91);
     }
     int fd=open(file,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
-    if (fd<0) { fprintf(stderr,"P11_MARKER_CREATE_FAILED\n"); _exit(91); }
+    if (fd<0) { fprintf(stderr,"P11_MARKER_CREATE_FAILED\\n"); _exit(91); }
     char out[220];
-    int n=snprintf(out,sizeof out,"%s %s\n",phase,cmd->txn_id);
+    int n=snprintf(out,sizeof out,"%s %s\\n",phase,cmd->txn_id);
     if (n<=0 || n>=(int)sizeof out || write(fd,out,(size_t)n)!=n ||
         fsync(fd)!=0 || close(fd)!=0) {
-        fprintf(stderr,"P11_MARKER_DURABILITY_FAILED\n");_exit(91);
+        fprintf(stderr,"P11_MARKER_DURABILITY_FAILED\\n");_exit(91);
     }
-    fprintf(stderr,"P11_INFLIGHT_TEST_MARKER_PERSISTED phase=%s txn=%s\n",phase,cmd->txn_id);
+    fprintf(stderr,"P11_INFLIGHT_TEST_MARKER_PERSISTED phase=%s txn=%s\\n",phase,cmd->txn_id);
     fflush(stderr);
     sleep(15); /* caller must kill only THIS run-owned native process */
-    fprintf(stderr,"P11_INFLIGHT_TEST_GATE_EXPIRED_FAIL_CLOSED\n");
+    fprintf(stderr,"P11_INFLIGHT_TEST_GATE_EXPIRED_FAIL_CLOSED\\n");
     fflush(stderr);
     _exit(92);
 }

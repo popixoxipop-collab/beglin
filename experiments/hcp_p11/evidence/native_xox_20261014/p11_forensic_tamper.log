@@ -1,0 +1,21 @@
+test_01_intact_sha_provenance (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_02_native_marker_corrupted (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_03_escrow_transaction_corrupted (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_04_missing_durable_intent_blocks (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_05_modified_intent_ack_sha_blocked (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_06_modified_verified_txn_hash_blocked (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_07_wrong_compiled_source_preimage_blocked (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_08_original_crash_declared_success_blocked (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_09_replayed_original_crash_txn_blocked (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_10_incorrect_recovery_sequence_blocked (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_11_missing_second_BF16_readback (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_12_bad_readback_tile_hash_rejected (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_13_false_BF16_full_teacher_claim_rejected (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_14_wrong_BF16_source_index_rejected (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_15_unwitnessed_earlier_attempt_falsified_rejected (test_hcp_p11_forensic.P11TamperTests) ... ok
+test_16_duplicate_crashed_txn_rejected (test_hcp_p11_forensic.P11TamperTests) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.134s
+
+OK

@@ -1,0 +1,32 @@
+{
+  "automatic_prod_reconciler_not_installed": true,
+  "bad_early_test_not_counted_as_crash": true,
+  "exactly_once_old_requests_not_proven": true,
+  "full_BF16_teacher_not_executed": true,
+  "new_study_source_commit": "6a3790590321b35e353f0b06978517e5407dcce9",
+  "production_promotion_allowed": false,
+  "read_only_BF16_slice_probe_SHA256": "49af27431fe9e672ea5783a0bc0112f2b412fe655ea3f769467bbfad13983090",
+  "read_only_BF16_weight_bytes_checked": 16384,
+  "schema": "beglin-hcp-p11-independent-native-audit-v1",
+  "status": "REAL_CRASH_MARKER_AND_COMMAND_ESCROW_MATCHED",
+  "total_real_recovered_inferences": 6,
+  "unique_ambiguous_transaction_count": 2,
+  "windows": {
+    "before_ack": {
+      "command_quarantined": true,
+      "command_sha256": "3e2322e05d7beded8f393faf793f831d691a3899bca64ee443ed7eef85e33564",
+      "fresh_B_A_B_original_sequence_SHA_matched": true,
+      "marker_sha256": "6981dba2c7133102da65bc3a89be3e3b773974f701058991cc9dda7a042dbef6",
+      "old_result_classification": "UNKNOWN",
+      "report_sha256": "39d272c4b94d0120d2b3a90c6aa65371017efbe6899e61571533bad3ee50c519"
+    },
+    "first_bind": {
+      "command_quarantined": true,
+      "command_sha256": "648a07529a73203130e2f16513e63f824f95384416637e3167dd35d758c8c7ec",
+      "fresh_B_A_B_original_sequence_SHA_matched": true,
+      "marker_sha256": "e0e0d28a1a1d253a1c61fa4866f827817c65e1ecafcc9f3a9e4f6f8dc90788c4",
+      "old_result_classification": "UNKNOWN",
+      "report_sha256": "656db4280567702d2af7c0eab388bf9615935e538b51c5a8c091d95327a54fb4"
+    }
+  }
+}

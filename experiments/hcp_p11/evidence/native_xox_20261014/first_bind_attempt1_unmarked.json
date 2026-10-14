@@ -1,0 +1,13 @@
+{
+  "evidence_retained_for_investigation": true,
+  "native_marker_exists": false,
+  "old_ack_sha256": "5c74bd73a360f36e3eb331ac3ef3be5cbaf1b428b9492673c40f1c7fd446a87e",
+  "old_worker_dead": true,
+  "original_stage_untouched": true,
+  "quarantine_reconciliation_not_attempted": true,
+  "schema": "beglin-p11-early-marker-timeout-v1",
+  "stale_command_sha256": "7376a5034a39ec16ab663c268e1d0b4a5084fcc28ba60d5ec5175a4fed09bb25",
+  "status": "NOT_A_WITNESSED_NATIVE_CRASH",
+  "test_harness_previous_wait_limit_s": 8,
+  "window": "first_bind"
+}

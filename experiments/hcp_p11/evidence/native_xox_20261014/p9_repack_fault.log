@@ -1,0 +1,27 @@
+P9_MLX_SOURCE_PATCH {"opt_in_env": "BEGLIN_HCP_P9_PREPARED_CACHE", "original_blob_sha": "b6cbc1c98cfedcd0f3c99f437d1f6c5978f2ce5a", "original_sha256": "46cf413afb03787766c3eee1b0ccdbf683d91a39d74cd1a9bbd4ccbb2e690279", "patched_sha256": "b80f4aec669c47a06beb7083b7ee2cd068ada1673cd9ed1ad950f20fe30b2efa", "production_touched": false, "research_only": true, "same_source_after_strip": true}
+test_01_original_blob_pinned (test_hcp_p9_cache_patch.P9PatchTests) ... ok
+test_02_instrumentation_exact_inverse (test_hcp_p9_cache_patch.P9PatchTests) ... ok
+test_03_double_patch_rejected (test_hcp_p9_cache_patch.P9PatchTests) ... ok
+test_04_missing_marker_cannot_unpatch (test_hcp_p9_cache_patch.P9PatchTests) ... ok
+test_05_modified_source_not_accepted (test_hcp_p9_cache_patch.P9PatchTests) ... ok
+test_06_no_source_overwrite (test_hcp_p9_cache_patch.P9PatchTests) ... ok
+test_07_opt_in_off_by_default (test_hcp_p9_cache_patch.P9PatchTests) ... ok
+test_08_exact_tensor_whitelist (test_hcp_p9_cache_patch.P9PatchTests) ... ok
+test_09_bounded_packed_residency (test_hcp_p9_cache_patch.P9PatchTests) ... ok
+test_10_full_byte_and_lifetime_guard (test_hcp_p9_cache_patch.P9PatchTests) ... ok
+test_11_snapshot_rollback_unchanged (test_hcp_p9_cache_patch.P9PatchTests) ... ok
+test_12_scales_are_rewrapped_each_hit (test_hcp_p9_cache_patch.P9PatchTests) ... ok
+test_13_cache_no_external_tensor_broadening (test_hcp_p9_cache_patch.P9PatchTests) ... ok
+test_01_sealed_p5_source (test_hcp_p9_fault_patch.P9FaultTests) ... ok
+test_02_source_exact_reversal (test_hcp_p9_fault_patch.P9FaultTests) ... ok
+test_03_injected_in_middle_of_two_target_transaction (test_hcp_p9_fault_patch.P9FaultTests) ... ok
+test_04_unchanged_source_rejected (test_hcp_p9_fault_patch.P9FaultTests) ... ok
+test_05_double_patch_rejected (test_hcp_p9_fault_patch.P9FaultTests) ... ok
+test_06_opt_in_once_only (test_hcp_p9_fault_patch.P9FaultTests) ... ok
+test_07_stage_remains_original (test_hcp_p9_fault_patch.P9FaultTests) ... ok
+test_08_rollback_and_terminal_ack_preserved (test_hcp_p9_fault_patch.P9FaultTests) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 0.026s
+
+OK
