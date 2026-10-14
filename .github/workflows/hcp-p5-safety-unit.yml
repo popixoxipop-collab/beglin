@@ -2,7 +2,12 @@ name: Beglin HCP P5 Scratch-only KV128 and ACK Safety Contract
 on:
   push:
     branches: [research/hcp-p5-isolated-rebind-capacity-20261014]
-    paths: [".github/workflows/hcp-p5-safety-unit.yml"]
+    paths:
+      - ".github/workflows/hcp-p5-safety-unit.yml"
+      - "tools/hcp_p5_scratch_128_patch.py"
+      - "tools/hcp_p5_native_long128_shadow.py"
+      - "tools/hcp_p5_scratch_binary_adapter.py"
+      - "tools/test_hcp_p5_scratch_contracts.py"
 permissions:
   contents: read
 jobs:
