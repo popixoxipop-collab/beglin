@@ -1,0 +1,32 @@
+name: Beglin P5 Native REBIND_SET Scratch Source and Capacity128 Unit
+on:
+  push:
+    branches: [research/hcp-p5-scratch-rebind-set-20261014]
+    paths: [".github/workflows/hcp-p5-native-source-unit.yml"]
+permissions:
+  contents: read
+jobs:
+  source-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Offline Python test dependencies
+        run: python -m pip install numpy transformers
+      - name: Validate scratch-only source and fail-closed capacity contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tools/hcp_p5_scratch_rebind_ab.py tools/hcp_p5_scratch_capacity128.py \
+            tools/hcp_p5_capacity128_long_ab.py
+          cd tools
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 python -m unittest \
+            test_hcp_p5_native_source_capacity.py \
+            test_hcp_p4_long_contracts.py \
+            test_hcp_p4_evidence_gate.py -v
+          echo P5_PINNED_NATIVE_REBIND_AND_CAPACITY_GUARD_PASS
