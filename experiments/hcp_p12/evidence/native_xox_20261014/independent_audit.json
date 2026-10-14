@@ -1,0 +1,23 @@
+{
+  "BF16_local_sha256": "104d8112a737515f7bd52ae187735940e5948afebea78601cb61a73e58484de4",
+  "LLM_task_quality_noninferiority_certified": false,
+  "crash_ambiguous_transactions_not_replayed": true,
+  "local_BF16_tensors_checked": 2,
+  "local_qNg64_bitwidths": [
+    5,
+    6
+  ],
+  "main_modified": false,
+  "native_reboot_after_terminal_journal": true,
+  "native_terminal_transactions_verified": 2,
+  "new_generated_sequences_verified": 4,
+  "promotion_allowed": false,
+  "real_startup_sha256": "b054485d140acea74d48a3878eeb1f0df7cd5ba124b06a13c1be016a296e4fcb",
+  "schema": "beglin-hcp-p12-independent-double-study-audit-v1",
+  "source_C_sha256": {
+    "gguf_transcode.c": "7371cc352226e912dbf42762e5e63a70e91acb5c90691d90e32401e18af7ec5f",
+    "qng64_dense.c": "cb985ec48cfa1f1f9ebe8411d12da5d3f73720c8acdcad51fc279a2b25ff8956"
+  },
+  "status": "NATIVE_PRESTART_JOURNAL_AND_ORIGINAL_BF16_LOCAL_ORACLE_INDEPENDENTLY_VERIFIED",
+  "whole_BF16_model_forward_executed": false
+}

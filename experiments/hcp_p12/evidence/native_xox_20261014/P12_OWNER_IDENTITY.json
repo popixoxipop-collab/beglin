@@ -1,0 +1,8 @@
+{
+  "P9_binary_sha256": "103549b7f7f4a3d142be883013956b4f1437759c8be76bff31f2451956df37fd",
+  "P9_mlx_source_sha256": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f",
+  "model_index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "root": "/Users/xox/mcp-sandbox/tailnet-commander/.tailnet-tmp/hcp-p11-inflight-p12-startup-20261014",
+  "schema": "beglin-p12-owner-prestart-v1",
+  "worker": "/Users/xox/mcp-sandbox/tailnet-commander/.tailnet-tmp/hcp-p11-inflight-p12-startup-20261014/workers/native-qualification"
+}

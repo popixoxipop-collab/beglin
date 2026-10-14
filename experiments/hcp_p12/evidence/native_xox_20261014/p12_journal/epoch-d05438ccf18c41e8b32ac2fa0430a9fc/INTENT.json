@@ -1,0 +1,10 @@
+{
+  "ack_sha256": "ffe4a83b5b7ecf57484cd2bf20bb520d943dc333d6adb604ca548e3070a96c98",
+  "cmd_sha256": "5346c9e6f94df669a7538d255395d099765f6860d4dcb754598eeab2d7d26b91",
+  "schema": "beglin-hcp-p12-acknowledged-prestart-intent-v1",
+  "source_epoch": 2,
+  "source_policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+  "target_policy_hash": "e471dfb075ca86cd0c5341b972258df7991847bb3f1557b69447c8b6168042ae",
+  "terminal_status": "REBIND_SET_APPLIED",
+  "txn_id": "epoch-d05438ccf18c41e8b32ac2fa0430a9fc"
+}

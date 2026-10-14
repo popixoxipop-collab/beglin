@@ -1,0 +1,82 @@
+{
+  "P12_gate_never_installed_in_production": true,
+  "archived_old_transaction_was_never_replayed": true,
+  "automatic_promotion": false,
+  "distinct_escrow_command_sha256": [
+    "0024167957abade2afeb10507585539e67051fb6ba9e9741304eb896144065e9",
+    "5346c9e6f94df669a7538d255395d099765f6860d4dcb754598eeab2d7d26b91"
+  ],
+  "live_after": {
+    "PIDs": [
+      35481,
+      35493
+    ],
+    "route_sha": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+    "stage_sha": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9"
+  },
+  "live_before": {
+    "PIDs": [
+      35481,
+      35493
+    ],
+    "route_sha": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+    "stage_sha": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9"
+  },
+  "model_index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "native_previous_terminal_B_journaled_before_start": true,
+  "new_P6_matched_generations": 4,
+  "no_full_BF16_reference": true,
+  "old_terminal_transactions_escrowed": 2,
+  "p9_mlx_source_sha256": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f",
+  "prior_crash_ambiguous_transactions_not_auto_retried": true,
+  "production_touched": false,
+  "real_ack_verified": true,
+  "real_native_first_start_policy": "A",
+  "real_native_p9_binary_sha256": "103549b7f7f4a3d142be883013956b4f1437759c8be76bff31f2451956df37fd",
+  "real_native_restart_policy": "A",
+  "responses": [
+    {
+      "PID": 73005,
+      "epoch": 3,
+      "native_ACK_status": "REBIND_SET_APPLIED",
+      "policy": "B",
+      "seq_sha256": "13e708ca6f960c83ac6f0311db786ad3fa5e70677ca2ab13bcf070beab494e26",
+      "transitioned": true,
+      "txn_id_sha256": "b62ee11baf9d7383fb227dc0116ebcc15ef9084d5bf6e838c83277c444973382"
+    },
+    {
+      "PID": 73048,
+      "epoch": 3,
+      "native_ACK_status": "REBIND_SET_APPLIED",
+      "policy": "B",
+      "seq_sha256": "13e708ca6f960c83ac6f0311db786ad3fa5e70677ca2ab13bcf070beab494e26",
+      "transitioned": true,
+      "txn_id_sha256": "281443893c68b7dda029540169436ab59aff53979fbb710767496d7cb00d03d6"
+    },
+    {
+      "PID": 73048,
+      "epoch": 4,
+      "native_ACK_status": "REBIND_SET_APPLIED",
+      "policy": "A",
+      "seq_sha256": "13e708ca6f960c83ac6f0311db786ad3fa5e70677ca2ab13bcf070beab494e26",
+      "transitioned": true,
+      "txn_id_sha256": "3a7d91bafe46ae72bf2c401148abec5f299b188d7b09ad432e926a83df12c087"
+    },
+    {
+      "PID": 73048,
+      "epoch": 5,
+      "native_ACK_status": "REBIND_SET_APPLIED",
+      "policy": "B",
+      "seq_sha256": "13e708ca6f960c83ac6f0311db786ad3fa5e70677ca2ab13bcf070beab494e26",
+      "transitioned": true,
+      "txn_id_sha256": "29011b727b2404694cc24a8b5b26830daf4a62c53e964a05910611e8f075f061"
+    }
+  ],
+  "restart_new_pid": true,
+  "schema": "beglin-hcp-p12-real-native-acknowledged-prestart-journal-v1",
+  "status": "XOX_SAME_PINNED_GPU_BINARY_TERMINAL_ARCHIVED_AND_FRESH_RESTART_PASS",
+  "verified_receipt_sha256": [
+    "6a6f0aee1937e0d3442ae65317c7a5fce88594d639c12155977e52a51e7f66c3",
+    "13ddd2f94a452bd5e1699c203f62fe1660448a4969345ecf3492aaedbd07b3e4"
+  ]
+}

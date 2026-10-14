@@ -1,0 +1,50 @@
+{
+  "automatic_live_promotion": false,
+  "distinct_test_invocations": 8,
+  "production_touched": false,
+  "receipt_files": {
+    "P10_evidence": {
+      "result": "PASS",
+      "sha256": "779656e41bde507d60ed30caea9c7824d5b3f7fcd0c176c85d6af090015a197e",
+      "tests": 10
+    },
+    "P11_evidence": {
+      "result": "PASS",
+      "sha256": "1a77796a840ac311f2738d04213cabf4d8141cd104fc2d3a1056cefe3cccb7a5",
+      "tests": 12
+    },
+    "P11_forensic": {
+      "result": "PASS",
+      "sha256": "8e2c9ecc41bf631c9715c1489914297823315ba2a9466094e434fcac863ce5f0",
+      "tests": 16
+    },
+    "P11_inflight": {
+      "result": "PASS",
+      "sha256": "48bdb8ecfc83023e063a02b1006fbc531321958025d70275c5621c39256da487",
+      "tests": 18
+    },
+    "P12_independent_evidence": {
+      "result": "PASS",
+      "sha256": "e17add4796381c9b00cc4b4907e8d0a31fd5f29d6dd02e2ff727623658af6fd8",
+      "tests": 20
+    },
+    "P12_prestart": {
+      "result": "PASS",
+      "sha256": "6be5cb1854eee5239ba11e0571df15743bd69d2b2215da429415b300e46f7165",
+      "tests": 24
+    },
+    "P8_governor": {
+      "result": "PASS",
+      "sha256": "67d51e672a22e0e31df408010061eca46ada647b4c7be776df9da221fe4e8ebf",
+      "tests": 48
+    },
+    "P9_cache_and_fault": {
+      "result": "PASS",
+      "sha256": "1f9c48229fdbaad7a41c69322e1a637ab863d24356d6d51afc3d725273a212f4",
+      "tests": 21
+    }
+  },
+  "schema": "beglin-hcp-p12-full-P8-P12-regression-suite-v1",
+  "test_count": 169,
+  "test_fails": 0
+}

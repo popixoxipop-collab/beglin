@@ -1,0 +1,12 @@
+{
+  "ack_sha256": "aac836d9fa595fb26cda812051a25e1e34936d5e2aba236c2ad28e34aa29d86e",
+  "cmd_sha256": "0024167957abade2afeb10507585539e67051fb6ba9e9741304eb896144065e9",
+  "decision": "TERMINAL_COMMITTED",
+  "new_worker_must_start_at_policy_A": true,
+  "no_auto_replay": true,
+  "no_double_commit": true,
+  "no_production_mutation": true,
+  "schema": "beglin-hcp-p12-acknowledged-prestart-verified-v1",
+  "source_epoch": 4,
+  "txn_id": "epoch-72e4beb0cd9f492283a69bf124bfb2fc"
+}

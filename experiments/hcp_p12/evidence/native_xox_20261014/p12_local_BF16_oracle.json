@@ -1,0 +1,141 @@
+{
+  "C_compiled_library_sha256": "1bb29f8c73abdf6afc157495b14efcd93d82f5cc61c6416b8359fc9e7259fe6e",
+  "automatic_promotion": false,
+  "bits_tested": [
+    5,
+    6
+  ],
+  "compiled_source_sha256": {
+    "gguf_transcode.c": "7371cc352226e912dbf42762e5e63a70e91acb5c90691d90e32401e18af7ec5f",
+    "qng64_dense.c": "cb985ec48cfa1f1f9ebe8411d12da5d3f73720c8acdcad51fc279a2b25ff8956"
+  },
+  "full_BF16_teacher_forward_executed": false,
+  "independent_projection_vectors": 8,
+  "max_RSS_bytes": 345194496,
+  "model_BF16_logits_reference_measured": false,
+  "model_index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "native_C_vs_independent_bitunpack_matvec_equivalence": true,
+  "original_BF16_shards_opened_readonly": true,
+  "production_P9_weights_bit_identical_not_proven": true,
+  "production_touched": false,
+  "records": [
+    {
+      "fp32_weight_bytes": 23068672,
+      "input_rng_seed": 20265775,
+      "original_dtype": "BF16",
+      "quantization_bits": {
+        "5": {
+          "C_transcode_layout": "group64, biased-bit-plane, little-endian",
+          "RSS_after_bytes": 311705600,
+          "bits": 5,
+          "cpu_quantize_and_decode_wall_s": 0.2175,
+          "native_C_vs_independent_unpack_projection_max_abs": 2.2649765014648438e-06,
+          "native_quantizer": "gguf_quantize_qNg64 original C, error-feedback 64",
+          "packed_bytes": 3604480,
+          "packed_sha256": "9ba5e0f1d688cf34c4dcbc0836d18ae7bff03025e9a66061e7952eee1f98fbf4",
+          "projection_mean_absolute_error": 0.034004940910046404,
+          "projection_relative_l2": 0.07366035310297629,
+          "projection_rmse": 0.043789977748662876,
+          "projection_sha256": "d2d5791e9c82822a146e6dbfe2a034b4db1eb365e8b5849956fd0bc0f52619bc",
+          "scale_sha256": "ca2da4f3321bf588e98e88769ba5de0b3fb8892fbb20dd1fcb305d20c941ef06",
+          "scales_bytes": 360448,
+          "weight_max_abs_error": 0.02235717698931694,
+          "weight_relative_l2": 0.07395898076836531,
+          "weight_rmse": 0.000954214045782813
+        },
+        "6": {
+          "C_transcode_layout": "group64, biased-bit-plane, little-endian",
+          "RSS_after_bytes": 328581120,
+          "bits": 6,
+          "cpu_quantize_and_decode_wall_s": 0.2346,
+          "native_C_vs_independent_unpack_projection_max_abs": 1.9073486328125e-06,
+          "native_quantizer": "gguf_quantize_qNg64 original C, error-feedback 64",
+          "packed_bytes": 4325376,
+          "packed_sha256": "0a6ab44e440c8444e8d22e8a567b773df314fb1af0ba744d97068094dabcfb54",
+          "projection_mean_absolute_error": 0.016498326365703777,
+          "projection_relative_l2": 0.03585164414344864,
+          "projection_rmse": 0.021313265999415375,
+          "projection_sha256": "f31836a428ff131f2f58789d564edd332ec19be0dca5b2a01d570af14d9e548a",
+          "scale_sha256": "1486d4cba84167b4992880a4067aea4f805756abf5a968d6b8920b908b45b1cf",
+          "scales_bytes": 360448,
+          "weight_max_abs_error": 0.010116085410118103,
+          "weight_relative_l2": 0.035806400321843124,
+          "weight_rmse": 0.0004619718898376068
+        }
+      },
+      "reference_project_sha256": "e2dd7b2e348bbbb15fd5b0de69d2d656f5bb5187b5f06c69b808abbfc1a15689",
+      "source_full_weight_tile_sha256": "3b715590172c2cd9f7c33a712fd09953f6ee632c761c16006c0ab244617c501d",
+      "source_shard": "model-00001-of-000004.safetensors",
+      "source_tensor": "model.layers.3.mlp.shared_experts.up_proj.weight",
+      "target": "shared_up_L3",
+      "vector_count": 8,
+      "weight_shape": [
+        2816,
+        2048
+      ]
+    },
+    {
+      "fp32_weight_bytes": 23068672,
+      "input_rng_seed": 20266039,
+      "original_dtype": "BF16",
+      "quantization_bits": {
+        "5": {
+          "C_transcode_layout": "group64, biased-bit-plane, little-endian",
+          "RSS_after_bytes": 341950464,
+          "bits": 5,
+          "cpu_quantize_and_decode_wall_s": 0.2161,
+          "native_C_vs_independent_unpack_projection_max_abs": 2.86102294921875e-06,
+          "native_quantizer": "gguf_quantize_qNg64 original C, error-feedback 64",
+          "packed_bytes": 3604480,
+          "packed_sha256": "a6eacfe7ad9e1a6837486e5603a13ef2af8998f99ef46f8cfd9f2a3d1d972a04",
+          "projection_mean_absolute_error": 0.04108691138110032,
+          "projection_relative_l2": 0.08437329679586515,
+          "projection_rmse": 0.05486107914738106,
+          "projection_sha256": "b8faf44851440863861aaffc28b954b7719682319da91383ac28c8334568950e",
+          "scale_sha256": "d610796da69d74b63a726090ff08a19a45e6f607940411fd4feae0fccbe9871a",
+          "scales_bytes": 360448,
+          "weight_max_abs_error": 0.04083658754825592,
+          "weight_relative_l2": 0.0876427205710211,
+          "weight_rmse": 0.0010490574164430928
+        },
+        "6": {
+          "C_transcode_layout": "group64, biased-bit-plane, little-endian",
+          "RSS_after_bytes": 345194496,
+          "bits": 6,
+          "cpu_quantize_and_decode_wall_s": 0.2392,
+          "native_C_vs_independent_unpack_projection_max_abs": 2.1010637283325195e-06,
+          "native_quantizer": "gguf_quantize_qNg64 original C, error-feedback 64",
+          "packed_bytes": 4325376,
+          "packed_sha256": "58c9e0e80de6821fbc360bab0d62eaa52f0ea7c90f674f89c006444c11f057e9",
+          "projection_mean_absolute_error": 0.02030964730378315,
+          "projection_relative_l2": 0.0411939987296925,
+          "projection_rmse": 0.02678510038756157,
+          "projection_sha256": "6eaa63db3eb3f428fffc440fac61d66648a34e6ff289ce05cfc07c50e09ce5d4",
+          "scale_sha256": "7e2e2a1972aad33fcaf1a286e3f47b20c815e6e5a389180540b67a4eb1b6c4c2",
+          "scales_bytes": 360448,
+          "weight_max_abs_error": 0.0184326171875,
+          "weight_relative_l2": 0.042349576622319,
+          "weight_rmse": 0.0005069118935310474
+        }
+      },
+      "reference_project_sha256": "8db1fdd955a79632f83ef09ed4a6b44782d56c3bdea69c314154fc088a81c1ff",
+      "source_full_weight_tile_sha256": "3e58b9ef0ee80513102e1a325b11ba1aa5e267f014431455b4e0d8f0e8a3331e",
+      "source_shard": "model-00004-of-000004.safetensors",
+      "source_tensor": "model.layers.26.mlp.shared_experts.down_proj.weight",
+      "target": "shared_down_L26",
+      "vector_count": 8,
+      "weight_shape": [
+        2048,
+        2816
+      ]
+    }
+  ],
+  "same_quantization_algorithm_as_native": true,
+  "schema": "beglin-hcp-p12-real-native-BF16-local-two-tensor-projections-v1",
+  "source_commit": "e2271d6fe758c6d09877130637dccb193427ea15",
+  "source_local_tensors": 2,
+  "status": "TWO_ORIGINAL_BF16_MATRICES_EXACT_C_QNG64_LOCAL_ORACLE_PASS",
+  "task_accuracy_noninferiority_proven": false,
+  "tested_reference_is_full_model": false,
+  "whole_model_quality_certified": false
+}
