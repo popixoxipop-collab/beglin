@@ -1,0 +1,107 @@
+{
+  "amendment_parent_bank_SHA256": "1d31f16faca1704bc79761703d12506f713868cb2e37c68fcc8509f37be8e77a",
+  "amendment_reason": "Before any model inference, original trailing space merged with answer start in source BPE tokenizer; newline forces stable token-prefix boundary. Question texts/labels/decision criteria unchanged.",
+  "date": "2026-10-15",
+  "domains": [
+    "math",
+    "science",
+    "computing",
+    "language"
+  ],
+  "evaluation": {
+    "additional": "KL(teacher||native) and JS divergence per forced gold-token prefix. Greedy generated 8-token sequence prefix compared against fixed expected answer token IDs; strict token prefix accuracy, not language-semantic correctness.",
+    "automatic_live_promotion": false,
+    "confidence": "Paired question-level bootstrap one-sided 95% UCB, seed 20261015, 10000 resamples (no token-level pseudo-replication).",
+    "fail_closed": true,
+    "gate": "B quality noninferiority RESEARCH-ONLY only if UCB(B-A)<=+0.05 nats/token AND paired answer-token-prefix accuracy decrease lower one-sided 95% bound >=-0.05 AND no missing/fault cases.",
+    "noninferiority_margin_nats_per_token": 0.05,
+    "primary": "Paired mean per-example gold answer-token NLL B minus A; lower means B better.",
+    "production_touched": false,
+    "scope_limitations": "12 internally authored first-use cases are too small for production noninferiority, not independent external holdout and potentially included in original training."
+  },
+  "generation_budget": 8,
+  "goal": "Evaluate real full BF16 teacher token-level NLL against frozen gold answer; native Beglin P9 A/B teacher-forced prefix NLL and greedy short generation prefix accuracy.",
+  "instructions": "Answer the short question accurately. Output only the answer text with no reasoning.",
+  "items": [
+    {
+      "domain": "math",
+      "expected_answer": "forty three",
+      "id": "p17-00",
+      "question": "What is 17 plus 26? Write the result in lowercase English words."
+    },
+    {
+      "domain": "math",
+      "expected_answer": "one hundred eight",
+      "id": "p17-01",
+      "question": "What is 9 times 12? Write the result in lowercase English words."
+    },
+    {
+      "domain": "math",
+      "expected_answer": "eight",
+      "id": "p17-02",
+      "question": "What is 48 divided by 6? Write the result as lowercase English words."
+    },
+    {
+      "domain": "science",
+      "expected_answer": "hydrogen and oxygen",
+      "id": "p17-03",
+      "question": "What are the two elements in water? Join the names with 'and'."
+    },
+    {
+      "domain": "science",
+      "expected_answer": "carbon dioxide",
+      "id": "p17-04",
+      "question": "Name the gas plants absorb for photosynthesis. Use two lowercase English words."
+    },
+    {
+      "domain": "science",
+      "expected_answer": "one newton",
+      "id": "p17-05",
+      "question": "What is the SI unit of force? Answer with the phrase 'one' and the singular unit name."
+    },
+    {
+      "domain": "computing",
+      "expected_answer": "Not Found",
+      "id": "p17-06",
+      "question": "What does HTTP status code 404 usually mean? Use the usual two-word English phrase."
+    },
+    {
+      "domain": "computing",
+      "expected_answer": "False and True",
+      "id": "p17-07",
+      "question": "What are the two Boolean literal names in Python? Write them in alphabetical order with 'and'."
+    },
+    {
+      "domain": "computing",
+      "expected_answer": "four bytes",
+      "id": "p17-08",
+      "question": "How many bytes are in 32 bits? Answer in lowercase English words with the unit."
+    },
+    {
+      "domain": "language",
+      "expected_answer": "attorneys general",
+      "id": "p17-09",
+      "question": "What is the two-word plural of 'attorney general'?"
+    },
+    {
+      "domain": "language",
+      "expected_answer": "Japanese yen",
+      "id": "p17-10",
+      "question": "What two-word English phrase names Japan's currency?"
+    },
+    {
+      "domain": "language",
+      "expected_answer": "Ottawa, Canada",
+      "id": "p17-11",
+      "question": "What is the capital of Canada? Write the city and country, separated by a comma."
+    }
+  ],
+  "model_outputs_observed_before_amendment": false,
+  "primary_reference": "Original P15 DeepSeek-V2-Lite BF16 source, BF16 CPU arithmetic, layer-streamed full teacher.",
+  "prompt_template": "Answer the short question accurately. Output only the answer text with no reasoning.\nQuestion: {question}\nAnswer:\n",
+  "schema": "beglin-hcp-p17-amended-before-inference-internal-holdout-v2",
+  "seed": 20261015,
+  "sensitivity_reference": "Original P15 DeepSeek-V2-Lite BF16 source, FP32 CPU arithmetic, optional bounded subset only; never silently substitute.",
+  "source": "Original newly authored internal questions for first use in Beglin. NOT independent external benchmark, not proven absent from pretraining.",
+  "total": 12
+}
