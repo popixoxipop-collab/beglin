@@ -1,0 +1,175 @@
+name: Beglin P7 XOX Isolated Repeated Native AB Cost
+on:
+  push:
+    branches: [research/hcp-p7-repeated-cost-20261014]
+    paths: [".github/workflows/hcp-p7-xox-repeated-cost.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: beglin-p7-xox-repeated-native-cost
+  cancel-in-progress: false
+jobs:
+  block-balanced-native:
+    runs-on: [self-hosted, xox, macOS, ARM64, virtual-character]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 1b4606eef596e10f3003f7d9f07b607616e990d6
+          path: frozen_prompt_source
+          persist-credentials: false
+      - name: Import P4 exact 36-prompt source identity, no raw original logits
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 11852505311
+          run-id: 38467501959
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: archived_safe_p4
+      - name: XOX source, stage, model and scratch guards
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = XOX.local && test "$(id -un)" = xox
+          PY=/Users/xox/.venv-vllm-metal/bin/python3
+          TOKENIZER=/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors
+          INDEX="$TOKENIZER/model.safetensors.index.json"
+          FEATURE=archived_safe_p4/p4_derived_long_features.json
+          SCRATCH="$RUNNER_TEMP/hcp-p7-repeated-$GITHUB_RUN_ID"
+          test -x "$PY" && test -f "$INDEX" && test -f "$FEATURE" && test ! -e "$SCRATCH"
+          "$PY" - <<'PY'
+          import hashlib,os,pathlib,shutil,subprocess,sys
+          sys.path.insert(0,str(pathlib.Path("tools").resolve()))
+          import production_serving_supervisor_persistent as ps
+          from hcp_p5_scratch_capacity128 import ALLOWED_SOURCE_HASH
+          h=lambda p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
+          assert h("qwen_infer.c")==ALLOWED_SOURCE_HASH
+          assert h("/Users/xox/vdsp_local_data/deepseek_v2lite_bf16_safetensors/model.safetensors.index.json")=="d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+          assert h("archived_safe_p4/p4_derived_long_features.json")=="c3b54b1ebe41d9a85ed94ddd0da87cde0de86ecf0af56d2e621733e439944f53"
+          assert h(ps.PERSISTENT_BINARY)==ps.EXPECTED_PERSISTENT_BINARY_SHA
+          assert int(subprocess.check_output(["sysctl","-n","hw.memsize"]))>=40*1024**3
+          assert shutil.disk_usage(os.environ["RUNNER_TEMP"]).free>=3*1024**3
+          print("P7_SOURCE_STAGE_HARDWARE_AND_CHECKPOINT_PINNED_PASS")
+          PY
+          mkdir -p "$SCRATCH/src" "$SCRATCH/upload"
+          printf '%s\n' "PY=$PY" "TOKENIZER=$TOKENIZER" \
+            "INDEX=$INDEX" "FEATURE=$FEATURE" "SCRATCH=$SCRATCH" >> "$GITHUB_ENV"
+          rsync -a --exclude=.git --exclude=.github --exclude=frozen_prompt_source \
+            --exclude=archived_safe_p4 --exclude=results --exclude=attestations \
+            --exclude=build --exclude=build-persistent ./ "$SCRATCH/src/"
+      - name: P5 sources and P7 crossover/cluster-bootstrap unit regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd tools
+          "$PY" -m unittest test_hcp_p5_native_source_capacity.py test_hcp_p7_repeated_cost.py -v
+      - name: Patch exactly bounded P5 scratch C and MLX KV128, no logits instrumentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PY" tools/hcp_p5_scratch_pair_capacity.py --source-root "$SCRATCH/src"
+          "$PY" - <<'PY'
+          import os,pathlib,hashlib
+          root=pathlib.Path(os.environ["SCRATCH"])/"src"
+          h=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+          assert h(root/"qwen_infer.c")=="bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612"
+          assert h(root/"mlx_moe.cpp")=="daded3c0e4bf7cc2a86e0fab8c1f73322b5b0ffea0002d9b2d38857d2e9591ae"
+          assert "BEGLIN_HCP_P6_LOGITS_OUTPUT" not in (root/"qwen_infer.c").read_text()
+          print("P7_UNMODIFIED_P5_DUAL_KV128_SOURCE_PINNED")
+          PY
+      - name: Compile P7 scratch-only original math GPU executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release \
+            -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
+          nice -n 10 cmake --build "$SCRATCH/build" --target qwen_infer_gpu -j2
+          test -x "$SCRATCH/build/qwen_infer_gpu"
+          shasum -a 256 "$SCRATCH/build/qwen_infer_gpu"
+      - name: Two domains, two temporal blocks native ACK and roundtrip smoke
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" tools/hcp_p7_repeated_native_cost.py \
+            --root "$SCRATCH" --binary "$SCRATCH/build/qwen_infer_gpu" \
+            --source "$SCRATCH/src/qwen_infer.c" \
+            --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer "$TOKENIZER" --index "$INDEX" --feature "$FEATURE" \
+            --output "$SCRATCH/upload/p7_2domain_2block.json" --count 2 --blocks 2
+      - name: All 12 domains four independently balanced repeated temporal blocks
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 nice -n 10 "$PY" tools/hcp_p7_repeated_native_cost.py \
+            --root "$SCRATCH" --binary "$SCRATCH/build/qwen_infer_gpu" \
+            --source "$SCRATCH/src/qwen_infer.c" \
+            --bank frozen_prompt_source/experiments/hierarchical_tupper_moe/prompt_bank \
+            --tokenizer "$TOKENIZER" --index "$INDEX" --feature "$FEATURE" \
+            --output "$SCRATCH/upload/p7_12domain_4block.json" --count 12 --blocks 4
+      - name: Seal complete experimental evidence, never infer promotion or speedup
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PY" - <<'PY'
+          import hashlib,json,os,pathlib
+          p=pathlib.Path(os.environ["SCRATCH"])/"upload"
+          sh=lambda x:hashlib.sha256(x.read_bytes()).hexdigest()
+          expected={"p7_2domain_2block.json":(2,2,4,16),
+                    "p7_12domain_4block.json":(12,4,48,192)}
+          for k,(domains,blocks,pairs,admissions) in expected.items():
+              d=json.loads((p/k).read_text())
+              assert d["schema"]=="beglin-hcp-p7-repeated-native-ab-transition-inclusive-v1"
+              assert (d["prompt_count_per_block"],d["temporal_blocks"],d["matched_pairs"],d["total_native_admissions"])==(domains,blocks,pairs,admissions)
+              assert d["old_stage_unchanged"] is True and d["active_route_unchanged"] is True
+              assert d["speed_improvement_proven"] is False and d["production_touched"] is False
+              assert d["raw_tokens_or_logits_uploaded"] is False
+          receipt={"schema":"beglin-hcp-p7-block-balanced-native-cost-receipt-v1",
+             "status":"REPEATED_COST_PILOT_ONLY_NO_PROMOTION",
+             "source_commit":os.environ["GITHUB_SHA"],
+             "original_P5_seal_commit":"b5cf761089153a6326855f267f1381fadb3f414e",
+             "original_P6_success_run":38500179877,
+             "file_sha256":{k:sh(p/k) for k in expected},
+             "twenty_temporal_block_gate_completed":False,
+             "raw_tokens_or_logits_uploaded":False,"speedup_proven":False,
+             "production_touched":False,"automatic_live_promotion":False}
+          (p/"receipt.json").write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\n")
+          print("P7_NATIVE_REPEATED_COST_RECEIPT",json.dumps(receipt,sort_keys=True))
+          PY
+      - name: Preserve sanitized experiment statistics, not logits or prompts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beglin-p7-xox-repeated-native-ab-cost
+          path: ${{ runner.temp }}/hcp-p7-repeated-${{ github.run_id }}/upload/*.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Destroy only this Actions run-owned worker/cache/source/token scratch
+        if: always()
+        shell: bash
+        run: |
+          /Users/xox/.venv-vllm-metal/bin/python3 - <<'PY'
+          import os,pathlib,shutil
+          runner=pathlib.Path(os.environ["RUNNER_TEMP"]).resolve(strict=True)
+          run=os.environ.get("GITHUB_RUN_ID","")
+          if not run.isdecimal():raise SystemExit("INVALID_GITHUB_RUN_ID_NO_DELETE")
+          root=runner/("hcp-p7-repeated-"+run)
+          if root.is_symlink() or root.parent!=runner:raise SystemExit("NOT_RUN_OWNED_NO_DELETE")
+          if root.is_dir():
+              shutil.rmtree(root)
+              print("P7_RUN_OWNED_SCRATCH_ONLY_CLEANED")
+          PY
