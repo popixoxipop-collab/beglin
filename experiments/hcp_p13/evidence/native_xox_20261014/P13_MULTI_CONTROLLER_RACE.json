@@ -1,0 +1,61 @@
+{
+  "P12_original_live_PIDs_untouched": true,
+  "automatic_live_promotion": false,
+  "exclusive_owner_time_intervals_no_overlap": true,
+  "full_multi_GPU_worker_concurrency_certified": false,
+  "independent_competing_processes_after_release": 8,
+  "independent_refused_controllers": 7,
+  "independent_successful_controllers": 1,
+  "later_serial_start_allowed": true,
+  "parent_locks_held_during_first_batch": 1,
+  "prestart_no_auto_replay_verified": true,
+  "production_touched": false,
+  "real_GPU_admission_executed": false,
+  "recorded_competitors": [
+    {
+      "attempt_ns": 196117500,
+      "child": "child-00",
+      "status": "denied"
+    },
+    {
+      "attempt_ns": 197891750,
+      "child": "child-01",
+      "status": "denied"
+    },
+    {
+      "attempt_ns": 188586083,
+      "child": "child-02",
+      "status": "denied"
+    },
+    {
+      "attempt_ns": 188052916,
+      "child": "child-03",
+      "exclusive_from": 277797625,
+      "exclusive_until": 554424333,
+      "status": "acquired"
+    },
+    {
+      "attempt_ns": 190568875,
+      "child": "child-04",
+      "status": "denied"
+    },
+    {
+      "attempt_ns": 184393250,
+      "child": "child-05",
+      "status": "denied"
+    },
+    {
+      "attempt_ns": 183133875,
+      "child": "child-06",
+      "status": "denied"
+    },
+    {
+      "attempt_ns": 178413833,
+      "child": "child-07",
+      "status": "denied"
+    }
+  ],
+  "schema": "beglin-hcp-p13-real-multiprocess-exclusive-admission-race-v1",
+  "simultaneous_blocked_while_owner_active": 8,
+  "status": "REAL_MULTI_PROCESS_FLOCK_FAIL_CLOSED"
+}

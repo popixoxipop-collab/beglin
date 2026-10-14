@@ -1,0 +1,12 @@
+{
+  "captured_cache_events": 48,
+  "frozen_original_BF16_4_representations_byte_equal": true,
+  "full_BF16_transformer_reference_logits_not_run": true,
+  "independent_original_P6_generated_SHA_matches": 48,
+  "independent_original_live_stage_and_PID_verified": true,
+  "native_result_sha256": "00f62f2d2799185fb1c63fd6efdb300f6bbd40e011837a30d4cd19618c26a7a5",
+  "orig_model_C_and_MLX_sha_checked": true,
+  "production_promotion_allowed": false,
+  "schema": "beglin-hcp-p13-independent-C-original-BF16-vs-real-P9-native-SHA-audit-v1",
+  "source_reference_sha256": "50d222534ab1324b990a2c4d83cc227e0ca2ba53c2037b500d688f742caeb078"
+}

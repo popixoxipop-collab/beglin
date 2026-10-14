@@ -1,0 +1,12 @@
+{
+  "P13_SHA_only_C_sha256": "26e542118302a5a82f147ef1678ec0f6e4516b467d0a4166cc1bc7dce29fa8c6",
+  "P9_MLX_KV128_SHA256": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f",
+  "automatic_live_promotion": false,
+  "frozen_BF16_local_reference_sha256": "50d222534ab1324b990a2c4d83cc227e0ca2ba53c2037b500d688f742caeb078",
+  "live_original_route_sha256": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+  "live_original_stage_sha256": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9",
+  "original_p5_CB128_C_SHA256": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612",
+  "production_touched": false,
+  "schema": "beglin-hcp-p13-isolated-native-preflight-v1",
+  "source_git_commit": "5418310d178f42d68dde09fa398414ab91fb38d4"
+}

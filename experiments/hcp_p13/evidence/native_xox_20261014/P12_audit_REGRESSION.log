@@ -1,0 +1,25 @@
+test_01_untampered_double_source_passes (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_02_corrupt_terminal_command_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_03_terminal_ack_tampered_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_04_partial_intent_fsync_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_05_deleted_verified_receipt_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_06_forged_committed_status_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_07_native_generation_divergence_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_08_native_PID_reuse_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_09_native_source_hash_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_10_native_ack_epoch_invalid_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_11_original_full_teacher_claim_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_12_fake_task_accuracy_claim_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_13_source_quantizer_changed_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_14_native_C_unpack_disagreement_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_15_wrong_BF16_n_not_in_5_6_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_16_wrong_model_checkpoint_identity_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_17_wrong_owner_binary_identity_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_18_preflight_production_route_changed_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_19_duplicate_missing_archive_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+test_20_wrong_native_delta_pair_refused (test_hcp_p12_evidence_audit.P12NegativeAudits) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 0.245s
+
+OK

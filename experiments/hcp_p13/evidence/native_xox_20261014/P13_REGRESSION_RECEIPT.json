@@ -1,0 +1,60 @@
+{
+  "automatic_live_promotion": false,
+  "failed": 0,
+  "live_production_touched": false,
+  "run_groups": 10,
+  "schema": "beglin-hcp-p13-whole-P8-P13-regression-suite-v1",
+  "test_count": 197,
+  "test_receipts": {
+    "P08": {
+      "count": 48,
+      "sha256": "67d51e672a22e0e31df408010061eca46ada647b4c7be776df9da221fe4e8ebf",
+      "status": "PASS"
+    },
+    "P09": {
+      "count": 21,
+      "sha256": "03d9192e0658cf3cace8fe6534908964140a66379cba2a1ce96508283377019f",
+      "status": "PASS"
+    },
+    "P10": {
+      "count": 10,
+      "sha256": "da3e41344405cded51ffe2c12f5364cf4c42480090df5603c2f52c1b08389494",
+      "status": "PASS"
+    },
+    "P11_crash": {
+      "count": 18,
+      "sha256": "8eddbbe660d1f887f8ece2bc045f08e56e93733e2c456b080dceb578a370a7a1",
+      "status": "PASS"
+    },
+    "P11_forensic": {
+      "count": 16,
+      "sha256": "d92be886ececd6377b44327d67f13a811353791398a0532ca9edd1297bfafea1",
+      "status": "PASS"
+    },
+    "P11_original_audit": {
+      "count": 12,
+      "sha256": "bf114cb99f925e1d2ac7a700d253f54ac3db28d6926643e65298cc5f94c5c4f4",
+      "status": "PASS"
+    },
+    "P12_audit": {
+      "count": 20,
+      "sha256": "e7f244aaaefc796870cf5a9887351b9ae26135eacd3e0f44b09c4f5cf673efe9",
+      "status": "PASS"
+    },
+    "P12_gate": {
+      "count": 24,
+      "sha256": "ac087cb90e63e9f29c4019270cfd0d38598e4c15bb5b127c413fd5bf3ddfafc1",
+      "status": "PASS"
+    },
+    "P13_hash": {
+      "count": 16,
+      "sha256": "b0345d9d404d50ae473852863fc2ea824903018a36c63515aa0d9c5c72d8d741",
+      "status": "PASS"
+    },
+    "P13_strict_ACK": {
+      "count": 12,
+      "sha256": "d90fdb9030a18e8901e0493fcb6eca7097108e981b75f10772d2336e7865c18e",
+      "status": "PASS"
+    }
+  }
+}

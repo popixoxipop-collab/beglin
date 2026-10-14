@@ -1,0 +1,116 @@
+{
+  "P12_parent_commit": "6ae561d1b4bb3cb83d4ba4e43c6cea9b257f94e3",
+  "P13_BF16_reference_preregistered_in_GitHub_before_native_commit": "5418310d178f42d68dde09fa398414ab91fb38d4",
+  "P13_handoff_sha256": "d7df6015b1ebd9f9039c9a489cc7d0be80c0ae3370d17fc707dd4c2bc0005574",
+  "P13_only_C_instrumentation_SHA256": "26e542118302a5a82f147ef1678ec0f6e4516b467d0a4166cc1bc7dce29fa8c6",
+  "P13_original_BF16_four_packed_and_scales_SHA256": "50d222534ab1324b990a2c4d83cc227e0ca2ba53c2037b500d688f742caeb078",
+  "P13_protocol_sha256": "60ca1f2a192a66dedd44ae2b9d3d866593f9ac49900f0ba05bd982afed083207",
+  "P13_run_owned_native_binary_SHA256": "657acc942b39f85307f04857b2e8fdd86ebe776a8855af3928e7050c6ff9d065",
+  "P8_to_P13_regression_cases_passed": 197,
+  "P9_MLX_KV128_source_sha256": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f",
+  "actual_controller_race_processes_per_stage": 8,
+  "actual_native_SHA_log_lines_each_trial": 48,
+  "actual_native_admissions_independent_replay": 48,
+  "actual_native_admissions_initial": 48,
+  "actual_native_admissions_total": 96,
+  "all_contenders_blocked_while_lock_owned": 8,
+  "automatic_live_promotion": false,
+  "crash_ambiguous_original_txn_exactly_once_certified": false,
+  "date": "2026-10-14",
+  "distinct_cached_bitwidth_tensor_representations": 4,
+  "end_to_end_quantization_quality_noninferiority_proven": false,
+  "evidence_files_sha256": {
+    "P08_REGRESSION.log": {
+      "bytes": 2904,
+      "sha256": "67d51e672a22e0e31df408010061eca46ada647b4c7be776df9da221fe4e8ebf"
+    },
+    "P09_REGRESSION.log": {
+      "bytes": 2176,
+      "sha256": "03d9192e0658cf3cace8fe6534908964140a66379cba2a1ce96508283377019f"
+    },
+    "P10_REGRESSION.log": {
+      "bytes": 959,
+      "sha256": "da3e41344405cded51ffe2c12f5364cf4c42480090df5603c2f52c1b08389494"
+    },
+    "P11_crash_REGRESSION.log": {
+      "bytes": 1615,
+      "sha256": "8eddbbe660d1f887f8ece2bc045f08e56e93733e2c456b080dceb578a370a7a1"
+    },
+    "P11_forensic_REGRESSION.log": {
+      "bytes": 1497,
+      "sha256": "d92be886ececd6377b44327d67f13a811353791398a0532ca9edd1297bfafea1"
+    },
+    "P11_original_audit_REGRESSION.log": {
+      "bytes": 1228,
+      "sha256": "bf114cb99f925e1d2ac7a700d253f54ac3db28d6926643e65298cc5f94c5c4f4"
+    },
+    "P12_audit_REGRESSION.log": {
+      "bytes": 2026,
+      "sha256": "e7f244aaaefc796870cf5a9887351b9ae26135eacd3e0f44b09c4f5cf673efe9"
+    },
+    "P12_gate_REGRESSION.log": {
+      "bytes": 2408,
+      "sha256": "ac087cb90e63e9f29c4019270cfd0d38598e4c15bb5b127c413fd5bf3ddfafc1"
+    },
+    "P13_INDEPENDENT_AUDIT.json": {
+      "bytes": 633,
+      "sha256": "d14ca95fc47eef94090bed1412040ea0b73d9e073d587f940afeb5d882bf7b0d"
+    },
+    "P13_MULTI_CONTROLLER_RACE.json": {
+      "bytes": 1577,
+      "sha256": "269f9cfed3368d82412a5209fcf5b1026f2593fffab6442edd0daa57324b8e40"
+    },
+    "P13_REGRESSION_RECEIPT.json": {
+      "bytes": 1737,
+      "sha256": "e5914f2c63a9fadf35a1244dff5e5a61a7366c6447c04b219ac3f67551447e0b"
+    },
+    "P13_hash_REGRESSION.log": {
+      "bytes": 1429,
+      "sha256": "b0345d9d404d50ae473852863fc2ea824903018a36c63515aa0d9c5c72d8d741"
+    },
+    "P13_strict_ACK_REGRESSION.log": {
+      "bytes": 1460,
+      "sha256": "d90fdb9030a18e8901e0493fcb6eca7097108e981b75f10772d2336e7865c18e"
+    },
+    "preflight.json": {
+      "bytes": 793,
+      "sha256": "5f8e16a5afbd325dd9337d786544d5dea35cc64aa4c68a1ecbe93e58a80cf8b5"
+    },
+    "real_native_pack_sha.json": {
+      "bytes": 18079,
+      "sha256": "d9cd613a68be1e93101514ae9229c120e9b738909c3ada61ab7bb645d95a9de0"
+    },
+    "real_native_pack_sha_v2.json": {
+      "bytes": 32285,
+      "sha256": "00f62f2d2799185fb1c63fd6efdb300f6bbd40e011837a30d4cd19618c26a7a5"
+    }
+  },
+  "four_real_native_original_BF16_C_qNg64_packed_and_scale_byte_SHA_match": true,
+  "full_original_BF16_model_teacher_logits_measured": false,
+  "independent_P6_source_generation_SHA_checks": 48,
+  "independent_audit_SHA256": "d14ca95fc47eef94090bed1412040ea0b73d9e073d587f940afeb5d882bf7b0d",
+  "main_merged": false,
+  "model_index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "multi_GPU_worker_concurrency_certified": false,
+  "native_old_ACK_semantic_forgery_regressions_passed": 12,
+  "new_P13_SHA_capture_safety_regressions_passed": 16,
+  "original_P5_C128_SHA256": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612",
+  "original_immutable_active_route_SHA256": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+  "original_immutable_live_stage_SHA256": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9",
+  "original_worker_PIDs": [
+    35481,
+    35493
+  ],
+  "production_touched": false,
+  "race_after_unlock_one_controller_acquired_and_seven_blocked": true,
+  "raw_BF16_weight_tensors_and_raw_token_ids_uploaded": false,
+  "schema": "beglin-hcp-p13-original-bf16-native-cached-qng64-final-evidence-manifest-v1",
+  "source_files_SHA256": {
+    "hcp_p13_controller_race.py": "fe30620ce201eed0e007c0599029bbda15ee278ec8b939a5ecd035ea6e9edab9",
+    "hcp_p13_independent_audit.py": "d859cf9b6012b7996b716a74429293a794e5653309d6b69586910b4e17ee19b9",
+    "hcp_p13_native_byte_parity.py": "86d8f1a617f7d453d95cf037adaf35770ae702abdc2ebf0771e6c22cdbb5417e",
+    "hcp_p13_native_byte_parity_v2.py": "c2aaf5bda045b720a529bdc72d468ffcb277c5186bf4bf0e8529a4c2e3f08a72",
+    "hcp_p13_pack_sha_patch.py": "12a1a29740e8243bdf302c2faae09d8d301df4823735037b6b6a7ec93becbb49",
+    "hcp_p13_strict_journal.py": "116ba998c60b1c022eeab9521831a18287aab209c8540e7a66a9fc830b30552f"
+  }
+}
