@@ -1,0 +1,53 @@
+test_35_cost_sum (__main__.CostTests) ... ok
+test_36_bad_nesting (__main__.CostTests) ... ok
+test_37_nan_cost (__main__.CostTests) ... ok
+test_38_source_pin_rejects (__main__.CostTests) ... ok
+test_39_phase_sum (__main__.CostTests) ... ok
+test_40_phase_nan (__main__.CostTests) ... ok
+test_41_roundtrip_preserves_every_byte (__main__.ExactSourceTests) ... ok
+test_42_hash_exact (__main__.ExactSourceTests) ... ok
+test_43_wrong_source_rejected (__main__.ExactSourceTests) ... ok
+test_44_double_patch_rejected (__main__.ExactSourceTests) ... ok
+test_45_ACK_rollback_still_present (__main__.ExactSourceTests) ... ok
+test_46_gate_not_widened (__main__.ExactSourceTests) ... ok
+test_47_native_phase_schema (__main__.ExactSourceTests) ... ok
+test_48_original_file_unchanged (__main__.ExactSourceTests) ... ok
+test_01_initial_hold (__main__.GovernorTests) ... ok
+test_02_minimum_hold_expires (__main__.GovernorTests) ... ok
+test_03_unknown_quality_stays (__main__.GovernorTests) ... ok
+test_04_invalid_incumbent_blocks (__main__.GovernorTests) ... ok
+test_05_missing_cost (__main__.GovernorTests) ... ok
+test_06_nonpositive_bound (__main__.GovernorTests) ... ok
+test_07_ci_crosses_zero (__main__.GovernorTests) ... ok
+test_08_negative_cost_rejected (__main__.GovernorTests) ... ok
+test_09_nan_rejected (__main__.GovernorTests) ... ok
+test_10_infinity_rejected (__main__.GovernorTests) ... ok
+test_11_context_bound (__main__.GovernorTests) ... ok
+test_12_expiry (__main__.GovernorTests) ... ok
+test_13_horizon_bound (__main__.GovernorTests) ... ok
+test_14_unamortized (__main__.GovernorTests) ... ok
+test_15_exact_cost_boundary_not_enough (__main__.GovernorTests) ... ok
+test_16_does_not_commit_on_proposal (__main__.GovernorTests) ... ok
+test_17_valid_ACK_commits (__main__.GovernorTests) ... ok
+test_18_failed_ACK_keeps_state (__main__.GovernorTests) ... ok
+test_19_wrong_epoch (__main__.GovernorTests) ... ok
+test_20_wrong_worker (__main__.GovernorTests) ... ok
+test_21_wrong_context (__main__.GovernorTests) ... ok
+test_22_wrong_transaction (__main__.GovernorTests) ... ok
+test_23_verifier_not_attested (__main__.GovernorTests) ... ok
+test_24_duplicate_plan_blocked (__main__.GovernorTests) ... ok
+test_25_duplicate_dispatch_blocked (__main__.GovernorTests) ... ok
+test_26_before_dispatch_abort (__main__.GovernorTests) ... ok
+test_27_timeout_does_not_allow_abort_or_retry (__main__.GovernorTests) ... ok
+test_28_replayed_complete_blocked (__main__.GovernorTests) ... ok
+test_29_rate_limit (__main__.GovernorTests) ... ok
+test_30_policy_identity_mismatch (__main__.GovernorTests) ... ok
+test_31_settings_invalid (__main__.GovernorTests) ... ok
+test_32_bad_sha (__main__.GovernorTests) ... ok
+test_33_bool_epoch (__main__.GovernorTests) ... ok
+test_34_complete_without_dispatch (__main__.GovernorTests) ... ok
+
+----------------------------------------------------------------------
+Ran 48 tests in 0.045s
+
+OK

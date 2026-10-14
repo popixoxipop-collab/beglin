@@ -1,0 +1,147 @@
+{
+  "automatic_live_promotion": false,
+  "candidate_gate": {
+    "cost_gate_independently": "no_positive_confidence_bound",
+    "decision": "KEEP",
+    "observed_switch_upper_bound_ms": 412.927,
+    "positive_saving_lower_bound_ms": -5.762349390625001,
+    "quality_permission_granted": false,
+    "reason": "candidate_quality_or_authority_not_verified",
+    "reliable_break_even_requests": null,
+    "steady_B_minus_A_ci95_ms": [
+      -10.7387026982639,
+      5.762349390625001
+    ],
+    "steady_B_minus_A_mean_ms": -2.2255457638888916
+  },
+  "cost_boundary_decomposition": {
+    "steady": {
+      "admissions": 144,
+      "mean_ms": {
+        "native_transition_before_ACK_ms": 0.0,
+        "python_policy_wrapper_ms": 2.8174167398405365,
+        "remaining_native_including_ACK_ms": 538.2022638888889,
+        "worker_IPC_polling_ms": 15.595491572659464
+      },
+      "mean_total_admission_ms": 556.6151722013889
+    },
+    "switch": {
+      "admissions": 144,
+      "mean_ms": {
+        "native_transition_before_ACK_ms": 330.4624861111111,
+        "python_policy_wrapper_ms": 3.1483755968958897,
+        "remaining_native_including_ACK_ms": 523.6328333333333,
+        "worker_IPC_polling_ms": 14.937715257270785
+      },
+      "mean_total_admission_ms": 872.1814102986111
+    }
+  },
+  "fixed_AF_A_B_dynamic_real_comparison_complete": false,
+  "lookup_replay": {
+    "cost_quality_governor": {
+      "estimated_mean_admission_ms": 557.7279450833333,
+      "estimated_total_admission_ms": 40156.41204599998,
+      "initial_policy_setup_cost_included": false,
+      "method": "archived_cost_cell_lookup",
+      "new_native_execution": false,
+      "proposals_not_followed": 36,
+      "requests": 72,
+      "selected_policy_counts": {
+        "A": 72,
+        "B": 0
+      },
+      "switches": 0
+    },
+    "fixed_A": {
+      "estimated_mean_admission_ms": 557.7279450833333,
+      "estimated_total_admission_ms": 40156.41204599998,
+      "initial_policy_setup_cost_included": false,
+      "method": "archived_cost_cell_lookup",
+      "new_native_execution": false,
+      "proposals_not_followed": 36,
+      "requests": 72,
+      "selected_policy_counts": {
+        "A": 72,
+        "B": 0
+      },
+      "switches": 0
+    },
+    "fixed_AF": {
+      "new_native_execution": false,
+      "reason": "P6 speed data contain only A and B",
+      "status": "NOT_MEASURED"
+    },
+    "fixed_B": {
+      "estimated_mean_admission_ms": 555.5023993194444,
+      "estimated_total_admission_ms": 39996.17275100002,
+      "initial_policy_setup_cost_included": false,
+      "method": "archived_cost_cell_lookup",
+      "new_native_execution": false,
+      "proposals_not_followed": 36,
+      "requests": 72,
+      "selected_policy_counts": {
+        "A": 0,
+        "B": 72
+      },
+      "switches": 0
+    },
+    "minimum_hold_8": {
+      "estimated_mean_admission_ms": 586.4613148333333,
+      "estimated_total_admission_ms": 42225.214668,
+      "initial_policy_setup_cost_included": false,
+      "method": "archived_cost_cell_lookup",
+      "new_native_execution": false,
+      "proposals_not_followed": 32,
+      "requests": 72,
+      "selected_policy_counts": {
+        "A": 36,
+        "B": 36
+      },
+      "switches": 7
+    },
+    "naive_follow": {
+      "estimated_mean_admission_ms": 867.3731249722222,
+      "estimated_total_admission_ms": 62450.86499799999,
+      "initial_policy_setup_cost_included": false,
+      "method": "archived_cost_cell_lookup",
+      "new_native_execution": false,
+      "proposals_not_followed": 0,
+      "requests": 72,
+      "selected_policy_counts": {
+        "A": 36,
+        "B": 36
+      },
+      "switches": 71
+    }
+  },
+  "native_gate": {
+    "free_gb": 15.41,
+    "host": "xox",
+    "reason": "no_eligible_storage_pool",
+    "reserve_gb": 20
+  },
+  "native_profile_status": "NOT_EXECUTED_STORAGE_GATE",
+  "native_transition_internal_phases_measured": false,
+  "production_touched": false,
+  "replay_assumptions": [
+    "synthetic alternating policy proposals; original P6 input order",
+    "latencies looked up by block/prompt/policy/switch flag",
+    "no new native execution; not causal or production speed evidence",
+    "initial policy establishment/warmup cost not included",
+    "previously used corpus, not a new untouched holdout"
+  ],
+  "schema": "beglin-hcp-p8-offline-decomposition-and-governor-v1",
+  "source_hashes": {
+    "order": "43c5cae9a3c72c1986bfd013915f325375a9d959c0520bee9e201ce5dbf5bb6f",
+    "quality": "2ad68622fcfe4e8f2d16e0abb1c24e010618fd14ab40917f4dd4278167e59104",
+    "speed": "a27a1181f9fa4aec33d4d3a09cad25ed9e04585a779d8e7e57fbbed03071a31e"
+  },
+  "speedup_proven": false,
+  "static_source_findings": {
+    "MLX_5_6bit_bind_reallocates_and_repacks": true,
+    "dominant_internal_phase_proven": false,
+    "qNg64_CPU_cache_hit_still_calls_MLX_bind": true,
+    "transition_timer_ends_before_durable_ACK": true
+  },
+  "validated_source_cells": 288
+}

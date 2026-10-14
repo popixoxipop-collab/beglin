@@ -1,0 +1,28 @@
+{
+  "analysis_sha256": "a4b45759abfc250ebbc5dd20a80039384e27d4e1466358908a01128fadff8816",
+  "automatic_live_promotion": false,
+  "base_commit": "6465b243e83c733d7a246520703be3954d5069ed",
+  "clang_gpu_path_syntax_exit": 0,
+  "created_utc": "2026-10-14T03:22:36.504497+00:00",
+  "native_blocker": "no_eligible_storage_pool",
+  "native_profile_execution": false,
+  "native_speedup_proven": false,
+  "new_governor_connected_to_live_worker": false,
+  "production_modified": false,
+  "profiled_C_sha256": "84ff47596d6912741b8dcd14c8bdb2028f09031c4c48b78272314a4374d88edf",
+  "python_tests": {
+    "failed": 0,
+    "passed": 48,
+    "skipped": 0
+  },
+  "report_sha256": "339bd72684b9d9623695c0b32c0e28ae9c92a8411b0f3a2aa6afd1a667427c19",
+  "schema": "beglin-hcp-p8-cpu-validation-receipt-v1",
+  "source_cells_revalidated": 288,
+  "source_reversal_to_P5_CB128_verified": true,
+  "source_sha256": {
+    "hcp_p8_analyze.py": "b6b0f2fa1ab07c8d5e193f96af5b27bfbaaa255339f547d7f3afeb96484751b0",
+    "hcp_p8_governor.py": "e6f44d626b0209dd61a2f1d603ca14a056377e445ff74ccd1c5cc84c0e5efffb",
+    "hcp_p8_profile_patch.py": "8220238d4726f820a2e952e891a8873885d3e85c30f1cff26a32c7e85ee95f5e",
+    "test_hcp_p8.py": "9de0d9f781c0a73bea62145023b03d7f3506295ccd2cd933cf26f17339a62135"
+  }
+}
