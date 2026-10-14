@@ -1,0 +1,37 @@
+{
+  "automatic_live_promotion": false,
+  "control_observer_output_pairs": 8,
+  "files_sha256": {
+    "native-phases.json": "19a77a05053bed0c946bd0242b85d56c0ae3b657f642569e35f2ae880f118abe",
+    "parity.json": "6e9a13a7cceb23824938685829c33aeb6a0249b0904d8c95301d864c720c5e84"
+  },
+  "live_route_sha256": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+  "live_stage_pids": [
+    35481,
+    35493
+  ],
+  "live_stage_sha256": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9",
+  "logit_token_parity_preserved": true,
+  "means_ms": {
+    "durable_ack_ms": 0.6251142891714285,
+    "entry_to_ack_ms": 339.91217144897143,
+    "mlx_bind_ms": 329.5969143044857,
+    "qng64_cache_lookup_or_build_ms": 9.437857116028571
+  },
+  "native_phase_replayed_to_repair": false,
+  "new_speedup_proven": false,
+  "original_native_phase_process_exit_code": 1,
+  "phase_count": 35,
+  "phase_sum_35_35_pass": true,
+  "postrun_exception": "TypeError: PosixPath + str in final receipt filename only",
+  "preflight_sha256": "03191c57184671020843e3c51b7ad255ff96fb27cf9080cd7e03a7c39407a425",
+  "production_touched": false,
+  "schema": "beglin-hcp-p8-xox-measurement-recovered-receipt-v1",
+  "source_commit": "9d55fff527aae34bd2568b149661e52cc75a8504",
+  "source_domains": 12,
+  "source_sha256": {
+    "observer_C": "84ff47596d6912741b8dcd14c8bdb2028f09031c4c48b78272314a4374d88edf",
+    "plain_C": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612"
+  },
+  "status": "NATIVE_EVIDENCE_COMPLETE_POSTRUN_RECEIPT_EXCEPTION_DISCLOSED"
+}

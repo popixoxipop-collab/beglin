@@ -1,0 +1,28 @@
+{
+  "after": {
+    "pids": [
+      35481,
+      35493
+    ],
+    "route": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+    "stage": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9"
+  },
+  "automatic_live_promotion": false,
+  "before": {
+    "pids": [
+      35481,
+      35493
+    ],
+    "route": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+    "stage": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9"
+  },
+  "control_binary_sha256": "ca376b07827471243d28cec3ca356fd71cdc2f8aa980f14a153602335dae644e",
+  "git_commit": "9d55fff527aae34bd2568b149661e52cc75a8504",
+  "instrumented_binary_sha256": "8c234baa330c8f08925dd802574720a0c7419197e5dc006a6b0d92ebc0182200",
+  "live_preserved": true,
+  "model_index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "phase": "performance",
+  "production_touched": false,
+  "schema": "beglin-hcp-p8-native-run-receipt-v1",
+  "speedup_proven": false
+}

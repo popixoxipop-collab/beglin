@@ -1,0 +1,12 @@
+{
+  "automatic_live_promotion": false,
+  "mlx128_sha": "daded3c0e4bf7cc2a86e0fab8c1f73322b5b0ffea0002d9b2d38857d2e9591ae",
+  "model_index_sha": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "original_stage_sha": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9",
+  "plain_C_sha": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612",
+  "profiled_C_sha": "84ff47596d6912741b8dcd14c8bdb2028f09031c4c48b78272314a4374d88edf",
+  "root": "/Users/xox/mcp-sandbox/tailnet-commander/.tailnet-tmp/hcp-p8-native-20261014-1245",
+  "route_sha_before": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+  "schema": "beglin-hcp-p8-native-preflight-v1",
+  "source_head": "9d55fff527aae34bd2568b149661e52cc75a8504"
+}

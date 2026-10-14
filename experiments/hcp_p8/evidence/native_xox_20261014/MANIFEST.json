@@ -1,0 +1,23 @@
+{
+  "actual_phase_transitions": 35,
+  "control_observer_output_pairs": 8,
+  "copied_files_sha256": {
+    "native-phases.json": "19a77a05053bed0c946bd0242b85d56c0ae3b657f642569e35f2ae880f118abe",
+    "parity.json": "6e9a13a7cceb23824938685829c33aeb6a0249b0904d8c95301d864c720c5e84",
+    "performance.json": "dcec608dc2a3a0b7bfba6f02bdcd9d7bc7e1cd13e0e988399f4b16e4d850e069",
+    "preflight.json": "03191c57184671020843e3c51b7ad255ff96fb27cf9080cd7e03a7c39407a425",
+    "research-receipt-performance.json": "d0d98c2a19acda39952a82d53eebbf684738ca42c58b539161765f4a5c550eb8",
+    "research-receipt-profile.json": "6d830639dee078f0f27e9f13e2d0bbb1d0bc1a3b1324559a50bf61331ada3397"
+  },
+  "five_arm_real_inferences": 120,
+  "native_binaries_compiled_on_xox": 2,
+  "no_production_promotion": true,
+  "original_stage_and_route_preserved": true,
+  "p8_driver_sha256": "91c846cc47b06b914a56a46e7f5fbf55ad6e04340d84cb566da4b51feb3bb476",
+  "p8_recovery_sealer_sha256": "bc93cbe6e6ff7cad07297e2e84a1d85d011f60c791bdc3ce6cdf4ef1ce7c3bce",
+  "performance_process_exit_code": 0,
+  "postrun_exception_recovered_without_native_rerun": true,
+  "postrun_profile_process_original_exit_code": 1,
+  "schema": "beglin-hcp-p8-native-evidence-archive-v1",
+  "source_root": "/Users/eoe/mcp-sandbox/tailnet-commander/hcp-p8-switch-cost-20261014/native_evidence_pilot"
+}
