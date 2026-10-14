@@ -43,11 +43,21 @@ def sha_bytes(data: bytes) -> str:
 def patch_text(source: str) -> str:
     if sha_bytes(source.encode("utf-8")) != P5_C128_SHA256:
         raise ValueError("P6 only accepts exact SHA-pinned P5 128-position C source")
-    if source.count(ANCHOR) != 1 or source.count("REBIND_SET_APPLIED") < 1:
-        raise ValueError("P6 capture anchor or REBIND_SET invariant absent")
+    # Several independent gates share this assignment. Limit the hook to
+    # the exact GPU MLA persistent prefill scope, never the GQA or CPU paths.
+    scope = "            // 5. prefill columns: only spos==plen-1 carries a consumable token."
+    boundary = "            total_tok_processed += A;"
+    if source.count(scope) != 1 or source.count("REBIND_SET_APPLIED") < 1:
+        raise ValueError("P6 GPU MLA prefill scope or REBIND_SET invariant absent")
+    start = source.index(scope)
+    end = source.index(boundary, start)
+    region = source[start:end]
+    if region.count(ANCHOR) != 1:
+        raise ValueError("P6 GPU MLA prefill anchor ambiguous or missing")
     if "#define MOE_CBATCH_MAXPOS 128" not in source or "if (pass == 1)" not in source:
         raise ValueError("P6 not applied to proven CB128 native worker")
-    return source.replace(ANCHOR, HOOK + ANCHOR, 1)
+    point = source.index(ANCHOR, start, end)
+    return source[:point] + HOOK + source[point:]
 
 def apply(root: pathlib.Path) -> dict:
     root = root.resolve(strict=True)
