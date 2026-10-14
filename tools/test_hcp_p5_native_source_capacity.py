@@ -3,6 +3,7 @@
 import hashlib,pathlib,tempfile,unittest
 from hcp_p5_scratch_capacity128 import patch,apply,ALLOWED_SOURCE_HASH
 from hcp_p5_scratch_rebind_ab import check_scratch_binary,validate_prior_stage
+from hcp_p5_scratch_pair_capacity import patch_both,MLX_GIT_BLOB_SHA
 
 SOURCE=pathlib.Path(__file__).resolve().parents[1]/"qwen_infer.c"
 
@@ -37,6 +38,25 @@ class ScratchP5NativeTests(unittest.TestCase):
             self.assertFalse(receipt["production_touched"])
             self.assertEqual((root/"CMakeLists.txt").read_text().count("qng64_dense.c"),1)
             self.assertEqual((root/"qwen_infer.c").read_text().count("#define MOE_CBATCH_MAXPOS 128"),1)
+    def test_dual_native_and_mlx_gpu_128_capacity_patch(self):
+        backend=pathlib.Path(__file__).resolve().parents[1]/"mlx_moe.cpp"
+        ml=backend.read_bytes()
+        import hashlib
+        gitblob=hashlib.sha1(b"blob "+str(len(ml)).encode()+bytes([0])+ml).hexdigest()
+        self.assertEqual(gitblob,MLX_GIT_BLOB_SHA)
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            (root/"qwen_infer.c").write_bytes(SOURCE.read_bytes())
+            (root/"mlx_moe.cpp").write_bytes(ml)
+            (root/"CMakeLists.txt").write_text("add_library(qwen_infer_obj OBJECT\\n  qwen_infer.c\\n)\\n")
+            result=patch_both(root)
+            self.assertEqual(result["gpu_mla_KV_capacity"],128)
+            self.assertEqual(result["native_c_capacity"],128)
+            self.assertFalse(result["production_touched"])
+            self.assertIn("#define MLA_L0_MAXPOS 128",(root/"mlx_moe.cpp").read_text())
+            self.assertIn("#define GQA_L0_MAXPOS 32",(root/"mlx_moe.cpp").read_text())
+            self.assertIn("#define MOE_CBATCH_MAXPOS 128",(root/"qwen_infer.c").read_text())
+
     def test_binary_path_and_old_stage_guard(self):
         with tempfile.TemporaryDirectory() as td:
             root=pathlib.Path(td);(root/"build").mkdir()
