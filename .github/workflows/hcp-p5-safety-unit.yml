@@ -1,0 +1,27 @@
+name: Beglin HCP P5 Scratch-only KV128 and ACK Safety Contract
+on:
+  push:
+    branches: [research/hcp-p5-isolated-rebind-capacity-20261014]
+    paths: [".github/workflows/hcp-p5-safety-unit.yml"]
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install numpy transformers
+      - name: Require strict scratch-only capacity arrays and original native transition safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tools/hcp_p5_scratch_128_patch.py tools/hcp_p5_scratch_binary_adapter.py tools/hcp_p5_native_long128_shadow.py
+          cd tools
+          OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 python -m unittest test_hcp_p5_scratch_contracts.py test_hcp_p4_evidence_gate.py test_hcp_p3_quality_gate.py -v
+          echo P5_SCRATCH_ONLY_KV128_ACK_SAFETY_UNIT_PASS
