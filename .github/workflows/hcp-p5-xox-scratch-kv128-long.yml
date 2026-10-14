@@ -64,11 +64,15 @@ jobs:
              "old_stage_untouched":True},sort_keys=True))
           PY
           rsync -a --exclude=.git --exclude=.github --exclude=frozen_prompt_source --exclude=results --exclude=attestations --exclude=build --exclude=build-persistent ./ "$SCRATCH/src/"
-      - name: Patch only scratch native C buffer dimensions and qNg64 linkage
+      - name: Patch BOTH scratch C cbatch128 and MLX GPU MLA/GQA positional cache128
         shell: bash
         run: |
           set -euo pipefail
           /Users/xox/.venv-vllm-metal/bin/python3 tools/hcp_p5_scratch_128_patch.py --scratch-src "$SCRATCH/src"
+          grep -q '#define MOE_CBATCH_MAXPOS 128' "$SCRATCH/src/qwen_infer.c"
+          grep -q '#define MLA_L0_MAXPOS 128' "$SCRATCH/src/mlx_moe.cpp"
+          grep -q '#define GQA_L0_MAXPOS 128' "$SCRATCH/src/mlx_moe.cpp"
+          echo P5_C_AND_MLX_128_POSITION_LIMITS_MATCH
           cmake -S "$SCRATCH/src" -B "$SCRATCH/build" -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
           nice -n 10 cmake --build "$SCRATCH/build" --target qwen_infer_gpu -j2
           shasum -a 256 "$SCRATCH/build/qwen_infer_gpu"
