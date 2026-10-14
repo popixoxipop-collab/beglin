@@ -1,0 +1,39 @@
+{
+  "P5_CB128_C_sha256": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612",
+  "P9_patched_mlx_sha256": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f",
+  "fault_C_sha256": "6611036998baa344a83809a526d241f7752530d89b9a9b9cbb0102f6a2466d2a",
+  "file_sha256": {
+    "full.json": "d6638759819d76d7eb2acabf08e705849b0c9b0974822a25111d699970be3f0b",
+    "full_audit.json": "70ba0c754a20c87a9b65908e7a0f3078b00ad97ac9d689d5d0131be4a4e9939e",
+    "p8_existing_tests.log": "288d5e6c6a87485a8d50b5f301c2323a4e3d8dfa02f12e42051d732b08bf631a",
+    "p9_new_tests.log": "03d9192e0658cf3cace8fe6534908964140a66379cba2a1ce96508283377019f",
+    "rollback.json": "d13a15cd6a88ff2d7a9746c2494e3156f19be98e7eb595c35d078a1f1e7176ef",
+    "smoke.json": "87e523e8f68ba47f3cde887a19d2f168498b3de993afac8fdf1871244fd94d07",
+    "smoke_audit.json": "a45915942ecd7ee14519ad1ee7edb7503cb6089731912276cc2c21324c929179"
+  },
+  "full_admissions": 384,
+  "independent_sha_audit": true,
+  "main_changed": false,
+  "model_index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "native_binary_fault_sha256": "da7dd1571f2efd5c03231fd2b5935407314380189c92a0da6b4e3a6d1fdfad0b",
+  "native_binary_plain_sha256": "103549b7f7f4a3d142be883013956b4f1437759c8be76bff31f2451956df37fd",
+  "production_touched": false,
+  "python_tests": {
+    "p8_existing": 48,
+    "p9_new": 21
+  },
+  "raw_token_ids_or_logits_uploaded": false,
+  "rollback_safety_tested": true,
+  "runtime_activated": false,
+  "schema": "beglin-hcp-p9-xox-native-evidence-manifest-v1",
+  "smoke_admissions": 32,
+  "source_commit": "a46154d8d3598ef1c7b0d51cd1d4447090c89ac4",
+  "source_files": {
+    "hcp_p9_cache_patch.py": "7f62736fbd81d15284dcbd97d5bb9a313556d58cf876b4eadb0e99cab8cfc608",
+    "hcp_p9_evidence_audit.py": "54f8e3c8b4bf4ccf9ff52552835dffd7c64feb7b1c69c7bde8159c05f7408f80",
+    "hcp_p9_fault_patch.py": "97dc033d800c484e4653dce65ed726c53f1a2f29b1bc0c99475ef0fce5fa6986",
+    "hcp_p9_fault_trial.py": "b6843b3fe65bb94a9a8810276ca3c632fb6ce87985e7401924facdb9fd58271f",
+    "hcp_p9_native_trial.py": "ac0b02ccbbfcc3e7fd2f84b323eacfed709eb6c17a504351b816d26487f313a6"
+  },
+  "test_total": 69
+}

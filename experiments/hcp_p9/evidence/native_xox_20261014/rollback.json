@@ -1,0 +1,67 @@
+{
+  "automatic_live_promotion": false,
+  "cache_hit_after_failed_transaction": true,
+  "cached_mlx_source_sha256": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f",
+  "error_expected_not_hidden": true,
+  "failed_B_preimage_A_retained": true,
+  "fault_binary_sha256": "da7dd1571f2efd5c03231fd2b5935407314380189c92a0da6b4e3a6d1fdfad0b",
+  "fault_injected_once": true,
+  "fault_source_sha256": "6611036998baa344a83809a526d241f7752530d89b9a9b9cbb0102f6a2466d2a",
+  "full_concurrency_or_restart_certified": false,
+  "live_postimage": {
+    "pids": [
+      35481,
+      35493
+    ],
+    "route": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+    "stage": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9"
+  },
+  "live_preimage": {
+    "pids": [
+      35481,
+      35493
+    ],
+    "route": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+    "stage": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9"
+  },
+  "native_worker_same_PID": true,
+  "production_touched": false,
+  "recovery_exact_ABB_policy_sequence": [
+    "B",
+    "A",
+    "B"
+  ],
+  "recovery_tokens_match_P6": true,
+  "schema": "beglin-hcp-p9-real-native-one-shot-rollback-v1",
+  "status": "EXACT_REBIND_SET_FAILED_ACK_AND_RECOVERY_CONFIRMED",
+  "terminal_evidence": [
+    {
+      "caught_error_type": "RuntimeControlError",
+      "epoch": 2,
+      "policy_hash": "dbee11614bb74073e0751bbf9fad0f67f0b99396256cb88589df80701f363ef1",
+      "terminal_status": "REBIND_SET_FAILED",
+      "worker_pid_preserved": true
+    },
+    {
+      "epoch": 3,
+      "output_SHA_matched": true,
+      "policy": "B",
+      "terminal_status": "REBIND_SET_APPLIED",
+      "worker_pid_preserved": true
+    },
+    {
+      "epoch": 4,
+      "output_SHA_matched": true,
+      "policy": "A",
+      "terminal_status": "REBIND_SET_APPLIED",
+      "worker_pid_preserved": true
+    },
+    {
+      "epoch": 5,
+      "output_SHA_matched": true,
+      "policy": "B",
+      "terminal_status": "REBIND_SET_APPLIED",
+      "worker_pid_preserved": true
+    }
+  ]
+}

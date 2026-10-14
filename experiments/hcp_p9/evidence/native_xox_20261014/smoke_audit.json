@@ -1,0 +1,17 @@
+{
+  "ACK_and_operator_route_untouched": true,
+  "actual_native_admissions": 32,
+  "block_bootstrap_95ci_ms": [
+    -313.3477332,
+    -282.68683350000003
+  ],
+  "cache_mutation_error_count": 0,
+  "frozen_P6_quality_SHA256": "2ad68622fcfe4e8f2d16e0abb1c24e010618fd14ab40917f4dd4278167e59104",
+  "native_result_sha256": "87e523e8f68ba47f3cde887a19d2f168498b3de993afac8fdf1871244fd94d07",
+  "paired_switch_on_minus_off_mean_ms": -296.6236060909091,
+  "production_promotion_allowed": false,
+  "raw_tokens_absent": true,
+  "schema": "beglin-hcp-p9-independent-evidence-audit-v1",
+  "source_P6_token_SHA_verified": true,
+  "strict_matched_pairs": 16
+}
