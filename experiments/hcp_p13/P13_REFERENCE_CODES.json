@@ -1,0 +1,66 @@
+{
+  "automatic_live_promotion": false,
+  "expected_distinct": 4,
+  "full_BF16_model_logits_or_task_accuracy_not_measured": true,
+  "reference_P12_raw_original_BF16_local_oracle_sha256": "104d8112a737515f7bd52ae187735940e5948afebea78601cb61a73e58484de4",
+  "reference_prior_to_native_P13_capture": true,
+  "replacements": [
+    {
+      "bits": 5,
+      "packed_SHA256": "9ba5e0f1d688cf34c4dcbc0836d18ae7bff03025e9a66061e7952eee1f98fbf4",
+      "packed_bytes": 3604480,
+      "scales_SHA256": "ca2da4f3321bf588e98e88769ba5de0b3fb8892fbb20dd1fcb305d20c941ef06",
+      "scales_bytes": 360448,
+      "shape": [
+        2816,
+        2048
+      ],
+      "source_tensor": "model.layers.3.mlp.shared_experts.up_proj.weight",
+      "target": "shared_up_L3"
+    },
+    {
+      "bits": 6,
+      "packed_SHA256": "0a6ab44e440c8444e8d22e8a567b773df314fb1af0ba744d97068094dabcfb54",
+      "packed_bytes": 4325376,
+      "scales_SHA256": "1486d4cba84167b4992880a4067aea4f805756abf5a968d6b8920b908b45b1cf",
+      "scales_bytes": 360448,
+      "shape": [
+        2816,
+        2048
+      ],
+      "source_tensor": "model.layers.3.mlp.shared_experts.up_proj.weight",
+      "target": "shared_up_L3"
+    },
+    {
+      "bits": 5,
+      "packed_SHA256": "a6eacfe7ad9e1a6837486e5603a13ef2af8998f99ef46f8cfd9f2a3d1d972a04",
+      "packed_bytes": 3604480,
+      "scales_SHA256": "d610796da69d74b63a726090ff08a19a45e6f607940411fd4feae0fccbe9871a",
+      "scales_bytes": 360448,
+      "shape": [
+        2048,
+        2816
+      ],
+      "source_tensor": "model.layers.26.mlp.shared_experts.down_proj.weight",
+      "target": "shared_down_L26"
+    },
+    {
+      "bits": 6,
+      "packed_SHA256": "58c9e0e80de6821fbc360bab0d62eaa52f0ea7c90f674f89c006444c11f057e9",
+      "packed_bytes": 4325376,
+      "scales_SHA256": "7e2e2a1972aad33fcaf1a286e3f47b20c815e6e5a389180540b67a4eb1b6c4c2",
+      "scales_bytes": 360448,
+      "shape": [
+        2048,
+        2816
+      ],
+      "source_tensor": "model.layers.26.mlp.shared_experts.down_proj.weight",
+      "target": "shared_down_L26"
+    }
+  ],
+  "schema": "beglin-hcp-p13-frozen-original-BF16-C-qNg64-four-representations-v1",
+  "source_C_compiled_micro_oracle_SHA256": "1bb29f8c73abdf6afc157495b14efcd93d82f5cc61c6416b8359fc9e7259fe6e",
+  "source_C_qng64_decoder_SHA256": "cb985ec48cfa1f1f9ebe8411d12da5d3f73720c8acdcad51fc279a2b25ff8956",
+  "source_C_quantizer_SHA256": "7371cc352226e912dbf42762e5e63a70e91acb5c90691d90e32401e18af7ec5f",
+  "source_model_index_SHA256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+}
