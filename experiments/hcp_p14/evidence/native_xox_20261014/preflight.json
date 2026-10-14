@@ -1,0 +1,12 @@
+{
+  "P11_test_crash_inject_C_SHA256": "3d5a6d9f2f63d53e960c14a88dc4892ffa27cfd67b6d15258b6c930a7c17f2bd",
+  "P9_MLX128_SHA256": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f",
+  "P9_original_C_SHA256": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612",
+  "automatic_live_promotion": false,
+  "cache_default_off": true,
+  "original_route_SHA256": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+  "original_stage_SHA256": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9",
+  "production_touched": false,
+  "schema": "beglin-hcp-p14-isolated-dual-worker-native-preflight-v1",
+  "source_commit": "93ac73bb6feefe4bf020b7882fbc0bf3d8d977e7"
+}

@@ -1,0 +1,21 @@
+test_01_actual_sanitized_proof_passes (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_02_missing_original_unknown_txn_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_03_ackless_crash_claimed_success_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_04_healthy_peer_restarted_claim_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_05_overlapping_calls_forgery_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_06_oversubscription_with_forged_RSS_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_07_changed_quarantine_command_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_08_intent_missing_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_09_verified_receipt_tamper_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_10_marker_wrong_epoch_id_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_11_BF16_full_forward_false_claim_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_12_BF16_model_index_false_claim_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_13_fake_streaming_teacher_accuracy_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_14_wrong_native_git_commit_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_15_bad_GPU_receipt_SHA_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+test_16_reduced_P6_verified_response_count_denied (test_hcp_p14_eoe_audit.P14EOEChecks) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.108s
+
+OK

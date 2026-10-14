@@ -1,0 +1,29 @@
+test_01_fresh_start_allowed_and_owned (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_02_valid_terminal_applied_persisted_before_boot (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_03_valid_terminal_failed_persisted_not_replayed (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_04_idempotent_crash_after_journal_before_start (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_05_unknown_no_terminal_ack_blocked (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_06_unknown_can_be_quarantined_by_p11_then_new_start_allowed (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_07_wrong_epoch_applied_blocked (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_08_wrong_result_policy_blocked (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_09_wrong_target_count_blocked (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_10_wrong_transaction_id_blocked (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_11_source_policy_forgery_blocked (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_12_wrong_target_bitwidth_blocked (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_13_partial_archive_blocks_restart (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_14_archive_tamper_blocks_restart (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_15_second_controller_lock_denied_in_separate_process (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_16_identity_mismatch_refused (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_17_foreign_worker_root_refused (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_18_owner_identity_tamper_refused (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_19_unaccompanied_ack_terminal_refused (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_20_archive_unacknowledged_when_unmatched_policy_denied (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_21_bad_ack_corrupted_json_denied (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_22_duplicate_terminal_receipt_archive_not_overwritten (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_23_journal_symlink_refused (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+test_24_two_owner_lifetime_can_be_serial (test_hcp_p12_prestart_journal.PrestartTests) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 4.184s
+
+OK

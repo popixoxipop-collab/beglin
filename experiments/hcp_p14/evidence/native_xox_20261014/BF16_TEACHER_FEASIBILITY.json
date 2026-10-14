@@ -1,0 +1,87 @@
+{
+  "RSS_limit_bytes": 536870912,
+  "RSS_peak_bytes": 24707072,
+  "a_streaming_teacher_might_fit_but_not_proven": true,
+  "accelerate_installed": true,
+  "any_layer_subcomponent_reads_performed": false,
+  "automatic_live_promotion": false,
+  "exact_whole_BF16_teacher_logits_produced": false,
+  "full_BF16_teacher_forward_executed": false,
+  "largest_layer_weight_bytes": 1169695744,
+  "largest_layer_weight_gib": 1.0894,
+  "largest_single_tensor_bytes": 419430400,
+  "layer_weight_bytes_by_index": {
+    "0": 162014208,
+    "1": 1169695744,
+    "10": 1169695744,
+    "11": 1169695744,
+    "12": 1169695744,
+    "13": 1169695744,
+    "14": 1169695744,
+    "15": 1169695744,
+    "16": 1169695744,
+    "17": 1169695744,
+    "18": 1169695744,
+    "19": 1169695744,
+    "2": 1169695744,
+    "20": 1169695744,
+    "21": 1169695744,
+    "22": 1169695744,
+    "23": 1169695744,
+    "24": 1169695744,
+    "25": 1169695744,
+    "26": 1169695744,
+    "3": 1169695744,
+    "4": 1169695744,
+    "5": 1169695744,
+    "6": 1169695744,
+    "7": 1169695744,
+    "8": 1169695744,
+    "9": 1169695744
+  },
+  "model_decoder_layer_count": 27,
+  "model_index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "model_type": "deepseek_v2",
+  "no_unverified_teacher_results_promoted": true,
+  "non_layer_major_weight_count": 3,
+  "non_layer_top_weights_bytes": {
+    "lm_head.weight": 419430400,
+    "model.embed_tokens.weight": 419430400,
+    "model.norm.weight": 4096
+  },
+  "original_all_tensors_indexed": 5291,
+  "original_operational_checkpoint_not_modified": true,
+  "original_per_shard_headers_checked": {
+    "model-00001-of-000004.safetensors": {
+      "header_bytes": 164592,
+      "model_file_bytes": 8594887408,
+      "tensor_count": 1329,
+      "tensor_data_bytes": 8594722816
+    },
+    "model-00002-of-000004.safetensors": {
+      "header_bytes": 185480,
+      "model_file_bytes": 8591757448,
+      "tensor_count": 1491,
+      "tensor_data_bytes": 8591571968
+    },
+    "model-00003-of-000004.safetensors": {
+      "header_bytes": 185912,
+      "model_file_bytes": 8590718520,
+      "tensor_count": 1491,
+      "tensor_data_bytes": 8590532608
+    },
+    "model-00004-of-000004.safetensors": {
+      "header_bytes": 122144,
+      "model_file_bytes": 5636263200,
+      "tensor_count": 980,
+      "tensor_data_bytes": 5636141056
+    }
+  },
+  "original_shard_total_file_bytes": 31413626576,
+  "original_weight_data_total_bytes": 31412968448,
+  "production_touched": false,
+  "schema": "beglin-hcp-p14-fully-original-BF16-header-only-resource-admission-v1",
+  "status": "FULL_BF16_TEACHER_ENGINE_NOT_YET_STREAMING_CERTIFIED",
+  "transformers_has_native_deepseek_v2_module": true,
+  "whole_BF16_model_loaded": false
+}

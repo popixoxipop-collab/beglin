@@ -1,0 +1,20 @@
+{
+  "P14_EOE_rechecked_original_quarantine_SHA256": "02d779515be3d45dc29059270a13b1e5547ee22381ff81ae6778e8fa19426cc9",
+  "P14_full_record_independent_XOX_audit_SHA256": "236475031894ea9ef1df87ff7c9a46a36f770fa89e0cc15373254927aedee470",
+  "P14_raw_full_native_result_SHA256": "98aa76b19129a7634061595e98463267f506435069c3714db7f2b0a3ff7e9a71",
+  "exact_BF16_metadata_model_layers": 27,
+  "exact_BF16_metadata_tensors": 5291,
+  "full_raw_per_admission_evidence_remains_on_XOX": true,
+  "full_teacher_logits_measured": false,
+  "independent_48_response_raw_evidence_recomputed_on_EOE": false,
+  "largest_layer_weight_gib": 1.0894,
+  "native_crashed_original_result": "UNKNOWN_NO_AUTO_RETRY",
+  "native_dual_worker_peak_RSS_GiB": 11.71207,
+  "native_new_B_A_B_recovered_requests": 3,
+  "native_survivor_real_requests": 6,
+  "original_XOX_time_overlap_pairs": 24,
+  "promote_production_allowed": false,
+  "schema": "beglin-hcp-p14-EOE-sanitized-summary-independent-audit-v1",
+  "status": "P14_XOX_FULL_RECORD_AUDIT_SHA_AND_INDEPENDENT_ESCROW_BF16_PROVENANCE_VERIFIED",
+  "true_dual_native_responses_passed_in_original_XOX_audit": 48
+}

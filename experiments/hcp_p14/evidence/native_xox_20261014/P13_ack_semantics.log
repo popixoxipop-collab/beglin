@@ -1,0 +1,17 @@
+test_01_original_real_native_terminals_pass (test_hcp_p13_strict_journal.P13SemanticsTests) ... ok
+test_02_ack_epoch_forgery_with_rehashed_receipts_rejected (test_hcp_p13_strict_journal.P13SemanticsTests) ... ok
+test_03_ack_result_policy_forgery_with_rehashed_receipts_rejected (test_hcp_p13_strict_journal.P13SemanticsTests) ... ok
+test_04_ack_preimage_policy_forgery_with_rehashed_receipts_rejected (test_hcp_p13_strict_journal.P13SemanticsTests) ... ok
+test_05_wrong_second_target_bitwidth_with_rehashed_receipts_rejected (test_hcp_p13_strict_journal.P13SemanticsTests) ... ok
+test_06_wrong_changed_targets_count_with_rehashed_receipts_rejected (test_hcp_p13_strict_journal.P13SemanticsTests) ... ok
+test_07_wrong_native_transaction_id_with_rehashed_receipts_rejected (test_hcp_p13_strict_journal.P13SemanticsTests) ... ok
+test_08_wrong_native_expected_epoch_with_rehashed_receipts_rejected (test_hcp_p13_strict_journal.P13SemanticsTests) ... ok
+test_09_intent_status_forgery_even_when_SHA_untouched_rejected (test_hcp_p13_strict_journal.P13SemanticsTests) ... ok
+test_10_wrong_src_epoch_in_intent_even_when_SHA_untouched_rejected (test_hcp_p13_strict_journal.P13SemanticsTests) ... ok
+test_11_missing_ACK_denied (test_hcp_p13_strict_journal.P13SemanticsTests) ... ok
+test_12_archive_ACK_symlink_denied (test_hcp_p13_strict_journal.P13SemanticsTests) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.060s
+
+OK

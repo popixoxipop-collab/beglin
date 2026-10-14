@@ -1,0 +1,122 @@
+{
+  "automatic_live_promotion": false,
+  "base_P14_evidence_manifest_sha256": "79a6bf8c87b80e1caf96c0a6e6fa903b10c8efcd9f3611535c6743bc5cc794cb",
+  "created_at_utc": "2026-10-14T14:52:27.262212+00:00",
+  "duplicate_P14_attempt_rejected_before_start_on_existing_run_owned_root": true,
+  "duplicate_attempt_not_counted_as_completed_native_inference": true,
+  "original_P14_evidence_manifest_left_byte_identical": true,
+  "original_P14_native_result_sha256": "98aa76b19129a7634061595e98463267f506435069c3714db7f2b0a3ff7e9a71",
+  "preexisting_P14_two_native_workers_result_reaudited": true,
+  "production_touched": false,
+  "recovered_free_disk_gib": 6.76,
+  "schema": "beglin-hcp-p14-storage-reserve-protection-supplement-v1",
+  "xox_cache_cleanup_receipt_fields": {
+    "HuggingFace_model_cache_and_research_workspaces_untouched": true,
+    "active_Codex_updater_launcher_untouched": true,
+    "active_chrome_profile3_untouched": true,
+    "active_open_fd_checks_before_each": true,
+    "date": "2026-10-14",
+    "disk_free_bytes_after": 22562271232,
+    "disk_free_bytes_before": 15304286208,
+    "disk_free_gb_after": 22.562,
+    "home_or_model_weights_deleted": false,
+    "production_binary_or_route_untouched": true,
+    "safe_targets": [
+      {
+        "duration_s": 0.479,
+        "path": "/Users/xox/Library/Caches/com.openai.codex/org.sparkle-project.Sparkle/Installation/K2pGlPqJ7",
+        "physical_KiB_before": 2200380,
+        "removed": true
+      },
+      {
+        "duration_s": 4.493,
+        "path": "/Users/xox/Library/Caches/Google/Chrome/Profile 4/Cache",
+        "physical_KiB_before": 854024,
+        "removed": true
+      },
+      {
+        "duration_s": 0.81,
+        "path": "/Users/xox/Library/Caches/Google/Chrome/Profile 4/Code Cache",
+        "physical_KiB_before": 331924,
+        "removed": true
+      },
+      {
+        "duration_s": 5.589,
+        "path": "/Users/xox/Library/Caches/Google/Chrome/Profile 5/Cache",
+        "physical_KiB_before": 1189256,
+        "removed": true
+      },
+      {
+        "duration_s": 0.493,
+        "path": "/Users/xox/Library/Caches/Google/Chrome/Profile 5/Code Cache",
+        "physical_KiB_before": 174444,
+        "removed": true
+      },
+      {
+        "duration_s": 2.29,
+        "path": "/Users/xox/Library/Caches/Google/Chrome/Profile 7/Cache",
+        "physical_KiB_before": 405120,
+        "removed": true
+      },
+      {
+        "duration_s": 0.652,
+        "path": "/Users/xox/Library/Caches/Google/Chrome/Profile 7/Code Cache",
+        "physical_KiB_before": 197440,
+        "removed": true
+      },
+      {
+        "duration_s": 1.0,
+        "path": "/Users/xox/Library/Caches/Google/Chrome/Profile 6/Cache",
+        "physical_KiB_before": 186564,
+        "removed": true
+      },
+      {
+        "duration_s": 0.348,
+        "path": "/Users/xox/Library/Caches/Google/Chrome/Profile 6/Code Cache",
+        "physical_KiB_before": 155740,
+        "removed": true
+      },
+      {
+        "duration_s": 0.531,
+        "path": "/Users/xox/Library/Caches/Google/Chrome/Default/Cache",
+        "physical_KiB_before": 159532,
+        "removed": true
+      },
+      {
+        "duration_s": 0.116,
+        "path": "/Users/xox/Library/Caches/Google/Chrome/Default/Code Cache",
+        "physical_KiB_before": 67600,
+        "removed": true
+      },
+      {
+        "duration_s": 0.068,
+        "path": "/Users/xox/Library/Caches/ms-playwright/chromium-1208",
+        "physical_KiB_before": 338220,
+        "removed": true
+      },
+      {
+        "duration_s": 0.081,
+        "path": "/Users/xox/Library/Caches/ms-playwright/chromium_headless_shell-1208",
+        "physical_KiB_before": 191636,
+        "removed": true
+      },
+      {
+        "duration_s": 0.067,
+        "path": "/Users/xox/Library/Caches/ms-playwright/chromium-1234",
+        "physical_KiB_before": 364372,
+        "removed": true
+      },
+      {
+        "duration_s": 0.023,
+        "path": "/Users/xox/Library/Caches/ms-playwright/chromium_headless_shell-1234",
+        "physical_KiB_before": 200744,
+        "removed": true
+      }
+    ],
+    "schema": "beglin-hcp-p14-xox-regenerable-cache-relief-v1",
+    "total_known_cache_kib": 7016996
+  },
+  "xox_cache_cleanup_receipt_sha256": "bec73afa6872210c7be01c42eaacefa0d44923c119d0936f15ece5cc904e9686",
+  "xox_measured_free_after_gib": 21.013,
+  "xox_measured_free_before_gib": 14.253
+}

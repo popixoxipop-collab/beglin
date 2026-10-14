@@ -1,0 +1,128 @@
+{
+  "BF16_biggest_layer_weights_GiB": 1.0894,
+  "BF16_full_teacher_forward_executed": false,
+  "BF16_full_vocab_logits_measured": false,
+  "BF16_original_layer_count": 27,
+  "BF16_original_tensor_header_count": 5291,
+  "EOE_sanitized_evidence_SHA256": {
+    "BF16_TEACHER_FEASIBILITY.json": {
+      "bytes": 2732,
+      "sha256": "14ca8badf6221b4d144049a74203bb6b8d4cacd047b861a1922ad3434abac9ec"
+    },
+    "P08_governor.log": {
+      "bytes": 2904,
+      "sha256": "d0e6c4698e36ab905014c878e4b091ab4bcefa7b0655974554fbed7392f3c585"
+    },
+    "P09_cache_rollback.log": {
+      "bytes": 2176,
+      "sha256": "42dea0b766c6c0c00fc3f0391b65e2f4b390c9f034e5382fd49023e4c30ddf10"
+    },
+    "P10_qualification.log": {
+      "bytes": 959,
+      "sha256": "b8231b310cadc1e99f678880496b77f3ba4e8c54d341f3ae22e25f17e85ea695"
+    },
+    "P11_evidence.log": {
+      "bytes": 1228,
+      "sha256": "41a2311f0d13eeb6ae6a71decbc2c0109cb59f3cd796536bc770678a2e93e17a"
+    },
+    "P11_forensic.log": {
+      "bytes": 1497,
+      "sha256": "2bee76f6d80da6d1df0993ee8c5168ac9b6f7cabd049b9f0b87af0143d9e2b67"
+    },
+    "P11_inflight.log": {
+      "bytes": 1615,
+      "sha256": "7abd5277fc7e0defb6dd46f2ea36eb77ae798be98d69b30f0944f39de4969618"
+    },
+    "P12_evidence.log": {
+      "bytes": 2026,
+      "sha256": "0435144d0e30e33ef3bc308e8d7c93eb5d4e629795a66f5f62c847687d408ce9"
+    },
+    "P12_prestart.log": {
+      "bytes": 2408,
+      "sha256": "a04eff1944e50a2ed59c11db5d83de7de6070df9d7a811efdddb08adb547e506"
+    },
+    "P13_ack_semantics.log": {
+      "bytes": 1460,
+      "sha256": "880c0f729f7137bc9157a86d8a51c6a4b7781b01f644ba45279645b1b067e769"
+    },
+    "P13_native_packed_sha.log": {
+      "bytes": 1429,
+      "sha256": "a3af06d0d40a8fb33445876df6aa49923e4df7b8e8df05a56ba4878823cc4f1d"
+    },
+    "P14_AUDIT_SUMMARY.json": {
+      "bytes": 1404,
+      "sha256": "236475031894ea9ef1df87ff7c9a46a36f770fa89e0cc15373254927aedee470"
+    },
+    "P14_EOE_AUDIT.json": {
+      "bytes": 1132,
+      "sha256": "d76f65e73bf816c368446ebfbbc065caa8da4400eccdb15b792b7b5a896c7bb5"
+    },
+    "P14_REGRESSION_RECEIPT.json": {
+      "bytes": 1905,
+      "sha256": "02bd15f6cf6f26f39d5966f5cf8d8eb88f19820aa22096ec290f15cbc216c82b"
+    },
+    "P14_peer_crash_evidence.log": {
+      "bytes": 1487,
+      "sha256": "84f9f1ef1c175883ffeb2856b0d1ed205d2012d5d8a5e99b7861b241f998bab0"
+    },
+    "before_ack.fault.marker": {
+      "bytes": 50,
+      "sha256": "b57807c4cef1d1e53f40d248476139f7c1aefe4870c52e70bed1dace640a5da5"
+    },
+    "preflight.json": {
+      "bytes": 712,
+      "sha256": "dab0a769f972ea81dc73a76acff7c855499843e5213aa91e0847a0338b93d9ec"
+    },
+    "quarantine/INTENT.json": {
+      "bytes": 814,
+      "sha256": "8e4b5e47a74420ab011deb74ac72518cb28c1ad481ef07a44e6ee29febac41b5"
+    },
+    "quarantine/VERIFIED.json": {
+      "bytes": 1350,
+      "sha256": "02d779515be3d45dc29059270a13b1e5547ee22381ff81ae6778e8fa19426cc9"
+    },
+    "quarantine/original_unknown.cmd": {
+      "bytes": 164,
+      "sha256": "6463a471f5bb77b60f6699483c139a2bf4cda654cabe7467d3f60adf43ebb9db"
+    }
+  },
+  "P11_fault_only_native_binary_SHA256": "a5fd3f590ad6bbddcb69e690ccf738b711b8f7ceb3319f99ee933123f5ac7e78",
+  "P13_parent_commit": "dc4d2dbc999633e75ff5ff0a430642ceefc830b3",
+  "P14_XOX_original_forensic_archive_directory": "/Users/xox/mcp-sandbox/tailnet-commander/hcp-p14-native-forensic-20261014",
+  "P14_XOX_original_forensic_manifest_SHA256": "b425aa8ba5ce7a2939cc8c2ec508024f020e1f0c127eb2afdab1ec4c5c736976",
+  "P14_XOX_raw_original_response_JSON_SHA256": "98aa76b19129a7634061595e98463267f506435069c3714db7f2b0a3ff7e9a71",
+  "P8_to_P14_regression_tests_FAILED": 0,
+  "P8_to_P14_regression_tests_PASSED": 213,
+  "P9_native_GPU_binary_SHA256": "103549b7f7f4a3d142be883013956b4f1437759c8be76bff31f2451956df37fd",
+  "actual_peak_two_GPU_worker_RSS_GiB": 11.71207,
+  "automatic_live_promotion": false,
+  "final_handoff_SHA256": "bb313a1f12ce49cb7f4f43948914fabb30d8560bbf3f78d82bb6293145f048f3",
+  "main_merged": false,
+  "native_survivor_new_admissions_after_peer_fault": 6,
+  "original_model_index_SHA256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "original_response_level_independent_audit_performed_on_XOX": true,
+  "original_response_level_independent_audit_reperformed_on_EOE": false,
+  "original_route_SHA256": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+  "original_stage_SHA256": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9",
+  "original_worker_PIDs": [
+    35481,
+    35493
+  ],
+  "overlapped_admission_pairs": 24,
+  "peer_new_B_A_B_admissions": 3,
+  "peer_original_ambiguous_transaction_status": "UNKNOWN_NOT_RETRIED",
+  "preregister_SHA256": "2da76c7d6164a104a96bad4af23d2620f993ae3632bbaaaf674789b292ffa207",
+  "preregister_commit": "93ac73bb6feefe4bf020b7882fbc0bf3d8d977e7",
+  "production_changed": false,
+  "quality_noninferiority_certified": false,
+  "schema": "beglin-hcp-p14-original-native-worker-and-BF16-envelope-final-manifest-v1",
+  "scripts_SHA256": {
+    "hcp_p14_bf16_teacher_feasibility.py": "419cfe54ee6117db8924225f1a5575b994452d9157d0d21e389b1f5e828727da",
+    "hcp_p14_eoe_summary_audit.py": "686d0f70c180431d435c8c736f98c2aee3ea099c15a8bb73e4d94233ec3e9a89",
+    "hcp_p14_native_audit.py": "e66b9a09da56ae7d7fcb13194123c5199e2d9971406de923071ccc8b8fe4d506",
+    "hcp_p14_seal_manifest.py": "86729fa7668e9e8a60b09b46abeb75d4366f08f226b8f1c8d4cdce19f9ae4397",
+    "hcp_p14_two_workers_native.py": "86b9826f9d9a1b1f60d4da307ef8687034f4c7450607b4f6754920cc826b930a"
+  },
+  "simultaneous_native_real_admissions": 48,
+  "two_independent_real_GPU_worker_processes": true
+}

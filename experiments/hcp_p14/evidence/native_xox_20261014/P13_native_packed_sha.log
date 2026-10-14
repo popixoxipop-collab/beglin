@@ -1,0 +1,21 @@
+test_01_exact_cb128_source_only (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_02_C_SHA_annotation_perfectly_reversible (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_03_double_source_annotation_denied (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_04_annotation_default_off (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_05_full_native_paired_BF16_output_valid (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_06_wrong_packed_code_SHA_denied (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_07_wrong_scale_code_SHA_denied (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_08_missing_native_trace_denied (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_09_generated_sequence_changed_denied (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_10_fake_terminal_ACK_denied (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_11_wrong_binary_SHA_denied (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_12_frozen_reference_mutation_denied (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_13_fake_full_BF16_teacher_claim_denied (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_14_production_stage_changed_denied (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_15_missing_mode_admission_denied (test_hcp_p13_evidence.P13TraceTests) ... ok
+test_16_input_domain_mismatch_denied (test_hcp_p13_evidence.P13TraceTests) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.066s
+
+OK
