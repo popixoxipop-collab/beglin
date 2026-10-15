@@ -1,0 +1,67 @@
+{
+  "schema": "beglin-hcp-p18-frozen-480-direct-6-real-question-progress-v1",
+  "status": "P18_6_OF_480_REAL_PAIRED_ORIGINAL_BF16_NATIVE_AB_FULL_GOLD_LOGITS_AUDITED_NOT_QUALITY",
+  "original_frozen_bank_sha256": "c5dc5ff1971dde5ca0809c458bd218a42905d0ca8836db7c84603abb06f401df",
+  "original_protocol_sha256": "77e12dfff7fef48894c28413b3a8d7b9bd4bfbcc723c26d88ed1d02b4231484c",
+  "total_question_target": 480,
+  "directly_attested_original_BF16_plus_AB_questions": 6,
+  "original_BF16_plus_AB_gold_positions": 8,
+  "directly_attested_native_A_B_full_vocab_f32_vectors": 16,
+  "original_full_vocab_size": 102400,
+  "originally_captured_BF16_long931_additional_XOX_source_observed_not_part_of_6_pair": true,
+  "actual_BF16_full_model_source_tensors": 5291,
+  "question_observations": [
+    {
+      "id": "p18-mmlu-000",
+      "dataset": "mmlu",
+      "gold_positions": 1,
+      "B_minus_A_NLL": 0.11501111533935315,
+      "attestation_sha256": "2d9bd085bcfb28871ad9d8b42f82bb9347b02e0fcb9897a6ab6baf25ce57bd7e"
+    },
+    {
+      "id": "p18-arc_challenge-000",
+      "dataset": "arc_challenge",
+      "gold_positions": 1,
+      "B_minus_A_NLL": 0.04672360688073951,
+      "attestation_sha256": "2d9bd085bcfb28871ad9d8b42f82bb9347b02e0fcb9897a6ab6baf25ce57bd7e"
+    },
+    {
+      "id": "p18-gsm8k-000",
+      "dataset": "gsm8k",
+      "gold_positions": 3,
+      "B_minus_A_NLL": -0.09761011526526531,
+      "attestation_sha256": "2d9bd085bcfb28871ad9d8b42f82bb9347b02e0fcb9897a6ab6baf25ce57bd7e"
+    },
+    {
+      "id": "p18-mmlu-018",
+      "dataset": "mmlu",
+      "gold_positions": 1,
+      "B_minus_A_NLL": -0.08600321317166504,
+      "attestation_sha256": "af761db9964bce9d4229f2b66d1ef6b6da7887baa2c77c4c006e83e8ecbc55d2"
+    },
+    {
+      "id": "p18-mmlu-001",
+      "dataset": "mmlu",
+      "gold_positions": 1,
+      "B_minus_A_NLL": 0.18942079693724168,
+      "attestation_sha256": "bc83adfd1a5f231b3536df54bf92fa306e2260e3499ff11c0396a3d067782158"
+    },
+    {
+      "id": "p18-mmlu-002",
+      "dataset": "mmlu",
+      "gold_positions": 1,
+      "B_minus_A_NLL": -0.16455660080707446,
+      "attestation_sha256": "52bea64b20cb1b3f54c01568106d9cf9bef12b674261a8c0cf6e50a325864183"
+    }
+  ],
+  "planned_task_full_generation_certified_count": 0,
+  "planned_three_warm_latency_trial_complete_count": 0,
+  "pre_registered_cluster_bootstrap_proven": false,
+  "pre_registered_quality_noninferiority_certified": false,
+  "scratch_purge_policy_blocked": true,
+  "XOX_protected_minimum_disk_gib": 20,
+  "D50_stage_evidence_preserved": true,
+  "P17_original_and_operator_release_not_modified": true,
+  "automatic_live_promotion": false,
+  "production_touched": false
+}
