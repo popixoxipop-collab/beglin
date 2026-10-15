@@ -1,0 +1,26 @@
+{
+  "C_source_sha256": "82475145a4351b934cfccda6763112cdf25751e2ca470ac8417a16e6dc8fdb1c",
+  "MLX_source_sha256": "a0122c8b2010573fb3b20b1c58ab4a3abb26b73602eddf92dd008dda7892f82b",
+  "P17_prefixes_excluded": 31,
+  "all_hashes_equal_frozen_bank": true,
+  "allowlisted_prefixes": 673,
+  "automatic_live_promotion": false,
+  "capture_security_invariants": {
+    "full_fd_sync": true,
+    "full_vocab_bytes": true,
+    "hex_and_exclusive": true,
+    "max_token_text_capacity": true,
+    "native_log_witness": true,
+    "p18_only_allowlist_check": true,
+    "research_scratch_optin": true,
+    "separate_env": true,
+    "size_guard": true,
+    "strict_scope": true
+  },
+  "native_GPU_executed": false,
+  "production_touched": false,
+  "schema": "beglin-hcp-p18-frozen-native-capture-source-audit-v1",
+  "source_bank_sha256": "c5dc5ff1971dde5ca0809c458bd218a42905d0ca8836db7c84603abb06f401df",
+  "source_modified_in_existing_P17": false,
+  "status": "P18_673_FROZEN_FULL_LOGIT_CAPTURE_SOURCE_AUDIT_PASS"
+}

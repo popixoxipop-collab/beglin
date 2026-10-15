@@ -1,0 +1,27 @@
+{
+  "B_minus_A_gold_NLL_nats": 0.11501111533935315,
+  "P18_full_480_research_noninferiority_certified": false,
+  "automatic_live_promotion": false,
+  "frozen_480_token_sha256": "c5dc5ff1971dde5ca0809c458bd218a42905d0ca8836db7c84603abb06f401df",
+  "frozen_protocol_sha256": "77e12dfff7fef48894c28413b3a8d7b9bd4bfbcc723c26d88ed1d02b4231484c",
+  "item_id": "p18-mmlu-000",
+  "native_full_vocab_F32_captures": 2,
+  "original_BF16_complete_model_forward_count": 1,
+  "original_BF16_gold_NLL_nats": 1.017819917192373,
+  "original_BF16_logits_sha256": "7025aed3a8c23fdc024f9a2f4e4a9c4944129f09d1bc3c32633c57c21a1249b6",
+  "policy_A": {
+    "gold_NLL_nats": 0.5151753750563053,
+    "raw_full_logits_sha256": "ea5dea070b577e9afcd1dadd12b41e92ec46d7b25f87d145e9935e8e69bc612e",
+    "strict_gold_first_token": true
+  },
+  "policy_B": {
+    "gold_NLL_nats": 0.6301864903956584,
+    "raw_full_logits_sha256": "252ffc12d1a76bd139c97d9eb8fe94d38259fb23e4ca29ae738d61a59d37b209",
+    "strict_gold_first_token": true
+  },
+  "production_touched": false,
+  "schema": "beglin-hcp-p18-one-question-independent-three-real-full-vocab-NLL-v1",
+  "source_5291_tensor_hash_manifest_sha256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+  "status": "P18_ONE_ITEM_ORIGINAL_BF16_AND_NATIVE_A_B_NLL_INDEPENDENTLY_VERIFIED_NOT_FULL_GATE",
+  "vocab": 102400
+}

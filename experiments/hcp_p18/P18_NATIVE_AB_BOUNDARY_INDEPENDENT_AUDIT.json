@@ -1,0 +1,56 @@
+{
+  "203_A_B_first_token_agree": true,
+  "962_A_B_first_token_agree": true,
+  "NLL_nondinferiority_certified": false,
+  "P18_480_AB_full_logits_executed": false,
+  "P18_all_480_BF16_teachers_executed": false,
+  "audited_native_smokes": 3,
+  "automatic_live_promotion": false,
+  "included_prior_A_203": true,
+  "maximum_observed_input_tokens": 962,
+  "maximum_observed_total_position": 963,
+  "observations": [
+    {
+      "generated": 1,
+      "generated_token_sha256": "4c8d5b6c695d265fb63dd73f275a21043a5887b37cb4fea0552ecc7b417c8f88",
+      "log_sha256": "0a31c21ac9d270ede1e7199adcd1aee8f721df4000b18197565ef35c8c06bf56",
+      "native_ack_sha256": "14ad758d97f4a0db0df872539b08d5965de9bf92408b2e1ddd99b661642b1209",
+      "num_logits_finite_checked": 20787200,
+      "policy": "B",
+      "prompt_tokens": 203,
+      "receipt_sha256": "09bd83bbb68ac1f090c0c1713a770fb0a266110c66c487fd016860c08feb75f9",
+      "rss_bytes": 4672978944,
+      "sample": "203_B",
+      "total_runtime_ms": 9533.5
+    },
+    {
+      "generated": 1,
+      "generated_token_sha256": "86e50149658661312a9e0b35558d84f6c6d3da797f552a9657fe0558ca40cdef",
+      "log_sha256": "1053349894e2661e5e3f40636aabaed6558c2979e2d050db3ed60142aaaab068",
+      "native_ack_sha256": "ca3d58aee92d626a179fc4f10ffc5987dbc095d8b3146b7b2ec253ab769a24e2",
+      "num_logits_finite_checked": 98508800,
+      "policy": "A",
+      "prompt_tokens": 962,
+      "receipt_sha256": "b79482ce30743713c57484e1543869aa2a2d27393dec99fce05d1619aa39b7c8",
+      "rss_bytes": 6956892160,
+      "sample": "962_A",
+      "total_runtime_ms": 19044.8
+    },
+    {
+      "generated": 1,
+      "generated_token_sha256": "86e50149658661312a9e0b35558d84f6c6d3da797f552a9657fe0558ca40cdef",
+      "log_sha256": "ec2c120df37c4baf2074c4b42e54c34ea0204715ee2083a05648728d29b26203",
+      "native_ack_sha256": "b5ab37787712b0f75e3048d7f06e8d733c37ce823d31c4ff6cbde9f16095ab23",
+      "num_logits_finite_checked": 98508800,
+      "policy": "B",
+      "prompt_tokens": 962,
+      "receipt_sha256": "09d636a46938e5b5a1b9f8366276036713fa11c7bc9dee2ca4f06fd0bca347a5",
+      "rss_bytes": 6982582272,
+      "sample": "962_B",
+      "total_runtime_ms": 17342.9
+    }
+  ],
+  "production_touched": false,
+  "schema": "beglin-hcp-p18-a-b-203-963-independent-raw-log-audit-v1",
+  "status": "P18_A_B_203_AND_963_NATIVE_GPU_SMOKES_VERIFIED_NOT_QUALITY"
+}
