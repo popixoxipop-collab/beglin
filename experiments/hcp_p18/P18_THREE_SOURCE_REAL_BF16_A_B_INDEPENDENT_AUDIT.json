@@ -1,0 +1,73 @@
+{
+  "BF16_real_full_model_forwards_total": 3,
+  "P18_noninferiority_certified": false,
+  "automatic_live_promotion": false,
+  "gold_token_positions_total": 5,
+  "native_real_AB_full_vocab_logit_vectors_total": 10,
+  "not_480_question_stratified_bootstrap": true,
+  "original_AC_GSM_8_A_B_source_receipt_SHA256": "d84ccb4a63bb52fa6819f2a50fc3df0dcc1227154d8473c81f9616adb38d37c5",
+  "production_touched": false,
+  "question_count": 3,
+  "samples": [
+    {
+      "A_gold_mean_NLL": 0.5151753750563053,
+      "BF16_original_mean_NLL": 1.017819917192373,
+      "B_gold_mean_NLL": 0.6301864903956584,
+      "B_minus_A_gold_mean_NLL": 0.11501111533935315,
+      "dataset": "mmlu",
+      "gold_count": 1,
+      "item_id": "p18-mmlu-000",
+      "source_BF16_logits_SHA256": "7025aed3a8c23fdc024f9a2f4e4a9c4944129f09d1bc3c32633c57c21a1249b6"
+    },
+    {
+      "A_gold_argmax_count": 1,
+      "A_gold_mean_NLL": 1.2724723345531395,
+      "A_gold_token_losses": [
+        1.2724723345531395
+      ],
+      "BF16_original_mean_NLL": 0.33126502775809996,
+      "B_gold_argmax_count": 1,
+      "B_gold_mean_NLL": 1.319195941433879,
+      "B_gold_token_losses": [
+        1.319195941433879
+      ],
+      "B_minus_A_gold_mean_NLL": 0.04672360688073951,
+      "dataset": "arc_challenge",
+      "gold_count": 1,
+      "item_id": "p18-arc_challenge-000",
+      "source_BF16_logits_SHA256": "ffb9d59f8b9739274498c2085d679ec5d2fb4137a4a7a482705f6761da83d490"
+    },
+    {
+      "A_gold_argmax_count": 1,
+      "A_gold_mean_NLL": 3.7538625142827384,
+      "A_gold_token_losses": [
+        7.732811540914181,
+        3.27917256799741,
+        0.249603433936624
+      ],
+      "BF16_original_mean_NLL": 3.8187934323055863,
+      "B_gold_argmax_count": 1,
+      "B_gold_mean_NLL": 3.656252399017473,
+      "B_gold_token_losses": [
+        7.5544577436809845,
+        3.1619859224659344,
+        0.2523135309055
+      ],
+      "B_minus_A_gold_mean_NLL": -0.09761011526526531,
+      "dataset": "gsm8k",
+      "gold_count": 3,
+      "item_id": "p18-gsm8k-000",
+      "source_BF16_logits_SHA256": "ba5423d1728802ea189af1ba0ef5ebceb64aa5c9f17c6dea96c924f1b5c7ead9"
+    }
+  ],
+  "schema": "beglin-hcp-p18-3-external-source-one-question-each-real-original-27L-BF16-A-B-full-vocab-v1",
+  "single_per_source_not_representative": true,
+  "source_frozen_480_bank_sha256": "c5dc5ff1971dde5ca0809c458bd218a42905d0ca8836db7c84603abb06f401df",
+  "status": "P18_THREE_SOURCE_REAL_BF16_NATIVE_AB_GOLD_LOGITS_AUDITED_NOT_480_QUALITY",
+  "stratum_question_counts": {
+    "arc_challenge": 1,
+    "gsm8k": 1,
+    "mmlu": 1
+  },
+  "three_question_unweighted_B_minus_A_mean_NLL_nats_per_gold_token": 0.021374868984942452
+}
