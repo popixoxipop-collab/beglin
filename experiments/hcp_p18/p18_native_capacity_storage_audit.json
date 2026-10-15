@@ -1,0 +1,27 @@
+{
+  "P18_cohort_sha256": "19e7080b7208b8c7dd6fd06a656bb400dd2a9f72ca5f5674a80f5cc9a654cf65",
+  "P18_protocol_sha256": "77e12dfff7fef48894c28413b3a8d7b9bd4bfbcc723c26d88ed1d02b4231484c",
+  "automatic_live_promotion": false,
+  "fits_existing_cb_and_mlx_128_positions": 82,
+  "fits_proposed_4096_positions": 480,
+  "fits_single_sequence_MOE_MAXPOS_160": 98,
+  "frozen_question_count": 480,
+  "full_480_admissible": false,
+  "native_model_forward_count": 0,
+  "observed_source_macros": {
+    "MLA_L0_MAXPOS": 128,
+    "MOE_CBATCH_MAXPOS": 128,
+    "MOE_MAXPOS": 160
+  },
+  "production_touched": false,
+  "proposed_4096_vs_existing_KV_positional_dimension_multiplier": 32,
+  "required_max_total_positions": 963,
+  "schema": "beglin-hcp-p18-native-capacity-storage-preflight-v1",
+  "source_C_sha256": "d724af1eb97ee715e206188fa120547f4cc1f18f55a3c37938b6b5a4ce9986d2",
+  "source_MLX_sha256": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f",
+  "source_capability_4096_verified": false,
+  "status": "P18_NATIVE_CONTEXT_AND_XOX_SSD_GUARD_BLOCKED",
+  "xox_disk_deficit_bytes": 2500890624,
+  "xox_disk_free_bytes": 18973945856,
+  "xox_disk_protected_reserve_bytes": 21474836480
+}

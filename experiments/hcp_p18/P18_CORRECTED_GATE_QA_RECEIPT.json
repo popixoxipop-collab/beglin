@@ -1,0 +1,18 @@
+{
+  "automatic_live_promotion": false,
+  "frozen_cohort_sha256": "19e7080b7208b8c7dd6fd06a656bb400dd2a9f72ca5f5674a80f5cc9a654cf65",
+  "frozen_contract_audit_sha256": "80d39b127ef6b9606ea6066cca5d4af5fcf52e6ed60bfe3dfb9c0d5c273090c4",
+  "frozen_protocol_sha256": "77e12dfff7fef48894c28413b3a8d7b9bd4bfbcc723c26d88ed1d02b4231484c",
+  "new_gate_sha256": "237d6ce68c714f8e5098bf212796bde965abc669f3fc03147eb50ffd9bba18de",
+  "new_test_sha256": "61d40e514b9ab007bcc4ea74d1ad74185407a107e71904df8495831c25b848b9",
+  "parquet_sha256_format": "64 lowercase hex",
+  "production_touched": false,
+  "qa_cases": 25,
+  "qa_exit": 0,
+  "qa_log_sha256": "841eb36b76769a7552c891af0241cfcae99d427cdc0626e8a814260b188af8a5",
+  "real_native_AB_forward_count": 0,
+  "real_native_BF16_forward_count": 0,
+  "schema": "beglin-hcp-p18-git-revision-fix-regression-v1",
+  "source_git_revision_format": "40 lowercase hex",
+  "status": "P18_CORRECTED_GATE_AND_FROZEN_COHORT_QA_PASS_NOT_NATIVE"
+}

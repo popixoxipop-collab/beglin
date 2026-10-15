@@ -1,0 +1,30 @@
+test_01_synthetic_zero_margin_pass_never_promotes (__main__.GateTests) ... ok
+test_02_nll_noninferiority_exceeded (__main__.GateTests) ... ok
+test_03_task_accuracy_drop (__main__.GateTests) ... ok
+test_04_latency_regression (__main__.GateTests) ... ok
+test_05_positive_control_failure (__main__.GateTests) ... ok
+test_06_unfrozen_protocol_fails (__main__.GateTests) ... ok
+test_07_changed_margin_fails (__main__.GateTests) ... ok
+test_08_wrong_dataset_revision_fails (__main__.GateTests) ... ok
+test_09_duplicate_question_fails (__main__.GateTests) ... ok
+test_10_missing_question_fails (__main__.GateTests) ... ok
+test_11_wrong_split_fails (__main__.GateTests) ... ok
+test_12_no_raw_audit_fails (__main__.GateTests) ... ok
+test_13_wrong_independent_source_identity_fails (__main__.GateTests) ... ok
+test_14_missing_teacher_evidence_fails (__main__.GateTests) ... ok
+test_15_nonfinite_logits_rejected (__main__.GateTests) ... ok
+test_16_wrong_gold_token_count_fails (__main__.GateTests) ... ok
+test_17_inconsistent_time_breakdown_fails (__main__.GateTests) ... ok
+test_18_latency_precision_transition_included_fails (__main__.GateTests) ... ok
+test_19_latency_unfixed_decode_steps_fails (__main__.GateTests) ... ok
+test_20_missed_output_audit_fails (__main__.GateTests) ... ok
+test_21_not_untouched_production_fails (__main__.GateTests) ... ok
+test_22_missing_24_tokens_long_cap_stratum_fails (__main__.GateTests) ... ok
+test_23_substitute_tokens_for_questions_fails (__main__.GateTests) ... ok
+test_24_cannot_make_unpinned_protocol_pass (__main__.GateTests) ... ok
+test_25_wrong_source_evidence_manifest_fails (__main__.GateTests) ... ok
+
+----------------------------------------------------------------------
+Ran 25 tests in 14.019s
+
+OK
