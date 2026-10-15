@@ -1,0 +1,29 @@
+{
+  "B_minus_A_nats_per_gold_token": -0.08600321317166504,
+  "P18_original_27_layers_full_forwarded": true,
+  "P18_original_5291_BF16_tensors_read": true,
+  "automatic_live_promotion": false,
+  "frozen_480_source_count_complete": false,
+  "gold_token_positions": 1,
+  "input_tokens": 203,
+  "item_id": "p18-mmlu-018",
+  "native_204_total_positions_verified": true,
+  "native_A_F32_raw_logits_SHA256": "bdebf665b3111db7c6482cd3682697a62e3b9785d1dd4f66571300343dcf9bfb",
+  "native_A_gold_NLL_nats": 2.2368270117777165,
+  "native_B_F32_raw_logits_SHA256": "5bf00419150101002257c713ce91eb4d44f901bec8634da81e76c84c9d13fb02",
+  "native_B_gold_NLL_nats": 2.1508237986060514,
+  "new_native_C_binary_SHA256": "bf8a70ec5f0e449c3e2c35aeeccc3932dbafe0a376322570d0ebd0a0cae8f81d",
+  "original_C_source_change_audit": {
+    "new_C_source_sha256": "fa8a328bedc1e56e79938460e1d4a171f0fd363535fc610183b4022e41ce0bfa",
+    "old_C_source_sha256": "82475145a4351b934cfccda6763112cdf25751e2ca470ac8417a16e6dc8fdb1c",
+    "source_bound_only_difference": true
+  },
+  "production_touched": false,
+  "quality_noninferiority_certified": false,
+  "schema": "beglin-hcp-p18-long203-real-BF16-plus-native-AB-independent-audit-v1",
+  "source_frozen_bank_sha256": "c5dc5ff1971dde5ca0809c458bd218a42905d0ca8836db7c84603abb06f401df",
+  "source_original_teacher_tensor_values_sha256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+  "status": "P18_LONG203_27L_BF16_AND_NATIVE_AB_FULL_102400_LOGITS_AUDIT_PASS_NOT_480_QUALITY",
+  "teacher_BF16_gold_NLL_nats": 2.372428468057759,
+  "teacher_F32_raw_logits_SHA256": "2cc6e216e6c734bc041c8897de1a126a5562988dd93d1022b960eb2484a6a783"
+}

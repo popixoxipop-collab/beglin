@@ -1,0 +1,13 @@
+{
+  "automatic_live_promotion": false,
+  "extended_teacher_context_limit": 1024,
+  "new_P18_teacher_sha256": "c2a631ee7d82feef83efce59087b0a144f7561b9da26db920e1201b45b689820",
+  "only_class_parent_and_position_constant_changed": true,
+  "original_P17_paths_written": false,
+  "original_P17_teacher_sha256": "40dd5550b7759ac2760a6c374e1ddf3af35e68af637ab8d2a4f75bca8bee01d3",
+  "original_layer_forward_formula_identical": true,
+  "original_teacher_context_limit": 112,
+  "production_touched": false,
+  "schema": "beglin-hcp-p18-original-bf16-112-to-1024-source-exact-diff-v1",
+  "status": "P18_ORIGINAL_BF16_27L_SOURCE_EXACT_PARITY_EXCEPT_POSITION_LIMIT_PASS"
+}
