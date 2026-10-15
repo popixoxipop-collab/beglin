@@ -21,7 +21,7 @@ class GateTests(unittest.TestCase):
             "accuracy_margin_B_minus_A":-0.05,
             "latency_geomean_ratio_ceiling":1.10,
             "p95_latency_ratio_ceiling":1.15},
-          "datasets":{s:{"revision":"a"*64,"raw_dataset_sha256":"b"*64,
+          "datasets":{s:{"revision":"a"*40,"raw_dataset_sha256":"b"*64,
                          "license":"TEST_ONLY","split":"test","n":160}
                       for s in g.SOURCES}}
         qs=[];scores=[]
@@ -29,7 +29,7 @@ class GateTests(unittest.TestCase):
             for i in range(160):
                 ident=f"{s}-{i:03d}"
                 cap=(8,32,128)[i%3];shots=(0,3,5)[i%3]
-                q={"item_id":ident,"dataset":s,"dataset_revision":"a"*64,"split":"test",
+                q={"item_id":ident,"dataset":s,"dataset_revision":"a"*40,"split":"test",
                    "record_sha256":"c"*64,"prompt_token_sha256":"d"*64,
                    "gold_token_sha256":"e"*64,"gold_token_count":2,
                    "prompt_token_count":100,"max_new_tokens":cap,
@@ -102,7 +102,7 @@ class GateTests(unittest.TestCase):
         self.protocol["statistics"]["nll_margin_nats_per_gold_token"]=0.2
         self.rejects()
     def test_08_wrong_dataset_revision_fails(self):
-        self.cohort["items"][0]["dataset_revision"]="9"*64
+        self.cohort["items"][0]["dataset_revision"]="9"*40
         self.rejects()
     def test_09_duplicate_question_fails(self):
         self.cohort["items"][0]["item_id"]=self.cohort["items"][1]["item_id"]

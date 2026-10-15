@@ -36,6 +36,10 @@ def reject_if(condition,message):
 def is_sha(s):
     return isinstance(s,str) and len(s)==64 and all(c in "0123456789abcdef" for c in s)
 
+def is_git_revision(s):
+    """Hugging Face/Git SHA-1 commit is a 40-hex ref; Parquet digests remain SHA-256."""
+    return isinstance(s,str) and len(s)==40 and all(c in "0123456789abcdef" for c in s)
+
 def sha_file(p):
     f=pathlib.Path(p)
     reject_if(not f.is_file() or f.is_symlink(),"source must be regular file, not a symlink")
@@ -78,7 +82,7 @@ def frozen_protocol(p):
     for name in SOURCES:
         x=ds[name]
         reject_if(x.get("n")!=COUNT_PER_SOURCE or x.get("split")!="test"
-                  or not is_sha(x.get("revision")) or not is_sha(x.get("raw_dataset_sha256"))
+                  or not is_git_revision(x.get("revision")) or not is_sha(x.get("raw_dataset_sha256"))
                   or not x.get("license"),"dataset revision/hash/license not pinned")
     reject_if(p.get("automatic_live_promotion") is not False
               or p.get("incumbent")!="A" or p.get("challenger")!="B",
