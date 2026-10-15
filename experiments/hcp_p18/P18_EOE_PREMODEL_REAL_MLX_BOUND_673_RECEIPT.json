@@ -1,0 +1,31 @@
+{
+  "BF16_teacher_model_forward_executed_here": false,
+  "MLX_100_cycle_restore_soak_verified": true,
+  "MLX_actual_transition_PASS_lines": 106,
+  "MLX_binding_test_exit": 0,
+  "P18_480_original_quality_certified": false,
+  "actual_MLX_test_output_SHA256": "c1d628903c6727aaed3df4527da52484689b60acf214c4c97776a85a9bf97cdc",
+  "automatic_live_promotion": false,
+  "native_A_B_model_forward_executed_here": false,
+  "original_C_to_EOE_changed_component": "single capture directory literal only",
+  "original_MOE_model_copy_complete": false,
+  "original_frozen_gold_prefixes": 673,
+  "original_frozen_test_question_units": 480,
+  "original_full_BF16_model_copy_complete": false,
+  "original_full_vocab": 102400,
+  "original_model_27layers_metadata_verified": true,
+  "original_model_tensor_index_count": 5291,
+  "production_touched": false,
+  "schema": "beglin-hcp-p18-eoe-premodel-original-security-and-MLX-binding-QA-v1",
+  "source_SHA256": {
+    "EOE_binary": "4b22f80d6368fd8653abcf2b4f3e4d9e1c5fdff8e50ef598d942bbfc1774f176",
+    "EOE_native_source": "f5fab593e588d5a5b34528cc99c518fc2f894186ab46cb50bca5dc1b2e59df5e",
+    "MLX_source": "a0122c8b2010573fb3b20b1c58ab4a3abb26b73602eddf92dd008dda7892f82b",
+    "XOX_native_source": "fa8a328bedc1e56e79938460e1d4a171f0fd363535fc610183b4022e41ce0bfa",
+    "frozen": "c5dc5ff1971dde5ca0809c458bd218a42905d0ca8836db7c84603abb06f401df",
+    "original_BF16_config": "f346286b0f1c8b044252fd54cb4fa78b9fab6472a6e8bebb9edfe03d414ea03d",
+    "original_BF16_index": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+    "original_BF16_modeling": "7d8e5221095286eea991137760893fd7ba52727c0b4ebf48ec09e8bc56b45b9c"
+  },
+  "status": "P18_EOE_ORIGINAL_FROZEN_673_NATIVE_SOURCE_AND_REAL_MLX_100CYCLE_PASS_NO_MODEL"
+}
