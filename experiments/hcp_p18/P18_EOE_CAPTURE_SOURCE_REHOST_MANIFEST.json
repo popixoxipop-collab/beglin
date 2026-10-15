@@ -1,0 +1,11 @@
+{
+  "MLX_source_SHA256": "a0122c8b2010573fb3b20b1c58ab4a3abb26b73602eddf92dd008dda7892f82b",
+  "allowed_gold_prefix_hash_count": 673,
+  "automatic_live_promotion": false,
+  "new_capture_dir": "/Volumes/D50/TailnetCommander/work/hcp-p18-external-multimetric-20261015/eoe_p18_gpu_capture_raw",
+  "original_XOX_security_fenced_C_SHA256": "fa8a328bedc1e56e79938460e1d4a171f0fd363535fc610183b4022e41ce0bfa",
+  "ported_only_capture_dir_literal": true,
+  "ported_research_C_SHA256": "f5fab593e588d5a5b34528cc99c518fc2f894186ab46cb50bca5dc1b2e59df5e",
+  "production_touched": false,
+  "schema": "beglin-hcp-p18-EOE-metadata-only-MLX-source-rehost-v1"
+}
