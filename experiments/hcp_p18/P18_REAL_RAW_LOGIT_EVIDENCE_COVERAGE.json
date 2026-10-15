@@ -1,0 +1,42 @@
+{
+  "BF16_original_full_generations_with_native_finish_reason_verified": 0,
+  "actual_original_native_GPU_witness_SHA_match": true,
+  "automatic_live_promotion": false,
+  "complete_greedy_generations_with_native_finish_reason_verified": 0,
+  "expected_question_count": 480,
+  "fixed_work_3_trial_warm_latency_pairs_verified": 0,
+  "frozen_480_bank_sha256": "c5dc5ff1971dde5ca0809c458bd218a42905d0ca8836db7c84603abb06f401df",
+  "independent_full_480_task_accuracy_verified": false,
+  "native_full_pair_per_question": {
+    "p18-arc_challenge-000": {
+      "dataset": "arc_challenge",
+      "raw_gold_positions": 1
+    },
+    "p18-gsm8k-000": {
+      "dataset": "gsm8k",
+      "raw_gold_positions": 3
+    },
+    "p18-mmlu-000": {
+      "dataset": "mmlu",
+      "raw_gold_positions": 1
+    }
+  },
+  "native_full_vocab_float32_A_B_vectors_required": 1346,
+  "native_full_vocab_float32_A_B_vectors_verified": 10,
+  "native_paired_A_B_question_windows_verified": 3,
+  "native_paired_gold_positions_required": 673,
+  "native_paired_gold_positions_verified": 5,
+  "original_BF16_full_vocab_float32_gold_rows_verified": 6,
+  "original_BF16_gold_positions_required": 673,
+  "original_BF16_gold_positions_verified": 6,
+  "original_BF16_question_windows_verified": 4,
+  "production_touched": false,
+  "schema": "beglin-hcp-p18-raw-evidence-coverage-v1",
+  "source_question_counts_per_dataset": {
+    "arc_challenge": 1,
+    "gsm8k": 1,
+    "mmlu": 1
+  },
+  "statistical_480_question_noninferiority_certified": false,
+  "status": "P18_REAL_RAW_LOGITS_COVERAGE_VERIFIED_480_GATE_BLOCKED"
+}

@@ -1,0 +1,43 @@
+{
+  "QA_cases": 55,
+  "QA_exit_code": 0,
+  "actual_native_A_B_question_windows": 3,
+  "actual_original_BF16_question_windows": 4,
+  "automatic_live_promotion": false,
+  "gate_rejection_of_incomplete_480_raw_evidence": true,
+  "original_full_vocab_A_B_vectors": 10,
+  "production_touched": false,
+  "question_authority": 480,
+  "raw_generation_native_witness_score_not_attested_by_task_grammar_alone": true,
+  "real_task_accuracy_certified": false,
+  "schema": "beglin-hcp-p18-task-and-real-raw-evidence-QA-v1",
+  "source_files_sha256": {
+    "P18_REAL_RAW_LOGIT_EVIDENCE_COVERAGE.json": "02d440e8a73603b230a7c39f7d2ea65ae938414f616d25dbbd1c0f8034e47d10",
+    "hcp_p18_independent_task_scorer.py": "588a7b03f1f931e6a79a0358dc2bc85ef8cc6818e3235ef53a8113264bc6e28f",
+    "hcp_p18_quality_gate.py": "237d6ce68c714f8e5098bf212796bde965abc669f3fc03147eb50ffd9bba18de",
+    "hcp_p18_real_raw_evidence_coverage.py": "239e6b476c9a163c68063283280a7e3b719bf55563c905eb7f44531f76f59c55",
+    "p18_gate_cohort_PRIVATE.json": "19e7080b7208b8c7dd6fd06a656bb400dd2a9f72ca5f5674a80f5cc9a654cf65",
+    "p18_protocol_FROZEN.json": "77e12dfff7fef48894c28413b3a8d7b9bd4bfbcc723c26d88ed1d02b4231484c",
+    "test_hcp_p18_independent_task_scorer.py": "fe62818b2486713818276034f235818ef420a109d9c82f44979e52b5825a94c0",
+    "test_hcp_p18_real_raw_evidence_coverage.py": "cffb080dc8be5e8974a037322d3866ce2c2e643f3b4a79c0a4f7fc28afaa4e88"
+  },
+  "source_task_rules": [
+    "letter_exact",
+    "numeric_exact"
+  ],
+  "statistical_noninferiority_certified": false,
+  "status": "P18_INDEPENDENT_TASK_AND_RAW_EVIDENCE_QA_PASS_NOT_480_QUALITY",
+  "test_groups": [
+    {
+      "exit_code": 0,
+      "expected_tests": 30,
+      "script": "test_hcp_p18_independent_task_scorer.py"
+    },
+    {
+      "exit_code": 0,
+      "expected_tests": 25,
+      "script": "test_hcp_p18_real_raw_evidence_coverage.py"
+    }
+  ],
+  "test_log_sha256": "c5038388f44c67b79b326f8a08f527647e657dfb2366140c14848fe34004b611"
+}

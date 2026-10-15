@@ -1,0 +1,70 @@
+$ python3 test_hcp_p18_independent_task_scorer.py
+test_01_all480_pin_and_P17_id_replay (__main__.TestP18TaskRules) ... ok
+test_02_all_3_datasets_complete_gold_with_EOS (__main__.TestP18TaskRules) ... ok
+test_03_mmlu_wrong_single_letter_is_incorrect (__main__.TestP18TaskRules) ... ok
+test_04_arc_wrong_single_letter_is_incorrect (__main__.TestP18TaskRules) ... ok
+test_05_mmlu_extra_explanation_is_wrong_not_correct (__main__.TestP18TaskRules) ... ok
+test_06_mmlu_question_prefix_is_wrong (__main__.TestP18TaskRules) ... ok
+test_07_gsm_exacts_decimal_numeric_equivalence (__main__.TestP18TaskRules) ... ok
+test_08_gsm_decimal_with_units_is_incorrect (__main__.TestP18TaskRules) ... ok
+test_09_gsm_chain_of_thought_is_incorrect (__main__.TestP18TaskRules) ... ok
+test_10_numeric_exponent_refused (__main__.TestP18TaskRules) ... ok
+test_11_numeric_comma_grouping_valid (__main__.TestP18TaskRules) ... ok
+test_12_nonfinite_ignored (__main__.TestP18TaskRules) ... ok
+test_13_incomplete_one_token_in_8_cap_rejected (__main__.TestP18TaskRules) ... ok
+test_14_no_finish_reason_rejected (__main__.TestP18TaskRules) ... ok
+test_15_claim_eos_without_eos_rejected (__main__.TestP18TaskRules) ... ok
+test_16_bos_generated_rejected (__main__.TestP18TaskRules) ... ok
+test_17_interior_eos_rejected (__main__.TestP18TaskRules) ... ok
+test_18_out_of_vocab_rejected (__main__.TestP18TaskRules) ... ok
+test_19_bool_token_rejected (__main__.TestP18TaskRules) ... ok
+test_20_over_cap_rejected (__main__.TestP18TaskRules) ... ok
+test_21_correct_source_and_raw_generation_hash_only_not_attested (__main__.TestP18TaskRules) ... ok
+test_22_bad_generation_sha_rejected (__main__.TestP18TaskRules) ... ok
+test_23_bad_prompt_sha_rejected (__main__.TestP18TaskRules) ... ok
+test_24_unknown_question_rejected (__main__.TestP18TaskRules) ... ok
+test_25_wrong_policy_rejected (__main__.TestP18TaskRules) ... ok
+test_26_manually_specified_text_not_accepted_as_decoded_evidence (__main__.TestP18TaskRules) ... ok
+test_27_wrong_benchmark_type_rejected (__main__.TestP18TaskRules) ... ok
+test_28_corrupt_reference_does_not_score_correct (__main__.TestP18TaskRules) ... ok
+test_29_maxnew_correctly_requires_exact_cap (__main__.TestP18TaskRules) ... ok
+test_30_numeric_ambiguity_is_false (__main__.TestP18TaskRules) ... ok
+
+----------------------------------------------------------------------
+Ran 30 tests in 0.162s
+
+OK
+
+$ python3 test_hcp_p18_real_raw_evidence_coverage.py
+test_01_real_BF16_recorded_teacher_four (__main__.SourceTamperAuditTests) ... ok
+test_02_real_native_BF16_teacher_original_exact_position_sum (__main__.SourceTamperAuditTests) ... ok
+test_03_all_real_full_native_gold_receipts_10 (__main__.SourceTamperAuditTests) ... ok
+test_04_real_capture_log_one_parse_two (__main__.SourceTamperAuditTests) ... ok
+test_05_real_capture_log_eight_parse (__main__.SourceTamperAuditTests) ... ok
+test_06_log_tampering_fails_sha_before_parse (__main__.SourceTamperAuditTests) ... ok
+test_07_original_serving_runtime_consistent (__main__.SourceTamperAuditTests) ... ok
+test_08_original_stage_digest_mutation_rejected (__main__.SourceTamperAuditTests) ... ok
+test_09_original_stage_PID_mutation_rejected (__main__.SourceTamperAuditTests) ... ok
+test_10_scratch_PID_leak_mutation_rejected (__main__.SourceTamperAuditTests) ... ok
+test_11_incomplete_stage_snapshot_rejected (__main__.SourceTamperAuditTests) ... ok
+test_12_logprob_requires_102400_logits (__main__.SourceTamperAuditTests) ... ok
+test_13_logprob_rejects_nan (__main__.SourceTamperAuditTests) ... ok
+test_14_logprob_rejects_infinity (__main__.SourceTamperAuditTests) ... ok
+test_15_uniform_distribution_gives_log_vocab (__main__.SourceTamperAuditTests) ... ok
+test_16_missing_raw_file_fails (__main__.SourceTamperAuditTests) ... ok
+test_17_tampered_raw_bytes_fail (__main__.SourceTamperAuditTests) ... ok
+test_18_symlink_source_fails (__main__.SourceTamperAuditTests) ... ok
+test_19_one_token_under_cap_eight_not_task_complete (__main__.SourceTamperAuditTests) ... ok
+test_20_source_original_tensor_hashes_same (__main__.SourceTamperAuditTests) ... ok
+test_21_evidence_partial_truthfulness (__main__.SourceTamperAuditTests) ... ok
+test_22_no_raw_evidence_from_gold_source_fabrication (__main__.SourceTamperAuditTests) ... ok
+test_23_source_teacher_no_bf16_generated_task_claim (__main__.SourceTamperAuditTests) ... ok
+test_24_full_480_gold_positions_still_incomplete (__main__.SourceTamperAuditTests) ... ok
+test_25_unmodified_original_header_sha (__main__.SourceTamperAuditTests) ... ok
+
+----------------------------------------------------------------------
+Ran 25 tests in 0.172s
+
+OK
+
+P18 real 480-question gate incomplete-source fail-closed: real native/teacher audit incomplete
