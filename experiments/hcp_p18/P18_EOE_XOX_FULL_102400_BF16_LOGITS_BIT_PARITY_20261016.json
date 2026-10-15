@@ -1,0 +1,33 @@
+{
+  "schema": "beglin-hcp-p18-eoe-original-27L-5291t-102400-f32-XOX-binary-exact-cross-host-parity-v1",
+  "status": "P18_EOE_XOX_ORIGINAL_BF16_27L_5291T_FULL_102400_LOGITS_BYTE_EXACT",
+  "item_id": "p18-mmlu-000",
+  "source_frozen_test_bank_sha256": "c5dc5ff1971dde5ca0809c458bd218a42905d0ca8836db7c84603abb06f401df",
+  "original_P17_original_teacher_source_sha256": "40dd5550b7759ac2760a6c374e1ddf3af35e68af637ab8d2a4f75bca8bee01d3",
+  "original_tensor_values_5291_source_manifest_sha256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+  "EOE_original_teacher_source_receipt_sha256": "e5f3abe81b323ea6e1bf2b070dc15e0521f4756aedeeaa298f19fc2e10e05b1f",
+  "XOX_original_teacher_source_receipt_sha256": "c7628194d2e601f64525b1c05e5c59be5848eb40c68420dbd5c935e6ec148c3b",
+  "original_BF16_source_layers": 27,
+  "original_BF16_source_tensors_full": 5291,
+  "prompt_tokens": 107,
+  "gold_tokens": 1,
+  "float32_logits_shape": [
+    1,
+    102400
+  ],
+  "EOE_original_full_logits_npy_sha256": "7025aed3a8c23fdc024f9a2f4e4a9c4944129f09d1bc3c32633c57c21a1249b6",
+  "XOX_original_full_logits_npy_sha256": "7025aed3a8c23fdc024f9a2f4e4a9c4944129f09d1bc3c32633c57c21a1249b6",
+  "float32_elementwise_bitwise_equal": true,
+  "maximum_absolute_float32_logits_difference": 0,
+  "EOE_gold_token_NLL_nats": 1.017819917192373,
+  "XOX_gold_token_NLL_nats": 1.017819917192373,
+  "original_Torch_version_EOE": "2.13.0",
+  "original_Torch_version_XOX": "2.11.0",
+  "EOE_process_exit_code": 0,
+  "official_copy_seal_executed": false,
+  "original_model_files_readonly_SHA_cross_check_17_of_17_pass": true,
+  "native_A_B_EOE_forward_verified": false,
+  "frozen_480_quality_certified": false,
+  "production_touched": false,
+  "automatic_live_promotion": false
+}

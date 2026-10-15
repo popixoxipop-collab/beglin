@@ -1,0 +1,143 @@
+{
+  "schema": "beglin-hcp-p18-EOE-read-only-17-original-files-SHA-crosscheck-not-authorization-v1",
+  "status": "P18_D50_ORIGINAL_BF16_AND_MOE_17_FILE_BYTES_MATCH_READ_ONLY_NO_NATIVE_SEAL",
+  "original_bf16_sha_paired_files": 12,
+  "original_quantized_moe_sha_paired_files": 5,
+  "origin_host": "xox",
+  "destination_storage_pool": "d50_work",
+  "source_copy_process_receipts": {
+    "bf16": {
+      "process_id": "proc_edd7dafc6a64ccb31f4b644910df0399",
+      "exit_code": 0
+    },
+    "moe": {
+      "process_id": "proc_6223c668c2043cb5d772868c894b1a51",
+      "exit_code": 0
+    }
+  },
+  "verified_original_BF16_checkpoint_shard_bytes": 31413626576,
+  "source_file_read_only_sha_matches": [
+    {
+      "domain": "BF16",
+      "relative_path": "model-00001-of-000004.safetensors",
+      "XOX_original_SHA256": "a314b79a30810b1038f9db08345178e16fb5742aa266c4a3dc05054c59800082",
+      "EOE_D50_copied_SHA256": "a314b79a30810b1038f9db08345178e16fb5742aa266c4a3dc05054c59800082",
+      "expected_bytes": 8594887408
+    },
+    {
+      "domain": "BF16",
+      "relative_path": "model-00002-of-000004.safetensors",
+      "XOX_original_SHA256": "b0bd088feada0af954614da3a5b179c4d4d5d8bb2482ec83194d101f3fe91796",
+      "EOE_D50_copied_SHA256": "b0bd088feada0af954614da3a5b179c4d4d5d8bb2482ec83194d101f3fe91796",
+      "expected_bytes": 8591757448
+    },
+    {
+      "domain": "BF16",
+      "relative_path": "model-00003-of-000004.safetensors",
+      "XOX_original_SHA256": "d31b192e488f0b3a04e007d842c3c9ba5783d944cb1cc27402fe8b8bb837c490",
+      "EOE_D50_copied_SHA256": "d31b192e488f0b3a04e007d842c3c9ba5783d944cb1cc27402fe8b8bb837c490",
+      "expected_bytes": 8590718520
+    },
+    {
+      "domain": "BF16",
+      "relative_path": "model-00004-of-000004.safetensors",
+      "XOX_original_SHA256": "304499be0ea06bf8a3937d7a3cc515bc3738dbd288bdd0bbc1b2d3560fce4930",
+      "EOE_D50_copied_SHA256": "304499be0ea06bf8a3937d7a3cc515bc3738dbd288bdd0bbc1b2d3560fce4930",
+      "expected_bytes": 5636263200
+    },
+    {
+      "domain": "BF16",
+      "relative_path": "model.safetensors.index.json",
+      "XOX_original_SHA256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+      "EOE_D50_copied_SHA256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+    },
+    {
+      "domain": "BF16",
+      "relative_path": "config.json",
+      "XOX_original_SHA256": "f346286b0f1c8b044252fd54cb4fa78b9fab6472a6e8bebb9edfe03d414ea03d",
+      "EOE_D50_copied_SHA256": "f346286b0f1c8b044252fd54cb4fa78b9fab6472a6e8bebb9edfe03d414ea03d"
+    },
+    {
+      "domain": "BF16",
+      "relative_path": "configuration_deepseek.py",
+      "XOX_original_SHA256": "6de5e7445ab490a16482027b131d5bd6a003da9b58a182a11432115fac84ce59",
+      "EOE_D50_copied_SHA256": "6de5e7445ab490a16482027b131d5bd6a003da9b58a182a11432115fac84ce59"
+    },
+    {
+      "domain": "BF16",
+      "relative_path": "modeling_deepseek.py",
+      "XOX_original_SHA256": "7d8e5221095286eea991137760893fd7ba52727c0b4ebf48ec09e8bc56b45b9c",
+      "EOE_D50_copied_SHA256": "7d8e5221095286eea991137760893fd7ba52727c0b4ebf48ec09e8bc56b45b9c"
+    },
+    {
+      "domain": "BF16",
+      "relative_path": "tokenizer.json",
+      "XOX_original_SHA256": "41f3bf64213da8c012d8bd0871a58a1fdf70463e8f08f110ddbb1082f529f669",
+      "EOE_D50_copied_SHA256": "41f3bf64213da8c012d8bd0871a58a1fdf70463e8f08f110ddbb1082f529f669"
+    },
+    {
+      "domain": "BF16",
+      "relative_path": "tokenizer_config.json",
+      "XOX_original_SHA256": "31181eaf79394ea26728d95ecb54fe7c8413e6f56085dbabc8b0818134380ec8",
+      "EOE_D50_copied_SHA256": "31181eaf79394ea26728d95ecb54fe7c8413e6f56085dbabc8b0818134380ec8"
+    },
+    {
+      "domain": "BF16",
+      "relative_path": "tokenization_deepseek_fast.py",
+      "XOX_original_SHA256": "702fc7dbadc450f2fecfbc59e248ecca5845b49101e8f58f805261c920a3effa",
+      "EOE_D50_copied_SHA256": "702fc7dbadc450f2fecfbc59e248ecca5845b49101e8f58f805261c920a3effa"
+    },
+    {
+      "domain": "BF16",
+      "relative_path": "generation_config.json",
+      "XOX_original_SHA256": "63ec07f6cb36bd8359b44f671123518dd6fbf55007e0c74aa96c296a75def8b5",
+      "EOE_D50_copied_SHA256": "63ec07f6cb36bd8359b44f671123518dd6fbf55007e0c74aa96c296a75def8b5"
+    },
+    {
+      "domain": "MOE",
+      "relative_path": "weights_moe/deepseek_moe_af.bin",
+      "XOX_original_SHA256": "9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4",
+      "EOE_D50_copied_SHA256": "9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4",
+      "expected_bytes": 9814343680
+    },
+    {
+      "domain": "MOE",
+      "relative_path": "weights_moe/deepseek_moe_f32.bin",
+      "XOX_original_SHA256": "1cc5386c8b8773ee802e059be22f0b7b317dacfc3c9bbf0b724b4e411b596033",
+      "EOE_D50_copied_SHA256": "1cc5386c8b8773ee802e059be22f0b7b317dacfc3c9bbf0b724b4e411b596033",
+      "expected_bytes": 14137344
+    },
+    {
+      "domain": "MOE",
+      "relative_path": "weights_moe/arch_config_moe.txt",
+      "XOX_original_SHA256": "43f205631553478b204f761d5894aaeec67100ed276aca762a24c62e63a91c50",
+      "EOE_D50_copied_SHA256": "43f205631553478b204f761d5894aaeec67100ed276aca762a24c62e63a91c50",
+      "expected_bytes": 372
+    },
+    {
+      "domain": "MOE",
+      "relative_path": "weights_moe/layout_f32.txt",
+      "XOX_original_SHA256": "2ecc5fcb2b4d26302fdd26e9f7d9167811b431a5649d467fa5e5912dbb5a5e4c",
+      "EOE_D50_copied_SHA256": "2ecc5fcb2b4d26302fdd26e9f7d9167811b431a5649d467fa5e5912dbb5a5e4c",
+      "expected_bytes": 6695
+    },
+    {
+      "domain": "MOE",
+      "relative_path": "weights_moe/layout_af.txt",
+      "XOX_original_SHA256": "ba3898f3bf366b1aec8471d9896885f101bf64b78c816828ea82bd7d58851c3e",
+      "EOE_D50_copied_SHA256": "ba3898f3bf366b1aec8471d9896885f101bf64b78c816828ea82bd7d58851c3e",
+      "expected_bytes": 25625
+    }
+  ],
+  "initial_5291_tensors_original_checkpoint_source_hashes_sha256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+  "sampled_BF16_4_shards_tensor_values_real_sha_match_count": 48,
+  "expected_frozen_eval_source_sha256": "c5dc5ff1971dde5ca0809c458bd218a42905d0ca8836db7c84603abb06f401df",
+  "official_model_copy_seal_executed": false,
+  "official_model_copy_seal_blocked_by_tool_safety": true,
+  "original_model_copy_certification_receipts_issued": false,
+  "not_a_production_or_native_admission_receipt": true,
+  "native_engine_promotion_allowed": false,
+  "evaluation_480_quality_certified": false,
+  "production_touched": false,
+  "automatic_live_promotion": false
+}

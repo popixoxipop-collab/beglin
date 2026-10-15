@@ -1,0 +1,28 @@
+{
+  "schema": "beglin-hcp-p18-eoe-original-bf16-independent-item-gold-nll-audit-v1",
+  "status": "P18_EOE_ORIGINAL_BF16_REAL_FULL_VOCAB_GOLD_NLL_INDEPENDENT_ITEM_PASS",
+  "item_id": "p18-mmlu-003",
+  "index": 3,
+  "dataset": "mmlu",
+  "original_frozen_480_bank_sha256": "c5dc5ff1971dde5ca0809c458bd218a42905d0ca8836db7c84603abb06f401df",
+  "source_record_sha256": "1d7d640fb623a999bd4dc51bd9efe444d9c4fa56f5cfddeb1ef9d368cae5b2df",
+  "prompt_token_sha256": "29021a4e66f7a7a52454b2955614cb6f4a3867ae5a12cb3be0769c1843246473",
+  "gold_token_sha256": "e29c9c180c6279b0b02abd6a1801c7c04082cf486ec027aa13515e4f3884bb6b",
+  "source_27layer_model": true,
+  "original_source_tensor_count": 5291,
+  "original_source_5291_values_sha256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+  "full_float32_vocab_size": 102400,
+  "input_tokens": 265,
+  "gold_tokens": 1,
+  "real_gold_token_NLL_nats": [
+    0.05419078023086499
+  ],
+  "real_BF16_numpy_logits_sha256": "8f2f217fb2a518e0b31a391d7722f4ae5700eb184b4af767478eb1965d4fb0ee",
+  "source_worker_receipt_sha256": "89ea173e39bf518f0bc4f80ec8ecffd90babe50e4e9b4a1d34557ac8982bbd57",
+  "independently_recomputed_raw_f32_logsumexp_NLL": true,
+  "task_full_autoregressive_generation_not_verified": true,
+  "paired_native_AB_not_measured": true,
+  "original_480_full_quality_gate_certified": false,
+  "production_touched": false,
+  "automatic_live_promotion": false
+}
