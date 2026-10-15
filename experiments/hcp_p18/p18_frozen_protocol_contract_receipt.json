@@ -1,0 +1,19 @@
+{
+  "automatic_live_promotion": false,
+  "cohort_sha256": "19e7080b7208b8c7dd6fd06a656bb400dd2a9f72ca5f5674a80f5cc9a654cf65",
+  "frozen_scoring_margins": {
+    "NLL_nats_per_token": 0.05,
+    "latency_empirical_p95_ratio": 1.15,
+    "latency_geomean_ratio": 1.1,
+    "task_accuracy_delta": -0.05
+  },
+  "independent_480_input_audit_sha256": "4e43064669116c9e4c670f969e230c0ddb29a1535f9b191c89f68f9be0a91ea1",
+  "native_4096_context_verified": false,
+  "negative_fail_closed_checks": 9,
+  "production_touched": false,
+  "protocol_sha256": "77e12dfff7fef48894c28413b3a8d7b9bd4bfbcc723c26d88ed1d02b4231484c",
+  "raw_BF16_logit_observations": 0,
+  "raw_native_A_B_observations": 0,
+  "schema": "beglin-hcp-p18-preregistered-contract-audit-v1",
+  "status": "P18_FROZEN_PROTOCOL_AND_480_COHORT_CONTRACT_PASS_NOT_NATIVE"
+}

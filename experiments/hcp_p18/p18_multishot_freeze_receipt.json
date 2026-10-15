@@ -1,0 +1,83 @@
+{
+  "actual_AB_forward_count": 0,
+  "actual_BF16_forward_count": 0,
+  "automatic_live_promotion": false,
+  "count_within_128_and_assigned_cap": 82,
+  "count_within_4096_and_assigned_cap": 480,
+  "dev_source_manifest_sha256": "2d9f6e63fe49cfe646493f0e3e79870ff2eca34adac5081b3bb8fb305b28d836",
+  "gold_tokens_range": [
+    1,
+    6
+  ],
+  "original_tokenizer_sha256": "41f3bf64213da8c012d8bd0871a58a1fdf70463e8f08f110ddbb1082f529f669",
+  "p17_token_parity_sha256": "3b7f99193e26c7bc6bca6c9cf8252256b880ed97f66e15d94836fa06ee0ad5f9",
+  "private_frozen_cohort_sha256": "c5dc5ff1971dde5ca0809c458bd218a42905d0ca8836db7c84603abb06f401df",
+  "production_touched": false,
+  "prompt_tokens_range": [
+    38,
+    931
+  ],
+  "quality_certified": false,
+  "question_count": 480,
+  "schema": "beglin-hcp-p18-token-freeze-receipt-v1",
+  "selection_source_sha256": "ea7cb77649fcdc285393234e019d56db0d7178fb7787cf23268a7c52c072bb5a",
+  "shot_cap_matrix": {
+    "arc_challenge": {
+      "cap_128": 53,
+      "cap_32": 53,
+      "cap_8": 54,
+      "cross_0_128": 18,
+      "cross_0_32": 18,
+      "cross_0_8": 18,
+      "cross_3_128": 18,
+      "cross_3_32": 18,
+      "cross_3_8": 18,
+      "cross_5_128": 17,
+      "cross_5_32": 17,
+      "cross_5_8": 18,
+      "shots_0": 54,
+      "shots_3": 54,
+      "shots_5": 52
+    },
+    "gsm8k": {
+      "cap_128": 53,
+      "cap_32": 53,
+      "cap_8": 54,
+      "cross_0_128": 18,
+      "cross_0_32": 18,
+      "cross_0_8": 18,
+      "cross_3_128": 18,
+      "cross_3_32": 18,
+      "cross_3_8": 18,
+      "cross_5_128": 17,
+      "cross_5_32": 17,
+      "cross_5_8": 18,
+      "shots_0": 54,
+      "shots_3": 54,
+      "shots_5": 52
+    },
+    "mmlu": {
+      "cap_128": 53,
+      "cap_32": 53,
+      "cap_8": 54,
+      "cross_0_128": 18,
+      "cross_0_32": 18,
+      "cross_0_8": 18,
+      "cross_3_128": 18,
+      "cross_3_32": 18,
+      "cross_3_8": 18,
+      "cross_5_128": 17,
+      "cross_5_32": 17,
+      "cross_5_8": 18,
+      "shots_0": 54,
+      "shots_3": 54,
+      "shots_5": 52
+    }
+  },
+  "source_counts": {
+    "arc_challenge": 160,
+    "gsm8k": 160,
+    "mmlu": 160
+  },
+  "status": "P18_COHORT_TOKEN_FROZEN_NATIVE_CAPABILITY_PENDING"
+}

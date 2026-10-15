@@ -1,0 +1,22 @@
+{
+  "actual_model_forward_count": 0,
+  "audited_exemplar_count": 15,
+  "audited_question_count": 480,
+  "automatic_live_promotion": false,
+  "dataset_counts": {
+    "arc_challenge": 160,
+    "gsm8k": 160,
+    "mmlu": 160
+  },
+  "dev_source_manifest_sha256": "2d9f6e63fe49cfe646493f0e3e79870ff2eca34adac5081b3bb8fb305b28d836",
+  "frozen_cohort_sha256": "c5dc5ff1971dde5ca0809c458bd218a42905d0ca8836db7c84603abb06f401df",
+  "native_4096_context_verified": false,
+  "native_AB_forward_count": 0,
+  "observed_prompt_token_max": 931,
+  "production_touched": false,
+  "schema": "beglin-hcp-p18-independent-multishot-input-audit-v1",
+  "source_cohort_SHA256": "ea7cb77649fcdc285393234e019d56db0d7178fb7787cf23268a7c52c072bb5a",
+  "status": "P18_480_TOKEN_AND_SOURCE_INDEPENDENT_AUDIT_PASS",
+  "tokenizer_sha256": "41f3bf64213da8c012d8bd0871a58a1fdf70463e8f08f110ddbb1082f529f669",
+  "verified_shot_cap_design": "orthogonal 3x3 fixed ordinal cycle"
+}
