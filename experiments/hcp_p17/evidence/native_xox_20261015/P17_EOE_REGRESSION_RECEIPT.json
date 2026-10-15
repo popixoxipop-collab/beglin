@@ -1,0 +1,38 @@
+{
+  "EOE_reexecuted_today": true,
+  "XOX_original_27layer_miniature_streaming_test_cases_passed_earlier": 26,
+  "cases": 64,
+  "failed": 0,
+  "native_real_C_source_capture_count": 62,
+  "original_12_full_BF16_reference_forward_complete": true,
+  "production_modified": false,
+  "quality_research_gate_passed": false,
+  "runs": 4,
+  "runs_evidence": [
+    {
+      "cases": 16,
+      "log_sha256": "4958b2a073929292d65fcb47055d71cdf0dbe9072c793279708c7a0d49da1122",
+      "name": "P17_original_teacher_full_logit_tamper",
+      "result": "PASS"
+    },
+    {
+      "cases": 24,
+      "log_sha256": "d18c3fbdca19cae914de5221b0d7271967d3f73e7f8b83eefe2b843af3fc209e",
+      "name": "P17_research_quality_gate",
+      "result": "PASS"
+    },
+    {
+      "cases": 12,
+      "log_sha256": "5b35e7ea7aa57ede7e59710df78e360ad09cc3b773e4f87a34035788a960c119",
+      "name": "P17_full_vocab_independent_math",
+      "result": "PASS"
+    },
+    {
+      "cases": 12,
+      "log_sha256": "63267f0c878c04c501069643a0994c9d68364a4efec79681c989f30922436a47",
+      "name": "P17_C_observer_source_integrity",
+      "result": "PASS"
+    }
+  ],
+  "schema": "beglin-hcp-p17-EOE-reexecuted-regression-suite-v1"
+}

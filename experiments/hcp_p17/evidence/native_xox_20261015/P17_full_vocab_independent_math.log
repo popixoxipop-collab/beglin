@@ -1,0 +1,17 @@
+test_01_uniform_full_vocab_gold_nll (test_hcp_p17_independent_recompute.P17IndependentNumericsTests) ... ok
+test_02_uniform_kl_and_js_zero (test_hcp_p17_independent_recompute.P17IndependentNumericsTests) ... ok
+test_03_distinct_real_logit_distributions_not_equal (test_hcp_p17_independent_recompute.P17IndependentNumericsTests) ... ok
+test_04_max_shift_invariance (test_hcp_p17_independent_recompute.P17IndependentNumericsTests) ... ok
+test_05_zero_prefix_logit_vector_fails (test_hcp_p17_independent_recompute.P17IndependentNumericsTests) ... ok
+test_06_wrong_vocabulary_fails (test_hcp_p17_independent_recompute.P17IndependentNumericsTests) ... ok
+test_07_bad_gold_target_index_fails (test_hcp_p17_independent_recompute.P17IndependentNumericsTests) ... ok
+test_08_nonfinite_full_original_logits_fail (test_hcp_p17_independent_recompute.P17IndependentNumericsTests) ... ok
+test_09_native_C_trace_has_real_32byte_hex_id (test_hcp_p17_independent_recompute.P17IndependentNumericsTests) ... ok
+test_10_native_C_trace_rejects_extra_argmax_suffix (test_hcp_p17_independent_recompute.P17IndependentNumericsTests) ... ok
+test_11_missing_full_real_cohort_fails_not_promoted (test_hcp_p17_independent_recompute.P17IndependentNumericsTests) ... ok
+test_12_positive_finite_NLL (test_hcp_p17_independent_recompute.P17IndependentNumericsTests) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.023s
+
+OK

@@ -1,0 +1,142 @@
+{
+  "EOE_full_source_numerical_tolerance_max_difference": 1.7763568394002505e-15,
+  "EOE_independent_full_logits_source_recompute": true,
+  "EOE_reexecuted_regression_passes": 64,
+  "EOE_regression_failed": 0,
+  "P16_parent_commit": "577e0fae6d03d04882aa346a8e75d132b2850cd6",
+  "P17_first_use_precommitted_source_commit": "f4a83c139bbac759719af12b5650affe37931adb",
+  "P17_internal_research_gate_passed": false,
+  "P17_research_gate_status": "P17_INTERNAL_RESEARCH_GATE_BLOCKED",
+  "XOX_actual_native_execution_script_SHA256": "182b0e20affcc724f2763ae6b52f0f5ab457400fbee6fa42374f34315845d9b0",
+  "actual_native_MLX_full_logit_prefix_A_B_count": 62,
+  "actual_native_MLX_greedy_8token_A_B_count": 24,
+  "automatic_live_promotion": false,
+  "date": "2026-10-15",
+  "evidence_files_SHA256": {
+    "EOE_P17_BF16_12_TEACHER_INDEPENDENT_AUDIT.json": {
+      "bytes": 9343,
+      "sha256": "cb925c0562316f47193931ac628037bb3f4f2a6ee018ec83b469558056093304"
+    },
+    "EOE_P17_FROM_RAW_NATIVE_RECALCULATED_QUALITY_GATE.json": {
+      "bytes": 35096,
+      "sha256": "6df463c54437a239b21472cb4bfa5a7429b6e42e70f81a7f3dcbcba1a5a90512"
+    },
+    "EOE_P17_FROM_RAW_NATIVE_RECALCULATED_SCORES.json": {
+      "bytes": 13290,
+      "sha256": "3c62d743b248afc2b39c41e6350d6b45dbab864da01f40773741c4190efc924c"
+    },
+    "EOE_P17_RAW_PROVENANCE_SHA_AND_NUMERIC_CROSSCHECK.json": {
+      "bytes": 1754,
+      "sha256": "4b772df528bdca222cd0421082de7457998559dd157d9c4f5c21677babf1e648"
+    },
+    "P17_C_observer_source_integrity.log": {
+      "bytes": 1124,
+      "sha256": "63267f0c878c04c501069643a0994c9d68364a4efec79681c989f30922436a47"
+    },
+    "P17_EOE_REGRESSION_RECEIPT.json": {
+      "bytes": 1190,
+      "sha256": "26a40a677461d7f7b59202a0f7f9cc0c1708007e8b0ec414ad04d0dc3a2d47ab"
+    },
+    "P17_SOURCE_COPY_MANIFEST.json": {
+      "bytes": 2600,
+      "sha256": "ce68e6ad4ffa70e078845278fe169b76605b3f74f9a99af49632d8056826cd56"
+    },
+    "P17_full_vocab_independent_math.log": {
+      "bytes": 1438,
+      "sha256": "5b35e7ea7aa57ede7e59710df78e360ad09cc3b773e4f87a34035788a960c119"
+    },
+    "P17_original_teacher_full_logit_tamper.log": {
+      "bytes": 1856,
+      "sha256": "4958b2a073929292d65fcb47055d71cdf0dbe9072c793279708c7a0d49da1122"
+    },
+    "P17_research_quality_gate.log": {
+      "bytes": 2226,
+      "sha256": "d18c3fbdca19cae914de5221b0d7271967d3f73e7f8b83eefe2b843af3fc209e"
+    },
+    "XOX_P17_26_ORIGINAL_NUMERICAL_REGRESSION.log": {
+      "bytes": 3521,
+      "sha256": "5f57ddaf9fe9d029aead16fc1fe6be76f915f5a2072ce230d606c7c6fa268366"
+    },
+    "XOX_P17_NATIVE_24_GREEDY_RECEIPT.json": {
+      "bytes": 24664,
+      "sha256": "ac4530f956f7628c7228c0c5668c67e0544d600279c27a3ee13a1ed06b9e34e4"
+    },
+    "XOX_P17_NATIVE_62_FORCED_PREFIX_RECEIPT.json": {
+      "bytes": 69074,
+      "sha256": "a059affe1d82540f2903b9ae2e40b3cb6b237bca3342c44b321d3fd7fb07ae04"
+    },
+    "XOX_P17_NATIVE_RUN_PREFLIGHT.json": {
+      "bytes": 681,
+      "sha256": "29a6a0f0de403d6496cfa849b07ac84cd6688825e6c0477dde5a0668a28ebc28"
+    },
+    "XOX_P17_ORIGINAL_BF16_12_TEACHER_COHORT.json": {
+      "bytes": 5142,
+      "sha256": "40b047342dfe199e98b2c83c519ec6529ebb760136c6083fa51d28dc324c8d25"
+    },
+    "XOX_P17_ORIGINAL_BF16_INDEPENDENT_AUDIT.json": {
+      "bytes": 9343,
+      "sha256": "cb925c0562316f47193931ac628037bb3f4f2a6ee018ec83b469558056093304"
+    },
+    "XOX_P17_PAIRED_QUALITY_GATE.json": {
+      "bytes": 35086,
+      "sha256": "20ae4d0e88774d1e8229c281109832c782eaa4676d4b1354d40f5f17b3bfcf6c"
+    },
+    "XOX_P17_VERIFIED_12_QUESTION_SCORES.json": {
+      "bytes": 13289,
+      "sha256": "277eae739711bf4e945f6ce70a9b07bc6c41f53caada874140ebda809791bb2b"
+    }
+  },
+  "final_handoff_SHA256": "553db060cb20399aa948cd54af647870367263e56b76dc644ff7c95c604b8802",
+  "frozen_12_questions_31_gold_tokens_SHA256": "a8e6e42b11a0f881317ab8afddebf7b266a965f4100bfddd7342183e73728521",
+  "frozen_original_model_index_SHA256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+  "independent_external_benchmark": false,
+  "isolated_real_GPU_native_binary_SHA256": "af21004244cdc735b43739dfe4d8bf5dde61dfc51e2fd92d6ac5c417b169cc88",
+  "main_merged": false,
+  "mean_question_B_minus_A_gold_NLL": 0.027109423976514623,
+  "model_original_BF16_complete_decoder_layer_count": 27,
+  "model_original_BF16_weight_tensor_count": 5291,
+  "native_policy_A_exact_gold_prefix_questions": 2,
+  "native_policy_B_exact_gold_prefix_questions": 2,
+  "noninferiority_margin_nats_per_token": 0.05,
+  "one_sided_95percent_LCB_B_minus_A_gold_NLL": -0.06914730119844081,
+  "one_sided_95percent_UCB_B_minus_A_gold_NLL": 0.14313676600030487,
+  "original_P9_MLX_KV128_SHA256": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f",
+  "original_XOX_real_model_source_numerical_regression_pass": 26,
+  "original_and_independently_recomputed_JSON_bytes_identical": false,
+  "original_full_BF16_teacher_gold_vocabulary_logits": 31,
+  "original_full_BF16_teacher_model_runs": 12,
+  "original_live_route_sha256": "c1b3400cfbd75893191debe6eaf388afc3e26a9866c1f4d43f3778906df44c47",
+  "original_p5_C128_SHA256": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612",
+  "original_production_touched": false,
+  "original_serving_worker_PIDs": [
+    35481,
+    35493
+  ],
+  "original_stage_sha256": "8daf7c2b7f22ab0321131d67ede9c74b423fa305132bf8071243d41285f68fd9",
+  "paired_bootstrap_n": 10000,
+  "paired_bootstrap_seed": 20261015,
+  "private_raw_12_original_BF16_teacher_windows_preserved_EOE": true,
+  "private_raw_62_native_float32_captures_preserved_EOE": true,
+  "quality_noninferiority_for_B_certified": false,
+  "question_level_mean_A_gold_NLL": 2.9664850853830504,
+  "question_level_mean_B_gold_NLL": 2.993594509359565,
+  "question_level_mean_teacher_gold_NLL": 2.2127045891713584,
+  "raw_model_weight_files_or_raw_full_logits_published_to_GitHub": false,
+  "run_only_C_logit_observer_SHA256": "d724af1eb97ee715e206188fa120547f4cc1f18f55a3c37938b6b5a4ce9986d2",
+  "schema": "beglin-hcp-p17-original-BF16-native-A-B-complete-research-evidence-manifest-v1",
+  "source_and_test_py_SHA256": {
+    "hcp_p17_independent_recompute.py": "4f5ca914f47f869be97f8e2568a12d5d95f1db7b0d2baa0ddee5ae819608e059",
+    "hcp_p17_native_eval_sha_pinned.py": "182b0e20affcc724f2763ae6b52f0f5ab457400fbee6fa42374f34315845d9b0",
+    "hcp_p17_observer_patch.py": "b8f21ed465e1b295cb64fd010c9314f0344cf0b89c83599054a5ced87cddbcb4",
+    "hcp_p17_quality_gate.py": "83a8b9c5f5f4b123b2c1a979434f08cfc7bfbf4897d1c19b4c05c3c6a2c8d39b",
+    "hcp_p17_teacher_audit.py": "677a5746577341da603f52107fd98271caccc9e503fd25884838100e5a9d2022",
+    "hcp_p17_teacher_gold.py": "40dd5550b7759ac2760a6c374e1ddf3af35e68af637ab8d2a4f75bca8bee01d3",
+    "hcp_p17_teacher_remaining.py": "baaa8f58890d83a32e21fbeef66eb34b9ee2bad7d49d1fa623dc49c75190c621",
+    "test_hcp_p17_independent_recompute.py": "2b9a52b1919e6f6e1f9f925906343370c915ba0d850ebbd9cf30f591294c0747",
+    "test_hcp_p17_observer.py": "6208ef948f566a4e23c8838908de15318bc0a54ab2b90cdb2b6bc3aa2422d83c",
+    "test_hcp_p17_quality_gate.py": "d1b2274cc29bdce43ab30aa5cf07b8f31132214921e3ae41be26080eb00cccf1",
+    "test_hcp_p17_teacher_audit.py": "9c2eb35027f83161f60edec142e4f6f3f565dae7b38eaf235dda2204a296d9d8",
+    "test_hcp_p17_teacher_gold.py": "44e2c62d946e33e429704ac38269c9e75c57d8dfc34724ea2760065d40b50d16"
+  },
+  "unseen_from_original_pretraining_verified": false
+}

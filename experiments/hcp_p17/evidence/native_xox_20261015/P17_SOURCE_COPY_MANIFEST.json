@@ -1,0 +1,63 @@
+{
+  "EOE_raw_arrays_not_in_git": true,
+  "automatic_live_promotion": false,
+  "file_SHA256": {
+    "EOE_P17_BF16_12_TEACHER_INDEPENDENT_AUDIT.json": {
+      "bytes": 9343,
+      "sha256": "cb925c0562316f47193931ac628037bb3f4f2a6ee018ec83b469558056093304"
+    },
+    "EOE_P17_FROM_RAW_NATIVE_RECALCULATED_QUALITY_GATE.json": {
+      "bytes": 35096,
+      "sha256": "6df463c54437a239b21472cb4bfa5a7429b6e42e70f81a7f3dcbcba1a5a90512"
+    },
+    "EOE_P17_FROM_RAW_NATIVE_RECALCULATED_SCORES.json": {
+      "bytes": 13290,
+      "sha256": "3c62d743b248afc2b39c41e6350d6b45dbab864da01f40773741c4190efc924c"
+    },
+    "EOE_P17_RAW_PROVENANCE_SHA_AND_NUMERIC_CROSSCHECK.json": {
+      "bytes": 1754,
+      "sha256": "4b772df528bdca222cd0421082de7457998559dd157d9c4f5c21677babf1e648"
+    },
+    "XOX_P17_26_ORIGINAL_NUMERICAL_REGRESSION.log": {
+      "bytes": 3521,
+      "sha256": "5f57ddaf9fe9d029aead16fc1fe6be76f915f5a2072ce230d606c7c6fa268366"
+    },
+    "XOX_P17_NATIVE_24_GREEDY_RECEIPT.json": {
+      "bytes": 24664,
+      "sha256": "ac4530f956f7628c7228c0c5668c67e0544d600279c27a3ee13a1ed06b9e34e4"
+    },
+    "XOX_P17_NATIVE_62_FORCED_PREFIX_RECEIPT.json": {
+      "bytes": 69074,
+      "sha256": "a059affe1d82540f2903b9ae2e40b3cb6b237bca3342c44b321d3fd7fb07ae04"
+    },
+    "XOX_P17_NATIVE_RUN_PREFLIGHT.json": {
+      "bytes": 681,
+      "sha256": "29a6a0f0de403d6496cfa849b07ac84cd6688825e6c0477dde5a0668a28ebc28"
+    },
+    "XOX_P17_ORIGINAL_BF16_12_TEACHER_COHORT.json": {
+      "bytes": 5142,
+      "sha256": "40b047342dfe199e98b2c83c519ec6529ebb760136c6083fa51d28dc324c8d25"
+    },
+    "XOX_P17_ORIGINAL_BF16_INDEPENDENT_AUDIT.json": {
+      "bytes": 9343,
+      "sha256": "cb925c0562316f47193931ac628037bb3f4f2a6ee018ec83b469558056093304"
+    },
+    "XOX_P17_PAIRED_QUALITY_GATE.json": {
+      "bytes": 35086,
+      "sha256": "20ae4d0e88774d1e8229c281109832c782eaa4676d4b1354d40f5f17b3bfcf6c"
+    },
+    "XOX_P17_VERIFIED_12_QUESTION_SCORES.json": {
+      "bytes": 13289,
+      "sha256": "277eae739711bf4e945f6ce70a9b07bc6c41f53caada874140ebda809791bb2b"
+    }
+  },
+  "model_weights_not_copied_to_git": true,
+  "original_full_BF16_teacher_window_arrays": 12,
+  "original_native_capture_float32_arrays": 62,
+  "original_native_real_first_prefill_logits_per_array": 102400,
+  "production_modified": false,
+  "quality_gate": "P17_INTERNAL_RESEARCH_GATE_BLOCKED",
+  "raw_private_evidence_path": "EOE sandbox/hcp-p17-unseen-multitoken-20261015/private_verification",
+  "schema": "beglin-hcp-p17-sanitized-source-map-with-private-raw-provenance-v1",
+  "total_sanitized_new_source_receipts": 12
+}

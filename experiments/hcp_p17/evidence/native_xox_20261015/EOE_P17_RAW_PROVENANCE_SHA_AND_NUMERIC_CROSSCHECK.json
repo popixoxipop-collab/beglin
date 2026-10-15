@@ -1,0 +1,24 @@
+{
+  "EOE_independent_quality_result_SHA256": "6df463c54437a239b21472cb4bfa5a7429b6e42e70f81a7f3dcbcba1a5a90512",
+  "EOE_independent_score_result_SHA256": "3c62d743b248afc2b39c41e6350d6b45dbab864da01f40773741c4190efc924c",
+  "XOX_original_full_evidence_SHA256": {
+    "P17_FULL_12_BF16_TEACHERS.json": "40b047342dfe199e98b2c83c519ec6529ebb760136c6083fa51d28dc324c8d25",
+    "P17_INDEPENDENT_12_TEACHER_AUDIT.json": "cb925c0562316f47193931ac628037bb3f4f2a6ee018ec83b469558056093304",
+    "P17_NATIVE_FORCED_PREFIX_FULL_LOGITS.json": "a059affe1d82540f2903b9ae2e40b3cb6b237bca3342c44b321d3fd7fb07ae04",
+    "P17_NATIVE_GREEDY_EIGHT_TOKEN_RESULTS.json": "ac4530f956f7628c7228c0c5668c67e0544d600279c27a3ee13a1ed06b9e34e4",
+    "P17_RESEARCH_QUALITY_GATE.json": "20ae4d0e88774d1e8229c281109832c782eaa4676d4b1354d40f5f17b3bfcf6c",
+    "P17_VERIFIED_SCORE_RECORDS.json": "277eae739711bf4e945f6ce70a9b07bc6c41f53caada874140ebda809791bb2b"
+  },
+  "actual_original_native_vectors_verified": 62,
+  "all_status_and_question_metrics_reproduced_within_1e-12": true,
+  "complete_original_BF16_teacher_logit_windows": 31,
+  "four_native_source_provenance_objects_checked": true,
+  "max_absolute_numeric_difference_in_bootstrap_question_metrics": 1.7763568394002505e-15,
+  "original_XOX_and_EOE_JSON_SHA_byte_identical": false,
+  "original_p17_runowned_gpu_binary_sha256": "af21004244cdc735b43739dfe4d8bf5dde61dfc51e2fd92d6ac5c417b169cc88",
+  "production_promotion_allowed": false,
+  "production_touched": false,
+  "research_quality_noninferiority_gate": "P17_INTERNAL_RESEARCH_GATE_BLOCKED",
+  "schema": "beglin-hcp-p17-EOE-independent-source-reread-comparison-v1",
+  "source_xox_native_driver_sha256": "182b0e20affcc724f2763ae6b52f0f5ab457400fbee6fa42374f34315845d9b0"
+}

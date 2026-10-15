@@ -1,0 +1,994 @@
+{
+  "B_minus_A_nll_question_bootstrap": {
+    "cluster_unit": "question_not_token",
+    "lower_one_sided_95": -0.0691473011984407,
+    "mean": 0.027109423976514436,
+    "replicates": 10000,
+    "seed": 20261015,
+    "upper_one_sided_95": 0.14313676600030478
+  },
+  "B_minus_A_prefix_accuracy_question_bootstrap": {
+    "cluster_unit": "question_not_token",
+    "lower_one_sided_95": 0.0,
+    "mean": 0.0,
+    "replicates": 10000,
+    "seed": 20261015,
+    "upper_one_sided_95": 0.0
+  },
+  "actual_end_to_end_task_accuracy_certified": false,
+  "actual_gold_token_positions": 31,
+  "automatic_live_promotion": false,
+  "challenger": "B",
+  "incumbent": "A",
+  "independent_native_actual_logits_columns": 6348800,
+  "independent_real_full_vocab_KL_JS_per_prefix": [
+    {
+      "JS_divergence_nats": 0.05608463170312404,
+      "KL_teacher_to_native_nats": 0.2582172654653994,
+      "gold_step": 0,
+      "item_id": "p17-00",
+      "native_gold_nll": 13.494351936825218,
+      "native_selected_argmax": 74807,
+      "policy": "A",
+      "teacher_reference_gold_nll": 11.201631419375527,
+      "teacher_selected_argmax": 74807
+    },
+    {
+      "JS_divergence_nats": 0.0013887806138251193,
+      "KL_teacher_to_native_nats": 0.004711822358621056,
+      "gold_step": 1,
+      "item_id": "p17-00",
+      "native_gold_nll": 4.4310443643153015,
+      "native_selected_argmax": 12,
+      "policy": "A",
+      "teacher_reference_gold_nll": 5.755945664406141,
+      "teacher_selected_argmax": 12
+    },
+    {
+      "JS_divergence_nats": 0.0762232841660842,
+      "KL_teacher_to_native_nats": 0.4416744234362189,
+      "gold_step": 0,
+      "item_id": "p17-00",
+      "native_gold_nll": 13.392394280632697,
+      "native_selected_argmax": 74807,
+      "policy": "B",
+      "teacher_reference_gold_nll": 11.201631419375527,
+      "teacher_selected_argmax": 74807
+    },
+    {
+      "JS_divergence_nats": 0.0013323577642284962,
+      "KL_teacher_to_native_nats": 0.00452803621716518,
+      "gold_step": 1,
+      "item_id": "p17-00",
+      "native_gold_nll": 4.451148603226251,
+      "native_selected_argmax": 12,
+      "policy": "B",
+      "teacher_reference_gold_nll": 5.755945664406141,
+      "teacher_selected_argmax": 12
+    },
+    {
+      "JS_divergence_nats": 0.017203037998653442,
+      "KL_teacher_to_native_nats": 0.06364260099517811,
+      "gold_step": 0,
+      "item_id": "p17-01",
+      "native_gold_nll": 9.958398059453433,
+      "native_selected_argmax": 40439,
+      "policy": "A",
+      "teacher_reference_gold_nll": 8.139479903618245,
+      "teacher_selected_argmax": 40439
+    },
+    {
+      "JS_divergence_nats": 0.024521874762697467,
+      "KL_teacher_to_native_nats": 0.29691890426588097,
+      "gold_step": 1,
+      "item_id": "p17-01",
+      "native_gold_nll": 0.0017451518133242416,
+      "native_selected_argmax": 5197,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.07955551891900825,
+      "teacher_selected_argmax": 5197
+    },
+    {
+      "JS_divergence_nats": 0.1415031312855297,
+      "KL_teacher_to_native_nats": 0.715885248553232,
+      "gold_step": 2,
+      "item_id": "p17-01",
+      "native_gold_nll": 2.3789715349247373,
+      "native_selected_argmax": 285,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.6970693959973886,
+      "teacher_selected_argmax": 6524
+    },
+    {
+      "JS_divergence_nats": 0.020768671065258006,
+      "KL_teacher_to_native_nats": 0.07608899752145543,
+      "gold_step": 0,
+      "item_id": "p17-01",
+      "native_gold_nll": 10.239634954571613,
+      "native_selected_argmax": 40439,
+      "policy": "B",
+      "teacher_reference_gold_nll": 8.139479903618245,
+      "teacher_selected_argmax": 40439
+    },
+    {
+      "JS_divergence_nats": 0.025061461447543516,
+      "KL_teacher_to_native_nats": 0.31948960868392867,
+      "gold_step": 1,
+      "item_id": "p17-01",
+      "native_gold_nll": 0.00128913977027878,
+      "native_selected_argmax": 5197,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.07955551891900825,
+      "teacher_selected_argmax": 5197
+    },
+    {
+      "JS_divergence_nats": 0.16431099623899653,
+      "KL_teacher_to_native_nats": 0.8860466735049513,
+      "gold_step": 2,
+      "item_id": "p17-01",
+      "native_gold_nll": 2.7210402173261343,
+      "native_selected_argmax": 285,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.6970693959973886,
+      "teacher_selected_argmax": 6524
+    },
+    {
+      "JS_divergence_nats": 0.3607409816981633,
+      "KL_teacher_to_native_nats": 1.9711310951710699,
+      "gold_step": 0,
+      "item_id": "p17-02",
+      "native_gold_nll": 7.138879992970111,
+      "native_selected_argmax": 19,
+      "policy": "A",
+      "teacher_reference_gold_nll": 3.6868318014708485,
+      "teacher_selected_argmax": 14741
+    },
+    {
+      "JS_divergence_nats": 0.37157966920717683,
+      "KL_teacher_to_native_nats": 2.042888805604795,
+      "gold_step": 0,
+      "item_id": "p17-02",
+      "native_gold_nll": 7.79764568821664,
+      "native_selected_argmax": 19,
+      "policy": "B",
+      "teacher_reference_gold_nll": 3.6868318014708485,
+      "teacher_selected_argmax": 14741
+    },
+    {
+      "JS_divergence_nats": 0.0962600784159325,
+      "KL_teacher_to_native_nats": 0.36703553162152547,
+      "gold_step": 0,
+      "item_id": "p17-03",
+      "native_gold_nll": 6.055590682883878,
+      "native_selected_argmax": 39,
+      "policy": "A",
+      "teacher_reference_gold_nll": 4.107831260209636,
+      "teacher_selected_argmax": 53761
+    },
+    {
+      "JS_divergence_nats": 1.746741560021655e-07,
+      "KL_teacher_to_native_nats": 5.923764920263832e-07,
+      "gold_step": 1,
+      "item_id": "p17-03",
+      "native_gold_nll": 1.708957590551563e-06,
+      "native_selected_argmax": 14038,
+      "policy": "A",
+      "teacher_reference_gold_nll": 5.084522811671377e-07,
+      "teacher_selected_argmax": 14038
+    },
+    {
+      "JS_divergence_nats": 0.0010359732417272744,
+      "KL_teacher_to_native_nats": 0.0040244942391576876,
+      "gold_step": 2,
+      "item_id": "p17-03",
+      "native_gold_nll": 0.015130503113272908,
+      "native_selected_argmax": 285,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.011752375837026818,
+      "teacher_selected_argmax": 285
+    },
+    {
+      "JS_divergence_nats": 1.9279370327099054e-05,
+      "KL_teacher_to_native_nats": 6.641413630742245e-05,
+      "gold_step": 3,
+      "item_id": "p17-03",
+      "native_gold_nll": 0.00014577592133946382,
+      "native_selected_argmax": 23382,
+      "policy": "A",
+      "teacher_reference_gold_nll": 5.9238342053902215e-05,
+      "teacher_selected_argmax": 23382
+    },
+    {
+      "JS_divergence_nats": 0.07854859969759846,
+      "KL_teacher_to_native_nats": 0.2958997226004679,
+      "gold_step": 0,
+      "item_id": "p17-03",
+      "native_gold_nll": 5.685391269950205,
+      "native_selected_argmax": 53761,
+      "policy": "B",
+      "teacher_reference_gold_nll": 4.107831260209636,
+      "teacher_selected_argmax": 53761
+    },
+    {
+      "JS_divergence_nats": 1.228263785525113e-07,
+      "KL_teacher_to_native_nats": 4.225181692281305e-07,
+      "gold_step": 1,
+      "item_id": "p17-03",
+      "native_gold_nll": 1.4582725995637702e-06,
+      "native_selected_argmax": 14038,
+      "policy": "B",
+      "teacher_reference_gold_nll": 5.084522811671377e-07,
+      "teacher_selected_argmax": 14038
+    },
+    {
+      "JS_divergence_nats": 0.0013796174667889676,
+      "KL_teacher_to_native_nats": 0.004921260942714804,
+      "gold_step": 2,
+      "item_id": "p17-03",
+      "native_gold_nll": 0.01716255927714272,
+      "native_selected_argmax": 285,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.011752375837026818,
+      "teacher_selected_argmax": 285
+    },
+    {
+      "JS_divergence_nats": 3.721796912207651e-05,
+      "KL_teacher_to_native_nats": 0.00011948942317488819,
+      "gold_step": 3,
+      "item_id": "p17-03",
+      "native_gold_nll": 0.0002125883239401105,
+      "native_selected_argmax": 23382,
+      "policy": "B",
+      "teacher_reference_gold_nll": 5.9238342053902215e-05,
+      "teacher_selected_argmax": 23382
+    },
+    {
+      "JS_divergence_nats": 0.18526053746707072,
+      "KL_teacher_to_native_nats": 0.7138096269875785,
+      "gold_step": 0,
+      "item_id": "p17-04",
+      "native_gold_nll": 2.599586100391754,
+      "native_selected_argmax": 1651,
+      "policy": "A",
+      "teacher_reference_gold_nll": 2.7981135303401246,
+      "teacher_selected_argmax": 1651
+    },
+    {
+      "JS_divergence_nats": 0.1375558392782259,
+      "KL_teacher_to_native_nats": 0.5395955694395187,
+      "gold_step": 1,
+      "item_id": "p17-04",
+      "native_gold_nll": 1.18658449747981,
+      "native_selected_argmax": 12,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.23402512949612486,
+      "teacher_selected_argmax": 54188
+    },
+    {
+      "JS_divergence_nats": 0.1562615157208319,
+      "KL_teacher_to_native_nats": 0.5792228984006585,
+      "gold_step": 0,
+      "item_id": "p17-04",
+      "native_gold_nll": 2.745843339696517,
+      "native_selected_argmax": 1651,
+      "policy": "B",
+      "teacher_reference_gold_nll": 2.7981135303401246,
+      "teacher_selected_argmax": 1651
+    },
+    {
+      "JS_divergence_nats": 0.15418626485595138,
+      "KL_teacher_to_native_nats": 0.6147276337130086,
+      "gold_step": 1,
+      "item_id": "p17-04",
+      "native_gold_nll": 1.291065217338744,
+      "native_selected_argmax": 12,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.23402512949612486,
+      "teacher_selected_argmax": 54188
+    },
+    {
+      "JS_divergence_nats": 0.1266053182933219,
+      "KL_teacher_to_native_nats": 0.563731038549458,
+      "gold_step": 0,
+      "item_id": "p17-05",
+      "native_gold_nll": 2.43412951136035,
+      "native_selected_argmax": 4711,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.8384895314393148,
+      "teacher_selected_argmax": 594
+    },
+    {
+      "JS_divergence_nats": 0.0660737815452397,
+      "KL_teacher_to_native_nats": 0.28283193799409334,
+      "gold_step": 1,
+      "item_id": "p17-05",
+      "native_gold_nll": 0.4030504934082444,
+      "native_selected_argmax": 761,
+      "policy": "A",
+      "teacher_reference_gold_nll": 1.01524935268624,
+      "teacher_selected_argmax": 22994
+    },
+    {
+      "JS_divergence_nats": 7.054028245582306e-07,
+      "KL_teacher_to_native_nats": 3.091527422233933e-06,
+      "gold_step": 2,
+      "item_id": "p17-05",
+      "native_gold_nll": 1.651479853848059e-05,
+      "native_selected_argmax": 1427,
+      "policy": "A",
+      "teacher_reference_gold_nll": 2.7544944167345875e-05,
+      "teacher_selected_argmax": 1427
+    },
+    {
+      "JS_divergence_nats": 0.13207738307106193,
+      "KL_teacher_to_native_nats": 0.595525189499892,
+      "gold_step": 0,
+      "item_id": "p17-05",
+      "native_gold_nll": 2.464470638540881,
+      "native_selected_argmax": 4711,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.8384895314393148,
+      "teacher_selected_argmax": 594
+    },
+    {
+      "JS_divergence_nats": 0.028364327806268047,
+      "KL_teacher_to_native_nats": 0.1194332316599284,
+      "gold_step": 1,
+      "item_id": "p17-05",
+      "native_gold_nll": 0.5629452066991902,
+      "native_selected_argmax": 761,
+      "policy": "B",
+      "teacher_reference_gold_nll": 1.01524935268624,
+      "teacher_selected_argmax": 22994
+    },
+    {
+      "JS_divergence_nats": 1.3257066413418815e-06,
+      "KL_teacher_to_native_nats": 4.883287892457068e-06,
+      "gold_step": 2,
+      "item_id": "p17-05",
+      "native_gold_nll": 4.733376417220825e-05,
+      "native_selected_argmax": 1427,
+      "policy": "B",
+      "teacher_reference_gold_nll": 2.7544944167345875e-05,
+      "teacher_selected_argmax": 1427
+    },
+    {
+      "JS_divergence_nats": 0.02294166122560734,
+      "KL_teacher_to_native_nats": 0.08620866637034767,
+      "gold_step": 0,
+      "item_id": "p17-06",
+      "native_gold_nll": 0.1682449733297844,
+      "native_selected_argmax": 3647,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.11550750298667012,
+      "teacher_selected_argmax": 3647
+    },
+    {
+      "JS_divergence_nats": 1.2247427642226321e-05,
+      "KL_teacher_to_native_nats": 9.787839295792664e-05,
+      "gold_step": 1,
+      "item_id": "p17-06",
+      "native_gold_nll": 0.00016090515316591336,
+      "native_selected_argmax": 7734,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.00017278605614023945,
+      "teacher_selected_argmax": 7734
+    },
+    {
+      "JS_divergence_nats": 0.024610060780400792,
+      "KL_teacher_to_native_nats": 0.09054675767596888,
+      "gold_step": 0,
+      "item_id": "p17-06",
+      "native_gold_nll": 0.17344116539207732,
+      "native_selected_argmax": 3647,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.11550750298667012,
+      "teacher_selected_argmax": 3647
+    },
+    {
+      "JS_divergence_nats": 1.2258409759638718e-05,
+      "KL_teacher_to_native_nats": 9.71548836054755e-05,
+      "gold_step": 1,
+      "item_id": "p17-06",
+      "native_gold_nll": 0.0001111567208482711,
+      "native_selected_argmax": 7734,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.00017278605614023945,
+      "teacher_selected_argmax": 7734
+    },
+    {
+      "JS_divergence_nats": 0.031204056276483167,
+      "KL_teacher_to_native_nats": 0.13100130728682036,
+      "gold_step": 0,
+      "item_id": "p17-07",
+      "native_gold_nll": 2.872815792631812,
+      "native_selected_argmax": 384,
+      "policy": "A",
+      "teacher_reference_gold_nll": 2.352368503790604,
+      "teacher_selected_argmax": 384
+    },
+    {
+      "JS_divergence_nats": 0.11458410628493046,
+      "KL_teacher_to_native_nats": 0.47784119432202654,
+      "gold_step": 1,
+      "item_id": "p17-07",
+      "native_gold_nll": 2.561894626434988,
+      "native_selected_argmax": 185,
+      "policy": "A",
+      "teacher_reference_gold_nll": 1.0852943710870804,
+      "teacher_selected_argmax": 100001
+    },
+    {
+      "JS_divergence_nats": 0.0036160481877694816,
+      "KL_teacher_to_native_nats": 0.011099007627820848,
+      "gold_step": 2,
+      "item_id": "p17-07",
+      "native_gold_nll": 0.10042287190900012,
+      "native_selected_argmax": 10491,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.07996361259643692,
+      "teacher_selected_argmax": 10491
+    },
+    {
+      "JS_divergence_nats": 0.028126225685996282,
+      "KL_teacher_to_native_nats": 0.12531992147626053,
+      "gold_step": 0,
+      "item_id": "p17-07",
+      "native_gold_nll": 2.743941160356144,
+      "native_selected_argmax": 384,
+      "policy": "B",
+      "teacher_reference_gold_nll": 2.352368503790604,
+      "teacher_selected_argmax": 384
+    },
+    {
+      "JS_divergence_nats": 0.1289304851480644,
+      "KL_teacher_to_native_nats": 0.5213484960873707,
+      "gold_step": 1,
+      "item_id": "p17-07",
+      "native_gold_nll": 2.4962720886558536,
+      "native_selected_argmax": 185,
+      "policy": "B",
+      "teacher_reference_gold_nll": 1.0852943710870804,
+      "teacher_selected_argmax": 100001
+    },
+    {
+      "JS_divergence_nats": 0.0014210621922629482,
+      "KL_teacher_to_native_nats": 0.004588363869340446,
+      "gold_step": 2,
+      "item_id": "p17-07",
+      "native_gold_nll": 0.09574552676075143,
+      "native_selected_argmax": 10491,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.07996361259643692,
+      "teacher_selected_argmax": 10491
+    },
+    {
+      "JS_divergence_nats": 0.21877340254395589,
+      "KL_teacher_to_native_nats": 1.8034255393316867,
+      "gold_step": 0,
+      "item_id": "p17-08",
+      "native_gold_nll": 5.037650373650894,
+      "native_selected_argmax": 18,
+      "policy": "A",
+      "teacher_reference_gold_nll": 4.448988902856399,
+      "teacher_selected_argmax": 18
+    },
+    {
+      "JS_divergence_nats": 0.0030476162714676916,
+      "KL_teacher_to_native_nats": 0.011541217490238488,
+      "gold_step": 1,
+      "item_id": "p17-08",
+      "native_gold_nll": 0.21064631241166865,
+      "native_selected_argmax": 7868,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.2602450741217588,
+      "teacher_selected_argmax": 7868
+    },
+    {
+      "JS_divergence_nats": 0.22500949776654852,
+      "KL_teacher_to_native_nats": 1.7428164220080697,
+      "gold_step": 0,
+      "item_id": "p17-08",
+      "native_gold_nll": 4.868158902355788,
+      "native_selected_argmax": 18,
+      "policy": "B",
+      "teacher_reference_gold_nll": 4.448988902856399,
+      "teacher_selected_argmax": 18
+    },
+    {
+      "JS_divergence_nats": 0.009289250538810117,
+      "KL_teacher_to_native_nats": 0.03956368040091292,
+      "gold_step": 1,
+      "item_id": "p17-08",
+      "native_gold_nll": 0.1488076981052373,
+      "native_selected_argmax": 7868,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.2602450741217588,
+      "teacher_selected_argmax": 7868
+    },
+    {
+      "JS_divergence_nats": 0.0178603227562455,
+      "KL_teacher_to_native_nats": 0.08730742817981037,
+      "gold_step": 0,
+      "item_id": "p17-09",
+      "native_gold_nll": 8.83641519575356,
+      "native_selected_argmax": 4592,
+      "policy": "A",
+      "teacher_reference_gold_nll": 7.532645558754751,
+      "teacher_selected_argmax": 4592
+    },
+    {
+      "JS_divergence_nats": 0.10192014406532887,
+      "KL_teacher_to_native_nats": 0.39203141146619536,
+      "gold_step": 1,
+      "item_id": "p17-09",
+      "native_gold_nll": 1.0393797112871468,
+      "native_selected_argmax": 12842,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.2523440431293551,
+      "teacher_selected_argmax": 27541
+    },
+    {
+      "JS_divergence_nats": 0.0001398204576165897,
+      "KL_teacher_to_native_nats": 0.0011621456554961052,
+      "gold_step": 2,
+      "item_id": "p17-09",
+      "native_gold_nll": 0.000246023398311479,
+      "native_selected_argmax": 2401,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.0008625216181528117,
+      "teacher_selected_argmax": 2401
+    },
+    {
+      "JS_divergence_nats": 0.0203641066027115,
+      "KL_teacher_to_native_nats": 0.08716401024256634,
+      "gold_step": 0,
+      "item_id": "p17-09",
+      "native_gold_nll": 8.408904165981077,
+      "native_selected_argmax": 4592,
+      "policy": "B",
+      "teacher_reference_gold_nll": 7.532645558754751,
+      "teacher_selected_argmax": 4592
+    },
+    {
+      "JS_divergence_nats": 0.05859704121774893,
+      "KL_teacher_to_native_nats": 0.2161560268166796,
+      "gold_step": 1,
+      "item_id": "p17-09",
+      "native_gold_nll": 0.7587336012950843,
+      "native_selected_argmax": 12842,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.2523440431293551,
+      "teacher_selected_argmax": 27541
+    },
+    {
+      "JS_divergence_nats": 0.00016664605504475332,
+      "KL_teacher_to_native_nats": 0.0013940015301681023,
+      "gold_step": 2,
+      "item_id": "p17-09",
+      "native_gold_nll": 0.0001619860689245911,
+      "native_selected_argmax": 2401,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.0008625216181528117,
+      "teacher_selected_argmax": 2401
+    },
+    {
+      "JS_divergence_nats": 0.05200349577655028,
+      "KL_teacher_to_native_nats": 0.1973008792248771,
+      "gold_step": 0,
+      "item_id": "p17-10",
+      "native_gold_nll": 4.354874017824283,
+      "native_selected_argmax": 56,
+      "policy": "A",
+      "teacher_reference_gold_nll": 3.1010526705838792,
+      "teacher_selected_argmax": 56
+    },
+    {
+      "JS_divergence_nats": 0.06809527673745219,
+      "KL_teacher_to_native_nats": 0.3120904271487699,
+      "gold_step": 1,
+      "item_id": "p17-10",
+      "native_gold_nll": 1.8370416187296783,
+      "native_selected_argmax": 770,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.6940809991132824,
+      "teacher_selected_argmax": 770
+    },
+    {
+      "JS_divergence_nats": 0.03348381592265279,
+      "KL_teacher_to_native_nats": 0.12766984781727314,
+      "gold_step": 0,
+      "item_id": "p17-10",
+      "native_gold_nll": 4.016830081623596,
+      "native_selected_argmax": 56,
+      "policy": "B",
+      "teacher_reference_gold_nll": 3.1010526705838792,
+      "teacher_selected_argmax": 56
+    },
+    {
+      "JS_divergence_nats": 0.06695601484454852,
+      "KL_teacher_to_native_nats": 0.3060845542395602,
+      "gold_step": 1,
+      "item_id": "p17-10",
+      "native_gold_nll": 1.821514880674222,
+      "native_selected_argmax": 770,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.6940809991132824,
+      "teacher_selected_argmax": 770
+    },
+    {
+      "JS_divergence_nats": 0.05697195769139053,
+      "KL_teacher_to_native_nats": 0.36037779489265104,
+      "gold_step": 0,
+      "item_id": "p17-11",
+      "native_gold_nll": 0.2872936722246102,
+      "native_selected_argmax": 50320,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.5698354373593943,
+      "teacher_selected_argmax": 50320
+    },
+    {
+      "JS_divergence_nats": 6.126133088947213e-07,
+      "KL_teacher_to_native_nats": 8.64286023846721e-06,
+      "gold_step": 1,
+      "item_id": "p17-11",
+      "native_gold_nll": 1.4278562332492584e-08,
+      "native_selected_argmax": 38677,
+      "policy": "A",
+      "teacher_reference_gold_nll": 1.829762034333271e-06,
+      "teacher_selected_argmax": 38677
+    },
+    {
+      "JS_divergence_nats": 0.007020068342709546,
+      "KL_teacher_to_native_nats": 0.03244632368538892,
+      "gold_step": 2,
+      "item_id": "p17-11",
+      "native_gold_nll": 0.053345998401169936,
+      "native_selected_argmax": 11,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.12125385700695546,
+      "teacher_selected_argmax": 11
+    },
+    {
+      "JS_divergence_nats": 9.149679453737783e-05,
+      "KL_teacher_to_native_nats": 0.0005591897301388439,
+      "gold_step": 3,
+      "item_id": "p17-11",
+      "native_gold_nll": 0.0005715876045258028,
+      "native_selected_argmax": 8900,
+      "policy": "A",
+      "teacher_reference_gold_nll": 0.0010980639259940972,
+      "teacher_selected_argmax": 8900
+    },
+    {
+      "JS_divergence_nats": 0.04933052341391998,
+      "KL_teacher_to_native_nats": 0.2929327069138228,
+      "gold_step": 0,
+      "item_id": "p17-11",
+      "native_gold_nll": 0.2729502677722593,
+      "native_selected_argmax": 50320,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.5698354373593943,
+      "teacher_selected_argmax": 50320
+    },
+    {
+      "JS_divergence_nats": 5.954334874460387e-07,
+      "KL_teacher_to_native_nats": 7.320174763735717e-06,
+      "gold_step": 1,
+      "item_id": "p17-11",
+      "native_gold_nll": 1.8941662460747466e-08,
+      "native_selected_argmax": 38677,
+      "policy": "B",
+      "teacher_reference_gold_nll": 1.829762034333271e-06,
+      "teacher_selected_argmax": 38677
+    },
+    {
+      "JS_divergence_nats": 0.008083183315616065,
+      "KL_teacher_to_native_nats": 0.03786458946475055,
+      "gold_step": 2,
+      "item_id": "p17-11",
+      "native_gold_nll": 0.0493887806706752,
+      "native_selected_argmax": 11,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.12125385700695546,
+      "teacher_selected_argmax": 11
+    },
+    {
+      "JS_divergence_nats": 8.641740974751777e-05,
+      "KL_teacher_to_native_nats": 0.0005271755559289012,
+      "gold_step": 3,
+      "item_id": "p17-11",
+      "native_gold_nll": 0.0006347419319894243,
+      "native_selected_argmax": 8900,
+      "policy": "B",
+      "teacher_reference_gold_nll": 0.0010980639259940972,
+      "teacher_selected_argmax": 8900
+    }
+  ],
+  "independent_teacher_actual_logits_columns": 3174400,
+  "native_AB_token_logit_positions": 62,
+  "native_exact_original_C_capture_events": 62,
+  "native_greedy_calls": 24,
+  "noninferiority_nll_margin_nats_per_token": 0.05,
+  "noninferiority_prefix_accuracy_margin": 0.05,
+  "not_external_independent_benchmark": true,
+  "not_independent_of_original_pretraining": true,
+  "production_touched": false,
+  "question_level_records": [
+    {
+      "A": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 8.96269815057026,
+        "gold_nll_sum": 17.92539630114052,
+        "real_evidence_SHA256": "602af2bdff02c59086f0df258789a4e75f24c9a8fa3f391fab50d2c8267c63ef",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 8.921771441929474,
+        "gold_nll_sum": 17.843542883858948,
+        "real_evidence_SHA256": "ac7c92f8b27619f1b3289d15f7ada8c232e19e85f402c2455c81c7f68d52aff9",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B_minus_A_gold_prefix_accuracy": 0.0,
+      "B_minus_A_mean_gold_NLL": -0.04092670864078585,
+      "domain": "math",
+      "gold_count": 2,
+      "item_id": "p17-00",
+      "original_teacher_mean_gold_NLL_nats": 8.478788541890834
+    },
+    {
+      "A": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 4.113038248730498,
+        "gold_nll_sum": 12.339114746191495,
+        "real_evidence_SHA256": "99a3f8e3b197682ca7eb12fde967090168ae5cbf091dbb019f316e56b420d9c5",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 4.3206547705560086,
+        "gold_nll_sum": 12.961964311668027,
+        "real_evidence_SHA256": "00d4e8c5b7cbee9d04aedeae19aac096efc38fc9fc5ac846ca9d3186ef225560",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B_minus_A_gold_prefix_accuracy": 0.0,
+      "B_minus_A_mean_gold_NLL": 0.2076165218255106,
+      "domain": "math",
+      "gold_count": 3,
+      "item_id": "p17-01",
+      "original_teacher_mean_gold_NLL_nats": 2.972034939511547
+    },
+    {
+      "A": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 7.138879992970111,
+        "gold_nll_sum": 7.138879992970111,
+        "real_evidence_SHA256": "b198a634b78a62d8cdcdf79e47b4c5553e32fe308c02ae13ee7cc4412c966ae6",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 7.79764568821664,
+        "gold_nll_sum": 7.79764568821664,
+        "real_evidence_SHA256": "3e14283a97002674909c32fe8dcc4ff457f35c473be9da3c63da49ffc13b2d85",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B_minus_A_gold_prefix_accuracy": 0.0,
+      "B_minus_A_mean_gold_NLL": 0.6587656952465295,
+      "domain": "math",
+      "gold_count": 1,
+      "item_id": "p17-02",
+      "original_teacher_mean_gold_NLL_nats": 3.6868318014708485
+    },
+    {
+      "A": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 1.5177171677190202,
+        "gold_nll_sum": 6.070868670876081,
+        "real_evidence_SHA256": "cbb1c41fbc37bdd94cf92cc5f8fc0ccd7d2680b369d76afd442567aac89475bc",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 1.425691968955972,
+        "gold_nll_sum": 5.702767875823888,
+        "real_evidence_SHA256": "0b35fc6d30253741e9a95310ce39570ba5a04c8d1aba19db7907ec4d2aa2172a",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B_minus_A_gold_prefix_accuracy": 0.0,
+      "B_minus_A_mean_gold_NLL": -0.09202519876304827,
+      "domain": "science",
+      "gold_count": 4,
+      "item_id": "p17-03",
+      "original_teacher_mean_gold_NLL_nats": 1.0299108457102495
+    },
+    {
+      "A": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 1.893085298935782,
+        "gold_nll_sum": 3.786170597871564,
+        "real_evidence_SHA256": "d5b75635623267ce557b53a8dfcef6b4e794a9bb14c60d00964a9e5496574561",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 2.0184542785176305,
+        "gold_nll_sum": 4.036908557035261,
+        "real_evidence_SHA256": "4e7f8ba567a3741fa58fd79cc55333cf78ab8a0033fb28c95837fb54862cfd14",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B_minus_A_gold_prefix_accuracy": 0.0,
+      "B_minus_A_mean_gold_NLL": 0.12536897958184845,
+      "domain": "science",
+      "gold_count": 2,
+      "item_id": "p17-04",
+      "original_teacher_mean_gold_NLL_nats": 1.5160693299181247
+    },
+    {
+      "A": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 0.9457321731890443,
+        "gold_nll_sum": 2.837196519567133,
+        "real_evidence_SHA256": "bb11b3a44b6e9643f70c96ca30bd2be0fccc50ae1353c3b49274708e3215d7b5",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 1.0091543930014144,
+        "gold_nll_sum": 3.0274631790042434,
+        "real_evidence_SHA256": "c442a844a5359231ef8795618685f5304cdebeb97c228684c0abfe73c1800aff",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B_minus_A_gold_prefix_accuracy": 0.0,
+      "B_minus_A_mean_gold_NLL": 0.06342221981237006,
+      "domain": "science",
+      "gold_count": 3,
+      "item_id": "p17-05",
+      "original_teacher_mean_gold_NLL_nats": 0.6179221430232408
+    },
+    {
+      "A": {
+        "gold_exact_prefix_all_correct": true,
+        "gold_nll_mean": 0.08420293924147515,
+        "gold_nll_sum": 0.1684058784829503,
+        "real_evidence_SHA256": "3764a16cb37302e92c354df6ffe31ff737a740ee379a6dafd9deb8df1154057e",
+        "strict_gold_prefix_accuracy": 1.0
+      },
+      "B": {
+        "gold_exact_prefix_all_correct": true,
+        "gold_nll_mean": 0.0867761610564628,
+        "gold_nll_sum": 0.1735523221129256,
+        "real_evidence_SHA256": "3e5d1bfbb0c88b4f4219d8608941101d09b6f5d4e6cb63903235c0ae5b75947e",
+        "strict_gold_prefix_accuracy": 1.0
+      },
+      "B_minus_A_gold_prefix_accuracy": 0.0,
+      "B_minus_A_mean_gold_NLL": 0.0025732218149876473,
+      "domain": "computing",
+      "gold_count": 2,
+      "item_id": "p17-06",
+      "original_teacher_mean_gold_NLL_nats": 0.05784014452140518
+    },
+    {
+      "A": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 1.8450444303252667,
+        "gold_nll_sum": 5.5351332909758,
+        "real_evidence_SHA256": "35d23e011fd512f5fe37eb548fb9d0d8a8f28fcc8e4676e3f787555514841bf4",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 1.778652925257583,
+        "gold_nll_sum": 5.335958775772749,
+        "real_evidence_SHA256": "59298d28930365f48493e800400123c688a6a6974758b2bd4ac2f1ada0bb010a",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B_minus_A_gold_prefix_accuracy": 0.0,
+      "B_minus_A_mean_gold_NLL": -0.06639150506768376,
+      "domain": "computing",
+      "gold_count": 3,
+      "item_id": "p17-07",
+      "original_teacher_mean_gold_NLL_nats": 1.1725421624913739
+    },
+    {
+      "A": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 2.6241483430312815,
+        "gold_nll_sum": 5.248296686062563,
+        "real_evidence_SHA256": "aefbca6bfe7ec39d392d89fbf8041e40b7190c0c73c7511aee5467c08c238e22",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 2.5084833002305125,
+        "gold_nll_sum": 5.016966600461025,
+        "real_evidence_SHA256": "82ac5ef978b2ebab4ce3a8a4bedc747dad2e9ea1f7d9f5a76486ba94a240d453",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B_minus_A_gold_prefix_accuracy": 0.0,
+      "B_minus_A_mean_gold_NLL": -0.11566504280076906,
+      "domain": "computing",
+      "gold_count": 2,
+      "item_id": "p17-08",
+      "original_teacher_mean_gold_NLL_nats": 2.354616988489079
+    },
+    {
+      "A": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 3.2920136434796725,
+        "gold_nll_sum": 9.876040930439018,
+        "real_evidence_SHA256": "07c62a7439fee5b39f68bcfdc3a842fdae4fe1f7c67ed872d0484083827c9173",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 3.055933251115029,
+        "gold_nll_sum": 9.167799753345086,
+        "real_evidence_SHA256": "b76a488ec95531560ecff95e24e960594aa777e07d698b605c7fe24abd6a5287",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B_minus_A_gold_prefix_accuracy": 0.0,
+      "B_minus_A_mean_gold_NLL": -0.23608039236464373,
+      "domain": "language",
+      "gold_count": 3,
+      "item_id": "p17-09",
+      "original_teacher_mean_gold_NLL_nats": 2.5952840411674196
+    },
+    {
+      "A": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 3.0959578182769807,
+        "gold_nll_sum": 6.191915636553961,
+        "real_evidence_SHA256": "9ab57c60f1b11de7ac80bcb19e594373fc3666f17248c084f7e91c67935ddbc2",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B": {
+        "gold_exact_prefix_all_correct": false,
+        "gold_nll_mean": 2.919172481148909,
+        "gold_nll_sum": 5.838344962297818,
+        "real_evidence_SHA256": "d3ff4fbfe91622531c6974e71052ee280c5a2012a3cc2d59c470211ed12f12e6",
+        "strict_gold_prefix_accuracy": 0.0
+      },
+      "B_minus_A_gold_prefix_accuracy": 0.0,
+      "B_minus_A_mean_gold_NLL": -0.17678533712807187,
+      "domain": "language",
+      "gold_count": 2,
+      "item_id": "p17-10",
+      "original_teacher_mean_gold_NLL_nats": 1.8975668348485808
+    },
+    {
+      "A": {
+        "gold_exact_prefix_all_correct": true,
+        "gold_nll_mean": 0.08530281812721707,
+        "gold_nll_sum": 0.3412112725088683,
+        "real_evidence_SHA256": "722d68c896a3a76ed4619a740bb920d8c5a1c57dfc7551002904638dc3b84328",
+        "strict_gold_prefix_accuracy": 1.0
+      },
+      "B": {
+        "gold_exact_prefix_all_correct": true,
+        "gold_nll_mean": 0.08074345232914659,
+        "gold_nll_sum": 0.32297380931658637,
+        "real_evidence_SHA256": "b729bbeb934b5860e4ddc7fba394493cf3560dde5744958fa9da2e6950f086e7",
+        "strict_gold_prefix_accuracy": 1.0
+      },
+      "B_minus_A_gold_prefix_accuracy": 0.0,
+      "B_minus_A_mean_gold_NLL": -0.0045593657980704805,
+      "domain": "language",
+      "gold_count": 4,
+      "item_id": "p17-11",
+      "original_teacher_mean_gold_NLL_nats": 0.17304729701359456
+    }
+  ],
+  "question_units": 12,
+  "raw_logs_and_checkpoint_original_files_not_renamed_or_mutated": true,
+  "research_internal_gate_pass": false,
+  "same_model_original_BF16_teacher": true,
+  "schema": "beglin-hcp-p17-question-cluster-paired-noninferiority-gate-v1",
+  "source_capture_worker_log_SHA256": "51ed50d0c54de165f550efd2e898a2e44ff86c470a2b43cf7c5eb217b995f430",
+  "source_common_BF16_checkpoint_tensor_hash_manifest_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+  "source_native_greedy_receipt_SHA256": "ac4530f956f7628c7228c0c5668c67e0544d600279c27a3ee13a1ed06b9e34e4",
+  "source_native_prefix_receipt_SHA256": "a059affe1d82540f2903b9ae2e40b3cb6b237bca3342c44b321d3fd7fb07ae04",
+  "source_teacher_cohort_receipt_SHA256": "40b047342dfe199e98b2c83c519ec6529ebb760136c6083fa51d28dc324c8d25",
+  "status": "P17_INTERNAL_RESEARCH_GATE_BLOCKED"
+}

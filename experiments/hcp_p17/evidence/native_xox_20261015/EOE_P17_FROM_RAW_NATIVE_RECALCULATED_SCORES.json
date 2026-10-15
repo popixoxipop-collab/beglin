@@ -1,0 +1,476 @@
+{
+  "frozen_token_sha256": "a8e6e42b11a0f881317ab8afddebf7b266a965f4100bfddd7342183e73728521",
+  "independent_actual_logits_source_audit_passed": true,
+  "production_touched": false,
+  "records": [
+    {
+      "A": {
+        "gold_token_nll_nats": [
+          13.494351936825218,
+          4.4310443643153015
+        ],
+        "native_greedy_token_ids": [
+          74807,
+          12023,
+          8109,
+          8522,
+          12,
+          22276,
+          317,
+          17205
+        ],
+        "real_source_logits_manifest_sha256": "602af2bdff02c59086f0df258789a4e75f24c9a8fa3f391fab50d2c8267c63ef"
+      },
+      "B": {
+        "gold_token_nll_nats": [
+          13.392394280632697,
+          4.451148603226251
+        ],
+        "native_greedy_token_ids": [
+          74807,
+          12023,
+          8109,
+          8522,
+          12,
+          22276,
+          317,
+          17205
+        ],
+        "real_source_logits_manifest_sha256": "ac7c92f8b27619f1b3289d15f7ada8c232e19e85f402c2455c81c7f68d52aff9"
+      },
+      "domain": "math",
+      "gold_answer_sha256": "d007d8d421bd85f8969f1bd735a4d74bad28280c9fb5fdc7760e4389f668ce93",
+      "gold_token_count": 2,
+      "item_id": "p17-00",
+      "original_BF16_teacher_gold_nll_nats": [
+        11.201631419375527,
+        5.755945664406141
+      ]
+    },
+    {
+      "A": {
+        "gold_token_nll_nats": [
+          9.958398059453433,
+          0.0017451518133242416,
+          2.3789715349247302
+        ],
+        "native_greedy_token_ids": [
+          40439,
+          2602,
+          15367,
+          317,
+          984,
+          2602,
+          11326,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "99a3f8e3b197682ca7eb12fde967090168ae5cbf091dbb019f316e56b420d9c5"
+      },
+      "B": {
+        "gold_token_nll_nats": [
+          10.239634954571613,
+          0.00128913977027878,
+          2.7210402173261343
+        ],
+        "native_greedy_token_ids": [
+          40439,
+          2602,
+          15367,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "00d4e8c5b7cbee9d04aedeae19aac096efc38fc9fc5ac846ca9d3186ef225560"
+      },
+      "domain": "math",
+      "gold_answer_sha256": "0c15728d14d3834ceec0e769276be44d85512e68ccbaf0c440d9d00395ab3bb2",
+      "gold_token_count": 3,
+      "item_id": "p17-01",
+      "original_BF16_teacher_gold_nll_nats": [
+        8.139479903618245,
+        0.07955551891900825,
+        0.6970693959973886
+      ]
+    },
+    {
+      "A": {
+        "gold_token_nll_nats": [
+          7.138879992970111
+        ],
+        "native_greedy_token_ids": [
+          19,
+          23,
+          893,
+          207,
+          21,
+          403,
+          207,
+          23
+        ],
+        "real_source_logits_manifest_sha256": "b198a634b78a62d8cdcdf79e47b4c5553e32fe308c02ae13ee7cc4412c966ae6"
+      },
+      "B": {
+        "gold_token_nll_nats": [
+          7.79764568821664
+        ],
+        "native_greedy_token_ids": [
+          19,
+          23,
+          893,
+          207,
+          21,
+          403,
+          207,
+          23
+        ],
+        "real_source_logits_manifest_sha256": "3e14283a97002674909c32fe8dcc4ff457f35c473be9da3c63da49ffc13b2d85"
+      },
+      "domain": "math",
+      "gold_answer_sha256": "20a047c78405e06de821ac45579d01c216dda152ff4ce033ca1ea04c7109edd5",
+      "gold_token_count": 1,
+      "item_id": "p17-02",
+      "original_BF16_teacher_gold_nll_nats": [
+        3.6868318014708485
+      ]
+    },
+    {
+      "A": {
+        "gold_token_nll_nats": [
+          6.055590682883878,
+          1.708957590551563e-06,
+          0.015130503113269356,
+          0.00014577592133946382
+        ],
+        "native_greedy_token_ids": [
+          39,
+          17,
+          46,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "cbb1c41fbc37bdd94cf92cc5f8fc0ccd7d2680b369d76afd442567aac89475bc"
+      },
+      "B": {
+        "gold_token_nll_nats": [
+          5.685391269950205,
+          1.4582725995637702e-06,
+          0.01716255927714272,
+          0.0002125883239401105
+        ],
+        "native_greedy_token_ids": [
+          53761,
+          14038,
+          285,
+          508,
+          20678,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "0b35fc6d30253741e9a95310ce39570ba5a04c8d1aba19db7907ec4d2aa2172a"
+      },
+      "domain": "science",
+      "gold_answer_sha256": "c1096e1fee9fd4532fd5da0cfb1b16fbfd1745839bc6fb70ef20c9acb7df5eb4",
+      "gold_token_count": 4,
+      "item_id": "p17-03",
+      "original_BF16_teacher_gold_nll_nats": [
+        4.107831260209636,
+        5.084522811671377e-07,
+        0.011752375837026818,
+        5.9238342053902215e-05
+      ]
+    },
+    {
+      "A": {
+        "gold_token_nll_nats": [
+          2.599586100391754,
+          1.18658449747981
+        ],
+        "native_greedy_token_ids": [
+          1651,
+          17,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "d5b75635623267ce557b53a8dfcef6b4e794a9bb14c60d00964a9e5496574561"
+      },
+      "B": {
+        "gold_token_nll_nats": [
+          2.745843339696517,
+          1.291065217338744
+        ],
+        "native_greedy_token_ids": [
+          1651,
+          17,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "4e7f8ba567a3741fa58fd79cc55333cf78ab8a0033fb28c95837fb54862cfd14"
+      },
+      "domain": "science",
+      "gold_answer_sha256": "282d5c49ccd0848d9c02d87584816da77669394d582f794af14c69ca9245776d",
+      "gold_token_count": 2,
+      "item_id": "p17-04",
+      "original_BF16_teacher_gold_nll_nats": [
+        2.7981135303401246,
+        0.23402512949612486
+      ]
+    },
+    {
+      "A": {
+        "gold_token_nll_nats": [
+          2.43412951136035,
+          0.4030504934082444,
+          1.651479853848059e-05
+        ],
+        "native_greedy_token_ids": [
+          4711,
+          22994,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "bb11b3a44b6e9643f70c96ca30bd2be0fccc50ae1353c3b49274708e3215d7b5"
+      },
+      "B": {
+        "gold_token_nll_nats": [
+          2.4644706385408774,
+          0.5629452066991902,
+          4.733376417220825e-05
+        ],
+        "native_greedy_token_ids": [
+          4711,
+          22994,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "c442a844a5359231ef8795618685f5304cdebeb97c228684c0abfe73c1800aff"
+      },
+      "domain": "science",
+      "gold_answer_sha256": "ee987f207e9e084703b9cf96b6f60cea24a5ff86d0a990ff2e9d6c80494d41fd",
+      "gold_token_count": 3,
+      "item_id": "p17-05",
+      "original_BF16_teacher_gold_nll_nats": [
+        0.8384895314393148,
+        1.01524935268624,
+        2.7544944167345875e-05
+      ]
+    },
+    {
+      "A": {
+        "gold_token_nll_nats": [
+          0.1682449733297844,
+          0.00016090515316591336
+        ],
+        "native_greedy_token_ids": [
+          3647,
+          7734,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "3764a16cb37302e92c354df6ffe31ff737a740ee379a6dafd9deb8df1154057e"
+      },
+      "B": {
+        "gold_token_nll_nats": [
+          0.17344116539207732,
+          0.0001111567208482711
+        ],
+        "native_greedy_token_ids": [
+          3647,
+          7734,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "3e5d1bfbb0c88b4f4219d8608941101d09b6f5d4e6cb63903235c0ae5b75947e"
+      },
+      "domain": "computing",
+      "gold_answer_sha256": "7a803279b272ce136de7f43ac3d2f7470bda9b116b3ad34bab92e26cd1687c99",
+      "gold_token_count": 2,
+      "item_id": "p17-06",
+      "original_BF16_teacher_gold_nll_nats": [
+        0.11550750298667012,
+        0.00017278605614023945
+      ]
+    },
+    {
+      "A": {
+        "gold_token_nll_nats": [
+          2.872815792631812,
+          2.5618946264349916,
+          0.10042287190900012
+        ],
+        "native_greedy_token_ids": [
+          384,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "35d23e011fd512f5fe37eb548fb9d0d8a8f28fcc8e4676e3f787555514841bf4"
+      },
+      "B": {
+        "gold_token_nll_nats": [
+          2.743941160356144,
+          2.4962720886558536,
+          0.09574552676075143
+        ],
+        "native_greedy_token_ids": [
+          384,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "59298d28930365f48493e800400123c688a6a6974758b2bd4ac2f1ada0bb010a"
+      },
+      "domain": "computing",
+      "gold_answer_sha256": "9ead7bab3860912eff21695a0baac8b2f8d79b3cc008a177a54485c50b886e17",
+      "gold_token_count": 3,
+      "item_id": "p17-07",
+      "original_BF16_teacher_gold_nll_nats": [
+        2.352368503790604,
+        1.0852943710870804,
+        0.07996361259643692
+      ]
+    },
+    {
+      "A": {
+        "gold_token_nll_nats": [
+          5.037650373650894,
+          0.2106463124116651
+        ],
+        "native_greedy_token_ids": [
+          18,
+          17,
+          9811,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "aefbca6bfe7ec39d392d89fbf8041e40b7190c0c73c7511aee5467c08c238e22"
+      },
+      "B": {
+        "gold_token_nll_nats": [
+          4.868158902355788,
+          0.1488076981052373
+        ],
+        "native_greedy_token_ids": [
+          18,
+          17,
+          9811,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "82ac5ef978b2ebab4ce3a8a4bedc747dad2e9ea1f7d9f5a76486ba94a240d453"
+      },
+      "domain": "computing",
+      "gold_answer_sha256": "803b1f79cab7a1095c056f9791e1fbac2ccab06b67bcd2b4643621bfe833750a",
+      "gold_token_count": 2,
+      "item_id": "p17-08",
+      "original_BF16_teacher_gold_nll_nats": [
+        4.448988902856399,
+        0.2602450741217588
+      ]
+    },
+    {
+      "A": {
+        "gold_token_nll_nats": [
+          8.83641519575356,
+          1.0393797112871468,
+          0.000246023398311479
+        ],
+        "native_greedy_token_ids": [
+          4592,
+          6,
+          82,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "07c62a7439fee5b39f68bcfdc3a842fdae4fe1f7c67ed872d0484083827c9173"
+      },
+      "B": {
+        "gold_token_nll_nats": [
+          8.408904165981077,
+          0.7587336012950843,
+          0.0001619860689245911
+        ],
+        "native_greedy_token_ids": [
+          4592,
+          6,
+          82,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "b76a488ec95531560ecff95e24e960594aa777e07d698b605c7fe24abd6a5287"
+      },
+      "domain": "language",
+      "gold_answer_sha256": "a8463f00040253b18c61e10221949617466638b4e7e7284e590b4eb39ed66877",
+      "gold_token_count": 3,
+      "item_id": "p17-09",
+      "original_BF16_teacher_gold_nll_nats": [
+        7.532645558754751,
+        0.2523440431293551,
+        0.0008625216181528117
+      ]
+    },
+    {
+      "A": {
+        "gold_token_nll_nats": [
+          4.354874017824283,
+          1.8370416187296783
+        ],
+        "native_greedy_token_ids": [
+          56,
+          255,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "9ab57c60f1b11de7ac80bcb19e594373fc3666f17248c084f7e91c67935ddbc2"
+      },
+      "B": {
+        "gold_token_nll_nats": [
+          4.016830081623596,
+          1.821514880674222
+        ],
+        "native_greedy_token_ids": [
+          56,
+          255,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "d3ff4fbfe91622531c6974e71052ee280c5a2012a3cc2d59c470211ed12f12e6"
+      },
+      "domain": "language",
+      "gold_answer_sha256": "5927b1a4156d8ae07e4df55b9628f1461ac61d74d07bcd19d7ea0dab7c2f43b1",
+      "gold_token_count": 2,
+      "item_id": "p17-10",
+      "original_BF16_teacher_gold_nll_nats": [
+        3.1010526705838792,
+        0.6940809991132824
+      ]
+    },
+    {
+      "A": {
+        "gold_token_nll_nats": [
+          0.2872936722246102,
+          1.4278562332492584e-08,
+          0.053345998401169936,
+          0.0005715876045258028
+        ],
+        "native_greedy_token_ids": [
+          50320,
+          38677,
+          11,
+          8900,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "722d68c896a3a76ed4619a740bb920d8c5a1c57dfc7551002904638dc3b84328"
+      },
+      "B": {
+        "gold_token_nll_nats": [
+          0.2729502677722593,
+          1.8941662460747466e-08,
+          0.0493887806706752,
+          0.0006347419319894243
+        ],
+        "native_greedy_token_ids": [
+          50320,
+          38677,
+          11,
+          8900,
+          100001
+        ],
+        "real_source_logits_manifest_sha256": "b729bbeb934b5860e4ddc7fba394493cf3560dde5744958fa9da2e6950f086e7"
+      },
+      "domain": "language",
+      "gold_answer_sha256": "11c99cee5ecf1b7434469cc2eeec70c4c825015b8fd855996efef464180303cf",
+      "gold_token_count": 4,
+      "item_id": "p17-11",
+      "original_BF16_teacher_gold_nll_nats": [
+        0.5698354373593943,
+        1.829762034333271e-06,
+        0.12125385700695546,
+        0.0010980639259940972
+      ]
+    }
+  ],
+  "schema": "beglin-hcp-p17-independent-real-teacher-native-question-scores-v1",
+  "verified_actual_BF16_gold_logit_positions": 31,
+  "verified_actual_native_gold_logit_positions": 62,
+  "verified_native_real_greedy_generations": 24
+}

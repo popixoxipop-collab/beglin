@@ -1,0 +1,110 @@
+{
+  "automatic_promotion": false,
+  "external_independent_dataset": false,
+  "frozen_source_sha256": "a8e6e42b11a0f881317ab8afddebf7b266a965f4100bfddd7342183e73728521",
+  "full_BF16_forwards": 12,
+  "items": [
+    {
+      "NLL": 8.478788541890834,
+      "gold": 2,
+      "id": "p17-00",
+      "original_logits_SHA256": "48a93fdc245486535cc56ad3cb8d1e1e10e7f00d78d3ddd88ecabdd24f41b37b",
+      "original_weight_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+      "teacher_receipt_SHA256": "11e77ac0a3512bebc7e5e960eae6d32453b754522682de64a3d15f6f2d87c783"
+    },
+    {
+      "NLL": 2.972034939511547,
+      "gold": 3,
+      "id": "p17-01",
+      "original_logits_SHA256": "39ed266df251b4670ee40a5bba9fa8a4a893f8d98d7009fc33e0278582dff337",
+      "original_weight_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+      "teacher_receipt_SHA256": "dca4340fb2a3fa4c90cc171fa7a7c3a2a4b6699067ee1d95a924cd36641130da"
+    },
+    {
+      "NLL": 3.6868318014708485,
+      "gold": 1,
+      "id": "p17-02",
+      "original_logits_SHA256": "518e932ee06132267958e5c6a4399cd60b4817dafa6b9fa24d197e9f72f7f60b",
+      "original_weight_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+      "teacher_receipt_SHA256": "04426c3181be4eb4fda987f7cbd0d101c73ceeb6a2b034e3c04491ddadab45ca"
+    },
+    {
+      "NLL": 1.0299108457102495,
+      "gold": 4,
+      "id": "p17-03",
+      "original_logits_SHA256": "37739287d539b07784912ec718b001f809a888b86c7ccdef6641f98b1f7876d8",
+      "original_weight_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+      "teacher_receipt_SHA256": "b603b362b49649604b686c04ad880e4254b5b97b7dc7beec4b654e809cc54255"
+    },
+    {
+      "NLL": 1.5160693299181247,
+      "gold": 2,
+      "id": "p17-04",
+      "original_logits_SHA256": "d2ace31ca8fa9f20355855a5271d2a63f9a60f41aab505ec47f240456813c97c",
+      "original_weight_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+      "teacher_receipt_SHA256": "99cabcfd3119e3e599bef79d0ceeb77b599012caf23f6ee5d68e7cc0756e2023"
+    },
+    {
+      "NLL": 0.6179221430232408,
+      "gold": 3,
+      "id": "p17-05",
+      "original_logits_SHA256": "c9426e77fd02488f046b77c7c2866c7445e568b58a5a8578a59770f354067b5c",
+      "original_weight_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+      "teacher_receipt_SHA256": "530b96213c861623d0d7cdd11b708bff22544f3e419c7fa2e4539d9308f69b21"
+    },
+    {
+      "NLL": 0.05784014452140518,
+      "gold": 2,
+      "id": "p17-06",
+      "original_logits_SHA256": "de9b1b0aa50bb000bfbbfdaa8ac98389d82852619b0711af000074b865efdd51",
+      "original_weight_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+      "teacher_receipt_SHA256": "70774fd2de29a13b00e352f6ed8533d2395d22103b517585c526cde3abe40e96"
+    },
+    {
+      "NLL": 1.1725421624913739,
+      "gold": 3,
+      "id": "p17-07",
+      "original_logits_SHA256": "40d5d36f0bb1d870bef3d66cbf7cc9a8dc55505be81113c1b26d65d1e5a0a9ca",
+      "original_weight_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+      "teacher_receipt_SHA256": "3e8ef43cd30040711410d2cab0d64bbb2445c308d9d6260c41506e24a01750db"
+    },
+    {
+      "NLL": 2.354616988489079,
+      "gold": 2,
+      "id": "p17-08",
+      "original_logits_SHA256": "ba6cb6764ae2f53b1f433db91102bd9fabbcba22238dac8d3deca7705cc10783",
+      "original_weight_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+      "teacher_receipt_SHA256": "d26f1b312d07a98af5f96858a6d0c4489f15bcead1cc81bf73085456f5cf993e"
+    },
+    {
+      "NLL": 2.5952840411674196,
+      "gold": 3,
+      "id": "p17-09",
+      "original_logits_SHA256": "089a7ab234194d7fa702da7ff1e2f26e8d6a5a4c2c3fe38538109f8a92b2c3c4",
+      "original_weight_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+      "teacher_receipt_SHA256": "5fe483ebfbb48ce4f3e1781c40f27d609912c5e41c0deec1095f0951d094b5fd"
+    },
+    {
+      "NLL": 1.8975668348485808,
+      "gold": 2,
+      "id": "p17-10",
+      "original_logits_SHA256": "cf755581ad99ea213b9fd06f2afe6852deaea55305ee2040b8b0ba53fe079e8d",
+      "original_weight_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+      "teacher_receipt_SHA256": "25df7e4d33c4ff47715579597a08d87222d49b9a021a669db6cc67d09478aeb9"
+    },
+    {
+      "NLL": 0.17304729701359456,
+      "gold": 4,
+      "id": "p17-11",
+      "original_logits_SHA256": "90ca423a66cb10843e3c304e032ef5cd2c0bd35b601d06fcd2580136a187a9a7",
+      "original_weight_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+      "teacher_receipt_SHA256": "887f558827c1fa7fc2c2573628266bcfb08203ec8d2dcf18230ad99a87a0c22b"
+    }
+  ],
+  "production_touched": false,
+  "quality_noninferiority_certified": false,
+  "same_5291_original_source_tensor_hashes": true,
+  "schema": "beglin-hcp-p17-12-original-whole-BF16-gold-teachers-v1",
+  "status": "TWELVE_REAL_27_LAYER_5291_TENSOR_BF16_FORWARD_COMPLETE",
+  "whole_model_gold_token_full_logit_positions": 31
+}

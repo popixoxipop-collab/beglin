@@ -1,0 +1,21 @@
+test_01_real_genuine_original_BF16_12_passes (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_02_missing_original_whole_model_report_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_03_forged_26_of_27_layers_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_04_missing_5291_source_tensors_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_05_wrong_full_vocabulary_shape_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_06_logit_file_byte_tampered_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_07_original_full_logit_nonfinite_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_08_forged_teacher_NLL_rejected (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_09_original_model_source_index_not_unchanged_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_10_wrong_original_gold_answer_token_sha_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_11_missing_5291_hash_manifest_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_12_modified_original_5291_tensor_sha_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_13_untrusted_input_bank_amendment_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_14_fake_B_policy_noninferiority_claim_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_15_original_GPU_used_claim_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+test_16_spoofed_live_production_PID_refused (test_hcp_p17_teacher_audit.P17TeacherFullEvidenceTests) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.975s
+
+OK

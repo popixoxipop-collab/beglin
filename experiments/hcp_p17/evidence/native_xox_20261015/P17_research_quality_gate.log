@@ -1,0 +1,29 @@
+test_01_paired_zero_delta_pass_internal_only (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_02_bad_loss_margin_blocked (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_03_bad_greedy_prefix_accuracy_blocked (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_04_missing_question_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_05_duplicate_item_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_06_gold_answer_sha_mismatch_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_07_wrong_gold_length_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_08_zero_nan_gold_loss_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_09_incorrect_p15_reference_count_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_10_missing_native_prefixes_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_11_missing_native_greedy_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_12_silent_source_not_audited_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_13_invalid_raw_prefix_ids_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_14_early_EOS_single_output_valid (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_15_longer_than_max_generation_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_16_untrusted_orig_checkpoint_claim_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_17_wrong_orig_domain_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_18_clustering_by_question_not_gold_token_count (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_19_exact_margins_and_bootstrap_seed (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_20_reject_token_level_pseudo_replication (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_21_reject_unsupported_bootstrap_seed (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_22_reject_unsupported_bootstrap_resample_count (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_23_longest_correct_prefix (test_hcp_p17_quality_gate.P17GateTests) ... ok
+test_24_native_source_provenance_missing_refused (test_hcp_p17_quality_gate.P17GateTests) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 0.050s
+
+OK

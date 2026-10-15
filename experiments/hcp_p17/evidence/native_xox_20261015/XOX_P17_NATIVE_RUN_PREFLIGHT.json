@@ -1,0 +1,11 @@
+{
+  "actual_observer_only_C_SHA256": "d724af1eb97ee715e206188fa120547f4cc1f18f55a3c37938b6b5a4ce9986d2",
+  "automatic_promotion": false,
+  "native_P9_prepared_cache_MLX_SHA256": "ce07a8296e3cc0f53a5e07a9c242bb09bcb9d6d41c76e9a516f410f1bfd3004f",
+  "original_31_gold_prefix_source_SHA256": "a8e6e42b11a0f881317ab8afddebf7b266a965f4100bfddd7342183e73728521",
+  "production_touched": false,
+  "real_original_C128_SHA256": "bbb43d6144b1656e2f170079e21623b7bce29ccc5923b16f3558f4fc64fb7612",
+  "research_source_branch_HEAD": "f4a83c139bbac759719af12b5650affe37931adb",
+  "schema": "beglin-hcp-p17-isolated-native-exact-source-build-preflight-v1",
+  "source_observer_reversible": true
+}
