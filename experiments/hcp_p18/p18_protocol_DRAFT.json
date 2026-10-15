@@ -1,0 +1,96 @@
+{
+  "schema": "beglin-hcp-p18-preregistered-protocol-v1",
+  "status": "DRAFT_SOURCE_SELECTED_TOKENIZER_AND_RUNTIME_UNVERIFIED",
+  "parent_P17_commit": "9e01436670a40ed785effd03285a3aee8824fdb3",
+  "baseline_quality_status": "P17_INTERNAL_RESEARCH_GATE_BLOCKED",
+  "model": "DeepSeek-V2-Lite BF16 27-layer 5291-tensor teacher plus native qNg64 A/B",
+  "incumbent": "A",
+  "challenger": "B",
+  "automatic_live_promotion": false,
+  "source_manifest_sha256": "ca453fd6776f20c9ea4279e98bffb1ffd97e9f1963c1425bc874a46eaaf150a4",
+  "selection_receipt_sha256": "1e16f8d75487b7e8cc00e62fcda7511a3af4cc176ca31a9528eb046def76dc79",
+  "private_candidate_bank_sha256": "ea7cb77649fcdc285393234e019d56db0d7178fb7787cf23268a7c52c072bb5a",
+  "datasets": {
+    "mmlu": {
+      "repo_id": "cais/mmlu",
+      "revision": "c30699e8356da336a370243923dbaf21066bb9fe",
+      "raw_dataset_sha256": "74a41822ce7d3def56e1682f958469c04642a5336a5ce912fa375fdb90fb25d7",
+      "file": "all/test-00000-of-00001.parquet",
+      "split": "test",
+      "n": 160,
+      "license": "MIT"
+    },
+    "arc_challenge": {
+      "repo_id": "allenai/ai2_arc",
+      "revision": "210d026faf9955653af8916fad021475a3f00453",
+      "raw_dataset_sha256": "62f03257e737aed263f55c6abf87c7bb0028a44a6bdd2a26eb1279eb42c1d1e9",
+      "file": "ARC-Challenge/test-00000-of-00001.parquet",
+      "split": "test",
+      "n": 160,
+      "license": "CC-BY-SA-4.0"
+    },
+    "gsm8k": {
+      "repo_id": "openai/gsm8k",
+      "revision": "740312add88f781978c0658806c59bc2815b9866",
+      "raw_dataset_sha256": "ee7b8da9e381df27b9e3f7758a159ab2bdaa4dbaa910546cbbc47e0cb44e4f59",
+      "file": "main/test-00000-of-00001.parquet",
+      "split": "test",
+      "n": 160,
+      "license": "MIT"
+    }
+  },
+  "selection": {
+    "seed": 20261015,
+    "algorithm": "sha256(seed|dataset|canonical_json_record_sha256), ascending first 160 per source",
+    "after_model_scores_visible": false,
+    "raw_test_text_github": false
+  },
+  "statistics": {
+    "seed": 20261015,
+    "bootstrap_replicates": 10000,
+    "familywise_alpha": 0.05,
+    "bonferroni_endpoints": 3,
+    "nll_margin_nats_per_gold_token": 0.05,
+    "accuracy_margin_B_minus_A": -0.05,
+    "latency_geomean_ratio_ceiling": 1.1,
+    "p95_latency_ratio_ceiling": 1.15,
+    "cluster_unit": "question",
+    "stratification": "160 each dataset",
+    "task_positive_control_floors": {
+      "mmlu": 0.3,
+      "arc_challenge": 0.3,
+      "gsm8k": 0.1
+    }
+  },
+  "protocol_gates": {
+    "real_BF16_full_model_every_question": true,
+    "same_checkpoint_and_tokenizer": true,
+    "A_B_real_gold_full_vocab_arrays_independently_audited": true,
+    "A_B_real_greedy_task_outputs_independently_verified": true,
+    "latency_trials_per_policy": 3,
+    "latency_cache_mode": "warm",
+    "precision_switch_excluded_from_latency": true,
+    "latency_fixed_decode_steps": [
+      8,
+      32,
+      128
+    ],
+    "question_sample_count": 480,
+    "shot_count_bins": [
+      0,
+      3,
+      5
+    ],
+    "actual_native_4096_context_verified": false
+  },
+  "open_blockers": [
+    "Validate full P18 tokenizer digest against XOX P17 original checkpoint",
+    "Prepare independent dev-only few-shot exemplars and token-frozen cohort",
+    "Confirm or implement and regress native KV/CB context beyond P17 128 limit before long-context or 128-token generation",
+    "Run preflight on XOX disk free-after-job >= 20GB protected reserve",
+    "Complete independent BF16/A/B logits and task correctness audits",
+    "Only then change status to FROZEN_BEFORE_EVALUATION via a new reviewed immutable receipt before first P18 inference"
+  ],
+  "independence_limitation": "Externally authored public benchmark, training-data contamination not excluded",
+  "production_touched": false
+}
