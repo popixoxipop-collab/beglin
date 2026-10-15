@@ -1,0 +1,35 @@
+{
+  "audited": 480,
+  "by_source": [
+    {
+      "audited_rows": 160,
+      "dataset": "gsm8k",
+      "parquet_sha256": "ee7b8da9e381df27b9e3f7758a159ab2bdaa4dbaa910546cbbc47e0cb44e4f59",
+      "sampled_rows": 160,
+      "source_rows": 1319
+    },
+    {
+      "audited_rows": 160,
+      "dataset": "mmlu",
+      "parquet_sha256": "74a41822ce7d3def56e1682f958469c04642a5336a5ce912fa375fdb90fb25d7",
+      "sampled_rows": 160,
+      "source_rows": 14042
+    },
+    {
+      "audited_rows": 160,
+      "dataset": "arc_challenge",
+      "parquet_sha256": "62f03257e737aed263f55c6abf87c7bb0028a44a6bdd2a26eb1279eb42c1d1e9",
+      "sampled_rows": 160,
+      "source_rows": 1172
+    }
+  ],
+  "native_AB_executed": false,
+  "original_model_executed": false,
+  "private_candidate_bank_sha256": "ea7cb77649fcdc285393234e019d56db0d7178fb7787cf23268a7c52c072bb5a",
+  "production_touched": false,
+  "schema": "beglin-hcp-p18-independent-public-source-cohort-audit-v1",
+  "selection_receipt_sha256": "1e16f8d75487b7e8cc00e62fcda7511a3af4cc176ca31a9528eb046def76dc79",
+  "source_manifest_sha256": "ca453fd6776f20c9ea4279e98bffb1ffd97e9f1963c1425bc874a46eaaf150a4",
+  "status": "P18_SOURCE_SELECTION_INDEPENDENT_AUDIT_PASS",
+  "tokenization_complete": false
+}
