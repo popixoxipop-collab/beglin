@@ -1,0 +1,53 @@
+{
+  "all_logit_comparisons": [
+    {
+      "bitwise_equal": true,
+      "dev_sequence_index": 0,
+      "gold_count": 3,
+      "logits_number": 307200,
+      "maximum_absolute_F32_difference": 0.0,
+      "stage": "shared_short_long"
+    },
+    {
+      "bitwise_equal": true,
+      "dev_sequence_index": 1,
+      "gold_count": 5,
+      "logits_number": 512000,
+      "maximum_absolute_F32_difference": 0.0,
+      "stage": "shared_short_long"
+    },
+    {
+      "bitwise_equal": true,
+      "dev_sequence_index": 1,
+      "gold_count": 5,
+      "logits_number": 512000,
+      "maximum_absolute_F32_difference": 0.0,
+      "stage": "shared_long_short"
+    },
+    {
+      "bitwise_equal": true,
+      "dev_sequence_index": 0,
+      "gold_count": 3,
+      "logits_number": 307200,
+      "maximum_absolute_F32_difference": 0.0,
+      "stage": "shared_long_short"
+    }
+  ],
+  "automatic_live_promotion": false,
+  "frozen_480_quality_certified": false,
+  "measured_speedup_ratio": 1.4340295185563139,
+  "only_development_203_token_source_sha256": "b628ec3247cfc7a94785a93e539562a7a2bc7726f133c21162479749b8f0ac2c",
+  "original_P17_source_SHA256": "40dd5550b7759ac2760a6c374e1ddf3af35e68af637ab8d2a4f75bca8bee01d3",
+  "production_touched": false,
+  "reverse_shared_one_original_weight_stream_seconds": 296.1845931247808,
+  "schema": "beglin-hcp-p18-staged-original-27L-BF16-real-parity-summary-v1",
+  "shared_one_original_weight_stream_seconds": 250.63913804199547,
+  "standalone_two_original_weight_streams_seconds": 359.42392245773226,
+  "status": "P18_REAL_DEVONLY_ORIGINAL_SHARED_BF16_ALL_GOLD_BITEXACT_PASS",
+  "two_development_gold_windows": [
+    3,
+    5
+  ],
+  "v2_source_sha256": "c160e79ecb527ccfcc7c908e7fc64f67abf8938a4186c2f7033eac753c7cde2f",
+  "validated_F32_elements_each_pass": 819200
+}

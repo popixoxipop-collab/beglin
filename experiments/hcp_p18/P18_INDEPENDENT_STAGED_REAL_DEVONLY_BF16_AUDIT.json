@@ -1,0 +1,75 @@
+{
+  "automatic_live_promotion": false,
+  "baseline_2_separate_original_BF16_forward_seconds": 359.42392245773226,
+  "comparison_count": 4,
+  "comparison_float32_logits_total": 1638400,
+  "comparisons": [
+    {
+      "byte_exact": true,
+      "dev_source_index": 0,
+      "full_vocab_float32_values_compared": 307200,
+      "gold_positions": 3,
+      "maximum_abs_float32_logit_diff": 0.0,
+      "shared_stage": "shared_short_long"
+    },
+    {
+      "byte_exact": true,
+      "dev_source_index": 1,
+      "full_vocab_float32_values_compared": 512000,
+      "gold_positions": 5,
+      "maximum_abs_float32_logit_diff": 0.0,
+      "shared_stage": "shared_short_long"
+    },
+    {
+      "byte_exact": true,
+      "dev_source_index": 0,
+      "full_vocab_float32_values_compared": 307200,
+      "gold_positions": 3,
+      "maximum_abs_float32_logit_diff": 0.0,
+      "shared_stage": "shared_long_short"
+    },
+    {
+      "byte_exact": true,
+      "dev_source_index": 1,
+      "full_vocab_float32_values_compared": 512000,
+      "gold_positions": 5,
+      "maximum_abs_float32_logit_diff": 0.0,
+      "shared_stage": "shared_long_short"
+    }
+  ],
+  "frozen_480_research_quality_certified": false,
+  "full_generation_task_accuracy_certified": false,
+  "input_original_tokens": 203,
+  "official_original_EOE_A_B_native_forward_unrun": true,
+  "original_forward_speedup_one_run_ratio": 1.4340295185563139,
+  "original_tensor_value_reference_SHA256": "88ec605a2824d0b1cb7dd905986cd06e8a2c11b5255ccd0a9b7dc47d8dfd8cda",
+  "production_touched": false,
+  "reverse_order_ratio": 1.21351323060315,
+  "schema": "beglin-hcp-p18-development-only-real-original-bf16-independent-four-stage-audit-v1",
+  "shared_long_short_original_BF16_forward_seconds": 296.1845931247808,
+  "shared_short_long_original_BF16_forward_seconds": 250.63913804199547,
+  "source_role": "development_only_not_480_test",
+  "stage_receipts": {
+    "shared_long_short": {
+      "measured_original_forward_seconds": 296.1845931247808,
+      "original_tensors_once": 5291,
+      "receipt_sha256": "b9d2628ac38d6aaaf14b848e110dd80b34c9994ef448a76a81b93539b72ca54a"
+    },
+    "shared_short_long": {
+      "measured_original_forward_seconds": 250.63913804199547,
+      "original_tensors_once": 5291,
+      "receipt_sha256": "efb6486b4170edde162246aed75289769494fcb02bc228f1cdc98a744301f708"
+    },
+    "standalone_long": {
+      "measured_original_forward_seconds": 210.37930416688323,
+      "original_tensors_once": 5291,
+      "receipt_sha256": "92a967ff7d99f1e88da0d5c276f4e3bffa61e66e802fe88bf6fce82a7036f07f"
+    },
+    "standalone_short": {
+      "measured_original_forward_seconds": 149.04461829084903,
+      "original_tensors_once": 5291,
+      "receipt_sha256": "e093cd26a6587726486a2b52524e13f8d0afef70914ef129b5edcadf050afa10"
+    }
+  },
+  "status": "P18_SHARED_27L_BF16_REAL_FULL_GOLD_VOCAB_BOTH_ORDERS_BYTE_EXACT_DEVONLY"
+}
