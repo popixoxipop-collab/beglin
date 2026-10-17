@@ -6,6 +6,9 @@ on:
       - research/local-quant-budget-20261017
     paths:
       - 'tools/quant_sim_n.py'
+      - 'qng64_dense.c'
+      - 'qng64_dense.h'
+      - 'tests/test_qng64_dense_contract.c'
       - 'tools/qng64_storage.py'
       - 'tools/precision_budget_*.py'
       - 'tools/test_precision_budget_*.py'
@@ -13,6 +16,9 @@ on:
   pull_request:
     paths:
       - 'tools/quant_sim_n.py'
+      - 'qng64_dense.c'
+      - 'qng64_dense.h'
+      - 'tests/test_qng64_dense_contract.c'
       - 'tools/qng64_storage.py'
       - 'tools/precision_budget_*.py'
       - 'tools/test_precision_budget_*.py'
