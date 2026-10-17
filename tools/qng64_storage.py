@@ -9,9 +9,12 @@ CUDA/Metal temporary buffers, nor measured runtime memory.
 GROUP = 64
 MIN_N = 2
 MAX_N = 15
-QNG64_CPU_BITS = frozenset(range(MIN_N, MAX_N + 1))
+# The actual BEGLIN qng64_dense.c API rejects n=4: that precision uses q4g64.
+# n=8 remains its own qNg64 encoding on CPU, distinct from q8g64.
+QNG64_CPU_BITS = frozenset(n for n in range(MIN_N, MAX_N + 1) if n != 4)
 # Mirrored from vdsp-engine tools/backend_adapters.py, quant_format qng64_g64_ef_v1.
 # GPU 4-bit uses q4g64; GPU 8-bit uses q8g64, NOT qNg64(n=4/8).
+# Mirror native mlx_moe.cpp and tools/backend_adapters.py; no runtime claim.
 QNG64_MLX_METAL_BITS = frozenset([2, 3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15])
 
 
@@ -27,8 +30,8 @@ def _integer(label, value):
 
 def check_n(n):
     n = _integer("n", n)
-    if not MIN_N <= n <= MAX_N:
-        raise QuantizationConfigurationError("qNg64 supports bit-width n=2..15")
+    if not MIN_N <= n <= MAX_N or n == 4:
+        raise QuantizationConfigurationError("BEGLIN qNg64 supports n=2..15 except n=4 (use q4g64)")
     return n
 
 
