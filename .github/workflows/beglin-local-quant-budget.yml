@@ -11,6 +11,8 @@ on:
       - 'tests/test_qng64_dense_contract.c'
       - 'benchmarks/qng64_uniform_mixed_microbench.c'
       - 'benchmarks/qng64_native_output_calibration.c'
+      - 'benchmarks/qng64_tiled_accelerate_poc.c'
+      - 'tests/test_qng64_tiled_accelerate_poc.c'
       - 'tools/qng64_storage.py'
       - 'tools/precision_budget_*.py'
       - 'tools/test_precision_budget_*.py'
@@ -23,6 +25,8 @@ on:
       - 'tests/test_qng64_dense_contract.c'
       - 'benchmarks/qng64_uniform_mixed_microbench.c'
       - 'benchmarks/qng64_native_output_calibration.c'
+      - 'benchmarks/qng64_tiled_accelerate_poc.c'
+      - 'tests/test_qng64_tiled_accelerate_poc.c'
       - 'tools/qng64_storage.py'
       - 'tools/precision_budget_*.py'
       - 'tools/test_precision_budget_*.py'
@@ -60,6 +64,25 @@ jobs:
             qng64_dense.c tests/test_qng64_dense_contract.c -lm \
             -o "$RUNNER_TEMP/beglin_qng64_dense_contract"
           "$RUNNER_TEMP/beglin_qng64_dense_contract"
+      - name: Native Apple Accelerate tiled qNg64 NEON and fallback numeric regressions
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -m
+          for flavor in neon scalar_fallback; do
+            extra=()
+            if [[ "$flavor" == scalar_fallback ]]; then
+              extra=(-DBEGLIN_FORCE_SCALAR_UNPACK=1)
+            fi
+            cc -O3 -DACCELERATE_NEW_LAPACK ${extra[@]} \
+              -std=c11 -Wall -Wextra -Werror -I. \
+              qng64_dense.c benchmarks/qng64_tiled_accelerate_poc.c \
+              tests/test_qng64_tiled_accelerate_poc.c \
+              -framework Accelerate -lm \
+              -o "$RUNNER_TEMP/beglin_qng64_tiled_$flavor"
+            "$RUNNER_TEMP/beglin_qng64_tiled_$flavor"
+          done
       - name: Actual native CPU qNg64 GEMV uniform-vs-mixed microbenchmark
         shell: bash
         run: |
