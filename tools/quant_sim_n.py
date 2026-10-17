@@ -170,7 +170,7 @@ def main():
     ap.add_argument("--checkpoint", required=True, help="path to *.index.json or a single *.safetensors file")
     ap.add_argument("--tensor", required=True, help="real tensor name inside the checkpoint")
     ap.add_argument("--out-dir", required=True)
-    ap.add_argument("--n", type=int, nargs="+", required=True, help="qNg64 bit-widths to simulate, n=2..15")
+    ap.add_argument("--n", type=int, nargs="+", required=True, help="qNg64 bit-widths to simulate, n=2..15 excluding n=4 (q4g64 uses another format)")
     ap.add_argument("--passthrough", action="store_true",
                      help="also write a zero-quantization pure-F32 passthrough file (pipeline sanity check)")
     args = ap.parse_args()
