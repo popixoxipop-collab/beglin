@@ -34,11 +34,15 @@ def input_profile(n_tensors=2, backend="cpu", budget=2200):
 class TestQng64Storage(unittest.TestCase):
     def test_exact_packed_code_plus_scale_bytes(self):
         for n in range(2, 16):
+            if n == 4:  # separate q4g64 format, never qNg64
+                continue
             self.assertEqual(packed_weight_bytes(64, n), n*8+4)
             self.assertEqual(packed_weight_bytes(128, n), 2*(n*8+4))
             self.assertEqual(effective_bits_per_weight(n), n + 0.5)
-        self.assertEqual(packed_weight_bytes(64, 4), 36)
-        self.assertEqual(effective_bits_per_weight(4), 4.5)
+        with self.assertRaises(QuantizationConfigurationError):
+            packed_weight_bytes(64, 4)
+        with self.assertRaises(QuantizationConfigurationError):
+            effective_bits_per_weight(4)
         self.assertEqual(effective_bits_per_weight(5), 5.5)
         self.assertEqual(effective_bits_per_weight(7), 7.5)
 
@@ -48,10 +52,12 @@ class TestQng64Storage(unittest.TestCase):
         for n in (4,8):
             with self.assertRaises(QuantizationConfigurationError):
                 check_backend_n("mlx_metal",n)
-        self.assertEqual(check_backend_n("cpu", 8), 8)
+        self.assertEqual(check_backend_n("cpu", 8), 8)  # distinct CPU qNg64 n8
+        with self.assertRaises(QuantizationConfigurationError):
+            check_backend_n("cpu", 4)  # q4g64 is not qNg64
 
     def test_bad_n_and_shape(self):
-        for n in (0,1,16,32,True,"5",5.0):
+        for n in (0,1,4,16,32,True,"5",5.0):
             with self.assertRaises(QuantizationConfigurationError):
                 packed_weight_bytes(64,n)
         for elements in (0,-64,3,65,128.0,True):
