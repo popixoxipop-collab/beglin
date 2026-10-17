@@ -70,17 +70,22 @@ jobs:
         run: |
           set -euo pipefail
           uname -m
-          for flavor in neon scalar_fallback; do
-            extra=()
-            if [[ "$flavor" == scalar_fallback ]]; then
-              extra=(-DBEGLIN_FORCE_SCALAR_UNPACK=1)
-            fi
-            cc -O3 -DACCELERATE_NEW_LAPACK ${extra[@]} \
+          compile_tiled() {
+            local flavor="$1"
+            shift
+            cc -O3 -DACCELERATE_NEW_LAPACK "$@" \
               -std=c11 -Wall -Wextra -Werror -I. \
               qng64_dense.c benchmarks/qng64_tiled_accelerate_poc.c \
               tests/test_qng64_tiled_accelerate_poc.c \
               -framework Accelerate -lm \
               -o "$RUNNER_TEMP/beglin_qng64_tiled_$flavor"
+          }
+          for flavor in neon scalar_fallback; do
+            if [[ "$flavor" == scalar_fallback ]]; then
+              compile_tiled "$flavor" -DBEGLIN_FORCE_SCALAR_UNPACK=1
+            else
+              compile_tiled "$flavor"
+            fi
             "$RUNNER_TEMP/beglin_qng64_tiled_$flavor"
           done
       - name: Actual native CPU qNg64 GEMV uniform-vs-mixed microbenchmark
