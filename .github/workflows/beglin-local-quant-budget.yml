@@ -1,0 +1,71 @@
+name: beglin-local-quant-budget
+
+on:
+  push:
+    branches:
+      - research/local-quant-budget-20261017
+    paths:
+      - 'tools/quant_sim_n.py'
+      - 'tools/qng64_storage.py'
+      - 'tools/precision_budget_*.py'
+      - 'tools/test_precision_budget_*.py'
+      - '.github/workflows/beglin-local-quant-budget.yml'
+  pull_request:
+    paths:
+      - 'tools/quant_sim_n.py'
+      - 'tools/qng64_storage.py'
+      - 'tools/precision_budget_*.py'
+      - 'tools/test_precision_budget_*.py'
+      - '.github/workflows/beglin-local-quant-budget.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-algorithm:
+    name: "offline ${{ matrix.os }} / Python ${{ matrix.python }}"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Syntax-check engine research tools
+        run: |
+          python -m py_compile tools/quant_sim_n.py tools/qng64_storage.py \
+            tools/precision_budget_search.py tools/precision_budget_collect.py \
+            tools/precision_budget_fixture.py tools/test_precision_budget_search.py \
+            tools/test_precision_budget_collect.py
+      - name: qNg64 per-tensor algorithm regressions (synthetic only)
+        run: python -m unittest discover -s tools -p 'test_precision_budget*.py' -v
+      - name: Generate and solve synthetic CPU + Metal capability plans
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/beglin-quant-ci"
+          for backend in cpu mlx_metal; do
+            python tools/precision_budget_fixture.py \
+              --backend "$backend" --budget-frac 0.5 \
+              --output "$RUNNER_TEMP/beglin-quant-ci/$backend-profile.json"
+            python tools/precision_budget_search.py \
+              --input "$RUNNER_TEMP/beglin-quant-ci/$backend-profile.json" \
+              --output "$RUNNER_TEMP/beglin-quant-ci/$backend-policy.json"
+            python - "$RUNNER_TEMP/beglin-quant-ci/$backend-policy.json" <<'PY'
+          import json, sys
+          doc = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert doc["mode"] == "OFFLINE_RESEARCH_ONLY_NOT_QUALIFIED_FOR_LIVE"
+          assert doc["automatic_live_promotion"] is False
+          assert doc["quality_validated"] is False
+          assert doc["latency_measured"] is False
+          assert doc["gpu_resident_memory_measured"] is False
+          assert doc["serialized_qng64_weight_bytes"] <= doc["budget_bytes"]
+          print(doc["backend"], doc["serialized_qng64_weight_bytes"],
+                doc["weighted_relative_l2_squared_proxy"])
+          PY
+          done
