@@ -32,7 +32,8 @@ jobs:
           python-version: '3.11'
       - name: Install pinned MLX C++ headers and dylib
         shell: bash
-        run: python -m pip install --disable-pip-version-check --only-binary=:all: mlx==0.32.1
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: mlx==0.32.1
       - name: Compile actual native BEGLIN C++ bridge
         shell: bash
         run: |
