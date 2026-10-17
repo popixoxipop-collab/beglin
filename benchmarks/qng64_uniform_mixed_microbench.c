@@ -137,24 +137,48 @@ static size_t run_arm(const char *name, const int widths[NROLE],
     return total;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
     const int uniform[NROLE] = {7, 7, 7, 7, 7, 7};
-    const int mixed[NROLE] = {7, 7, 6, 9, 7, 6};
+    int candidate[NROLE] = {7, 7, 6, 9, 7, 6};
+    const char *label = "mixed_7_7_6_9_7_6";
+    if (argc != 1 && argc != NROLE + 1)
+        fatal("usage: microbench [n0 n1 n2 n3 n4 n5]");
+    if (argc == NROLE + 1) {
+        label = "native_output_calibrated";
+        for (int i = 0; i < NROLE; ++i) {
+            char *end = NULL;
+            const long n = strtol(argv[i + 1], &end, 10);
+            if (end == argv[i + 1] || *end || n < 2 || n > 15 || n == 4)
+                fatal("invalid qNg64 width argument; q4g64 is separate");
+            candidate[i] = (int)n;
+        }
+    }
     float x[NIN];
     for (int i = 0; i < NIN; ++i)
-        x[i] = 0.08f * sinf((float)i * 0.0452f) + 0.04f * cosf((float)i * 0.0119f);
+        x[i] = 0.08f * sinf((float)i * 0.0452f) +
+               0.04f * cosf((float)i * 0.0119f);
 
     double sps_a, sps_b, err_a, err_b;
     const size_t bytes_a = run_arm("uniform_n7", uniform, x, &sps_a, &err_a);
-    const size_t bytes_b = run_arm("mixed_7_7_6_9_7_6", mixed, x, &sps_b, &err_b);
-    if (bytes_a != bytes_b) fatal("unequal serialized-weight budgets");
-    if (bytes_a != (size_t)184320) fatal("wrong native code+scale accounting");
+    const size_t bytes_b = run_arm(label, candidate, x, &sps_b, &err_b);
+    if (argc == 1 && bytes_a != bytes_b)
+        fatal("default mixed policy must use same weight budget");
+    if (bytes_b > bytes_a)
+        fatal("selected policy exceeds uniform 7-bit weight budget");
+    if (bytes_a != (size_t)184320)
+        fatal("wrong native code+scale accounting");
+    if (!(err_a > 0.0) || !(sps_a > 0.0) || !(sps_b > 0.0))
+        fatal("invalid denominator");
     printf("{\"scope\":\"SYNTHETIC_NATIVE_CPU_QNG64_GEMV_ONLY\","
-           "\"uniform_and_mixed_weight_bytes_equal\":true,"
+           "\"uniform_and_mixed_weight_bytes_equal\":%s,"
+           "\"selected_within_uniform_budget\":true,"
+           "\"selected_to_uniform_output_L2_ratio\":%.10g,"
+           "\"selected_to_uniform_GEMV_throughput_ratio\":%.10g,"
            "\"reported_bf16_bytes\":%d,\"actual_native_cpu_test_only\":true,"
            "\"not_llm_tokens_per_second\":true,\"not_metal_gpu\":true,"
            "\"not_model_quality_certified\":true,"
            "\"automatic_live_promotion\":false}\n",
-           NROLE * NOUT * NIN * 2);
+           bytes_a == bytes_b ? "true" : "false", err_b / err_a,
+           sps_b / sps_a, NROLE * NOUT * NIN * 2);
     return 0;
 }
