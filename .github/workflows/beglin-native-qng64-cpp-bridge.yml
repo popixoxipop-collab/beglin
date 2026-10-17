@@ -1,0 +1,53 @@
+name: BEGLIN native qNg64 C++ compile gate
+
+on:
+  push:
+    branches:
+      - research/local-quant-budget-20261017
+    paths:
+      - mlx_moe.cpp
+      - mlx_moe.h
+      - tools/qng64_native_cpp_bridge_regression.cpp
+      - .github/workflows/beglin-native-qng64-cpp-bridge.yml
+  pull_request:
+    paths:
+      - mlx_moe.cpp
+      - mlx_moe.h
+      - tools/qng64_native_cpp_bridge_regression.cpp
+      - .github/workflows/beglin-native-qng64-cpp-bridge.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpp-build-only:
+    name: macOS arm64 MLX 0.32.1 compile/link only
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned MLX C++ headers and dylib
+        shell: bash
+        run: python -m pip install --disable-pip-version-check --only-binary=:all: mlx==0.32.1
+      - name: Compile actual native BEGLIN C++ bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          MLX_DIR="$(python -c 'import mlx; print(list(mlx.__path__)[0])')"
+          test -f "$MLX_DIR/include/mlx/mlx.h"
+          test -f "$MLX_DIR/lib/libmlx.dylib"
+          clang++ -std=c++20 -O2 -I. -I"$MLX_DIR/include" \
+            mlx_moe.cpp tools/qng64_native_cpp_bridge_regression.cpp \
+            -L"$MLX_DIR/lib" -Wl,-rpath,"$MLX_DIR/lib" -lmlx \
+            -o "$RUNNER_TEMP/beglin_native_cpp_qng64_probe"
+          test -x "$RUNNER_TEMP/beglin_native_cpp_qng64_probe"
+          otool -L "$RUNNER_TEMP/beglin_native_cpp_qng64_probe" | grep -F 'libmlx.dylib'
+          echo '{"gate":"PASS_CXX_COMPILE_LINK_ONLY","metal_device_certified":false,"model_quality_certified":false,"automatic_live_promotion":false}'
+
+# A hosted macOS runner does not attest physical Metal GPU kernel execution.
+# The actual hardware parity evidence lives on the isolated EOE research host.
