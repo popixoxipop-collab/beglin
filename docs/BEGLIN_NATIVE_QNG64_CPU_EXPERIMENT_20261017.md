@@ -46,6 +46,10 @@ Read-only pre-existing `beglin_followup(status)` reports G53 `PASS` and G54 `PAS
 - Maximum absolute last-logit difference among six comparisons ≈ 7.6294e-5, maximum NLL sum difference ≈ 0.001709.
 - This establishes parity for **those previous baseline policies**, not mixed-budget qNg64 quality.
 
+## Important source-tree distinction
+
+The kernel built by GitHub CI is the repository's `qng64_dense.c` from the **research PR checkout**. The XOX `vdsp_engine` workspace currently reports `main...origin/main [ahead 2, behind 234]` and a direct read of `qng64_dense.c` there returned `NOT_FOUND`. XOX separately declares a qNg64 CPU/backend capability in `tools/backend_adapters.py`, but this CI does **not** demonstrate the currently serving XOX binary uses the same C code. No XOX native executable was launched. Keep engine release/runtime parity unverified until a permitted, identifiable XOX build/benchmark is run.
+
 ## Unresolved engine work
 
 1. Acquire authorized, independent real DeepSeek per-tensor calibration; the XOX registered Python exec policy has denied previous execution. Do not bypass it with privileged pathways or mutate serving.
