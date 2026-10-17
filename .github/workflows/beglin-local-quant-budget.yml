@@ -9,6 +9,7 @@ on:
       - 'qng64_dense.c'
       - 'qng64_dense.h'
       - 'tests/test_qng64_dense_contract.c'
+      - 'benchmarks/qng64_uniform_mixed_microbench.c'
       - 'tools/qng64_storage.py'
       - 'tools/precision_budget_*.py'
       - 'tools/test_precision_budget_*.py'
@@ -19,6 +20,7 @@ on:
       - 'qng64_dense.c'
       - 'qng64_dense.h'
       - 'tests/test_qng64_dense_contract.c'
+      - 'benchmarks/qng64_uniform_mixed_microbench.c'
       - 'tools/qng64_storage.py'
       - 'tools/precision_budget_*.py'
       - 'tools/test_precision_budget_*.py'
@@ -56,6 +58,13 @@ jobs:
             qng64_dense.c tests/test_qng64_dense_contract.c -lm \
             -o "$RUNNER_TEMP/beglin_qng64_dense_contract"
           "$RUNNER_TEMP/beglin_qng64_dense_contract"
+      - name: Actual native CPU qNg64 GEMV uniform-vs-mixed microbenchmark
+        shell: bash
+        run: |
+          cc -std=c11 -O3 -Wall -Wextra -Werror -I. \
+            qng64_dense.c benchmarks/qng64_uniform_mixed_microbench.c -lm \
+            -o "$RUNNER_TEMP/beglin_qng64_mixed_microbench"
+          "$RUNNER_TEMP/beglin_qng64_mixed_microbench"
       - name: qNg64 per-tensor algorithm regressions (synthetic only)
         run: python -m unittest discover -s tools -p 'test_precision_budget*.py' -v
       - name: Generate and solve synthetic CPU + Metal capability plans
