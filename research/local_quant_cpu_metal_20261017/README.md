@@ -35,6 +35,21 @@ python3 research/local_quant_cpu_metal_20261017/test_qng64_metal_expert_gather_r
 
 All real BF16 checkpoint outputs and SHA-pinned private receipts stay on the authorized research host. **The public repository contains synthetic, reusable engine code and summary numbers only.**
 
+## Full routed Gate/Up/Down experimental operators
+
+- `qng64_metal_routed_ffn_research.py`: whole routed Gate→BF16 SiLU×Up→Down→topK weighted sum and optional packed shared FFN + residual on MLX GPU, retaining the same packed expert banks; synthetic Apple GPU tests **4/4 PASS** (`test_qng64_metal_routed_ffn_research.py`).
+- `qng64_metal_fused_routed_ffn_research.py`: alternative custom Metal kernels for RNE-to-BF16 nonlinear and topK/shared/residual accumulation; synthetic tests **3/3 PASS** (`test_qng64_metal_fused_routed_ffn_research.py`).
+- **Do not equate less host transfer with more speed:** at 222 real DeepSeek token–expert pairs across 57 routed experts, the existing staged 3-gather method gave **24.31ms** median for 3 Gate/Up/Down + source-style reduction, vs **30.21ms** unfused GPU-resident and **29.81ms** custom-fused; separate 171 calls gave **53.48ms**. Reuse 24.31ms as research baseline. The fused output differed from staged by only relative L2 `2.565e-5`, but **did not improve latency**.
+
+On approved Apple MLX GPU:
+
+```sh
+python3 research/local_quant_cpu_metal_20261017/test_qng64_metal_routed_ffn_research.py
+python3 research/local_quant_cpu_metal_20261017/test_qng64_metal_fused_routed_ffn_research.py
+```
+
+Details and precise benchmark scope: `docs/BEGLIN_MOE_GATE_UP_DOWN_FULL_GATHER_AB_20261017.md`. These are **not** live C++ backend/serving integrations. Model source weights and private receipts were not committed.
+
 ## Important format boundaries
 
 BEGLIN CPU qNg64 supports widths `2..15` except `4`, which is a distinct `q4g64` representation. The current `mlx_moe.cpp` custom Metal bitplane path supports `7,9..15`. This research adapter permits `6` **only with explicit `experimental_n6=True`**. Existing native MLX n6 dispatch repacks the format into MLX `quantized_matmul`; the custom n6 path here is **not an assertion that live C++ code already dispatches that way**.
