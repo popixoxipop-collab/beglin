@@ -43,6 +43,13 @@ jobs:
             tools/precision_budget_search.py tools/precision_budget_collect.py \
             tools/precision_budget_fixture.py tools/test_precision_budget_search.py \
             tools/test_precision_budget_collect.py
+      - name: Real BEGLIN qng64_dense.c CPU encode/decode/GEMV contract
+        shell: bash
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -I. \
+            qng64_dense.c tests/test_qng64_dense_contract.c -lm \
+            -o "$RUNNER_TEMP/beglin_qng64_dense_contract"
+          "$RUNNER_TEMP/beglin_qng64_dense_contract"
       - name: qNg64 per-tensor algorithm regressions (synthetic only)
         run: python -m unittest discover -s tools -p 'test_precision_budget*.py' -v
       - name: Generate and solve synthetic CPU + Metal capability plans
