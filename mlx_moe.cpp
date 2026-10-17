@@ -1976,8 +1976,22 @@ static mx::array qng64_ffn_gather(const FfnRoleRef &t, const mx::array &x,
 int mlx_gpu_qng64_gather_probe(const uint8_t *planes, long E, long out, long in, long ng, int n,
                                 const float *scales, const float *x, int N,
                                 const int32_t *expert_idx, float *out_buf) {
+    // The direct research probe wraps caller-owned memory, so reject malformed
+    // shapes/indices BEFORE constructing arrays or launching Metal threads.
+    // Pointer capacity is still the caller's responsibility; only a
+    // source-attested serialized-manifest validator may admit full-model blobs.
+    if (!planes || !scales || !x || !expert_idx || !out_buf) return 0;
+    if (E <= 0 || out <= 0 || in < 64 || (in % 64) != 0 ||
+        ng != in / 64 || N <= 0 || !(n == 7 || (n >= 9 && n <= 15))) return 0;
+    const long max_int = 2147483647L;
+    const long width_bytes = (long)n * 8L;
+    if (E > max_int || out > max_int || in > max_int || ng > max_int ||
+        ng > max_int / width_bytes || out > max_int / E ||
+        E * out > max_int / ng || E * out * ng > max_int / width_bytes)
+        return 0;
+    for (int z = 0; z < N; ++z)
+        if (expert_idx[z] < 0 || (long)expert_idx[z] >= E) return 0;
     if (!mlx_gpu_available()) return 0;
-    if (E <= 0 || out <= 0 || in <= 0 || ng <= 0 || n <= 0 || N <= 0) return 0;
     try {
         mx::array planes_arr((void *)planes, {(int)E, (int)out, (int)(ng * n * 8)}, mx::uint8, noop_deleter);
         mx::array scales_arr((void *)scales, {(int)E, (int)out, (int)ng}, mx::float32, noop_deleter);

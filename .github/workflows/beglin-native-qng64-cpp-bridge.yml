@@ -8,12 +8,14 @@ on:
       - mlx_moe.cpp
       - mlx_moe.h
       - tools/qng64_native_cpp_bridge_regression.cpp
+      - tools/qng64_native_cpp_gather_regression.cpp
       - .github/workflows/beglin-native-qng64-cpp-bridge.yml
   pull_request:
     paths:
       - mlx_moe.cpp
       - mlx_moe.h
       - tools/qng64_native_cpp_bridge_regression.cpp
+      - tools/qng64_native_cpp_gather_regression.cpp
       - .github/workflows/beglin-native-qng64-cpp-bridge.yml
   workflow_dispatch:
 
@@ -48,6 +50,12 @@ jobs:
             -o "$RUNNER_TEMP/beglin_native_cpp_qng64_probe"
           test -x "$RUNNER_TEMP/beglin_native_cpp_qng64_probe"
           otool -L "$RUNNER_TEMP/beglin_native_cpp_qng64_probe" | grep -F 'libmlx.dylib'
+          clang++ -std=c++20 -O2 -I. -I"$MLX_DIR/include" \
+            mlx_moe.cpp tools/qng64_native_cpp_gather_regression.cpp \
+            -L"$MLX_DIR/lib" -Wl,-rpath,"$MLX_DIR/lib" -lmlx \
+            -o "$RUNNER_TEMP/beglin_native_cpp_qng64_gather_probe"
+          test -x "$RUNNER_TEMP/beglin_native_cpp_qng64_gather_probe"
+          otool -L "$RUNNER_TEMP/beglin_native_cpp_qng64_gather_probe" | grep -F 'libmlx.dylib'
           echo '{"gate":"PASS_CXX_COMPILE_LINK_ONLY","metal_device_certified":false,"model_quality_certified":false,"automatic_live_promotion":false}'
 
 # A hosted macOS runner does not attest physical Metal GPU kernel execution.
