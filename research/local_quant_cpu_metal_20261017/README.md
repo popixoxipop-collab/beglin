@@ -21,6 +21,20 @@ clang -O3 -std=c11 -fPIC -dynamiclib -Wall -Wextra -Werror \
 
 The Metal test **requires** a GPU and must not be counted as a CI PASS on runners lacking MLX/Metal.
 
+## Source-matched MoE gather kernel
+
+- `qng64_metal_expert_gather_research.py`: mirrors the BEGLIN `mlx_moe.cpp::qng64_gather_gemv_kernel` two-SIMD-group algorithm to process arbitrary explicit `[token, expert]` pairs in **one real Metal dispatch** using raw qNg64 bitplanes. The adapter rejects invalid host expert IDs and weights without copying a decompressed GPU matrix.
+- `test_qng64_metal_expert_gather_research.py`: 4 standalone synthetic tests including a separate Metal per-expert path, independent dense output oracle, negative IDs/formats, and packed-code mutation/recovery. Apple M1 Max MLX hardware: **4/4 PASS**; original native C qNg64 vs gather on real DeepSeek first-2-layer MoE routing: max relative L2 `1.314e-7` for independently sampled pairs.
+- Limited **Gate projection** timing from 222 actual BF16 hidden-state token/expert pairs routed across 57 active experts: 57 separate Metal GPU calls median **22.01 ms**, single gather dispatch median **7.88 ms**, **2.79× fewer seconds** in 5 interleaved rounds. This is an API-level kernel+CPU synchronization comparison for Gate projection only, not whole MoE or model tokens/s.
+
+To test on an approved Apple GPU:
+
+```sh
+python3 research/local_quant_cpu_metal_20261017/test_qng64_metal_expert_gather_research.py
+```
+
+All real BF16 checkpoint outputs and SHA-pinned private receipts stay on the authorized research host. **The public repository contains synthetic, reusable engine code and summary numbers only.**
+
 ## Important format boundaries
 
 BEGLIN CPU qNg64 supports widths `2..15` except `4`, which is a distinct `q4g64` representation. The current `mlx_moe.cpp` custom Metal bitplane path supports `7,9..15`. This research adapter permits `6` **only with explicit `experimental_n6=True`**. Existing native MLX n6 dispatch repacks the format into MLX `quantized_matmul`; the custom n6 path here is **not an assertion that live C++ code already dispatches that way**.
