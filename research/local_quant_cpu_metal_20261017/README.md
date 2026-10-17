@@ -50,6 +50,14 @@ python3 research/local_quant_cpu_metal_20261017/test_qng64_metal_fused_routed_ff
 
 Details and precise benchmark scope: `docs/BEGLIN_MOE_GATE_UP_DOWN_FULL_GATHER_AB_20261017.md`. These are **not** live C++ backend/serving integrations. Model source weights and private receipts were not committed.
 
+## Full 27-layer BF16 versus selective native qNg64 Q-projection inference
+
+- `qng64_tiled_cpu_linear_research.py`: reusable BF16 PyTorch CPU linear with **actual C qNg64 packed bitplanes + F32 group scales**, bounded 64-row Apple Accelerate transient GEMM. No resident full F32 dense model weight; *research-only*, not production C++.
+- `test_qng64_tiled_cpu_linear_research.py`: hardware-compatible synthetic 5-case native C test suite, including exact group/code byte accounting, independent mathematical decoder, invalid input rejection, and packed-code bitflip control. **5/5 EOE Apple Silicon PASS**.
+- Build its local test dylib by compiling `qng64_dense.c` with the sibling `qng64_tiled_accelerate_portable_poc.c` as demonstrated above; then run with `BEGLIN_QNG64_RESEARCH_DYLIB=/absolute/path/to/compiled.dylib python3 research/local_quant_cpu_metal_20261017/test_qng64_tiled_cpu_linear_research.py`. Requires PyTorch, NumPy and Apple Accelerate, so NOT part of generic Linux GitHub CI.
+- The **27/27-layer** DeepSeek BF16 research model ran in an isolated streaming reference, and its final logits SHA was reproduced byte-exactly when evaluated alongside real compressed **q_proj-only** trajectories. One calibration prompt chose n7 under strict equal 27-q-proj code/scale byte budget; +2% Q-only payload upgraded layers 2/7 to n9. Three independently authored holdout prompts yielded **25/25 top1 agreement** for +2% and average self NLL **5.76494 vs 5.78858 BF16**, but one of three prompt NLLs worsened. No production/task-quality or whole-model-all-weight conclusion.
+- Details: `docs/BEGLIN_FULL27_REAL_BF16_QPROJ_LOCAL_QUANT_20261018.md`. Research source proof receipts remain on the authorized workstation and are **not** uploaded.
+
 ## Important format boundaries
 
 BEGLIN CPU qNg64 supports widths `2..15` except `4`, which is a distinct `q4g64` representation. The current `mlx_moe.cpp` custom Metal bitplane path supports `7,9..15`. This research adapter permits `6` **only with explicit `experimental_n6=True`**. Existing native MLX n6 dispatch repacks the format into MLX `quantized_matmul`; the custom n6 path here is **not an assertion that live C++ code already dispatches that way**.
