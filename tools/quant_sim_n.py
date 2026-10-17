@@ -31,6 +31,8 @@ import os
 import struct
 import sys
 
+from qng64_storage import check_n, effective_bits_per_weight
+
 GROUP = 64
 
 
@@ -106,6 +108,9 @@ def quantize_dequantize_n(vals: array.array, out: int, in_: int, n: int) -> arra
     own scale/clamp convention (qmax=2^(n-1)-1), plain round-to-nearest-even
     (Python's round() on floats is already round-half-to-even, matching this
     project's own rintf()-not-roundf() finding for the same reason)."""
+    n = check_n(n)
+    if out <= 0 or in_ <= 0 or len(vals) != out * in_:
+        raise ValueError("tensor dimensions must match values and be positive")
     if in_ % GROUP != 0:
         raise SystemExit(f"in={in_} not a multiple of GROUP={GROUP}")
     qmax = float((1 << (n - 1)) - 1)
@@ -165,7 +170,7 @@ def main():
     ap.add_argument("--checkpoint", required=True, help="path to *.index.json or a single *.safetensors file")
     ap.add_argument("--tensor", required=True, help="real tensor name inside the checkpoint")
     ap.add_argument("--out-dir", required=True)
-    ap.add_argument("--n", type=int, nargs="+", required=True, help="bit-widths to simulate, e.g. 2 3 4 ... 16")
+    ap.add_argument("--n", type=int, nargs="+", required=True, help="qNg64 bit-widths to simulate, n=2..15")
     ap.add_argument("--passthrough", action="store_true",
                      help="also write a zero-quantization pure-F32 passthrough file (pipeline sanity check)")
     args = ap.parse_args()
@@ -184,7 +189,7 @@ def main():
     for n in args.n:
         qd = quantize_dequantize_n(vals, out, in_, n)
         err = rel_l2(vals, qd)
-        eff_bpw = n + 32.0 / (GROUP * n)  # same convention as q4g64's own 4+32/64=4.5
+        eff_bpw = effective_bits_per_weight(n)  # n code bits + one F32 scale per 64 weights
         out_path = os.path.join(args.out_dir, f"sim_n{n}.safetensors")
         write_single_tensor_safetensors(out_path, "sim", (out, in_), qd)
         results.append({"n": n, "effective_bpw": eff_bpw, "rel_l2": err, "path": out_path})
