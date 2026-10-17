@@ -600,7 +600,21 @@ int mlx_gpu_dequant_probe(const char *name, long e, long row, long col0, int nco
     }
 }
 
+// Research probe shares the REAL custom qNg64 Metal kernel with the engine.
+static mx::array qng64_gemv_e0(const char *name, const mx::array &x);
 int mlx_gpu_matvec_probe(const char *name, long e, const float *x, float *y) {
+    if (!name || !x || !y || !mlx_gpu_available()) return 0;
+    auto nbit = g_qng64_tensors.find(name);
+    if (nbit != g_qng64_tensors.end()) {
+        if (e != 0 || nbit->second.E != 1) return 0;
+        try {
+            mx::array xin((void *)x, {1, (int)nbit->second.in}, mx::float32, noop_deleter);
+            mx::array yout = qng64_gemv_e0(name, xin);
+            mx::eval(yout);
+            std::memcpy(y, yout.data<float>(), sizeof(float) * (size_t)nbit->second.out);
+            return 1;
+        } catch (...) { return 0; }
+    }
     auto mit = g_mixed_qng64_tensors.find(name);
     if (mit != g_mixed_qng64_tensors.end()) {
         if (e != 0) return 0;
@@ -2005,6 +2019,41 @@ static mx::array lazy_matvec_e0(const char *name, const mx::array &x) {
     mx::array s_e = mx::take(t.scales, 0, 0);
     mx::array b_e = mx::take(t.biases, 0, 0);
     return mx::quantized_matmul(x, w_e, s_e, b_e, /*transpose=*/true, g_layer_group, t.bits);
+}
+
+// Research-only bound-operator parity probe. The same lazy_matvec_e0
+// dispatch used by MLA/GQA and the native C++ qNg64 Metal kernel runs here.
+// No serving scheduler, policy activation or promotion is modified.
+int mlx_gpu_qng64_bound_batch_probe(const char *name, const float *x,
+                                     int batch, float *y) {
+    if (!name || !x || !y || batch <= 0 || batch > 4096 || !mlx_gpu_available())
+        return 0;
+    long in = 0, out = 0;
+    auto nit = g_qng64_tensors.find(name);
+    if (nit != g_qng64_tensors.end()) {
+        if (nit->second.E != 1) return 0;
+        in = nit->second.in;
+        out = nit->second.out;
+    } else {
+        auto qit = g_tensors.find(name);
+        if (qit == g_tensors.end() || qit->second.E != 1 ||
+            (qit->second.bits != 2 && qit->second.bits != 3 &&
+             qit->second.bits != 5 && qit->second.bits != 6))
+            return 0;
+        in = qit->second.in;
+        out = qit->second.out;
+    }
+    if (in < 64 || (in % 64) != 0 || in > 2147483647L ||
+        out <= 0 || out > 2147483647L) return 0;
+    try {
+        mx::array xin((void *)x, {batch, (int)in}, mx::float32, noop_deleter);
+        mx::array yout = lazy_matvec_e0(name, xin);
+        if (yout.shape().size() != 2 ||
+            yout.shape(0) != batch || yout.shape(1) != out) return 0;
+        mx::eval(yout);
+        std::memcpy(y, yout.data<float>(), sizeof(float) * (size_t)batch * (size_t)out);
+        return 1;
+    } catch (...) { return 0; }
 }
 
 int mlx_gpu_layer_step_lazy(int l, int pos, int is_dense,
