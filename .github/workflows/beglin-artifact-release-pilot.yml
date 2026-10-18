@@ -49,11 +49,23 @@ jobs:
         run: |
           set -euo pipefail
           archive="${RUNNER_TEMP}/beglin-${ARTIFACT_ID}.zip"
-          if ! gh release view "$ARCHIVE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
-            gh release create "$ARCHIVE_TAG" --repo "$GH_REPO" --target "$GITHUB_SHA" --title "Beglin historical QT archive (pilot, do not publish)" --notes "Original Actions ZIP. No source deletion. ID 11453425023, SHA256 e214cbf4e4fddd8de5a6ff75bab9ce536ecfee490b9f213f0c5f378ae4e55748." --draft
+          # Draft releases are not always resolvable by /releases/tags/TAG;
+          # use the exact previously created draft release ID instead.
+          release_id="416391864"
+          release="$(gh api "repos/${GH_REPO}/releases/${release_id}")"
+          echo "$release" | jq -e --arg tag "$ARCHIVE_TAG" '.tag_name == $tag and .draft == true' >/dev/null
+          present="$(echo "$release" | jq --arg name "beglin-${ARTIFACT_ID}.zip" '[.assets[]|select(.name == $name)]|length')"
+          if [ "$present" = "0" ]; then
+            curl --fail --show-error --silent --retry 3 --retry-all-errors \
+              --connect-timeout 20 --max-time 1100 \
+              --request POST \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header "Content-Type: application/zip" \
+              --data-binary "@$archive" \
+              "https://uploads.github.com/repos/${GH_REPO}/releases/${release_id}/assets?name=beglin-${ARTIFACT_ID}.zip" \
+              --output "${RUNNER_TEMP}/release-upload-result.json"
           fi
-          gh release upload "$ARCHIVE_TAG" "$archive" --repo "$GH_REPO"
-          release="$(gh api "repos/${GH_REPO}/releases/tags/${ARCHIVE_TAG}")"
+          release="$(gh api "repos/${GH_REPO}/releases/${release_id}")"
           echo "$release" | jq -e --arg name "beglin-${ARTIFACT_ID}.zip" --arg digest "sha256:${EXPECTED_SHA256}" --argjson size "$EXPECTED_BYTES" '[.assets[] | select(.name == $name and .size == $size and .digest == $digest)] | length == 1' >/dev/null
           echo "PRIVATE_RELEASE_ARCHIVE_DIGEST_VERIFIED"
           echo "ORIGINAL_GITHUB_ACTIONS_ARTIFACT_NOT_DELETED"
