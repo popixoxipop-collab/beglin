@@ -12,18 +12,47 @@ passes and never alters original model files or serving.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 import torch
 from torch import nn
 
 from prequant_n7_sealed_v1 import PackReader
 from full27_sealed_materializer_v1 import (
-    INDEX_SHA, FULL_ROLES, FULL_Q_BYTES, geometry, gate,
+    AUTHORITY_SCHEMA, BOUNDARY_SHA, INDEX_SHA, SHARD_SHAS,
+    FULL_ROLES, FULL_Q_BYTES, geometry, gate,
 )
+
+# Specific original EOE read-only BF16 checkpoint and qNg64 n7 offline export.
+# These are source-identity receipts, not a portable production loader policy.
+SOURCE_RUN_AUTHORITY_SHA256 = "3b13bc1d98c5843f146afa428b6dfff45352f7def698d6a5a156d32d0fae136f"
+SOURCE_EXPORTER_SHA256 = "ca1872c6ea41861d6db97ed29010e68d2d794c500cb1909e16a5fb9e40b1acf8"
+SOURCE_NATIVE_C_SHA256 = "6d76b36ef23341e7ac90ecda79541e93133e701e5538ab215e757c334526d786"
 
 
 class SealedPrequantFull27:
     def __init__(self, root, manifest_sha256, known, cpp_class, model_package):
+        authority_file = Path(root)/"RUN_AUTHORITY.json"
+        gate(not authority_file.is_symlink() and authority_file.is_file() and
+             authority_file.stat().st_size < 16384,
+             "sealed full27 original source authority file missing or unsafe")
+        authority_raw = authority_file.read_bytes()
+        gate(hashlib.sha256(authority_raw).hexdigest()==SOURCE_RUN_AUTHORITY_SHA256,
+             "externally pinned original BF16 full27 run authority SHA mismatch")
+        authority=json.loads(authority_raw)
+        gate(type(authority) is dict and
+             authority.get("schema")==AUTHORITY_SCHEMA and
+             authority.get("index_sha256")==INDEX_SHA and
+             authority.get("boundary_tsv_sha256")==BOUNDARY_SHA and
+             authority.get("source_shard_sha256")==SHARD_SHAS and
+             authority.get("native_quantizer_sha256")==SOURCE_NATIVE_C_SHA256 and
+             authority.get("exporter_source_sha256")==SOURCE_EXPORTER_SHA256 and
+             authority.get("qng64_role_count")==FULL_ROLES and
+             authority.get("BF16_exclusion_count")==110 and
+             authority.get("quantized_expected_bytes")==FULL_Q_BYTES,
+             "sealed full27 source shard/transform/n7 policy authority drift")
+        self.original_source_authority_sha256=SOURCE_RUN_AUTHORITY_SHA256
         self.reader = PackReader(Path(root), manifest_sha256, INDEX_SHA)
         gate(len(self.reader.roles)==FULL_ROLES and
              self.reader.total_packed_bytes == FULL_Q_BYTES,
@@ -120,6 +149,7 @@ class SealedPrequantFull27:
     def summary(self):
         return {
             "schema": "beglin.v11.full27.sealed-prequant-inference-hook/1",
+            "original_source_run_authority_sha256": self.original_source_authority_sha256,
             "sealed_manifest_sha256": self.reader.manifest_sha256,
             "frozen_qng64_roles_in_manifest": FULL_ROLES,
             "modelwide_uniform7_compressed_bytes": FULL_Q_BYTES,
