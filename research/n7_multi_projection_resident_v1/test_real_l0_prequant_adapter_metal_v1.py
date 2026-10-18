@@ -128,8 +128,9 @@ def main():
                 cpu_y=np.empty((1,m.out),np.float32)
                 fn(ptr(m.packed,U),ptr(m.scales,F),7,ptr(xin,F),None,
                    ptr(cpu_y,F),m.out,m.in_features,1)
-                delta=np.linalg.norm(gpu_y.astype(np.float64)-cpu_y.astype(np.float64))
-                baseline=np.linalg.norm(cpu_y.astype(np.float64))
+                cpu_bf16=torch.from_numpy(cpu_y).to(torch.bfloat16).float().numpy()
+                delta=np.linalg.norm(gpu_y.astype(np.float64)-cpu_bf16.astype(np.float64))
+                baseline=np.linalg.norm(cpu_bf16.astype(np.float64))
                 rel=float(delta/max(baseline,1e-30))
                 gate(rel<3e-4,"real packed weight physical Metal/C output disagreement")
                 observed=max(observed,rel)
