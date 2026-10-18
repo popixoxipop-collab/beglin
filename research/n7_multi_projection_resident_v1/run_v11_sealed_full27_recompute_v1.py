@@ -379,7 +379,7 @@ def main():
             if args.max_layers==27:
                 with torch.no_grad():
                     logits,_=packed.finish_logits(
-                        index,headers,hidden[0,-1:,:],cfg)
+                        index,headers,hidden[:,-1:,:],cfg)
                 gate(logits.shape==(1,102400) and np.isfinite(logits).all(),
                      "full-vocabulary original BF16 source lm_head invalid")
                 token=int(np.argmax(logits[0]))
