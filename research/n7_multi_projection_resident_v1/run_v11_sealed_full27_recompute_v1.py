@@ -98,8 +98,30 @@ class SealedMetalLinear(nn.Module):
             delta=torch.linalg.vector_norm((y.float()-answer.float()).reshape(-1))
             norm=torch.linalg.vector_norm(answer.float().reshape(-1)).clamp_min(1e-30)
             rel=float(delta/norm)
-            gate(np.isfinite(rel) and rel<3e-4,
-                 "native C oracle/source Metal parity drift: "+self.role)
+            if not(np.isfinite(rel) and rel<3e-4):
+                # Diagnosis only, NOT a relaxation of the BF16 correctness gate:
+                # run the same saved GPU handle once in F32 and isolate BF16
+                # rounding-boundary changes from native kernel arithmetic.
+                entry=self.cache.lru.get(self.role)
+                gate(entry is not None,"GPU source role missing before FP32 diagnosis")
+                raw_gpu=np.empty_like(ref)
+                ok=self.cache.forward_fn(
+                    int(entry["handle"]),X.ctypes.data_as(F),
+                    int(X.shape[0]),raw_gpu.ctypes.data_as(F))
+                gate(ok==1,"native Metal raw F32 diagnostic dispatch failed")
+                c64=ref.astype(np.float64)
+                gpu64=raw_gpu.astype(np.float64)
+                raw_rel=float(np.linalg.norm(c64-gpu64)/
+                    max(np.linalg.norm(c64),1e-30))
+                raw_abs=float(np.max(np.abs(c64-gpu64)))
+                raise RuntimeError(
+                    "BEGLIN_REAL_MODEL_NUMERIC_FAIL_CLOSED role="+self.role+
+                    " BF16_relative_L2="+str(rel)+
+                    " FP32_relative_L2="+str(raw_rel)+
+                    " FP32_max_abs="+str(raw_abs)+
+                    " C_max_abs="+str(float(np.max(np.abs(ref))))+
+                    " BF16_mismatch_count="+str(int(torch.sum(y!=answer))))
+
             self.native_C_first_call_parity=True
             self.max_C_relative_L2=rel
         self.calls+=1
@@ -210,7 +232,7 @@ def main():
     parser.add_argument("--manifest-sha",required=True)
     parser.add_argument("--native-c-dylib",required=True)
     parser.add_argument("--native-gpu-dylib",required=True)
-    parser.add_argument("--max-layers",type=int,choices=(1,2,27),required=True)
+    parser.add_argument("--max-layers",type=int,choices=(1,2,5,27),required=True)
     parser.add_argument("--greedy-tokens",type=int,choices=(0,2),required=True)
     parser.add_argument("--receipt-dir",required=True)
     args=parser.parse_args()
