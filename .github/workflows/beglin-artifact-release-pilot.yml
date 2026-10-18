@@ -1,0 +1,59 @@
+name: Beglin historical artifact release archive pilot
+
+on:
+  push:
+    branches: [maintenance/beglin-artifact-release-pilot-20261018]
+    paths: [.github/workflows/beglin-artifact-release-pilot.yml]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: beglin-artifact-release-pilot-11453425023
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: popixoxipop-collab/beglin
+      ARTIFACT_ID: "11453425023"
+      EXPECTED_SHA256: e214cbf4e4fddd8de5a6ff75bab9ce536ecfee490b9f213f0c5f378ae4e55748
+      EXPECTED_BYTES: "798844703"
+      ARCHIVE_TAG: archive-beglin-qt-20261018-pilot
+    steps:
+      - name: Verify original GitHub artifact identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          meta="$(gh api "repos/${GH_REPO}/actions/artifacts/${ARTIFACT_ID}")"
+          echo "$meta" | jq -e --argjson id "$ARTIFACT_ID" --arg digest "sha256:${EXPECTED_SHA256}" --argjson size "$EXPECTED_BYTES" '.id == $id and .digest == $digest and .size_in_bytes == $size and .expired == false' >/dev/null
+
+      - name: Download original ZIP without repacking
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          archive="${RUNNER_TEMP}/beglin-${ARTIFACT_ID}.zip"
+          curl --fail --show-error --silent --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 1100 --header "Authorization: Bearer ${GH_TOKEN}" --header "Accept: application/vnd.github+json" "https://api.github.com/repos/${GH_REPO}/actions/artifacts/${ARTIFACT_ID}/zip" --output "$archive"
+          test "$(stat -c '%s' "$archive")" = "$EXPECTED_BYTES"
+          printf '%s  %s\n' "$EXPECTED_SHA256" "$archive" | sha256sum --check --status
+          unzip -tq "$archive" >/dev/null
+          echo "ORIGINAL_GITHUB_ZIP_SHA256_VERIFIED"
+
+      - name: Store original ZIP as private draft release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/beglin-${ARTIFACT_ID}.zip"
+          if ! gh release view "$ARCHIVE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release create "$ARCHIVE_TAG" --repo "$GH_REPO" --target "$GITHUB_SHA" --title "Beglin historical QT archive (pilot, do not publish)" --notes "Original Actions ZIP. No source deletion. ID 11453425023, SHA256 e214cbf4e4fddd8de5a6ff75bab9ce536ecfee490b9f213f0c5f378ae4e55748." --draft
+          fi
+          gh release upload "$ARCHIVE_TAG" "$archive" --repo "$GH_REPO"
+          release="$(gh api "repos/${GH_REPO}/releases/tags/${ARCHIVE_TAG}")"
+          echo "$release" | jq -e --arg name "beglin-${ARTIFACT_ID}.zip" --arg digest "sha256:${EXPECTED_SHA256}" --argjson size "$EXPECTED_BYTES" '[.assets[] | select(.name == $name and .size == $size and .digest == $digest)] | length == 1' >/dev/null
+          echo "PRIVATE_RELEASE_ARCHIVE_DIGEST_VERIFIED"
+          echo "ORIGINAL_GITHUB_ACTIONS_ARTIFACT_NOT_DELETED"
