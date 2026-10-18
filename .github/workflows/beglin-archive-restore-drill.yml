@@ -1,0 +1,54 @@
+name: Beglin archived ZIP restore drill
+
+on:
+  push:
+    branches: [maintenance/beglin-artifact-release-pilot-20261018]
+    paths: [.github/workflows/beglin-archive-restore-drill.yml]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: beglin-archive-restoredrill-id653240743
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: popixoxipop-collab/beglin
+      SOURCE_ARTIFACT_ID: "11453425023"
+      RELEASE_ID: "416391864"
+      RELEASE_ASSET_ID: "653240743"
+      EXPECTED_SIZE: "798844703"
+      EXPECTED_SHA: e214cbf4e4fddd8de5a6ff75bab9ce536ecfee490b9f213f0c5f378ae4e55748
+    steps:
+      - name: Verify private draft and original+asset metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/releases/$RELEASE_ID" | jq -e '.draft == true and .tag_name == "archive-beglin-qt-20261018-pilot"' >/dev/null
+          gh api "repos/$GH_REPO/actions/artifacts/$SOURCE_ARTIFACT_ID" | jq -e --argjson id "$SOURCE_ARTIFACT_ID" --argjson size "$EXPECTED_SIZE" --arg digest "sha256:$EXPECTED_SHA" '.id == $id and .size_in_bytes == $size and .digest == $digest and .expired == false' >/dev/null
+          gh api "repos/$GH_REPO/releases/assets/$RELEASE_ASSET_ID" | jq -e --argjson id "$RELEASE_ASSET_ID" --argjson size "$EXPECTED_SIZE" --arg digest "sha256:$EXPECTED_SHA" '.id == $id and .state == "uploaded" and .size == $size and .digest == $digest' >/dev/null
+          echo "EXACT_ORIGINAL_AND_PRIVATE_RELEASE_IDENTITY_VERIFIED"
+
+      - name: Download preserved private release asset and verify original bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          target="$RUNNER_TEMP/restored-$RELEASE_ASSET_ID.zip"
+          curl --fail --location --silent --show-error --retry 3 --retry-all-errors \
+            --connect-timeout 20 --max-time 720 \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/octet-stream" \
+            "https://api.github.com/repos/$GH_REPO/releases/assets/$RELEASE_ASSET_ID" \
+            --output "$target"
+          test "$(stat -c '%s' "$target")" = "$EXPECTED_SIZE"
+          printf '%s  %s\n' "$EXPECTED_SHA" "$target" | sha256sum --check --status
+          unzip -tq "$target" >/dev/null
+          echo "PRIVATE_DRAFT_RELEASE_ASSET_RESTORE_SHA256_AND_ZIP_CRC_PASS"
+          echo "GITHUB_ACTIONS_SOURCE_DELETE_COUNT=0"
