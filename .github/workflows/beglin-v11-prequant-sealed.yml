@@ -12,6 +12,8 @@ on:
       - "research/n7_multi_projection_resident_v1/audit_full27_sealed_prequant_v1.py"
       - "research/n7_multi_projection_resident_v1/audit_v11_sealed_full27_two_greedy_v1.py"
       - "research/n7_multi_projection_resident_v1/audit_v11_sealed_three_cold_full27_v1.py"
+      - "research/n7_multi_projection_resident_v1/run_v11_sealed_full27_recompute_v1.py"
+      - "research/n7_multi_projection_resident_v1/audit_v11_sealed_uncached_recompute_v1.py"
       - "research/n7_multi_projection_resident_v1/test_real_l0_prequant_adapter_metal_v1.py"
   workflow_dispatch:
 
@@ -51,4 +53,6 @@ jobs:
             research/n7_multi_projection_resident_v1/audit_full27_sealed_prequant_v1.py \
             research/n7_multi_projection_resident_v1/audit_v11_sealed_full27_two_greedy_v1.py \
             research/n7_multi_projection_resident_v1/test_real_l0_prequant_adapter_metal_v1.py \
-            research/n7_multi_projection_resident_v1/audit_v11_sealed_three_cold_full27_v1.py
+            research/n7_multi_projection_resident_v1/audit_v11_sealed_three_cold_full27_v1.py \
+            research/n7_multi_projection_resident_v1/run_v11_sealed_full27_recompute_v1.py \
+            research/n7_multi_projection_resident_v1/audit_v11_sealed_uncached_recompute_v1.py
