@@ -88,7 +88,7 @@ def main():
 
     # Hardlinks refer to the original read-only packed bytes; a temporary
     # seven-role manifest exists only during this opt-in EOE test.
-    with tempfile.TemporaryDirectory(prefix="beglin_l0_sealed_preview_") as td:
+    with tempfile.TemporaryDirectory(prefix="beglin_l0_sealed_preview_", dir=stage.parent) as td:
         preview=Path(td)
         manifest={"schema":SCHEMA,"source_checkpoint_index_sha256":INDEX_SHA,"roles":[]}
         for role in sorted(seven):
