@@ -56,7 +56,23 @@ Initial full sealed inference: 225.5128 sec, peak RSS 2,281,324,544 B.
 First independent cold-process full27 replay: 232.4134 sec, peak RSS 2,283,945,984 B, genuine token selection 429→4281→6230, 8,289 GPU calls, zero C quantizations and clean GPU teardown.
 Cold replay A SHA256: ccf58c6521ecac4b258065dbff8ca879e374884e261b20ef870fdb3498915f89.
 
-A third cold independent process and separate three-run auditor are **pending verification**, not yet counted as PASS in this document version.
+Second independent cold-process full27 replay: **214.2065 sec**, peak RSS **2,281,062,400 B**, tokens 429→4281→6230, original C re-quant 0, 8,289 physical packed GEMVs, all GPU handles released. Its append-only receipt SHA256:
+**7a8d5bd32b840da6bd8fe2cfa40fd584b2ccadf521384dda9c78c6d5700cc072**.
+
+A separate auditor reopened all **three** cold-process receipts and verified source/model/precision/kernel SHAs, every layer count, tokens, exact scalar relative L2/max abs logits metrics, no C re-quantization, identical Metal call/eviction counts and clean GPU lifetime across processes.
+
+Status: **PASS_THREE_COLD_FULL27_PREQUANT_REAL_TWO_GREEDY_IDENTICAL_METRICS**.
+
+| Full research protocol, individual cold process | Total time | Peak process RSS |
+| --- | ---: | ---: |
+| Initial | 225.5128 s | 2,281,324,544 B |
+| Replay A | 232.4134 s | 2,283,945,984 B |
+| Replay B | 214.2065 s | 2,281,062,400 B |
+| Median (n=3) | **225.5128 s** | **2,281,324,544 B** |
+
+Three-run SHA receipt: **4fc523b6538253ff4d0f19b850b9806dcc02afdea47202ccffa619c813c1ae0e**.
+
+The original old-v11 reference had only one matched research run (464.1193 sec, 9,133,473,792B peak RSS). Hence the three-process spread strengthens new-v11 reproducibility but **is not** a repeated matched A/B, statistical confidence interval, official throughput/TTFT/TPOT or p95 claim. Full logits arrays were not compared byte-for-byte and only one original-model prompt was repeatedly decoded.
 
 ## 5. Delivered code, CI and operational scope
 
