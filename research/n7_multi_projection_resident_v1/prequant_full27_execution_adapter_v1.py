@@ -28,7 +28,7 @@ class SealedPrequantFull27:
         gate(len(self.reader.roles)==FULL_ROLES and
              self.reader.total_packed_bytes == FULL_Q_BYTES,
              "frozen 5181-role full model prequant manifest required")
-        gate(type(known) is dict and len(known) == 5291,
+        gate(type(known) is dict and len(known) == FULL_ROLES,
              "prior full27 uniform7 model policy unavailable")
         policy_keys = {
             k for k, v in known.items()
