@@ -96,7 +96,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: qt-attention-shard0-pilot
-          path: /tmp/qt-shard0
+          # Preserve results, but never upload the externally obtainable
+          # Qwen model checkpoint (hundreds of MiB per run).
+          path: |
+            /tmp/qt-shard0/
+            !/tmp/qt-shard0/model.safetensors
+          if-no-files-found: error
 
   fullmaps:
     runs-on: [self-hosted, macOS, ARM64, xox]
@@ -170,7 +175,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: qt-fullmaps
-          path: /tmp/qt-fullmaps
+          # The downstream sweep only consumes /maps; the model itself is
+          # independently fetched at /tmp/qt-sweep/run/model.safetensors.
+          path: |
+            /tmp/qt-fullmaps/
+            !/tmp/qt-fullmaps/model.safetensors
+          if-no-files-found: error
 
   sweep:
     needs: fullmaps
@@ -215,4 +225,9 @@ jobs:
         if: always()
         with:
           name: qt-full-attention-sweep
-          path: /tmp/qt-sweep/run
+          # Checkpoint is already publicly pinned by the experiment; archive
+          # only derived calibration, metrics, maps, and logs here.
+          path: |
+            /tmp/qt-sweep/run/
+            !/tmp/qt-sweep/run/model.safetensors
+          if-no-files-found: error
