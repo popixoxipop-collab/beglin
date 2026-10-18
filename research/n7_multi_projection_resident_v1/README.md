@@ -64,3 +64,24 @@ The same-input single MoE layer warm wall time was observed at **0.15728 s** und
 5. **Safety**: raw C input pointers cannot establish backing buffer lengths. Only pass source SHA/manifest-attested arrays from a trusted, capacity-checking loader. Invalid shapes, bits, budget overruns and handles fail closed. Other host/serving/release state is unmodified.
 
 **Promotion status: DRAFT research only; XOX runtime/serving and BEGLIN automatic live promotion remain untouched.**
+
+## Optional content-addressed original-C host packing memo
+
+The companion `research_n7_source_pack_memo_v1.py` is a strictly opt-in,
+bounded original `Native.bind` wrapper. It computes SHA-256 over each
+contiguous **original source F32 dense weight matrix** and reuses only an
+identical previously produced n7/group64 packed uint8/F32-scales tuple,
+else calls the original BEGLIN C quantizer. Its upper bound is 8 GiB
+(host compact weight memory; runtime config may set a smaller limit).
+The arrays are made read-only, and the original method is restored on close.
+
+`test_n7_host_packed_memo_portable_v1.py` exercises the original native C
+quantizer/matmul, byte-identical SHA hits, changed-content rejection,
+immutable compact arrays, forced RAM LRU eviction and deterministic
+repacking; no original source model or actual weights are shipped. Both
+standalone synthetic tests run from `build_and_test.sh`.
+
+**Memory scope:** this is deliberately an additional CPU-side compact
+cache. It reduces repeat **quantization**, not BF16 original-source file
+reads; it must not be interpreted as a reduction in GPU/CPU overall
+process memory, full-model residency, real TTFT/TPOT or production speed.

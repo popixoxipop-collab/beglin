@@ -21,6 +21,9 @@ if [[ ! -f "${MLX_PARENT}/lib/libmlx.dylib" || ! -d "${MLX_PARENT}/include/mlx" 
   exit 3
 fi
 mkdir -p "${HERE}/build"
+# Use unique per-run QA evidence so CI reruns never overwrite receipts.
+RUN_OUTPUT_DIR="$(mktemp -d "${HERE}/build/qa-run.XXXXXXXX")"
+export BEGLIN_TEST_RECEIPTS_DIR="${RUN_OUTPUT_DIR}"
 
 "${CC}" -std=c11 -O2 -fPIC -dynamiclib -Wall -Wextra -Werror \
   -I"${REPO_ROOT}" \
@@ -37,3 +40,6 @@ mkdir -p "${HERE}/build"
 
 "${PY}" -m py_compile "${HERE}/test_multi_gpu_n7_v10_portable.py"
 "${PY}" -u "${HERE}/test_multi_gpu_n7_v10_portable.py"
+
+"${PY}" -m py_compile "${HERE}/research_n7_source_pack_memo_v1.py" "${HERE}/test_n7_host_packed_memo_portable_v1.py"
+"${PY}" -u "${HERE}/test_n7_host_packed_memo_portable_v1.py"
