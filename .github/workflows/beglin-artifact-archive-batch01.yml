@@ -1,0 +1,69 @@
+name: Beglin historical artifact archive batch 01
+
+on:
+  push:
+    branches: [maintenance/beglin-artifact-release-pilot-20261018]
+    paths: [.github/workflows/beglin-artifact-archive-batch01.yml]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: beglin-historical-artifact-archive-batch01
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: popixoxipop-collab/beglin
+      RELEASE_ID: "416391864"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify draft release and archive first ten pinned originals
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          release="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}")"
+          echo "$release" | jq -e '.draft == true and .tag_name == "archive-beglin-qt-20261018-pilot"' >/dev/null
+          manifest="docs/archive/beglin-qt-artifact-manifest-20261018.json"
+          test "$(jq '.artifacts|length' "$manifest")" = "68"
+          count=0
+          while IFS= read -r row; do
+            id="$(jq -r '.id' <<< "$row")"
+            size="$(jq -r '.size' <<< "$row")"
+            sha="$(jq -r '.sha256' <<< "$row")"
+            [[ "$id" =~ ^[0-9]{8,20}$ ]]
+            [[ "$sha" =~ ^[a-f0-9]{64}$ ]]
+            [[ "$size" =~ ^[0-9]+$ ]]
+            remote="$(gh api "repos/${GH_REPO}/actions/artifacts/${id}")"
+            echo "$remote" | jq -e --argjson id "$id" --argjson size "$size" --arg digest "sha256:${sha}" '.id == $id and .size_in_bytes == $size and .digest == $digest and .expired == false' >/dev/null
+            filename="beglin-${id}.zip"
+            current="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}")"
+            existing="$(echo "$current" | jq --arg name "$filename" '[.assets[]|select(.name == $name)]|length')"
+            if [ "$existing" = "1" ]; then
+              echo "$current" | jq -e --arg name "$filename" --argjson size "$size" --arg digest "sha256:${sha}" '[.assets[]|select(.name == $name and .size == $size and .digest == $digest and .state == "uploaded")]|length == 1' >/dev/null
+              echo "EXISTING_VERIFIED_${id}"
+            else
+              test "$existing" = "0"
+              zip="${RUNNER_TEMP}/${filename}"
+              curl --fail --silent --show-error --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 1100 --header "Authorization: Bearer ${GH_TOKEN}" --header "Accept: application/vnd.github+json" "https://api.github.com/repos/${GH_REPO}/actions/artifacts/${id}/zip" --output "$zip"
+              test "$(stat -c '%s' "$zip")" = "$size"
+              printf '%s  %s\n' "$sha" "$zip" | sha256sum --check --status
+              unzip -tq "$zip" >/dev/null
+              echo "ORIGINAL_SHA_VERIFIED_${id}"
+              curl --fail --silent --show-error --connect-timeout 20 --max-time 1100 --request POST --header "Authorization: Bearer ${GH_TOKEN}" --header "Content-Type: application/zip" --data-binary "@$zip" "https://uploads.github.com/repos/${GH_REPO}/releases/${RELEASE_ID}/assets?name=${filename}" --output "${RUNNER_TEMP}/upload-${id}.json"
+              rm -- "$zip"
+              uploaded="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}")"
+              echo "$uploaded" | jq -e --arg name "$filename" --argjson size "$size" --arg digest "sha256:${sha}" '[.assets[]|select(.name == $name and .size == $size and .digest == $digest and .state == "uploaded")]|length == 1' >/dev/null
+              echo "RELEASE_ARCHIVE_VERIFIED_${id}"
+            fi
+            count=$((count+1))
+          done < <(jq -c '.artifacts[0:10][]' "$manifest")
+          test "$count" = "10"
+          echo "ARCHIVED_OR_REVERIFIED_FIRST_TEN=10"
+          echo "ORIGINAL_ACTIONS_ARTIFACTS_DELETED=0"
