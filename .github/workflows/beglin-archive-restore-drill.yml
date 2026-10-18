@@ -6,7 +6,9 @@ on:
     paths: [.github/workflows/beglin-archive-restore-drill.yml]
 
 permissions:
-  contents: read
+  # GitHub restricts draft-release API reads for the original read-only token.
+  # Token is never used for a write in this restore drill.
+  contents: write
   actions: read
 
 concurrency:
