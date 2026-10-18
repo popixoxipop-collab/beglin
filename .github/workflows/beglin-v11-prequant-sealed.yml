@@ -6,6 +6,12 @@ on:
       - ".github/workflows/beglin-v11-prequant-sealed.yml"
       - "research/n7_multi_projection_resident_v1/prequant_n7_sealed_v1.py"
       - "research/n7_multi_projection_resident_v1/test_prequant_n7_sealed_v1.py"
+      - "research/n7_multi_projection_resident_v1/full27_sealed_materializer_v1.py"
+      - "research/n7_multi_projection_resident_v1/prequant_full27_execution_adapter_v1.py"
+      - "research/n7_multi_projection_resident_v1/run_original_full27_v11_sealed_overlay_v1.py"
+      - "research/n7_multi_projection_resident_v1/audit_full27_sealed_prequant_v1.py"
+      - "research/n7_multi_projection_resident_v1/audit_v11_sealed_full27_two_greedy_v1.py"
+      - "research/n7_multi_projection_resident_v1/test_real_l0_prequant_adapter_metal_v1.py"
   workflow_dispatch:
 
 permissions:
@@ -38,3 +44,9 @@ jobs:
             research/n7_multi_projection_resident_v1/test_prequant_n7_sealed_v1.py \
             research/n7_multi_projection_resident_v1/test_v11_prequant_metal_concurrency_v1.py \
             research/n7_multi_projection_resident_v1/test_v11_prequant_real_checkpoint_role_v1.py
+            research/n7_multi_projection_resident_v1/full27_sealed_materializer_v1.py
+            research/n7_multi_projection_resident_v1/prequant_full27_execution_adapter_v1.py
+            research/n7_multi_projection_resident_v1/run_original_full27_v11_sealed_overlay_v1.py
+            research/n7_multi_projection_resident_v1/audit_full27_sealed_prequant_v1.py
+            research/n7_multi_projection_resident_v1/audit_v11_sealed_full27_two_greedy_v1.py
+            research/n7_multi_projection_resident_v1/test_real_l0_prequant_adapter_metal_v1.py
