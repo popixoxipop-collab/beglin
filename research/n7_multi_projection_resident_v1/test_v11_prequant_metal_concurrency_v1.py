@@ -121,6 +121,10 @@ def child_worker(root, manifest_sha, worker_id):
         must(denom > 0 and diff / denom < 3e-4, "native C/Metal parity mismatch")
         canonical[role] = got.clone()
     # Warm all three geometries before concurrent dispatch and Metal compilation.
+    epochs = int(os.environ.get("BEGLIN_V11_STRESS_EPOCHS", "3"))
+    repeats = int(os.environ.get("BEGLIN_V11_STRESS_REPEATS", "10"))
+    must(1 <= epochs <= 200 and 1 <= repeats <= 100 and
+         epochs * repeats <= 10000, "bounded stress profile required")
     counts = []
     failures = []
     failures_lock = threading.Lock()
@@ -131,7 +135,7 @@ def child_worker(root, manifest_sha, worker_id):
     def one_thread():
         local = 0
         # Adjacent repeated roles guarantee both LRU hits and forced evictions.
-        for _ in range(10):
+        for _ in range(repeats):
             for role in ROLES:
                 for _same_role_hit in range(2):
                     answer = cache.call(role, modules[role], tensors[role])
@@ -142,14 +146,15 @@ def child_worker(root, manifest_sha, worker_id):
         return local
 
     try:
-        for _epoch in range(3):
+        for _epoch in range(epochs):
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
                 counts.extend(pool.map(lambda unused: one_thread(), range(3)))
             epoch_rss.append(rss_bytes())
         state = cache.get_state()
         must(not failures, "concurrent request output changed")
-        must(sum(counts) == 540, "worker request accounting not 540")
-        must(state["actual_GPU_forward_calls"] == 543,
+        expected_calls = epochs * 3 * repeats * len(ROLES) * 2
+        must(sum(counts) == expected_calls, "worker request accounting drift")
+        must(state["actual_GPU_forward_calls"] == expected_calls + len(ROLES),
              "native physical GPU invocation count drift")
         must(state["GPU_reuse_hits"] > 0 and state["GPU_LRU_evictions"] > 0,
              "bounded LRU reuse/eviction not exercised")
@@ -170,6 +175,11 @@ def child_worker(root, manifest_sha, worker_id):
     must(lib.beglin_multi_n7_forward_v1(stale, ptr(testx, F), 1, ptr(testy, F)) == 0,
          "stale GPU weight handle remained callable")
     final_rss = rss_bytes()
+    must(after_warm is not None and final_rss is not None and
+         all(v is not None for v in epoch_rss), "RSS measurements required")
+    drift = max(epoch_rss) - epoch_rss[0]
+    must(drift <= 64 * 1024 * 1024,
+         "post-warm RSS grew by more than 64 MiB")
     return {
         "status": "PASS_V11_PREQUANT_GPU_LRU_MULTI_REQUEST_WORKER",
         "worker_id": worker_id,
@@ -182,6 +192,10 @@ def child_worker(root, manifest_sha, worker_id):
         "GPU_opaque_handles_after_cleanup": 0,
         "GPU_compressed_payload_bytes_after_cleanup": 0,
         "epoch_rss_bytes": epoch_rss,
+        "postwarm_rss_drift_bytes": drift,
+        "stress_epochs": epochs,
+        "stress_repeats_per_thread": repeats,
+        "extended_soak_profile": epochs >= 25,
         "after_warm_rss_bytes": after_warm,
         "final_rss_bytes": final_rss,
         "MLX_active_allocator_at_last_snapshot_B": state["active_MLX_allocator_bytes"],
