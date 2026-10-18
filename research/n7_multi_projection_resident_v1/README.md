@@ -85,3 +85,35 @@ standalone synthetic tests run from `build_and_test.sh`.
 cache. It reduces repeat **quantization**, not BF16 original-source file
 reads; it must not be interpreted as a reduction in GPU/CPU overall
 process memory, full-model residency, real TTFT/TPOT or production speed.
+
+
+## Original policy working-set calculator (offline, research only)
+
+The additional `estimate_n7_host_cache_budget_v1.py` is a fail-closed
+**metadata-only** planner. It checks source manifest SHA-256 and all
+**5,181** frozen n7/group64 model tensor policy entries, verifies all
+1,664 MoE expert three-role size contracts, and uses an **observed aggregate**
+non-kv_b source-role count to estimate immutable packed host memory.
+It does not read model weights, shard payloads, hidden states or expert IDs.
+
+In the 27L original-model trial, 2,367 distinct non-kv_b GPU source roles
+imply 735 unique experts and **6,794,035,200 B** compressed working set.
+The planner uses 20% headroom (rounded up to whole GiB) and recommends
+**8 GiB** as a *research-only admission candidate*. An independent physical
+8 GiB model trial retained exactly that many compact bytes and had zero
+CPU LRU evictions. The 6 GiB trial had 2,563 CPU LRU evictions.
+
+Use a trusted SHA-pinned policy file and an available-memory measurement:
+
+```bash
+python3 research/n7_multi_projection_resident_v1/estimate_n7_host_cache_budget_v1.py   --policy-file /path/to/verified/quant-policy.json   --policy-sha256 YOUR_VERIFIED_64_HEX_SHA256   --observed-nonkvb-roles 2367   --available-ram-bytes TRUSTED_AVAILABLE_MEMORY_BYTES
+```
+
+The planner rejects incomplete expert trios, unauthorized n7 policy changes,
+nonhomogeneous expert sizes, duplicate names, malformed role counts,
+insufficient memory (reserving 2 GiB for other work) and cache cap overflow.
+Prompts with different expert routing may require different capacity.
+It does not authorize production or remove source/checkpoint attestation.
+
+`test_estimate_n7_host_cache_budget_v1.py` provides 10 no-model synthetic
+admission/fail-closed tests and is included in `build_and_test.sh`.

@@ -43,3 +43,6 @@ export BEGLIN_TEST_RECEIPTS_DIR="${RUN_OUTPUT_DIR}"
 
 "${PY}" -m py_compile "${HERE}/research_n7_source_pack_memo_v1.py" "${HERE}/test_n7_host_packed_memo_portable_v1.py"
 "${PY}" -u "${HERE}/test_n7_host_packed_memo_portable_v1.py"
+
+"$PY" -m py_compile "$HERE/estimate_n7_host_cache_budget_v1.py" "$HERE/test_estimate_n7_host_cache_budget_v1.py"
+"$PY" -u "$HERE/test_estimate_n7_host_cache_budget_v1.py"
