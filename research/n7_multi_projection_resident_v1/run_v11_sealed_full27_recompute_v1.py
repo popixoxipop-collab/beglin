@@ -243,8 +243,8 @@ def main():
     bf16.src.DATA=d
     bf16.first_ref.DATA=d
     gpu_source=Path(args.native_gpu_dylib)
-    gate(sha_path(gpu_source.with_name(
-        "n7_multi_projection_gpu_residency_v11_gpuowned_candidate.cpp")) ==
+    gate(sha_path(gpu_source.parent.parent/
+        "n7_multi_projection_gpu_residency_v11_gpuowned_candidate.cpp") ==
         GPU_CPP_SHA,"MLX C++ GPU ownership candidate source SHA drift")
     lib=ctypes.CDLL(str(args.native_gpu_dylib))
     lib.beglin_multi_n7_gpu_available_v1.restype=ctypes.c_int
