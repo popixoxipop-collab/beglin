@@ -1,0 +1,74 @@
+name: Beglin optional small evidence archive
+
+on:
+  push:
+    branches: [maintenance/beglin-artifact-release-pilot-20261018]
+    paths: [.github/workflows/beglin-optional-small-archive.yml]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: beglin-optional-small-evidence-20261018
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: popixoxipop-collab/beglin
+      RELEASE_ID: "416391864"
+      MANIFEST_SHA256: "9799b8b923f171312c72e47d5768307a846eeb482a240b99a06fcb78c63a7f74"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify and preserve historical small ZIPs
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          manifest="docs/archive/beglin-optional-32-small-artifacts-20261018.json"
+          printf '%s  %s\n' "$MANIFEST_SHA256" "$manifest" | sha256sum --check --status
+          jq -e '.count == 32 and (.artifacts | length) == 32 and .status == "UNARCHIVED_NOT_APPROVED_FOR_DELETION"' "$manifest" >/dev/null
+          gh api "repos/$GH_REPO/releases/$RELEASE_ID" | jq -e '.draft == true and .tag_name == "archive-beglin-qt-20261018-pilot"' >/dev/null
+          count=0
+          while IFS= read -r row; do
+            id="$(jq -r '.id' <<< "$row")"
+            bytes="$(jq -r '.size_in_bytes' <<< "$row")"
+            sha="$(jq -r '.digest | sub("^sha256:"; "")' <<< "$row")"
+            [[ "$id" =~ ^[0-9]{8,20}$ && "$bytes" =~ ^[0-9]{6,9}$ && "$sha" =~ ^[a-f0-9]{64}$ ]]
+            [[ "$bytes" -gt 5242880 && "$bytes" -lt 536870912 ]]
+            remote="$(gh api "repos/$GH_REPO/actions/artifacts/$id")"
+            echo "$remote" | jq -e --argjson id "$id" --argjson sz "$bytes" --arg dig "sha256:$sha" '.id == $id and .size_in_bytes == $sz and .digest == $dig and .expired == false' >/dev/null
+            name="beglin-$id.zip"
+            current="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID/assets?per_page=100")"
+            present="$(echo "$current" | jq --arg n "$name" '[.[]|select(.name == $n)]|length')"
+            if [ "$present" = "0" ]; then
+              file="$RUNNER_TEMP/$name"
+              curl --fail --silent --show-error --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 600 --header "Authorization: Bearer $GH_TOKEN" --header "Accept: application/vnd.github+json" "https://api.github.com/repos/$GH_REPO/actions/artifacts/$id/zip" --output "$file"
+              test "$(stat -c '%s' "$file")" = "$bytes"
+              printf '%s  %s\n' "$sha" "$file" | sha256sum --check --status
+              unzip -tq "$file" >/dev/null
+              curl --fail --silent --show-error --retry 3 --retry-all-errors --connect-timeout 20 --max-time 600 --request POST --header "Authorization: Bearer $GH_TOKEN" --header "Content-Type: application/zip" --data-binary "@$file" "https://uploads.github.com/repos/$GH_REPO/releases/$RELEASE_ID/assets?name=$name" --output "$RUNNER_TEMP/$id-upload-receipt.json"
+              rm -- "$file"
+            else
+              test "$present" = "1"
+            fi
+            verified="false"
+            for t in 1 2 3 4 5; do
+              listing="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID/assets?per_page=100")"
+              if echo "$listing" | jq -e --arg n "$name" --argjson sz "$bytes" --arg dg "sha256:$sha" '[.[]|select(.name==$n and .size==$sz and .digest==$dg and .state=="uploaded")]|length==1' >/dev/null; then
+                verified="true"
+                break
+              fi
+              sleep 2
+            done
+            test "$verified" = "true"
+            echo "SMALL_ARCHIVE_VERIFIED_$id"
+            count=$((count+1))
+          done < <(jq -c '.artifacts[]' "$manifest")
+          test "$count" = "32"
+          echo "SMALL_ARCHIVE_COUNT=32"
+          echo "ORIGINAL_GITHUB_ACTIONS_ARTIFACT_DELETES=0"
