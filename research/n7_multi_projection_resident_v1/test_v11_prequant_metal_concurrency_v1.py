@@ -75,7 +75,7 @@ def create_fixture(root):
         scales = np.empty((groups,), dtype=np.float32)
         rc = c.qng64_quantize_f32(ptr(w, F), out, in_features, 7,
                                   ptr(planes, U), ptr(scales, F))
-        must(rc == 1, "source C n7 quantization failed")
+        must(rc == 0, "source C n7 quantization failed")
         writer.add(role, out, in_features, planes, scales)
     return writer.seal()
 
