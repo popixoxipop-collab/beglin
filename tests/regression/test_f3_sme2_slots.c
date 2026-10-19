@@ -143,6 +143,7 @@ static void scenario(const char *tag, int f16lhs, MoeAFTensor *q4, MoeAFTensor *
 int main(void) {
     reg_init();
     MOE_SME2_CACHE_SLOTS = 8;
+    MOE_SME2_SLOT_DENSE = 5; MOE_SME2_SLOT_SHARED = 6; MOE_SME2_SLOT_LMHEAD = 7;   /* MOE_N_EXPERTS + {0,1,2} for a 5-expert model */
     g_moe_sme2 = calloc((size_t)MOE_MAXLAYERS * MOE_SME2_CACHE_SLOTS * 3, sizeof(MoeSme2Slot));
     g_moe_sme2_f16lhs = calloc((size_t)MOE_MAXLAYERS * MOE_SME2_CACHE_SLOTS * 3, sizeof(MoeSme2Slot));
     g_groupsum = malloc(4096 * sizeof(float));
@@ -157,6 +158,51 @@ int main(void) {
     for (int mode = 1; mode >= 0; mode--) {
         g_moe_sme2_f16lhs_mode_cached = mode;   /* normally read once from QWEN_MOE_SME2_F16LHS */
         scenario(mode ? "f16lhs, bits=4 set by hand" : "int8-LHS, bits=4 set by hand", mode, q4f, q8, mode ? 1 : 2);
+    }
+
+    /* F3b: the tensor exactly as st_register_moe_experts_q4g64_as() returns it (bits NOT touched). */
+    MoeAFTensor *q4 = st_register_moe_experts_q4g64_as("L%d.e%d.w", 0, REG_E, "f3_q4_as_registered");
+    REG_CHECK(q4->bits == 4, "(F3b) st_register_moe_experts_q4g64_as sets bits: bits=%d (want 4)", q4->bits);
+    for (int mode = 1; mode >= 0; mode--) {
+        g_moe_sme2_f16lhs_mode_cached = mode;
+        scenario(mode ? "f16lhs, q4 as registered" : "int8-LHS, q4 as registered", mode, q4, q8, mode ? 3 : 4);
+    }
+
+    /* F3b, E=1 sibling: st_register_moe_dense_af_q4g64_as() (shared/dense/attention roles), as registered. */
+    {
+        MoeAFTensor *dq4 = st_register_moe_dense_af_q4g64_as("dense.w", "f3_dense_q4_as_registered");
+        REG_CHECK(dq4->bits == 4, "(F3b) st_register_moe_dense_af_q4g64_as sets bits: bits=%d (want 4)", dq4->bits);
+        float x[M * REG_IN], y[M * REG_OUT], t4[M * REG_OUT];
+        for (int i = 0; i < M * REG_IN; i++) x[i] = (float)((i * 37) % 17 - 8) / 8.0f;
+        for (int m = 0; m < M; m++) moe_matvec_af(NULL, dq4, 0, x + m * REG_IN, t4 + m * REG_OUT);
+        for (int mode = 1; mode >= 0; mode--) {
+            g_moe_sme2_f16lhs_mode_cached = mode;
+            int g0 = g_gemm_calls;
+            moe_matvec_af_group_smart(NULL, dq4, 0, MOE_SME2_SLOT_DENSE, mode ? 5 : 6, 0, x, M, y);
+            MoeSme2Slot *s = slot_of(mode, mode ? 5 : 6, MOE_SME2_SLOT_DENSE, 0);
+            REG_CHECK(s->ready == 1 && g_gemm_calls == g0 + 1 && rel(y, t4, M * REG_OUT) < 1e-6,
+                      "[%s, dense q4 as registered] first use reaches SME2: ready=%d gemm+%d rel-L2=%.3g (want 1, +1, <1e-6)",
+                      mode ? "f16lhs" : "int8-LHS", s->ready, g_gemm_calls - g0, rel(y, t4, M * REG_OUT));
+        }
+    }
+
+    /* F3b, GGUF registrar: gguf_register_moe_q4g64_as() on a one-tensor F32 GGUF [in=128, out=16, E=2] holding the
+     * same expert weights, written next to the safetensors fixture (so only under $REG_OUT). */
+    {
+        char gpath[1024];
+        snprintf(gpath, sizeof gpath, "%s.f3.gguf", getenv("REG_ST"));
+        GgufWriter *gw = gguf_w_open(gpath);
+        uint64_t ne[3] = {REG_IN, REG_OUT, REG_E};
+        if (!gw) { fprintf(stderr, "cannot open %s for writing\n", gpath); return 2; }
+        gguf_w_kv_str(gw, "general.architecture", "llama", 5);
+        gguf_w_add_tensor(gw, "f3.experts.weight", GGML_TYPE_F32, 3, ne, &REG_W[0][0][0], sizeof REG_W);
+        if (!gguf_w_finish(gw) || !(g_gguf_moe = gguf_open(gpath))) { fprintf(stderr, "cannot build %s\n", gpath); return 2; }
+        MoeAFTensor *gq4 = gguf_register_moe_q4g64_as("f3.experts.weight", "f3_gguf_q4_as_registered");
+        REG_CHECK(gq4->bits == 4, "(F3b) gguf_register_moe_q4g64_as sets bits: bits=%d (want 4)", gq4->bits);
+        for (int mode = 1; mode >= 0; mode--) {
+            g_moe_sme2_f16lhs_mode_cached = mode;
+            scenario(mode ? "f16lhs, GGUF q4 as registered" : "int8-LHS, GGUF q4 as registered", mode, gq4, q8, mode ? 7 : 8);
+        }
     }
     return reg_fail;
 }

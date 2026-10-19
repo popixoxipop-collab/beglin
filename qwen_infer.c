@@ -8928,7 +8928,13 @@ static MoeAFTensor *gguf_register_moe_q4g64_as(const char *gguf_name, const char
     w->E = E; w->out = out; w->in = in; w->ng = ng;
     w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
     w->scale_off = (long)packed_bytes; w->bias_off = -1;  // never dereferenced: sym=1
-    w->base = base; w->sym = 1;
+    // D-q4g64-bits-1: bits=4 set explicitly (was calloc 0). moe_sme2_ensure_ready() requires
+    //   actual_bits == 4, so a q4g64 tensor with bits==0 was sent to the scalar path for good.
+    //   Decoders treat 0 and 4 identically (moe_qng64_n_supported(4) is false), so no scalar
+    //   result changes; the only effect is that SME2 hosts may now repack this tensor. Same for
+    //   st_register_moe_experts_q4g64_as() / st_register_moe_dense_af_q4g64_as() below.
+    //   EXIT: none -- MoeAFTensor's comment already states every constructor sets bits.
+    w->base = base; w->sym = 1; w->bits = 4;
     return w;
 }
 
@@ -15967,7 +15973,8 @@ static MoeAFTensor *st_register_moe_experts_q4g64_as(const char *name_pattern, i
     w->E = E; w->out = out; w->in = in; w->ng = ng;
     w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
     w->scale_off = (long)packed_bytes; w->bias_off = -1;  // never dereferenced: sym=1
-    w->base = base; w->sym = 1;
+    // D-q4g64-bits-1: bits=4 explicit, see gguf_register_moe_q4g64_as().
+    w->base = base; w->sym = 1; w->bits = 4;
     return w;
 }
 
@@ -16018,7 +16025,8 @@ static MoeAFTensor *st_register_moe_dense_af_q4g64_as(const char *name, const ch
     w->E = 1; w->out = out; w->in = in; w->ng = ng;
     w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
     w->scale_off = (long)packed_bytes; w->bias_off = -1;
-    w->base = base; w->sym = 1;
+    // D-q4g64-bits-1: bits=4 explicit, see gguf_register_moe_q4g64_as().
+    w->base = base; w->sym = 1; w->bits = 4;
     return w;
 }
 
