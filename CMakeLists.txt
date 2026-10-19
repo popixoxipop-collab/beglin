@@ -146,7 +146,16 @@ target_compile_options(safetensors_affine4_test PRIVATE -O2 -w)
 add_test(NAME safetensors_affine4 COMMAND safetensors_affine4_test)
 
 # P12 dense arbitrary-n qNg64 reference primitive.
+# D-N4-qng64-test-include: tools/qng64_dense_test.c does #include "qng64_dense.h",
+# which lives in the repo root, not in tools/. WHY: a quoted include only
+# searches the including file's own directory (tools/) and then the -I list; the
+# target had no -I, so `cmake --build --target qng64_dense_test` (and a plain
+# `cmake --build`) died with "'qng64_dense.h' file not found" and ctest reported
+# the test "Not Run". The MLX probes below already pass the same directory.
+# COST: none -- target-scoped, adds one -I to this one test.
+# EXIT: if the test moves next to qng64_dense.h, drop this line.
 add_executable(qng64_dense_test tools/qng64_dense_test.c qng64_dense.c)
+target_include_directories(qng64_dense_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(qng64_dense_test PRIVATE m)
 add_test(NAME qng64_dense_test COMMAND qng64_dense_test)
 
