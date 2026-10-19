@@ -71,7 +71,7 @@ The *same* source-pinned seven-token fused MLA cached runner was executed twice 
 Private numpy-file SHA-256 for each stage is IDENTICAL across these separate cold runs:
 - Prefill: 5f2fffc2e0b5f7a57e141c98c87fa7dd5abfbd6697501a20d44ab7287a4af1f1
 - First decode: fe2505efbda4022c3a81d7201f1c6938d91df52211a067b1501f4003c26a42f1
-- Second decode: 5c9cc6adf47637807021f7fb9b6377e1031bab9df81ce5a
+- Second decode: 5c9cc6adf47637807021f7fb9c3a76817524e4a451e475acf25a1aa65ee594d6
 
 These are **byte-identical full vocabulary model logits within the NEW cached arm across two executions**, NOT proof of byte-identical logits versus original v11 or uncached arm.
 
