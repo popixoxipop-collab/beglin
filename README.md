@@ -314,9 +314,11 @@ int4/int8/F32 per individual tensor, not per bundled category:
 # kv_b_proj/o_proj), the dense layer's gate/up/down, shared-experts'
 # gate/up/down, embed_tokens, lm_head. One "<role> <layer> <bits>" line
 # per override; layer=-1 is a wildcard (every layer, or the whole tensor
-# for embed_tokens/lm_head, which have no real layer index). bits is 4,
-# 8, or 32 (F32 -- valid for attention roles and embed_tokens/lm_head;
-# dense-layer/shared-experts internal gate/up/down stay int4/int8 only).
+# for embed_tokens/lm_head, which have no real layer index). bits is 2, 3,
+# 4, 5, 6, 7, 8, 16, or 32 (4 = q4g64, 8 = q8g64, 2/3/5/6/7 = qNg64
+# bit-planes, 16/32 = raw F16/F32 -- valid for attention roles and the
+# dense-layer/shared-experts gate/up/down; embed_tokens/lm_head accept F32
+# but not F16).
 cat > role_bits.txt <<'EOF'
 q_proj -1 32           # every layer's q_proj -> F32 (this is the real fix
 k_proj -1 32           # from "What's actually novel here" above: promoting

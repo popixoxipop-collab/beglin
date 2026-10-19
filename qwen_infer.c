@@ -16773,9 +16773,9 @@ static MoeF32Tensor *st_register_moe_f32_as(const char *name, const char *engine
 // independently selectable, not bundled per role-category the way earlier attempts this round
 // were. QWEN_MOE_ROLE_BITS points at a "<role> <layer> <bits>" list (one override per line;
 // layer=-1 is a wildcard, used for embed_tokens/lm_head which have no real layer index and for
-// "every layer" overrides); bits is 4, 8, or 32 (F32 -- only valid for embed_tokens/lm_head,
-// the two tensors this loader has real evidence F32 matters for, see MoeAFTensor's own bits
-// comment; st_register_moe_role() FATALs if 32 is requested anywhere else). Unset (default):
+// "every layer" overrides); bits is 2, 3, 4, 5, 6, 7, 8, 16, or 32 (4 = q4g64, 8 = q8g64,
+// 2/3/5/6/7 = qNg64 bit-planes -- D-role-bits-1; 16/32 = raw F16/F32 passthrough, only valid where
+// st_register_moe_role()'s allow_f32 gate is on, see MoeAFTensor's own bits comment). Unset (default):
 // every role keeps its pre-existing hardcoded default (8 for every AF role, 32 for
 // embed_tokens/lm_head) -- byte-identical to this round's shipped behavior.
 typedef struct { char role[48]; int layer; int bits; } MoeRoleBitsEntry;
@@ -16814,7 +16814,7 @@ static int moe_role_bits(const char *role, int layer, int default_bits) {
     return default_bits;
 }
 
-// Dispatches to F32 / q8g64 / q4g64 registration by bits -- consolidates the 3-way branch
+// Dispatches to F32 / F16 / q8g64 / qNg64 (2,3,5,6,7) / q4g64 registration by bits -- consolidates the branch
 // every per-role call site below needs instead of duplicating it inline. f32_as_af (D-qknorm-1
 // follow-up, 2026-08-29): embed_tokens/lm_head are single global tensors with their own
 // MoeF32Tensor/moe_find_f32() path (moe_forward_token() branches on embed_is_f32/lmhead_is_f32
@@ -16850,8 +16850,22 @@ static void st_register_moe_role(const char *name, const char *engine_name, int 
         st_register_moe_f16_as_af(name, engine_name);
     } else if (bits == 8) {
         st_register_moe_dense_af_q8g64_as(name, engine_name);
-    } else {
+    } else if (bits == 2 || bits == 3 || bits == 5 || bits == 6 || bits == 7) {
+        // D-role-bits-1 (N2): moe_load_role_bits() accepts 2/3/5/6/7, but this chain used to end in an
+        // unconditional q4g64 `else`, so a request for n bits was registered as 4-bit with no warning
+        // (a self-consistent tensor, not garbage -- a silently ignored precision request).
+        //   WHY : route them to the E=1 qNg64 registrar the CPU promotion paths already use
+        //         (st_register_moe_dense_af_qNg64_as()); every consumer of these role tensors in
+        //         run_moe_safetensors_verify_mode() (CPU decode/matvec, SME2 `actual_bits != 4`
+        //         guard, attn-bits summary) already handles bit-plane tensors. n=4 stays q4g64, n=8 q8g64.
+        //   COST: bit-plane decode is the slower scalar path (no SME2 for n!=4), same as n=8/16/32 today.
+        //   EXIT: none needed; widen this list together with moe_load_role_bits()'s validator.
+        st_register_moe_dense_af_qNg64_as(name, bits, engine_name);
+    } else if (bits == 4) {
         st_register_moe_dense_af_q4g64_as(name, engine_name);
+    } else {
+        fprintf(stderr, "FATAL: QWEN_MOE_ROLE_BITS: role '%s' bits=%d has no registrar (supported: 2,3,4,5,6,7,8,16,32)\n", role, bits);
+        exit(1);
     }
 }
 
