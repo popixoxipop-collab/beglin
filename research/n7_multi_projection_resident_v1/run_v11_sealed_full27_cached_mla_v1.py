@@ -123,9 +123,8 @@ def main():
         gate(sha_path(checkpoint/name)==pin,
              "original DeepSeek BF16 source identity drift: "+name)
     gate(sha_path(checkpoint/"tokenizer.json")==
-         "f970a810f1c107ff845fdf60532797b4b7d8fd636546e3f835e5b18e59b050e5" or
-         len((checkpoint/"tokenizer.json").read_bytes())>1000,
-         "original tokenizer must be available; model classes still pinned")
+         "41f3bf64213da8c012d8bd0871a58a1fdf70463e8f08f110ddbb1082f529f669",
+         "original tokenizer SHA-256 source authority changed")
     resident=import_private_fused()
     packed,bf16,numeric=model_source()
     for obj in (packed,packed.exp,packed.exp.base,packed.source,
