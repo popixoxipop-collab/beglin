@@ -318,6 +318,11 @@ int mlx_gpu_bind_af(const uint8_t *blob, long blob_bytes, const char *name,
             int bias_code = 1 << (bits - 1);
             biases = mx::multiply(scales, mx::array(-(float)bias_code));
         } else {
+            // D-qNg64-19 (issue #65): bits==8 here means q8g64 ONLY. A qNg64 n=8 tensor is also
+            // bits=8 on the CPU side but holds bit-planes; this branch would read them as int8
+            // garbage and the caller's kind=1/bits=8 verification would still pass. The binder
+            // cannot tell the two apart, so qwen_infer.c's moe_gpu_bind_bits() passes bits=0
+            // (refused by the gate at the top) for qNg64 n=8 -- there is no n=8 plane kernel.
             // D-gpu-4: bits==8. CPU's q8g64 (gguf_quantize_q8g64()) is SIGNED int8,
             // symmetric (no bias array -- bias_off is a -1 sentinel here, never
             // dereferenced), unpacked (1 byte/element, not word-packed). MLX's own

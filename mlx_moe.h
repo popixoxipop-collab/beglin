@@ -38,7 +38,9 @@ int mlx_gpu_reset_runtime_epoch(void);
 // Registers one AF-family tensor (E experts, out x in, group size ng) with
 // MLX, reading directly out of `blob` at the given byte offsets -- same
 // mmap the CPU arm (moe_decode_af/moe_matvec_af) reads, zero-copy where
-// possible (D-gpu-3). `bits` mirrors MoeAFTensor.bits (4/8/32); this AF-blob
+// possible (D-gpu-3). `bits` mirrors MoeAFTensor.bits (4/8/32); bits==8 is the
+// q8g64 raw-int8 layout ONLY -- qNg64 n=8 (bit-planes) has no GPU kernel and callers
+// pass qwen_infer.c's moe_gpu_bind_bits() (0 => refused) for it (D-qNg64-19); this AF-blob
 // fixture registers everything at bits=4 (F-13), but the parameter is real
 // so a future caller pointed at a mixed-precision tensor doesn't silently
 // assume int4. Returns 1 on success, 0 on failure (unsupported bits, shape
