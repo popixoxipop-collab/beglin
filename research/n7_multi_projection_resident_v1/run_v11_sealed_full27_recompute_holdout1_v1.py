@@ -411,11 +411,11 @@ def main():
                 stage["private_logits_npy_sha256"]=sha_path(logits_path)
                 # Existing separate original-model 27L frozen qNg64 baseline.
                 if step==0:
-                    old=np.load(
-                        "/Users/eoe/mcp-sandbox/tailnet-commander/"
-                        "beglin-real-activations-20261017/"
-                        "qng64_uniform7_full27_prompt1_logits_v1.npy",
-                        allow_pickle=False)
+                    baseline_path=BASE/"qng64_uniform7_full27_prompt1_logits_v1.npy"
+                    gate(sha_path(baseline_path)==
+                         "75e36edb9f696af89bf47c7720f2f124ff6a14c47eb3efaef5f2da2c95326f8c",
+                         "frozen independent holdout1 prior qNg64 n7 logits SHA mismatch")
+                    old=np.load(str(baseline_path),allow_pickle=False)
                     gate(old.shape==(7,102400),"independent old source q7 holdout1 logits unavailable")
                     base=old[-1].astype(np.float64)
                     got=logits[0].astype(np.float64)
