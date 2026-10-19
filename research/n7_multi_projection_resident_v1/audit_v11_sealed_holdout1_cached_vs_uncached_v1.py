@@ -183,8 +183,8 @@ def main():
             need(prior_top1["uncached_greedy_argmax"]==expected_token,
                  "frozen original BF16->uniform7 reference invalid")
             metrics["original_prior_uniform7_top1"]=expected_token
-            metrics["uncached_vs_prior_uniform7_relative_L2"]=
-                prior_top1["cached_vs_uncached_vocab_logit_relative_L2"]
+            metrics["uncached_vs_prior_uniform7_relative_L2"]=(
+                prior_top1["cached_vs_uncached_vocab_logit_relative_L2"])
         comparisons.append(metrics)
         all_top1 &= metrics["top1_agreement"]
         all_numeric &= (math.isfinite(metrics["cached_vs_uncached_vocab_logit_relative_L2"]) and
