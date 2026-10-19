@@ -16,6 +16,8 @@ const REQUIRED_INSTALLED_FILES = [
   "gguf_write.h",
   "gguf_write_quants.c",
   "gguf_write_quants.h",
+  "qng64_dense.c",
+  "qng64_dense.h",
   "scripts/postinstall-build.js",
 ];
 

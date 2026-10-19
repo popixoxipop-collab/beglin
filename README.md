@@ -255,6 +255,8 @@ clang -O3 -w -c gguf_cache.c -o gguf_cache.o
 clang -O3 -w -c gguf_load.c -o gguf_load.o
 clang -O3 -w -c gguf_quants.c -o gguf_quants.o
 clang -O3 -w -c gguf_transcode.c -o gguf_transcode.o
+clang -O3 -w -c gguf_write.c -o gguf_write.o               # D-export: GGUF writer qwen_infer.c's export modes call (gguf_w_*; link fails without it)
+clang -O3 -w -c gguf_write_quants.c -o gguf_write_quants.o # D-export Phase 2: Q4_0/Q4_K/Q5_0/Q6_K/Q8_0 encoders (same reason)
 clang -O3 -w -c hf_config.c -o hf_config.o
 clang -O3 -w -c safetensors_load.c -o safetensors_load.o
 clang -O3 -w -c safetensors_quants.c -o safetensors_quants.o
@@ -279,6 +281,7 @@ clang -O2 -march=armv9.2-a+sme2 -I. -c \
 
 # Link
 clang -O3 qwen_infer.o gguf_cache.o gguf_load.o gguf_quants.o gguf_transcode.o \
+  gguf_write.o gguf_write_quants.o \
   hf_config.o safetensors_load.o safetensors_quants.o bpe_tokenizer.o qng64_dense.o sme2_kai.o kai_*.o \
   -o qwen_infer -framework Accelerate -lpthread
 
