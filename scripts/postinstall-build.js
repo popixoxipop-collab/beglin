@@ -89,19 +89,27 @@ function main() {
     obj("sme2_kai.c"),
   ]);
 
-  const kernelFiles = [
+  // D-N8-split: only the SME/SME2 kernels are compiled with -march=...+sme2. The NEON pack functions run in normal
+  // (non-streaming) mode; compiled with +sme2 clang vectorizes them with SVE (cntw/ptrue/index z..), which Apple M4
+  // traps (SIGILL in kai_run_lhs_quant_pack_qsi8d32p_f32_neon on the int8-LHS path).
+  //   COST: a new SME kernel must be added to smeKernelFiles, otherwise it is compiled plain and fails to assemble.
+  //   EXIT: none -- mirrors CMakeLists.txt (kleidi_obj / kleidi_neon_obj) and the README recipe.
+  const smeKernelFiles = [
     "kleidiai/kai_common_sme_asm.S",
-    "kleidiai/kai_lhs_pack_f16pmrx2_f32_neon.c",
-    "kleidiai/kai_lhs_quant_pack_qsi8d32p_f32_neon.c",
     "kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa.c",
     "kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa_asm.S",
     "kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa.c",
     "kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa_asm.S",
+  ];
+  const neonKernelFiles = [
+    "kleidiai/kai_lhs_pack_f16pmrx2_f32_neon.c",
+    "kleidiai/kai_lhs_quant_pack_qsi8d32p_f32_neon.c",
     "kleidiai/kai_rhs_pack_nxk_qsi4c32ps1s0scalef16_qsu4c32s16s0_neon.c",
     "kleidiai/kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.c",
   ];
+  const kernelFiles = [...smeKernelFiles, ...neonKernelFiles];
   console.log("[beglin] compiling KleidiAI SME2 kernels");
-  for (const f of kernelFiles) {
+  for (const f of smeKernelFiles) {
     run("clang", [
       "-O2",
       "-march=armv9.2-a+sme2",
@@ -112,6 +120,10 @@ function main() {
       "-o",
       obj(path.basename(f)),
     ]);
+  }
+  console.log("[beglin] compiling KleidiAI NEON pack functions (plain -- no SME/SVE arch flag)");
+  for (const f of neonKernelFiles) {
+    run("clang", ["-O2", "-I", ROOT, "-c", path.join(ROOT, f), "-o", obj(path.basename(f))]);
   }
 
   console.log("[beglin] linking");
@@ -133,7 +145,20 @@ function main() {
     );
   }
 
-  console.log(`[beglin] built ${OUT_BINARY} (caller-plain check: OK)`);
+  // The same convention for the plain NEON KleidiAI objects: SVE instructions there trap on M4 (see D-N8-split above).
+  // Mnemonic/register check (the caller-plain regex above only matches the words sve/sme/addvl, not cntw/ptrue/z-regs).
+  const SVE_STYLE = /\bz\d+\.|\bp\d+\.|\bptrue\b|\bwhilelt\b|\bcnt[bhwd]\b|\bindex\b[^;\n]*\bz\d/;
+  for (const f of neonKernelFiles) {
+    const dis = spawnSync("otool", ["-tV", obj(path.basename(f))]);
+    if (SVE_STYLE.test(dis.stdout ? dis.stdout.toString() : "")) {
+      throw new Error(
+        `NEON kernel ${path.basename(f)} contains SVE instructions. It runs outside streaming mode and ` +
+          "would SIGILL on Apple M4 -- refusing to install it."
+      );
+    }
+  }
+
+  console.log(`[beglin] built ${OUT_BINARY} (caller-plain check: OK, NEON kernels SVE-free: OK)`);
 }
 
 main();
