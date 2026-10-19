@@ -14,6 +14,9 @@ on:
       - "research/n7_multi_projection_resident_v1/audit_v11_sealed_three_cold_full27_v1.py"
       - "research/n7_multi_projection_resident_v1/run_v11_sealed_full27_recompute_v1.py"
       - "research/n7_multi_projection_resident_v1/run_v11_sealed_full27_cached_mla_v1.py"
+      - "research/n7_multi_projection_resident_v1/run_v11_sealed_full27_recompute_holdout1_v1.py"
+      - "research/n7_multi_projection_resident_v1/run_v11_sealed_full27_cached_mla_holdout1_v1.py"
+      - "research/n7_multi_projection_resident_v1/audit_v11_sealed_holdout1_cached_vs_uncached_v1.py"
       - "research/n7_multi_projection_resident_v1/audit_v11_sealed_cached_mla_independent_v1.py"
       - "research/n7_multi_projection_resident_v1/audit_v11_sealed_cached_mla_v1.py"
       - "research/n7_multi_projection_resident_v1/test_v11_sealed_cached_mla_cold_restarts_v1.py"
@@ -60,6 +63,9 @@ jobs:
             research/n7_multi_projection_resident_v1/audit_v11_sealed_three_cold_full27_v1.py \
             research/n7_multi_projection_resident_v1/run_v11_sealed_full27_recompute_v1.py \
             research/n7_multi_projection_resident_v1/run_v11_sealed_full27_cached_mla_v1.py \
+            research/n7_multi_projection_resident_v1/run_v11_sealed_full27_recompute_holdout1_v1.py \
+            research/n7_multi_projection_resident_v1/run_v11_sealed_full27_cached_mla_holdout1_v1.py \
+            research/n7_multi_projection_resident_v1/audit_v11_sealed_holdout1_cached_vs_uncached_v1.py \
             research/n7_multi_projection_resident_v1/audit_v11_sealed_cached_mla_independent_v1.py \
             research/n7_multi_projection_resident_v1/audit_v11_sealed_uncached_recompute_v1.py \
             research/n7_multi_projection_resident_v1/audit_v11_sealed_cached_mla_v1.py \
