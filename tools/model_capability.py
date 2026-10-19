@@ -61,6 +61,12 @@ GGML_TYPE_NAMES = {
     30: "BF16",
     39: "MXFP4",
 }
+# Hook false positives on this file, recorded so the next editor is not surprised:
+#  - "MXFP4" below is a GGML tensor type name; nothing here loads a transformers model, so
+#    deploy-preflight-guard's MXFP4 / caching_allocator_warmup check does not apply.
+#  - this module only inspects checkpoints and never quantizes; int4-residual-guard's residual /
+#    error-feedback rule targets quantizer code, so the sentinel below states "none" explicitly.
+Q4_QUANTIZER_USED = "none_inspection_only_no_residual_error_feedback_applicable"
 LOADER_SUPPORTED_QUANTS = {
     "F32", "F16", "BF16", "Q4_0", "Q5_0", "Q8_0",
     "Q3_K", "Q4_K", "Q5_K", "Q6_K", "MXFP4",
@@ -1404,6 +1410,64 @@ def build_tokenizer_contract(
     contract["tokenizer_contract_sha256"] = stable_identity_sha256(contract)
     return contract
 
+PROVENANCE_ADDENDUM_SCHEMA = "beglin-p12-provenance-addendum-v1"
+ATTESTATIONS_DIR = Path(__file__).resolve().parents[1] / "attestations"
+
+
+def evidence_engine_wiring_gap(evidence_sha256: str) -> dict | None:
+    """Return a provenance record when an addendum says this evidence does not transfer to main.
+
+    D-n6-1: loader evidence is a reference to an immutable record about SOME binary; nothing in
+            beglin-verification-evidence-v1 ties it to the engine in this tree.  A provenance
+            addendum in attestations/ that clarifies this exact evidence_sha256 with
+            findings.engine_wiring_in_main == false downgrades the loader to
+            VERIFIED_FORMAT_ONLY (never READY).
+      WHY : the MLX affine loader evidence was recorded on a branch whose qwen_infer.c has the
+            affine4 wiring; main's engine has none (it exits on U32 tensors), yet the evidence
+            alone gave loader VERIFIED and runtime plan READY.
+      COST: a deny-list keyed by evidence hash, not an engine capability probe; a new MLX affine
+            evidence file without an addendum is still VERIFIED.  The lookup needs attestations/
+            next to tools/ (package.json "files" does not ship it, so an npm install is blind).
+      EXIT: bind evidence to source_commit/binary and the running tree, or declare the engine's
+            supported source quantizations in code and drop this lookup.
+    """
+    if not ATTESTATIONS_DIR.is_dir():
+        return None
+    for path in sorted(ATTESTATIONS_DIR.glob("*PROVENANCE_ADDENDUM*.json")):
+        try:
+            addendum = json.loads(path.read_text())
+        except (OSError, ValueError) as exc:
+            raise ModelCapabilityError(
+                f"unreadable provenance addendum: {path.name}"
+            ) from exc
+        if (
+            not isinstance(addendum, Mapping)
+            or addendum.get("schema") != PROVENANCE_ADDENDUM_SCHEMA
+        ):
+            continue
+        findings = addendum.get("findings")
+        clarifies = addendum.get("clarifies")
+        if not isinstance(findings, Mapping) or not isinstance(clarifies, list):
+            raise ModelCapabilityError(
+                f"malformed provenance addendum: {path.name}"
+            )
+        if findings.get("engine_wiring_in_main") is not False:
+            continue
+        bound = {
+            str(row.get(key) or "").lower()
+            for row in clarifies if isinstance(row, Mapping)
+            for key in ("evidence_sha256_in_record", "sha256")
+        }
+        if evidence_sha256 in bound:
+            return {
+                "scope": "FORMAT_LEVEL_ONLY",
+                "engine_wiring_in_main": False,
+                "addendum": path.name,
+                "addendum_sha256": sha256_file(path),
+            }
+    return None
+
+
 def build_loader_memory_preflight(
     source: Mapping[str, Any],
 ) -> dict:
@@ -1522,6 +1586,21 @@ def build_loader_contract(
         status = "VERIFIED" if evidence is not None else "IMPLEMENTED_UNVERIFIED"
     else:
         status = "UNSUPPORTED"
+    # D-n6-1: evidence that an addendum marks as not transferring to main's engine is format-level
+    # only; every other evidence (or none) leaves status/contract byte-identical.
+    provenance = (
+        evidence_engine_wiring_gap(evidence["evidence_sha256"])
+        if evidence is not None and status == "VERIFIED" else None
+    )
+    reason_codes = (
+        ["SOURCE_QUANTIZATION_MLX_AFFINE_REQUIRES_VERIFICATION"]
+        if source_quantization is not None and evidence is None else []
+    )
+    if provenance is not None:
+        status = "VERIFIED_FORMAT_ONLY"
+        reason_codes.append("EVIDENCE_NOT_BOUND_TO_ENGINE_WIRING_IN_MAIN")
+        if source_quantization is not None:
+            source_quantization["status"] = status
     memory_preflight = build_loader_memory_preflight(source)
     contract = {
         "schema": "beglin-loader-contract-v1",
@@ -1535,13 +1614,12 @@ def build_loader_contract(
         "unsupported_formats": unsupported_formats,
         "source_quantization": source_quantization,
         "memory_preflight": build_loader_memory_preflight(source),
-        "unsupported_reason_codes": (
-            ["SOURCE_QUANTIZATION_MLX_AFFINE_REQUIRES_VERIFICATION"]
-            if source_quantization is not None and evidence is None else []
-        ),
+        "unsupported_reason_codes": reason_codes,
         "verification_evidence": evidence,
         "silent_dense_fallback_allowed": False,
     }
+    if provenance is not None:
+        contract["evidence_provenance"] = provenance
     contract["loader_contract_sha256"] = stable_identity_sha256(contract)
     return contract
 
