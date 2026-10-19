@@ -5109,8 +5109,20 @@ static void moe_sme2_ensure_ready(const uint8_t *af, MoeAFTensor *tsr, long blob
     float *sym_scales = malloc((size_t)out * ng * sizeof(float));
     float *adj_bias = tsr->sym ? NULL : malloc((size_t)out * ng * sizeof(float));
     long row_words = in / 8;
+    // D-sme2-mixed-stride-1: start of expert blob_e's packed nibbles. A uniform tensor keeps the
+    // blob_e * out * (in/2) stride (byte-identical to before); a MIXED tensor (ebits != NULL) must use
+    // the same epacked_off[] prefix sum moe_decode_af()/moe_matvec_af_row() use.
+    //   WHY : the uniform stride assumes every expert occupies out*in/2 bytes. In a mixed tensor the
+    //         experts differ in size (4: in/2 per row, 8: in, 16: 2*in, 32: 4*in, 2/3/5/6/7: ng*n*8),
+    //         so a 4-bit expert following any non-4-bit one (ebits {8,4}, {5,4}, {16,4}, ...) was
+    //         repacked from the wrong bytes (scalar paths were right; expert 0 and 4-bit-only prefixes
+    //         were right by coincidence). Scale addressing below is bit-width independent, unchanged.
+    //   COST: one branch per repack (cold, once per slot build).
+    //   EXIT: none -- if experts ever get a common packed stride, both forms collapse into one.
+    size_t e_pk_off = tsr->ebits ? tsr->epacked_off[blob_e]
+                                 : (size_t)blob_e * tsr->out * row_words * 4;
     for (int row = 0; row < out; row++) {
-        const uint8_t *src = base + tsr->packed_off + ((size_t)blob_e * tsr->out + row) * row_words * 4;
+        const uint8_t *src = base + tsr->packed_off + e_pk_off + (size_t)row * row_words * 4;
         memcpy(sym_packed + (size_t)row * row_pbytes, src, row_pbytes);
         for (int g = 0; g < ng; g++) {
             long sidx = tsr->scale_off + (((size_t)blob_e * tsr->out + row) * ng + g) * 4;
