@@ -8461,6 +8461,11 @@ static int run_moe_sym_selftest_mode(int argc, char **argv) {
     t_affine.packed_off = 0; t_affine.packed_bytes = (long)packed_bytes;
     t_affine.scale_off = (long)packed_bytes; t_affine.bias_off = (long)(packed_bytes + scale_bytes);
     t_affine.base = blob; t_affine.sym = 0;
+    // D-sym-selftest-bits-1: bits=4 set explicitly (was `{0}`). moe_sme2_ensure_ready() sends every
+    // `actual_bits != 4` tensor to the scalar fallback, so with bits==0 BOTH calls below ran
+    // moe_matvec_af() and "GATE 4.2 PASS" compared scalar with scalar on an SME2 host.
+    //   COST: none (this gate only runs on SME2 hardware). EXIT: none; t_sym inherits it via the copy.
+    t_affine.bits = 4;
 
     t_sym = t_affine;
     snprintf(t_sym.name, sizeof t_sym.name, "sym_selftest_sym");
