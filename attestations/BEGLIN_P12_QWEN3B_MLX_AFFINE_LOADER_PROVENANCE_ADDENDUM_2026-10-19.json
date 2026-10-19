@@ -1,0 +1,261 @@
+{
+  "addendum_date": "2026-10-19",
+  "clarifies": [
+    {
+      "path": "attestations/BEGLIN_P12_QWEN3B_MLX_AFFINE_LOADER_ACCEPTANCE_2026-10-04.json",
+      "schema": "beglin-p12-loader-acceptance-evidence-v1",
+      "sha256": "fe6a377bc976465e60056a7b0084d437b75bffdf6e90e63bd5e842fc9e2465c1",
+      "source_commit_in_record": "06e7acf75ae84ed1cc397d59baf7195d1f60f0f6",
+      "status_in_record": "VERIFIED_LOADER_FORMAT",
+      "verification_scope_in_record": "LOADER_FORMAT_AND_FORWARD_FINITE"
+    },
+    {
+      "evidence_sha256_equals_sha256_of_acceptance_file": true,
+      "evidence_sha256_in_record": "fe6a377bc976465e60056a7b0084d437b75bffdf6e90e63bd5e842fc9e2465c1",
+      "path": "attestations/BEGLIN_P12_QWEN3B_MLX_AFFINE_LOADER_VERIFICATION_2026-10-04.json",
+      "schema": "beglin-verification-evidence-v1",
+      "sha256": "944407b31a0dda577fe288cfacca63d2bb7b379f30801fc58e9aa88125d425d4",
+      "status_in_record": "VERIFIED"
+    }
+  ],
+  "correct_scope_of_original_claim": {
+    "applies_to": "format-level loader verification: the MLX affine 4-bit safetensors layout and its dequantization, plus a finite forward pass, as recorded in the original record for a binary built from source_commit (that binary_sha256 was not re-built or re-hashed here)",
+    "does_not_apply_to": "the qwen_infer.c engine on main; the wiring that reads MLX affine 4-bit checkpoints inside the engine (g_st_mlx_affine4, st_dequant_logical_f32) exists at source_commit but not on main",
+    "numeric_model_reference_verified_in_record": false,
+    "reading_rule": "treat VERIFIED_LOADER_FORMAT / VERIFIED as 'format-level, source_commit lineage', not as 'main engine loads and runs this checkpoint'",
+    "what_main_has": "the format-level primitive safetensors_dequant_affine4_matrix and its oracle test safetensors_affine4_test (no call site in the engine)"
+  },
+  "findings": {
+    "engine_calls_affine4_loader_in_main": false,
+    "engine_wiring_in_main": false,
+    "engine_wiring_present_at_source_commit": true,
+    "engine_wiring_present_on_branch_tip_precision_p12_model_capability": false,
+    "engine_wiring_symbols": [
+      "g_st_mlx_affine4",
+      "st_dequant_logical_f32"
+    ],
+    "loader_format_oracle_test_in_main": true,
+    "loader_format_oracle_test_passes_on_main_sources_locally": true,
+    "loader_format_oracle_test_target": "safetensors_affine4_test",
+    "loader_format_primitive_in_main": true,
+    "loader_format_primitive_symbols": [
+      "safetensors_affine4_supported",
+      "safetensors_dequant_affine4_matrix"
+    ],
+    "original_claim_transfers_to_main_engine": false,
+    "p12_content_commit_on_main_single_parent": "79d98de2bf035eca3ae48572e9f931356fd9c294",
+    "source_commit_is_ancestor_of_main": false,
+    "source_commit_reachable_from_branches": [
+      "origin/p12-mlx-affine-safetensors-v1-20261004",
+      "origin/precision-p12-model-capability-v1-20261004",
+      "origin/precision-p12-qng64-capability-hardening-v1-20261004",
+      "origin/precision-p12-tokenizer-runtime-v1-20261004"
+    ]
+  },
+  "issue": "popixoxipop-collab/beglin#69 (defect F6)",
+  "local_runs": [
+    {
+      "build_command": "clang -O2 -w -o <out>/safetensors_affine4_test safetensors_affine4_test.c safetensors_load.c safetensors_quants.c hf_config.c",
+      "build_exit_code": 0,
+      "claim": "format-level oracle test compiled from the main source files passes (no model, no engine)",
+      "id": "L1",
+      "run_command": "<out>/safetensors_affine4_test",
+      "run_exit_code": 0,
+      "run_output_lines": [
+        "PASS mlx-affine4 oracle"
+      ],
+      "working_tree": "fix/base = main 0f7c357 + tests/regression/ only; qwen_infer.c and safetensors_* are byte-identical to main"
+    }
+  ],
+  "not_established_by_this_addendum": [
+    "no model was run and no engine binary was built",
+    "the numbers in the original record (greedy token, oracle diff, exit code, binary_sha256) were not reproduced",
+    "whether the engine wiring should be landed on main or the original claim withdrawn is a maintainer decision"
+  ],
+  "observations": [
+    {
+      "claim": "source_commit is NOT an ancestor of main (exit 1 = not ancestor)",
+      "command": "git merge-base --is-ancestor 06e7acf75ae84ed1cc397d59baf7195d1f60f0f6 0f7c3570ef8c905be216cdb228d67d28ecacbe26",
+      "exit_code": 1,
+      "id": "O1",
+      "output_lines": []
+    },
+    {
+      "claim": "merge-base of main and source_commit; commits unique to each side (main-only, source-only)",
+      "command": "git merge-base 0f7c3570ef8c905be216cdb228d67d28ecacbe26 06e7acf75ae84ed1cc397d59baf7195d1f60f0f6 && git rev-list --left-right --count 0f7c3570ef8c905be216cdb228d67d28ecacbe26...06e7acf75ae84ed1cc397d59baf7195d1f60f0f6",
+      "exit_code": 0,
+      "id": "O2",
+      "output_lines": [
+        "40ab1e6a65f1ffff0dff36c923c2463556765074",
+        "2\t65"
+      ]
+    },
+    {
+      "claim": "remote-tracking branches that contain source_commit (no fetch was performed)",
+      "command": "git branch -r --contains 06e7acf75ae84ed1cc397d59baf7195d1f60f0f6",
+      "exit_code": 0,
+      "id": "O3",
+      "output_lines": [
+        "  origin/p12-mlx-affine-safetensors-v1-20261004",
+        "  origin/precision-p12-model-capability-v1-20261004",
+        "  origin/precision-p12-qng64-capability-hardening-v1-20261004",
+        "  origin/precision-p12-tokenizer-runtime-v1-20261004"
+      ]
+    },
+    {
+      "claim": "no tag contains source_commit (empty output)",
+      "command": "git tag --contains 06e7acf75ae84ed1cc397d59baf7195d1f60f0f6",
+      "exit_code": 0,
+      "id": "O4",
+      "output_lines": []
+    },
+    {
+      "claim": "engine wiring symbols are absent from qwen_infer.c on main (matching-line count)",
+      "command": "git show 0f7c3570ef8c905be216cdb228d67d28ecacbe26:qwen_infer.c | grep -a -c -E 'g_st_mlx_affine4|st_dequant_logical_f32'",
+      "exit_code": 1,
+      "id": "O5",
+      "output_lines": [
+        "0"
+      ]
+    },
+    {
+      "claim": "engine wiring symbols are present in qwen_infer.c at source_commit (matching-line count)",
+      "command": "git show 06e7acf75ae84ed1cc397d59baf7195d1f60f0f6:qwen_infer.c | grep -a -c -E 'g_st_mlx_affine4|st_dequant_logical_f32'",
+      "exit_code": 0,
+      "id": "O6",
+      "output_lines": [
+        "8"
+      ]
+    },
+    {
+      "claim": "branch tip origin/p12-mlx-affine-safetensors-v1-20261004: wiring present in qwen_infer.c (matching-line count)",
+      "command": "git show ad372ec620a105e71e234de6cdc96de60c2316fc:qwen_infer.c | grep -a -c -E 'g_st_mlx_affine4|st_dequant_logical_f32'",
+      "exit_code": 0,
+      "id": "O7-p12-mlx-affine-safetensors-v1-20261004",
+      "output_lines": [
+        "8"
+      ]
+    },
+    {
+      "claim": "branch tip origin/precision-p12-model-capability-v1-20261004: wiring ABSENT in qwen_infer.c (matching-line count)",
+      "command": "git show ea08e84a4ce140a679057da84490fb21ed17d81a:qwen_infer.c | grep -a -c -E 'g_st_mlx_affine4|st_dequant_logical_f32'",
+      "exit_code": 1,
+      "id": "O7-precision-p12-model-capability-v1-20261004",
+      "output_lines": [
+        "0"
+      ]
+    },
+    {
+      "claim": "branch tip origin/precision-p12-qng64-capability-hardening-v1-20261004: wiring present in qwen_infer.c (matching-line count)",
+      "command": "git show b43dba1472354d24bd559d01602398442bca4f25:qwen_infer.c | grep -a -c -E 'g_st_mlx_affine4|st_dequant_logical_f32'",
+      "exit_code": 0,
+      "id": "O7-precision-p12-qng64-capability-hardening-v1-20261004",
+      "output_lines": [
+        "8"
+      ]
+    },
+    {
+      "claim": "branch tip origin/precision-p12-tokenizer-runtime-v1-20261004: wiring present in qwen_infer.c (matching-line count)",
+      "command": "git show 1d1f34f1e9abd9f7d0d91217cb98f849e3a2b30a:qwen_infer.c | grep -a -c -E 'g_st_mlx_affine4|st_dequant_logical_f32'",
+      "exit_code": 0,
+      "id": "O7-precision-p12-tokenizer-runtime-v1-20261004",
+      "output_lines": [
+        "8"
+      ]
+    },
+    {
+      "claim": "what main contains instead: files defining or calling the affine4 loader primitive (qwen_infer.c is not listed)",
+      "command": "git grep -l -a -E 'safetensors_dequant_affine4_matrix|safetensors_affine4_supported' 0f7c3570ef8c905be216cdb228d67d28ecacbe26 -- '*.c' '*.cpp' '*.h'",
+      "exit_code": 0,
+      "id": "O8",
+      "output_lines": [
+        "0f7c3570ef8c905be216cdb228d67d28ecacbe26:safetensors_affine4_test.c",
+        "0f7c3570ef8c905be216cdb228d67d28ecacbe26:safetensors_quants.c",
+        "0f7c3570ef8c905be216cdb228d67d28ecacbe26:safetensors_quants.h"
+      ]
+    },
+    {
+      "claim": "what main contains instead: the format-level oracle test target in CMakeLists.txt",
+      "command": "git grep -n -a -E 'safetensors_affine4' 0f7c3570ef8c905be216cdb228d67d28ecacbe26 -- CMakeLists.txt",
+      "exit_code": 0,
+      "id": "O9",
+      "output_lines": [
+        "0f7c3570ef8c905be216cdb228d67d28ecacbe26:CMakeLists.txt:129:add_executable(safetensors_affine4_test",
+        "0f7c3570ef8c905be216cdb228d67d28ecacbe26:CMakeLists.txt:130:  safetensors_affine4_test.c",
+        "0f7c3570ef8c905be216cdb228d67d28ecacbe26:CMakeLists.txt:135:target_compile_options(safetensors_affine4_test PRIVATE -O2 -w)",
+        "0f7c3570ef8c905be216cdb228d67d28ecacbe26:CMakeLists.txt:136:add_test(NAME safetensors_affine4 COMMAND safetensors_affine4_test)"
+      ]
+    },
+    {
+      "claim": "on the model-capability branch the last commit that changed the occurrence count of the wiring symbol is 541bfd8, and the symbol count at that branch tip is 0 (O7); git log -S, newest first",
+      "command": "git log --format='%H %s' -S'g_st_mlx_affine4' ea08e84a4ce140a679057da84490fb21ed17d81a -- qwen_infer.c",
+      "exit_code": 0,
+      "id": "O10",
+      "output_lines": [
+        "541bfd8e5d260590c2840146b9175b5312806ae5 feat(p12): route dense qNg64 through shared single and batched kernels",
+        "06e7acf75ae84ed1cc397d59baf7195d1f60f0f6 feat(p12): load MLX affine4 dense safetensors"
+      ]
+    },
+    {
+      "claim": "size of qwen_infer.c in bytes at the parent of 541bfd8 (first line) and at 541bfd8 (second line)",
+      "command": "git cat-file -s 541bfd8e5d260590c2840146b9175b5312806ae5~1:qwen_infer.c && git cat-file -s 541bfd8e5d260590c2840146b9175b5312806ae5:qwen_infer.c",
+      "exit_code": 0,
+      "id": "O11",
+      "output_lines": [
+        "1308649",
+        "245"
+      ]
+    },
+    {
+      "claim": "later commits on that branch that touched qwen_infer.c (subjects only; their content was not audited here)",
+      "command": "git log --format='%h %s' 541bfd8e5d260590c2840146b9175b5312806ae5..ea08e84a4ce140a679057da84490fb21ed17d81a -- qwen_infer.c",
+      "exit_code": 0,
+      "id": "O12",
+      "output_lines": [
+        "4db003f feat(p12): wire safetensors text I/O through verified tokenizer sidecar",
+        "163f4e4 fix(p12): use native safetensors dequant path for dense qNg64",
+        "1a4a0ea fix(p12): declare safetensors dequant before qNg64 registration",
+        "b971f26 fix(p12): rebase dense qNg64 on verified P11 Qwen source",
+        "fff6725 fix(p12): restore verified Qwen source",
+        "8a59001 fix(p12): restore qwen inference after newline corruption"
+      ]
+    },
+    {
+      "claim": "main's history after the merge base is two single-parent commits (no merge commit); 79d98de is the P12 commit and none of the branch-only commits (O2) is an ancestor of main, so non-ancestry alone is expected for any P12 source_commit; the content-level absence in O5 is the substantive gap",
+      "command": "git log --format='%H parents=%P %s' 40ab1e6a65f1ffff0dff36c923c2463556765074..0f7c3570ef8c905be216cdb228d67d28ecacbe26",
+      "exit_code": 0,
+      "id": "O13",
+      "output_lines": [
+        "0f7c3570ef8c905be216cdb228d67d28ecacbe26 parents=79d98de2bf035eca3ae48572e9f931356fd9c294 QT-0..4: add Q/T heatmaps and mixed-qNg64 local precision foundation",
+        "79d98de2bf035eca3ae48572e9f931356fd9c294 parents=40ab1e6a65f1ffff0dff36c923c2463556765074 P12: close Qwen CPU-MLX n5 parity"
+      ]
+    },
+    {
+      "claim": "both original attestation files first appeared on main in 79d98de",
+      "command": "git log --format='%H %s' 0f7c3570ef8c905be216cdb228d67d28ecacbe26 -- attestations/BEGLIN_P12_QWEN3B_MLX_AFFINE_LOADER_ACCEPTANCE_2026-10-04.json attestations/BEGLIN_P12_QWEN3B_MLX_AFFINE_LOADER_VERIFICATION_2026-10-04.json",
+      "exit_code": 0,
+      "id": "O14",
+      "output_lines": [
+        "79d98de2bf035eca3ae48572e9f931356fd9c294 P12: close Qwen CPU-MLX n5 parity"
+      ]
+    }
+  ],
+  "observed_against": {
+    "branch_tips_observed": {
+      "p12-mlx-affine-safetensors-v1-20261004": "ad372ec620a105e71e234de6cdc96de60c2316fc",
+      "precision-p12-model-capability-v1-20261004": "ea08e84a4ce140a679057da84490fb21ed17d81a",
+      "precision-p12-qng64-capability-hardening-v1-20261004": "b43dba1472354d24bd559d01602398442bca4f25",
+      "precision-p12-tokenizer-runtime-v1-20261004": "1d1f34f1e9abd9f7d0d91217cb98f849e3a2b30a"
+    },
+    "main_commit": "0f7c3570ef8c905be216cdb228d67d28ecacbe26",
+    "main_commit_note": "tip of main and of origin/main in the local clone; no git fetch was performed, so remote-tracking refs are as of the local clone"
+  },
+  "original_records_modified": false,
+  "schema": "beglin-p12-provenance-addendum-v1",
+  "status": "SCOPE_CLARIFICATION",
+  "supersession": {
+    "supersedes": [],
+    "when_to_write_a_new_addendum": "if the engine wiring is landed on main, write a new addendum naming the landing commit and a fresh run; do not edit this file or the original records"
+  },
+  "verification_claimed_by_this_addendum": false
+}
