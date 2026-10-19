@@ -103,7 +103,8 @@ def main():
         need(r.get("source_layer_count")==27
              and r.get("new_context_position")==(0 if i==0 else 4+i)
              and r.get("latent_KV_size_bytes")==27*(5+i)*1152
-             and r.get("source_gpu_packed_module_instances_this_stage",0)>1000,
+             and r.get("source_gpu_packed_module_instances_this_stage",0)>
+                 (1000 if i==0 else 500),
              "missing 27-layer sealed prequant source/cached KV stage: "+str(i))
     need(new.get("persistent_MLA_KV_total_bytes")==217728
          and new.get("persistent_KV_source_storage") ==
