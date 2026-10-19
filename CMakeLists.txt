@@ -70,11 +70,21 @@ find_package(MLX CONFIG REQUIRED PATHS ${MLX_CMAKE_DIR})
 # caller-plain convention -- see RESULTS.md "caller-plain convention" for why
 # compiling these with an SME/SVE -march flag can SIGILL on real hardware.
 # The *_verify.c files are deliberately excluded: each carries its own main().
+# D-F4-qng64-link: qng64_dense.c is part of the engine object set. WHY:
+# qwen_infer.c (matvec_t/matmul_t/load_safetensors_weights) calls
+# qng64_{group_bytes,packed_bytes,quantize_f32,matvec_f32,matmul_f32}, so
+# linking qwen_infer_gpu without it fails with undefined _qng64_* (issue #68).
+# COST: none -- the file has no main() and no globals; the stand-alone
+# executables below (qng64_dense_test, p12_qwen25_real_mlx_probe) do not link
+# $<TARGET_OBJECTS:qwen_infer_obj>, so there is no duplicate-symbol risk.
+# EXIT: if a second consumer of qwen_infer_obj appears that also compiles
+# qng64_dense.c itself, drop that copy instead of this entry.
 add_library(qwen_infer_obj OBJECT
   qwen_infer.c
   hf_config.c
   safetensors_load.c
   safetensors_quants.c
+  qng64_dense.c
   gguf_load.c gguf_quants.c gguf_transcode.c gguf_cache.c
   bpe_tokenizer.c
   gguf_write.c

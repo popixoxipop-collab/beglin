@@ -31,6 +31,8 @@
     "safetensors_load.h",
     "safetensors_quants.c",
     "safetensors_quants.h",
+    "qng64_dense.c",
+    "qng64_dense.h",
     "q4gemv.h",
     "q4gemv_g256.h",
     "attn_neon.h",
