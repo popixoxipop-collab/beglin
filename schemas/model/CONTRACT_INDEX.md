@@ -19,7 +19,7 @@ Canonical contracts for the model-capability front door.
 - `validation-plan-v1.schema.json`
 - `verification-evidence-v1.schema.json`
 
-Identity rule: timestamps and absolute source locations are excluded from stable identity hashes; content/checkpoint hashes are not. Unknown architecture/operator/tokenizer/quantization capability must fail closed. `IMPLEMENTED_UNVERIFIED` is never equivalent to `VERIFIED`.
+Identity rule: timestamps and absolute source locations are excluded from stable identity hashes; content/checkpoint hashes are not. Unknown architecture/operator/tokenizer/quantization capability must fail closed. `IMPLEMENTED_UNVERIFIED` is never equivalent to `VERIFIED`. A loader whose evidence is clarified by a `beglin-p12-provenance-addendum-v1` record with `engine_wiring_in_main=false` is `VERIFIED_FORMAT_ONLY`: it is not `VERIFIED`, the runtime plan stays `VALIDATION_REQUIRED`, and `p11_allowed` is false.
 
 Verification rule: any capability reported as `VERIFIED`, `IN_ENGINE_VERIFIED`, or `EXTERNAL_VERIFIED` must carry a `beglin-verification-evidence-v1` reference whose checkpoint/architecture/backend identity matches the inspected model. A boolean flag or file presence alone is never verification.
 - `tokenizer-runtime-plan-v1.schema.json` — explicit in-engine/external tokenizer execution plan with executable hash binding

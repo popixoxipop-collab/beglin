@@ -16,6 +16,7 @@
     "status": {
       "enum": [
         "VERIFIED",
+        "VERIFIED_FORMAT_ONLY",
         "IMPLEMENTED_UNVERIFIED",
         "PARTIAL",
         "UNSUPPORTED"
