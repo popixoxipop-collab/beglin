@@ -267,15 +267,19 @@ clang -O3 -w -c qng64_dense.c -o qng64_dense.o      # dense qNg64 primitives qwe
 # pointers, no SME/SVE code of its own):
 clang -O2 -march=armv9.2-a+sme2 -I. -c sme2_kai.c -o sme2_kai.o
 
-# KleidiAI vendored kernels + assembly: only these carry the arch flag.
+# KleidiAI vendored SME/SME2 kernels + assembly: only these carry the arch flag.
 clang -O2 -march=armv9.2-a+sme2 -I. -c \
   kleidiai/kai_common_sme_asm.S \
-  kleidiai/kai_lhs_pack_f16pmrx2_f32_neon.c \
-  kleidiai/kai_lhs_quant_pack_qsi8d32p_f32_neon.c \
   kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa.c \
   kleidiai/kai_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa_asm.S \
   kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa.c \
-  kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa_asm.S \
+  kleidiai/kai_matmul_clamp_f32_qsi8d32p1vlx4_qsi4c32p4vlx4_1vlx4vl_sme_mopa_asm.S
+
+# KleidiAI NEON pack functions run in normal (non-streaming) mode, so they are compiled PLAIN: with the SME2 flag clang
+# vectorizes them with SVE (cntw/ptrue/index z..), which Apple M4 traps (SIGILL on the int8-LHS path).
+clang -O2 -I. -c \
+  kleidiai/kai_lhs_pack_f16pmrx2_f32_neon.c \
+  kleidiai/kai_lhs_quant_pack_qsi8d32p_f32_neon.c \
   kleidiai/kai_rhs_pack_nxk_qsi4c32ps1s0scalef16_qsu4c32s16s0_neon.c \
   kleidiai/kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.c
 
@@ -288,6 +292,11 @@ clang -O3 qwen_infer.o gguf_cache.o gguf_load.o gguf_quants.o gguf_transcode.o \
 # Verify no SVE/SME instruction leaked into the plain-compiled caller
 # (this must always print nothing):
 otool -tV qwen_infer.o | grep -iE 'sve|sme|addvl'
+
+# Same for the plain NEON pack objects (this must also print nothing):
+otool -tV kai_lhs_pack_f16pmrx2_f32_neon.o kai_lhs_quant_pack_qsi8d32p_f32_neon.o \
+  kai_rhs_pack_nxk_qsi4c32ps1s0scalef16_qsu4c32s16s0_neon.o kai_rhs_pack_nxk_qsi4c32ps4s0sf16_qsu4c32s16s0_neon.o \
+  | grep -E '\bz[0-9]+\.|\bp[0-9]+\.|ptrue|whilelt|cnt[bhwd]\b'
 ```
 
 Runs on any Apple Silicon Mac; the SME2-accelerated MoE path additionally

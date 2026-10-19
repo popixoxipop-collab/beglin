@@ -103,9 +103,26 @@ target_compile_options(sme2_kai_obj PRIVATE -O2 -march=armv9.2-a+sme2)
 file(GLOB KLEIDI_SRCS kleidiai/*.c kleidiai/*.S)
 list(FILTER KLEIDI_SRCS EXCLUDE REGEX
   "(kai_test|thread_scaling|prototype|vdsp_ref|verify_gemm|verify_real_repack)")
-add_library(kleidi_obj OBJECT ${KLEIDI_SRCS})
+# D-N8-split: only the SME/SME2 kernels get -march=...+sme2; the NEON pack functions are compiled plain.
+#   WHY : with +sme2 on every file, clang vectorized the NEON packers with SVE (cntw/ptrue/index z..). They run in normal
+#         (non-streaming) mode, where Apple M4 has no SVE, so the int8-LHS path (QWEN_MOE_SME2_F16LHS=0) died with
+#         SIGILL in kai_run_lhs_quant_pack_qsi8d32p_f32_neon (+84 = cntw). The default f16 path's RHS packers also carry
+#         SVE stores in rarely-taken branches. scripts/postinstall-build.js and the README recipe already listed the
+#         kernels; they now follow the same split.
+#   COST: two object libraries instead of one. A new KleidiAI file is NEON-plain unless its name matches _mopa or is
+#         kai_common_sme_asm.S, so a new SME kernel must be added to the regex below.
+#   EXIT: compile per file with set_source_files_properties(COMPILE_OPTIONS) once CMake >= 3.x can drop a target flag
+#         (it cannot today), or fold both back if KleidiAI marks its NEON files non-SVE.
+set(KLEIDI_SME_SRCS ${KLEIDI_SRCS})
+list(FILTER KLEIDI_SME_SRCS INCLUDE REGEX "(_mopa|kai_common_sme_asm)")
+set(KLEIDI_NEON_SRCS ${KLEIDI_SRCS})
+list(FILTER KLEIDI_NEON_SRCS EXCLUDE REGEX "(_mopa|kai_common_sme_asm)")
+add_library(kleidi_obj OBJECT ${KLEIDI_SME_SRCS})
 target_compile_options(kleidi_obj PRIVATE
   -O2 -march=armv9.2-a+sme2 -I${CMAKE_SOURCE_DIR} -I${CMAKE_SOURCE_DIR}/kleidiai -w)
+add_library(kleidi_neon_obj OBJECT ${KLEIDI_NEON_SRCS})
+target_compile_options(kleidi_neon_obj PRIVATE
+  -O2 -I${CMAKE_SOURCE_DIR} -I${CMAKE_SOURCE_DIR}/kleidiai -w)
 
 # MLX GPU MoE glue (C++).
 add_library(mlx_moe_obj OBJECT mlx_moe.cpp)
@@ -116,6 +133,7 @@ add_executable(qwen_infer_gpu
   $<TARGET_OBJECTS:qwen_infer_obj>
   $<TARGET_OBJECTS:sme2_kai_obj>
   $<TARGET_OBJECTS:kleidi_obj>
+  $<TARGET_OBJECTS:kleidi_neon_obj>
   $<TARGET_OBJECTS:mlx_moe_obj>
 )
 target_link_libraries(qwen_infer_gpu PRIVATE mlx "-framework Accelerate" pthread)
@@ -131,6 +149,12 @@ target_link_libraries(mlx_binding_transition_test PRIVATE mlx)
 
 enable_testing()
 add_test(NAME mlx_binding_transition COMMAND mlx_binding_transition_test)
+
+# D-N8-guard: the plain-NEON KleidiAI objects must carry no SVE instructions (see kleidi_obj / kleidi_neon_obj above).
+# The objects are built as part of qwen_infer_gpu; the script exits 2 (test fails) if they are missing.
+add_test(NAME kleidi_neon_no_sve
+  COMMAND bash ${CMAKE_SOURCE_DIR}/tests/regression/check_no_sve_in_objects.sh $<TARGET_OBJECTS:kleidi_neon_obj>
+  COMMAND_EXPAND_LISTS)
 
 
 # P12 loader-format gate: exact installed-MLX affine 4-bit oracle.
