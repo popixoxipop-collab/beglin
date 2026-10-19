@@ -4956,6 +4956,10 @@ typedef struct {
     void *rhs_packed;      // KleidiAI-packed symmetric RHS, NULL until lazily built
     float *adj_bias;       // [out*ng], adj_bias[row*ng+g] = 8*scale[row,g] + bias[row,g]
     int ready;              // 0=not attempted, 1=ready, -1=sticky-failed (shape/hw/alloc issue)
+    // D-sme2-slot-1: what `ready` was decided from, for BOTH ready==1 and ready==-1. Identity only
+    // (never dereferenced); moe_sme2_ensure_ready() re-evaluates the slot when either differs.
+    const MoeAFTensor *src;  // tensor bound to the slot when the verdict was taken
+    int src_bits;            // its resolved actual_bits (ebits[blob_e] or bits) at that time
 } MoeSme2Slot;
 // [layer][cache_slot][0=gate,1=up,2=down] -- routed (switch_mlp) tensors use cache_slot ==
 // their real expert index (0..MOE_N_EXPERTS-1, MOE_N_EXPERTS=64 for this model, confirmed via
@@ -5056,7 +5060,33 @@ static void moe_sme2_ensure_ready(const uint8_t *af, MoeAFTensor *tsr, long blob
     const uint8_t *base = tsr->base ? tsr->base : af;
     int f16lhs = moe_sme2_f16lhs_mode();
     MoeSme2Slot *slot = f16lhs ? moe_sme2_f16lhs_slot(layer,cache_e,proj_idx) : moe_sme2_slot(layer,cache_e,proj_idx);
-    if (slot->ready != 0) return;
+    // D-sme2-slot-1: a slot is only valid for the (tensor, bit-width) it was built from.
+    //   WHY : `ready` used to be written 0->1 / 0->-1 and never reset, and moe_matvec_af_group_smart()
+    //         served the cached RHS without asking which tensor built it. A runtime promotion or
+    //         demotion (g_moe_lt_active[...] re-pointed, see moe_promotion_apply_one() /
+    //         moe_demotion_nq_maybe_apply()) therefore kept running the OLD tensor's weights on SME2
+    //         hosts (promotion silently ignored), or kept a demoted tensor on the scalar path.
+    //   Hot path is one pointer compare + one int compare. A mismatch retires the old buffers with
+    //   free() and re-evaluates. Free-in-place is safe because no other thread can touch a slot:
+    //   the only pthread_create sites are the MoE scalar pool and q4pool (workers run
+    //   g_moe_row_fn / q4 kernels, never this function), mlx_moe.cpp and sme2_kai.c create no
+    //   threads, kai_sme2_gemm_*() is synchronous, and the other globals this path shares
+    //   (g_groupsum, the LHS scratch that moe_sme2_ensure_scratch*() frees and regrows) already
+    //   assume a single caller thread. Promotion/demotion are applied by that same thread, at
+    //   startup (moe_promotion_nq_init) or at the drained quiescent boundary of the cbatch loop
+    //   (g_moe_cpu_weight_epoch), so no GEMM holds the old rhs_packed.
+    //   COST: promote-then-demote (pointer swapped back) pays one repack per switch; g_moe_af[]
+    //         entries are never freed or reused (g_moe_naf only grows), so a pointer match is
+    //         never an ABA alias.
+    //   EXIT: if this function ever runs from pool workers, g_groupsum and the scratch must be
+    //         made per-thread first, and this free must become a retire list.
+    int actual_bits = tsr->ebits ? tsr->ebits[blob_e] : tsr->bits;
+    if (slot->ready != 0) {
+        if (slot->src == tsr && slot->src_bits == actual_bits) return;
+        free(slot->rhs_packed); free(slot->adj_bias);
+        slot->rhs_packed = NULL; slot->adj_bias = NULL; slot->ready = 0;
+    }
+    slot->src = tsr; slot->src_bits = actual_bits;
     // Opus-plan hazard fix (2026-09-02, ROI-G planning pass): everything below this point
     // unconditionally assumes q4g64 packed-nibble layout (row_pbytes=in/2, row_words=in/8,
     // nibble unpacking) regardless of tsr->bits -- kai_sme2_shape_ok()/kai_sme2_available()
@@ -5066,7 +5096,6 @@ static void moe_sme2_ensure_ready(const uint8_t *af, MoeAFTensor *tsr, long blob
     // the SAME ebits-vs-uniform source moe_decode_af()/moe_matvec_af_row() already use (a
     // mixed-expert tensor's per-expert bits, not just tsr->bits) -- bail to the scalar
     // moe_matvec_af() fallback, which already branches correctly on every bit-width.
-    int actual_bits = tsr->ebits ? tsr->ebits[blob_e] : tsr->bits;
     if (actual_bits != 4) { slot->ready = -1; return; }
     int out = tsr->out, in = tsr->in, ng = tsr->ng;
     if (f16lhs) {
@@ -8935,7 +8964,13 @@ static MoeAFTensor *gguf_register_moe_q4g64_as(const char *gguf_name, const char
     w->E = E; w->out = out; w->in = in; w->ng = ng;
     w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
     w->scale_off = (long)packed_bytes; w->bias_off = -1;  // never dereferenced: sym=1
-    w->base = base; w->sym = 1;
+    // D-q4g64-bits-1: bits=4 set explicitly (was calloc 0). moe_sme2_ensure_ready() requires
+    //   actual_bits == 4, so a q4g64 tensor with bits==0 was sent to the scalar path for good.
+    //   Decoders treat 0 and 4 identically (moe_qng64_n_supported(4) is false), so no scalar
+    //   result changes; the only effect is that SME2 hosts may now repack this tensor. Same for
+    //   st_register_moe_experts_q4g64_as() / st_register_moe_dense_af_q4g64_as() below.
+    //   EXIT: none -- MoeAFTensor's comment already states every constructor sets bits.
+    w->base = base; w->sym = 1; w->bits = 4;
     return w;
 }
 
@@ -15980,7 +16015,8 @@ static MoeAFTensor *st_register_moe_experts_q4g64_as(const char *name_pattern, i
     w->E = E; w->out = out; w->in = in; w->ng = ng;
     w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
     w->scale_off = (long)packed_bytes; w->bias_off = -1;  // never dereferenced: sym=1
-    w->base = base; w->sym = 1;
+    // D-q4g64-bits-1: bits=4 explicit, see gguf_register_moe_q4g64_as().
+    w->base = base; w->sym = 1; w->bits = 4;
     return w;
 }
 
@@ -16031,7 +16067,8 @@ static MoeAFTensor *st_register_moe_dense_af_q4g64_as(const char *name, const ch
     w->E = 1; w->out = out; w->in = in; w->ng = ng;
     w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
     w->scale_off = (long)packed_bytes; w->bias_off = -1;
-    w->base = base; w->sym = 1;
+    // D-q4g64-bits-1: bits=4 explicit, see gguf_register_moe_q4g64_as().
+    w->base = base; w->sym = 1; w->bits = 4;
     return w;
 }
 
