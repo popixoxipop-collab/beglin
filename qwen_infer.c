@@ -2395,6 +2395,18 @@ typedef struct {
     // byte-per-element codes (16x finer than int4's 16 levels) instead. Only this round's own
     // st_register_moe_*_q8g64_as() set bits=8; GGUF-MoE/AF-blob never do.
     int bits;
+    // D-qNg64-19 (issue #65): 1 for a tensor built by st_register_moe_{experts,dense_af}_qNg64_as()
+    // (bit-plane format, `bits` == n), 0 for every other constructor (calloc/zero-init default, so
+    // a constructor that never mentions it is automatically "not qNg64").
+    //   WHY: q8g64 (raw signed int8) and qNg64 at n=8 are both stored with sym=1, bits=8, so no
+    //   (bits, sym) test can tell them apart; moe_decode_af()/moe_matvec_af_row() took their int8
+    //   branch for every bits==8 tensor and decoded n=8 bit-planes as int8 garbage (rel-L2 ~3).
+    //   Only the raw-int8 `bits == 8` branches consult this (they apply when !qng64); the
+    //   bit-plane branches keep their existing sym+moe_qng64_n_supported(bits) gate, so every
+    //   n != 8 tensor is untouched. Meaningless when ebits != NULL (mixed tensors never set it).
+    //   COST: one int per tensor. EXIT: if q8g64 and qNg64(n=8) are ever unified into one format
+    //   (see moe_qng64_n_supported()'s EXIT note), drop this field with the int8 branches.
+    int qng64;
     // Per-expert mixed-precision override (profiling-driven expert promotion follow-up,
     // 2026-08-29): NULL for every tensor above (the uniform `bits` field applies to all E
     // experts, exactly as before -- byte-identical when unset). When non-NULL (length E, set
@@ -2428,6 +2440,25 @@ typedef struct {
 // (see gguf_register_moe_mxfp4_native_as(), moe_decode_af()'s and moe_matvec_af_row()'s own
 // MOE_BITS_GGUF_MXFP4 branches).
 #define MOE_BITS_GGUF_MXFP4 40
+
+// D-qNg64-19 (issue #65): the `bits` argument every mlx_gpu_bind_af() call site must pass. The GPU
+// binder (mlx_moe.cpp) only sees `bits`, and its bits==8 branch is the raw-int8 q8g64 layout, so a
+// qNg64 n=8 tensor (bit-planes, bits=8) passed straight through would be bound as int8 garbage AND
+// pass the kind=1/bits=8 verification. No MLX/Metal kernel exists for qNg64 n=8 (MLX's own table
+// excludes 8, and the custom plane kernel covers n=7,9..15 only), so refuse it here, loudly:
+// returning 0 makes mlx_gpu_bind_af() return 0 (its gate rejects any bits outside its supported
+// set), which every call site already treats as a bind failure.
+//   COST: a qNg64 n=8 tensor cannot be served on GPU (CPU serves it correctly).
+//   EXIT: add an n=8 plane kernel to mlx_moe.cpp, then return t->bits here and give the binder a
+//   way to tell the two layouts apart (it cannot today: both arrive as bits==8).
+static inline int moe_gpu_bind_bits(const MoeAFTensor *t) {
+    if (t->qng64 && t->bits == 8) {
+        fprintf(stderr, "[moe gpu] REFUSED: tensor %s is qNg64 n=8 (bit-planes); there is no GPU kernel for it "
+                        "and mlx_gpu_bind_af's bits==8 branch is the q8g64 int8 layout -- not binding\n", t->name);
+        return 0;
+    }
+    return t->bits;
+}
 
 static uint8_t *moe_mmap_file(const char *path, long *out_bytes) {
     int fd = open(path, O_RDONLY);
@@ -2565,9 +2596,12 @@ static float moe_decode_af(const uint8_t *blob, MoeAFTensor *t, long e, long row
     // eoff: byte offset where expert e's packed data begins. Uniform tensors (ebits==NULL)
     // reproduce the exact old per-tensor-bits formula; mixed tensors use the precomputed
     // non-uniform prefix-sum table (see MoeAFTensor's own ebits/epacked_off comment).
+    // D-qNg64-19: a qNg64 n=8 tensor is bits==8 too but holds bit-planes -- it must skip this raw-int8
+    // branch (and its eoff) and take the bit-plane branch below; see MoeAFTensor::qng64.
+    int is_int8 = (bits == 8 && !t->qng64);
     long eoff = t->ebits ? (long)t->epacked_off[e]
-                         : (bits == 8 ? e * t->out * t->in : e * t->out * (t->in / 8) * 4);
-    if (bits == 8) {
+                         : (is_int8 ? e * t->out * t->in : e * t->out * (t->in / 8) * 4);
+    if (is_int8) {
         long byte_idx = t->packed_off + eoff + row * t->in + col;
         int8_t code = (int8_t)base[byte_idx];
         return (float)code * scale;
@@ -2682,10 +2716,11 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
         }
         return accmx;
     }
+    int is_int8 = (bits == 8 && !t->qng64);   // D-qNg64-19: qNg64 n=8 is bits==8 but bit-planes, see moe_decode_af()
     long eoff = t->ebits ? (long)t->epacked_off[e]
-                         : (bits == 8 ? e * t->out * t->in : e * t->out * row_words * 4);
+                         : (is_int8 ? e * t->out * t->in : e * t->out * row_words * 4);
     double acc = 0.0;
-    if (bits == 8) {   // see moe_decode_af()'s own bits==8 comment for the exact convention
+    if (is_int8) {   // see moe_decode_af()'s own bits==8 comment for the exact convention
         long row_byte0 = t->packed_off + eoff + row * t->in;
         for (long g = 0; g < ng; g++) {
             long scale_idx = t->scale_off + (row_base * ng + g) * 4;
@@ -2771,7 +2806,7 @@ static double moe_matvec_af_row(const uint8_t *blob, MoeAFTensor *t, long e, lon
 // (moe4a_ref_generation.json / mlx_lm), not just compared token-for-token against the exact path,
 // before ever being considered for promotion to default.
 static double moe_matvec_af_row_vdsp(const uint8_t *blob, MoeAFTensor *t, long e, long row, const float *x) {
-    if (t->bits == 8) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==8 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for int8 tensors)\n"); exit(1); }
+    if (t->bits == 8 && !t->qng64) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==8 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for int8 tensors)\n"); exit(1); }
     if (t->bits == 16) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==16 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for F16-as-AF tensors)\n"); exit(1); }
     if (t->bits == 32) { fprintf(stderr, "FATAL: moe_matvec_af_row_vdsp: bits==32 not implemented (QWEN_MOE_SCALAR_VDSP unsupported for F32-as-AF tensors)\n"); exit(1); }
     // D-qNg64-1/D-qNg64-18: gated on sym (like the decode/matvec branches) so a genuine sym==0
@@ -6123,6 +6158,7 @@ static void moe_neartie_attn_bits_summary(char *buf, size_t bufsz) {
         for (int i = 0; i < 4; i++) {
             if (!roles[i]) continue;
             total++;
+            if (roles[i]->qng64) { cnt_other++; continue; }   // D-qNg64-19: qNg64 n=8 is bits==8 but NOT q8g64
             switch (roles[i]->bits) {
                 case 4: cnt4++; break; case 8: cnt8++; break;
                 case 16: cnt16++; break; case 32: cnt32++; break;
@@ -10178,6 +10214,12 @@ static int run_moe_gpu_mode(int argc, char **argv) {
                     t->name, t->bits, (void *)t->ebits);
             gate2_fail = 1;
         }
+        // D-qNg64-19: bits==8 is only valid here as q8g64; a qNg64 n=8 (bit-plane) tensor has no GPU kernel.
+        if (t->qng64 && t->bits == 8) {
+            fprintf(stderr, "[moe gpu] GATE2 FAIL: tensor %s is qNg64 n=8 (bit-planes, bits=8); no GPU kernel, would be misread as q8g64\n",
+                    t->name);
+            gate2_fail = 1;
+        }
     }
     fprintf(stderr, "[moe gpu] GATE2 (bits sanity): %s (%d tensors checked)\n",
             gate2_fail ? "FAIL" : "PASS", g_moe_naf);
@@ -10187,7 +10229,7 @@ static int run_moe_gpu_mode(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         int ok = mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                                  t->packed_off, t->scale_off, t->bias_off, t->bits);
+                                  t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t));
         if (!ok) {
             fprintf(stderr, "FATAL: [moe gpu] bind failed for tensor %s\n", t->name);
             exit(1);
@@ -10334,7 +10376,7 @@ static int run_moe_gpu_mode(int argc, char **argv) {
                         continue;
                     }
                     int ok = mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                                              t->packed_off, t->scale_off, t->bias_off, t->bits);
+                                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t));
                     if (!ok) {
                         fprintf(stderr, "[moe gpu] GATE6 FAIL: rebind failed for hi tensor %s (bits=%d)\n", t->name, t->bits);
                         continue;
@@ -10393,7 +10435,7 @@ static int run_moe_gpu_mode(int argc, char **argv) {
             g_st_moe = saved_st_moe;
             if (q8t && q8t->ebits == NULL) {
                 int ok = mlx_gpu_bind_af(q8t->base ? q8t->base : af_blob, af_bytes, q8t->name, q8t->E, q8t->out, q8t->in, q8t->ng,
-                                          q8t->packed_off, q8t->scale_off, q8t->bias_off, q8t->bits);
+                                          q8t->packed_off, q8t->scale_off, q8t->bias_off, moe_gpu_bind_bits(q8t));
                 if (ok) {
                     float gpu_vals[8];
                     int ncols = q8t->in < 8 ? (int)q8t->in : 8;
@@ -10440,7 +10482,7 @@ static int run_moe_gpu_mode(int argc, char **argv) {
                         continue;
                     }
                     int ok = mlx_gpu_bind_af(qnt->base ? qnt->base : af_blob, af_bytes, qnt->name, qnt->E, qnt->out, qnt->in, qnt->ng,
-                                              qnt->packed_off, qnt->scale_off, qnt->bias_off, qnt->bits);
+                                              qnt->packed_off, qnt->scale_off, qnt->bias_off, moe_gpu_bind_bits(qnt));
                     if (n == 7) {
                         fprintf(stderr, "[moe gpu] GATE6c n=7: bind %s (expected: refused, no native MLX kernel)\n",
                                 ok ? "SUCCEEDED -- UNEXPECTED, INVESTIGATE" : "refused as expected");
@@ -10507,7 +10549,7 @@ static int run_moe_gpu_mode(int argc, char **argv) {
 
                 if (eg) {
                     int ok_g = mlx_gpu_bind_af(eg->base ? eg->base : af_blob, af_bytes, eg->name, eg->E, eg->out, eg->in, eg->ng,
-                                                eg->packed_off, eg->scale_off, eg->bias_off, eg->bits);
+                                                eg->packed_off, eg->scale_off, eg->bias_off, moe_gpu_bind_bits(eg));
                     fprintf(stderr, "[moe gpu] GATE7 prep: rebound %s (bits=%d) under production name: %s\n",
                             eg->name, eg->bits, ok_g ? "ok" : "FAILED");
 
@@ -10526,9 +10568,9 @@ static int run_moe_gpu_mode(int argc, char **argv) {
                             "model.layers.%d.mlp.experts.%d.down_proj.weight", ffn_test_layer, MOE_N_EXPERTS, en_down);
                         g_st_moe = saved3;
                         int ok_u = eu && mlx_gpu_bind_af(eu->base ? eu->base : af_blob, af_bytes, eu->name, eu->E, eu->out, eu->in, eu->ng,
-                                                          eu->packed_off, eu->scale_off, eu->bias_off, eu->bits);
+                                                          eu->packed_off, eu->scale_off, eu->bias_off, moe_gpu_bind_bits(eu));
                         int ok_d = ed && mlx_gpu_bind_af(ed->base ? ed->base : af_blob, af_bytes, ed->name, ed->E, ed->out, ed->in, ed->ng,
-                                                          ed->packed_off, ed->scale_off, ed->bias_off, ed->bits);
+                                                          ed->packed_off, ed->scale_off, ed->bias_off, moe_gpu_bind_bits(ed));
                         if (ok_u && ok_d) {
                             int r_uniform = mlx_gpu_test_ffn_uniform(en_gate, en_up, en_down);
                             fprintf(stderr, "[moe gpu] GATE7b (uniform gate=16/up=16/down=16): mlx_gpu_test_ffn_uniform=%d (expect 1)\n", r_uniform);
@@ -10859,7 +10901,7 @@ static int run_moe_gpu_mla_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu mla] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -11024,7 +11066,7 @@ static int run_moe_gpu_full_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu full] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -11269,7 +11311,7 @@ static int run_moe_gpu_fused_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu fused] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -11505,7 +11547,7 @@ static int run_moe_gpu_generate_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu generate] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -11858,7 +11900,7 @@ static int run_moe_gpu_gqa_fused_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu gqa fused] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -12223,7 +12265,7 @@ static int run_moe_gpu_batch_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu batch] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -12476,7 +12518,7 @@ static int run_moe_gpu_gqa_batch_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu gqa batch] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -12762,7 +12804,7 @@ static int run_moe_gpu_cbatch_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu cbatch] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -13130,7 +13172,7 @@ static int run_moe_gpu_gqa_generate_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu gqa generate] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -13341,7 +13383,7 @@ static int run_moe_gpu_gqa_cbatch_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu gqa cbatch] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -13515,7 +13557,7 @@ static int run_moe_gpu_gqa_cbatch_prefill_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu gqa cbatch prefill] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -14029,7 +14071,7 @@ static int run_moe_gpu_gqa_cbatch_online_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu gqa cb online] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -14411,7 +14453,7 @@ static int run_moe_gpu_cbatch_prefill_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu cbatch prefill] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -14866,7 +14908,7 @@ static int run_moe_gpu_cbatch_online_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [moe gpu cb online] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -15314,7 +15356,7 @@ static int run_moe_gqa_gpu_gate(int argc, char **argv) {
     for (int i = 0; i < g_moe_naf; i++) {
         MoeAFTensor *t = &g_moe_af[i];
         if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                              t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                              t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
             fprintf(stderr, "FATAL: [gqa olmoe gpu] bind failed for tensor %s\n", t->name);
             exit(1);
         }
@@ -15547,7 +15589,7 @@ static int run_moe_verify_mode(int argc, char **argv) {
             for (int i = 0; i < g_moe_naf; i++) {
                 MoeAFTensor *t = &g_moe_af[i];
                 if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                                      t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                                      t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
                     fprintf(stderr, "FATAL: [bindonly] bind failed for tensor %s\n", t->name);
                     exit(1);
                 }
@@ -15572,7 +15614,7 @@ static int run_moe_verify_mode(int argc, char **argv) {
             for (int i = 0; i < g_moe_naf; i++) {
                 MoeAFTensor *t = &g_moe_af[i];
                 if (!mlx_gpu_bind_af(t->base ? t->base : af_blob, af_bytes, t->name, t->E, t->out, t->in, t->ng,
-                                      t->packed_off, t->scale_off, t->bias_off, t->bits)) {
+                                      t->packed_off, t->scale_off, t->bias_off, moe_gpu_bind_bits(t))) {
                     fprintf(stderr, "FATAL: [bindconfig] bind failed for tensor %s\n", t->name);
                     exit(1);
                 }
@@ -16142,7 +16184,7 @@ static MoeAFTensor *st_register_moe_experts_qNg64_as(const char *name_pattern, i
     w->E = E; w->out = out; w->in = in; w->ng = ng;
     w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
     w->scale_off = (long)packed_bytes; w->bias_off = -1;  // never dereferenced: sym=1
-    w->base = base; w->sym = 1; w->bits = n;
+    w->base = base; w->sym = 1; w->bits = n; w->qng64 = 1;   // D-qNg64-19: bit-plane marker, see MoeAFTensor::qng64
     return w;
 }
 
@@ -16532,7 +16574,7 @@ static MoeAFTensor *st_register_moe_dense_af_qNg64_as(const char *name, int n, c
     w->E = 1; w->out = out; w->in = in; w->ng = ng;
     w->packed_off = 0; w->packed_bytes = (long)packed_bytes;
     w->scale_off = (long)packed_bytes; w->bias_off = -1;
-    w->base = base; w->sym = 1; w->bits = n;
+    w->base = base; w->sym = 1; w->bits = n; w->qng64 = 1;   // D-qNg64-19: bit-plane marker, see MoeAFTensor::qng64
     return w;
 }
 
@@ -16860,6 +16902,15 @@ static const MoeStExpertRole MOE_ST_EXPERT_ROLES[] = {   // always 3, every rout
 //   specifically, that's a separate registrar-selection decision, not a change to this gate.
 static int moe_qng64_n_supported(int n) {
     return n == 2 || n == 3 || (n >= 5 && n <= 15);
+}
+// D-qNg64-19 (issue #65): the GPU subset of moe_qng64_n_supported() -- identical except n=8. The CPU
+// decoders handle n=8 (bit-planes, MoeAFTensor::qng64), but the GPU has no n=8 kernel: MLX's native
+// set excludes 8, the custom plane kernel covers n=7,9..15, and mlx_gpu_bind_af()'s bits==8 branch
+// is q8g64's int8 layout, which would "bind" n=8 bit-planes as garbage and still pass the
+// kind=1/bits=8 verification. Every GPU rebind/promotion path must use this, not the CPU predicate.
+//   COST: qNg64 n=8 is CPU-only. EXIT: an n=8 plane kernel plus a binder-visible layout flag.
+static inline int moe_gpu_qng64_n_supported(int n) {   // inline: only the QWEN_GPU_MLX section calls it
+    return n != 8 && moe_qng64_n_supported(n);
 }
 static void moe_promotion_nq_validate_n(const char *context, const char *role_buf, int layer, int n) {
     if (!moe_qng64_n_supported(n)) {
@@ -17380,8 +17431,8 @@ static int moe_gpu_txn_read(MoeGpuTxnCommand *out, char *err, size_t errcap) {
                 return -1;
             }
             if (!moe_gpu_parse_i32(target_s, &target_n) ||
-                !moe_qng64_n_supported(target_n)) {
-                snprintf(err, errcap, "target %d target_n is not qNg64", i);
+                !moe_gpu_qng64_n_supported(target_n)) {   // D-qNg64-19: GPU subset (no n=8 kernel)
+                snprintf(err, errcap, "target %d target_n is not a GPU-bindable qNg64 width (n=8 has no GPU kernel)", i);
                 return -1;
             }
             if (target_n == expected_n) {
@@ -17459,8 +17510,8 @@ static int moe_gpu_txn_read(MoeGpuTxnCommand *out, char *err, size_t errcap) {
         return -1;
     }
     if (out->op == 2) {
-        if (!moe_qng64_n_supported(target_n)) {
-            snprintf(err, errcap, "target_n=%d is not qNg64", target_n);
+        if (!moe_gpu_qng64_n_supported(target_n)) {   // D-qNg64-19: GPU subset (no n=8 kernel)
+            snprintf(err, errcap, "target_n=%d is not a GPU-bindable qNg64 width (n=8 has no GPU kernel)", target_n);
             return -1;
         }
         if (target_n == expected_n) {
@@ -17573,7 +17624,13 @@ static const char *moe_gpu_role_st_pattern(MoeAttribRole role, int *is_expert) {
 
 static MoeAFTensor *moe_gpu_qng64_cached(
         MoeAttribRole role, int layer, int n, MoeAFTensor *base_ptr) {
-    if (n <= 0 || n >= 16 || !moe_qng64_n_supported(n)) return NULL;
+    if (n == 8) {   // D-qNg64-19: no GPU kernel; the callers treat NULL as a failed bind and restore the snapshot
+        fprintf(stderr, "[moe gpu rebind] REFUSED role=%s layer=%d n=8: qNg64 n=8 has no GPU kernel "
+                        "(mlx_gpu_bind_af's bits==8 is the q8g64 int8 layout); binding unchanged\n",
+                MOE_ATTRIB_ROLE_NAMES[role], layer);
+        return NULL;
+    }
+    if (n <= 0 || n >= 16 || !moe_gpu_qng64_n_supported(n)) return NULL;
     MoeAFTensor *cached = g_moe_promoted_nq_gpu_cache[role][layer][n];
     if (cached) {
         if (g_moe_gpu_transition_active) g_moe_gpu_last_cache_hits++;
@@ -17639,7 +17696,7 @@ static int moe_gpu_rebind_apply_quiescent(const MoeGpuTxnCommand *cmd) {
         cmd->role, cmd->layer, cmd->target_n, base_ptr);
     int ok = qnt && mlx_gpu_bind_af(
         qnt->base, 0, qnt->name, qnt->E, qnt->out, qnt->in, qnt->ng,
-        qnt->packed_off, qnt->scale_off, qnt->bias_off, qnt->bits);
+        qnt->packed_off, qnt->scale_off, qnt->bias_off, moe_gpu_bind_bits(qnt));
     int applied_bits = 0;
     int applied_kind = ok ? mlx_gpu_binding_kind(base_ptr->name, &applied_bits) : 0;
     int expected_kind =
@@ -17742,7 +17799,7 @@ static int moe_gpu_rebind_set_apply_quiescent(const MoeGpuTxnCommand *cmd) {
             t->role, t->layer, t->target_n, base_ptrs[i]);
         int ok = qnt && mlx_gpu_bind_af(
             qnt->base, 0, qnt->name, qnt->E, qnt->out, qnt->in, qnt->ng,
-            qnt->packed_off, qnt->scale_off, qnt->bias_off, qnt->bits);
+            qnt->packed_off, qnt->scale_off, qnt->bias_off, moe_gpu_bind_bits(qnt));
         int applied_bits = 0;
         int applied_kind = ok ? mlx_gpu_binding_kind(base_ptrs[i]->name, &applied_bits) : 0;
         int expected_kind =
@@ -18145,6 +18202,15 @@ static void moe_promotion_nq_init_gpu(void) {
             fprintf(stderr, "FATAL: QWEN_MOE_PROMOTION_FILE_NQ: role=%s layer=%d has no production tensor\n", role_buf, layer);
             exit(1);
         }
+        // D-qNg64-19: qNg64 n=8 is valid for the CPU decoders but has no GPU kernel, and the GPU
+        // binder's bits==8 would bind it as the q8g64 int8 layout and still pass the
+        // kind=1/bits=8 verification below -- refuse before any snapshot/registration, state unchanged.
+        if (!moe_gpu_qng64_n_supported(n)) {
+            fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d REFUSED: qNg64 n=%d has no GPU kernel (n=8 would be bound as the q8g64 int8 layout); GPU binding unchanged\n",
+                    role_buf, layer, n);
+            n_bind_failed++;
+            continue;
+        }
         int base_bits = base_ptr->bits;
         if (n < base_bits) {
             fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d REFUSED: n=%d < base_bits=%d\n", role_buf, layer, n, base_bits);
@@ -18188,7 +18254,7 @@ static void moe_promotion_nq_init_gpu(void) {
         // it unconditionally) -- the ": af_blob" fallback every other GPU bind call site in this
         // file carries never actually applies here, so this function needs no af_blob parameter.
         int ok = mlx_gpu_bind_af(qnt->base, 0, qnt->name, qnt->E, qnt->out, qnt->in, qnt->ng,
-                                  qnt->packed_off, qnt->scale_off, qnt->bias_off, qnt->bits);
+                                  qnt->packed_off, qnt->scale_off, qnt->bias_off, moe_gpu_bind_bits(qnt));
         if (!ok) {
             fprintf(stderr, "[moe promotion nq gpu] role=%s layer=%d SKIP: mlx_gpu_bind_af failed for qNg64(n=%d); restoring pre-attempt snapshot\n",
                     role_buf, layer, n);
