@@ -2389,11 +2389,19 @@ typedef struct {
     // Step 3 divergence fix (this round): int4 group-64 RTN on attention/FFN weights, measured
     // against a true fp32 MLX reference (not the looser quantized-vs-quantized comparisons every
     // earlier MoE gate used), showed real-data rel-L2 well above this round's hard-fail threshold.
-    // bits selects the packed encoding moe_decode_af()/moe_matvec_af_row[_vdsp]() use: 4 (default,
-    // EVERY existing constructor site sets this explicitly) reproduces the exact nibble-pair
-    // addressing all three MoE loaders always used; 8 reads gguf_quantize_q8g64()'s one-signed-
-    // byte-per-element codes (16x finer than int4's 16 levels) instead. Only this round's own
-    // st_register_moe_*_q8g64_as() set bits=8; GGUF-MoE/AF-blob never do.
+    // bits selects the packed encoding moe_decode_af()/moe_matvec_af_row[_vdsp]() use: 4 reproduces
+    // the exact nibble-pair addressing all three MoE loaders always used; 8 reads gguf_quantize_
+    // q8g64()'s one-signed-byte-per-element codes (16x finer than int4's 16 levels) instead (with
+    // qng64 set: n=8 bit-planes); 2,3,5,6,7,9..15 are qNg64 bit-planes (bits == n); 16/32 raw float;
+    // MOE_BITS_GGUF_MXFP4 native MXFP4.
+    // There is NO implicit default. bits==0 (calloc / `{0}`) is NOT "4-bit": the scalar decoders happen
+    // to fall through to the nibble branch for it, but moe_sme2_ensure_ready() requires actual_bits==4
+    // (0 => scalar fallback for good) and the GPU binder / GATE2 reject it. Every constructor in this
+    // file (moe_load_layout_af() and every gguf_/st_register_* registrar that takes g_moe_af[g_moe_naf++],
+    // the neartie `hi` malloc, and the hand-built tensors in the Gate 4.2 and MQA self-tests) now sets
+    // it explicitly; a new one must too.
+    // The q4g64 registrars (D-q4g64-bits-1) and the Gate 4.2 pair (D-sym-selftest-bits-1) were the last
+    // that did not.
     int bits;
     // D-qNg64-19 (issue #65): 1 for a tensor built by st_register_moe_{experts,dense_af}_qNg64_as()
     // (bit-plane format, `bits` == n), 0 for every other constructor (calloc/zero-init default, so
@@ -2410,10 +2418,11 @@ typedef struct {
     // Per-expert mixed-precision override (profiling-driven expert promotion follow-up,
     // 2026-08-29): NULL for every tensor above (the uniform `bits` field applies to all E
     // experts, exactly as before -- byte-identical when unset). When non-NULL (length E, set
-    // only by st_register_moe_experts_mixed_as()), ebits[e] selects 4 or 8 for expert e
-    // individually, and epacked_off[e] gives that expert's packed-byte start offset (a
-    // prefix-sum table, since int4/int8 experts occupy different byte counts per row -- the
-    // uniform e*out*row_pbytes stride moe_decode_af()/moe_matvec_af_row() otherwise use no
+    // only by st_register_moe_experts_mixed_as()), ebits[e] selects the bit-width of expert e
+    // individually -- any of 2,3,4,5,6,7,8,16,32 (the set that function and the QWEN_MOE_EXPERT_BITS
+    // parser validate; 2/3/5/6/7 are qNg64 bit-planes, 16/32 raw float) -- and epacked_off[e] gives
+    // that expert's packed-byte start offset (a prefix-sum table, since experts of different widths
+    // occupy different byte counts per row -- the uniform e*out*row_pbytes stride moe_decode_af()/moe_matvec_af_row() otherwise use no
     // longer applies once experts within one tensor differ in bit-width). Scale/bias addressing
     // is untouched: group count (`ng`) and therefore scale-array layout is bit-width-independent
     // (confirmed against st_register_moe_experts_q4g64_as()/q8g64_as()'s own scale_bytes
@@ -2487,7 +2496,7 @@ static int g_moe_naf = 0;
 static void moe_load_layout_af(const char *path) {
     FILE *f = fopen(path, "r");
     if (!f) { perror(path); exit(1); }
-    g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
+    g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));   // zero-init: bits==0 is NOT an implicit 4-bit (see MoeAFTensor::bits) -- every constructor must set it explicitly
     char name[128];
     long E, out, in, ng, po, pb, so, bo;
     while (fscanf(f, "%127s %ld %ld %ld %ld %ld %ld %ld %ld",
@@ -5109,8 +5118,20 @@ static void moe_sme2_ensure_ready(const uint8_t *af, MoeAFTensor *tsr, long blob
     float *sym_scales = malloc((size_t)out * ng * sizeof(float));
     float *adj_bias = tsr->sym ? NULL : malloc((size_t)out * ng * sizeof(float));
     long row_words = in / 8;
+    // D-sme2-mixed-stride-1: start of expert blob_e's packed nibbles. A uniform tensor keeps the
+    // blob_e * out * (in/2) stride (byte-identical to before); a MIXED tensor (ebits != NULL) must use
+    // the same epacked_off[] prefix sum moe_decode_af()/moe_matvec_af_row() use.
+    //   WHY : the uniform stride assumes every expert occupies out*in/2 bytes. In a mixed tensor the
+    //         experts differ in size (4: in/2 per row, 8: in, 16: 2*in, 32: 4*in, 2/3/5/6/7: ng*n*8),
+    //         so a 4-bit expert following any non-4-bit one (ebits {8,4}, {5,4}, {16,4}, ...) was
+    //         repacked from the wrong bytes (scalar paths were right; expert 0 and 4-bit-only prefixes
+    //         were right by coincidence). Scale addressing below is bit-width independent, unchanged.
+    //   COST: one branch per repack (cold, once per slot build).
+    //   EXIT: none -- if experts ever get a common packed stride, both forms collapse into one.
+    size_t e_pk_off = tsr->ebits ? tsr->epacked_off[blob_e]
+                                 : (size_t)blob_e * tsr->out * row_words * 4;
     for (int row = 0; row < out; row++) {
-        const uint8_t *src = base + tsr->packed_off + ((size_t)blob_e * tsr->out + row) * row_words * 4;
+        const uint8_t *src = base + tsr->packed_off + e_pk_off + (size_t)row * row_words * 4;
         memcpy(sym_packed + (size_t)row * row_pbytes, src, row_pbytes);
         for (int g = 0; g < ng; g++) {
             long sidx = tsr->scale_off + (((size_t)blob_e * tsr->out + row) * ng + g) * 4;
@@ -8449,6 +8470,11 @@ static int run_moe_sym_selftest_mode(int argc, char **argv) {
     t_affine.packed_off = 0; t_affine.packed_bytes = (long)packed_bytes;
     t_affine.scale_off = (long)packed_bytes; t_affine.bias_off = (long)(packed_bytes + scale_bytes);
     t_affine.base = blob; t_affine.sym = 0;
+    // D-sym-selftest-bits-1: bits=4 set explicitly (was `{0}`). moe_sme2_ensure_ready() sends every
+    // `actual_bits != 4` tensor to the scalar fallback, so with bits==0 BOTH calls below ran
+    // moe_matvec_af() and "GATE 4.2 PASS" compared scalar with scalar on an SME2 host.
+    //   COST: none (this gate only runs on SME2 hardware). EXIT: none; t_sym inherits it via the copy.
+    t_affine.bits = 4;
 
     t_sym = t_affine;
     snprintf(t_sym.name, sizeof t_sym.name, "sym_selftest_sym");
@@ -9932,7 +9958,7 @@ static int run_gguf_moe_verify_mode(int argc, char **argv) {
     if (!strcmp(arch, "gpt-oss")) moe_init_yarn_neox();
     fprintf(stderr, "[gguf moe yarn] rope_mscale=%.10f attn_scale=%.10f\n", g_moe_rope_mscale, g_moe_attn_scale);
 
-    g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
+    g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));   // zero-init: bits==0 is NOT an implicit 4-bit (see MoeAFTensor::bits) -- every constructor must set it explicitly
     g_moe_f32 = malloc(sizeof(MoeF32Tensor) * 512);
 
     int is_gptoss = !strcmp(arch, "gpt-oss");
@@ -18664,7 +18690,7 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
     fprintf(stderr, "[moe safetensors yarn] rope_mscale=%.10f attn_scale=%.10f\n", g_moe_rope_mscale, g_moe_attn_scale);
 
     g_st_moe = safetensors_open_multi(path);   // eager multi-shard open -- every real target is sharded
-    g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));   // zero-init: new bits field defaults to 0 (== 4-bit, see MoeAFTensor's own comment) for any constructor that doesn't set it explicitly
+    g_moe_af = calloc(MOE_MAX_AF_TENSORS, sizeof(MoeAFTensor));   // zero-init: bits==0 is NOT an implicit 4-bit (see MoeAFTensor::bits) -- every constructor must set it explicitly
     g_moe_f32 = malloc(sizeof(MoeF32Tensor) * 512);
 
     // Per-expert mixed-precision expert promotion (profiling-driven follow-up, 2026-08-29;
