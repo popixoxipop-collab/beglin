@@ -1,0 +1,47 @@
+name: BEGLIN qNg64 full27 source boundary admission
+
+on:
+  push:
+    branches:
+      - research/local-quant-budget-20261017
+    paths:
+      - tools/verify_full27_source_bounds_cpp_v1.cpp
+      - tools/test_full27_source_bounds_cpp_v1.py
+      - .github/workflows/beglin-full27-source-bounds.yml
+  pull_request:
+    paths:
+      - tools/verify_full27_source_bounds_cpp_v1.cpp
+      - tools/test_full27_source_bounds_cpp_v1.py
+      - .github/workflows/beglin-full27-source-bounds.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research-source-admission:
+    name: macOS C++ source boundary + 24 fail-closed cases
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile source-only native C++ validator
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          clang++ -std=c++17 -O2 -Wall -Wextra -Werror \
+            tools/verify_full27_source_bounds_cpp_v1.cpp \
+            -o tools/verify_full27_source_bounds_cpp_v1
+          test -x tools/verify_full27_source_bounds_cpp_v1
+      - name: Reject malformed safetensors metadata and source boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/test_full27_source_bounds_cpp_v1.py
+          python3 tools/test_full27_source_bounds_cpp_v1.py
+          echo '{"status":"PASS_SYNTHETIC_BOUNDARY_REGRESSION","full_model_checkpoint_present":false,"native_model_quality_certified":false,"automatic_live_promotion":false}'
+
+# Hosted GitHub runners only exercise isolated synthetic headers/payloads.
+# Real 5,291-tensor D50 source validation + 27-layer Metal logits are EOE
+# private read-only research evidence and NOT run in public CI.

@@ -1,0 +1,81 @@
+name: BEGLIN v11 prequant sealed reader (research)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/beglin-v11-prequant-sealed.yml"
+      - "research/n7_multi_projection_resident_v1/prequant_n7_sealed_v1.py"
+      - "research/n7_multi_projection_resident_v1/test_prequant_n7_sealed_v1.py"
+      - "research/n7_multi_projection_resident_v1/full27_sealed_materializer_v1.py"
+      - "research/n7_multi_projection_resident_v1/prequant_full27_execution_adapter_v1.py"
+      - "research/n7_multi_projection_resident_v1/run_original_full27_v11_sealed_overlay_v1.py"
+      - "research/n7_multi_projection_resident_v1/audit_full27_sealed_prequant_v1.py"
+      - "research/n7_multi_projection_resident_v1/audit_v11_sealed_full27_two_greedy_v1.py"
+      - "research/n7_multi_projection_resident_v1/audit_v11_sealed_three_cold_full27_v1.py"
+      - "research/n7_multi_projection_resident_v1/run_v11_sealed_full27_recompute_v1.py"
+      - "research/n7_multi_projection_resident_v1/run_v11_sealed_full27_cached_mla_v1.py"
+      - "research/n7_multi_projection_resident_v1/run_v11_sealed_full27_recompute_holdout1_v1.py"
+      - "research/n7_multi_projection_resident_v1/run_v11_sealed_full27_cached_mla_holdout1_v1.py"
+      - "research/n7_multi_projection_resident_v1/audit_v11_sealed_holdout1_cached_vs_uncached_v1.py"
+      - "research/n7_multi_projection_resident_v1/audit_v11_sealed_holdout1_cold_replay_v1.py"
+      - "research/n7_multi_projection_resident_v1/test_v11_holdout1_audit_contract_v1.py"
+      - "research/n7_multi_projection_resident_v1/audit_v11_sealed_cached_mla_independent_v1.py"
+      - "research/n7_multi_projection_resident_v1/audit_v11_sealed_cached_mla_v1.py"
+      - "research/n7_multi_projection_resident_v1/test_v11_sealed_cached_mla_cold_restarts_v1.py"
+      - "research/n7_multi_projection_resident_v1/audit_v11_sealed_uncached_recompute_v1.py"
+      - "research/n7_multi_projection_resident_v1/test_real_l0_prequant_adapter_metal_v1.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sealed-prequant-negative-tests:
+    name: CPU source/manifest SHA (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install --disable-pip-version-check "numpy>=1.26,<3"
+      - name: Fail-closed sealed mmap/manifest regression
+        run: |
+          python -m unittest discover \
+            -s research/n7_multi_projection_resident_v1 \
+            -p 'test_prequant_n7_sealed_v1.py' -v
+      - name: Compile new research tests only
+        run: |
+          python -m py_compile \
+            research/n7_multi_projection_resident_v1/prequant_n7_sealed_v1.py \
+            research/n7_multi_projection_resident_v1/test_prequant_n7_sealed_v1.py \
+            research/n7_multi_projection_resident_v1/test_v11_prequant_metal_concurrency_v1.py \
+            research/n7_multi_projection_resident_v1/test_v11_prequant_real_checkpoint_role_v1.py \
+            research/n7_multi_projection_resident_v1/full27_sealed_materializer_v1.py \
+            research/n7_multi_projection_resident_v1/prequant_full27_execution_adapter_v1.py \
+            research/n7_multi_projection_resident_v1/run_original_full27_v11_sealed_overlay_v1.py \
+            research/n7_multi_projection_resident_v1/audit_full27_sealed_prequant_v1.py \
+            research/n7_multi_projection_resident_v1/audit_v11_sealed_full27_two_greedy_v1.py \
+            research/n7_multi_projection_resident_v1/test_real_l0_prequant_adapter_metal_v1.py \
+            research/n7_multi_projection_resident_v1/audit_v11_sealed_three_cold_full27_v1.py \
+            research/n7_multi_projection_resident_v1/run_v11_sealed_full27_recompute_v1.py \
+            research/n7_multi_projection_resident_v1/run_v11_sealed_full27_cached_mla_v1.py \
+            research/n7_multi_projection_resident_v1/run_v11_sealed_full27_recompute_holdout1_v1.py \
+            research/n7_multi_projection_resident_v1/run_v11_sealed_full27_cached_mla_holdout1_v1.py \
+            research/n7_multi_projection_resident_v1/audit_v11_sealed_holdout1_cached_vs_uncached_v1.py \
+            research/n7_multi_projection_resident_v1/audit_v11_sealed_holdout1_cold_replay_v1.py \
+            research/n7_multi_projection_resident_v1/test_v11_holdout1_audit_contract_v1.py \
+            research/n7_multi_projection_resident_v1/audit_v11_sealed_cached_mla_independent_v1.py \
+            research/n7_multi_projection_resident_v1/audit_v11_sealed_uncached_recompute_v1.py \
+            research/n7_multi_projection_resident_v1/audit_v11_sealed_cached_mla_v1.py \
+            research/n7_multi_projection_resident_v1/test_v11_sealed_cached_mla_cold_restarts_v1.py
+      - name: Holdout numeric and private logits negative tests
+        run: |
+          python -m unittest discover \
+            -s research/n7_multi_projection_resident_v1 \
+            -p 'test_v11_holdout1_audit_contract_v1.py' -v

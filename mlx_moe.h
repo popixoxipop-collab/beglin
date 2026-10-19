@@ -112,6 +112,12 @@ int mlx_gpu_bind_qng64_mixed_dense_probe(const uint8_t *planes, long planes_byte
                                           const float *scales, const char *name,
                                           long out, long in);
 
+// Research-only: bound single-expert qNg64 through the exact lazy C++
+// GEMV/MATMUL path. Native n=2,3,5,6 or custom Metal n=7,9..15.
+// Caller retains inputs; do not call during active serving/epoch changes.
+int mlx_gpu_qng64_bound_batch_probe(const char *name, const float *x,
+                                     int batch, float *y);
+
 // Gate 4: y = quantized_matmul(x, w_e) for tensor `name`'s expert `e`,
 // against a caller-supplied dense fp32 x[in], written to y[out]. For direct
 // comparison against moe_matvec_af() on the same expert/input. Returns 1 on
