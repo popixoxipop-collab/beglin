@@ -259,6 +259,7 @@ clang -O3 -w -c hf_config.c -o hf_config.o
 clang -O3 -w -c safetensors_load.c -o safetensors_load.o
 clang -O3 -w -c safetensors_quants.c -o safetensors_quants.o
 clang -O3 -w -c bpe_tokenizer.c -o bpe_tokenizer.o  # Phase 6 (D-tok): real BPE tokenizer (own TU, same reason)
+clang -O3 -w -c qng64_dense.c -o qng64_dense.o      # dense qNg64 primitives qwen_infer.c calls (link fails without it, issue #68)
 
 # SME2 kernel wrapper (also plain -- it dispatches through function
 # pointers, no SME/SVE code of its own):
@@ -278,7 +279,7 @@ clang -O2 -march=armv9.2-a+sme2 -I. -c \
 
 # Link
 clang -O3 qwen_infer.o gguf_cache.o gguf_load.o gguf_quants.o gguf_transcode.o \
-  hf_config.o safetensors_load.o safetensors_quants.o bpe_tokenizer.o sme2_kai.o kai_*.o \
+  hf_config.o safetensors_load.o safetensors_quants.o bpe_tokenizer.o qng64_dense.o sme2_kai.o kai_*.o \
   -o qwen_infer -framework Accelerate -lpthread
 
 # Verify no SVE/SME instruction leaked into the plain-compiled caller
