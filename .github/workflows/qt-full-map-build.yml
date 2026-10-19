@@ -1,0 +1,27 @@
+name: QT Full Map Build
+on:
+  push:
+    branches: [qt-mixed-runtime-hotpath]
+    paths: ["tools/qt_build_full_attention_maps.py"]
+  workflow_dispatch:
+jobs:
+  maps:
+    runs-on: [self-hosted, macOS, ARM64, xox]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare
+        run: |
+          rm -rf /tmp/qt-full-maps && mkdir -p /tmp/qt-full-maps
+          curl -L --fail -o /tmp/qt-full-maps/model.safetensors https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/model.safetensors
+          python3 tools/qt_qwen25_attention_inventory.py --safetensors /tmp/qt-full-maps/model.safetensors --output /tmp/qt-full-maps/inventory.json
+          python3 tools/qt_attention_shard_plan.py --inventory /tmp/qt-full-maps/inventory.json --shards 8 --output-dir /tmp/qt-full-maps/shards
+      - name: Build maps
+        run: python3 tools/qt_build_full_attention_maps.py --checkpoint /tmp/qt-full-maps/model.safetensors --shards-dir /tmp/qt-full-maps/shards --output-dir /tmp/qt-full-maps/maps
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qt-full-attention-maps
+          path: |
+            /tmp/qt-full-maps/inventory.json
+            /tmp/qt-full-maps/shards
+            /tmp/qt-full-maps/maps/*.bits

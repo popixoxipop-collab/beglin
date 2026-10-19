@@ -81,6 +81,7 @@ find_package(MLX CONFIG REQUIRED PATHS ${MLX_CMAKE_DIR})
 # qng64_dense.c itself, drop that copy instead of this entry.
 add_library(qwen_infer_obj OBJECT
   qwen_infer.c
+  qng64_dense.c
   hf_config.c
   safetensors_load.c
   safetensors_quants.c
@@ -195,6 +196,15 @@ if(APPLE AND MLX_FOUND)
   add_executable(qt_mixed_qng64_binding_probe tools/qt_mixed_qng64_binding_probe.cpp mlx_moe.cpp)
   target_include_directories(qt_mixed_qng64_binding_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MLX_INCLUDE_DIRS})
   target_link_libraries(qt_mixed_qng64_binding_probe PRIVATE mlx)
+  add_executable(qt_mixed_runtime_dispatch_probe tools/qt_mixed_runtime_dispatch_probe.cpp mlx_moe.cpp)
+  target_include_directories(qt_mixed_runtime_dispatch_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MLX_INCLUDE_DIRS})
+  target_link_libraries(qt_mixed_runtime_dispatch_probe PRIVATE mlx)
+  add_executable(qt_incumbent_mixed_benchmark tools/qt_incumbent_mixed_benchmark.cpp mlx_moe.cpp)
+  target_include_directories(qt_incumbent_mixed_benchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MLX_INCLUDE_DIRS})
+  target_link_libraries(qt_incumbent_mixed_benchmark PRIVATE mlx)
+  add_executable(qt_incumbent_interleaved_ab tools/qt_incumbent_interleaved_ab.cpp mlx_moe.cpp)
+  target_include_directories(qt_incumbent_interleaved_ab PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MLX_INCLUDE_DIRS})
+  target_link_libraries(qt_incumbent_interleaved_ab PRIVATE mlx)
 
   add_executable(qt_qwen25_real_mixed_mlx_probe tools/qt_qwen25_real_mixed_mlx_probe.cpp mlx_moe.cpp)
   target_include_directories(qt_qwen25_real_mixed_mlx_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MLX_INCLUDE_DIRS})

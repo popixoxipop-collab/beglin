@@ -1,0 +1,67 @@
+name: QT Qwen Patch Validation
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "patches/qwen_mixed_cell_adapter.patch"
+      - ".github/workflows/qt-qwen-patch-validation.yml"
+jobs:
+  validate:
+    runs-on: [self-hosted, macOS, ARM64, xox]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Bootstrap canonical patch from clean base
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qt-patch-evidence
+          BASE="$(git rev-parse HEAD)"
+          printf '%s\n' "$BASE" > /tmp/qt-patch-evidence/base_sha.txt
+          python3 tools/bootstrap_qwen_mixed_adapter_patch.py
+          git diff -- qwen_infer.c > /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch
+          test -s /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch
+          test "$(grep -c '^diff --git ' /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch)" -eq 1
+          grep -q '^diff --git a/qwen_infer.c b/qwen_infer.c$' /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch
+          PATCH_SHA="$(shasum -a 256 /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch | awk '{print $1}')"
+          printf '%s\n' "$PATCH_SHA" > /tmp/qt-patch-evidence/patch_sha256.txt
+          git checkout -- qwen_infer.c
+          git apply --check /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch
+      - name: Apply generated patch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch
+          test "$(git diff --name-only)" = "qwen_infer.c"
+          git diff --check
+          git diff -- qwen_infer.c > /tmp/qt-patch-evidence/applied.diff
+          cmp /tmp/qt-patch-evidence/qwen_mixed_cell_adapter.patch /tmp/qt-patch-evidence/applied.diff
+          shasum -a 256 /tmp/qt-patch-evidence/applied.diff > /tmp/qt-patch-evidence/applied_diff_sha256.txt
+      - name: Compile patched qwen
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build-qt-patch -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-qt-patch --target qwen_infer_gpu -j4
+      - name: Record patched tree receipt
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "{"
+            echo "  \"schema\": \"beglin-qt-ci-patch-receipt-v1\","
+            echo "  \"base_sha\": \"$(cat /tmp/qt-patch-evidence/base_sha.txt 2>/dev/null || true)\","
+            echo "  \"patch_sha256\": \"$(cat /tmp/qt-patch-evidence/patch_sha256.txt 2>/dev/null || true)\","
+            echo "  \"patched_qwen_sha256\": \"$(shasum -a 256 qwen_infer.c | awk '{print $1}')\","
+            echo "  \"changed_files\": [\"qwen_infer.c\"]"
+            echo "}"
+          } > /tmp/qt-patch-evidence/receipt.json
+          cat /tmp/qt-patch-evidence/receipt.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qt-qwen-patch-evidence
+          path: /tmp/qt-patch-evidence

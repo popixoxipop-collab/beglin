@@ -8,11 +8,13 @@ on:
   push:
     branches:
       - "qt-heatmap-*"
+      - "qt-mixed-runtime-*"
     paths:
       - "mlx_moe.cpp"
       - "mlx_moe.h"
       - "tools/qt_mixed_qng64_mlx_probe.cpp"
       - "tools/qt_mixed_qng64_binding_probe.cpp"
+      - "tools/qt_mixed_runtime_dispatch_probe.cpp"
       - "CMakeLists.txt"
       - ".github/workflows/qt-mixed-qng64-mlx-probe.yml"
   pull_request:
@@ -48,7 +50,7 @@ jobs:
           cmake -S . -B build-qt-mixed-qng64 -DCMAKE_BUILD_TYPE=Release \
             -DMLX_CMAKE_DIR=/Users/xox/.venv-vllm-metal/lib/python3.12/site-packages/mlx/share/cmake
           cmake --build build-qt-mixed-qng64 --target \
-            qt_mixed_qng64_mlx_probe qt_mixed_qng64_binding_probe -j4
+            qt_mixed_qng64_mlx_probe qt_mixed_qng64_binding_probe qt_mixed_runtime_dispatch_probe -j4
       - name: Run CPU oracle vs mixed Metal matvec
         shell: bash
         run: |
@@ -61,6 +63,12 @@ jobs:
           set -euo pipefail
           ./build-qt-mixed-qng64/qt_mixed_qng64_binding_probe | tee /tmp/qt-mixed-qng64-binding.txt
           grep -q '"status":"PASS"' /tmp/qt-mixed-qng64-binding.txt
+      - name: Run production lazy-dispatch mixed binding smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./build-qt-mixed-qng64/qt_mixed_runtime_dispatch_probe | tee /tmp/qt-mixed-runtime-dispatch.txt
+          grep -q "QT_MIXED_RUNTIME_DISPATCH_PASS" /tmp/qt-mixed-runtime-dispatch.txt
       - name: Seal isolated evidence
         shell: bash
         run: |
