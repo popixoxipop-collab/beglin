@@ -323,13 +323,15 @@ embed_tokens -1 8      # embed_tokens -> int8 (default is F32)
 EOF
 
 # QWEN_MOE_EXPERT_BITS: routed experts specifically, individually, by
-# (layer, expert_id) rather than by role -- "<layer> <expert_id>" per
-# promoted-to-int8 line; every other expert defaults to int4. Typically
-# generated from real router traffic (see moe_st_expert_profiler.py in
-# RESULTS.md's per-expert mixed-precision writeup), not hand-written.
+# (layer, expert_id) rather than by role -- one "<layer> <expert_id> <bits>"
+# line per override; bits is 2, 3, 4, 5, 6, 7, 8, 16, or 32 (4 = q4g64,
+# 8 = q8g64, 2/3/5/6/7 = qNg64 bit-planes, 16/32 = raw F16/F32); every
+# expert not listed defaults to int8. Typically generated from real router
+# traffic (see moe_st_expert_profiler.py in RESULTS.md's per-expert
+# mixed-precision writeup), not hand-written.
 cat > expert_bits.txt <<'EOF'
-11 52
-11 13
+11 52 32
+11 13 5
 EOF
 
 QWEN_MOE_SAFETENSORS=/path/to/model.safetensors.index.json \
