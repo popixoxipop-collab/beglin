@@ -13,6 +13,7 @@ const REQUIRED_BUILD_SOURCES = [
   "bpe_tokenizer.c",
   "gguf_write.c",
   "gguf_write_quants.c",
+  "qng64_dense.c",
 ];
 
 const REQUIRED_ARCHIVE_FILES = [
@@ -23,6 +24,8 @@ const REQUIRED_ARCHIVE_FILES = [
   "gguf_write.h",
   "gguf_write_quants.c",
   "gguf_write_quants.h",
+  "qng64_dense.c",
+  "qng64_dense.h",
   "tools/model_capability.py",
   "tools/precision_context.py",
   "tools/backend_adapters_v2.py",
