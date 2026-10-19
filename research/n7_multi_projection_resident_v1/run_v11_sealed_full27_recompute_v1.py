@@ -85,6 +85,16 @@ class SealedMetalLinear(nn.Module):
         self.bf16_single_ULP_flips=0
         self.max_F32_relative_L2=0.0
 
+    @property
+    def packed(self):
+        # Exact already-quantized mmap views expected by the pinned original
+        # GPU-resident fused MLA kv_b source-affinity contract. No CPU copy.
+        return self.source.packed
+
+    @property
+    def scales(self):
+        return self.source.scales
+
     def forward(self,x):
         y=self.cache.call(self.role,self.source,x)
         if not self.native_C_first_call_parity:
