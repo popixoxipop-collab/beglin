@@ -41,7 +41,7 @@ from research_n7_device_lru_cache_v3_GPUonly_candidate import ResidentN7Cache
 from full27_sealed_materializer_v1 import SHARD_SHAS
 
 LOCAL=Path(__file__).resolve().parent
-PREVIOUS_SOURCE_SHA="58fecab380b956efeb22d239e0762ab385fc1886011cee54492a3736b58a1602"
+PREVIOUS_SOURCE_SHA="3340c6b86f7085f90b6276e784fa791d188227aeb3d8d301fa3f97f779809cae"
 P18=Path("/Users/eoe/mcp-sandbox/tailnet-commander/beglin-real-activations-20261017")
 NATIVE=Path("/Users/eoe/mcp-sandbox/tailnet-commander/beglin-native-full27-20261018")
 
