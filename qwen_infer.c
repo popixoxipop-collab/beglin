@@ -16325,7 +16325,8 @@ static void moe_lazy_hi_release_all(void) {
 // Per-expert mixed-precision sibling of st_register_moe_experts_q4g64_as()/q8g64_as()
 // (profiling-driven expert promotion follow-up, 2026-08-29): same shape/dtype checks and
 // per-expert dequant loop, but each expert e is transcoded to q4g64 int4 or q8g64 int8
-// individually per ebits_in[e], rather than uniformly. Because int4/int8 rows differ in byte
+// individually per ebits_in[e], rather than uniformly (4 = q4g64 nibbles, 8 = q8g64, 16/32 =
+// raw float, 2/3/5/6/7 = qNg64 bit-planes, see D-mixed-qng64-1 below). Because int4/int8 rows differ in byte
 // size, the packed buffer can't use a single stride -- epacked_off is a prefix-sum table (see
 // MoeAFTensor's own ebits/epacked_off comment) built here and handed to moe_decode_af()/
 // moe_matvec_af_row() unchanged. Scale layout stays the uniform E*out*ng formula (bit-width-
@@ -16366,6 +16367,10 @@ static MoeAFTensor *st_register_moe_experts_mixed_as(const char *name_pattern, i
         // raw-float shape at 2 bytes/element (sizeof(_Float16)) -- a fourth byte-width, same
         // generalization.
         size_t row_pbytes = (size_t)(b == 32 ? in * 4 : (b == 16 ? in * (long)sizeof(_Float16) : (b == 8 ? in : in / 2)));
+        // D-mixed-qng64-1: 2/3/5/6/7 are qNg64 bit-planes (ng*b*8 bytes/row), the layout
+        // moe_decode_af()/moe_matvec_af_row() read for ebits[e] in that set -- NOT the q4g64
+        // nibble stride (in/2) the line above falls through to for every width except 8/16/32.
+        if (b != 4 && b != 8 && b != 16 && b != 32) row_pbytes = (size_t)ng * (size_t)b * 8;
         epacked_off[e] = off;
         off = moe_gguf_add_checked("mixed packed_bytes running total", off,
                  moe_gguf_mul_checked("mixed row bytes", (size_t)out, row_pbytes));
@@ -16419,6 +16424,18 @@ static MoeAFTensor *st_register_moe_experts_mixed_as(const char *name_pattern, i
         } else if (ebits_in[e] == 8) {
             gguf_quantize_q8g64(deq, (int)out, (int)in,
                                  (int8_t *)(packed_all + epacked_off[e]),
+                                 scales_all + (size_t)e * (size_t)out * (size_t)ng);
+        } else if (ebits_in[e] != 4) {
+            // D-mixed-qng64-1: ebits 2/3/5/6/7 -> the SAME qNg64 bit-plane packer
+            // st_register_moe_experts_qNg64_as() uses (the validators accept these widths and the
+            // decoders read them as bit-planes; packing them as q4g64 nibbles decoded to garbage,
+            // e.g. n=5 rel-L2 6.36 vs 0.12 -- GitHub issue #64).
+            //   WHY: the decode side was already correct; only this encode branch was missing.
+            //   COST: none for 4/8/16/32 (their branches are untouched, byte-identical).
+            //   EXIT: if a width should not be offered per expert, narrow the two validators
+            //   (this function and the QWEN_MOE_EXPERT_BITS parser) instead of re-adding nibbles.
+            gguf_quantize_qNg64(deq, (int)out, (int)in, ebits_in[e],
+                                 packed_all + epacked_off[e],
                                  scales_all + (size_t)e * (size_t)out * (size_t)ng);
         } else {
             gguf_quantize_q4g64_error_feedback(deq, (int)out, (int)in,
@@ -18535,7 +18552,7 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
 
     // Per-expert mixed-precision expert promotion (profiling-driven follow-up, 2026-08-29;
     // D-expert-promo-1 extended this to a 3rd tier the same day). QWEN_MOE_EXPERT_BITS points
-    // at a "<layer> <expert_id> <bits>" list (one triple per line, bits in {4,8,32}) naming an
+    // at a "<layer> <expert_id> <bits>" list (one triple per line, bits in {2,3,4,5,6,7,8,16,32}) naming an
     // explicit precision override for that (layer,expert); every other expert stays at this
     // loader's shipped int8 default (matching the blanket-int8 behavior when this env var is
     // unset entirely -- st_register_moe_experts_q8g64_as() below). bits=32 (F32, no quantize
@@ -18546,7 +18563,7 @@ static int run_moe_safetensors_verify_mode(int argc, char **argv) {
     // is a breaking change from the file's original 2-field "<layer> <expert_id>" (implicit
     // "promote to int8, default int4") -- safe because QWEN_MOE_EXPERT_BITS was never adopted as
     // a shipped default (this round's own DeepSeek-V2-Lite profiling round said so explicitly).
-    int **g_promo_ebits = NULL;   // g_promo_ebits[l][e] in {4,8,32}, l=0..MOE_NL-1, e=0..MOE_N_EXPERTS-1
+    int **g_promo_ebits = NULL;   // g_promo_ebits[l][e] in {2,3,4,5,6,7,8,16,32}, l=0..MOE_NL-1, e=0..MOE_N_EXPERTS-1
     const char *promo_path = getenv("QWEN_MOE_EXPERT_BITS");
     if (promo_path && promo_path[0]) {
         g_promo_ebits = malloc(sizeof(int *) * (size_t)MOE_NL);
