@@ -4,6 +4,8 @@ Never changes production routes, weights, or applies trust_remote_code.
 """
 from pathlib import Path
 import os,json,time,hashlib
+os.environ['HF_HOME']='/mnt/g/TailnetCommander/work/oml_acs_hf'
+os.environ['HF_HUB_DISABLE_PROGRESS_BARS']='1'
 from huggingface_hub import snapshot_download, HfApi
 MODEL="microsoft/Phi-4-mini-instruct"
 REV="cfbefacb99257ffa30c83adab238a50856ac3083"
