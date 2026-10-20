@@ -1,0 +1,96 @@
+{
+  "schema": "oml-acs-g1-two-family-technical-smoke/1",
+  "observed_at": "2026-10-21",
+  "job": {
+    "id": "job_f76b8c8bf0f5e01ab3f4bc3458a328db",
+    "state": "SUCCEEDED",
+    "exit_code": 0,
+    "wall_ms": 203593,
+    "experiment_elapsed_seconds": 159.8,
+    "storage_cleanup": "success"
+  },
+  "identity": {
+    "source": "Qwen/Qwen2.5-1.5B-Instruct",
+    "source_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "target": "mistralai/Mistral-7B-Instruct-v0.3",
+    "target_revision": "c170c708c41dac9275d15a8fff4eca08d52bab71",
+    "precision": "BF16",
+    "gpu": "NVIDIA GeForce RTX 5070 Ti",
+    "target_layer_index_zero_based": 16,
+    "source_files_sha256": {
+      "research/oml_acs/hf_adapter.py": "62f3d70dfdc387ebd82351ea3582deeb8ca2b35ef83ef2281d4505a900da5e52",
+      "research/oml_acs/acs_core.py": "6300097cdcac0634e947ea1ed157f031174a717dfc447ecd7e118d4323dfa730",
+      "research/oml_acs/g1_two_family_smoke.py": "d85e98a4e10ffdb35b00814dfe9a3c45c3f5f4cd036946bcbf4062953d54ad03"
+    }
+  },
+  "observed": {
+    "anchors": {
+      "count": 12,
+      "origin": "hand-written engineering fixtures, NOT HELM",
+      "matched_text_order": true
+    },
+    "source_contrast_pairs": 4,
+    "target_heldout_positive": 4,
+    "target_heldout_negative": 4,
+    "source_anchor_activations_shape": [
+      12,
+      1536
+    ],
+    "target_anchor_activations_shape": [
+      12,
+      4096
+    ],
+    "pairwise_rank": {
+      "ACS": {
+        "positive_higher": 12,
+        "total": 16
+      },
+      "target_anchor_permutation": {
+        "positive_higher": 15,
+        "total": 16
+      }
+    },
+    "target_projected_scores": {
+      "positive": [
+        0.14339403300890424,
+        0.15797077912788815,
+        0.14442048880987565,
+        0.16464287207059622
+      ],
+      "negative": [
+        0.1444295543786325,
+        0.13538281735684027,
+        0.1575701235568856,
+        0.13127116459629273
+      ]
+    },
+    "generation": {
+      "prompt": "Describe a typical movie in one short sentence.",
+      "baseline": "A young orphan discovers he's a",
+      "transferred_axis_alpha_3": "A young orphan, discovered to be a powerful",
+      "text_changed": true,
+      "targeted_behavior_improvement": "NOT_ESTABLISHED"
+    },
+    "peak_gpu_allocated_mb": 11779.2
+  },
+  "verdict": {
+    "run_execution": "PASS",
+    "hidden_state_cross_family_transfer_path": "EXECUTED",
+    "generation_perturbation": "OUTPUT_TEXT_CHANGED",
+    "semantic_steering_success": "NOT_DEMONSTRATED",
+    "small_control_comparison": "WORSE_THAN_SHUFFLED_ANCHOR_ORDER",
+    "preregistered_ACS_reproduction": "NOT_RUN",
+    "A": "NO_VERDICT",
+    "B": "NO_VERDICT",
+    "C1": "NO_VERDICT",
+    "C2": "NO_VERDICT",
+    "Q": "NO_VERDICT",
+    "explanation": "One source and one target, 12 non-paper anchors and 4+4 synthetic evaluation prompts. Informal pairwise rank is not a generalization or significance metric."
+  },
+  "restrictions": {
+    "old_V6_holdout_24_exclusion_not_certified": true,
+    "production_modified": false,
+    "main_modified": false,
+    "no_extra_downloads": true
+  }
+}
