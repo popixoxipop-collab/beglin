@@ -59,11 +59,20 @@ class AnchorProjector:
             raise TypeError("treat_as_point must be explicit bool")
         return self.ahat @ unit(v - self.mu if treat_as_point else v)
 
-    def backproject(self, canonical_direction) -> np.ndarray:
+    def backproject(self, canonical_direction, *, normalize_output: bool = True) -> np.ndarray:
+        """Transpose/adjoint projection (not an inverse).
+
+        normalize_output=False matches displayed ACS paper Eq. (5) literally.
+        normalize_output=True retains our earlier normalized steering variant.
+        The text also discusses unit-normalizing axes; report which mode ran.
+        """
         c = _array(canonical_direction, "canonical_direction", 1)
         if c.shape[0] != self.anchor_count:
             raise ValueError("incompatible anchors/order")
-        return unit(self.ahat.T @ c)  # adjoint, NOT inverse
+        raw = self.ahat.T @ c
+        if normalize_output not in (True, False):
+            raise TypeError("normalize_output must be bool")
+        return unit(raw) if normalize_output else raw
 
 def source_axis_direction(positives, negatives) -> np.ndarray:
     p, n = _array(positives, "positives", 2), _array(negatives, "negatives", 2)
@@ -71,15 +80,27 @@ def source_axis_direction(positives, negatives) -> np.ndarray:
         raise ValueError("positive/negative hidden dimensions differ")
     return unit(p.mean(axis=0) - n.mean(axis=0))
 
-def canonical_direction(projected_directions, weights=None) -> np.ndarray:
+def canonical_mean_raw(projected_directions, weights=None) -> np.ndarray:
+    """Literal displayed Eq. (4): mean without additional L2 normalization.
+
+    For C1 source reliability weighting, pass fixed nonnegative weights.
+    This is a scale-preserving reference, separate from steering-normalized axes.
+    """
     u = _array(projected_directions, "projected_directions", 2)
     n = u.shape[0]
     w = np.full(n, 1.0 / n) if weights is None else _array(weights, "weights", 1)
     if w.shape != (n,) or (w < 0).any() or float(w.sum()) <= EPS:
         raise ValueError("weights must be a nonnegative vector, one per source")
-    # Paper Eq. (4): average source-projected directions without silently
-    # normalizing each projected source a second time; unit-normalize final axis.
-    return unit(w @ u / w.sum())
+    return w @ u / w.sum()
+
+def canonical_direction(projected_directions, weights=None) -> np.ndarray:
+    """Normalized axis *variant*, used in earlier G1 engineering tests.
+
+    The displayed Eq. (4) itself is returned by canonical_mean_raw().
+    The paper text describes unit-normalization yet omits it in Eqs. (4)-(5).
+    Preserve both to test the effect rather than silently pick one.
+    """
+    return unit(canonical_mean_raw(projected_directions, weights))
 
 def simplex_projection(v) -> np.ndarray:
     """Euclidean projection onto nonnegative weights summing to 1."""
