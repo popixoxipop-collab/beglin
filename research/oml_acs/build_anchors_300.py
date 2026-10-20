@@ -133,6 +133,34 @@ def row_record(s,i,text,source_row):
         "extract_field":s[5],"purpose":"development_anchor_only",
     }
 
+def select_narrative_file(s,rng,seen):
+    """One SHA-pinned small Parquet shard, avoiding all-24-shard streaming.
+    This is a documented sub-sample, NOT the author's HELM scenario sample.
+    """
+    from huggingface_hub import hf_hub_download
+    import pyarrow.parquet as pq
+    filename="data/train-00000-of-00024.parquet"
+    path=Path(hf_hub_download(repo_id=s[1],revision=s[2],repo_type="dataset",
+                              filename=filename,cache_dir="/mnt/g/TailnetCommander/work/oml_acs_hf_dataset_cache"))
+    file_sha=digest(path.read_bytes())
+    questions=pq.read_table(path,columns=["question"]).to_pylist()
+    chosen=[]
+    for idx in rng.permutation(len(questions)):
+        source_row=questions[int(idx)]
+        text=clean(getfield(source_row,"question.text"))
+        if not 10<=len(text)<=300: continue
+        h=digest(text.encode())
+        if h in seen:continue
+        seen.add(h)
+        entry=row_record(s,int(idx),text,source_row)
+        entry["source_file"]=filename
+        entry["source_file_sha256"]=file_sha
+        entry["source_id"]=filename+":row:"+str(idx)
+        chosen.append(entry)
+        if len(chosen)==NUM_EACH:break
+    print("SCENARIO",s[0],"selected",len(chosen),"pinned_parquet_sha",file_sha,"total_rows_shard",len(questions),flush=True)
+    return chosen
+
 def select_simple(s,rng,seen):
     url=f"https://huggingface.co/datasets/{s[1]}/resolve/{s[2]}/sst_test_cases.csv"
     data=request(url)
@@ -202,7 +230,8 @@ def build(out:Path):
             original_HELM_author_row_ids_unavailable=True,pinned_hf_repository_revision=True)
     rows=[];seen=set()
     for spec in SPECS:
-        if spec[0]=="SimpleSafetyTests":found=select_simple(spec,rng,seen)
+        if spec[0]=="NarrativeQA":found=select_narrative_file(spec,rng,seen)
+        elif spec[0]=="SimpleSafetyTests":found=select_simple(spec,rng,seen)
         elif spec[0]=="AnthropicRedTeam":found=select_anthropic(spec,rng,seen)
         else:found=select_pinned_stream(spec,rng,seen)
         rows.extend(found)
@@ -221,6 +250,7 @@ def build(out:Path):
         v6_consumed_holdouts_verified=False,final_eval_access_allowed=False,
         limitations=["No original 300 IDs; not exact paper replication",
         "Pinned HF dataset mirror may not be identical to HELM preprocessing",
+        "NarrativeQA samples only pinned train-00000-of-00024 shard to avoid multi-GB download",
         "License review pending for unknown/other sources",
         "V6 24 consumed holdout IDs not matched",
         "No independent near-duplicate/semantic-overlap audit",
