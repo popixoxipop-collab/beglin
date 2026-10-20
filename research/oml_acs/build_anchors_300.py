@@ -93,47 +93,41 @@ def viewer_row(s,index:int):
     if int(row["row_idx"])!=index: raise ValueError("HF viewer row index changed")
     return row["row"]
 
-def select_viewer(s,rng,seen):
-    total=LEN[s[0]]
-    offsets=rng.permutation(total)
-    chosen=[]
-    max_look=min(total,400 if s[0]=="IMDB" else 110)
-    # Batched network reads; offset order remains seeded, not completion order.
-    attempted=0
-    for start in range(0,max_look,20):
-        inds=[int(i) for i in offsets[start:start+20]]
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            results=list(pool.map(lambda i:safe_viewer(s,i),inds))
-        for idx,row,err in results:
-            attempted+=1
-            if err:
-                ISSUES.append(s[0]+": row fetch "+str(idx)+" "+err[:120])
-                continue
-            txt=clean(getfield(row,s[5]))
-            if not 10<=len(txt)<=300: continue
-            sha=digest(txt.encode("utf-8"))
-            if sha in seen:continue
-            seen.add(sha)
-            chosen.append(row_record(s,idx,txt,row))
-            if len(chosen)==NUM_EACH:break
-        if len(chosen)==NUM_EACH:break
-    print("SCENARIO",s[0],"selected",len(chosen),"attempts",attempted,flush=True)
+def select_pinned_stream(s,rng,seen):
+    """Read actual HF dataset repository at a pinned commit, NOT dataset-viewer HEAD.
+    Uses bounded shuffle buffer; source-record metadata and local hashes are kept.
+    This samples the dataset's streaming shard shuffle, not the paper's exact IDs.
+    """
+    from datasets import load_dataset
+    dataset = load_dataset(s[1],s[3],split=s[4],revision=s[2],streaming=True,
+                           trust_remote_code=False)
+    derived_seed = int(rng.integers(0,2**32-1))
+    dataset = dataset.shuffle(seed=derived_seed,buffer_size=128)
+    limit=6000 if s[0]=="IMDB" else 1300
+    chosen=[];attempted=0
+    for row in dataset:
+        attempted+=1
+        text=clean(getfield(row,s[5]))
+        if not 10<=len(text)<=MAX_CHARS:continue
+        sha=digest(text.encode("utf-8"))
+        if sha in seen:continue
+        seen.add(sha)
+        chosen.append(row_record(s,attempted-1,text,row))
+        if len(chosen)>=NUM_EACH:break
+        if attempted>=limit:break
+    print("SCENARIO",s[0],"selected",len(chosen),"stream_rows",attempted,"pinned_revision",s[2],flush=True)
     return chosen
-
-def safe_viewer(s,i):
-    try:return i,viewer_row(s,i),None
-    except Exception as ex:return i,None,type(ex).__name__+":"+str(ex)
 
 def row_record(s,i,text,source_row):
     group = ""
     if s[0]=="NarrativeQA":group=str(getfield(source_row,"document.id") or "")
     elif s[0]=="NaturalQA":group=str(getfield(source_row,"document.url") or "")
     elif s[0]=="HellaSwag":group=str(source_row.get("source_id",""))
-    if not group:group="row:"+str(i) # Semantic overlap still needs independent review.
+    if not group:group="source-row-sha256:"+stable(source_row) # Independent semantic-overlap audit still needed.
     return {
         "schema":"oml-acs-anchor-row/1","scenario":s[0],"category":s[6],
         "dataset":s[1],"dataset_revision":s[2],"dataset_config":s[3],
-        "source_split":s[4],"source_id":str(i),"cluster_id":digest(group.encode()),
+        "source_split":s[4],"source_id":str(source_row.get("id") or source_row.get("source_id") or source_row.get("BehaviorID") or stable(source_row)),"stream_position":i,"cluster_id":digest(group.encode()),
         "text":text,"text_sha256":digest(text.encode()),
         "source_row_sha256":stable(source_row),
         "extract_field":s[5],"purpose":"development_anchor_only",
@@ -205,12 +199,12 @@ def build(out:Path):
         license_=check_head(spec)
         revisions[spec[0]]=dict(src_key(spec),license=license_,
             license_review_required=spec[0] in LICENSE_REVIEW,
-            rows_are_dataset_viewer_head_not_revision_bound=spec[0] not in {"SimpleSafetyTests","AnthropicRedTeam"})
+            original_HELM_author_row_ids_unavailable=True,pinned_hf_repository_revision=True)
     rows=[];seen=set()
     for spec in SPECS:
         if spec[0]=="SimpleSafetyTests":found=select_simple(spec,rng,seen)
         elif spec[0]=="AnthropicRedTeam":found=select_anthropic(spec,rng,seen)
-        else:found=select_viewer(spec,rng,seen)
+        else:found=select_pinned_stream(spec,rng,seen)
         rows.extend(found)
     for spec in SPECS:check_head(spec)
     counts=Counter(r["scenario"] for r in rows)
@@ -219,14 +213,14 @@ def build(out:Path):
     anchors_bytes=("".join(json.dumps(r,sort_keys=True,ensure_ascii=False)+"\n" for r in rows)).encode()
     status="PROVISIONAL_300_NOT_FROZEN" if quotas_ok and duplicate_ok else "INCOMPLETE_NOT_FROZEN"
     summary=dict(schema="oml-acs-anchors-manifest/1",status=status,
-        note="Original author anchor IDs unpublished; HF Viewer does not pin content by revision. Raw text remains on local host.",
-        paper="arXiv:2605.09875v1",seed=SEED,method="NumPy default_rng(42) random offsets + length filter; author source IDs unverified",
+        note="Original author anchor IDs unpublished; HF dataset read at pinned revision, but sample IDs differ. Raw text remains on local host.",
+        paper="arXiv:2605.09875v1",seed=SEED,method="NumPy default_rng(42), derived per-source seed + datasets streaming shuffle buffer128, 10-300 char filter; author row IDs unavailable",
         total=len(rows),counts=dict(sorted(counts.items())),quota_ok=quotas_ok,unique_text=duplicate_ok,
         sources=list(revisions.values()),ids=[{k:v for k,v in r.items() if k not in ("text",)} for r in rows],
         raw_local_sha256=digest(anchors_bytes),data_splits_frozen=False,
         v6_consumed_holdouts_verified=False,final_eval_access_allowed=False,
         limitations=["No original 300 IDs; not exact paper replication",
-        "Dataset Viewer response reflects current processed snapshot, no revision-specific read",
+        "Pinned HF dataset mirror may not be identical to HELM preprocessing",
         "License review pending for unknown/other sources",
         "V6 24 consumed holdout IDs not matched",
         "No independent near-duplicate/semantic-overlap audit",
