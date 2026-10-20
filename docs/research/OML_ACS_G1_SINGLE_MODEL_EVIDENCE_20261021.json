@@ -1,0 +1,66 @@
+{
+  "schema": "oml-acs-g1-bf16-single-model-smoke/1",
+  "observed_at": "2026-10-21",
+  "status": "SUCCEEDED",
+  "scientific_verdict": "NOT_EVALUATED",
+  "job_id": "job_ad9f837bfc55217185be2457d0cc08a6",
+  "exit_code": 0,
+  "host": "alienware",
+  "environment": "WSL Torch 2.12.1+cu130 Transformers 5.12.1 NVIDIA RTX 5070 Ti",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "hf_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "precision": "BF16",
+  "layer_index_zero_based": 14,
+  "source_sha256": {
+    "research/oml_acs/hf_adapter.py": "62f3d70dfdc387ebd82351ea3582deeb8ca2b35ef83ef2281d4505a900da5e52",
+    "research/oml_acs/acs_core.py": "6300097cdcac0634e947ea1ed157f031174a717dfc447ecd7e118d4323dfa730",
+    "research/oml_acs/g1_smoke.py": "a4924403779a8207150651ca3d5d3f388fbdff4ca1576f78dfab354501acb9cc"
+  },
+  "experiments": {
+    "anchor_kind": "synthetic engineering; NOT HELM",
+    "anchor_count": 8,
+    "hidden_dim": 1536,
+    "source_positive": 3,
+    "source_negative": 3,
+    "axis_cosine_after_adjoint_reconstruction": 0.17397041949404823,
+    "candidate_question_text": "Review: The service was awful",
+    "raw_candidate_log_likelihoods": {
+      "Negative": -0.002113967202603817,
+      "Positive": -7.5021138191223145
+    },
+    "normalized_probs": {
+      "Positive": 0.000552778718733978,
+      "Negative": 0.9994472212812661
+    },
+    "generation_control": {
+      "prompt": "Please write one brief sentence describing a typical movie.",
+      "no_intervention": "A typical movie is an entertaining and emotionally engaging film that tells a story",
+      "self_axis_alpha_3": "A typical movie is an entertaining and emotionally engaging film that tells a story",
+      "random_axis_alpha_3": "A typical movie is an entertaining and emotionally engaging film that tells a story",
+      "observation": "all three exactly equal; cannot claim behavioral intervention success"
+    },
+    "measurement": {
+      "model_stage_load_seconds": 58.6,
+      "experiment_elapsed_seconds": 64.04,
+      "gpu_peak_allocated_mb": 3025.96,
+      "job_wall_ms": 106620
+    }
+  },
+  "interpretation": {
+    "hook_readout_real": true,
+    "candidate_string_scoring_real": true,
+    "steering_hook_called": true,
+    "demonstrated_behavior_change": false,
+    "cross_family": false,
+    "HELM_300_reproduced": false,
+    "AUROC_measured": false,
+    "ensemble_NLL_measured": false,
+    "preregistration_frozen": false
+  },
+  "operational": {
+    "production_modified": false,
+    "isolated_script_temp_cleaned": true,
+    "entrypoint": "research/oml_acs/g1_smoke.py",
+    "note": "Source chunks mirrored byte-exact from GitHub, with SHA printed in job stdout. No new model download."
+  }
+}
