@@ -5,6 +5,7 @@ It must NEVER be used as evidence of real execution unless run receipts exist.
 from __future__ import annotations
 import hashlib
 import re
+from pathlib import Path
 from dataclasses import dataclass
 
 class AdapterContractError(RuntimeError):
@@ -53,8 +54,18 @@ def _first_hidden(output):
 
 class PinnedHF:
     def __init__(self, spec: ModelSpec, *, local_files_only: bool = True,
-                 explicitly_allow_download: bool = False, device_map=None):
+                 explicitly_allow_download: bool = False, device_map=None,
+                 local_snapshot_path: str | None = None, device: str = "cpu"):
         self.spec = spec.validate()
+        if device not in {"cpu", "cuda", "mps"}:
+            raise AdapterContractError("device must be cpu/cuda/mps")
+        source = spec.model_id
+        if local_snapshot_path is not None:
+            folder = Path(local_snapshot_path).expanduser()
+            if folder.name != spec.revision or not (folder / "config.json").is_file():
+                raise AdapterContractError("snapshot directory must equal pinned revision and contain config")
+            source = str(folder)
+            local_files_only = True
         if not local_files_only and not explicitly_allow_download:
             raise AdapterContractError("network checkpoint download requires explicit opt-in")
         try:
@@ -63,14 +74,17 @@ class PinnedHF:
         except ImportError as exc:
             raise AdapterContractError("install torch and transformers in an isolated research venv") from exc
         self.torch = torch
-        kwargs = dict(revision=spec.revision, local_files_only=local_files_only,
-                      trust_remote_code=False)
-        self.tokenizer = AutoTokenizer.from_pretrained(spec.model_id, **kwargs)
+        kwargs = dict(local_files_only=local_files_only, trust_remote_code=False)
+        if local_snapshot_path is None:
+            kwargs["revision"] = spec.revision
+        self.tokenizer = AutoTokenizer.from_pretrained(source, **kwargs)
         # Deliberately fail closed if Phi custom code is required; review that code separately.
-        mk = dict(kwargs, use_safetensors=True, torch_dtype=torch.bfloat16)
+        mk = dict(kwargs, use_safetensors=True, dtype=torch.bfloat16)
         if device_map is not None:
             mk["device_map"] = device_map
-        self.model = AutoModelForCausalLM.from_pretrained(spec.model_id, **mk)
+        self.model = AutoModelForCausalLM.from_pretrained(source, **mk)
+        if device_map is None:
+            self.model.to(device)
         self.model.eval()
         if len(blocks(self.model)) != spec.num_layers:
             raise AdapterContractError("loaded model layer count differs from preregistered spec")
@@ -102,7 +116,7 @@ class PinnedHF:
         try:
             with self.torch.no_grad():
                 ids = self._input(prompt)
-                self.model(input_ids=ids, use_cache=False)
+                self.model(input_ids=ids, attention_mask=self.torch.ones_like(ids), use_cache=False)
         finally:
             hook.remove()
         if len(holder) != 1:
@@ -126,7 +140,7 @@ class PinnedHF:
             raise AdapterContractError("empty or too-long answer continuation")
         with self.torch.no_grad():
             ids = self.torch.tensor([full_ids], dtype=self.torch.long, device=self.model.device)
-            logits = self.model(input_ids=ids, use_cache=False).logits[0].float()
+            logits = self.model(input_ids=ids, attention_mask=self.torch.ones_like(ids), use_cache=False).logits[0].float()
             target = ids[0, n:]
             log_probs = logits[n-1:-1].log_softmax(dim=-1)
             result = log_probs.gather(1, target.unsqueeze(1)).sum()
@@ -157,6 +171,7 @@ class PinnedHF:
             with torch.no_grad():
                 output = self.model.generate(
                     input_ids=ids,
+                    attention_mask=torch.ones_like(ids),
                     max_new_tokens=max_new_tokens,
                     do_sample=False,
                     pad_token_id=self.tokenizer.eos_token_id,
