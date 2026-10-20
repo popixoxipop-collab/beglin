@@ -1,0 +1,56 @@
+{
+  "schema": "oml-acs-model-lock/1",
+  "observed_at": "2026-10-21",
+  "source": "Hugging Face public model REST metadata (read-only on EOE); independently checked Qwen cache snapshot on Alienware",
+  "status": "MODEL_REVISIONS_PINNED_DATA_NOT_FROZEN",
+  "requirements": {
+    "trust_remote_code": false,
+    "local_files_only_by_default": true,
+    "dtype": "bfloat16",
+    "prompt": "model-defined apply_chat_template(add_generation_prompt=True)",
+    "extraction": "final-token post-block residual; 0-based layer index in our adapter",
+    "verification": "40-hex commit and actual local snapshot before experiments"
+  },
+  "pilot": [
+    {
+      "family": "qwen",
+      "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+      "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+      "gated": false,
+      "license": "apache-2.0",
+      "num_layers": 28,
+      "layer_index_0based": 14,
+      "local_cache_sha_match": true
+    },
+    {
+      "family": "llama",
+      "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+      "revision": "0cb88a4f764b7a12671c53f0838cd831a0843b95",
+      "gated": "manual",
+      "license": "llama3.2",
+      "num_layers": 28,
+      "layer_index_0based": 14,
+      "local_cache_sha_match": false,
+      "action_required": "License acceptance/auth and local weights verification; no bypass"
+    },
+    {
+      "family": "phi",
+      "model_id": "microsoft/Phi-4-mini-instruct",
+      "revision": "cfbefacb99257ffa30c83adab238a50856ac3083",
+      "gated": false,
+      "license": "mit",
+      "num_layers": 32,
+      "layer_index_0based": 16,
+      "local_cache_sha_match": false,
+      "action_required": "Review modeling code if installed Transformers requires trust_remote_code. Default deny"
+    }
+  ],
+  "later": [
+    "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+    "IBM Granite model exact HF ID TBD",
+    "google/gemma-2-2b-it final held-out"
+  ],
+  "v6_holdout_content_ids": "NOT_OBTAINED",
+  "data_manifest": "NOT_FROZEN",
+  "no_prod_change": true
+}
