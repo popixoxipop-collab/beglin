@@ -8,9 +8,11 @@ def row(i,split="train",text=None,cluster=None):
                 cluster_id=cluster or f"c{i}", split=split, text=text or f"Public synthetic prompt {i}")
 
 class ManifestTests(unittest.TestCase):
-    def test_audited_not_frozen_when_v6_identities_known(self):
+    def test_unbound_24_hashes_do_not_certify(self):
         r=audit_rows([row(1),row(2,"final_iid")],consumed_v6_text_sha256={sha_text(f"consumed historical document {i}") for i in range(24)})
-        self.assertEqual(r["status"],"AUDITED_NOT_FROZEN")
+        self.assertEqual(r["status"],"V6_EXCLUSION_UNVERIFIED")
+        self.assertTrue(r["v6_supplied_hashes_format_valid"])
+        self.assertFalse(r["v6_identity_verified"])
         self.assertFalse(r["issues"])
 
     def test_v6_unknown_blocks_freeze(self):
