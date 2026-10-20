@@ -9,12 +9,15 @@ def row(i,split="train",text=None,cluster=None):
 
 class ManifestTests(unittest.TestCase):
     def test_audited_not_frozen_when_v6_identities_known(self):
-        r=audit_rows([row(1),row(2,"final_iid")],consumed_v6_text_sha256=set())
+        r=audit_rows([row(1),row(2,"final_iid")],consumed_v6_text_sha256={sha_text(f"consumed historical document {i}") for i in range(24)})
         self.assertEqual(r["status"],"AUDITED_NOT_FROZEN")
         self.assertFalse(r["issues"])
 
     def test_v6_unknown_blocks_freeze(self):
         self.assertEqual(audit_rows([row(1)])["status"],"V6_EXCLUSION_UNVERIFIED")
+
+    def test_empty_v6_hashes_do_not_certify(self):
+        self.assertEqual(audit_rows([row(1)],consumed_v6_text_sha256=set())["status"],"V6_EXCLUSION_UNVERIFIED")
 
     def test_consumed_v6_is_blocked(self):
         t="this prompt was consumed"
