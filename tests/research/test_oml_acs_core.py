@@ -3,7 +3,7 @@ import sys, unittest
 from pathlib import Path
 import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "research" / "oml_acs"))
-from acs_core import (AnchorProjector, source_axis_direction, canonical_direction,
+from acs_core import (AnchorProjector, source_axis_direction, canonical_direction, canonical_mean_raw,
                       weights_from_source_errors, candidate_probs, mixture_nll, simplex_projection)
 
 class ACSMathTests(unittest.TestCase):
@@ -46,6 +46,23 @@ class ACSMathTests(unittest.TestCase):
     def test_weighted_canonical(self):
         u = np.array([[1., 0., 0., 0.], [0., 1., 0., 0.]])
         self.assertTrue(np.allclose(canonical_direction(u, [1., 0.]), [1., 0., 0., 0.]))
+
+    def test_literal_eq4_canonical_mean_preserves_scale(self):
+        u = np.array([[2., 0., 0., 0.], [0., 3., 0., 0.]])
+        got = canonical_mean_raw(u)
+        self.assertTrue(np.allclose(got, [1., 1.5, 0., 0.]))
+        self.assertNotAlmostEqual(np.linalg.norm(got), 1.0)
+        self.assertTrue(np.allclose(canonical_direction(u), got / np.linalg.norm(got)))
+
+    def test_literal_eq5_adjoint_is_not_normalized(self):
+        c = np.array([0., 1., 0., -1.])
+        raw = self.p.ahat.T @ c
+        self.assertTrue(np.allclose(self.p.backproject(c, normalize_output=False), raw))
+        self.assertTrue(np.allclose(self.p.backproject(c, normalize_output=True), raw / np.linalg.norm(raw)))
+
+    def test_weighted_literal_mean(self):
+        u = np.array([[3., 0., 0., 0.], [0., 2., 0., 0.]])
+        self.assertTrue(np.allclose(canonical_mean_raw(u, weights=[3., 1.]), [2.25, 0.5, 0., 0.]))
 
     def test_wrong_anchor_count_and_degenerate_fail_closed(self):
         with self.assertRaises(ValueError):
