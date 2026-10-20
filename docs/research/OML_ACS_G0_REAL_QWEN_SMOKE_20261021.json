@@ -1,0 +1,56 @@
+{
+  "schema": "oml-acs-g0-real-model-smoke/1",
+  "date": "2026-10-21",
+  "kind": "engineering_smoke_only_not_scientific_evaluation",
+  "job_id": "job_7334863bc30a2a4d2a3fe79261592929",
+  "host": "alienware",
+  "env": "WSL Ubuntu/CUDA",
+  "job_state": "SUCCEEDED",
+  "exit_code": 0,
+  "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+  "hf_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "precision": "BF16",
+  "gpu": "NVIDIA GeForce RTX 5070 Ti",
+  "layer_index_zero_based": 14,
+  "test_inputs": {
+    "anchor_texts": 4,
+    "behavior_positive": 1,
+    "behavior_negative": 1,
+    "activation_count": 6,
+    "hidden_size": 1536,
+    "anchor_coordinate_dim": 4
+  },
+  "numeric": {
+    "reconstruction_unit_norm": 1,
+    "finite": true
+  },
+  "generated_text": "Hello! How can I assist",
+  "wall_seconds": 35.6,
+  "peak_cuda_allocated_mb": 2987.23,
+  "quality": {
+    "AUROC": "NOT_MEASURED",
+    "NLL": "NOT_MEASURED",
+    "target_model_transfer": "NOT_TESTED",
+    "steering": "NOT_TESTED",
+    "full_300_anchors": "NOT_TESTED",
+    "dataset_splits": "NOT_FROZEN"
+  },
+  "warnings": [
+    "Transformers attention_mask warning during smoke; adapter patched to pass explicit mask, not yet integration-verified."
+  ],
+  "provenance": {
+    "received_from": "Tailnet Commander EOE job_status and job_output (stdout/stderr)",
+    "early_failed_job_ids": [
+      "job_4a697602e71d6ff6816380c61db99d4d",
+      "job_221d8ebb011a39df93462fcae018cae4",
+      "job_2ed38dd8ecf51917900de691233624fc"
+    ],
+    "note": "Earlier attempts failed due to Windows wrapper argv, Hub cache path, and Transformers 5 BatchEncoding. Only v4 succeeded."
+  },
+  "freeze": {
+    "v6_consumed_holdout_24_hashes": "MISSING",
+    "scientific_verdict": "NO_VERDICT",
+    "prereg_frozen": false
+  },
+  "production_touched": false
+}
