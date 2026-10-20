@@ -1,0 +1,91 @@
+{
+  "schema": "oml-acs-prereg/0.1-draft",
+  "status": "NOT_FROZEN",
+  "date": "2026-10-21",
+  "hypotheses": [
+    "A",
+    "B",
+    "C1",
+    "C2",
+    "Q"
+  ],
+  "models": {
+    "pilot": [
+      "Qwen/Qwen2.5-1.5B-Instruct",
+      "meta-llama/Llama-3.2-3B-Instruct",
+      "microsoft/Phi-4-mini-instruct"
+    ],
+    "later_sources": [
+      "SmolLM2",
+      "Granite"
+    ],
+    "held_out_family": "Gemma-2-2B"
+  },
+  "data": {
+    "pilot": 360,
+    "train": 900,
+    "dev": 450,
+    "calibration": 450,
+    "iid_final": 600,
+    "ood_final": 600,
+    "anchors": 300,
+    "behavior_axes_initial": [
+      "sentiment",
+      "emotion"
+    ],
+    "behavior_pairs_per_axis": {
+      "train": 100,
+      "dev": 50,
+      "final": 100
+    }
+  },
+  "criteria": {
+    "A": {
+      "relative_nll_improvement_min": 0.02,
+      "cluster_ci": "95% improvement",
+      "accuracy_noninferiority_margin": "TBD_BEFORE_FREEZE"
+    },
+    "B": {
+      "requires": [
+        "detection_vs_shuffled_random",
+        "generation_steering_vs_controls"
+      ]
+    },
+    "C1": {
+      "auroc_absolute_gain": 0.02,
+      "alternative": "predefined_steering_gain_TBD"
+    },
+    "C2": {
+      "incremental_nll_improvement": true
+    },
+    "Q": {
+      "max_auroc_drop": 0.03,
+      "max_relative_nll_increase": 0.02
+    }
+  },
+  "quantization": [
+    "BF16",
+    "real_8bit_if_supported",
+    "packed_4bit_if_supported"
+  ],
+  "constraints": {
+    "no_target_label_tuning": true,
+    "no_reused_v6_holdouts": true,
+    "no_production_change": true,
+    "no_new_hardware_or_paid_api": true
+  },
+  "budget_hours": {
+    "pilot": 8,
+    "main": 40
+  },
+  "unfrozen": [
+    "revisions",
+    "data_ids",
+    "anchor_ids",
+    "seeds",
+    "hook_layers",
+    "noninferiority_margin",
+    "steering_metric",
+    "sha256"
+  ]
+}
