@@ -23,6 +23,16 @@ class HFContractTests(unittest.TestCase):
     def test_unknown_decoder_block_fails_closed(self):
         with self.assertRaises(AdapterContractError):
             blocks(SimpleNamespace(model=SimpleNamespace(decoder=[])))
+    def test_local_snapshot_must_match_revision(self):
+        with self.assertRaises(AdapterContractError):
+            PinnedHF(ModelSpec("Qwen/Qwen2.5-1.5B-Instruct","a"*40,28,14),
+                     local_snapshot_path="/tmp/any-unpinned-folder")
+
+    def test_unsupported_device_rejected(self):
+        with self.assertRaises(AdapterContractError):
+            PinnedHF(ModelSpec("Qwen/Qwen2.5-1.5B-Instruct","a"*40,28,14),
+                     device="unknown")
+
     def test_no_implicit_checkpoint_download(self):
         with self.assertRaises(AdapterContractError):
             PinnedHF(ModelSpec("Qwen/Qwen2.5-1.5B-Instruct","a"*40,28,14),
