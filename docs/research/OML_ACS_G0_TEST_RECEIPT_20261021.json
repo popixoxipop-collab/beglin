@@ -1,0 +1,38 @@
+{
+  "schema": "oml-acs-g0-test-evidence/1",
+  "observed_at": "2026-10-21",
+  "host": "EOE.local",
+  "workspace": "sandbox",
+  "python": "3.9.6",
+  "production_touched": false,
+  "scientific_hypothesis_accepted": false,
+  "tests": [
+    {
+      "kind": "numeric_acs",
+      "executed_script": "OML_ACS_G0_TEST_20261021.py",
+      "pass": 12,
+      "fail": 0,
+      "exit_code": 0
+    },
+    {
+      "kind": "dataset_manifest",
+      "executed_script": "OML_ACS_G0_MANIFEST_TEST_20261021.py",
+      "pass": 8,
+      "fail": 0,
+      "exit_code": 0
+    },
+    {
+      "kind": "hf_adapter_contract",
+      "executed_script": "OML_ACS_G0_HF_TEST_20261021.py",
+      "pass": 7,
+      "fail": 0,
+      "exit_code": 0
+    }
+  ],
+  "total_pass": 27,
+  "total_fail": 0,
+  "model_integrated_eval": "NOT_YET_VERIFIED",
+  "old_v6_holdout_manifest": "MISSING",
+  "final_eval_freeze": "BLOCKED",
+  "source_checkout": "GitHub isolated research branch; XOX dirty workspace unchanged"
+}
