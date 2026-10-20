@@ -31,6 +31,8 @@ def audit_rows(rows: list[dict], *, consumed_v6_text_sha256: set[str] | None = N
     if not isinstance(rows, list) or not rows:
         raise ValueError("a nonempty set of source rows is required")
     consumed = set(consumed_v6_text_sha256 or [])
+    v6_verified = (len(consumed) >= 24 and all(isinstance(x, str) and len(x) == 64
+                   and all(c in "0123456789abcdef" for c in x) for x in consumed))
     seen_id, seen_text, seen_group = {}, {}, {}
     counts = Counter()
     issues = []
@@ -59,11 +61,11 @@ def audit_rows(rows: list[dict], *, consumed_v6_text_sha256: set[str] | None = N
         counts[split] += 1
         hashes.append(stable_sha({k: row[k] for k in req if k != "text"} | {"text_sha256": txt_sha}))
     status = ("INVALID" if issues else
-              "V6_EXCLUSION_UNVERIFIED" if consumed_v6_text_sha256 is None else "AUDITED_NOT_FROZEN")
+              "AUDITED_NOT_FROZEN" if v6_verified else "V6_EXCLUSION_UNVERIFIED")
     return {"schema": "oml-acs-dataset-audit/1", "status": status,
             "row_count": len(rows), "counts": dict(sorted(counts.items())),
             "issues": issues, "row_manifest_sha256": stable_sha(sorted(hashes)),
-            "v6_identity_verified": consumed_v6_text_sha256 is not None,
+            "v6_identity_verified": v6_verified,
             "note": "Declared cluster IDs are not a substitute for independent near-duplicate audit."}
 
 def load_jsonl(path: str) -> list[dict]:
