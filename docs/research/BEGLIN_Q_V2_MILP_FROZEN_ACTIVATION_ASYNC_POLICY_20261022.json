@@ -1,0 +1,464 @@
+{
+  "MILP_mip_gap": 0,
+  "MILP_nodes": 0,
+  "async_ms_max": 90,
+  "binary_MILP_solver_status": 0,
+  "calibration_gain_sum": 1.536327206456,
+  "date": "2026-10-22",
+  "main_or_production_modified": false,
+  "native_async_stage_source_sha256": "e39675f36f18af7d9397d77ee4fd89d9a8a295b123736cbaa71f9a0d84a27d66",
+  "native_memory_max": 830570496,
+  "native_projection_bytes": 776896512,
+  "native_role_kernel_source_sha256": "0cf95f659c3ad4f54706a17f61299becb95d7e3187fde0b706f95efa6555fa52",
+  "original_source_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "per_layer_schedule": [
+    {
+      "layer": 0,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 8,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 4
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 1,
+      "role_bits": {
+        "down_proj": 8,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 8,
+        "v_proj": 4
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 2,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 8,
+        "v_proj": 4
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 3,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 8,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 4,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 5,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 8,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 6,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 7,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 8,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 9,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 10,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 11,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 12,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 13,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 14,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 15,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 16,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 17,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 18,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 19,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 20,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 21,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 22,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 23,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 8
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 24,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 4
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 25,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 8,
+        "up_proj": 4,
+        "v_proj": 4
+      },
+      "stage_QKV_dispatch": "parallel_q4_1t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 26,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 4
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    },
+    {
+      "layer": 27,
+      "role_bits": {
+        "down_proj": 4,
+        "gate_proj": 4,
+        "k_proj": 4,
+        "o_proj": 4,
+        "q_proj": 4,
+        "up_proj": 4,
+        "v_proj": 4
+      },
+      "stage_QKV_dispatch": "parallel_q4_6t",
+      "stage_gateup_dispatch": "parallel_q4_6t"
+    }
+  ],
+  "predicted_hypothetical_async_DAG_ms": 89.71108574999988,
+  "predicted_native_serial_ms": 91.93007907197867,
+  "prereg_sha256": "0e4b2d999c4aca27da846642d837dade6166e5d312383cf1f795adfc81290c07",
+  "private_solver_receipt_sha256": "749d8648478b1a4b8c521de56b50821d224f85f8f247859a1d5c7d16994e068e",
+  "quality_source_sha256": "3e7b0d0c52332fd8056de240005ca9a5e0328ba8baaf9fc3be13f4d9bcac7b53",
+  "remaining_n4": 168,
+  "runtime_full_model_parallel_not_integrated": true,
+  "schema": "BEGLIN-Q-v2-MILP-frozen-policy-aggregate/1",
+  "scientific_Q_hypothesis": "NOT_ESTABLISHED",
+  "selected_28_n8": 28,
+  "selected_n8_policy_sha256": "9324c5ec891d638f2713d3bbd4187399e1aae8a9a74df129dfabc4e8ea870212",
+  "selected_upgraded_roles": {
+    "down_proj": [
+      1
+    ],
+    "gate_proj": [],
+    "k_proj": [
+      0
+    ],
+    "o_proj": [],
+    "q_proj": [
+      25
+    ],
+    "up_proj": [
+      1,
+      2,
+      3,
+      5
+    ],
+    "v_proj": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23
+    ]
+  },
+  "serial_ms_max": 100,
+  "source_calibration_only_before_eval": true,
+  "status": "OPTIMAL_HIGHS_SOURCE_ONLY_BEFORE_TEST"
+}
