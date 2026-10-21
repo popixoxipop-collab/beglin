@@ -73,6 +73,11 @@ LOG_NEW='''    fprintf(stderr, "[engine] safetensors: registered %d tensors (%d 
     if (q_lab) fprintf(stderr, "[Q-NATIVE-RESEARCH] projection_role_tensors: f32=%d n8=%d q4=%d common_head_q8=%d\\\\n",
         n_f32-2*g_cfg.nl-2, n_lab_n8, n_q4, n_q8);'''
 
+# The original C file contains one backslash-n C escape, not a double escaped
+# backslash-n. Normalize the embedded Python source-template representation.
+LOG_OLD=LOG_OLD.replace(chr(92)+chr(92)+"n",chr(92)+"n")
+LOG_NEW=LOG_NEW.replace(chr(92)+chr(92)+"n",chr(92)+"n")
+
 def check_source_and_patch()->str:
     if platform.system()!="Darwin" or platform.machine()!="arm64":
         raise RuntimeError("BEGLIN original CPU native probe requires macOS ARM64")
