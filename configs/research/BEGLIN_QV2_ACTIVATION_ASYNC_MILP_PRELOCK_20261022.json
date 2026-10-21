@@ -1,0 +1,59 @@
+{
+  "schema": "BEGLIN-Qv2-activation-async-MILP-prelock/1",
+  "date": "2026-10-22",
+  "status": "FROZEN_BEFORE_V2_POLICY_EVALUATION",
+  "source": {
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "official_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "activation_public_12_prompts_original_BF16": "ee7b177b4dde984a5d83e0cdb5983d2ae00c34ee752fef9113a79568a1d12663",
+    "score_196_source": "docs/research/BEGLIN_QV2_ACTIVATION_LOCAL_196_SOURCE_AGGREGATE_20261022.json",
+    "native_cpu_stage_cost": "docs/research/BEGLIN_QV2_ASYNC_STAGE_REAL_COST_AGGREGATE_20261022.json",
+    "native_role_kernel_cost": "docs/research/BEGLIN_Q_KERNEL_AWARE_ALLOCATOR_NATIVE_EVIDENCE_20261022.json",
+    "evaluation_public_8_prompts": "configs/research/BEGLIN_Q_ACTIVATION_ASYNC_PARALLEL_V2_PRELOCK_20261022.json",
+    "no_evaluation_prompt_read_before_solution_lock": true
+  },
+  "optimization": {
+    "variables": "For each of 28 decoder layers: 8 Q/K/V bit-pattern binaries +4 gate/up patterns +2 O-projection +2 down-projection = 448 binary choices; exactly one pattern per stage per layer",
+    "role_bit_options": "4-bit BEGLIN Q4G64 fused (1 or 6 thread) or 8-bit qNg64 n8 contiguous signed-code NEON",
+    "objective": "Maximize sum of 196 original BF16 activation-diagonal local output error reductions for tensors upgraded to 8-bit",
+    "constraints": {
+      "num_n8_exactly": 28,
+      "num_n4_exactly": 168,
+      "max_projection_weight_bytes": 830570496,
+      "max_serial_predicted_decode_ms": 100,
+      "max_parallel_candidate_DAG_predicted_decode_ms": 80
+    },
+    "serial_time_model": "75.26 + gamma*(sum_t n8_t*(role_cost_n8 - role_cost_best_q4)), gamma=1.039406406482483 pinned by prior known balanced policy and allQ4 BEFORE v2 quality scores",
+    "parallel_time_model": "75.26 + sum_{28 layers}[QKV_best_measured_stage_ms(bits)-QKV_serial6_measured_ms(444) + FFN_gate/up_best_measured_stage_ms(bits)-FFN_serial6_measured_ms(44) + O_bit_cost-O_q4_cost + down_bit_cost-down_q4_cost]; stage best among true serial6/independent_pool_parallel1/independent_pool_parallel6",
+    "CPU_concurrency_contract": "QKV independent given one normalized input; gate/up independent given one post-attention normalized input; O,down serialize after dependencies; 6t Q4 pools must be distinct per concurrent role; benchmark includes contention and Python threadpool coordination",
+    "solver": "scipy.optimize.milp/HiGHS, binary exact onehot, exact memory, two latency inequalities, nonzero objective; require status optimal and dual bound/gap with default numerical tolerances, do not promote if infeasible/timed-out",
+    "counterfactuals": "One second optimization without parallel DAG constraint, same memory/serial budget, to quantify effect of candidate async cost; no policy performance tuning",
+    "interpretation": "Parallel DAG predicted is hypothetical: the current full BEGLIN Qwen inference runtime is still sequential; do not claim realized full-model parallel gain"
+  },
+  "evaluation": {
+    "only_after_policy_frozen": true,
+    "single_original_8_public_eval_prompts": 8,
+    "conditions": [
+      "F32 widened original BF16",
+      "all Q4G64",
+      "old role-balanced RNG73",
+      "old kernel-aware weight-only",
+      "new v2 activation-aware async MILP"
+    ],
+    "metrics": [
+      "teacher-forced NLL over same eight public synthetic windows",
+      "real 151936-way next-token logits per prelocked eval first prompt",
+      "actual native CPU decode fastest-of-three speed",
+      "actual RSS if available"
+    ],
+    "report_negative_outcomes": true,
+    "scientific_quality_claim": "NO_VERDICT until independent heldout task data and V6 used-24 provenance"
+  },
+  "safety": {
+    "checkpoint_never_modified": true,
+    "old_V6_used24_not_opened": true,
+    "private_original_activation_arrays_not_published": true,
+    "per_tensor_output_perturbation_previous_block_not_retried": true,
+    "no_production_or_main_or_live_release_updates": true
+  }
+}
