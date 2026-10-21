@@ -1,0 +1,146 @@
+{
+  "schema": "oml-acs-g1-real-data-two-family-audit/1",
+  "date": "2026-10-21",
+  "verdict": "DEVELOPMENT_ONLY__TWO_FAMILY_REAL_DATA__FINAL_NOT_EVALUATED",
+  "data": {
+    "source_sha256": "b99fb5d7e8c909e6821f555ac590b36ff52393b9d4e7a01828ee936c615bd274",
+    "benchmark_revisions": {
+      "stanfordnlp/sst2": "8d51e7e4887a4caaa95b3fbebbf53c0490b58bbb",
+      "dair-ai/emotion": "cab853a1dbdf4c42c2b3ef2173804746df8825fe"
+    },
+    "rows": 600,
+    "per_behavior_axis_train_pos_neg": [
+      100,
+      100
+    ],
+    "per_behavior_axis_dev_pos_neg": [
+      50,
+      50
+    ],
+    "validation_dev_only": true,
+    "heldout_test_accessed": false,
+    "license_review_status": "PENDING"
+  },
+  "models": {
+    "qwen": {
+      "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+      "precision": "BF16",
+      "activation_shape": [
+        600,
+        1536
+      ],
+      "array_sha256": "48a9d811fa71daf622571dfcd625142f10b03fd4539f829cdf21c16578c240c9",
+      "npz_sha256": "169ce4c3846ca64ac4f05c2d86535f9377c5e2545e5fd2eeeb0fb42813f727cd",
+      "job_id": "job_45b6146f83ad672c749cc1ad227754bb",
+      "state": "SUCCEEDED",
+      "exit": 0,
+      "internal_elapsed_seconds": 53.53,
+      "CUDA_peak_MiB": 3005.56
+    },
+    "mistral": {
+      "revision": "c170c708c41dac9275d15a8fff4eca08d52bab71",
+      "precision": "BF16",
+      "activation_shape": [
+        600,
+        4096
+      ],
+      "array_sha256": "cd58a36e1d0fe51772f2c3ca2e38514bda48fa7f7f1c07ab127a400974b421f6",
+      "npz_sha256": "14b9303bae9be5e721561b8223eba04185fbc89ae648d7b0134483e787fdaa90",
+      "job_id": "job_a14fbe2342b5a48d5e7a82a62753043e",
+      "state": "SUCCEEDED",
+      "exit": 0,
+      "internal_elapsed_seconds": 287.29,
+      "CUDA_peak_MiB": 11781.49
+    }
+  },
+  "direction_assay": {
+    "source_qwen_target_mistral": {
+      "receipt_sha256": "59818ac8108c393d2cae7966d0765ef0f5afba5e3116b527a70b4ffe41fac54a",
+      "sst2": {
+        "auroc": 0.8684,
+        "dev_bootstrap_ci95": [
+          0.79756,
+          0.9292
+        ],
+        "shuffled_anchor_mean": 0.5103155778894473,
+        "shuffled_anchor_p": 0.02,
+        "random_axis_mean": 0.49702713567839196,
+        "random_axis_p": 0.035,
+        "target_native_train_baseline_auroc": 0.986
+      },
+      "carer": {
+        "auroc": 0.794,
+        "dev_bootstrap_ci95": [
+          0.6968,
+          0.88084
+        ],
+        "shuffled_anchor_mean": 0.5122050251256282,
+        "shuffled_anchor_p": 0.055,
+        "random_axis_mean": 0.4943758793969849,
+        "random_axis_p": 0.055,
+        "target_native_train_baseline_auroc": 0.8732
+      }
+    },
+    "source_mistral_target_qwen": {
+      "receipt_sha256": "67aed3666aa1a38ff3ff01a725b3a6003b6a16373546559fb79005332a131bb5",
+      "sst2": {
+        "auroc": 0.8016,
+        "dev_bootstrap_ci95": [
+          0.704,
+          0.8812
+        ],
+        "shuffled_anchor_mean": 0.507348743718593,
+        "shuffled_anchor_p": 0.01,
+        "random_axis_mean": 0.5071718592964825,
+        "random_axis_p": 0.015,
+        "target_native_train_baseline_auroc": 0.8676
+      },
+      "carer": {
+        "auroc": 0.6572,
+        "dev_bootstrap_ci95": [
+          0.54476,
+          0.76442
+        ],
+        "shuffled_anchor_mean": 0.5038713567839196,
+        "shuffled_anchor_p": 0.06,
+        "random_axis_mean": 0.5006391959798995,
+        "random_axis_p": 0.06,
+        "target_native_train_baseline_auroc": 0.7148
+      }
+    },
+    "randomized_controls": 199,
+    "bootstrap_resamples": 999,
+    "seed": 42,
+    "source_axis_train_only": true,
+    "dev_labels_fit_used": false,
+    "source_and_target_row_identity_in_order": true,
+    "notes": [
+      "Four comparisons are not multiple-comparison corrected",
+      "Dataset/source licenses require review for broader reuse",
+      "Real benchmark development split only: no independent final holdout",
+      "Target-native comparison uses its own training split, not developer labels"
+    ]
+  },
+  "research": {
+    "B": "PARTIAL_DEV_SIGNAL_NO_PREREG_VERDICT",
+    "A": "NO_VERDICT",
+    "C1": "NO_VERDICT",
+    "C2": "NO_VERDICT",
+    "Q": "NO_VERDICT",
+    "Phi_third_family_ready": false,
+    "V6_24_consumed_holdout_origin_verified": false
+  },
+  "code": [
+    "research/oml_acs/build_behavior_train_dev.py",
+    "research/oml_acs/extract_real_behavior.py",
+    "research/oml_acs/evaluate_real_behavior.py"
+  ],
+  "privacy": {
+    "raw_source_rows_on_private_WSL_only": true,
+    "private_mode": "0600",
+    "github_raw_text_published": false,
+    "github_embeddings_published": false,
+    "main_changed": false,
+    "production_changed": false
+  }
+}
