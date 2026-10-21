@@ -1,0 +1,94 @@
+{
+  "schema": "BEGLIN-Qv2-activation-and-async-native-MILP-prelock/1",
+  "date": "2026-10-22",
+  "status": "FROZEN_BEFORE_ANY_NEW_POLICY_FULL_MODEL_OUTPUT",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct pinned official BF16 revision 989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "role_order": [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj"
+  ],
+  "layers": 28,
+  "activation_source": {
+    "source_196_tensor_aggregate_repo_path": "docs/research/BEGLIN_Q_V2_ACTIVATION_DIAG_196_SOURCE_AGGREGATE_20261022.json",
+    "aggregate_original_private_sha256": "94ffe5c18ee4f92fadee912d1046d2ed104f3934e968081e87dfd1ac07ed1bf0",
+    "full_private_sha256": "7b3ad80294275807cb3775601915b18ec3caeeef430849d8cea48389b3623616",
+    "calibration_prompts": 12,
+    "source_BF16_activations_only": true
+  },
+  "async_stage_source": {
+    "native_profile_repo_path": "docs/research/BEGLIN_Q_V2_ASYNC_STAGE_EMPIRICAL_COST_20261022.json",
+    "EOE_original_private_sha256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+    "qkv_combos": 8,
+    "gate_up_combos": 4,
+    "real_concurrency_pretested": true,
+    "full_model_async_not_yet_implemented": true
+  },
+  "q4_n8_native_7_role_profile_sha256": "280ca338745d0ebb2c44986d18e8b240135fe7fa4b1077f49f65f5d8fb3eff93",
+  "problem": {
+    "variables": "28 layers x 128 binary q/k/v/o/gate/up/down role choices = 3584",
+    "objective": "maximize sum of source-only normalized local activation-diagonal 4->8 benefit over exactly 28 chosen source tensors",
+    "constraints": [
+      "exactly 1 bitmask per layer",
+      "exactly 28 n8 tensor roles (168 packed Q4)",
+      "projection bytes <=830570496",
+      "measured-stage predicted serial and/or async single decode limits"
+    ],
+    "solver": "scipy.optimize.milp HiGHS integer, integrality all 1, no post-model-output tuning, status0/gap<=1e-8 needed for exact-proxy-optimality"
+  },
+  "cost_model": {
+    "stage_order": "RMSNorm -> Q/K/V native serial or bounded async join -> attention -> o_proj -> residual -> RMSNorm -> gate/up join -> SwiGLU -> down_proj -> residual",
+    "native_threads": "parallel native q4 uses separate role-indexed pools, never concurrent use shared pool",
+    "serial_stage": "observed serial_q4_6t_ms from same source role0 tensor stages + measured o/down serial native kernel medians",
+    "async_stage": "observed best of measured serial/parallel per QKV or gate/up combination + measured o/down",
+    "calibration": "old allQ4 full decode 75.26ms and known seed73 fixed role-balanced random native repacked decode 116.18ms; gamma from original serial-stage delta, before new eval",
+    "not_full_model_async_performance": "async result is model estimate only until integrated and evaluated"
+  },
+  "policies": [
+    {
+      "name": "serial_safe",
+      "max_serial_predicted_ms": 100,
+      "max_async_predicted_ms": 100,
+      "projection_bytes_max": 830570496,
+      "n8_count": 28
+    },
+    {
+      "name": "async_hypothesis",
+      "max_serial_predicted_ms": 120,
+      "max_async_predicted_ms": 80,
+      "projection_bytes_max": 830570496,
+      "n8_count": 28
+    },
+    {
+      "name": "quality_memory_only",
+      "max_serial_predicted_ms": null,
+      "max_async_predicted_ms": null,
+      "projection_bytes_max": 830570496,
+      "n8_count": 28
+    }
+  ],
+  "quality_eval": {
+    "public_eval_prompts_from": "configs/research/BEGLIN_Q_ACTIVATION_ASYNC_PARALLEL_V2_PRELOCK_20261022.json",
+    "evaluation_prompts_count": 8,
+    "excluded_from_source_policy": true,
+    "metrics": [
+      "8-public-prompt teacher-forced Qwen native model perplexity",
+      "first full-vocab logits relative L2 and KL",
+      "single token best3 native CPU bench",
+      "actual process resident memory"
+    ],
+    "user_private_label_data_used": false
+  },
+  "limitation": "Diagonal approximation of local projection error is NOT causal final-model output sensitivity; no final IID/OOD, unknown V6 used rows. Never claim full-model async achieved using only stage cost measurements.",
+  "safety": {
+    "runtime_no_auto_promotion": true,
+    "origin_main_unchanged": true,
+    "original_HF_model_readonly": true,
+    "old_sealed_V6_final_not_opened": true,
+    "previous_blocked_full_model_single_tensor_interventions_not_retried": true
+  }
+}
