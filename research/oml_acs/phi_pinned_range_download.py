@@ -3,7 +3,7 @@
 
 Used only if HF Xet downloader stalls. Downloads from Hugging Face official
 resolve endpoint; validates total bytes, each Content-Range and final SHA-256
-against pinned model's CDN ETag. Leaves already cached first shard untouched.
+against the pinned repository LFS SHA256 (Xet ETag is a different hash). Leaves already cached first shard untouched.
 No model execution, credentials, production changes or extra software.
 """
 from __future__ import annotations
@@ -26,7 +26,8 @@ DONE=BASE/NAME
 SNAP=Path("/mnt/g/TailnetCommander/work/oml_acs_hf/hub/models--microsoft--Phi-4-mini-instruct/snapshots")/REV
 SNAP_FILE=SNAP/NAME
 EXPECTED_SIZE=2768428504
-EXPECTED_SHA256="24804b7b84ebd0ff3c0bca109f7fc998b0a236cd31e1cc3177ff288c5a2c8754"
+EXPECTED_SHA256="7ff79b9d2d31076bac2663393451f6530f4fc8ca49b09002116c92c373dba983"
+EXPECTED_XET_HASH="24804b7b84ebd0ff3c0bca109f7fc998b0a236cd31e1cc3177ff288c5a2c8754"
 BLOCK=32*1024*1024
 WORKERS=8
 URL=f"https://huggingface.co/{MODEL}/resolve/{REV}/{NAME}"
@@ -49,7 +50,7 @@ def preflight()->None:
         etag=str(resp.headers.get("ETag","")).strip('"').lower()
         length=int(resp.headers.get("Content-Length","-1"))
         ranges=resp.headers.get("Accept-Ranges","")
-        if length!=EXPECTED_SIZE or etag!=EXPECTED_SHA256 or ranges!="bytes":
+        if length!=EXPECTED_SIZE or etag!=EXPECTED_XET_HASH or ranges!="bytes":
             raise RuntimeError("pinned model shard authority mismatch")
     if not (SNAP/"model-00001-of-00002.safetensors").is_file():
         raise RuntimeError("first shard incomplete or missing")
@@ -120,21 +121,28 @@ def main():
             if i%10==0 or i==total:
                 print("RANGE_PROGRESS",i,total,round(time.monotonic()-start,1),flush=True)
     temp=DONE.with_name(DONE.name+".assembling")
-    if temp.exists(): raise FileExistsError("assembly already exists; reconcile manually")
-    h=hashlib.sha256()
-    written=0
-    with temp.open("xb") as output:
-        for i in range(total):
-            with part_path(i).open("rb") as f:
-                while True:
-                    part=f.read(4*1024*1024)
-                    if not part:break
-                    written+=len(part)
-                    h.update(part)
-                    output.write(part)
-        output.flush();os.fsync(output.fileno())
-    if written!=EXPECTED_SIZE or h.hexdigest()!=EXPECTED_SHA256:
-        raise RuntimeError("final pinned SHA256 or length mismatch; do not publish")
+    if temp.exists():
+        written=temp.stat().st_size
+        final_digest=sha_file(temp)
+        if written!=EXPECTED_SIZE or final_digest!=EXPECTED_SHA256:
+            raise RuntimeError("preexisting assembly has wrong LFS SHA256; refuse adoption")
+        print("RECOVERED_VERIFIED_ASSEMBLY",written,final_digest,flush=True)
+    else:
+        h=hashlib.sha256()
+        written=0
+        with temp.open("xb") as output:
+            for i in range(total):
+                with part_path(i).open("rb") as f:
+                    while True:
+                        part=f.read(4*1024*1024)
+                        if not part:break
+                        written+=len(part)
+                        h.update(part)
+                        output.write(part)
+            output.flush();os.fsync(output.fileno())
+        final_digest=h.hexdigest()
+        if written!=EXPECTED_SIZE or final_digest!=EXPECTED_SHA256:
+            raise RuntimeError("final pinned official LFS SHA256 or length mismatch")
     temp.replace(DONE)
     if SNAP_FILE.exists():
         raise RuntimeError("snapshot concurrently changed; manual reconciliation required")
@@ -147,7 +155,7 @@ def main():
     rec={
        "schema":"oml-acs-phi-pinned-range-cache/1","status":"SHA256_VERIFIED_COMPLETE",
        "model":MODEL,"revision":REV,"file":NAME,"size_bytes":written,
-       "file_sha256":h.hexdigest(),"recovered_chunks":total,"chunk_bytes":BLOCK,
+       "file_sha256":final_digest,"expected_xet_hash":EXPECTED_XET_HASH,"recovered_chunks":total,"chunk_bytes":BLOCK,
        "workers":WORKERS,"elapsed_seconds":round(time.monotonic()-start,2),
        "both_model_shards_present":len(list(SNAP.glob("*.safetensors")))==2,
        "operational_mutation":False,"paid_api":False,
