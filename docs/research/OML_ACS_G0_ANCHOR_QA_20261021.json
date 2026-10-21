@@ -1,0 +1,63 @@
+{
+  "schema": "oml-acs-g0-anchor-qa/1",
+  "date": "2026-10-21",
+  "status": "PROVISIONAL_300_NOT_FROZEN",
+  "acquisition": {
+    "job_id": "job_9869b799a6b9403be1b384478e7499ba",
+    "state": "SUCCEEDED",
+    "exit_code": 0,
+    "source_script_sha256": "9fa6875c522e52b27f330b4ad17984840f32acc0acec45201fc02f700ab64bac"
+  },
+  "collection": {
+    "scenario_count": 15,
+    "per_scenario_count": 20,
+    "total": 300,
+    "exact_text_hash_unique": true,
+    "raw_file_sha256": "47d5ddcb37b81212e3f43a34441662062b42a038d4cc606d9d7081c31131f83b",
+    "local_complete_manifest_sha256": "ea054e0eb7961940121208bba996a79ee9184e8dee04fb0c7789e17d4c2e47ca",
+    "local_redacted_digest_sha256": "70d15d773f3079d4e91502194bf495cd795650b46cd2ba1dece79428cea8279c"
+  },
+  "quality": {
+    "exact_duplicate_pairs": 0,
+    "trigram_jaccard_threshold": 0.8,
+    "lexical_near_duplicate_pairs": 0,
+    "semantic_paraphrase_audit_complete": false
+  },
+  "storage": {
+    "private_wsl_path": "/home/alienware-r13/.local/share/beglin/oml_acs/20261021/anchors_300_local.jsonl",
+    "raw_bytes": 228835,
+    "private_file_mode": "0600",
+    "previous_G_drive_raw_removed": true,
+    "github_contains_raw_text": false,
+    "github_contains_row_level_digest": false
+  },
+  "deviations": [
+    "Not author-identical HELM source IDs",
+    "NarrativeQA samples one pinned Parquet shard",
+    "Anthropic red team separate pinned gz file",
+    "Independent source licensing review pending"
+  ],
+  "gates": {
+    "V6_consumed_24_authoritatively_excluded": false,
+    "final_evaluation_frozen": false,
+    "three_family_rotation_done": false,
+    "Qwen_300_anchor_activation_executed": false,
+    "A": "NO_VERDICT",
+    "B": "NO_VERDICT",
+    "C1": "NO_VERDICT",
+    "C2": "NO_VERDICT",
+    "Q": "NO_VERDICT"
+  },
+  "verification": {
+    "eq4_eq5_variant_unit_tests_pass": 15,
+    "v6_strict_holdout_contract_tests_pass": 8,
+    "hf_adapter_contract_tests_pass": 9,
+    "production_touched": false,
+    "main_touched": false
+  },
+  "limits": [
+    "Row-level public digest transfer did not clear connector security boundary",
+    "Word trigrams cannot rule out semantic duplicates",
+    "Phi-4-mini cache job cancelled, not ready"
+  ]
+}
