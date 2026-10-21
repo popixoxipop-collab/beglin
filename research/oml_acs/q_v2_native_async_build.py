@@ -71,7 +71,7 @@ def patch(source,reg):
     start=source.index("        if (prof_on()) tp0 = nowt();\n        if (fused_dispatch() & 1) matvec_t(",f)
     end=source.index("        if (prof_on()) tp0 = nowt();\n        for(int h=0;h<g_cfg.nh;h++) rope_apply",start)
     old=source[start:end]
-    if old.count("matvec_t(")!=3 or len(old)>1800:
+    if old.count("matvec_t(")!=4 or len(old)>1800:
         raise RuntimeError("original Q/K/V calculation source patch drift")
     insert="""        if (qv2_async_enabled()) {
             if (fused_dispatch()!=0) {
@@ -89,7 +89,7 @@ def patch(source,reg):
     start=source.index("        if (prof_on()) tp0 = nowt();\n        if (fused_dispatch() & 2) matvec_t(",f)
     end=source.index("        if (prof_on()) tp0 = nowt();\n        swiglu(gate,up",start)
     old=source[start:end]
-    if old.count("matvec_t(")!=2 or len(old)>1500:
+    if old.count("matvec_t(")!=3 or len(old)>1500:
         raise RuntimeError("original Gate/Up source patch drift")
     insert="""        if (qv2_async_enabled()) {
             if (fused_dispatch()!=0) {
