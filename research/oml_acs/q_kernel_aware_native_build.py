@@ -52,8 +52,7 @@ def build():
     entries=[line.split() for line in chosen_file.read_text().splitlines()]
     if len(entries)!=28 or len({(role,idx) for role,idx in entries})!=28:
         raise RuntimeError("frozen allocator selected wrong number of tensor promotions")
-    if [sum(1 for item in entries if item[0]==r) for r in selection["policies"]["kernel_aware"]["decoder_and_precision_by_role"]] != candidate["counts"]:
-        # dictionary is inserted in original protocol/source role order; check independently below too
+    if [sum(1 for item in entries if item[0]==r) for r in ("q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj")] != candidate["counts"]:
         raise RuntimeError("frozen chosen role counts differ from candidate")
     source=SOURCE.read_text()
     for before,after in [(CODE_TARGET,CODE_REPLACE),(OLD_QUOTA,NEW_QUOTA)]:
