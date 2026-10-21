@@ -1,0 +1,141 @@
+{
+  "schema": "BEGLIN-Qv2-activation-aware-async-native-engineering-evidence/1",
+  "date": "2026-10-22",
+  "status": "TECHNICAL_PASS__NO_MODEL_QUALITY_OR_FULL_MODEL_ASYNC_SPEEDUP",
+  "model": {
+    "id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "official_BF16_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "BF16_cache_rev_Apple": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+    "layers": 28,
+    "roles": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ],
+    "projection_tensors": 196
+  },
+  "calibration": {
+    "original_BF16_forward_hooks": "196/196 PASS",
+    "GPU": "RTX 5070 Ti CUDA",
+    "public_prompts": 12,
+    "token_positions_each_module": 461,
+    "activation_second_moment_sha256": "ee7b177b4dde984a5d83e0cdb5983d2ae00c34ee752fef9113a79568a1d12663",
+    "original_BF16_forward_model_unchanged": true,
+    "source_only_calibration": true,
+    "CPU_native_3_bounded_workers_quality_scores": "196/196 PASS",
+    "activation_local_score_private_SHA256": "7b3ad80294275807cb3775601915b18ec3caeeef430849d8cea48389b3623616",
+    "activation_local_score_public_aggregate_SHA256": "94ffe5c18ee4f92fadee912d1046d2ed104f3934e968081e87dfd1ac07ed1bf0",
+    "metric": "source BF16 input-channel diagonal second moment weighted local projection reconstruction error Q4G64 vs qNg64 8; NOT full-model causal influence"
+  },
+  "observed_native_CPU_stage_concurrency": {
+    "device": "Apple Silicon EOE",
+    "sibling_stages": "Q/K/V simultaneous forward; Gate/Up simultaneous forward; join before dependencies",
+    "qkv_bitwidth_combinations": 8,
+    "gateup_bitwidth_combinations": 4,
+    "native_Q4_independent_1_or_6_thread_pools": true,
+    "qkv_max_observed_speedup_vs_serial": 1.5507927352110076,
+    "gateup_max_observed_speedup_vs_serial": 1.9015273285769336,
+    "measured_isolated_stage_not_full_model": true,
+    "private_stage_cost_SHA256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808"
+  },
+  "source_only_new_policies_frozen_before_model_evaluation": {
+    "selection_private_sha256": "8dd48956820d47073f7f415c7427d07f20e01db154cdd8c895ec5d6d134c38a4",
+    "global_search_scope": "exact over source-only top-k-per-role role counts, not global 2^196 choice; another separate HiGHS MILP experiment recorded globally optimal under its own linear constraints",
+    "serial100": {
+      "n8_tensors": 28,
+      "q4_tensors": 168,
+      "role_counts": [
+        2,
+        0,
+        18,
+        1,
+        0,
+        5,
+        2
+      ],
+      "weight_bytes": 792231936,
+      "predicted_serial_ms": 98.9892720457812,
+      "hypothetical_parallel_ms": 94.01909635614976,
+      "policy_sha256": "142c3e91cda6026678c2619e3bbf8b1f69f018aecac1f3d846d579dc9d8d07d6",
+      "public_evaluation_PPL": 1084.7481
+    },
+    "parallel80": {
+      "n8_tensors": 28,
+      "q4_tensors": 168,
+      "role_counts": [
+        2,
+        1,
+        22,
+        1,
+        0,
+        2,
+        0
+      ],
+      "weight_bytes": 758808576,
+      "predicted_serial_ms": 83.8666399279587,
+      "hypothetical_parallel_ms": 79.57661662913165,
+      "policy_sha256": "06f07fcfab7fdba22528c6c80e09582f18cfa77d0760a26e4ec35bc6a80dd72c",
+      "public_evaluation_PPL": 790.687
+    },
+    "additional_native_single_token_bench_for_these_two_new_policies": "NOT_RUN__TOOL_SAFETY_BLOCKED",
+    "kernel_cost_previous_model_allocation_is_not_this_new_policy": true
+  },
+  "independent_public_development": {
+    "public_prompts": 8,
+    "teacher_forced_positions": 131,
+    "prompt_texts_prelocked_before_quality_selection": true,
+    "original_model_BF16_source_widened_F32_PPL": 348.3639,
+    "prior_seed73_random_role_balanced_mixed_PPL": 552.702,
+    "BEGLIN_full_Q4G64_PPL": 727.9173,
+    "activation_source_parallel80_policy_PPL": 790.687,
+    "separate_global_MILP_activation_ASYNC_policy_PPL": 827.4999,
+    "activation_source_serial100_policy_PPL": 1084.7481,
+    "source_native_eval_private_sha256": "afff3f20a7d258a2639ebe28e3a163eedfa46787503d7a1ff31abcee0ab56f7f",
+    "separate_global_MILP_8public_receipt_sha256": "043ee279a2f5a7e0880286aa0c1b5e5cae7692dbf4775bf53c49a27b803383a9",
+    "used_orig_V6_24_or_original_final_holdout": false,
+    "criterion": "lower perplexity is better",
+    "observed_quality_improvement_over_Q4_or_random": false
+  },
+  "actual_full_model_pthread": {
+    "scope": "source BF16 Qwen 28 layers / 28 n8 projection + 168 Q4, source-only globally MILP-frozen policy",
+    "runtime": "isolated BEGLIN native Apple CPU, same compiled binary, opt-in BEGLIN_QV2_NATIVE_ASYNC=1",
+    "actual_original_serial_ms_best_of_three": 92.04,
+    "actual_QKV_GateUp_parallel_ms_best_of_three": 92.66,
+    "serial_tok_per_second": 10.865,
+    "parallel_tok_per_second": 10.792,
+    "parallel_speedup": 0.9933088711418089,
+    "performance_gain_verified": false,
+    "PPL_131_positions_serial": 827.4999,
+    "PPL_131_positions_parallel": 827.4999,
+    "logits_bytes_sha_identical_to_previous_serial": true,
+    "observed_pthread_QKV_joins_PPL": 3892,
+    "observed_pthread_GateUp_joins_PPL": 3892,
+    "serial_max_RSS_bytes": 4869226496,
+    "parallel_max_RSS_bytes": 4869980160,
+    "binary_sha256": "fb947372495962ed67bb00f91199030b2e41d50ab283f4a5bd81ab2e51cdc054",
+    "true_native_pthread_receipt_private_SHA256": "26096060a809b380cbf5bef749b87f09dcec1a253c3ecc99d6ef20652daec692",
+    "async_schedule_SHA256": "c36e76aea0b051e85bf94f95fa6973ad8918342213067c45e805674bdc47bfc5",
+    "all_QKV_and_GateUp_dependencies_joined_before_read": true
+  },
+  "independent_audit": {
+    "EOE_private_receipt_sha256": "2f326545ef39f02988138f6c0c0d50ea23bc7c528fcb68b23c1b96144b6af438",
+    "regression_tests": "9/9 PASS",
+    "includes_fail_closed_source_SHA_policy_PPL_equality_and_actual_parallel_slowdown": true
+  },
+  "claims_and_limits": {
+    "actual_online_dynamic_weight_bit_switching": false,
+    "GPU_Metal_hardware_kernel_policy_tested": false,
+    "Q_final_research_conclusion": "NO_VERDICT",
+    "impact_and_performance_caveat": "Activation diagonal scoring is a local proxy, QKV/GU stage microbench benefits do not necessarily transfer to full-model CPU throughput",
+    "eval_limit": "8 synthetic prompts, 131 teacher-forced positions, no real task AUROC or independent IID/OOD final",
+    "original_BF16_math_baseline": false,
+    "old_V6_consumed_24_doc_ID_exclusion_attested": false,
+    "previous_blocked_per_tensor_output_intervention_retried": false,
+    "model_main_or_immutable_operator_modified": false,
+    "final_promotion_permitted": false
+  }
+}
