@@ -1,0 +1,592 @@
+{
+  "anchor_source_sha256": "47d5ddcb37b81212e3f43a34441662062b42a038d4cc606d9d7081c31131f83b",
+  "audit": {
+    "auditor": "independent sklearn.metrics.roc_auc_score on sealed private NPZ",
+    "quadratic_simplex_closed_form_2source_agree": true,
+    "six_auc_agree": true,
+    "source_code_c1_unit_tests": "9/9 PASS"
+  },
+  "behavior_source_sha256": "b99fb5d7e8c909e6821f555ac590b36ff52393b9d4e7a01828ee936c615bd274",
+  "bootstrap_draws": 999,
+  "case_count": 6,
+  "cases": [
+    {
+      "AUROC": {
+        "correlated_error": 0.7896,
+        "reliability_only": 0.788,
+        "source_a_only": 0.8016,
+        "source_b_only": 0.78,
+        "source_oof_best_single": 0.8016,
+        "uniform": 0.7872
+      },
+      "C1_correlated_minus_reliability_only": 0.0015999999999999348,
+      "C1_correlated_minus_uniform": 0.0023999999999999577,
+      "C1_dev_gain_at_least_point_02": false,
+      "axis": "sst2_positive_vs_negative",
+      "paired_999_bootstrap_deltas": {
+        "correlated_minus_reliability_only": {
+          "lower": -0.0015999999999999348,
+          "resamples": 999,
+          "upper": 0.005600000000000049
+        },
+        "correlated_minus_uniform": {
+          "lower": -0.0011999999999999789,
+          "resamples": 999,
+          "upper": 0.007199999999999989
+        }
+      },
+      "source_error_centered_covariance": [
+        [
+          0.18240000000000042,
+          0.06779999999999992
+        ],
+        [
+          0.06779999999999992,
+          0.20159999999999983
+        ]
+      ],
+      "source_error_coprobability_matrix": [
+        [
+          0.24,
+          0.135
+        ],
+        [
+          0.135,
+          0.28
+        ]
+      ],
+      "source_error_cross_correlation": 0.35356723561474146,
+      "source_only_best_choice_model": "mistral",
+      "source_oof_balanced_accuracy": {
+        "mistral": 0.76,
+        "phi": 0.72
+      },
+      "source_oof_error_count": 200,
+      "source_oof_error_rate": {
+        "mistral": 0.24,
+        "phi": 0.28
+      },
+      "source_oof_folds_sha256": "259a524f32c0465f31ab99a5c9404297b7e4a6329104299edb613e1c352c80c2",
+      "source_weights": {
+        "correlated_error": [
+          0.579999360003493,
+          0.42000063999650694
+        ],
+        "reliability_only": [
+          0.5384613905329805,
+          0.46153860946701963
+        ],
+        "source_a_only": [
+          1,
+          0
+        ],
+        "source_b_only": [
+          0,
+          1
+        ],
+        "source_oof_best_single": [
+          1,
+          0
+        ],
+        "uniform": [
+          0.5,
+          0.5
+        ]
+      },
+      "sources": [
+        "mistral",
+        "phi"
+      ],
+      "target": "qwen",
+      "target_dev_oracle_best_single_AUROC": 0.8016,
+      "target_dev_oracle_non_deployable": true
+    },
+    {
+      "AUROC": {
+        "correlated_error": 0.6668,
+        "reliability_only": 0.6668,
+        "source_a_only": 0.6572,
+        "source_b_only": 0.6692,
+        "source_oof_best_single": 0.6572,
+        "uniform": 0.6664
+      },
+      "C1_correlated_minus_reliability_only": 0,
+      "C1_correlated_minus_uniform": 0.00039999999999995595,
+      "C1_dev_gain_at_least_point_02": false,
+      "axis": "carer_joy_vs_anger",
+      "paired_999_bootstrap_deltas": {
+        "correlated_minus_reliability_only": {
+          "lower": 0,
+          "resamples": 999,
+          "upper": 0
+        },
+        "correlated_minus_uniform": {
+          "lower": 0,
+          "resamples": 999,
+          "upper": 0.0023999999999999577
+        }
+      },
+      "source_error_centered_covariance": [
+        [
+          0.22277500000000036,
+          0.13610000000000025
+        ],
+        [
+          0.13610000000000025,
+          0.22440000000000043
+        ]
+      ],
+      "source_error_coprobability_matrix": [
+        [
+          0.335,
+          0.25
+        ],
+        [
+          0.25,
+          0.34
+        ]
+      ],
+      "source_error_cross_correlation": 0.6087142556567641,
+      "source_only_best_choice_model": "mistral",
+      "source_oof_balanced_accuracy": {
+        "mistral": 0.665,
+        "phi": 0.6599999999999999
+      },
+      "source_oof_error_count": 200,
+      "source_oof_error_rate": {
+        "mistral": 0.335,
+        "phi": 0.34
+      },
+      "source_oof_folds_sha256": "3b313fe2b0bd910178f72a89a58829fac5a961ce5d78cf8f309b5a1abd3bd6f7",
+      "source_weights": {
+        "correlated_error": [
+          0.5142855510180095,
+          0.4857144489819905
+        ],
+        "reliability_only": [
+          0.5037036927297198,
+          0.4962963072702803
+        ],
+        "source_a_only": [
+          1,
+          0
+        ],
+        "source_b_only": [
+          0,
+          1
+        ],
+        "source_oof_best_single": [
+          1,
+          0
+        ],
+        "uniform": [
+          0.5,
+          0.5
+        ]
+      },
+      "sources": [
+        "mistral",
+        "phi"
+      ],
+      "target": "qwen",
+      "target_dev_oracle_best_single_AUROC": 0.6692,
+      "target_dev_oracle_non_deployable": true
+    },
+    {
+      "AUROC": {
+        "correlated_error": 0.8992,
+        "reliability_only": 0.898,
+        "source_a_only": 0.8684,
+        "source_b_only": 0.9076,
+        "source_oof_best_single": 0.9076,
+        "uniform": 0.8972
+      },
+      "C1_correlated_minus_reliability_only": 0.0011999999999999789,
+      "C1_correlated_minus_uniform": 0.0020000000000000018,
+      "C1_dev_gain_at_least_point_02": false,
+      "axis": "sst2_positive_vs_negative",
+      "paired_999_bootstrap_deltas": {
+        "correlated_minus_reliability_only": {
+          "lower": -0.0028000000000000247,
+          "resamples": 999,
+          "upper": 0.005219999999999962
+        },
+        "correlated_minus_uniform": {
+          "lower": -0.0040000000000000036,
+          "resamples": 999,
+          "upper": 0.009599999999999942
+        }
+      },
+      "source_error_centered_covariance": [
+        [
+          0.2289749999999993,
+          0.04059999999999999
+        ],
+        [
+          0.04059999999999999,
+          0.20159999999999983
+        ]
+      ],
+      "source_error_coprobability_matrix": [
+        [
+          0.355,
+          0.14
+        ],
+        [
+          0.14,
+          0.28
+        ]
+      ],
+      "source_error_cross_correlation": 0.18896733394401763,
+      "source_only_best_choice_model": "phi",
+      "source_oof_balanced_accuracy": {
+        "phi": 0.72,
+        "qwen": 0.645
+      },
+      "source_oof_error_count": 200,
+      "source_oof_error_rate": {
+        "phi": 0.28,
+        "qwen": 0.355
+      },
+      "source_oof_folds_sha256": "259a524f32c0465f31ab99a5c9404297b7e4a6329104299edb613e1c352c80c2",
+      "source_weights": {
+        "correlated_error": [
+          0.3943667923009861,
+          0.6056332076990139
+        ],
+        "reliability_only": [
+          0.440945067889664,
+          0.559054932110336
+        ],
+        "source_a_only": [
+          1,
+          0
+        ],
+        "source_b_only": [
+          0,
+          1
+        ],
+        "source_oof_best_single": [
+          0,
+          1
+        ],
+        "uniform": [
+          0.5,
+          0.5
+        ]
+      },
+      "sources": [
+        "qwen",
+        "phi"
+      ],
+      "target": "mistral",
+      "target_dev_oracle_best_single_AUROC": 0.9076,
+      "target_dev_oracle_non_deployable": true
+    },
+    {
+      "AUROC": {
+        "correlated_error": 0.824,
+        "reliability_only": 0.8208,
+        "source_a_only": 0.794,
+        "source_b_only": 0.8388,
+        "source_oof_best_single": 0.8388,
+        "uniform": 0.8176
+      },
+      "C1_correlated_minus_reliability_only": 0.0031999999999999806,
+      "C1_correlated_minus_uniform": 0.006399999999999961,
+      "C1_dev_gain_at_least_point_02": false,
+      "axis": "carer_joy_vs_anger",
+      "paired_999_bootstrap_deltas": {
+        "correlated_minus_reliability_only": {
+          "lower": -0.0004200000000000581,
+          "resamples": 999,
+          "upper": 0.00880000000000003
+        },
+        "correlated_minus_uniform": {
+          "lower": 0,
+          "resamples": 999,
+          "upper": 0.014800000000000035
+        }
+      },
+      "source_error_centered_covariance": [
+        [
+          0.23897499999999994,
+          0.10569999999999986
+        ],
+        [
+          0.10569999999999986,
+          0.22440000000000043
+        ]
+      ],
+      "source_error_coprobability_matrix": [
+        [
+          0.395,
+          0.24
+        ],
+        [
+          0.24,
+          0.34
+        ]
+      ],
+      "source_error_cross_correlation": 0.45644381425344843,
+      "source_only_best_choice_model": "phi",
+      "source_oof_balanced_accuracy": {
+        "phi": 0.6599999999999999,
+        "qwen": 0.605
+      },
+      "source_oof_error_count": 200,
+      "source_oof_error_rate": {
+        "phi": 0.34,
+        "qwen": 0.395
+      },
+      "source_oof_folds_sha256": "3b313fe2b0bd910178f72a89a58829fac5a961ce5d78cf8f309b5a1abd3bd6f7",
+      "source_weights": {
+        "correlated_error": [
+          0.3921577085703485,
+          0.6078422914296515
+        ],
+        "reliability_only": [
+          0.46258513582285976,
+          0.5374148641771404
+        ],
+        "source_a_only": [
+          1,
+          0
+        ],
+        "source_b_only": [
+          0,
+          1
+        ],
+        "source_oof_best_single": [
+          0,
+          1
+        ],
+        "uniform": [
+          0.5,
+          0.5
+        ]
+      },
+      "sources": [
+        "qwen",
+        "phi"
+      ],
+      "target": "mistral",
+      "target_dev_oracle_best_single_AUROC": 0.8388,
+      "target_dev_oracle_non_deployable": true
+    },
+    {
+      "AUROC": {
+        "correlated_error": 0.8524,
+        "reliability_only": 0.856,
+        "source_a_only": 0.8564,
+        "source_b_only": 0.8456,
+        "source_oof_best_single": 0.8456,
+        "uniform": 0.8552
+      },
+      "C1_correlated_minus_reliability_only": -0.0035999999999999366,
+      "C1_correlated_minus_uniform": -0.0027999999999999137,
+      "C1_dev_gain_at_least_point_02": false,
+      "axis": "sst2_positive_vs_negative",
+      "paired_999_bootstrap_deltas": {
+        "correlated_minus_reliability_only": {
+          "lower": -0.01442000000000007,
+          "resamples": 999,
+          "upper": 0.006800000000000028
+        },
+        "correlated_minus_uniform": {
+          "lower": -0.015600000000000058,
+          "resamples": 999,
+          "upper": 0.010400000000000076
+        }
+      },
+      "source_error_centered_covariance": [
+        [
+          0.2289749999999993,
+          0.1048000000000002
+        ],
+        [
+          0.1048000000000002,
+          0.18240000000000042
+        ]
+      ],
+      "source_error_coprobability_matrix": [
+        [
+          0.355,
+          0.19
+        ],
+        [
+          0.19,
+          0.24
+        ]
+      ],
+      "source_error_cross_correlation": 0.5128080473299464,
+      "source_only_best_choice_model": "mistral",
+      "source_oof_balanced_accuracy": {
+        "mistral": 0.76,
+        "qwen": 0.645
+      },
+      "source_oof_error_count": 200,
+      "source_oof_error_rate": {
+        "mistral": 0.24,
+        "qwen": 0.355
+      },
+      "source_oof_folds_sha256": "259a524f32c0465f31ab99a5c9404297b7e4a6329104299edb613e1c352c80c2",
+      "source_weights": {
+        "correlated_error": [
+          0.23256062734616406,
+          0.767439372653836
+        ],
+        "reliability_only": [
+          0.40336166937336654,
+          0.5966383306266334
+        ],
+        "source_a_only": [
+          1,
+          0
+        ],
+        "source_b_only": [
+          0,
+          1
+        ],
+        "source_oof_best_single": [
+          0,
+          1
+        ],
+        "uniform": [
+          0.5,
+          0.5
+        ]
+      },
+      "sources": [
+        "qwen",
+        "mistral"
+      ],
+      "target": "phi",
+      "target_dev_oracle_best_single_AUROC": 0.8564,
+      "target_dev_oracle_non_deployable": true
+    },
+    {
+      "AUROC": {
+        "correlated_error": 0.7848,
+        "reliability_only": 0.7828,
+        "source_a_only": 0.7704,
+        "source_b_only": 0.804,
+        "source_oof_best_single": 0.804,
+        "uniform": 0.78
+      },
+      "C1_correlated_minus_reliability_only": 0.0020000000000000018,
+      "C1_correlated_minus_uniform": 0.0048000000000000265,
+      "C1_dev_gain_at_least_point_02": false,
+      "axis": "carer_joy_vs_anger",
+      "paired_999_bootstrap_deltas": {
+        "correlated_minus_reliability_only": {
+          "lower": 0,
+          "resamples": 999,
+          "upper": 0.005599999999999938
+        },
+        "correlated_minus_uniform": {
+          "lower": -0.00039999999999995595,
+          "resamples": 999,
+          "upper": 0.011199999999999988
+        }
+      },
+      "source_error_centered_covariance": [
+        [
+          0.23897499999999994,
+          0.0926750000000001
+        ],
+        [
+          0.0926750000000001,
+          0.22277500000000036
+        ]
+      ],
+      "source_error_coprobability_matrix": [
+        [
+          0.395,
+          0.225
+        ],
+        [
+          0.225,
+          0.335
+        ]
+      ],
+      "source_error_cross_correlation": 0.4016549590725502,
+      "source_only_best_choice_model": "mistral",
+      "source_oof_balanced_accuracy": {
+        "mistral": 0.665,
+        "qwen": 0.605
+      },
+      "source_oof_error_count": 200,
+      "source_oof_error_rate": {
+        "mistral": 0.335,
+        "qwen": 0.395
+      },
+      "source_oof_folds_sha256": "3b313fe2b0bd910178f72a89a58829fac5a961ce5d78cf8f309b5a1abd3bd6f7",
+      "source_weights": {
+        "correlated_error": [
+          0.3928579081601218,
+          0.6071420918398782
+        ],
+        "reliability_only": [
+          0.45890422218047566,
+          0.5410957778195244
+        ],
+        "source_a_only": [
+          1,
+          0
+        ],
+        "source_b_only": [
+          0,
+          1
+        ],
+        "source_oof_best_single": [
+          0,
+          1
+        ],
+        "uniform": [
+          0.5,
+          0.5
+        ]
+      },
+      "sources": [
+        "qwen",
+        "mistral"
+      ],
+      "target": "phi",
+      "target_dev_oracle_best_single_AUROC": 0.804,
+      "target_dev_oracle_non_deployable": true
+    }
+  ],
+  "date": "2026-10-21",
+  "dev_cases_meeting_threshold": 0,
+  "dev_mean_delta_vs_uniform": 0.0021999999999999984,
+  "dev_threshold": 0.02,
+  "final_eval_completed": false,
+  "k_folds": 5,
+  "limits": [
+    "Source error-covariance weights were estimated from already-used source train only; target dev not used for weights.",
+    "This development validation was previously exposed in B experiments; not blind nor preregistered final evidence.",
+    "No case met 0.02 absolute AUROC improvement; no final C1 claim.",
+    "No independent semantic near-duplicate audit, source license audit or original V6 24 used record origin attestation.",
+    "No BEGLIN native 8/4bit quantization or output mixture A/C2 tested."
+  ],
+  "model_revisions": {
+    "mistral": "c170c708c41dac9275d15a8fff4eca08d52bab71",
+    "phi": "cfbefacb99257ffa30c83adab238a50856ac3083",
+    "qwen": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
+  },
+  "participants": [
+    "qwen",
+    "mistral",
+    "phi"
+  ],
+  "previously_used_dev": true,
+  "private_receipt_bytes": 18234,
+  "raw_text_or_vectors_published": false,
+  "schema": "oml-acs-c1-source-only-oof-public-evidence/1",
+  "seed": 42,
+  "source_private_receipt_sha256": "8409cce11799a698382bf8b8071b31724234944454b0e406b998b743119ceb94",
+  "status": "DEVELOPMENT_EXPLORATORY_COMPLETE_NO_FINAL_HYPOTHESIS_VERDICT",
+  "target_dev_weight_fit": false,
+  "weights_use_source_training_OOF_only": true
+}
