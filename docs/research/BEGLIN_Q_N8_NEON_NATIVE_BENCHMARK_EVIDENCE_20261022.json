@@ -1,0 +1,150 @@
+{
+  "all_runs_isolated": true,
+  "benchmark_limitations": [
+    "Single-token native BEGLIN bench uses fastest of three trials after 8 warmups, not sustained serving throughput",
+    "Microbench medians on actual native tensors, but only eight to 96 test vectors and limited repeat windows",
+    "F32 reference uses BF16 source widened to FP32; full BF16 compute not evaluated",
+    "Original V6 24 used holdout and genuine task AUROC remain unverified",
+    "Mixed random control uses one frozen seed73, no final scientific claim",
+    "The native BEGLIN Metal GPU and power/energy are not evaluated",
+    "Only n8 dense GEMV uses this NEON fast path; batched matmul retains original scalar",
+    "The blocked earlier per-tensor output sensitivity experiment was not retried; this is distinct decoder optimization"
+  ],
+  "bf16_source_revision": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "binary_sha256": {
+    "allN8": "fe0262d028f23a4f1dc85fb9175a7961e40e6f82806c26796d07e797bf4cc307",
+    "mixed": "8153183c6b5a9b0f50e37f5c5ad143e8504266c6a180397e13304f80c77045b1"
+  },
+  "date": "2026-10-22",
+  "eval_conditions": "Apple Silicon EOE; same source BF16 checkpoint, same Qwen 28 layers, public synthetic 10-token prompt and two 21-token PPL windows",
+  "full_model_cases": [
+    {
+      "KL_scalar_to_neon": 6.899330112328454e-14,
+      "after_ms_per_token": 577.39,
+      "before_ms_per_token": 5257.63,
+      "bench_fast_kernel_calls": 11172,
+      "fallback_calls": 0,
+      "measured_full_model_speedup": 9.105855660818511,
+      "mode": "all_n8",
+      "native_NEON_PPL_process": "proc_210389d29ae408757c22bb8b27ecd9dd",
+      "native_NEON_bench_process": "proc_b0a6c4a064b8531afd8d0c22d3d367eb",
+      "neon_logits_sha256": "7ba272f52be5356d0dd74343870116126706cedbe944dd6cc6de23c355f06269",
+      "neon_tok_s": 1.7319316233395106,
+      "new_public_synthetic_PPL": 2148.1231,
+      "numerical_maxabs_vs_scalar": 0.00002384185791015625,
+      "numerical_relL2_vs_scalar": 8.96760296552335e-7,
+      "old_logits_sha256": "085c9e1d12c5e72840360845b0533f59818db9353239c16340f99d8a8ebb85c0",
+      "old_public_synthetic_PPL": 2148.1101,
+      "peak_RSS_bytes_new_PPL": null,
+      "ppl_fast_kernel_calls": 4508,
+      "relative_PPL_drift": 0.000006051831328347632,
+      "top10_same": true
+    },
+    {
+      "KL_scalar_to_neon": 1.2580240542613646e-12,
+      "after_ms_per_token": 144.43,
+      "before_ms_per_token": 810.17,
+      "bench_fast_kernel_calls": 1596,
+      "fallback_calls": 0,
+      "measured_full_model_speedup": 5.609430173786609,
+      "mode": "mixed_proxy",
+      "native_NEON_PPL_process": "proc_1a84ffa8ec04eccd24888ec5c4e6d34e",
+      "native_NEON_bench_process": "proc_7dc5e828a6be373f97a32707f8c0a7be",
+      "neon_logits_sha256": "5f424692474dd9101c8fd3ad4c62baaf7449b882387091a72290ae5e87499128",
+      "neon_tok_s": 6.923769300006923,
+      "new_public_synthetic_PPL": 4747.6983,
+      "numerical_maxabs_vs_scalar": 0.000017642974853515625,
+      "numerical_relL2_vs_scalar": 8.255426467602995e-7,
+      "old_logits_sha256": "de4edea26cdc0a4382ed3b95afdd86f96476fc43b12e15f73cc97ced482fae84",
+      "old_public_synthetic_PPL": 4747.6975,
+      "peak_RSS_bytes_new_PPL": 4922228736,
+      "ppl_fast_kernel_calls": 644,
+      "relative_PPL_drift": 1.6850273207153227e-7,
+      "top10_same": true
+    },
+    {
+      "KL_scalar_to_neon": 1.4156967364573417e-12,
+      "after_ms_per_token": 143.85,
+      "before_ms_per_token": 810.72,
+      "bench_fast_kernel_calls": 1596,
+      "fallback_calls": 0,
+      "measured_full_model_speedup": 5.635870698644422,
+      "mode": "mixed_random",
+      "native_NEON_PPL_process": "proc_504fd1813e8e1612f881df87f949f974",
+      "native_NEON_bench_process": "proc_056c55ed6046b2dbfcba0b1f4fb8900a",
+      "neon_logits_sha256": "914799996fd0da9720b2f8994884f3d5b4f4c4a087f426426d398da183c100b7",
+      "neon_tok_s": 6.9516857838025725,
+      "new_public_synthetic_PPL": 3411.2283,
+      "numerical_maxabs_vs_scalar": 0.00003337860107421875,
+      "numerical_relL2_vs_scalar": 0.0000017333103839113052,
+      "old_logits_sha256": "59aa84e5fec70ad8ea6b4e33832d471d52a0c8a1ecfd5a23cfce22157387920f",
+      "old_public_synthetic_PPL": 3411.2256,
+      "peak_RSS_bytes_new_PPL": 4922048512,
+      "ppl_fast_kernel_calls": 644,
+      "relative_PPL_drift": 7.915043789552838e-7,
+      "top10_same": true
+    }
+  ],
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "native_neon_source_sha256": "7b0b60b201d7f639f0c2508fd8ebcd49d8da7e9ea67c68b9d908309216b55273",
+  "no_live_promotion": true,
+  "official_source_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "original_packed_format_unchanged": true,
+  "original_scalar_source_sha256": "cb985ec48cfa1f1f9ebe8411d12da5d3f73720c8acdcad51fc279a2b25ff8956",
+  "original_source_and_main_unchanged": true,
+  "private_receipt_sha256": "b6b42a4a6c6fedc4daaf62ffa1aaa0a2fb4ee08db7d3d6d1ab4920689743631c",
+  "real_multishape": [
+    {
+      "benchmark_type": "Python ctypes 5 rounds x8 vectors",
+      "kernel_speedup": 9.687532416291148,
+      "numerical_maxabs_vs_scalar": 2.384185791015625e-7,
+      "numerical_relL2_vs_scalar": 5.6764387817926585e-8,
+      "stored_n8_bytes": 417792,
+      "tensor": "model.layers.0.self_attn.k_proj.weight",
+      "weight_shape": [
+        256,
+        1536
+      ]
+    },
+    {
+      "benchmark_type": "Python ctypes 5 rounds x8 vectors",
+      "kernel_speedup": 9.560205380065332,
+      "numerical_maxabs_vs_scalar": 2.384185791015625e-7,
+      "numerical_relL2_vs_scalar": 6.587146774460585e-8,
+      "stored_n8_bytes": 2506752,
+      "tensor": "model.layers.14.self_attn.o_proj.weight",
+      "weight_shape": [
+        1536,
+        1536
+      ]
+    },
+    {
+      "benchmark_type": "Python ctypes 5 rounds x8 vectors",
+      "kernel_speedup": 9.726509980510048,
+      "numerical_maxabs_vs_scalar": 2.384185791015625e-7,
+      "numerical_relL2_vs_scalar": 6.564527703087005e-8,
+      "stored_n8_bytes": 14622720,
+      "tensor": "model.layers.0.mlp.gate_proj.weight",
+      "weight_shape": [
+        8960,
+        1536
+      ]
+    },
+    {
+      "benchmark_type": "Python ctypes 5 rounds x8 vectors",
+      "kernel_speedup": 9.74288559118378,
+      "numerical_maxabs_vs_scalar": 5.960464477539063e-8,
+      "numerical_relL2_vs_scalar": 6.453171329037656e-8,
+      "stored_n8_bytes": 14622720,
+      "tensor": "model.layers.0.mlp.down_proj.weight",
+      "weight_shape": [
+        1536,
+        8960
+      ]
+    }
+  ],
+  "regression_tests": "6/6 PASS",
+  "schema": "beglin-q-native-neon-n8-research-evidence/1",
+  "scientific_Q_verdict": "NO_VERDICT",
+  "status": "PASS_TECHNICAL_FULL_MODEL_AND_FOUR_REAL_TENSOR_SHAPES"
+}
