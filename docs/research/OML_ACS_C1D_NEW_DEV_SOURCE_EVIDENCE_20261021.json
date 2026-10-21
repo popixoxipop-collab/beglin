@@ -1,0 +1,69 @@
+{
+  "schema": "oml-acs-c1d-new-development-source-evidence/1",
+  "date": "2026-10-21",
+  "status": "SELECTED_NOT_EVALUATED",
+  "job_id": "job_a33af33548ef2944be5578e5434136c2",
+  "state": "SUCCEEDED",
+  "exit_code": 0,
+  "protocol_commits": [
+    "7ff2a0547a96c4f17555f3fbaa9e14055381757d",
+    "31db6e90bff469315b5ed87ec67f73958337fc8"
+  ],
+  "selection_code": "research/oml_acs/build_c1d_new_dev.py",
+  "selection_seed": 73,
+  "new_count": 200,
+  "new_private_data_sha256": "6ee84d7b25a1025d0ae41dda32fbd1098a82499e8192cc9cde71808c52f3b4bb",
+  "sources": [
+    {
+      "axis": "sst2_positive_vs_negative",
+      "dataset": "stanfordnlp/imdb",
+      "revision": "e6281661ce1c48d982bc483cf8a173c1bbeb5d31",
+      "file": "plain_text/train-00000-of-00001.parquet",
+      "file_sha256": "db47d16b5c297cc0dd625e519c81319c24c9149e70e8496de5475f6fa928342c",
+      "label_classes": [
+        "negative",
+        "positive"
+      ],
+      "rows_per_class": 50,
+      "license_review_pending": true
+    },
+    {
+      "axis": "carer_joy_vs_anger",
+      "dataset": "google-research-datasets/go_emotions",
+      "revision": "add492243ff905527e67aeb8b80c082af02207c3",
+      "file": "simplified/train-00000-of-00001.parquet",
+      "file_sha256": "b7d74279616ae7c9b8374ab62ea9f9d6504d36a577bb17f745d720dc2b0d4e76",
+      "label_classes": [
+        "anger_id_2",
+        "joy_id_17"
+      ],
+      "rows_per_class": 50,
+      "singleton_label_only": true,
+      "license": "apache-2.0"
+    }
+  ],
+  "old_anchor_sha256": "47d5ddcb37b81212e3f43a34441662062b42a038d4cc606d9d7081c31131f83b",
+  "old_behavior_train_dev_sha256": "b99fb5d7e8c909e6821f555ac590b36ff52393b9d4e7a01828ee936c615bd274",
+  "data_quality": {
+    "exact_canonical_overlap_with_old_900_rows": 0,
+    "exact_duplicate_within_new_200": 0,
+    "word_3gram_jaccard_above_or_equal_0_8_vs_old": 0,
+    "word_3gram_jaccard_above_or_equal_0_8_internal": 0,
+    "max_word_3gram_jaccard_vs_old": 0.1429,
+    "full_semantic_nearduplicate_audit": false,
+    "private_mode": "0600"
+  },
+  "scientific_gates": {
+    "unopened_original_test_split": true,
+    "original_V6_24_provenance_not_verified": true,
+    "not_independent_final_IID_or_OOD": true,
+    "no_model_scores_observed_at_selection": true,
+    "main_unchanged": true,
+    "no_production_change": true
+  },
+  "unit_tests": {
+    "selection": 7,
+    "conditional_gate": 10,
+    "model_extraction": 6
+  }
+}
