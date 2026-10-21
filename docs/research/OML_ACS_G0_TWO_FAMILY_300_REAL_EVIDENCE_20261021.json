@@ -1,0 +1,92 @@
+{
+  "schema": "oml-acs-g0-two-family-300-anchor-evidence/1",
+  "date": "2026-10-21",
+  "status": "PASS_TECHNICAL_CAPTURE_AND_PRIVATE_GEOMETRY",
+  "source": {
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "layer_index_zero_based": 14,
+    "activation_shape": [
+      300,
+      1536
+    ],
+    "activation_sha256": "cbd5535b5247ea7b153a7835e5c27d9b8cc680cc6d031108b87db1a49136f692",
+    "projector_sha256": "664f24c3aed82e9dcc15e895d695fcdfc90215dd6ba17e2d708421bb4f0c9722",
+    "projector_effective_rank_entropy": 31.29
+  },
+  "target": {
+    "model": "mistralai/Mistral-7B-Instruct-v0.3",
+    "revision": "c170c708c41dac9275d15a8fff4eca08d52bab71",
+    "layer_index_zero_based": 16,
+    "activation_shape": [
+      300,
+      4096
+    ],
+    "activation_sha256": "7b3a187f7f54d28a518c9c18951d51b9b2e75bc2042541097f601d1895e767c5",
+    "capture_npz_sha256": "bc8151ae7e947d40b3fce5f6773205078ab8635521bf1cab036935b1c3ae9913",
+    "capture_npz_bytes": 2294378,
+    "projector_sha256": "ec38c4068528b73dcd3d32407e6a57a6183cdebc8ead8a758210f3edc820ee24",
+    "projector_bytes": 9426343,
+    "projector_effective_rank_entropy": 76.8765,
+    "projector_numeric_rank_tolerance_1e6": 299
+  },
+  "experiment": {
+    "job_id": "job_11504690c246b1225de2d1ca511f09e7",
+    "state": "SUCCEEDED",
+    "exit_code": 0,
+    "host": "alienware",
+    "device": "NVIDIA GeForce RTX 5070 Ti",
+    "precision": "BF16",
+    "loading_elapsed_seconds": 109.24,
+    "in_process_elapsed_seconds": 217.09,
+    "worker_run_ms": 273128,
+    "peak_cuda_allocated_mb": 11784.02,
+    "some_layers_offloaded_to_cpu": true,
+    "source_checkout_commit": "4d3a93c74c4860031d451e4b0ea7217b582954d1",
+    "capture_script_sha256": "c975e8650320341b6ae9219d4e78177b21214a0aadef4e87ca35d71cec816179"
+  },
+  "shared_data": {
+    "raw_anchor_sha256": "47d5ddcb37b81212e3f43a34441662062b42a038d4cc606d9d7081c31131f83b",
+    "scenario_count": 15,
+    "per_scenario": 20,
+    "rows_identical_order": true,
+    "per_row_SHA_confirmed": true,
+    "private_mode": "0600"
+  },
+  "verification": {
+    "independent_npz_sha": true,
+    "independent_qwen_mistral_row_order": true,
+    "independent_recomputed_mistral_projector": true,
+    "all_finite": true,
+    "all_rows_l2_norm_one": true,
+    "source_raw_text_exposed": false,
+    "source_model_weights_modified": false,
+    "main_modified": false,
+    "production_touched": false
+  },
+  "geometry": {
+    "type": "in_sample_anchor_gram_similarity_development_diagnostic",
+    "biased_linear_CKA": 0.8751012316945473,
+    "biased_CKA_permutation_mean": 0.05831599676025088,
+    "biased_CKA_permutation_95th": 0.06616850936552438,
+    "biased_CKA_permutation_empirical_p": 0.005,
+    "upper_off_diagonal_cosine_Pearson": 0.866535730310713,
+    "cosine_Pearson_permutation_mean": -0.00009777477458828609,
+    "cosine_Pearson_permutation_95th": 0.00814163799102226,
+    "cosine_Pearson_permutation_empirical_p": 0.005,
+    "permutation_seed": 42,
+    "permutation_count": 199,
+    "geometry_script": "research/oml_acs/audit_two_model_anchors.py",
+    "note": "p refers to permutation alignment null on the same development anchors, NOT a population generalization test"
+  },
+  "verdicts": {
+    "cross_family_anchor_geometry": "OBSERVED",
+    "source_to_target_behavior_steering": "NOT_TESTED_ON_300",
+    "behavior_detection_AUROC": "NOT_TESTED_ON_300",
+    "answer_combination_NLL": "NOT_TESTED",
+    "calibrated_weighted_ACS": "NOT_TESTED",
+    "quantization_robustness": "NOT_TESTED",
+    "final_holdout": "SEALED",
+    "V6_24_old_used_documents_attested_excluded": false
+  }
+}
