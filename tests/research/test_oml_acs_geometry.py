@@ -32,7 +32,10 @@ class GeometryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             metrics(np.eye(3)*np.nan,np.eye(3))
     def test_no_values_from_hidden_final_labels(self):
-        q=np.eye(10);m=q.copy()
+        q=np.eye(10,dtype=float)
+        q[:,0]+=np.linspace(0.,0.5,10)
+        q=q/np.linalg.norm(q,axis=1)[:,None]
+        m=q.copy()
         out=metrics(q,m,repeats=4)
         self.assertEqual(out["shuffle_count"],4)
         self.assertEqual(out["row_count"],10)
