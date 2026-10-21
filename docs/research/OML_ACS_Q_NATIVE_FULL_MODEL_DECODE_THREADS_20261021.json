@@ -1,0 +1,88 @@
+{
+  "schema": "oml-acs-beglin-native-q-fullmodel-decode/1",
+  "date": "2026-10-21",
+  "status": "PASS_NATIVE_DECODE_SPEED_COMPARISON_NOT_FINAL_Q",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "pinned_source_bf16_revision": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "official_model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "original_beglin_c_sha256": "52c8f5fd683b5ef0726e4738ab4b441624f54c807a3e71fb9d932cb79938d112",
+  "isolated_experimental_lab_c_sha256": "c03099aed130a5fd9222f0ba4d0fdf00d3e9bd1b1c203bf145ccb8290a0ad131",
+  "isolated_experimental_native_binary_sha256": "d59f463ba5a13d6559c00229f047802c0ebbb74362b00257fd2aaa4b06fc1e9d",
+  "native_source_scope": "Same 28 Qwen layers; 196 projection tensors FP32/widened BF16, qNg64 n8, or Q4G64; other 142 tensors FP32 incl tied output head in all conditions",
+  "bench_contract": "BEGLIN native qwen_infer bench 1; 10 prompt IDs prefill, 8 warmups, 1 timed greedy token, 3 repetitions; built-in benchmark prints fastest run, not independent median",
+  "platform": "EOE Apple Silicon Mac13,1 CPU; BEGLIN Metal GPU not used",
+  "conditions": {
+    "f32_proj_1blas_thread": {
+      "process_id": "proc_9de8a20b4f4839bfd8cd437e7701bce1",
+      "terminal": "EXITED",
+      "exit_code": 0,
+      "mode": "f32",
+      "veclib_max_threads": 1,
+      "effective_projection_threads": 1,
+      "ms_per_token": 210.79,
+      "tokens_per_second": 4.744,
+      "ms_layers": 175.09,
+      "ms_logits": 35.69
+    },
+    "qng64_n8_scalar": {
+      "process_id": "proc_85c32356fe2273ac7132f2afdd2fb73c",
+      "terminal": "EXITED",
+      "exit_code": 0,
+      "mode": "n8",
+      "veclib_max_threads": 1,
+      "projection_decoder": "qng64_matvec_f32 scalar bitplane",
+      "effective_projection_threads": 1,
+      "ms_per_token": 5257.63,
+      "tokens_per_second": 0.19,
+      "ms_layers": 5197.41,
+      "ms_logits": 60.2
+    },
+    "Q4G64_neon_6threads": {
+      "process_id": "proc_f747c64c75aefa08c220a67b195b8aa2",
+      "terminal": "EXITED",
+      "exit_code": 0,
+      "mode": "q4",
+      "veclib_max_threads": 1,
+      "Q4_THREADS": 6,
+      "ms_per_token": 75.26,
+      "tokens_per_second": 13.287,
+      "ms_layers": 39.2,
+      "ms_logits": 36.05
+    },
+    "Q4G64_neon_1thread": {
+      "process_id": "proc_fa6557ec3feab692a45f497b42200aec",
+      "terminal": "EXITED",
+      "exit_code": 0,
+      "mode": "q4",
+      "veclib_max_threads": 1,
+      "Q4_THREADS": 1,
+      "ms_per_token": 238.05,
+      "tokens_per_second": 4.201,
+      "ms_layers": 203.61,
+      "ms_logits": 34.42
+    }
+  },
+  "ratios": {
+    "Q4_6thread_speedup_vs_F32_1thread": 2.8008238107892636,
+    "Q4_1thread_speedup_vs_F32_1thread": 0.8854862423860532,
+    "QNg64_n8_scalar_speedup_vs_F32": 0.04009220884695195,
+    "Q4_6thread_speedup_vs_Q4_1thread": 3.1630348126494816
+  },
+  "source_docs": [
+    "research/oml_acs/q_full_model_lab_prepare.py",
+    "research/oml_acs/q_full_model_audit.py",
+    "docs/research/OML_ACS_Q_NATIVE_FULL_MODEL_PPL_MEMORY_REAL_20261021.json",
+    "docs/research/OML_ACS_Q_NATIVE_SINGLE_TENSOR_REAL_20261021.json"
+  ],
+  "limitations": [
+    "Q4 default 6-worker thread pool vs F32 Accelerate 1 BLAS thread: relative throughput includes available CPU parallelism, not bit-width alone",
+    "Setting Q4_THREADS=1 eliminates speedup in this test; Q4 became ~11% slower",
+    "qNg64(n8) bitplane CPU scalar decoder yields ~25x worse per-token time; no NEON-optimized n8 backend measured",
+    "Benchmark reports best of 3 single-token decode repetitions after eight warmups, not time distribution, sustained production TPS or energy efficiency",
+    "Model weights BF16-sourced F32 baseline, not actual native BF16 arithmetic",
+    "No 3-model BF16/8/4 behavior AUROC, task gold NLL or independent final IID/OOD study; Q remains unaccepted",
+    "Original V6 consumed 24 document identities are not independently bound; no release promotion"
+  ],
+  "no_production_or_main_changes": true,
+  "scientific_hypothesis_Q_verdict": "NOT_ESTABLISHED"
+}
