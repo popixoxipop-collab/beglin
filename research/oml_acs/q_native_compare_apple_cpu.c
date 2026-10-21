@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <sys/stat.h>
 
 enum { D=1536, N=96, TIMED_SAMPLES=24, ROUNDS=5 };
 
@@ -68,6 +69,10 @@ static void analyze(const float *ref,const float *a, size_t n,
     *max_abs=mx;
 }
 int main(int argc,char **argv) {
+    // Enforce private output files. The first run disclosed a default 0644
+    // mode inside a protected 0700 lab folder; fix the creator, not just
+    // chmod post hoc, so every future benchmark is fail-closed.
+    umask(0077);
     if(argc!=2) {fprintf(stderr,"usage: %s fixture_dir\n",argv[0]);return 2;}
     const char *dir=argv[1];
     const size_t count=(size_t)D*D;
