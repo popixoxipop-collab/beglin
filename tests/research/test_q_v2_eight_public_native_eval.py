@@ -84,6 +84,7 @@ class NativeQv2PublicEvaluationQA(unittest.TestCase):
     def test_no_live_async_serving_claim(self):
         self.assertFalse(self.lock["full_model_parallel_runtime_claim"])
         self.assertTrue(self.lock["status"]=="OPTIMAL_HIGHS_SOURCE_ONLY_BEFORE_TEST")
-        self.assertTrue(all(not data.get("production_touched",False) for data in []))
+        self.assertTrue(self.lock["full_model_runtime_currently_sequential"])
+        self.assertFalse(self.lock["tested_IID_OOD_or_prelocked_eval_prompts_used"])
 if __name__=="__main__":
     unittest.main(verbosity=2)
