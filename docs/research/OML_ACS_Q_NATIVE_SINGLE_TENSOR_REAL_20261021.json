@@ -1,0 +1,115 @@
+{
+  "schema": "oml-acs-beglin-native-q-real-single-tensor-evidence/1",
+  "date": "2026-10-21",
+  "status": "PASS_NATIVE_APPLE_CPU_REAL_MODEL_TENSOR__NOT_FULL_MODEL_Q",
+  "scope": {
+    "unit": "one tensor GEMV",
+    "tensor": "model.layers.0.self_attn.q_proj.weight",
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "official_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "local_snapshot_revision": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+    "same_bf16_tensor_bytes_as_official_pinned_HF": true,
+    "tensor_shape": [
+      1536,
+      1536
+    ],
+    "group_size": 64,
+    "inputs_count": 96,
+    "inputs": "genuine L0 RMSNorm(BF16 embedding[token]) derived from public synthetic English prompts",
+    "context_limitation": "single token embeddings do not represent multi-layer contextual activations"
+  },
+  "pins": {
+    "source_BF16_qproj_raw_sha256": "527bf1760462c181be3ab71e3c394cdf50283a4df6b5d80d0bd2a5ab0b7eded5",
+    "source_BF16_input_norm_raw_sha256": "9150388359dd3b4221e9c863ed8d5d54dd8284ad496766d698d4310a13a2ea3a",
+    "source_f32_weight_sha256": "2f2342dc6be9eb5b977a19d84b980f53eb0b6f4e922a806e3e5dfe3cf0ae4e65",
+    "input_f32_sha256": "f13b32cd930634eefea1e96a9ed258ebca4351f35ea95f43b430e1b46d64efd4",
+    "source_benchmark_c_sha256": "f169ad57720fa95abcc97282f8df3317aeaea9b25c3bf26392895f57fa7ed007",
+    "compiled_native_binary_sha256": "bd52c84d12299a00a5e5ecc6a5cc5350872ab261ea0cdda51551e302039ae207",
+    "beglin_quant_transcode_source_sha256": "7371cc352226e912dbf42762e5e63a70e91acb5c90691d90e32401e18af7ec5f",
+    "beglin_qng64_decode_source_sha256": "cb985ec48cfa1f1f9ebe8411d12da5d3f73720c8acdcad51fc279a2b25ff8956",
+    "beglin_q4_neon_source_sha256": "30175ff25c3a710ca55d27053844213b6d5a91ddda9336f00786aa34681cadab"
+  },
+  "formulas": {
+    "baseline": "BF16 original weights widened to float32, native Apple Accelerate cblas_sgemv",
+    "q8": "BEGLIN gguf_quantize_qNg64 n8 bitplanes + qng64_matvec_f32",
+    "q4": "BEGLIN gguf_quantize_q4g64_error_feedback group64 + gemv_q4g64_fused native NEON",
+    "qng64_n4_supported": false,
+    "n8_encodings_not_equivalent_to_q8g64": true,
+    "already_quantized_model_not_used_as_high_precision_origin": true
+  },
+  "observed": {
+    "weight_bytes": {
+      "BF16": 4718592,
+      "qNg64_8_with_scales": 2506752,
+      "packed4_with_scales": 1327104
+    },
+    "fraction_compressed_vs_BF16": {
+      "qNg64_8": 0.53125,
+      "packed4": 0.28125
+    },
+    "fraction_saved_vs_BF16": {
+      "qNg64_8": 0.46875,
+      "packed4": 0.71875
+    },
+    "accuracy_against_BF16_widened_matvec": {
+      "qNg64_8_rel_l2": 0.0028966901592119,
+      "packed4_rel_l2": 0.05197141927997384,
+      "qNg64_8_rmse": 0.008589124174977498,
+      "packed4_rmse": 0.15410311397162454,
+      "qNg64_8_mae": 0.0059108816671241985,
+      "packed4_mae": 0.10577012627768075,
+      "qNg64_8_max_abs_error": 0.1867218017578125,
+      "packed4_max_abs_error": 2.676959991455078
+    },
+    "repeated_per_input_steady_latency_ms": {
+      "conditions": "same Apple CPU process, VECLIB_MAXIMUM_THREADS=1, 24 input vectors/round, 5 timed rounds/method, warmup",
+      "run_1": {
+        "baseline_F32_Accelerate": 0.0971666692,
+        "qNg64_8": 8.84687501,
+        "packed4_NEON": 0.337500009
+      },
+      "run_2": {
+        "baseline_F32_Accelerate": 0.0894583257,
+        "qNg64_8": 8.82862499,
+        "packed4_NEON": 0.343541673
+      }
+    },
+    "quantization_build_wall_ms": {
+      "run_1_q8": 105.262,
+      "run_1_q4": 19.505,
+      "run_2_q8": 110.309,
+      "run_2_q4": 19.413
+    },
+    "saturated_n8_codes": 3,
+    "output_identical_between_runs": true,
+    "packed_weight_identical_between_runs": true
+  },
+  "independent_verification": {
+    "real_BF16_qproj_weights_sha_identical_on_Alienware_and_EOE": true,
+    "independent_Python_bitplane_decode_vs_native_GEMV_max_abs_error": 0,
+    "independent_Python_q4_nibble_decode_vs_native_NEON_GEMV_max_abs_error": 0.00002288818359375,
+    "independent_BF16_weight_F64_matmul_vs_Accelerate_max_abs_error": 0.0000152587890625,
+    "raw_and_packed_source_files_mode": "0600",
+    "private_lab_directory_mode": "0700",
+    "failed_first_file_modes_0644_detected_and_corrected": true,
+    "program_umask_0077_added_and_rerun": true
+  },
+  "nonclaims": {
+    "full_model_BF16_vs_q8_vs_q4_end_to_end": false,
+    "task_label_AUROC_calculated": false,
+    "Metal_GPU_executed": false,
+    "quantized_KV_cache": false,
+    "full_model_resident_memory_measured": false,
+    "energy_watts_measured": false,
+    "automatic_quantization_policy_promotion": false,
+    "single_tensor_latency_not_equivalent_to_LLM_tps": true
+  },
+  "limitations": [
+    "This benchmark uses one layer0 attention q_proj weight and real pre-layer0 token embeddings only, not task-contextual hidden states.",
+    "Reference F32 Accelerate GEMV is applied to values taken from BF16 weights; it is not a BF16 MLX or BEGLIN full-model runtime.",
+    "qNg64 CPU n8 is scalar while packed4 CPU is SIMD-accelerated NEON; speed differences reflect implementation as well as bit-width.",
+    "The single-tensor kernel is not the complete LLM pipeline; the original Q criterion of AUROC drop ≤0.03 and NLL increase ≤2% is not tested.",
+    "No controlled same-hardware BEGLIN Metal baseline; GPU speed comparison remains unverified.",
+    "Do not assign a final Q_PASS or claim a serving speedup."
+  ]
+}
