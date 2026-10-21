@@ -1,0 +1,120 @@
+{
+  "audit_script": "research/oml_acs/q_native_mixed_evidence_audit.py",
+  "audit_script_sha256": "40a710284d564a43a1831c39493ca82bc70c0f9a9a7131130597188115bf8aa3",
+  "date": "2026-10-21",
+  "full_native_BF16_math_tested": false,
+  "historical_V6_24_document_identity_exclusion_attested": false,
+  "independent_IID_OOD_holdout_opened": false,
+  "isolated_modified_C_sha256": "1671afa05644d4d79d1932fca4de2554a4a324222a13f34c72c7f64f889df590",
+  "isolated_native_binary_sha256": "7f0dfa6a0ae3ce69e2aa55369fa84f934c63e51c207781da9361b716d52f7720",
+  "limitations": [
+    "21 teacher-forced token positions in only two public synthetic chats cannot establish generalization or accuracy.",
+    "The native decode benchmark is one token, best of three with warmup, not throughput distribution.",
+    "Per-tensor squared normalized weight error was a surrogate; not observed causal model-level sensitivity.",
+    "Random control is one fixed seed; difference is exploratory and not population significance.",
+    "The all-F32 baseline widens a BF16 checkpoint; not true end-to-end BF16 math.",
+    "No model quality over private development/final data or BEGLIN Metal GPU test."
+  ],
+  "main_or_production_touched": false,
+  "metal_GPU_tested": false,
+  "modes": {
+    "f32": {
+      "KL_F32_to_candidate": 0,
+      "NLL_nats_per_token": 7.595170110981122,
+      "PPL": 1988.5681,
+      "bench_process_id": "proc_9de8a20b4f4839bfd8cd437e7701bce1",
+      "best_of_3_one_decode_token_ms": 210.79,
+      "full_vocab_logits_sha256": "1c7e0090c899d7c0441930cb589d1fe559f27baaf2c961ec54b9c36085cde82a",
+      "observed_peak_RSS_bytes_ppl_process": 9273802752,
+      "ppl_process_id": "proc_477e9d9eba963b248a52309e452e7ab7",
+      "relative_NLL_vs_F32": 0,
+      "top1_id": 9707
+    },
+    "n8": {
+      "KL_F32_to_candidate": 0.00007969963161556136,
+      "NLL_nats_per_token": 7.672343711298401,
+      "PPL": 2148.1101,
+      "bench_process_id": "proc_85c32356fe2273ac7132f2afdd2fb73c",
+      "best_of_3_one_decode_token_ms": 5257.63,
+      "full_vocab_logits_sha256": "085c9e1d12c5e72840360845b0533f59818db9353239c16340f99d8a8ebb85c0",
+      "observed_peak_RSS_bytes_ppl_process": 5490196480,
+      "ppl_process_id": "proc_863c70a3877229f2dcc839029171de98",
+      "relative_NLL_vs_F32": 0.010160878451649369,
+      "top1_id": 9707
+    },
+    "proxy": {
+      "KL_F32_to_candidate": 0.09729214967762034,
+      "NLL_nats_per_token": 8.465415042663698,
+      "PPL": 4747.6975,
+      "bench_process_id": "proc_29a036b8feb060badfe9bf7f1e92c6a9",
+      "best_of_3_one_decode_token_ms": 810.17,
+      "full_vocab_logits_sha256": "de4edea26cdc0a4382ed3b95afdd86f96476fc43b12e15f73cc97ced482fae84",
+      "observed_peak_RSS_bytes_ppl_process": 4921819136,
+      "ppl_process_id": "proc_b566089c4ff123c0ac944e03f7650102",
+      "relative_NLL_vs_F32": 0.11457872818732184,
+      "top1_id": 9707
+    },
+    "q4": {
+      "KL_F32_to_candidate": 0.24499136633860544,
+      "NLL_nats_per_token": 8.44447644490533,
+      "PPL": 4649.3209,
+      "bench_process_id": "proc_f747c64c75aefa08c220a67b195b8aa2",
+      "best_of_3_one_decode_token_ms": 75.26,
+      "full_vocab_logits_sha256": "32b77603736d49c589a30914a6d25a1c9ee1d8536d9db1ca2adb9df4b50f26c8",
+      "observed_peak_RSS_bytes_ppl_process": 4828217344,
+      "ppl_process_id": "proc_9cbaac402f4d3464b5b601e9af1a1aec",
+      "relative_NLL_vs_F32": 0.11182189753673577,
+      "top1_id": 9707
+    },
+    "random": {
+      "KL_F32_to_candidate": 0.05605665416082137,
+      "NLL_nats_per_token": 8.134826919193742,
+      "PPL": 3411.2256,
+      "bench_process_id": "proc_51727976cd9f1f8e374c2a0d48d1eed0",
+      "best_of_3_one_decode_token_ms": 810.72,
+      "full_vocab_logits_sha256": "59aa84e5fec70ad8ea6b4e33832d471d52a0c8a1ecfd5a23cfce22157387920f",
+      "observed_peak_RSS_bytes_ppl_process": 4922015744,
+      "ppl_process_id": "proc_3e47ecd48eb4ec42cc3c60299f45302c",
+      "relative_NLL_vs_F32": 0.0710526295431333,
+      "top1_id": 9707
+    }
+  },
+  "original_beglin_C_sha256": "52c8f5fd683b5ef0726e4738ab4b441624f54c807a3e71fb9d932cb79938d112",
+  "policies": {
+    "proxy": {
+      "logical_projection_bytes": 830570496,
+      "n8_tensors": 28,
+      "q4_tensors": 168,
+      "sha256": "f65f50421cd9e9bac32bc780805942d68c3d503075ce962ce25315fdb5914cb9",
+      "sum_squared_normalized_weight_error_proxy": 4.292481439867793
+    },
+    "random": {
+      "logical_projection_bytes": 830570496,
+      "n8_tensors": 28,
+      "q4_tensors": 168,
+      "sha256": "72065ac7a4ae5d68b1c7944dc4a67e40ac9c3c825db54a1d441ca3002ec015c5",
+      "sum_squared_normalized_weight_error_proxy": 4.383998360340633
+    }
+  },
+  "private_original_receipt_sha256": "ef2b5687e803366af05e8e6a377195951b25f51375005ae5ef39d29c66df0772",
+  "real_8bit_decoder_scalar_hotpath": true,
+  "same_public_synthetic_two_windows": true,
+  "schema": "oml-acs-native-Q-196-independent-audit-public/1",
+  "scientific_Q_hypothesis": "NOT_ESTABLISHED",
+  "source_196_tensor_quantization_scan_sha256": "720de694838d3a85156afae3732974f3867db1c8ce4957e55778da77724a0d8a",
+  "source_weight_proxy_proxy_better_than_random": true,
+  "status": "PASS_INDEPENDENT_ENGINEERING_AUDIT_WITH_NEGATIVE_PROXY_RESULT",
+  "target_development_NLL_proxy_worse_than_all4": true,
+  "target_development_NLL_proxy_worse_than_random": true,
+  "task_accuracy_AUROC_evaluated": false,
+  "tech_rig": [
+    "28 native Qwen blocks",
+    "7 tensor roles x28 =196",
+    "Source-only four n8 tensor promotions per role",
+    "Same private HF BF16 snapshot",
+    "Tied FP32 head for all five conditions",
+    "Original BEGLIN native C CPU, no PyTorch model inference"
+  ],
+  "total_ppl_target_tokens": 21,
+  "unit_tests": "5/5 PASS"
+}
