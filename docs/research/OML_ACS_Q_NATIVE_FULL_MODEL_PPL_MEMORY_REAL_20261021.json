@@ -1,0 +1,147 @@
+{
+  "V6_24_consumed_document_ids_still_unknown": true,
+  "baseline_definition": "BF16-source F32 projection arithmetic, NOT BF16 runtime math",
+  "dump_process_ids": {
+    "f32": "proc_b680921b8c5e77b57d04a4ad50b7c78b",
+    "n8": "proc_9991e43bf1c73bb59650c15b399cb975",
+    "q4": "proc_d0b8f835cd57f0918b4b6c4281a22528"
+  },
+  "experiment_uses_only_two_public_synthetic_chat_windows": true,
+  "final_Q_hypothesis_verdict": "NO_VERDICT",
+  "lab_C_sha256": "c03099aed130a5fd9222f0ba4d0fdf00d3e9bd1b1c203bf145ccb8290a0ad131",
+  "lab_binary_sha256": "d59f463ba5a13d6559c00229f047802c0ebbb74362b00257fd2aaa4b06fc1e9d",
+  "limitations": [
+    "PPL 21 tokens and one final logit input cannot establish general task accuracy",
+    "Baseline FP32 arithmetic from BF16-source weights; not true BF16 inference runtime",
+    "Wall timing and RSS include source loading, weight transcode and paging; not decode tokens/second",
+    "Only one run per PPL condition; no timing CI or cross-chip evaluation",
+    "Source quantizer behavior tested n8 CPU scalar and Q4 NEON, not BEGLIN Metal GPU kernels",
+    "No actual BEGLIN adaptive per-layer bits, C1-D behavioral AUROC under quant, or final IID/OOD evaluation",
+    "Old V6 used 24 document IDs and third-party dataset licensing still require independent audit"
+  ],
+  "local_BF16_snapshot_revision": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "main_and_production_untouched": true,
+  "mode_tensors": {
+    "f32": {
+      "F32": 196,
+      "n8": 0,
+      "q4": 0
+    },
+    "n8": {
+      "F32": 0,
+      "n8": 196,
+      "q4": 0
+    },
+    "q4": {
+      "F32": 0,
+      "n8": 0,
+      "q4": 196
+    }
+  },
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "native_last_token_logits": {
+    "baseline_top1_probability": 0.9948555416830656,
+    "comparison": {
+      "n8": {
+        "KL_reference_to_quantized_nats": 0.00007969963161556136,
+        "logit_max_abs": 0.7803020477294922,
+        "logit_rmse": 0.14770661447736438,
+        "probability_reference_top1_under_quantized": 0.9949581669014279,
+        "reference_top1": 9707,
+        "relative_logit_l2": 0.02640664424469728,
+        "top10_overlap": 10,
+        "top1_agreement": true
+      },
+      "q4": {
+        "KL_reference_to_quantized_nats": 0.24499136633860544,
+        "logit_max_abs": 10.98098635673523,
+        "logit_rmse": 2.3345176767754796,
+        "probability_reference_top1_under_quantized": 0.7709513186945577,
+        "reference_top1": 9707,
+        "relative_logit_l2": 0.4173596286916187,
+        "top10_overlap": 5,
+        "top1_agreement": true
+      }
+    },
+    "original_top1": 9707,
+    "output_checks": {
+      "f32": {
+        "logits_sha256": "1c7e0090c899d7c0441930cb589d1fe559f27baaf2c961ec54b9c36085cde82a",
+        "top1": 9707
+      },
+      "n8": {
+        "logits_sha256": "085c9e1d12c5e72840360845b0533f59818db9353239c16340f99d8a8ebb85c0",
+        "top1": 9707
+      },
+      "q4": {
+        "logits_sha256": "32b77603736d49c589a30914a6d25a1c9ee1d8536d9db1ca2adb9df4b50f26c8",
+        "top1": 9707
+      }
+    },
+    "prompt_token_ids_sha256": "62a0b508a74e166e0e4ef56edc684a0bd3365569abf3d4aa4d08376a6b0997f3",
+    "prompt_token_length": 10
+  },
+  "official_HF_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "projection_storage_memory": {
+    "Q4G64_projection_bytes_including_f32_scales": 736985088,
+    "common_nonprojection_weights_not_counted": true,
+    "projection_elements": 1310195712,
+    "projection_tensors": 196,
+    "qNg64_8_projection_bytes_including_f32_scales": 1392082944,
+    "source_BF16_projection_bytes": 2620391424,
+    "tied_output_head_is_FP32_all_modes": true,
+    "widened_F32_projection_bytes": 5240782848
+  },
+  "schema": "oml-acs-q-beglin-native-fullmodel-triple/1",
+  "selected_qproj_original_BF16_sha256": "527bf1760462c181be3ab71e3c394cdf50283a4df6b5d80d0bd2a5ab0b7eded5",
+  "small_teacher_forced_PPL_and_process_observations": {
+    "f32": {
+      "NLL_nats_per_token": 7.595170110981122,
+      "exit_code": 0,
+      "peak_RSS_bytes": 9273802752,
+      "perplexity": 1988.5681,
+      "process_id": "proc_477e9d9eba963b248a52309e452e7ab7",
+      "token_count": 21,
+      "wall_s": 5.7
+    },
+    "n8": {
+      "NLL_nats_per_token": 7.672343711298401,
+      "RSS_saving_vs_F32": 0.40798865073812607,
+      "exit_code": 0,
+      "peak_RSS_bytes": 5490196480,
+      "perplexity": 2148.1101,
+      "perplexity_ratio_vs_F32": 1.080229588315331,
+      "process_id": "proc_863c70a3877229f2dcc839029171de98",
+      "relative_NLL_increase_vs_F32": 0.010160878451649391,
+      "token_count": 21,
+      "wall_ratio_vs_F32": 29.457894736842103,
+      "wall_s": 167.91
+    },
+    "q4": {
+      "NLL_nats_per_token": 8.44447644490533,
+      "RSS_saving_vs_F32": 0.47937027850212355,
+      "exit_code": 0,
+      "peak_RSS_bytes": 4828217344,
+      "perplexity": 4649.3209,
+      "perplexity_ratio_vs_F32": 2.338024481032357,
+      "process_id": "proc_9cbaac402f4d3464b5b601e9af1a1aec",
+      "relative_NLL_increase_vs_F32": 0.11182189753673571,
+      "token_count": 21,
+      "wall_ratio_vs_F32": 2.419298245614035,
+      "wall_s": 13.79
+    }
+  },
+  "source_checkpoint_not_modified": true,
+  "status": "PASS_NATIVE_ALL_THREE_TIERS_SMALL_SYNTHETIC_TEST",
+  "tied_FP32_output_head_unchanged": true,
+  "date": "2026-10-21",
+  "host": "eoe",
+  "execution_platform": "Apple Silicon macOS arm64",
+  "operation_plane": "isolated research clone and scratch only",
+  "process_termination_checks": "six full-model native dump and PPL process IDs independently confirmed EXITED/0",
+  "repository": "popixoxipop-collab/beglin",
+  "branch": "research/oml-acs-prereg-20261021",
+  "corresponding_prior_single_tensor_evidence": "docs/research/OML_ACS_Q_NATIVE_SINGLE_TENSOR_REAL_20261021.json",
+  "corresponding_prior_first_logit_evidence": "docs/research/OML_ACS_Q_NATIVE_FULL_MODEL_3_PRECISION_FIRST_LOGIT_20261021.json",
+  "original_BEGLIN_source_SHA256": "52c8f5fd683b5ef0726e4738ab4b441624f54c807a3e71fb9d932cb79938d112"
+}
