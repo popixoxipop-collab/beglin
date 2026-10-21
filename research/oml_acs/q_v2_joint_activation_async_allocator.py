@@ -83,7 +83,7 @@ def old_control_masks():
         role,v=line.split();idx=int(v)
         if role not in mask or not 0<=idx<28 or (mask[role]>>idx)&1:raise RuntimeError("control source invalid")
         mask[role]|=1<<idx
-    if any(x.bit_count()!=4 for x in mask.values()):raise RuntimeError("baseline not 4 per role")
+    if any(bin(x).count('1')!=4 for x in mask.values()):raise RuntimeError("baseline not 4 per role")
     return mask
 
 def stage_total(msks,profile,parallel:bool):
