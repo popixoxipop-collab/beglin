@@ -1,0 +1,219 @@
+{
+  "actual_IID_OOD_holdout_opened": false,
+  "actual_PPL_max_RSS_bytes": 4859985920,
+  "actual_dump_bench_ppl_process_ids": {
+    "bench": "proc_d8f9c880c7054e1fb458a21664266228",
+    "dump": "proc_19ad2226928c9fff1ccdc5d3737abb07",
+    "ppl": "proc_f6c388f6fef452eb6921f3159911ef1d"
+  },
+  "actual_model_superiority": "NOT_ESTABLISHED",
+  "actual_native_development_comparison": {
+    "all_q4": {
+      "KL_widened_F32_to_policy_nats": 0.24499136633860544,
+      "NLL_nats_per_token": 8.44447644490533,
+      "PPL_21_synthetic_tokens": 4649.3209,
+      "full_vocab_logit_L2": 0.4173596286916187,
+      "logits_sha256": "32b77603736d49c589a30914a6d25a1c9ee1d8536d9db1ca2adb9df4b50f26c8",
+      "top1_id": 9707,
+      "top5_overlap": 2
+    },
+    "f32": {
+      "KL_widened_F32_to_policy_nats": 0,
+      "NLL_nats_per_token": 7.595170110981122,
+      "PPL_21_synthetic_tokens": 1988.5681,
+      "full_vocab_logit_L2": 0,
+      "logits_sha256": "1c7e0090c899d7c0441930cb589d1fe559f27baaf2c961ec54b9c36085cde82a",
+      "top1_id": 9707,
+      "top5_overlap": 5
+    },
+    "new_kernel_aware": {
+      "KL_widened_F32_to_policy_nats": 0.47931150370083614,
+      "NLL_nats_per_token": 8.42702088212149,
+      "PPL_21_synthetic_tokens": 4568.8686,
+      "full_vocab_logit_L2": 0.4951057753892074,
+      "logits_sha256": "0fe08ecb8ce0ce0dd78a9c079d103062fce2bfb275be53fa10b343985d8da82c",
+      "top1_id": 9707,
+      "top5_overlap": 1
+    },
+    "prior_balanced_proxy": {
+      "KL_widened_F32_to_policy_nats": 0.09729214967762034,
+      "NLL_nats_per_token": 8.465415211166416,
+      "PPL_21_synthetic_tokens": 4747.6983,
+      "full_vocab_logit_L2": 0.3819499683862743,
+      "logits_sha256": "de4edea26cdc0a4382ed3b95afdd86f96476fc43b12e15f73cc97ced482fae84",
+      "top1_id": 9707,
+      "top5_overlap": 3
+    },
+    "prior_balanced_random": {
+      "KL_widened_F32_to_policy_nats": 0.05605665416082137,
+      "NLL_nats_per_token": 8.134827710697808,
+      "PPL_21_synthetic_tokens": 3411.2283,
+      "full_vocab_logit_L2": 0.4064056741573373,
+      "logits_sha256": "59aa84e5fec70ad8ea6b4e33832d471d52a0c8a1ecfd5a23cfce22157387920f",
+      "top1_id": 9707,
+      "top5_overlap": 3
+    }
+  },
+  "blocked_output_sensitivity_not_retried": true,
+  "date": "2026-10-22",
+  "hf_BF16_cache_revision": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "historical_V6_24_ids_verified": false,
+  "immutable_runtime_not_activated": true,
+  "limitations": [
+    "The selected policy is also the memory-only source-weight-error optimum; 100ms kernel latency constraint was nonbinding.",
+    "With 80ms predicted latency, the optimizer chooses different roles based on native kernel costs; no quality scoring for that alternative.",
+    "Source-relative Frobenius error is not actual model behavior sensitivity and already failed against role-matched random controls.",
+    "Native Q4 6-thread and n8 repacked samples are L0 representative for each role; later layer activations can differ.",
+    "Native full-model decode latency is one-token fastest of three after warmup, not sustained TPS; predicted cost is additive approximation.",
+    "New policy worsens first-token KL vs all Q4 and 21-token NLL vs role-matched random. Do not suppress failures.",
+    "F32 is BF16 checkpoint widened to F32, not real BF16 runtime. No Metal GPU, task AUROC, real heldout PPL.",
+    "New C experimental dump initially created a 0644 logit file inside 0700 lab; file corrected to 0600; future lab loaders require restrictive umask.",
+    "Repacked n8 is a distinct in-memory encoding, not bitplane-compatible until tagged as a separate kernel layout.",
+    "Original V6 24 consumed IDs and third-party semantic contamination not attested. No production/model deployment."
+  ],
+  "model": "Qwen/Qwen2.5-1.5B-Instruct 28 layers",
+  "native_BF16_precision_runtime_tested": false,
+  "native_binary_sha256": "172613dc69f79f38c8553ff7087e653ec9c0031ca80aec8efd2f76f948599f14",
+  "official_BF16_model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "original_main_unchanged": true,
+  "production_model_untouched": true,
+  "regression_tests": "8/8 PASS",
+  "role_kernel_cost_measured": [
+    {
+      "n8_one_time_inplace_repack_ms": 0.6793750000000376,
+      "n8_repacked_neon_median_ms": 0.5705105000000099,
+      "n8_with_scales_bytes": 2506752,
+      "q4_neon_1thread_median_ms": 0.345557250000017,
+      "q4_neon_6thread_median_ms": 0.08978125000000392,
+      "q4_with_scales_bytes": 1327104,
+      "role": "q_proj",
+      "shape": [
+        1536,
+        1536
+      ]
+    },
+    {
+      "n8_one_time_inplace_repack_ms": 0.10833400000009874,
+      "n8_repacked_neon_median_ms": 0.10030724999998686,
+      "n8_with_scales_bytes": 417792,
+      "q4_neon_1thread_median_ms": 0.0626406249999989,
+      "q4_neon_6thread_median_ms": 0.05759887500000893,
+      "q4_with_scales_bytes": 221184,
+      "role": "k_proj",
+      "shape": [
+        256,
+        1536
+      ]
+    },
+    {
+      "n8_one_time_inplace_repack_ms": 0.10754200000007152,
+      "n8_repacked_neon_median_ms": 0.10034375000000928,
+      "n8_with_scales_bytes": 417792,
+      "q4_neon_1thread_median_ms": 0.06327087499999329,
+      "q4_neon_6thread_median_ms": 0.05816675000000493,
+      "q4_with_scales_bytes": 221184,
+      "role": "v_proj",
+      "shape": [
+        256,
+        1536
+      ]
+    },
+    {
+      "n8_one_time_inplace_repack_ms": 0.6324579999998914,
+      "n8_repacked_neon_median_ms": 0.5708749999999985,
+      "n8_with_scales_bytes": 2506752,
+      "q4_neon_1thread_median_ms": 0.3463801249999898,
+      "q4_neon_6thread_median_ms": 0.12338549999998949,
+      "q4_with_scales_bytes": 1327104,
+      "role": "o_proj",
+      "shape": [
+        1536,
+        1536
+      ]
+    },
+    {
+      "n8_one_time_inplace_repack_ms": 3.8498749999997806,
+      "n8_repacked_neon_median_ms": 3.318447875000019,
+      "n8_with_scales_bytes": 14622720,
+      "q4_neon_1thread_median_ms": 1.9960416250000002,
+      "q4_neon_6thread_median_ms": 0.41853649999995524,
+      "q4_with_scales_bytes": 7741440,
+      "role": "gate_proj",
+      "shape": [
+        8960,
+        1536
+      ]
+    },
+    {
+      "n8_one_time_inplace_repack_ms": 3.7889589999999806,
+      "n8_repacked_neon_median_ms": 3.3153281250000166,
+      "n8_with_scales_bytes": 14622720,
+      "q4_neon_1thread_median_ms": 2.018026000000006,
+      "q4_neon_6thread_median_ms": 0.4154011250000478,
+      "q4_with_scales_bytes": 7741440,
+      "role": "up_proj",
+      "shape": [
+        8960,
+        1536
+      ]
+    },
+    {
+      "n8_one_time_inplace_repack_ms": 3.6871669999998247,
+      "n8_repacked_neon_median_ms": 3.4694478750000313,
+      "n8_with_scales_bytes": 14622720,
+      "q4_neon_1thread_median_ms": 2.135494874999977,
+      "q4_neon_6thread_median_ms": 0.44023437500007034,
+      "q4_with_scales_bytes": 7741440,
+      "role": "down_proj",
+      "shape": [
+        1536,
+        8960
+      ]
+    }
+  ],
+  "schema": "BEGLIN-kernel-aware-4-or-8-native-Qwen-performance/1",
+  "selected_exact_28_tensor_ids_sha256": "148ae7dd773b11e2834339397657248f014f16718920f384394aeb724739f0d1",
+  "source_196_weights_sha256": "720de694838d3a85156afae3732974f3867db1c8ce4957e55778da77724a0d8a",
+  "source_7role_kernel_profile_sha256": "280ca338745d0ebb2c44986d18e8b240135fe7fa4b1077f49f65f5d8fb3eff93",
+  "source_locked_policy_sha256": "5841c6505cb4e5805b228e7af5609ecc11f38817fc7bccd34e5272f93f400df1",
+  "source_only_integer_optimizer": {
+    "actual_native_tok_s": 12.054001928640309,
+    "actual_single_decode_ms": 82.96,
+    "bits4_tensors": 168,
+    "bits8_tensors": 28,
+    "counterfactual_80ms_memory_bytes": 749371392,
+    "counterfactual_80ms_predicted_ms": 79.68385450555739,
+    "counterfactual_80ms_role_counts": [
+      7,
+      10,
+      11,
+      0,
+      0,
+      0,
+      0
+    ],
+    "full_q4_single_decode_ms": 75.26,
+    "latency_prediction_error_ms": -5.582255110820995,
+    "memory_limit_bytes": 830570496,
+    "predicted_single_decode_limit_ms": 100,
+    "predicted_single_decode_ms": 88.54225511082099,
+    "prior_role_balanced_28_upgrade_weight_bytes": 830570496,
+    "prior_role_balanced_single_decode_ms": 116.18,
+    "projection_weight_bytes": 768442368,
+    "selected_role_counts": {
+      "down_proj": 3,
+      "gate_proj": 0,
+      "k_proj": 10,
+      "o_proj": 0,
+      "q_proj": 6,
+      "up_proj": 0,
+      "v_proj": 9
+    },
+    "source_only_memory_feasible_count_allocations": 692998,
+    "source_only_time_feasible_count_allocations": 216571,
+    "source_proxy_distortion": 4.235612276810575,
+    "time_ceiling_100ms_nonbinding_vs_memory_only": true
+  },
+  "source_private_audit_sha256": "e634f73fd78bf35181d5cfd8aafc54675b8aa810182a1163483423f0c9da6769",
+  "status": "NATIVE_KERNEL_AWARE_ALLOCATION_ENGINEERING_PASS_QUALITY_NOT_IMPROVED"
+}
