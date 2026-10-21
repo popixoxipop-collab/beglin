@@ -1,0 +1,45 @@
+{
+  "schema": "BEGLIN-Qv2-native-DAG-mixed-precision-MILP/1",
+  "date": "2026-10-22",
+  "status": "FROZEN_BEFORE_NEW_POLICY_AND_NATIVE_EVALUATION",
+  "input_quality_file": "docs/research/BEGLIN_Q_V2_ACTIVATION_AWARE_LOCAL_SCORES_20261022.json",
+  "quality_private_full_SHA256": "7b3ad80294275807cb3775601915b18ec3caeeef430849d8cea48389b3623616",
+  "input_native_async_stage_file": "docs/research/BEGLIN_Q_V2_REAL_ASYNC_STAGE_COSTS_20261022.json",
+  "native_async_private_sha256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+  "input_native_role_file": "docs/research/BEGLIN_Q_KERNEL_AWARE_ALLOCATOR_NATIVE_EVIDENCE_20261022.json",
+  "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+  "capacity": {
+    "n8_exact": 28,
+    "n4_exact": 168,
+    "projection_bytes_max": 830570496,
+    "serial_native_model_predicted_ms_max": 100,
+    "async_DAG_hypothetical_predicted_ms_max": 90
+  },
+  "cost_model": {
+    "real_Q4_single_token_reference_ms": 75.26,
+    "serial_gamma_from_previous_original_BEGLIN_calibration": 1.039406406482483,
+    "per_layer_serial": "sum independent q4 6threads vs repacked n8 role costs, gamma calibrated as before",
+    "per_layer_async": "measured QKV stage best among serial6/pool-isolated parallel1/parallel6 + measured gate/up sibling stage + serial o_proj + serial down_proj, each compared to all4 stage and added to original 75.26ms",
+    "full_model_async_not_integrated": true,
+    "all4_3stage": "qkv=444, gate/up=44",
+    "mask_bit_order": "q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj",
+    "threads_use_shared_resources": "QKV and gate/up measured with distinct q4 pools; concurrent cost credit only for those exact profiled masks",
+    "cost_transfer_limitation": "role0 stage microbench extrapolated across 28 layers, not actual async serving"
+  },
+  "quality_objective": "maximize sum of activation-diagonal local source BF16 output-reconstruction-error reductions, not NLL; independent source inputs 12 public prompts 461 tokens",
+  "solver": "SciPy HiGHS exact MILP: one-of-128 4/8 bit masks per layer, 28 layers, 3584 binary policy options, 28 one-hot layer constraints + global bit/memory/native_serial/async_DAG constraints",
+  "solver_options": {
+    "mip_rel_gap": 0,
+    "time_limit_seconds": 180
+  },
+  "cost_determinism": "encode memory in source group64 exact bytes; role median wallms used as floating coefficient; no GPU profiling transferred between devices",
+  "fixed_evaluation_windows": "8 public synthetic eval prompts prelisted in BEGLIN_Q_ACTIVATION_ASYNC_PARALLEL_V2_PRELOCK_20261022.json; no original V6, no 300/600/200 source dev or final",
+  "controls": [
+    "old prior role-balanced RNG73",
+    "all Q4G64",
+    "source-BF16 widened F32 reference",
+    "prior source-weight-only kernel-aware"
+  ],
+  "candidate_promotion": "research only, fail closed if MILP not optimal or budget breached, no live model or main changes",
+  "anticipated_result": "May be slower or lower quality in native BEGLIN despite local proxy. Preserve negative results and do not tune after opening eval."
+}
