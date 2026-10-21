@@ -1,0 +1,312 @@
+{
+  "Q_final_hypothesis_accepted": false,
+  "all_five_tiers_use_same_tied_FP32_lmhead": true,
+  "data_source_used_for_policy_selection": "only original BF16 weights, not PPL or label results",
+  "full_model_28_layers_all_196_projection_precision_observations": {
+    "f32": {
+      "KL_source_F32_to_mode_nats": 0,
+      "full_vocab_logits_sha256": "1c7e0090c899d7c0441930cb589d1fe559f27baaf2c961ec54b9c36085cde82a",
+      "logit_relative_L2": 0,
+      "native_best_of_3_one_token_decode_ms": 210.79,
+      "nll_nats_per_token_from_rounded_ppl": 7.595170110981122,
+      "one_token_bench_tok_s": 4.7440580672707435,
+      "ppl_21_synthetic_token_windows": 1988.5681,
+      "relative_nll_increase_vs_source_f32_pct": 0,
+      "rss_peak_bytes_ppl_process": 9273802752,
+      "top1_token_id": 9707,
+      "top5_overlap_with_F32": 5
+    },
+    "n8": {
+      "KL_source_F32_to_mode_nats": 0.00007969963161556136,
+      "full_vocab_logits_sha256": "085c9e1d12c5e72840360845b0533f59818db9353239c16340f99d8a8ebb85c0",
+      "logit_relative_L2": 0.02640664424469728,
+      "native_best_of_3_one_token_decode_ms": 5257.63,
+      "nll_nats_per_token_from_rounded_ppl": 7.672343711298401,
+      "one_token_bench_tok_s": 0.19019976681508588,
+      "ppl_21_synthetic_token_windows": 2148.1101,
+      "relative_nll_increase_vs_source_f32_pct": 1.0160878451649369,
+      "rss_peak_bytes_ppl_process": 5490196480,
+      "top1_token_id": 9707,
+      "top5_overlap_with_F32": 5
+    },
+    "proxy": {
+      "KL_source_F32_to_mode_nats": 0.09729214967762034,
+      "full_vocab_logits_sha256": "de4edea26cdc0a4382ed3b95afdd86f96476fc43b12e15f73cc97ced482fae84",
+      "logit_relative_L2": 0.3819499683862743,
+      "native_best_of_3_one_token_decode_ms": 810.17,
+      "nll_nats_per_token_from_rounded_ppl": 8.465415042663698,
+      "one_token_bench_tok_s": 1.2343088487601368,
+      "ppl_21_synthetic_token_windows": 4747.6975,
+      "relative_nll_increase_vs_source_f32_pct": 11.457872818732184,
+      "rss_peak_bytes_ppl_process": 4921819136,
+      "top1_token_id": 9707,
+      "top5_overlap_with_F32": 3
+    },
+    "q4": {
+      "KL_source_F32_to_mode_nats": 0.24499136633860544,
+      "full_vocab_logits_sha256": "32b77603736d49c589a30914a6d25a1c9ee1d8536d9db1ca2adb9df4b50f26c8",
+      "logit_relative_L2": 0.4173596286916187,
+      "native_best_of_3_one_token_decode_ms": 75.26,
+      "nll_nats_per_token_from_rounded_ppl": 8.44447644490533,
+      "one_token_bench_tok_s": 13.287270794578793,
+      "ppl_21_synthetic_token_windows": 4649.3209,
+      "relative_nll_increase_vs_source_f32_pct": 11.182189753673576,
+      "rss_peak_bytes_ppl_process": 4828217344,
+      "top1_token_id": 9707,
+      "top5_overlap_with_F32": 2
+    },
+    "random": {
+      "KL_source_F32_to_mode_nats": 0.05605665416082137,
+      "full_vocab_logits_sha256": "59aa84e5fec70ad8ea6b4e33832d471d52a0c8a1ecfd5a23cfce22157387920f",
+      "logit_relative_L2": 0.4064056741573373,
+      "native_best_of_3_one_token_decode_ms": 810.72,
+      "nll_nats_per_token_from_rounded_ppl": 8.134826919193742,
+      "one_token_bench_tok_s": 1.2334714821393329,
+      "ppl_21_synthetic_token_windows": 3411.2256,
+      "relative_nll_increase_vs_source_f32_pct": 7.105262954313329,
+      "rss_peak_bytes_ppl_process": 4922015744,
+      "top1_token_id": 9707,
+      "top5_overlap_with_F32": 3
+    }
+  },
+  "full_model_ppl_two_public_synthetic_windows_21_tokens": true,
+  "full_model_task_AUROC_evaluated": false,
+  "no_new_final_holdout_opened": true,
+  "old_V6_24_provenance_verified": false,
+  "original_196_scan_sha256": "720de694838d3a85156afae3732974f3867db1c8ce4957e55778da77724a0d8a",
+  "original_engine_sha256": "52c8f5fd683b5ef0726e4738ab4b441624f54c807a3e71fb9d932cb79938d112",
+  "policy_source_only_selection": {
+    "proxy": {
+      "selection": {
+        "down_proj": [
+          12,
+          14,
+          19,
+          27
+        ],
+        "gate_proj": [
+          18,
+          19,
+          21,
+          22
+        ],
+        "k_proj": [
+          5,
+          12,
+          26,
+          27
+        ],
+        "o_proj": [
+          6,
+          8,
+          16,
+          21
+        ],
+        "q_proj": [
+          6,
+          14,
+          15,
+          20
+        ],
+        "up_proj": [
+          16,
+          17,
+          18,
+          19
+        ],
+        "v_proj": [
+          22,
+          23,
+          24,
+          25
+        ]
+      },
+      "sha256": "f65f50421cd9e9bac32bc780805942d68c3d503075ce962ce25315fdb5914cb9"
+    },
+    "random": {
+      "selection": {
+        "down_proj": [
+          0,
+          4,
+          19,
+          26
+        ],
+        "gate_proj": [
+          3,
+          5,
+          11,
+          14
+        ],
+        "k_proj": [
+          5,
+          14,
+          18,
+          24
+        ],
+        "o_proj": [
+          1,
+          2,
+          5,
+          23
+        ],
+        "q_proj": [
+          8,
+          12,
+          20,
+          21
+        ],
+        "up_proj": [
+          8,
+          12,
+          21,
+          25
+        ],
+        "v_proj": [
+          4,
+          17,
+          22,
+          23
+        ]
+      },
+      "sha256": "72065ac7a4ae5d68b1c7944dc4a67e40ac9c3c825db54a1d441ca3002ec015c5"
+    }
+  },
+  "production_or_main_modified": false,
+  "projection_storage_bytes": {
+    "BF16_original": 2620391424,
+    "F32_widened_source": 5240782848,
+    "all_n8": 1392082944,
+    "all_q4": 736985088,
+    "proxy": 830570496,
+    "role_matched_random": 830570496
+  },
+  "proxy_mean_weight_relative_squared_error": {
+    "n8": 0.0000796016619170587,
+    "proxy": 0.021900415509529543,
+    "q4": 0.026167407152252412,
+    "random": 0.02236733857316649
+  },
+  "role_proxy_summary": {
+    "down_proj": {
+      "mean_n8_weight_rel_l2": 0.008925063912338499,
+      "mean_q4_weight_rel_l2": 0.16189301459709143,
+      "random4_layers": [
+        0,
+        4,
+        19,
+        26
+      ],
+      "top4_layers": [
+        12,
+        14,
+        19,
+        27
+      ]
+    },
+    "gate_proj": {
+      "mean_n8_weight_rel_l2": 0.008720792917253204,
+      "mean_q4_weight_rel_l2": 0.15817435839145735,
+      "random4_layers": [
+        3,
+        5,
+        11,
+        14
+      ],
+      "top4_layers": [
+        18,
+        19,
+        21,
+        22
+      ]
+    },
+    "k_proj": {
+      "mean_n8_weight_rel_l2": 0.009021700529107954,
+      "mean_q4_weight_rel_l2": 0.16355350845927924,
+      "random4_layers": [
+        5,
+        14,
+        18,
+        24
+      ],
+      "top4_layers": [
+        5,
+        12,
+        26,
+        27
+      ]
+    },
+    "o_proj": {
+      "mean_n8_weight_rel_l2": 0.008533018698385015,
+      "mean_q4_weight_rel_l2": 0.15479687582000873,
+      "random4_layers": [
+        1,
+        2,
+        5,
+        23
+      ],
+      "top4_layers": [
+        6,
+        8,
+        16,
+        21
+      ]
+    },
+    "q_proj": {
+      "mean_n8_weight_rel_l2": 0.008920217489107703,
+      "mean_q4_weight_rel_l2": 0.16166250822032538,
+      "random4_layers": [
+        8,
+        12,
+        20,
+        21
+      ],
+      "top4_layers": [
+        6,
+        14,
+        15,
+        20
+      ]
+    },
+    "up_proj": {
+      "mean_n8_weight_rel_l2": 0.008690983793747676,
+      "mean_q4_weight_rel_l2": 0.15764191331580696,
+      "random4_layers": [
+        8,
+        12,
+        21,
+        25
+      ],
+      "top4_layers": [
+        16,
+        17,
+        18,
+        19
+      ]
+    },
+    "v_proj": {
+      "mean_n8_weight_rel_l2": 0.009530561199171974,
+      "mean_q4_weight_rel_l2": 0.1726414068680315,
+      "random4_layers": [
+        4,
+        17,
+        22,
+        23
+      ],
+      "top4_layers": [
+        22,
+        23,
+        24,
+        25
+      ]
+    }
+  },
+  "schema": "oml-acs-q-196-tensor-mixed-native-aggregate/1",
+  "source_feature_output_label_leakage": false,
+  "source_model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "source_only_proxy_not_task_sensitivity": true,
+  "source_original_BF16_widened_FP32_not_actual_BF16_math": true,
+  "source_snapshot_revision": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "status": "PASS_NATIVE_EXECUTION_WITH_NEGATIVE_PROXY_SELECTION_RESULT",
+  "timing_is_fastest_of_three_N1_not_p50": true,
+  "two_mixed_policies_exact_same_role_counts_and_weight_bytes": true
+}
