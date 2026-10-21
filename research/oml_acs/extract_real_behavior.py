@@ -99,11 +99,12 @@ def ensure_checkpoint(spec: dict)->None:
             raise RuntimeError("expected full 300-anchor projector")
 
 def extract(which: str)->None:
+    if which not in SOURCES:
+        raise ValueError("unknown model alias")
+    # Fail closed on unsupported arguments *before* importing large CUDA libraries.
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
     start=time.perf_counter()
-    if which not in SOURCES:
-        raise ValueError("unknown model alias")
     spec=SOURCES[which]
     out=BASE/f"behavior_{which}_600_bf16.npz"
     receipt=BASE/f"behavior_{which}_600_bf16_receipt.json"
