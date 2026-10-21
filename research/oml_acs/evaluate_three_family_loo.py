@@ -83,16 +83,15 @@ def run(target_name):
         anchor_source_identical=True,
         independent_final_holdout_used=False,V6_consumed_24_not_attested_excluded=True,
         prereg_model_deviation="Mistral7B substitutes for inaccessible gated Llama3.2-3B",
-        199_randomization_controls=True if False else None)
+        randomization_null_count=199,
+        original_HELM_row_exact_match=False,
+        production_touched=False)
 
 if __name__=="__main__":
     ap=argparse.ArgumentParser()
     ap.add_argument("--target",required=True,choices=PARTICIPANTS)
     args=ap.parse_args()
     result=run(args.target)
-    # strip literal marker that is not part of the validity contract
-    if None in result.values():
-        result.pop("199_randomization_controls",None)
     os.umask(0o077)
     path=ROOT/f"realbehavior_300anchors_threefamily_target_{args.target}_dev_v1.json"
     with path.open("x",encoding="utf-8") as f:
