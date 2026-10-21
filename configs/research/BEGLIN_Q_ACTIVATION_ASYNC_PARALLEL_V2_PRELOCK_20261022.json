@@ -1,0 +1,75 @@
+{
+  "schema": "beglin-Q-activation-aware-async-parallel-precision-v2/1",
+  "created_date": "2026-10-22",
+  "status": "LOCKED_BEFORE_NEW_ACTIVATION_EXTRACTION_OR_TEST_NLL",
+  "model": {
+    "id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "teacher": "original BF16 model, no modifications",
+    "layer_count": 28,
+    "roles": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ]
+  },
+  "calibration_public_only": [
+    "The bright harbor was quiet before sunrise.",
+    "A musician practiced slowly in the afternoon.",
+    "Explain why careful testing matters in software engineering.",
+    "A train was delayed, but all passengers arrived safely.",
+    "The friendly customer enjoyed a warm cup of tea.",
+    "Summarize the process of learning a new language.",
+    "Describe how a weather satellite collects measurements.",
+    "The little robot moved a box across the laboratory.",
+    "Machine learning systems should separate training and testing.",
+    "A research experiment needs clear metrics and failure logs.",
+    "Describe an ecosystem containing birds and small insects.",
+    "How can an engineer compare two efficient algorithms?"
+  ],
+  "evaluation_public_only": [
+    "The green bicycle was parked beside a bookstore.",
+    "Explain the purpose of an electrical transformer.",
+    "A quiet forest path led to a wooden bridge.",
+    "Write a brief description of a successful team meeting.",
+    "How can scientists distinguish causation from correlation?",
+    "Describe a city bus arriving during heavy rain.",
+    "Give one reason reproducible research is valuable.",
+    "A chef prepared a savory soup with fresh vegetables."
+  ],
+  "quality_proxy": {
+    "method": "diagonal activation-aware relative expected local projection output error",
+    "activation_capture": "unchanged BF16 source model, hooks at each original 28x7 projection input, aggregate per-input-channel sample second moment of BF16 full-model hidden inputs",
+    "score": "for each tensor i: sum_j E_cal[a_j^2] * sum_r (W4_ij - W_ij)^2 divided by sum_j E_cal[a_j^2] * sum_r W_ij^2 minus same ratio for 8bit",
+    "layer_limit": "This is diagonal covariance approximation; no cross-channel covariance, no downstream Hessian, no causal full-vocab output intervention",
+    "scope": "public calibration prompts only; no old V6, no prior private label/C1-D eval",
+    "only_adjust_policy_after_scores": false
+  },
+  "kernel_and_concurrency": {
+    "hardware": "Apple Mac13,1 BEGLIN CPU native Q4G64 fused 6-thread vs qNg64-n8 repacked NEON 1-thread",
+    "profile_source_sha256": "280ca338745d0ebb2c44986d18e8b240135fe7fa4b1077f49f65f5d8fb3eff93",
+    "execution": "n8 & q4 kernels are never assumed concurrent by default; explicitly benchmark Q/K/V parallel vs serial on same CPU",
+    "graph": "pre-norm -> concurrent q/k/v candidate stage -> attention -> o -> norm -> concurrent gate/up candidate stage -> down -> next decoder layer; synchronization joins at dependency boundaries",
+    "resource_limits": "Bound CPU worker thread count by actual hardware; shared native Q4 pool calls cannot be concurrent without independent pools; model is serial unless measured overlap advantage",
+    "objective": "source activation-aware quantization penalty minimized under exact 28 n8, <=830570496 projection bytes, estimated 100ms single-token and observed concurrency feasibility",
+    "control_policies": "old source-weight-only kernel-aware, prior role-balanced random, allQ4 and allN8"
+  },
+  "freeze": {
+    "policy_source_only": true,
+    "score_before_eval": true,
+    "evaluation_same_8_public_windows_after_policy_freeze": true,
+    "no_policy_tuning_after_eval": true
+  },
+  "avoid": {
+    "previous_blocked_per_tensor_full_model_logit_interventions": true,
+    "previous_used_V6_final_or_holdout": true,
+    "native_runtime_promotion": true,
+    "production_main_or_release_changes": true
+  },
+  "failure_condition": "missing activation stats, bad checkpoint SHA, invalid replica tensor ordering, changing heldout windows or unavailable real async timing => no policy promotion",
+  "scientific_verdict": "NOT_YET_TESTED"
+}
