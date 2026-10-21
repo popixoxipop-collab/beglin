@@ -52,7 +52,7 @@ class ActivationAsyncNativeTests(unittest.TestCase):
   self.assertEqual(a.OUTPUT.stat().st_mode&0o777,0o600)
   obj=json.loads(a.OUTPUT.read_text())
   self.assertEqual(obj["scientific_Q_final_verdict"],"NO_VERDICT")
-  self.assertTrue(obj["no_blocked_output_sensitivity_retry"])
+  self.assertTrue(obj["prior_blocked_per_tensor_full_logits_sensitivity_not_retried"])
   with self.assertRaises(FileExistsError):a.main()
 if __name__=="__main__":
  unittest.main(verbosity=2)
