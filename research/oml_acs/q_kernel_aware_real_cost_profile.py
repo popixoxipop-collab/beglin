@@ -6,7 +6,7 @@ import numpy as np
 
 ROOT=Path(__file__).resolve().parents[2]
 SNAP=Path("/Users/eoe/.cache/huggingface/hub/models--mlx-community--Qwen2.5-1.5B-Instruct-bf16/snapshots/4ae77cb209f06199b8df1c94e21ff341332a3a89")
-LAB=ROOT/"lab_local/q_kernel_aware_role_costs_20261022"
+LAB=ROOT/"lab_local/q_kernel_aware_role_costs_20261022_v2"
 SRC=SNAP/"model.safetensors"
 ROLES=("q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj")
 EXPECTED={
@@ -47,7 +47,9 @@ def time_role(lib,role,weight,base):
     if lib["enc8"](weight.ctypes.data,out,inp,8,q8.ctypes.data,s8.ctypes.data):raise RuntimeError("n8")
     if role=="q_proj":
         prior=ROOT/"lab_local/q_apple_cpu_20261021_v2"
-        if sha(q4.tobytes())!=sha((prior/"native_packed4.codes").read_bytes()) or sha(q8.tobytes())!=sha((prior/"native_qng64_n8.planes").read_bytes()):
+        scan=json.loads((ROOT/"lab_local/q_tensor_proxy_20261021/q_196_proxy_results_private.json").read_text())
+        ref=next(x for x in scan["rows"] if x["role"]=="q_proj" and x["layer"]==0)
+        if sha(q4.tobytes())!=ref["q4_codes_sha256"] or sha(q8.tobytes())!=ref["qng64_n8_planes_sha256"]:
             raise RuntimeError("independent original BEGLIN source quantizer differs")
     t=time.perf_counter()
     if lib["repack"](q8.ctypes.data,out,inp):raise RuntimeError("n8 repack")
@@ -90,6 +92,7 @@ def main():
                     if node["dtype"]!="BF16":raise RuntimeError("checkpoint no longer BF16")
                     bits=np.frombuffer(mm,dtype="<u2",count=(end-start)//2,offset=8+hlen+start)
                     weight=(bits.astype("<u4")<<16).view("<f4").reshape(node["shape"]).copy()
+                    del bits
                     item=time_role(lib,role,weight,f32input)
                     rows.append(item)
                     print("BEGLIN_KERNEL_ROLE_COST",json.dumps(item,sort_keys=True),flush=True)
