@@ -1,0 +1,73 @@
+{
+  "schema": "oml-acs-c1-source-oof/1",
+  "status": "PILOT_DEV_ONLY_PROTOCOL_PREWRITTEN_NOT_FINAL_PREREG",
+  "date": "2026-10-21",
+  "participants": [
+    "qwen",
+    "mistral",
+    "phi"
+  ],
+  "tasks": [
+    "sst2_positive_vs_negative",
+    "carer_joy_vs_anger"
+  ],
+  "input_anchors_sha256": "47d5ddcb37b81212e3f43a34441662062b42a038d4cc606d9d7081c31131f83b",
+  "behavior_train_dev_sha256": "b99fb5d7e8c909e6821f555ac590b36ff52393b9d4e7a01828ee936c615bd274",
+  "train_per_axis_per_class": 100,
+  "dev_per_axis_per_class": 50,
+  "fold_count": 5,
+  "fold_rule": "stratify 100 positive and 100 negative train source examples; seeded shared fold assignment for all source models",
+  "seed": 42,
+  "feature_contract": "post-block final-token BF16 activation saved float32, centered with each model's 300-anchor mu, point projection Ahat@unit(h-mu), direction Ahat@unit(mean(training pos)-mean(training neg))",
+  "fold_validation": "train-only positive/negative class midpoint threshold; exclude held-out fold from direction and cutoff",
+  "error_definition": "0/1 classification errors for source model self-classification OOF, 200 paired rows per behavior axis; no target train/dev labels in weights",
+  "weights": {
+    "uniform": [
+      0.5,
+      0.5
+    ],
+    "reliability_only": {
+      "dependence": 0,
+      "estimator": "weights_from_source_errors; quadratic E[e_i^2] only",
+      "ridge": 0.000001,
+      "iterations": 2000
+    },
+    "correlated_error": {
+      "dependence": 1,
+      "estimator": "weights_from_source_errors; quadratic E[e_i e_j] on shared OOF questions",
+      "ridge": 0.000001,
+      "iterations": 2000
+    },
+    "source_oof_best_single": {
+      "rule": "higher source OOF balanced accuracy; ties use participant order",
+      "not_oracle": true
+    },
+    "target_oracle_best_single": {
+      "rule": "pick source based on target dev AUROC; report only post-hoc, not deployable"
+    }
+  },
+  "direction_combine": "canonical_mean_raw([c_source1,c_source2],weights) then unit for detection only; no independent rescaling of each projected source axis before weighting",
+  "evaluation": "target-model dev point projected using same 300 anchors; label used only to score AUROC; labels never used to choose weights, sign, folds or hyperparameters",
+  "uncertainty": "999 paired stratified bootstrap of target 50 positive/50 negative examples, common sampled indices for all compared weights",
+  "endpoints": [
+    "C1 correlated_error_AUROC minus uniform_AUROC",
+    "C1 correlated_error_AUROC minus reliability_only_AUROC",
+    "LOO per-target per-axis report no aggregation hides failures"
+  ],
+  "primary_gain_threshold_absolute_auroc": 0.02,
+  "security_gates": {
+    "no_final_test_split": true,
+    "keep_prior_B_verdict": true,
+    "no_V6_reused_24": true,
+    "no_live_release_change": true,
+    "no_main_merge": true,
+    "no_new_hardware_or_paid_api": true
+  },
+  "caveats": [
+    "This uses the same already-seen development split from B; not a blind preregistration or independent hypothesis test",
+    "Target-native train upper bound and target-dev oracle are not deployable selection rules",
+    "Source OOF classification is a surrogate of transferred-axis reliability, not a proof of target reliability",
+    "Mistral7B replaces initially gated Llama3.2-3B, a model-composition deviation",
+    "Do not use target dev results to revise the weight estimator after this run"
+  ]
+}
