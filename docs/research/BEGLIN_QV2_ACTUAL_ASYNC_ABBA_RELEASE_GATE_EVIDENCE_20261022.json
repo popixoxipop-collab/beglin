@@ -1,0 +1,66 @@
+{
+  "ABBA_bench_ms_OFF": [
+    98.21,
+    90.61
+  ],
+  "ABBA_bench_ms_ON": [
+    94.33,
+    93.98
+  ],
+  "OFF_three_samples_ms": [
+    98.21,
+    90.61,
+    92.04
+  ],
+  "ON_three_samples_ms": [
+    94.33,
+    93.98,
+    92.66
+  ],
+  "QKV_GU_native_ASYNC_ON_qkv_gateup_joined_during_8_window_PPL": 3892,
+  "activation_source_12_public_prompts_token_positions": 461,
+  "actual_native_QKV_and_gateup_joined": true,
+  "auto_promotion_eligibility": false,
+  "conservative_research_default_BEGLIN_QV2_NATIVE_ASYNC": "0",
+  "date": "2026-10-22",
+  "eight_new_public_eval_prompts_teacherforced_positions": 131,
+  "engineering_speed_gate_min_ratio": 1.05,
+  "first_prompt_all_151936_logits_exactly_equal_native_on_off": true,
+  "frozen_prior_seed73_random_PPL": 552.702,
+  "full_Q4G64_PPL": 727.9173,
+  "independent_previous_native_receipt_SHA256": "2f326545ef39f02988138f6c0c0d50ea23bc7c528fcb68b23c1b96144b6af438",
+  "limitations": [
+    "Five-percent speed threshold is a conservative post-hoc engineering risk gate, not a preregistered statistical boundary.",
+    "Only three single-token timing samples/mode, each best of 3 within native benchmark; not throughput or thermal stress.",
+    "Qv2 source activation diagonal precision mask loses public NLL vs both prior seed73 random and all4.",
+    "Native experimental stage executor has not been subjected to concurrent multi-request race/latency testing or Metal GPU deployment.",
+    "Unable to rule out past V6 24 used-row provenance; independent real task AUROC not measured."
+  ],
+  "measured_CPU_async_speed_ratio_OFF_over_ON": 0.9996084991280209,
+  "model": "Qwen2.5-1.5B-Instruct",
+  "model_layers": 28,
+  "native_12_stage_cost_cases": 12,
+  "native_binary_SHA256": "fb947372495962ed67bb00f91199030b2e41d50ab283f4a5bd81ab2e51cdc054",
+  "native_same_PPL_ON_OFF": {
+    "off": 827.4999,
+    "on": 827.4999
+  },
+  "original_BF16_196_activation_moments_SHA256": "ee7b177b4dde984a5d83e0cdb5983d2ae00c34ee752fef9113a79568a1d12663",
+  "original_V6_24_consumed_rows_not_authoritatively_recovered": true,
+  "precision_mask_SHA256": "9324c5ec891d638f2713d3bbd4187399e1aae8a9a74df129dfabc4e8ea870212",
+  "prior_separate_same_binary_native_bench_ms_OFF": 92.04,
+  "prior_separate_same_binary_native_bench_ms_ON": 92.66,
+  "quantized_projection_8bit_count": 28,
+  "quantized_projection_Q4_count": 168,
+  "release_or_live_operator_modified": false,
+  "schema": "BEGLIN-Qv2-public-activation-aware-native-async-ONOFF-evidence/1",
+  "scientific_Q_quality_generalization": "NO_VERDICT",
+  "source_BF16_snapshot": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "source_only_policy_and_final_holdout_separated": true,
+  "source_private_ABBA_receipt_SHA256": "8f03f93670400c3e2b34f83bdc1d8fc65e1dd0bd915556dafd4f73b0201bab00",
+  "source_private_audit_receipt_SHA256": "6e9ed2794964aa4c3efba307744db61388730ada2aa18c81f4f65838c5da5341",
+  "speed_gate_pass": false,
+  "status": "PASS_INDEPENDENT_AUDIT__REJECT_ASYNC_PROMOTION_AND_QV2_BIT_POLICY",
+  "terminal_regression_tests": "8/8 PASS",
+  "v2_new_allocation_quality_gate_pass": false
+}
