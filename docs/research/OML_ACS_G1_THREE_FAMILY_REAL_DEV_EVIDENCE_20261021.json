@@ -1,0 +1,199 @@
+{
+  "schema": "oml-acs-g1-three-family-real-dev/1",
+  "date": "2026-10-21",
+  "classification": "DEVELOPMENT_EXPLORATION__NO_FINAL_VERDICT",
+  "source_data": {
+    "anchor_text_sha256": "47d5ddcb37b81212e3f43a34441662062b42a038d4cc606d9d7081c31131f83b",
+    "anchor_count": 300,
+    "anchor_original_author_ids_verified": false,
+    "behavior_text_sha256": "b99fb5d7e8c909e6821f555ac590b36ff52393b9d4e7a01828ee936c615bd274",
+    "sources": [
+      "stanfordnlp/sst2@8d51e7e4887a4caaa95b3fbebbf53c0490b58bbb",
+      "dair-ai/emotion@cab853a1dbdf4c42c2b3ef2173804746df8825fe"
+    ],
+    "behavior_train_pairs_each_axis": 100,
+    "behavior_dev_pairs_each_axis": 50,
+    "final_test_accessed": false
+  },
+  "models": {
+    "qwen": {
+      "model": "Qwen/Qwen2.5-1.5B-Instruct",
+      "rev": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+      "anchor_activation_shape": [
+        300,
+        1536
+      ],
+      "behavior_activation_shape": [
+        600,
+        1536
+      ],
+      "behavior_activation_array_sha256": "48a9d811fa71daf622571dfcd625142f10b03fd4539f829cdf21c16578c240c9"
+    },
+    "mistral": {
+      "model": "mistralai/Mistral-7B-Instruct-v0.3",
+      "rev": "c170c708c41dac9275d15a8fff4eca08d52bab71",
+      "anchor_activation_shape": [
+        300,
+        4096
+      ],
+      "behavior_activation_shape": [
+        600,
+        4096
+      ],
+      "behavior_activation_array_sha256": "cd58a36e1d0fe51772f2c3ca2e38514bda48fa7f7f1c07ab127a400974b421f6"
+    },
+    "phi": {
+      "model": "microsoft/Phi-4-mini-instruct",
+      "rev": "cfbefacb99257ffa30c83adab238a50856ac3083",
+      "anchor_activation_shape": [
+        300,
+        3072
+      ],
+      "anchor_array_sha256": "7921f56fc5819a5de68bf0980c312e3de8908c65df033ec14d82648a66b637a4",
+      "anchor_projector_sha256": "2a2b645c7dcae69a2203c6b3554f7f17bbc70fb7eaee54d1c0207d031d3c7fa1",
+      "behavior_activation_shape": [
+        600,
+        3072
+      ],
+      "behavior_activation_array_sha256": "9c947b7082f20ca21d27628090a7cb6f5e861d3bd759c593063fbbef6adabdd6",
+      "phi_checkpoints_lfs_sha256": [
+        "bc703090b63eda16f639fa4de7ac54635c23105ab1da2f6ec4d3403151d38ee6",
+        "7ff79b9d2d31076bac2663393451f6530f4fc8ca49b09002116c92c373dba983"
+      ],
+      "source_is_official_MIT_public": true,
+      "remote_code_trusted": false
+    }
+  },
+  "runs": {
+    "phi_range_recovery": "job_5f0dc129ed3633d1a8c9515eb8a68245",
+    "phi_300_activation": "job_4938c0df55cdf26f464c36457c5f7d00",
+    "phi_600_activation": "job_15b043430e7bead72d0cbc41be03d67b",
+    "statuses": [
+      "SUCCEEDED",
+      "SUCCEEDED",
+      "SUCCEEDED"
+    ],
+    "all_exit_code_zero": true
+  },
+  "three_family_uniform_LOO": {
+    "source_rule": "Mean of two source anchor-projected signed train axes (literal Eq4); normalize for detection scoring",
+    "evaluation_rule": "Fixed polarity, target dev labels used for scoring only, 50+50 dev examples per axis",
+    "controls": {
+      "anchor_order_permutations": 199,
+      "random_canonical_directions": 199,
+      "bootstrap_resamples": 999,
+      "seed": 42
+    },
+    "target_phi": {
+      "source_models": [
+        "qwen",
+        "mistral"
+      ],
+      "receipt_sha256": "8b2d8db543f98e6cf1292659deaab8475552265c3f70b1cb0a763d7e3809b70a",
+      "sst2": {
+        "auroc": 0.8552,
+        "bootstrap_CI95": [
+          0.78158,
+          0.92682
+        ],
+        "shuffled_p": 0.005,
+        "random_p": 0.02,
+        "best_single_source_auroc": 0.8564,
+        "target_train_native_auroc": 0.9184
+      },
+      "carer": {
+        "auroc": 0.78,
+        "bootstrap_CI95": [
+          0.67878,
+          0.8688
+        ],
+        "shuffled_p": 0.04,
+        "random_p": 0.035,
+        "best_single_source_auroc": 0.804,
+        "target_train_native_auroc": 0.8672
+      }
+    },
+    "target_qwen": {
+      "source_models": [
+        "mistral",
+        "phi"
+      ],
+      "receipt_sha256": "07dd3e50701da691b9ad9319658f5285725d56ce154d299b622718b6cf24abf1",
+      "sst2": {
+        "auroc": 0.7872,
+        "bootstrap_CI95": [
+          0.68758,
+          0.8708
+        ],
+        "shuffled_p": 0.015,
+        "random_p": 0.025,
+        "best_single_source_auroc": 0.8016,
+        "target_train_native_auroc": 0.8676
+      },
+      "carer": {
+        "auroc": 0.6664,
+        "bootstrap_CI95": [
+          0.5532,
+          0.76962
+        ],
+        "shuffled_p": 0.03,
+        "random_p": 0.05,
+        "best_single_source_auroc": 0.6692,
+        "target_train_native_auroc": 0.7148
+      }
+    },
+    "target_mistral": {
+      "source_models": [
+        "qwen",
+        "phi"
+      ],
+      "receipt_sha256": "b4264406055683a202c264afc9ddd87f759db401a1c1c53fa550522b79a1cdc1",
+      "sst2": {
+        "auroc": 0.8972,
+        "bootstrap_CI95": [
+          0.83678,
+          0.94762
+        ],
+        "shuffled_p": 0.02,
+        "random_p": 0.025,
+        "best_single_source_auroc": 0.9076,
+        "target_train_native_auroc": 0.986
+      },
+      "carer": {
+        "auroc": 0.8176,
+        "bootstrap_CI95": [
+          0.72278,
+          0.89762
+        ],
+        "shuffled_p": 0.025,
+        "random_p": 0.025,
+        "best_single_source_auroc": 0.8388,
+        "target_train_native_auroc": 0.8732
+      }
+    },
+    "source_mean_exceeds_best_single_source_count": 0,
+    "evaluated_target_axis_cases": 6,
+    "statistical_note": "Exploratory, in-development evaluations; p-values are finite-resolution 199 randomization nulls and uncorrected for multiple comparisons."
+  },
+  "limitations": {
+    "formula_variants_separate": true,
+    "gated_Llama3_2_3b_unavailable": true,
+    "preregistration_model_deviation": "Used Mistral 7B in place of initially planned gated Llama-3.2-3B; no exact original-paper replication claim",
+    "original_HELM_anchor_ids_not_verified": true,
+    "license_review_for_sst2_carer_pending": true,
+    "semantic_paraphrase_leakage_not_exhaustively_excluded": true,
+    "V6_consumed_24_holdout_origin_not_attested": true,
+    "independent_final_IID_OOD_not_opened": true,
+    "generation_steering_performed_in_three_family_LOO": false,
+    "A_NLL_study_not_run": true,
+    "C1_dynamic_weighting_not_run": true,
+    "C2_not_run": true,
+    "Q_real_8bit_4bit_not_run": true
+  },
+  "repo": {
+    "branch": "research/oml-acs-prereg-20261021",
+    "main_modified": false,
+    "production_modified": false,
+    "raw_text_or_activations_published": false
+  }
+}
