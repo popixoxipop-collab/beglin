@@ -175,8 +175,6 @@ def run_phase(phase):
             rss=re.search(r"(\d+)\s+maximum resident set size",log)
             if not match or not rss:
                 raise RuntimeError("missing real native perplexity / max RSS")
-            if int(match.group(2))!=sum(len(x)-1 for x in (json.loads((LAB/"input_lock_receipt.json").read_text())["token_lengths"] for _ in ())):
-                pass
             receipt.update(perplexity=float(match.group(1)),nll_nats_per_token=math.log(float(match.group(1))),
                            scored_tokens=int(match.group(2)),max_rss_bytes=int(rss.group(1)))
             expected_tokens=sum(n-1 for n in json.loads((LAB/"input_lock_receipt.json").read_text())["token_lengths"])
