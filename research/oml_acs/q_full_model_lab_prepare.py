@@ -19,7 +19,7 @@ import subprocess
 ROOT=Path(__file__).resolve().parents[2]
 SOURCE=ROOT/"qwen_infer.c"
 EXPECT_SOURCE_SHA="52c8f5fd683b5ef0726e4738ab4b441624f54c807a3e71fb9d932cb79938d112"
-LAB=ROOT/"lab_local/q_full_model_20261021"
+LAB=ROOT/"lab_local/q_full_model_20261021_v2"
 SNAP=Path("/Users/eoe/.cache/huggingface/hub/models--mlx-community--Qwen2.5-1.5B-Instruct-bf16/snapshots/4ae77cb209f06199b8df1c94e21ff341332a3a89")
 MODEL=SNAP/"model.safetensors"
 MODEL_REV="4ae77cb209f06199b8df1c94e21ff341332a3a89"
@@ -45,7 +45,7 @@ NEW_ANCHOR="""static void load_safetensors_weights(void) {
             fprintf(stderr,"FATAL: research Q tiers require isolated safetensors without other precision overrides\\n");
             exit(1);
         }
-        fprintf(stderr,"[Q-NATIVE-RESEARCH] precision=%s, source-original-BF16, common untied head Q8\\n",q_lab);
+        fprintf(stderr,"[Q-NATIVE-RESEARCH] precision=%s, source-original-BF16, common same-source tied F32 head (or untied Q8 when present)\\n",q_lab);
     }
     int n_lab_n8=0;
     int n_q4 = 0, n_f32 = 0;"""
@@ -71,7 +71,7 @@ LOG_OLD='''    fprintf(stderr, "[engine] safetensors: registered %d tensors (%d 
 LOG_NEW='''    fprintf(stderr, "[engine] safetensors: registered %d tensors (%d K_Q4G64, %d K_Q8G64, %d K_F32)\\\\n",
             g_nwt, n_q4, n_q8, n_f32);
     if (q_lab) fprintf(stderr, "[Q-NATIVE-RESEARCH] projection_role_tensors: f32=%d n8=%d q4=%d common_head_q8=%d\\\\n",
-        n_f32-2*g_cfg.nl-2, n_lab_n8, n_q4, n_q8);'''
+        n_f32-(2*g_cfg.nl+(g_cfg.qkv_bias?3*g_cfg.nl:0)+2), n_lab_n8, n_q4, n_q8);'''
 
 # The original C file contains one backslash-n C escape, not a double escaped
 # backslash-n. Normalize the embedded Python source-template representation.
@@ -143,24 +143,24 @@ def prepare():
         for idx,seq in enumerate(ids):
             write_private(p/f"eval/ppl_work/w{idx}.i32",struct.pack("<"+"i"*len(seq),*seq))
     metadata={
-      "schema":"oml-acs-beqlin-Q-fullmodel-lab-source/1",
+      "schema":"oml-acs-beglin-Q-fullmodel-lab-source/1",
       "model":"Qwen/Qwen2.5-1.5B-Instruct",
       "official_model_revision":OFFICIAL_REV,
       "local_BF16_revision":MODEL_REV,
-      "original_BEGILN_source_sha256":EXPECT_SOURCE_SHA,
+      "original_BEGLIN_source_sha256":EXPECT_SOURCE_SHA,
       "lab_modified_source_sha256":sha(source.encode()),
       "binary_sha256":sha(binary.read_bytes()),
       "source_q_proj_bf16_sha256":MODEL_QPROJ_SHA,
-      "all_precision_tiers_use_same_BF16_model_and_Q8_head":True,
+      "all_precision_tiers_use_same_BF16_model_and_invariant_head":True,
       "tiers":list(TIERS),
-      "baseline":"Original BF16-sourced projection weights widened to F32 BLAS; common lm_head Q8",
-      "n8":"Original BF16-sourced per projection qNg64 bitplane n8; common lm_head Q8",
-      "q4":"Original BF16-sourced per projection Q4G64 error-feedback nibble; common lm_head Q8",
+      "baseline":"Original BF16-sourced projection weights widened to F32 BLAS; common output head (tied F32 on this Qwen)",
+      "n8":"Original BF16-sourced per projection qNg64 bitplane n8; common output head (tied F32 on this Qwen)",
+      "q4":"Original BF16-sourced per projection Q4G64 error-feedback nibble; common output head (tied F32 on this Qwen)",
       "synthetic_prompt_lengths":[len(x) for x in ids],
       "synthetic_prompt_id_shas":[sha(struct.pack("<"+"i"*len(x),*x)) for x in ids],
       "model_checkpoint_not_modified":True,
       "main_not_modified":True,"production_touched":False,
-      "caveats":["NOT true BF16 arithmetic baseline: F32 projections widened from pinned BF16 checkpoint", "Cannot infer task AUROC, energy or final hypothesis Q from two synthetic prompts", "Common Q8 head is held constant across all tiers"]
+      "caveats":["NOT true BF16 arithmetic baseline: F32 projections widened from pinned BF16 checkpoint", "Cannot infer task AUROC, energy or final hypothesis Q from two synthetic prompts", "Actual Qwen1.5B has tied embedding/head registered F32 in all tiers; if separate head is present the loader holds Q8 constant"]
     }
     write_private(LAB/"lab_metadata.json",(json.dumps(metadata,sort_keys=True,indent=2)+"\n").encode())
     print("BEGLIN_Q_FULLMODEL_LAB_PREPARED",json.dumps(metadata,sort_keys=True),flush=True)
