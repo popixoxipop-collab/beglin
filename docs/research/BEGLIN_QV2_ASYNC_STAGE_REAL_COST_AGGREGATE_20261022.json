@@ -1,0 +1,107 @@
+{
+  "calibration_input_SHA256": "d74bc02f9ec04e9e40a7f6a7fea1a4589f0a9ce4d6dba24c71bbec906846c1bc",
+  "model": "Qwen2.5-1.5B-Instruct",
+  "native_library_SHA256": "0ab561e3fc77c8da7d7e50664c161c76cca108c7703865b5bdc0d6b75db1fcea",
+  "private_receipt_SHA256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+  "schema": "BEGLIN-Qv2-native-async-stage-cost-aggregate/1",
+  "snapshot_rev": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "source_weight_sha256": {
+    "gate_proj": "eecc25469ec3dd001f1226ce55167ec18dacdee9f66be15a63b0308c86c7c5a4",
+    "k_proj": "921b59a56fb5d7ddc125c4bba496100ff6696016be2603bd393ff1e53d5e31c3",
+    "q_proj": "2f2342dc6be9eb5b977a19d84b980f53eb0b6f4e922a806e3e5dfe3cf0ae4e65",
+    "up_proj": "234e08e00d79a42d1d3075ba0637d55883f176a33215c5968779088c9a7fe3ec",
+    "v_proj": "c96b3d85c5ea0053a2a67773d8963a9823bb000698e678a6bd33a20d7c8a1f16"
+  },
+  "source_wrapper_SHA256": "e9e34c97298dbc3b407c973ba91892f415ea87af83f7806c48c71b7e6840a9a5",
+  "stages": {
+    "ffn_gu": {
+      "44": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 0.7867656249999633,
+        "parallel1_ms": 2.1278802499999916,
+        "parallel6_ms": 0.7867656249999633,
+        "serial6_ms": 0.8352396249999838
+      },
+      "48": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 3.427703124999959,
+        "parallel1_ms": 3.4613176250000155,
+        "parallel6_ms": 3.427703124999959,
+        "serial6_ms": 3.7455208749999636
+      },
+      "84": {
+        "best_mode": "parallel_q4_1t",
+        "best_ms": 3.4137761250000453,
+        "parallel1_ms": 3.4137761250000453,
+        "parallel6_ms": 3.4418333749999253,
+        "serial6_ms": 3.750109374999977
+      },
+      "88": {
+        "best_mode": "parallel_q4_1t",
+        "best_ms": 3.4804478750000145,
+        "parallel1_ms": 3.4804478750000145,
+        "parallel6_ms": 3.4821718749999953,
+        "serial6_ms": 6.618166750000043
+      }
+    },
+    "qkv": {
+      "444": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 0.18793237499997728,
+        "parallel1_ms": 0.39392712500002647,
+        "parallel6_ms": 0.18793237499997728,
+        "serial6_ms": 0.24151562499996615
+      },
+      "448": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 0.20861974999997202,
+        "parallel1_ms": 0.38585424999998397,
+        "parallel6_ms": 0.20861974999997202,
+        "serial6_ms": 0.29005212499999544
+      },
+      "484": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 0.18910937499999614,
+        "parallel1_ms": 0.3863176249999656,
+        "parallel6_ms": 0.18910937499999614,
+        "serial6_ms": 0.2848489999999759
+      },
+      "488": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 0.20933850000004472,
+        "parallel1_ms": 0.3859010000000218,
+        "parallel6_ms": 0.20933850000004472,
+        "serial6_ms": 0.3246406250000389
+      },
+      "844": {
+        "best_mode": "parallel_q4_1t",
+        "best_ms": 0.6104427499999954,
+        "parallel1_ms": 0.6104427499999954,
+        "parallel6_ms": 0.6262292499999988,
+        "serial6_ms": 0.6916353749999993
+      },
+      "848": {
+        "best_mode": "parallel_q4_1t",
+        "best_ms": 0.6117239999999802,
+        "parallel1_ms": 0.6117239999999802,
+        "parallel6_ms": 0.6247343749999912,
+        "serial6_ms": 0.7425052499999696
+      },
+      "884": {
+        "best_mode": "parallel_q4_1t",
+        "best_ms": 0.6120677500000005,
+        "parallel1_ms": 0.6120677500000005,
+        "parallel6_ms": 0.62377075000003,
+        "serial6_ms": 0.7374635000000351
+      },
+      "888": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 0.6126562500000099,
+        "parallel1_ms": 0.6129687499999981,
+        "parallel6_ms": 0.6126562500000099,
+        "serial6_ms": 0.7700365000000153
+      }
+    }
+  },
+  "status": "PASS_ACTUAL_CPU_ASYNC_STAGE_BENCHMARK"
+}
