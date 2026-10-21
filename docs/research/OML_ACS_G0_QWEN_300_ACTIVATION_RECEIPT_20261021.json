@@ -1,0 +1,92 @@
+{
+  "schema": "oml-acs-g0-qwen300-confirmed/1",
+  "date": "2026-10-21",
+  "status": "PASS_TECHNICAL_CAPTURE_AND_PROJECTOR",
+  "execution": {
+    "host": "alienware",
+    "os": "WSL Ubuntu",
+    "device": "NVIDIA GeForce RTX 5070 Ti",
+    "job_id": "job_de3b19e9455efdf5db4e019f20acfa1e",
+    "state": "SUCCEEDED",
+    "exit_code": 0,
+    "worker_run_ms": 94324,
+    "in_model_script_elapsed_seconds": 43.48
+  },
+  "code": {
+    "repo": "popixoxipop-collab/beglin",
+    "source_branch": "research/oml-acs-prereg-20261021",
+    "checkout_commit": "47b72a453af4fe656e26f3795f67c8bbfd8297ca",
+    "script": "research/oml_acs/extract_anchors_qwen.py",
+    "script_sha256": "786ffb7320a6d656c6b81aa516acb9358eb277ea70dab34b0ed7491fc55393b1"
+  },
+  "dataset": {
+    "source": "HF 15 scenario sampled 20 each; not original author ID-equivalent",
+    "count": 300,
+    "original_author_ids_verified": false,
+    "normalized_text_sha256": "47d5ddcb37b81212e3f43a34441662062b42a038d4cc606d9d7081c31131f83b",
+    "rows_unique": true,
+    "private_input_mode": "0600"
+  },
+  "model": {
+    "id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "precision": "BF16",
+    "hidden_state_dtype": "float32",
+    "layer_index_zero_based": 14,
+    "model_layers": 28
+  },
+  "activations": {
+    "shape": [
+      300,
+      1536
+    ],
+    "finite": true,
+    "all_rows_integrity_checked": true,
+    "source_order_matches_private_manifest": true,
+    "sha256": "cbd5535b5247ea7b153a7835e5c27d9b8cc680cc6d031108b87db1a49136f692",
+    "compressed_file_size_bytes": 874714,
+    "compressed_file_sha256": "4892dd4e1a7ccfafcf7710373b29009702c37bbcb900d4e764eb65198ed8dad1",
+    "private_output_mode": "0600"
+  },
+  "acs_projector": {
+    "shape": [
+      300,
+      1536
+    ],
+    "mean_centered": true,
+    "all_ahat_row_norm_one": true,
+    "numerical_rank_tol_1e6": 299,
+    "effective_rank_entropy": 31.29,
+    "gram_trace": 300,
+    "artifact_size_bytes": 3533740,
+    "artifact_sha256": "664f24c3aed82e9dcc15e895d695fcdfc90215dd6ba17e2d708421bb4f0c9722",
+    "source_activation_sha256": "cbd5535b5247ea7b153a7835e5c27d9b8cc680cc6d031108b87db1a49136f692",
+    "private_output_mode": "0600"
+  },
+  "performance": {
+    "peak_cuda_allocated_mb": 3016.51,
+    "mean_centered_norm_min": 8.035862474305707,
+    "mean_centered_norm_max": 18.36821414876765,
+    "not_a_speedup_claim": true
+  },
+  "research_verdicts": {
+    "G0_anchor_capture": "PASS",
+    "G0_Qwen_300_projector": "PASS",
+    "B_inter_model_ACS": "NOT_EVALUATED_FOR_300",
+    "A_ensemble": "NOT_EVALUATED",
+    "C1_source_reliability": "NOT_EVALUATED",
+    "C2_cross_information": "NOT_EVALUATED",
+    "Q_8bit_4bit": "NOT_EVALUATED",
+    "original_paper_row_exact_replication": false
+  },
+  "safeguards": {
+    "no_labels_used": true,
+    "model_weights_not_changed": true,
+    "operational_production_touched": false,
+    "github_main_modified": false,
+    "raw_text_or_vectors_published": false,
+    "old_V6_24_consumed_documents_excluded": false,
+    "final_holdout_opened": false,
+    "final_data_frozen": false
+  }
+}
