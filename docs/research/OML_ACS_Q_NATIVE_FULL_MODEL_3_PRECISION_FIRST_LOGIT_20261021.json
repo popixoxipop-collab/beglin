@@ -1,0 +1,86 @@
+{
+  "schema": "oml-acs-beglin-q-native-full-model-3-precision-first-logit/1",
+  "date": "2026-10-21",
+  "status": "PASS_NATIVE_EXECUTION__Q_SCIENTIFIC_VERDICT_NOT_YET",
+  "source": {
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "official_hf_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "same_bf16_weight_verified_on_Alienware_EOE": true,
+    "mac_bf16_snapshot_revision": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+    "base_model_layers": 28,
+    "hidden_dim": 1536,
+    "weight_base": "same BF16 original checkpoint for all modes",
+    "source_repo_branch": "research/oml-acs-prereg-20261021",
+    "original_beglin_qwen_infer_c_sha256": "52c8f5fd683b5ef0726e4738ab4b441624f54c807a3e71fb9d932cb79938d112",
+    "isolated_patch_source_sha256": "c03099aed130a5fd9222f0ba4d0fdf00d3e9bd1b1c203bf145ccb8290a0ad131",
+    "research_laboratory_script": "research/oml_acs/q_full_model_lab_prepare.py"
+  },
+  "execution": {
+    "host": "eoe",
+    "architecture": "Apple Silicon arm64",
+    "worker": "BEGLIN native qwen_infer C compiled in separate research checkout; actual full model",
+    "mode": "dump",
+    "prompt_source": "public synthetic 10-token prompt",
+    "prefill_tokens": 10,
+    "full_vocab_logits": 151936,
+    "all_three_runs_exit0": true,
+    "production_touched": false,
+    "main_touched": false,
+    "common_head": "same tied embedding FP32 output head in all modes; NO standalone Q8 head",
+    "nonprojection_weights": "F32 widened from original BF16 in all runs",
+    "three_precision_modes": {
+      "f32": {
+        "projection_tensors": 196,
+        "quantized_projection_tensors": 0,
+        "argmax_token_id": 9707,
+        "full_logit_file_sha256": "1c7e0090c899d7c0441930cb589d1fe559f27baaf2c961ec54b9c36085cde82a",
+        "baseline_reference": "source BF16 weights widened to FP32; NOT native BF16 compute"
+      },
+      "qng64_n8": {
+        "projection_tensors": 196,
+        "quantized_projection_tensors": 196,
+        "encoding": "BEGLIN qNg64 8-bit bitplanes 64-group",
+        "argmax_token_id": 9707,
+        "full_logit_file_sha256": "085c9e1d12c5e72840360845b0533f59818db9353239c16340f99d8a8ebb85c0",
+        "logit_rel_l2": 0.02640664424469728,
+        "logit_rmse": 0.14770661447736438,
+        "max_logit_abs_difference": 0.7803020477294922,
+        "KL_baseline_to_quantized_nats": 0.00007969963161556136,
+        "baseline_top1_token_probability_under_quantized": 0.9949581669014279,
+        "top5_overlap": 5
+      },
+      "packed4": {
+        "projection_tensors": 196,
+        "quantized_projection_tensors": 196,
+        "encoding": "BEGLIN Q4G64 4-bit group64 with error feedback",
+        "argmax_token_id": 9707,
+        "full_logit_file_sha256": "32b77603736d49c589a30914a6d25a1c9ee1d8536d9db1ca2adb9df4b50f26c8",
+        "logit_rel_l2": 0.4173596286916187,
+        "logit_rmse": 2.3345176767754796,
+        "max_logit_abs_difference": 10.98098635673523,
+        "KL_baseline_to_quantized_nats": 0.24499136633860544,
+        "baseline_top1_token_probability_under_quantized": 0.7709513186945577,
+        "top5_overlap": 2
+      }
+    }
+  },
+  "verified_projection_weight_storage": {
+    "num_projection_tensors": 196,
+    "total_projection_elements": 1310195712,
+    "source_BF16_bytes": 2620391424,
+    "qng64_n8_with_scales_bytes": 1392082944,
+    "packed4_with_scales_bytes": 736985088,
+    "qng64_n8_saved_percent": 46.875,
+    "packed4_saved_percent": 71.875,
+    "these_are_logical_projection_weights_not_peak_RSS": true
+  },
+  "scope_limits": [
+    "One public synthetic prompt and its final logits; no heldout sentiment-task AUROC, perplexity or multiple independent prompts measured.",
+    "F32 BF16-widened weight baseline does not measure native BF16 execution precision.",
+    "No full-model decode tokens/sec, process resident memory, Apple Metal GPU, or Joule/energy measurements.",
+    "An identical argmax token does not imply similar logits: packed4 had 0.245 nats KL.",
+    "No source-anchored 24 V6 holdout exclusion attestation; final Q acceptance is SEALED.",
+    "The research-only precision switch changes a SHA-verified lab COPY of qwen_infer.c. Original tracked source and production unchanged."
+  ],
+  "next": "Use independently pinned prompt windows for PPL/NLL and token generation, repeat warm/cold timings and RSS; evaluate Q in C1/C1-D task accuracy via real engine model inference interface. Do not equate one-tensor kernel times with full model times."
+}
