@@ -1,0 +1,106 @@
+{
+  "schema": "oml-acs-c1d-prospective-dev-freeze/1",
+  "status": "SOURCE_AND_ALGORITHM_LOCKED_BEFORE_NEW_DEV_LABELS_ACCESS",
+  "date": "2026-10-21",
+  "purpose": "Input-conditional per-question ACS gating using only two source-model features and source OOF errors; compare against static C1",
+  "frozen_models": [
+    "qwen",
+    "mistral",
+    "phi"
+  ],
+  "weights_source": "five-fold stratified OOF errors, 200 rows per axis, class midpoint source-only training threshold, seed42 from existing research/evaluate_c1_source_oof.py",
+  "frozen_anchors_sha256": "47d5ddcb37b81212e3f43a34441662062b42a038d4cc606d9d7081c31131f83b",
+  "frozen_training_sha256": "b99fb5d7e8c909e6821f555ac590b36ff52393b9d4e7a01828ee936c615bd274",
+  "dataset_source": [
+    {
+      "axis": "sst2_positive_vs_negative",
+      "source": "stanfordnlp/imdb",
+      "revision": "e6281661ce1c48d982bc483cf8a173c1bbeb5d31",
+      "config": "plain_text",
+      "source_split": "train",
+      "file": "plain_text/train-00000-of-00001.parquet",
+      "positive_label": 1,
+      "negative_label": 0,
+      "max_chars": 1000,
+      "license_review": "OTHER"
+    },
+    {
+      "axis": "carer_joy_vs_anger",
+      "source": "google-research-datasets/go_emotions",
+      "revision": "add492243ff905527e67aeb8b80c082af02207c3",
+      "config": "simplified",
+      "source_split": "train",
+      "file": "simplified/train-00000-of-00001.parquet",
+      "positive_exact_singleton_label_id": 17,
+      "negative_exact_singleton_label_id": 2,
+      "max_chars": 300,
+      "license_review": "APACHE_2"
+    }
+  ],
+  "prospective_selection": {
+    "examples_per_axis_per_class": 50,
+    "total_records": 200,
+    "seed": 73,
+    "range_min_chars": 10,
+    "filter": "canonical exact-text overlap vs 300 anchors AND old SST2/CARER 600 items, minhash/token Jaccard audit independent",
+    "no_test_split": true,
+    "selection_occurs_without_scoring_model_outputs": true,
+    "raw_text_private_mode": "0600"
+  },
+  "gate_algorithm": {
+    "input_features": "for each candidate new prompt, each SOURCE model activation projected into 300-anchor canonical point Ahat@unit(h-mu); normalize each source point separately for cosine",
+    "OOF_memory": "same source-model representations of only 200 old train rows (per axis), each train row paired 200x2 binary OOF errors",
+    "similarity": "average cosine similarity of two independently unit-normalized source canonical point vectors, no target-model feature/labels",
+    "neighbor_count": 32,
+    "neighbor_weights": "uniform over top-32 nearest source TRAIN OOF rows by paired-input cosine, stable tie-break by SHA row order",
+    "local_error_coprobability": "nearest 32 paired binary source-OOF error rows, sum outer-products /32",
+    "shrinkage_global_fraction": 0.5,
+    "global_error_coprobability": "all 200 paired source-OOF error rows",
+    "R": "0.5*local + 0.5*global + ridge*identity",
+    "ridge": 0.000001,
+    "two_source_analytic_simplex": "w0 = clip((R11-R01)/(R00+R11-2*R01),0,1); w1=1-w0",
+    "fallback": "if denominator <=1e-12 use source-global correlated-error weight; no target label or dev performance adaptation",
+    "polarity": "each source native signed axis positive-minus-negative on full old 200 training examples; projected without normalization in raw Eq4 weighted mean, final unit after averaging",
+    "target_output": "target model's anchor-projected final-token activation dot per-example mixed unit behavior axis; source outputs only determine input-dependent mix",
+    "gating_options_fixed": [
+      "uniform_static",
+      "source_OOF_correlated_static",
+      "source_conditional_top32_shrunk"
+    ],
+    "no_online_training": true,
+    "no_target_labels_for_gate": true,
+    "no_target_dev_hyperparameter_tuning": true
+  },
+  "metrics": {
+    "primary": "AUROC per 3 target families x2 axes on new separate data",
+    "criterion": "dynamic AUROC minus source_OOF_correlated_static >= +0.02, 6 cases report all",
+    "uncertainty": "999 paired stratified bootstrap resamples for dynamic minus static, seeded 73",
+    "gate_diagnostics": [
+      "per-input w0 quartiles",
+      "weight standard deviation",
+      "actual fraction on simplex boundaries",
+      "fraction gate equals static within 1e-6"
+    ],
+    "comparators": [
+      "uniform_static",
+      "source_OOF_correlated_static",
+      "source_conditional_top32_shrunk"
+    ],
+    "all_output_labels_for_metric_only": true
+  },
+  "gates": {
+    "explicit_not_final_IID_OOD": true,
+    "old_V6_24_untouched": true,
+    "stop_on_dataset_revision_or_source_sha_drift": true,
+    "no_main_merge": true,
+    "no_prod_runtime_change": true,
+    "no_new_paid_API": true
+  },
+  "limitations": [
+    "The new IMDB train source shares a scenario name with 20 development anchors; exact/lexical disjointness audit is mandatory and semantic paraphrase audit may remain incomplete",
+    "Train-source OOF co-errors are a surrogate of transfer reliability not a theorem",
+    "The new validation examples come from publicly known corpora; independence is operational source separation, not proof of prior model nonexposure",
+    "Model/dataset license status and old V6 24 consumed identities are not yet fully attested",
+    "This is input-conditional two-source behavior-axis weighting, not dynamic quantization-bit allocation"
+  ]
+}
