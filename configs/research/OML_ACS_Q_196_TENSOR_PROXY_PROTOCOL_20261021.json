@@ -1,0 +1,58 @@
+{
+  "schema": "oml-acs-q-196-tensor-proxy-and-mixed-policy/1",
+  "date": "2026-10-21",
+  "status": "LOCKED_BEFORE_SENSITIVITY_SCAN_AND_NEW_PPL",
+  "source": {
+    "local_bf16_snapshot_revision": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+    "source_original_engine_qwen_infer_c_sha256": "52c8f5fd683b5ef0726e4738ab4b441624f54c807a3e71fb9d932cb79938d112",
+    "source_model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "official_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "architecture": "qwen2",
+    "hidden": 1536,
+    "blocks": 28,
+    "quantized_roles": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ],
+    "target_tensors": 196
+  },
+  "experiment_design": {
+    "distortion": "original BF16 -> F32 weight matrix, encode with original BEGLIN gguf_quantize_q4g64_error_feedback and gguf_quantize_qNg64 n=8; decode compressed codes and compute each tensor's quantization weight relative L2 error.",
+    "sensitivity_label": "weight-only relative distortion PROXY; not model task sensitivity or activation Jacobian",
+    "group_size": 64,
+    "packed4_format": "Q4G64 groups, packed nibbles EF",
+    "eight_bit_format": "qNg64 n8 true bit-plane EF",
+    "role_budget": "select exactly four out of 28 layers per each of seven roles for n8 promotion, 28/196 total",
+    "ranking": "within each role rank by q4 normalized Frobenius squared relative error minus qNg64_n8 squared relative error (high first), then layer ascending for tie",
+    "control": "four random layers without replacement from 28 within each role, RNG numpy PCG64 seed73; same role/shape costs",
+    "policies": [
+      "f32_widened_BF16_source",
+      "all_q4g64",
+      "all_qng64_n8",
+      "proxy_top4_per_role_n8_else_q4",
+      "seed73_random4_per_role_n8_else_q4"
+    ],
+    "hold_fixed": "Qwen tied lm_head/embed FP32, norms FP32, qkv biases F32, original BF16 checkpoint and tokenizer, 28 layers, prompt token files, runtime binary, CPU threads",
+    "policy_file_format": "per role 0-based layer, input policy SHA-256 binding; no deployment",
+    "prompts": "fixed public synthetic English strings in separate source file, no C1D or V6 data; two existing locked 10/13 token prompts first; 3-5 more public synthetic prompts before any candidate metrics if resource allows",
+    "metrics": [
+      "real native 151936-way final logits per same prompt: top1 match, KL(f32||tier), L2",
+      "teacher forced NLL/PPL vs identical prompt windows",
+      "steady decode benchmark p50 3 repeats with warmup",
+      "logical per-role weight bytes and observed peak RSS if available"
+    ],
+    "thresholds": {
+      "Q_quality_gate": "development only: mean NLL relative increase <= 0.02 AND classification AUROC drop <=0.03 must be evaluated separately; do not mark final PASS from PPL alone",
+      "Q_speed_gate": "do not claim throughput benefit without measured prefill/decode and cache admission"
+    },
+    "possible_outcomes": "negative results preserved, do not tune proxy scoring on evaluated PPL windows",
+    "quant_code_guard": "research-only copy, no changes to original qwen_infer.c, main, running processes, model checkpoints; n4 uses dedicated Q4G64 not qNg64",
+    "risk": "CPU n8 bitplane GEMV is scalar and may run far slower; budget-bound durations are not deployment timing",
+    "prior_evidence": "03 precision first-token result: full n8 KL~0.00008, full q4 KL~0.245 on one prompt, insufficient for Q acceptance"
+  }
+}
