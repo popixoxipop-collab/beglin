@@ -20,7 +20,7 @@ P=ROOT/"configs/research/BEGLIN_QV2_196_DAG_QUALITY_MILP_PRELOCK_20261022.json"
 G=ROOT/"docs/research/BEGLIN_Q_V2_ACTIVATION_AWARE_LOCAL_SCORES_20261022.json"
 A=ROOT/"docs/research/BEGLIN_Q_V2_REAL_ASYNC_STAGE_COSTS_20261022.json"
 R=ROOT/"docs/research/BEGLIN_Q_KERNEL_AWARE_ALLOCATOR_NATIVE_EVIDENCE_20261022.json"
-OUT=pathlib.Path.home()/".local/share/beglin/oml_acs/20261022_qv2_milp"
+OUT=pathlib.Path.home()/".local/share/beglin/oml_acs/20261022_qv2_milp_retry1"
 ROLES=("q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj")
 L=28
 M=128
@@ -125,7 +125,7 @@ def solve():
                 (L+2,opt["serial_increment_ms"]),
                 (L+3,opt["async_increment_ms"])):
                 rows.append(row);cols.append(col);values.append(val)
-    A=coo_matrix((np.asarray(values),(np.asarray(rows),np.asarray(cols))),
+    constraint_matrix=coo_matrix((np.asarray(values),(np.asarray(rows),np.asarray(cols))),
                  shape=(L+4,n)).tocsc()
     lb=np.full(L+4,-np.inf,dtype=np.float64)
     ub=np.full(L+4,np.inf,dtype=np.float64)
@@ -139,7 +139,7 @@ def solve():
     start=time.perf_counter()
     result=milp(c=-utility,integrality=np.ones(n,dtype=np.int8),
         bounds=Bounds(np.zeros(n),np.ones(n)),
-        constraints=LinearConstraint(A,lb,ub),
+        constraints=LinearConstraint(constraint_matrix,lb,ub),
         options=dict(time_limit=180.0,mip_rel_gap=0.0,disp=False))
     elapsed=time.perf_counter()-start
     if result.status!=0 or result.x is None or not result.success:
