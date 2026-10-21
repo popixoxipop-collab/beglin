@@ -16,7 +16,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 CONFIG=ROOT/"configs/research/BEGLIN_Q_ACTIVATION_ASYNC_PARALLEL_V2_PRELOCK_20261022.json"
 MODEL=pathlib.Path("/home/alienware-r13/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B-Instruct/snapshots/989aa7980e4cf806f80c7fef2b1adb7bc71aa306")
-OUT=pathlib.Path.home()/".local/share/beglin/oml_acs/20261022_qv2"
+OUT=pathlib.Path.home()/".local/share/beglin/oml_acs/20261022_qv2_retry1"
 ROLES=("q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj")
 def digest(b:bytes)->str:return hashlib.sha256(b).hexdigest()
 def atomic_private(path,data:bytes):
@@ -68,9 +68,12 @@ def main():
     try:
         with torch.inference_mode():
             for idx,text in enumerate(texts):
-                ids=tok.apply_chat_template([{"role":"user","content":text}],
+                encoded=tok.apply_chat_template([{"role":"user","content":text}],
                    tokenize=True,add_generation_prompt=True,return_tensors="pt")
-                assert ids.ndim==2 and ids.shape[0]==1 and 8<=ids.shape[1]<=90
+                # Transformers 5.12 returns BatchEncoding rather than bare tensor.
+                ids=encoded["input_ids"] if hasattr(encoded,"__getitem__") and not torch.is_tensor(encoded) else encoded
+                if not torch.is_tensor(ids) or ids.ndim!=2 or ids.shape[0]!=1 or not (8<=ids.shape[1]<=90):
+                    raise RuntimeError("Qwen template returned invalid token tensor")
                 token_lengths.append(int(ids.shape[1]))
                 model(input_ids=ids.to("cuda:0"),use_cache=False,return_dict=True)
                 print("ACTIVATION_CAPTURE_PROGRESS",idx+1,len(texts),
