@@ -47,7 +47,6 @@ def plan(memory_limit:int,latency_limit:float)->dict:
       estimated_single_decode_ms=r["native_approx_total_decode_ms"],
       source_only_weight_distortion_gain=r["source_proxy_gain"],
       chosen_kernel_by_role=kernels,
-      100ms_lock_policy=None,
       source_only_memory_feasible_choices=stats["memory_feasible"],
       kernel_feasible_choices=stats["kernel_time_feasible"],
       source_only_no_actual_quality_claim=True,
