@@ -1,0 +1,78 @@
+{
+  "schema": "BEGLIN-kernel-aware-mixed-precision-allocator-protocol/1",
+  "date": "2026-10-22",
+  "status": "LOCKED_BEFORE_NEW_ALLOCATION_NATIVE_MODEL_SCORING",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "source_BF16_local_snapshot": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "source_qscan_SHA256": "720de694838d3a85156afae3732974f3867db1c8ce4957e55778da77724a0d8a",
+  "source_native_7role_cost_SHA256": "280ca338745d0ebb2c44986d18e8b240135fe7fa4b1077f49f65f5d8fb3eff93",
+  "hardware": "EOE Apple Silicon Mac13,1",
+  "precision_options": [
+    {
+      "bit": 4,
+      "kernels": [
+        "BEGLIN Q4G64 NEON fused 1-thread",
+        "BEGLIN Q4G64 NEON fused 6-thread"
+      ],
+      "cost_source": "lowest median across same real L0 role geometry, 7 repeats x 8 inputs"
+    },
+    {
+      "bit": 8,
+      "kernels": [
+        "BEGLIN qNg64 n8 predecoded INT8 NEON GEMV"
+      ],
+      "cost_source": "real source-BF16 L0 role native kernel, same 7x8"
+    }
+  ],
+  "axes": {
+    "quality": "sum tensor relative_Frobenius squared error reduction (n4->n8); invalid as real model sensitivity",
+    "time": "measured 7-role marginal decode median ms; additive proxy corrected by previous full-model role-matched observation",
+    "memory": "sum exact BEGLIN Q4G64 vs n8 packed bytes including F32 scales"
+  },
+  "fixed_constraints": {
+    "n8_tensors": 28,
+    "n4_tensors": 168,
+    "memory_ceiling_bytes": 830570496,
+    "predicted_one_decode_ms_ceiling": 100,
+    "n8_per_role_min": 0,
+    "n8_per_role_max": 28
+  },
+  "time_calibration": {
+    "q4_native_reference_ms": 75.26,
+    "matched_4_per_role_old_repacked_ms": 116.18,
+    "source": "already measured existing native full BEGLIN decode (not new candidate)",
+    "gamma": "(116.18 - 75.26)/(4*sum role median marginal n8 - min(q4_1t,q4_6t))",
+    "calibrated_proxy_not_true_full_model_speed": true
+  },
+  "solver": "exact finite 7-role integer allocation; for k items in each role choose top k source-only error reductions, enumerate all 7 role counts with total 28, reject memory and predicted latency limit, maximize total proxy benefit, tie lexicographic role-count; record full search count and constraints",
+  "controls": [
+    "all q4",
+    "all n8",
+    "prior role-matched four-per-role weight-error selection",
+    "prior seed73 role-matched random",
+    "new kernel-aware under constrained memory/latency",
+    "separate memory-only source-error optimum"
+  ],
+  "output_metrics": [
+    "native full Qwen fixed public two-window 21-position PPL",
+    "one 151936-way final logits vector vs existing F32 widened source",
+    "native bench single-token best-of-three ms",
+    "peak PPL process RSS where available"
+  ],
+  "input_policy": "all prior fixed public synthetic prompts from q_full_model_20261021_v2, no new source or final test rows, no policy hyperparameter tuning after observing output",
+  "deployment": {
+    "main_modified": false,
+    "production_modified": false,
+    "release_modified": false,
+    "original_model_touched": false,
+    "previous_blocked_tensor_output_sensitivity_not_retried": true
+  },
+  "limitations": [
+    "Kernels are benchmarked per isolated source role and additive model is a heuristic, not a factual prediction",
+    "Proxy improvement on source model weights previously failed to predict NLL quality; this is engineering research not proof of better reasoning",
+    "Mode options are n4 Q4G64 and n8 qNg64 repacked NEON only; additional intermediate widths still need kernel profiling",
+    "F32 comparator widens BF16 source original; not true BF16 execution",
+    "21-token public synthetic PPL and first-token logits cannot establish independent final quality",
+    "Existing V6 24 consumed row identities are unknown; do not open old V6 final"
+  ]
+}
