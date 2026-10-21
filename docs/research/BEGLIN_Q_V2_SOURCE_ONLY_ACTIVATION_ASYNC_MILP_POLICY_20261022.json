@@ -1,0 +1,78 @@
+{
+  "MILP_mip_gap": 0,
+  "MILP_mip_node_count": 0,
+  "MILP_status": 0,
+  "async_ms_bound": 90,
+  "full_model_parallel_runtime_claim": false,
+  "full_model_runtime_currently_sequential": true,
+  "input_native_concurrency_measured_SHA256": "e39675f36f18af7d9397d77ee4fd89d9a8a295b123736cbaa71f9a0d84a27d66",
+  "input_native_role_profile_SHA256": "0cf95f659c3ad4f54706a17f61299becb95d7e3187fde0b706f95efa6555fa52",
+  "input_preregistered_SHA256": "0e4b2d999c4aca27da846642d837dade6166e5d312383cf1f795adfc81290c07",
+  "input_source_activation_quality_SHA256": "3e7b0d0c52332fd8056de240005ca9a5e0328ba8baaf9fc3be13f4d9bcac7b53",
+  "limits_of_model": [
+    "Do not call input-moment score full-model quality sensitivity",
+    "Async DAG observed stage costs not yet wired to whole Qwen runtime",
+    "Result is MILP optimum for the specified discrete-source surrogate and measured stage table, not globally optimal LLM quality",
+    "GPU Metal/other bitwidths not profiled"
+  ],
+  "native_hypothetical_async_DAG_predicted_ms": 89.71108574999988,
+  "native_model_storage_bytes": 776896512,
+  "native_model_storage_limit_bytes": 830570496,
+  "native_serial_predicted_ms": 91.93007907197867,
+  "original_model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "original_private_policy_receipt_SHA256": "749d8648478b1a4b8c521de56b50821d224f85f8f247859a1d5c7d16994e068e",
+  "provenance": "SOURCE_ONLY_FROZEN_BEFORE_NATIVE_RESULT",
+  "quality_private_receipt_SHA256": "7b3ad80294275807cb3775601915b18ec3caeeef430849d8cea48389b3623616",
+  "schema": "BEGLIN-Qv2-196-full-MILP-native-kernel-quality-async/1",
+  "selected_n8": 28,
+  "selected_q4": 168,
+  "selected_upgraded_roles": {
+    "down_proj": [
+      1
+    ],
+    "gate_proj": [],
+    "k_proj": [
+      0
+    ],
+    "o_proj": [],
+    "q_proj": [
+      25
+    ],
+    "up_proj": [
+      1,
+      2,
+      3,
+      5
+    ],
+    "v_proj": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23
+    ]
+  },
+  "serial_ms_bound": 100,
+  "source_calibration_gain_sum": 1.536327206456,
+  "source_policy_tensor_mask_sha256": "9324c5ec891d638f2713d3bbd4187399e1aae8a9a74df129dfabc4e8ea870212",
+  "source_quality_objective": "diagonal input-second-moment local projection reconstruction error benefit, no NLL",
+  "stage_private_receipt_SHA256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+  "status": "OPTIMAL_HIGHS_SOURCE_ONLY_BEFORE_TEST",
+  "tested_IID_OOD_or_prelocked_eval_prompts_used": false
+}
