@@ -195,8 +195,8 @@ def compute_case(target_name:str,axis:str,models:dict)->dict:
         source_oof_balanced_accuracy={model:float(stats[i]["accuracy"]) for i,model in enumerate(sources)},
         source_oof_class_accuracy={model:{"positive":stats[i]["positive_oof_accuracy"],
             "negative":stats[i]["negative_oof_accuracy"]} for i,model in enumerate(sources)},
-        source_error_coprobability_matrix=(errors.T@errors / len(errors)).tolist(),
-        source_error_centered_covariance=np.cov(errors,rowvar=False,ddof=0).tolist(),
+        source_error_coprobability_matrix=(errors.astype(np.float64).T@errors.astype(np.float64)/len(errors)).tolist(),
+        source_error_centered_covariance=np.cov(errors.astype(np.float64),rowvar=False,ddof=0).tolist(),
         source_error_cross_correlation=float(np.corrcoef(errors.T)[0,1])
             if all(float(np.std(errors[:,i]))>1e-10 for i in range(2)) else None,
         source_weights={name:[float(x) for x in w] for name,w in weights.items()},
