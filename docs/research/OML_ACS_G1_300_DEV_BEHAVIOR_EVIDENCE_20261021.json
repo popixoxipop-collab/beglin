@@ -1,0 +1,85 @@
+{
+  "schema": "oml-acs-g1-300-dev-behavior-evidence/1",
+  "date": "2026-10-21",
+  "verdict": "DEV_EXPLORATORY_COMPLETED__NO_SCIENTIFIC_HYPOTHESIS_VERDICT",
+  "models": {
+    "source": "Qwen/Qwen2.5-1.5B-Instruct",
+    "source_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "source_layer_zero_based": 14,
+    "target": "mistralai/Mistral-7B-Instruct-v0.3",
+    "target_revision": "c170c708c41dac9275d15a8fff4eca08d52bab71",
+    "target_layer_zero_based": 16
+  },
+  "source_artifacts": {
+    "shared_300_anchor_text_root_sha256": "47d5ddcb37b81212e3f43a34441662062b42a038d4cc606d9d7081c31131f83b",
+    "qwen_activation_sha256": "cbd5535b5247ea7b153a7835e5c27d9b8cc680cc6d031108b87db1a49136f692",
+    "mistral_activation_sha256": "7b3a187f7f54d28a518c9c18951d51b9b2e75bc2042541097f601d1895e767c5",
+    "source_code": "research/oml_acs/g1_300_dev_sentiment.py",
+    "source_code_sha256": "74bdf62e47450bf5f2fd0e90b7cb200893eb03b7f4696f34d7a63b61790cd4e0",
+    "fixed_fixture_root_sha256": "37535d22a8119d1334619f44ebeb7557bc9b266dc48ac5f390a0126ceba66502",
+    "local_private_receipt_sha256": "ce70ba742239df835a2458956b60634fce1fe15ba0319dac0cddb290d146c169",
+    "local_private_receipt_bytes": 2583
+  },
+  "evaluation": {
+    "synthetic_dev_source_train_pos": 6,
+    "synthetic_dev_source_train_neg": 6,
+    "target_positive_examples": 8,
+    "target_negative_examples": 8,
+    "positive_vs_negative_ranking_pairs": 64,
+    "ACS_correct_ranking_pairs": 62,
+    "ACS_pairwise_AUROC": 0.96875,
+    "shuffled_anchor_permutations": 199,
+    "shuffled_anchor_auc_mean": 0.5288944723618091,
+    "shuffled_anchor_auc_95th": 0.96875,
+    "shuffled_anchor_auc_empirical_p": 0.06,
+    "random_canonical_directions": 199,
+    "random_direction_auc_mean": 0.4936400753768844,
+    "random_direction_auc_95th": 0.9375,
+    "random_direction_auc_empirical_p": 0.04,
+    "seed": 42,
+    "target_labels_used_only_after_source_axis_formed": true
+  },
+  "steering": {
+    "generation_changed_raw": true,
+    "generation_changed_normalized": true,
+    "generation_changed_random": true,
+    "literal_adjoint_direction_norm": 5.4405406428114595,
+    "alpha": 3,
+    "literal_adjoint_effective_delta_norm": 16.32162192843438,
+    "normalized_steering_effective_delta_norm": 3,
+    "random_direction_effective_delta_norm": 3,
+    "literal_raw_generation_degenerated": true,
+    "meaningful_target_behavior_improvement_demonstrated": false,
+    "comments": "An output change under intervention is not causal evidence of intended sentiment manipulation: random control also changed. Raw-vs-normalized strengths differ substantially."
+  },
+  "runtime": {
+    "job_id": "job_a116531b67c06046f9f564271e32119f",
+    "state": "SUCCEEDED",
+    "exit_code": 0,
+    "device": "NVIDIA GeForce RTX 5070 Ti",
+    "precision": "BF16",
+    "in_process_elapsed_seconds": 93.93,
+    "worker_run_ms": 107405,
+    "peak_cuda_allocated_mb": 11779.75,
+    "storage_cleanup_success": true
+  },
+  "constraints": {
+    "not_paper_author_300_rows": true,
+    "not_independent_behavior_dataset": true,
+    "not_final_holdout": true,
+    "old_V6_24_used_docs_not_attested_excluded": true,
+    "shuffled_null_significant_at_0_05": false,
+    "three_family_rotation_not_done": true,
+    "prior_12_anchor_control_comparison_not_directly_comparable_due_different_examples": true,
+    "no_runtime_release_changes": true,
+    "no_main_merge": true,
+    "no_raw_benchmark_text_or_vectors_published": true
+  },
+  "next_gates": [
+    "Third independently trained pilot family: licensed Llama3.2 or verified public Phi-4-mini",
+    "Real pinned and disjoint behavior datasets with train/dev/final lock before independent AUROC",
+    "Norm-matched raw-vs-unit steering controls with matched prompts and multiple seeds",
+    "V6-24 consumed holdout origin-document attestation",
+    "A/B/C1/C2/Q verdicts separately; no auto-promotion"
+  ]
+}
