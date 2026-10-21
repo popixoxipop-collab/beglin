@@ -23,7 +23,7 @@ CHECKPOINT=pathlib.Path("/Users/eoe/.cache/huggingface/hub/models--mlx-community
 BIN=LAB/"beglin_Qv2_native_async"
 MASK=LAB/"frozen_selected_28_roles.txt"
 SCORE=BASE/"all_ppl_public_eval_receipt.json"
-RECEIPT=LAB/"source_frozen_actual_async_on_off_receipt.json"
+RECEIPT=LAB/"source_frozen_actual_async_on_off_receipt_retry1.json"
 EXPECTED_BIN="fb947372495962ed67bb00f91199030b2e41d50ab283f4a5bd81ab2e51cdc054"
 EXPECTED_MASK="9324c5ec891d638f2713d3bbd4187399e1aae8a9a74df129dfabc4e8ea870212"
 EXPECTED_EVAL_PPL_SHA="043ee279a2f5a7e0880286aa0c1b5e5cae7692dbf4775bf53c49a27b803383a9"
@@ -81,21 +81,22 @@ def run(mode:str,phase:str,index:int)->dict:
     result=subprocess.run(wrapped,env=env,cwd=str(ROOT),capture_output=True,text=True,timeout=240)
     seconds=time.monotonic()-t
     b=(result.stdout+"\n"+result.stderr).encode()
-    log=LAB/f"actual_async_{mode}_{phase}_{index}.txt"
+    log=LAB/f"actual_async_retry1_{mode}_{phase}_{index}.txt"
     write_private(log,b)
     if result.returncode!=0:raise RuntimeError("native Qwen "+mode+"/"+phase+" error "+result.stderr[-1100:])
     text=b.decode()
     if "[Q-NATIVE-RESEARCH] projection_role_tensors: f32=0 n8=28 q4=168" not in text:
         raise RuntimeError("wrong actual 28n8/168q4 precision policy")
-    if "[engine] safetensors" not in text or "production_changed=0" not in text:
+    if "[engine] safetensors" not in text or "[BEGLIN-N8-REPACKED-LAB]" not in text or "source_unchanged=1" not in text:
         raise RuntimeError("native source provenance/print guard absent")
     pattern=re.search(r"\[BEGLIN-QV2-NATIVE-ASYNC\]\s+qkv_joined=(\d+)\s+gateup_joined=(\d+)\s+serial_stage=(\d+).*production_changed=0",text)
-    if pattern is None:raise RuntimeError("missing source QKV/GU async join counters")
-    joins=[int(s) for s in pattern.groups()]
     if mode=="on":
+        if pattern is None:raise RuntimeError("async ON missing bounded-stage join counters")
+        joins=[int(s) for s in pattern.groups()]
         if joins[0]<=0 or joins[1]<=0:raise RuntimeError("async ON didn't run both independent stages")
     else:
-        if joins[0]!=0 or joins[1]!=0:raise RuntimeError("async OFF still ran side stage")
+        if pattern is not None:raise RuntimeError("async OFF still entered async QKV/GU path")
+        joins=[0,0,0]
     record=dict(mode=mode,phase=phase,attempt=index,wall_seconds=round(seconds,3),
          native_log_sha256=sha(b),qkv_joined=joins[0],gateup_joined=joins[1],
          serial_stage=joins[2],exit_code=result.returncode)
