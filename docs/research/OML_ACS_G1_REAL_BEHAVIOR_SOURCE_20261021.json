@@ -1,0 +1,76 @@
+{
+  "schema": "oml-acs-g1-real-behavior-source/1",
+  "date": "2026-10-21",
+  "status": "PASS_DEV_ONLY_DATA_ACQUISITION",
+  "job_id": "job_46554038af4e660af3fc31c8f4679ed1",
+  "job_state": "SUCCEEDED",
+  "exit_code": 0,
+  "source_file_sha256": "b99fb5d7e8c909e6821f555ac590b36ff52393b9d4e7a01828ee936c615bd274",
+  "source_file_mode": "0600",
+  "source_file_private": true,
+  "raw_prompt_text_published": false,
+  "labels_published": false,
+  "anchor_source_sha256": "47d5ddcb37b81212e3f43a34441662062b42a038d4cc606d9d7081c31131f83b",
+  "dataset_revisions": [
+    {
+      "dataset": "stanfordnlp/sst2",
+      "revision": "8d51e7e4887a4caaa95b3fbebbf53c0490b58bbb",
+      "label_mapping": {
+        "0": "negative",
+        "1": "positive"
+      },
+      "training_source_file_sha256": "c7921283b75a42e685f50edecb96798607ea0fcbfd0739ee8975f22c12d55f09",
+      "validation_source_file_sha256": "fb00fe008f6828f86ba2beda8415a4cf5da0c884f21c5f238c87131b5aa19529",
+      "license": "UNKNOWN_REQUIRES_MANUAL_REVIEW"
+    },
+    {
+      "dataset": "dair-ai/emotion",
+      "revision": "cab853a1dbdf4c42c2b3ef2173804746df8825fe",
+      "label_mapping": {
+        "1": "joy",
+        "3": "anger"
+      },
+      "training_source_file_sha256": "10817f0f2ea42358bc62f69a09dfb8bd71701727df6d5a387bea742f3ea06417",
+      "validation_source_file_sha256": "c70f0e660b5ebd1ea9a37d2a851f516f08a6d6477cdfc11be204e22a2f1102fd",
+      "license": "OTHER_REQUIRES_MANUAL_REVIEW"
+    }
+  ],
+  "per_axis_train_pairs": 100,
+  "per_axis_dev_pairs": 50,
+  "axes": [
+    "sst2_positive_vs_negative",
+    "carer_joy_vs_anger"
+  ],
+  "total_rows": 600,
+  "independent_private_verification": {
+    "all_600_source_hashes_unique": true,
+    "exact_collision_with_300_anchors": 0,
+    "train_dev_duplicates": 0,
+    "trigram_Jaccard_0_9_or_higher_pairs": 0,
+    "balanced_pos_neg_class_by_axis": true,
+    "private_file_mode": "0600",
+    "test_split_opened": false
+  },
+  "gates": {
+    "dev_only": true,
+    "independent_final_eval_allowed": false,
+    "semantic_near_duplicate_audit_complete": false,
+    "license_review_complete": false,
+    "former_V6_24_holdout_docs_attested_excluded": false,
+    "A": "NO_VERDICT",
+    "B": "NO_VERDICT",
+    "C1": "NO_VERDICT",
+    "C2": "NO_VERDICT",
+    "Q": "NO_VERDICT"
+  },
+  "code_paths": [
+    "research/oml_acs/build_behavior_train_dev.py",
+    "research/oml_acs/extract_real_behavior.py",
+    "research/oml_acs/evaluate_real_behavior.py"
+  ],
+  "tests": {
+    "data_collection_contract": 7,
+    "activation_extractor_contract": 5,
+    "AUROC_and_null_contract": 7
+  }
+}
