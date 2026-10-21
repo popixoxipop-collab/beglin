@@ -1,0 +1,164 @@
+{
+  "PPL_measurement_contract": "two public synthetic chat token windows, 21 positions, actual native model; not general task performance",
+  "allocator_accuracy_verdict": "NO_VERDICT",
+  "batch_M3_original_vs_repacked_max_abs": 0.000003814697265625,
+  "binary_validation": "two isolated whole-model native Qwen binaries (allN8 and 28N8/168Q4); original production binary not modified",
+  "date": "2026-10-22",
+  "decoder_8bit_accuracy_verdict": "TECHNICALLY_VERIFIED_ON_SMALL_SYNTHETIC_TEST_ONLY",
+  "decoder_contract": {
+    "extra_weight_storage": 0,
+    "in_place_conversion": "once during source-BF16 checkpoint loading",
+    "on_disk_source_format": "unchanged qNg64 n8 bitplanes",
+    "production_merge_requires_explicit_encoding_format_tag": true,
+    "run_memory_format": "same 64 bytes per group, in-place contiguous signed int8 code"
+  },
+  "final_IID_OOD_or_historical_V6_24_opened": false,
+  "four_real_BF16_tensor_shapes": [
+    {
+      "max_abs_err": 2.9802322387695312e-8,
+      "name": "model.layers.0.self_attn.k_proj.weight",
+      "rel_l2": 6.381623982498641e-8,
+      "scalar_to_repacked_speedup": 14.851912244289494,
+      "shape": [
+        256,
+        1536
+      ]
+    },
+    {
+      "max_abs_err": 1.4901161193847656e-8,
+      "name": "model.layers.14.self_attn.o_proj.weight",
+      "rel_l2": 6.482337275672327e-8,
+      "scalar_to_repacked_speedup": 15.298047278382755,
+      "shape": [
+        1536,
+        1536
+      ]
+    },
+    {
+      "max_abs_err": 2.9802322387695312e-8,
+      "name": "model.layers.0.mlp.gate_proj.weight",
+      "rel_l2": 6.560656341830741e-8,
+      "scalar_to_repacked_speedup": 15.313096276712633,
+      "shape": [
+        8960,
+        1536
+      ]
+    },
+    {
+      "max_abs_err": 2.9802322387695312e-8,
+      "name": "model.layers.0.mlp.down_proj.weight",
+      "rel_l2": 6.541468699200693e-8,
+      "scalar_to_repacked_speedup": 14.87462032090247,
+      "shape": [
+        1536,
+        8960
+      ]
+    }
+  ],
+  "limitations": [
+    "The all-n8 full PPL and decode timing are transcribed from previous durable process logs, not regenerated here",
+    "Best-of-three single decode token timing is not sustained throughput or confidence interval",
+    "Different QNg64 n8 in-memory codes require an explicit format tag before production merging",
+    "Original BF16-sourced weights widened to FP32 are not a native BF16 math baseline",
+    "No prospective heldout AUROC or output-sensitivity policy selection, which remains blocked",
+    "Original 24 V6 used docs unverified and independent scientific Q verdict NO_VERDICT",
+    "Both frozen 28n8/168q4 precision policies retain their earlier relative NLL losses; faster decoding does not improve their model quality.",
+    "Full 4bit 6-thread decode comparison remains faster in prior single-token tests; optimized n8 path is not a winning universal serving tier."
+  ],
+  "main_changed": false,
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "model_BF16_source_rev": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "native_full_model_3_cases": [
+    {
+      "PPL_new": 2148.1231,
+      "PPL_old": 2148.1231,
+      "case": "all_n8",
+      "full_model_bench_process_id": "proc_8aae092a4d7bfbcdc56954cc750505c8",
+      "full_model_ppl_process_id": "proc_964390d2e4ab96d3ea1d682408e367be",
+      "logits_repacked_sha256": "7ba272f52be5356d0dd74343870116126706cedbe944dd6cc6de23c355f06269",
+      "n8_projection_tensors": 196,
+      "new_PPL_max_RSS_bytes": 5491048448,
+      "new_repacked_NEON_ms": 379.06,
+      "new_tps": 2.638104785522081,
+      "old_fly_NEON_ms": 577.39,
+      "old_scalar_ms": 5257.63,
+      "q4_projection_tensors": 0,
+      "same_logits_bitwise_as_old_NEON": true
+    },
+    {
+      "PPL_new": 4747.6983,
+      "PPL_old": 4747.6983,
+      "case": "mixed_proxy",
+      "logits_repacked_sha256": "5f424692474dd9101c8fd3ad4c62baaf7449b882387091a72290ae5e87499128",
+      "n8_projection_tensors": 28,
+      "native_GEMV_calls": {
+        "bench": 1596,
+        "dump": 280,
+        "ppl": 644
+      },
+      "new_PPL_max_RSS_bytes": 4922425344,
+      "new_repacked_NEON_ms": 116.18,
+      "new_tps": 8.607333448097778,
+      "old_fly_NEON_ms": 144.43,
+      "policy_sha256": "f65f50421cd9e9bac32bc780805942d68c3d503075ce962ce25315fdb5914cb9",
+      "q4_projection_tensors": 168,
+      "same_logits_bitwise_as_old_NEON": true
+    },
+    {
+      "PPL_new": 3411.2283,
+      "PPL_old": 3411.2283,
+      "case": "mixed_random",
+      "logits_repacked_sha256": "914799996fd0da9720b2f8994884f3d5b4f4c4a087f426426d398da183c100b7",
+      "n8_projection_tensors": 28,
+      "native_GEMV_calls": {
+        "bench": 1596,
+        "dump": 280,
+        "ppl": 644
+      },
+      "new_PPL_max_RSS_bytes": 4922671104,
+      "new_repacked_NEON_ms": 116.18,
+      "new_tps": 8.607333448097778,
+      "old_fly_NEON_ms": 143.85,
+      "policy_sha256": "72065ac7a4ae5d68b1c7944dc4a67e40ac9c3c825db54a1d441ca3002ec015c5",
+      "q4_projection_tensors": 168,
+      "same_logits_bitwise_as_old_NEON": true
+    }
+  ],
+  "original_repacked_C_SHA256": "19a3cdf92af1764233d0eac3e61339387c9de52568022508bea3538470e85c76",
+  "original_source_SHA256": {
+    "batch": "faa60621c23b433ca3505ca112aac2f1dbd507591d9cae50392b9cc8bab612ec",
+    "build": "657a4cecc4b7d978fce6c6bd9362a92543a519ebc8ca4938f3524894a71758da",
+    "mixed": "e99d1ea70001872c393b24a5982eb00819f4d736d55824506bceb2b7f9607aef",
+    "multi": "772af04bc48f20d2de405df33d1ecc119a318d7fbb370081f1681cabe899d937"
+  },
+  "private_full_audit_sha256": "db836470290f61713f9ab612828489b239872d620e2c72ea666fdb9ce797b983",
+  "production_changed": false,
+  "release_changed": false,
+  "research_wrapper_C_SHA256": "d12b3fecf5f640e421640845226c1abd701ab75a8ed87c74d6a718e141961f98",
+  "schema": "beglin-q8-inplace-repacked-apple-source-n8-evidence/1",
+  "scientific_Q_hypothesis": "NO_VERDICT",
+  "source_files": [
+    "research/oml_acs/qng64_n8_repacked_neon.c",
+    "research/oml_acs/qng64_n8_repacked_neon.h",
+    "research/oml_acs/qng64_n8_repacked_real_benchmark.c",
+    "research/oml_acs/qng64_n8_repacked_multishape.py",
+    "research/oml_acs/qng64_n8_repacked_lab_dispatch.c",
+    "research/oml_acs/qng64_n8_repacked_full_build.py",
+    "research/oml_acs/qng64_n8_repacked_mixed_run.py",
+    "research/oml_acs/qng64_n8_repacked_independent_audit.py"
+  ],
+  "speed_measurement_contract": "Apple EOE macOS arm64 CPU, native BEGLIN bench fastest of three one-token trials after warmup; compare previous and new isolated executables, not sustained production throughput",
+  "status": "PASS_REPACKED_N8_DECODER_ALL_NATIVE_CONTEXTS_DEV_ONLY",
+  "unit_tests": {
+    "full_model_and_source_SHA_checks": "PASS",
+    "native_batch_M3": "PASS",
+    "other_valid_qNg64_widths": [
+      3,
+      5,
+      6,
+      7
+    ],
+    "research_regressions": "8/8 PASS"
+  },
+  "unrelated_per_tensor_output_sensitivity_blocker": "NOT_RETRIED"
+}
