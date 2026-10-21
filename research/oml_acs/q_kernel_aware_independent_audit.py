@@ -100,7 +100,7 @@ def source_only_optimum():
       kernel_latency_sensitivity_80ms_predicted_ms=strict["kernel_aware"]["native_approx_total_decode_ms"],
       kernel_latency_sensitivity_80ms_memory_bytes=strict["kernel_aware"]["packed_projection_memory_bytes"],
       kernel_time_constraint_100ms_changed_memory_only_optimum=(policy["counts"]!=raw["policies"]["memory_only"]["counts"]),
-      source_only_baseline_gammas=g    if False else float(gamma),
+      source_only_decode_calibration_gamma=float(gamma),
     )
 
 def native_model():
