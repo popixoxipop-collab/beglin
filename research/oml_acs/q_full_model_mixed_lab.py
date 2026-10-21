@@ -73,7 +73,7 @@ def mix_source()->str:
         if source.count(old)!=1:
             raise RuntimeError("unexpected lab code patch site: "+old)
         source=source.replace(old,new,1)
-    if source.count("q_lab_mix_n8")!=3:
+    if source.count("q_lab_mix_n8")!=4:
         raise RuntimeError("mixed mask not correctly represented")
     return source
 
