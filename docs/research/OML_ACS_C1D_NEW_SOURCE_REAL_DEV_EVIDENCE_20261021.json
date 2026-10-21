@@ -1,0 +1,272 @@
+{
+  "anchors_sha256": "47d5ddcb37b81212e3f43a34441662062b42a038d4cc606d9d7081c31131f83b",
+  "cases": [
+    {
+      "OOF_memory_rows": 200,
+      "absolute_gain_ge_0_02": false,
+      "axis": "sst2_positive_vs_negative",
+      "conditional_minus_static": 0.0008000000000000229,
+      "conditional_minus_uniform": 0.0020000000000000018,
+      "fold_manifest_sha256": "259a524f32c0465f31ab99a5c9404297b7e4a6329104299edb613e1c352c80c2",
+      "input_conditional_AUROC": 0.7872,
+      "input_conditional_w0_variation": {
+        "fraction_at_boundary": 0,
+        "fraction_near_static_1e6": 0.02,
+        "max": 0.743527578145294,
+        "median": 0.5876914442688564,
+        "min": 0.5093332536895685,
+        "p25": 0.5542853834033774,
+        "p75": 0.6126308201713168,
+        "standard_deviation": 0.04770954072427285
+      },
+      "input_local_topk": 32,
+      "n": 100,
+      "paired_bootstrap_999_CI95": [
+        -0.0023999999999999577,
+        0.0043999999999999595
+      ],
+      "shrink_fraction": 0.5,
+      "source_OOF_static_AUROC": 0.7864,
+      "sources": [
+        "mistral",
+        "phi"
+      ],
+      "static_source_weights": [
+        0.5799993600051201,
+        0.4200006399948799
+      ],
+      "target": "qwen",
+      "uniform_AUROC": 0.7852
+    },
+    {
+      "OOF_memory_rows": 200,
+      "absolute_gain_ge_0_02": false,
+      "axis": "carer_joy_vs_anger",
+      "conditional_minus_static": 0.0040000000000000036,
+      "conditional_minus_uniform": 0.0031999999999999806,
+      "fold_manifest_sha256": "3b313fe2b0bd910178f72a89a58829fac5a961ce5d78cf8f309b5a1abd3bd6f7",
+      "input_conditional_AUROC": 0.8788,
+      "input_conditional_w0_variation": {
+        "fraction_at_boundary": 0,
+        "fraction_near_static_1e6": 0.26,
+        "max": 0.7655143115662174,
+        "median": 0.5142853877625657,
+        "min": 0.3789494071678795,
+        "p25": 0.4977639436737148,
+        "p75": 0.5815275338800431,
+        "standard_deviation": 0.07135629802203829
+      },
+      "input_local_topk": 32,
+      "n": 100,
+      "paired_bootstrap_999_CI95": [
+        -0.007199999999999984,
+        0.015619999999999927
+      ],
+      "shrink_fraction": 0.5,
+      "source_OOF_static_AUROC": 0.8748,
+      "sources": [
+        "mistral",
+        "phi"
+      ],
+      "static_source_weights": [
+        0.514285551022274,
+        0.485714448977726
+      ],
+      "target": "qwen",
+      "uniform_AUROC": 0.8756
+    },
+    {
+      "OOF_memory_rows": 200,
+      "absolute_gain_ge_0_02": false,
+      "axis": "sst2_positive_vs_negative",
+      "conditional_minus_static": 0.0016000000000000458,
+      "conditional_minus_uniform": 0.0012000000000000899,
+      "fold_manifest_sha256": "259a524f32c0465f31ab99a5c9404297b7e4a6329104299edb613e1c352c80c2",
+      "input_conditional_AUROC": 0.8372,
+      "input_conditional_w0_variation": {
+        "fraction_at_boundary": 0,
+        "fraction_near_static_1e6": 0,
+        "max": 0.5123152062255174,
+        "median": 0.42347204880216094,
+        "min": 0.35677202689977594,
+        "p25": 0.40556580446097745,
+        "p75": 0.43037939496812133,
+        "standard_deviation": 0.023338309455167437
+      },
+      "input_local_topk": 32,
+      "n": 100,
+      "paired_bootstrap_999_CI95": [
+        -0.0012000000000000899,
+        0.005199999999999982
+      ],
+      "shrink_fraction": 0.5,
+      "source_OOF_static_AUROC": 0.8356,
+      "sources": [
+        "qwen",
+        "phi"
+      ],
+      "static_source_weights": [
+        0.39436679229976174,
+        0.6056332077002382
+      ],
+      "target": "mistral",
+      "uniform_AUROC": 0.836
+    },
+    {
+      "OOF_memory_rows": 200,
+      "absolute_gain_ge_0_02": false,
+      "axis": "carer_joy_vs_anger",
+      "conditional_minus_static": -0.00039999999999995595,
+      "conditional_minus_uniform": 0.0020000000000000018,
+      "fold_manifest_sha256": "3b313fe2b0bd910178f72a89a58829fac5a961ce5d78cf8f309b5a1abd3bd6f7",
+      "input_conditional_AUROC": 0.922,
+      "input_conditional_w0_variation": {
+        "fraction_at_boundary": 0,
+        "fraction_near_static_1e6": 0.1,
+        "max": 0.5471120037738235,
+        "median": 0.37857041890780574,
+        "min": 0.19802219388361286,
+        "p25": 0.3149629610965532,
+        "p75": 0.42797542897416974,
+        "standard_deviation": 0.0803978304418923
+      },
+      "input_local_topk": 32,
+      "n": 100,
+      "paired_bootstrap_999_CI95": [
+        -0.0036000000000000476,
+        0.0020000000000000018
+      ],
+      "shrink_fraction": 0.5,
+      "source_OOF_static_AUROC": 0.9224,
+      "sources": [
+        "qwen",
+        "phi"
+      ],
+      "static_source_weights": [
+        0.3921577085669917,
+        0.6078422914330083
+      ],
+      "target": "mistral",
+      "uniform_AUROC": 0.92
+    },
+    {
+      "OOF_memory_rows": 200,
+      "absolute_gain_ge_0_02": false,
+      "axis": "sst2_positive_vs_negative",
+      "conditional_minus_static": 0.0020000000000000018,
+      "conditional_minus_uniform": 0.00039999999999995595,
+      "fold_manifest_sha256": "259a524f32c0465f31ab99a5c9404297b7e4a6329104299edb613e1c352c80c2",
+      "input_conditional_AUROC": 0.8592,
+      "input_conditional_w0_variation": {
+        "fraction_at_boundary": 0,
+        "fraction_near_static_1e6": 0,
+        "max": 0.21885824799194073,
+        "median": 0.16373067018099605,
+        "min": 0.11527732309096862,
+        "p25": 0.14706297572969718,
+        "p75": 0.18732276820501947,
+        "standard_deviation": 0.026226750729830925
+      },
+      "input_local_topk": 32,
+      "n": 100,
+      "paired_bootstrap_999_CI95": [
+        -0.005600000000000049,
+        0.009199999999999986
+      ],
+      "shrink_fraction": 0.5,
+      "source_OOF_static_AUROC": 0.8572,
+      "sources": [
+        "qwen",
+        "mistral"
+      ],
+      "static_source_weights": [
+        0.2325606273430015,
+        0.7674393726569985
+      ],
+      "target": "phi",
+      "uniform_AUROC": 0.8588
+    },
+    {
+      "OOF_memory_rows": 200,
+      "absolute_gain_ge_0_02": false,
+      "axis": "carer_joy_vs_anger",
+      "conditional_minus_static": 0.0016000000000000458,
+      "conditional_minus_uniform": 0.0052000000000000934,
+      "fold_manifest_sha256": "3b313fe2b0bd910178f72a89a58829fac5a961ce5d78cf8f309b5a1abd3bd6f7",
+      "input_conditional_AUROC": 0.928,
+      "input_conditional_w0_variation": {
+        "fraction_at_boundary": 0,
+        "fraction_near_static_1e6": 0.03,
+        "max": 0.5451500184613408,
+        "median": 0.377927727863782,
+        "min": 0.2521512696731719,
+        "p25": 0.3211699717375564,
+        "p75": 0.4377212329463303,
+        "standard_deviation": 0.07213157396418259
+      },
+      "input_local_topk": 32,
+      "n": 100,
+      "paired_bootstrap_999_CI95": [
+        -0.0063999999999999665,
+        0.010820000000000012
+      ],
+      "shrink_fraction": 0.5,
+      "source_OOF_static_AUROC": 0.9264,
+      "sources": [
+        "qwen",
+        "mistral"
+      ],
+      "static_source_weights": [
+        0.3928579081577988,
+        0.6071420918422012
+      ],
+      "target": "phi",
+      "uniform_AUROC": 0.9228
+    }
+  ],
+  "cases_with_auroc_gain_ge_0_02": 0,
+  "final_holdout_opened": false,
+  "historical_training_sha256": "b99fb5d7e8c909e6821f555ac590b36ff52393b9d4e7a01828ee936c615bd274",
+  "limitations": [
+    "New IMDB and GoEmotions rows are source-separated development only, not blind independent final evaluation.",
+    "No semantic paraphrase exclusion proof or old V6 24 used-holdout identity attestation.",
+    "Selection used public dataset labels to balance classes but not model outputs; gate used no target labels.",
+    "All six 999-bootstrap paired comparison intervals include zero, no +0.02 threshold success.",
+    "IMDB license marked other and requires compliance review for dataset redistribution; no raw text published.",
+    "No dynamic tensor-level bit allocation, no performance or latency/energy benefit verified.",
+    "No parameter/hyperparameter changes after inspecting prospective development outcomes.",
+    "No main, production, or immutable Tailnet release changes."
+  ],
+  "mean_dynamic_minus_static": 0.0016000000000000274,
+  "new_row_count": 200,
+  "new_source_sha256": "6ee84d7b25a1025d0ae41dda32fbd1098a82499e8192cc9cde71808c52f3b4bb",
+  "num_target_axis_cases": 6,
+  "participating_models": [
+    "qwen",
+    "mistral",
+    "phi"
+  ],
+  "private_result_sha256": "d2592c692714f7587b06be425258ba41ca74a02cc41cc7691f4978c8cc72bb94",
+  "protocol_file": "configs/research/OML_ACS_C1D_PROSPECTIVE_DEV_FREEZE_20261021.json",
+  "real_Beglin_tensor_bit_allocation_performed": false,
+  "schema": "oml-acs-c1d-new-source-development-aggregate/1",
+  "source_and_algorithm_prelocked": true,
+  "status": "NEW_SOURCE_DEVELOPMENT_ONLY_NOT_FINAL",
+  "target_labels_to_gate": false,
+  "verification": {
+    "all_jobs_SUCCEEDED_exit0": true,
+    "code_unit_test_count": 23,
+    "code_unit_test_failures": 0,
+    "data_job": "job_a33af33548ef2944be5578e5434136c2",
+    "gate_job": "job_c0ca98eb98826dee639f1a8c886155db",
+    "independent_analytic_2x2_dynamic_gate_confirmed": true,
+    "independent_sklearn_AUROC_all_18_cases_confirmed": true,
+    "new_dev_extractor_jobs": {
+      "mistral": "job_8c76c191f8af8224ca3a76600d12ff30",
+      "phi": "job_8ddd3e53482f911492220b918507aae7",
+      "qwen": "job_63ff6ec797f6cf28ed6220596ec8dcfb"
+    },
+    "npz_integrity_and_same_order_confirmed": true
+  },
+  "weights_source_only": true
+}
