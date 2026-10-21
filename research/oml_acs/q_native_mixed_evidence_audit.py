@@ -143,9 +143,7 @@ def compare():
         if mode!="f32":
             q=np.exp(x-x.max());q/=q.sum()
             err=x-ref
-            m.update(
-              "relative_logit_L2",float(np.linalg.norm(err)/np.linalg.norm(ref))
-            )
+            m["relative_logit_L2"]=float(np.linalg.norm(err)/np.linalg.norm(ref))
             m["KL_F32_to_policy_nats"]=float(np.sum(prob*(np.log(np.maximum(prob,1e-300))-np.log(np.maximum(q,1e-300)))))
             m["top1_equal_to_F32"]=bool(x.argmax()==ref.argmax())
             m["top5_overlap"]=len(set(np.argsort(x)[-5:].tolist())&set(np.argsort(ref)[-5:].tolist()))
