@@ -1,0 +1,25 @@
+{
+  "GGN_4choice_not_exact_fullvocab_Hessian": true,
+  "actual_native_Q4N8_mask_SHA256": "0553e76e9a9d225e6c6e16a5b5a2ccb75e1794d16ee5c5608bc637a56504c4b2",
+  "best_feasible_swap": [
+    [
+      "o_proj",
+      15
+    ],
+    [
+      "o_proj",
+      7
+    ]
+  ],
+  "minimum_feasible_next_1swap_GGN_change": 0.0008832868952147743,
+  "original_BF16_24x196x3_signed_choice_jacobian_SHA256": "3d1c9bc2ff023b0b1b2efad0116a69cdb0d3ea2e0c025a6a82b7e8492548feb3",
+  "policy_original_SHA256": "add6def86a098f8cb1c9ddfc62cae7c5eb99d75efc10623a0d2b278a5b351257",
+  "production_precision_promotion_forbidden": true,
+  "schema": "BEGLIN-Qv9-independent-source-GGN-28N8-full-1-swap-certificate/1",
+  "source_feasible_Apple_cpu_kernel_pairs": 2408,
+  "source_held_MMLU_labels_never_accessed": true,
+  "source_local_not_global_binary_optimum": true,
+  "source_one_swap_total_eligible_pairs": 4704,
+  "source_train24_GGN_objective": 0.5656585080623134,
+  "status": "PASS_EXHAUSTIVE_ALL_4704_SOURCE_1SWAP_CANDIDATES_NO_IMPROVEMENT"
+}

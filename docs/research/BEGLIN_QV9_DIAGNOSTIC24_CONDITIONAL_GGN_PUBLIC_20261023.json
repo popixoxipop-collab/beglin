@@ -1,0 +1,22 @@
+{
+  "GGN_conditional_4choice_0p5_var_correct": true,
+  "GGN_fullvocab_loss_not_claimed": true,
+  "GGN_true_full_Hessian_not_claimed": true,
+  "elapsed_s": 310.96,
+  "frozen_other_source_group_untouched_SHA256": "87ed0d782636470b4e31db8bd6b69f0fd069dc30b167bdcb7aed1a81b53fe254",
+  "frozen_source_token_input_SHA256": "4714dc2be1ef4708c0099f153b15a1bd0f36b2143b006d000781bc592bf9be79",
+  "full_private_receipt_sha256": "62d6b1be35f2034d059ee6e4486676afddda51125b26366c46585a56732a9e57",
+  "model_projection_tensors": 196,
+  "n_contrastive_logits_backprop": 3,
+  "n_source_examples": 24,
+  "n_tokens_choice": 4,
+  "no_live_runtime_mutation": true,
+  "no_model_weight_mutation": true,
+  "no_single_tensor_downstream_output_intervention": true,
+  "original_checkpoint_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "prelock_sha256": "73dc2829da79637a97d68f903f72fed753eace2b154caec111c1fe60a7f4f983",
+  "schema": "BEGLIN-Qv9-real-BF16-conditional-4choice-output-GGN24/1",
+  "source_group": "diagnostic",
+  "source_mean_Q4_conditional_GGN": 156.526325152397,
+  "status": "ORIGINAL_BF16_24x196x3_CHOICE_LOGIT_CONTRASTIVE_JACOBIAN_COMPLETE"
+}

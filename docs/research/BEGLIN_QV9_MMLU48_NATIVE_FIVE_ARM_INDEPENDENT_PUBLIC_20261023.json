@@ -1,0 +1,146 @@
+{
+  "Qv9_source_policy_sha256": "add6def86a098f8cb1c9ddfc62cae7c5eb99d75efc10623a0d2b278a5b351257",
+  "auto_promotion": false,
+  "generalization_established": false,
+  "mask_sha256": "0553e76e9a9d225e6c6e16a5b5a2ccb75e1794d16ee5c5608bc637a56504c4b2",
+  "native_CPU_speed_win_established": false,
+  "native_fullvocab_NLL_not_conditional_choice_GGN": true,
+  "native_summary": {
+    "q4": {
+      "correct": 37,
+      "mean_fullvocab_correct_nexttoken_NLL": 0.8203794649745332,
+      "n": 48
+    },
+    "qv6_128": {
+      "correct": 36,
+      "mean_fullvocab_correct_nexttoken_NLL": 0.8284897928171763,
+      "n": 48
+    },
+    "qv6_64": {
+      "correct": 37,
+      "mean_fullvocab_correct_nexttoken_NLL": 0.8514296075830456,
+      "n": 48
+    },
+    "qv8_joint96": {
+      "correct": 34,
+      "mean_fullvocab_correct_nexttoken_NLL": 0.9949923867887492,
+      "n": 48
+    },
+    "qv9_ggn24": {
+      "correct": 35,
+      "mean_fullvocab_correct_nexttoken_NLL": 0.8396866628493673,
+      "n": 48
+    }
+  },
+  "operational_release_unchanged": true,
+  "original_BF16_reference_NLL": 0.6786893802366952,
+  "original_BF16_reference_correct": 38,
+  "paired_comparisons": {
+    "q4": {
+      "GGN_lower_NLL_cases": 22,
+      "GGN_minus_baseline_mean_fullvocab_NLL": 0.019307197874834047,
+      "McNemar_exact_p": 0.5,
+      "accuracy_difference": -2,
+      "paired_bootstrap95_percent": [
+        -0.16151621172020475,
+        0.18867769465870002
+      ]
+    },
+    "qv6_128": {
+      "GGN_lower_NLL_cases": 13,
+      "GGN_minus_baseline_mean_fullvocab_NLL": 0.011196870032191138,
+      "McNemar_exact_p": 1.0,
+      "accuracy_difference": -1,
+      "paired_bootstrap95_percent": [
+        -0.11392804356741085,
+        0.15216415267009942
+      ]
+    },
+    "qv6_64": {
+      "GGN_lower_NLL_cases": 16,
+      "GGN_minus_baseline_mean_fullvocab_NLL": -0.011742944733678234,
+      "McNemar_exact_p": 0.5,
+      "accuracy_difference": -2,
+      "paired_bootstrap95_percent": [
+        -0.1702625261346358,
+        0.1487717141110049
+      ]
+    },
+    "qv8_joint96": {
+      "GGN_lower_NLL_cases": 37,
+      "GGN_minus_baseline_mean_fullvocab_NLL": -0.1553057239393816,
+      "McNemar_exact_p": 1.0,
+      "accuracy_difference": 1,
+      "paired_bootstrap95_percent": [
+        -0.39867829174101455,
+        0.0882366792876182
+      ]
+    }
+  },
+  "posthoc_subject_descriptive_summary": {
+    "q4": {
+      "high_school_computer_science": {
+        "correct": 14,
+        "mean_fullvocab_correct_NLL": 1.309316886987517,
+        "n": 24
+      },
+      "high_school_psychology": {
+        "correct": 23,
+        "mean_fullvocab_correct_NLL": 0.3314420429615499,
+        "n": 24
+      }
+    },
+    "qv6_128": {
+      "high_school_computer_science": {
+        "correct": 13,
+        "mean_fullvocab_correct_NLL": 1.3842215382096856,
+        "n": 24
+      },
+      "high_school_psychology": {
+        "correct": 23,
+        "mean_fullvocab_correct_NLL": 0.2727580474246669,
+        "n": 24
+      }
+    },
+    "qv6_64": {
+      "high_school_computer_science": {
+        "correct": 14,
+        "mean_fullvocab_correct_NLL": 1.4121948140357388,
+        "n": 24
+      },
+      "high_school_psychology": {
+        "correct": 23,
+        "mean_fullvocab_correct_NLL": 0.2906644011303527,
+        "n": 24
+      }
+    },
+    "qv8_joint96": {
+      "high_school_computer_science": {
+        "correct": 14,
+        "mean_fullvocab_correct_NLL": 1.35452506419751,
+        "n": 24
+      },
+      "high_school_psychology": {
+        "correct": 20,
+        "mean_fullvocab_correct_NLL": 0.6354597093799882,
+        "n": 24
+      }
+    },
+    "qv9_ggn24": {
+      "high_school_computer_science": {
+        "correct": 13,
+        "mean_fullvocab_correct_NLL": 1.299170225914937,
+        "n": 24
+      },
+      "high_school_psychology": {
+        "correct": 22,
+        "mean_fullvocab_correct_NLL": 0.3802030997837981,
+        "n": 24
+      }
+    }
+  },
+  "private_SHA256": "0fde889723e627744f48abedb5f31ceb4269fb0f9e80d5cb7323d261d22e5614",
+  "schema": "BEGLIN-Qv9-independent-source-GGN-and-five-native-MMLU48-audit/1",
+  "source_48_BF16_GGN_audit_SHA256": "80e56d86995e9bcdd2d30bbf7b711bee99c94ce1f2b22be212c00172297eba09",
+  "status": "PASS_SOURCE_AND_ORIGINAL_MMLU48_FIVE_NATIVE_POLICY_AUDIT"
+}
