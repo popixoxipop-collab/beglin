@@ -37,9 +37,9 @@ def decide():
             a["PPL_relative_diff"]==0)
     if safe_test!=(speed>=MIN_SPEEDUP and all(
              a["stage_mode_2_sweep_native_observations"]["serial"]["samples_ms"][i]>=
-             MIN_SPEEDUP*a["stage_mode_2_sweep_native_observations"][a["fastest_posthoc_mode"]]["samples_ms"][1-i]
+             MIN_SPEEDUP*a["stage_mode_2_sweep_native_observations"][a["fastest_posthoc_mode"]]["samples_ms"][i]
              for i in range(2))):
-        # Forward sweep selects position 0 for candidates, reverse position 1.
+        # Compare same sweep index after reordering each mode into chronological measurements.
         raise RuntimeError("independent criterion input transcription inconsistency")
     candidate_eligible=safe_test and parity
     # This is a development-speed *candidate* gate, not deployment permission.
