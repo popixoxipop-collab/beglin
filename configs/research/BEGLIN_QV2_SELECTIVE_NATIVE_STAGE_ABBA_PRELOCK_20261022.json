@@ -1,0 +1,40 @@
+{
+  "schema": "BEGLIN-Qv2-selective-native-async-ABBA-protocol/1",
+  "date": "2026-10-22",
+  "locked_before_any_selective_execution": true,
+  "source": {
+    "existing_source_path": "lab_local/q_v2_actual_native_async_retry1_20261022/qwen_Qv2_native_actual_async.c",
+    "original_source_sha256": "767ae7df399fd6fcd6dbe42da843fbbee5ede717dcb4b1693ca0782e0e3ea598",
+    "frozen_q4_n8_policy_sha256": "9324c5ec891d638f2713d3bbd4187399e1aae8a9a74df129dfabc4e8ea870212",
+    "binary_existing_sha256": "fb947372495962ed67bb00f91199030b2e41d50ab283f4a5bd81ab2e51cdc054",
+    "model": "Qwen2.5-1.5B-Instruct",
+    "local_bf16_rev": "4ae77cb209f06199b8df1c94e21ff341332a3a89"
+  },
+  "design": {
+    "one_new_research_binary": true,
+    "runtime_default": "serial when BEGLIN_QV2_NATIVE_ASYNC=0; staged env only valid when =1",
+    "modes": [
+      "serial",
+      "qkv6",
+      "gu6",
+      "both6",
+      "qkv1",
+      "gu1",
+      "both1"
+    ],
+    "stages": "Q/K/V and Gate/Up only; preserve attention/O/SwiGLU/Down/residual dependencies and barriers",
+    "safe_threads": "Each asynchronous role owns its own Q4 1t or Q4 6t pool, no shared q4pool concurrent calls",
+    "comparisons": "same original BF16 model, original quantized 28 n8 168 q4 tensor mask, same 8 public evaluation prompts fixed before mode selection",
+    "initial_measurement": "one native single-token warm bench per mode, reverse-order repeat for guard against cache/time drift; no mode accepted as beneficial without repeated >5% gain",
+    "accuracy": "first 151936 logits exact equality and 131 public teacher-forced token NLL/PPL for chosen/worst stage modes; no full-label task accuracy",
+    "selection": "exploratory engineering only, not independent scientific quality selection. If no repeated robust >=1.05 speed ratio, recommend serial/off",
+    "disallowed": "do not change main, production runtime, release, checkpoint, original V6 final, previously blocked per-tensor output interventions"
+  },
+  "limits": [
+    "Whole-model first-token only and few repetitions; cannot prove sustained throughput",
+    "This evaluates scheduling, not new source-activation precision policy",
+    "Inspect actual enabled QKV/FFN join counts per mode, reject false async claims",
+    "Original reference source-BF16 widened F32 is not native BF16 math",
+    "No downstream causal quality, IID/OOD, GPU Metal, live promotion"
+  ]
+}
