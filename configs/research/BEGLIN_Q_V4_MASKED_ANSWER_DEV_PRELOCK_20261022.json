@@ -1,0 +1,70 @@
+{
+  "schema": "BEGLIN-Qv4-assistant-only-choice-likelihood-development-prelock/1",
+  "classification": "EXPLORATORY_DEVELOPMENT_NOT_FINAL_HOLDOUT",
+  "status": "FROZEN_BEFORE_NATIVE_SCORES",
+  "date": "2026-10-22",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "official_bf16_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "baseline_modes": [
+    "f32",
+    "q4",
+    "role_random",
+    "v2_diag",
+    "v3_cov"
+  ],
+  "target_suffix_format": "one token A or B after Qwen assistant generation prefix; same user question per pair",
+  "measurements": [
+    "correct_label_answer_only_NLL",
+    "wrong_label_answer_only_NLL",
+    "pairwise_accuracy",
+    "BF16_target_NLL_gap",
+    "prompt_PPL_not_compared"
+  ],
+  "no_historical_eval_reuse": true,
+  "legacy_V6_24_unknown_do_not_touch": true,
+  "source_12_calibration_not_touched": true,
+  "native_pthread_async_off": true,
+  "production_promotion": false,
+  "examples": [
+    {
+      "id": "q01",
+      "question": "Which physical quantity is measured in newtons? A. Force B. Energy. Respond using exactly one letter: A or B.",
+      "correct": "A"
+    },
+    {
+      "id": "q02",
+      "question": "In basic chemistry, oxidation of an atom means what? A. Gaining electrons B. Losing electrons. Respond using exactly one letter: A or B.",
+      "correct": "B"
+    },
+    {
+      "id": "q03",
+      "question": "What is 7 plus 8? A. 15 B. 16. Respond using exactly one letter: A or B.",
+      "correct": "A"
+    },
+    {
+      "id": "q04",
+      "question": "Which angle is complementary to 30 degrees? A. 30 degrees B. 60 degrees. Respond using exactly one letter: A or B.",
+      "correct": "B"
+    },
+    {
+      "id": "q05",
+      "question": "What is the capital of Japan? A. Tokyo B. Osaka. Respond using exactly one letter: A or B.",
+      "correct": "A"
+    },
+    {
+      "id": "q06",
+      "question": "At standard atmospheric pressure, pure water boils at approximately which Celsius temperature? A. 80 B. 100. Respond using exactly one letter: A or B.",
+      "correct": "B"
+    },
+    {
+      "id": "q07",
+      "question": "All roses are flowers, and some flowers are yellow. Does it necessarily follow that all roses are yellow? A. Yes B. No. Respond using exactly one letter: A or B.",
+      "correct": "B"
+    },
+    {
+      "id": "q08",
+      "question": "Which word means the opposite of scarce? A. Abundant B. Hidden. Respond using exactly one letter: A or B.",
+      "correct": "A"
+    }
+  ]
+}
