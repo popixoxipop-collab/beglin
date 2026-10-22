@@ -1,0 +1,61 @@
+{
+  "schema": "BEGLIN-Q-v3-full-covariance-empirical-local-projection-error/1",
+  "date": "2026-10-22",
+  "status": "LOCKED_BEFORE_COVARIANCE_CALIBRATION_AND_NEW_PUBLIC_DEV_EVALUATION",
+  "model": {
+    "id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "pinned_official_bf16_rev": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "layers": 28,
+    "roles": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ]
+  },
+  "source_calibration_reuse": {
+    "protocol": "configs/research/BEGLIN_Q_ACTIVATION_ASYNC_PARALLEL_V2_PRELOCK_20261022.json",
+    "sha256": "0d9177b152286ccd413028e74838529e2a5aad57b42ec793df3095f99208d4af",
+    "only_public_12_calibration_prompts": true,
+    "source_total_positions": 461
+  },
+  "fresh_evaluation_prompts": [
+    "A paper airplane glided gently over the empty playground.",
+    "Describe how a telescope gathers light from distant galaxies.",
+    "A bakery opened before dawn to prepare fresh bread for the town.",
+    "Why should software engineers test programs under unexpected inputs?",
+    "The museum's new exhibit explains how ancient maps were drawn.",
+    "Explain one difference between photosynthesis and cellular respiration.",
+    "A careful traveler packed water and a raincoat for the mountain trail.",
+    "How do simple machines make lifting heavy objects easier?",
+    "The neighborhood garden grows beans, tomatoes, and fragrant herbs.",
+    "Give a brief explanation of why numerical experiments need independent replication."
+  ],
+  "method": {
+    "source_only_quality": "For each native original BF16 linear module i, compare actual local projection output error E||X(W-Q_b(W))^T||^2 relative to original output E||XW^T||^2 over fixed calibration inputs, b=4 vs b=8. This uses empirical off-diagonal input correlations, unlike diagonal E[x_j^2] weights. Does NOT perturb downstream tensors or final-logit output.",
+    "compute": "Original BF16 model on Alienware CUDA, register non-mutating forward hooks, native original BEGLIN Q4G64 and qNg64 n8 encoders on CPU, FP16 resident perturbation matrices with FP32 CUDA local output dot products, explicit BF16 reference.",
+    "concurrency": "One GPU forward at a time; quantization tasks may be bounded at 3 CPU workers only if memory permits; no concurrent GPU jobs. Apple CPU independent QKV/GU stage cost already separately measured, only enable parallel full model if native failclosed speed gate passes.",
+    "optimizer": "Frozen 196 source-only tensor score vector; same measured native Q4/8 kernel costs and per-stage concurrent DAG. Exactly 28 n8, 168 q4, <=830570496 logical packed bytes, <=100ms serial estimated, <=50ms isolated async stage cost if feasible. HiGHS binary MILP optimum required. Policy frozen BEFORE evaluation.",
+    "controls": [
+      "BF16-original widened F32",
+      "all Q4G64",
+      "v2 source-only activation diagonal",
+      "v3 full-covariance local",
+      "seed73 role-balanced random"
+    ],
+    "evaluation": "Use ONLY the 10 fresh public prompt strings above with exactly the same token IDs and native Qwen chat template in all policies; compare PPL/NLL and same-prompt full-model timing where practical.",
+    "promotion": "Research only; do not promote if v3 candidate does not outperform all Q4 and role-balanced random quality tradeoff under same resource limits."
+  },
+  "limits": [
+    "Previously blocked per-tensor final LLM counterfactual/logit perturbation remains excluded.",
+    "Full-covariance means empirical projection-error quadratic form, not global Hessian or downstream causal sensitivity.",
+    "No old V6 24 consumed rows, C1D 200 dev labels, original final IID/OOD sets accessed.",
+    "One model, source synthetic calibration 12 prompts, fresh synthetic dev 10 prompts; no final Q claim.",
+    "Apple Metal GPU and real multi-user request scheduling not evaluated.",
+    "Do not modify main, immutable live, or original BF16 checkpoint."
+  ],
+  "scientific_final_Q": "NO_VERDICT"
+}
