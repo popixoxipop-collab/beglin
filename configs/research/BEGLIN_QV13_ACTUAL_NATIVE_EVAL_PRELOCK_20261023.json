@@ -1,0 +1,77 @@
+{
+  "schema": "BEGLIN-Qv13-frozen-source-and-256-eval-contract/1",
+  "timestamp_KST": "2026-10-23",
+  "status": "PRE_EVAL_FROZEN_SOURCE_MASKS_AND_DATASET_SELECTION_RULES",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "original_model_HF_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "full_native_Qwen_layers": 28,
+  "projection_tensor_roles_total": 196,
+  "native_original_Q4_binary_sha256": "408e74ae8f268b350ec2fc39c4843b048983e23a84802dbd9c42d067a79fcf7c",
+  "native_original_28n8_mixed_binary_sha256": "f64bae90250d83c051b55fc4907837ab1482a991dc27f35aee637860e40c1221",
+  "reference_preexisting_source_policy": "configs/research/BEGLIN_QV8_JOINT_SIGNED_28N8_SOURCE_POLICY_20261022.txt",
+  "reference_source_policy_sha256": "9db954db6ba690d92dd96ee1638b76afe53de90cc35922",
+  "additional_original_v2_policy_sha256": "9324c5ec891d638f2713d3bbd4187399e1aae8a9a74df129dfabc4e8ea870212",
+  "q4_projection_packed_bytes": 736985088,
+  "qv8_source28_projection_packed_bytes": 765493248,
+  "cost_basis": "original native kernel Q4/n8 packed weight group-scale memory ledger; excludes RSS and execution memory",
+  "control_random_role_preserving_seeds": [
+    73,
+    137,
+    211,
+    389,
+    577
+  ],
+  "randomization": "for each of seven roles independently, sample the same layer cardinality as frozen qv8 policy from 28 layers with Python Random(seed); deterministic role-order k/q/v/o/gate/up/down locked; no evaluation logits used",
+  "primary_comparison": "source_qv8_28n8 vs five equal-bytes random28 masks",
+  "secondary": "all Q4 baseline; original v2 28n8 (non-equal bytes if source role distribution differs); within-source fixed mask pairwise",
+  "dataset_protocol": {
+    "rationale": "RACE middle/test has only 55 unique full-untruncated <=208 token passages; RACE high/test has only 2. Original RACE 128+128 design infeasible. Revised before Qv13 C forward.",
+    "source_files": [
+      {
+        "dataset": "allenai/ai2_arc",
+        "config": "ARC-Challenge",
+        "split": "test",
+        "cached_arrow_sha256": "e56914301ff03032cabc30b284e0e8d612cc56bac7b6a5ab4e7f35b31d6c3e32",
+        "select": 128,
+        "eligible_inputs_before_selection": 1163
+      },
+      {
+        "dataset": "allenai/openbookqa",
+        "config": "main",
+        "split": "test",
+        "cached_arrow_sha256": "586293629974e2ed0fb06f33ef5336a737097cac11e063faf554799caacf791e",
+        "select": 128,
+        "eligible_inputs_before_selection": 500
+      }
+    ],
+    "selection": "valid complete non-truncated question and exactly four unique options; stable order by SHA256(dataset alias + id + question), then first 128 from each; no performance-based sampling",
+    "per_prompt": "original Qwen ChatML user message, Choose the correct answer, Question full source, four options as displayed A-D, Answer using one letter A, B, C, or D; source answer only for scoring",
+    "token_boundary": "18..208 Qwen tokens; each appended A/B/C/D exactly one token with unchanged prefix; verified distinct; no truncation",
+    "distinct_items": "source ids must be unique within each dataset and datasets names distinct",
+    "raw_token_protection": "owner-only lab on /Volumes/D50; no raw full text, token IDs, per-case results uploaded to GitHub",
+    "pilot": "first 8 selected ARC test items plus first 8 selected OpenBookQA test items, predesignated subset of 256, cannot be used to retune source policy",
+    "confirmation": "full 256 evaluation after locked masks; paired per-item bootstrap with 10,000 resamples and family correction for random-policy comparisons",
+    "public_test_caution": "test datasets could have been included in upstream pretrained model; newly selected means disjoint from Qv11/Qv12 experiments, not guaranteed never seen by model"
+  },
+  "metric_contract": {
+    "primary": "full-vocab softmax correct one-token NLL, mean over 256 question IDs, paired",
+    "secondary": [
+      "ABCD top-4 argmax accuracy",
+      "per-dataset NLL accuracy",
+      "source-vs-random paired bootstrap and Holm",
+      "native memory max RSS",
+      "end-to-end run wall time"
+    ],
+    "limits": [
+      "cannot interpret fullvocab next-token NLL as multiple-choice conditional NLL",
+      "cannot report p50/p95 individual token latency without instrumenting native",
+      "no 28n8 dynamic switching by preparing fixed masks"
+    ]
+  },
+  "model_input_pretraining_nonexposure_not_guaranteed": true,
+  "all_source_masks_frozen_before_eval": true,
+  "no_eval_labels_for_selection": true,
+  "no_main_merge": true,
+  "no_operator_release_change": true,
+  "no_live_promotion": true
+}
