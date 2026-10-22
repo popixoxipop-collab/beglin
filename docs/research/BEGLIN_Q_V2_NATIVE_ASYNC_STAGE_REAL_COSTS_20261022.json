@@ -1,0 +1,112 @@
+{
+  "concurrent_ctypes_workers": true,
+  "host": "EOE Apple Silicon Mac13,1",
+  "main_or_production_unchanged": true,
+  "native_library_sha256": "0ab561e3fc77c8da7d7e50664c161c76cca108c7703865b5bdc0d6b75db1fcea",
+  "role_order": {
+    "ffn_gu": [
+      "gate_proj",
+      "up_proj"
+    ],
+    "qkv": [
+      "q_proj",
+      "k_proj",
+      "v_proj"
+    ]
+  },
+  "schema": "BEGLIN-Qv2-native-CPU-async-stage-cost-public/1",
+  "separate_q4pools": true,
+  "source_private_receipt_sha256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+  "specific_latency_caveat": "stage wall time includes Python thread scheduling, not full Qwen decode; only 7 rounds times 8 source-derived vectors; may contend with other workloads",
+  "stages": {
+    "ffn_gu": {
+      "44": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 0.7867656249999633,
+        "parallel_q4_1t": 2.1278802499999916,
+        "parallel_q4_6t": 0.7867656249999633,
+        "serial_q4_6t": 0.8352396249999838
+      },
+      "48": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 3.427703124999959,
+        "parallel_q4_1t": 3.4613176250000155,
+        "parallel_q4_6t": 3.427703124999959,
+        "serial_q4_6t": 3.7455208749999636
+      },
+      "84": {
+        "best_mode": "parallel_q4_1t",
+        "best_ms": 3.4137761250000453,
+        "parallel_q4_1t": 3.4137761250000453,
+        "parallel_q4_6t": 3.4418333749999253,
+        "serial_q4_6t": 3.750109374999977
+      },
+      "88": {
+        "best_mode": "parallel_q4_1t",
+        "best_ms": 3.4804478750000145,
+        "parallel_q4_1t": 3.4804478750000145,
+        "parallel_q4_6t": 3.4821718749999953,
+        "serial_q4_6t": 6.618166750000043
+      }
+    },
+    "qkv": {
+      "444": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 0.18793237499997728,
+        "parallel_q4_1t": 0.39392712500002647,
+        "parallel_q4_6t": 0.18793237499997728,
+        "serial_q4_6t": 0.24151562499996615
+      },
+      "448": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 0.20861974999997202,
+        "parallel_q4_1t": 0.38585424999998397,
+        "parallel_q4_6t": 0.20861974999997202,
+        "serial_q4_6t": 0.29005212499999544
+      },
+      "484": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 0.18910937499999614,
+        "parallel_q4_1t": 0.3863176249999656,
+        "parallel_q4_6t": 0.18910937499999614,
+        "serial_q4_6t": 0.2848489999999759
+      },
+      "488": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 0.20933850000004472,
+        "parallel_q4_1t": 0.3859010000000218,
+        "parallel_q4_6t": 0.20933850000004472,
+        "serial_q4_6t": 0.3246406250000389
+      },
+      "844": {
+        "best_mode": "parallel_q4_1t",
+        "best_ms": 0.6104427499999954,
+        "parallel_q4_1t": 0.6104427499999954,
+        "parallel_q4_6t": 0.6262292499999988,
+        "serial_q4_6t": 0.6916353749999993
+      },
+      "848": {
+        "best_mode": "parallel_q4_1t",
+        "best_ms": 0.6117239999999802,
+        "parallel_q4_1t": 0.6117239999999802,
+        "parallel_q4_6t": 0.6247343749999912,
+        "serial_q4_6t": 0.7425052499999696
+      },
+      "884": {
+        "best_mode": "parallel_q4_1t",
+        "best_ms": 0.6120677500000005,
+        "parallel_q4_1t": 0.6120677500000005,
+        "parallel_q4_6t": 0.62377075000003,
+        "serial_q4_6t": 0.7374635000000351
+      },
+      "888": {
+        "best_mode": "parallel_q4_6t",
+        "best_ms": 0.6126562500000099,
+        "parallel_q4_1t": 0.6129687499999981,
+        "parallel_q4_6t": 0.6126562500000099,
+        "serial_q4_6t": 0.7700365000000153
+      }
+    }
+  },
+  "status": "MEASURED_NATIVE_INDEPENDENT_PROJECTION_STAGE_ONLY_NOT_FULL_DECODER_ASYNC"
+}
