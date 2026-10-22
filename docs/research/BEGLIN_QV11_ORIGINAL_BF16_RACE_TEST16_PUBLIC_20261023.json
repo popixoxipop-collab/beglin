@@ -1,0 +1,16 @@
+{
+  "RACE16_original_input_SHA256": "0de242b608837bd29ed72db99f1e910626753e2b27ea6ada9a24bdf864c96499",
+  "accuracy": 0.6875,
+  "checkpoint_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "correct": 11,
+  "independent_MPS_arithmetic_not_native_C_exact_parity": true,
+  "mean_correct_fullvocab_NLL": 1.612266713439567,
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "model_weights_unmodified": true,
+  "n": 16,
+  "operator_release_unchanged": true,
+  "private_16case_receipt_sha256": "706bbf540f59ee2d3c7193489338177dda9449cfff323a569a6b9b87f7c6d28e",
+  "schema": "BEGLIN-Qv11-16-original-BF16-Qwen-RACEtest-reference/1",
+  "status": "TRUE_ORIGINAL_BF16_QWEN_SOURCE_RACE16_MPS_REFERENCE_PASS",
+  "wall_elapsed_s": 4.18
+}

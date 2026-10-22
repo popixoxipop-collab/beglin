@@ -1,0 +1,17 @@
+{
+  "schema": "BEGLIN-Qv11-isolated-authentic-Qwen28-1n8-native-C-public-build/1",
+  "status": "SOURCE_VERIFIED_SINGLE_TENSOR_NATIVE_C_RESEARCH_BINARY_BUILT",
+  "original_Qv5_C_sha256": "375b3dfb02ac2c0fc90f3f500718578fe62d38cdcac541099fb896797470dbeb",
+  "original_Qv5_audited_mixed_binary_sha256": "f64bae90250d83c051b55fc4907837ab1482a991dc27f35aee637860e40c1221",
+  "original_all_Q4_base_binary_sha256": "408e74ae8f268b350ec2fc39c4843b048983e23a84802dbd9c42d067a79fcf7c",
+  "patched_C_sha256": "c0cecec848c4933e3b3407ef3f5f533cdf06e8155ab6e3a1e8f3dc185022c908",
+  "patched_native_one_n8_binary_sha256": "a054e68789fd6bc20a4bd815da5108b63361b14227b1fc4ab9e68a3b7b9a2711",
+  "only_semantic_change": "native mixed role-mask total_n8 guard 28 -> 1",
+  "diagnostic_log_text_updates": 2,
+  "original_Qwen_layers": 28,
+  "exact_projection_role_count": 196,
+  "no_original_quant_Kernel_source_changed": true,
+  "no_original_BF16_checkpoint_changed": true,
+  "production_untouched": true,
+  "original_private_build_receipt_sha256": "114cb8283c88c5eddf953bb498aa4ab9011b2a91cb6b5da6ffa98df2410a0e17"
+}

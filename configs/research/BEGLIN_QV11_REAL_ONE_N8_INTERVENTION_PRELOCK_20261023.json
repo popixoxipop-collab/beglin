@@ -1,0 +1,57 @@
+{
+  "schema": "BEGLIN-Qv11-actual-native-single-tensor-C-intervention-prelock/1",
+  "date": "2026-10-23",
+  "status": "PRELOCK_BEFORE_ACTUAL_1N8_RACE_NATIVE_INTERVENTION",
+  "parent": "research/qv10-topk-other-trust-20261023@09ae4d04264925a1cb46868cda4a4e63e332ead6",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "model_HF_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "source_original_BF16_rank_evidence": "BEGLIN_QV6_FISHER_SCALING_196_SOURCE_AGGREGATE_20261022.json",
+  "source_score_size": 128,
+  "source_score_selection": "For each preregistered role down_proj, k_proj, v_proj: choose argmax and argmin (Q4 squared-gradient directional proxy − n8 squared-gradient directional proxy) across exact 28 layers, smallest index breaks ties; fixed before evaluation.",
+  "source_128_Fisher_receipt_SHA256": "196376b30e6654aa10f985e5c258ead65b48afd1bfb6965fb329727aea67b2f1",
+  "role_extremes": {
+    "down_proj": {
+      "high_layer": 2,
+      "high_gain": 101.9897125111643,
+      "low_layer": 10,
+      "low_gain": 2.699793854084367
+    },
+    "k_proj": {
+      "high_layer": 0,
+      "high_gain": 98.19722845276516,
+      "low_layer": 1,
+      "low_gain": 0.3733405946428726
+    },
+    "v_proj": {
+      "high_layer": 20,
+      "high_gain": 65.90750075536619,
+      "low_layer": 27,
+      "low_gain": 0.32085383241386456
+    }
+  },
+  "evaluation_dataset": "ehovy/race",
+  "eval_revision": "2fec9fd81f1dc971569a9b729c43f2f0e6436637",
+  "split": "test",
+  "subset": "middle",
+  "n_articles": 16,
+  "selection": "SHA256(datasetRevision+'/test/'+original_article_id+'/'+original_question) ascending; first eligible 16 with distinct article IDs, complete untruncated article+question+four original answers, exact Qwen ChatML assistant prefix 18..208, and distinct single-token A/B/C/D",
+  "study_arms": [
+    "allQ4",
+    "down_proj:2",
+    "down_proj:10",
+    "k_proj:0",
+    "k_proj:1",
+    "v_proj:20",
+    "v_proj:27"
+  ],
+  "native_counterfactual": "Every arm uses the same 28-layer source BF16 Qwen weights; allQ4 uses original Qv5 base binary; intervention arms use a separately compiled copy of original Qv5 mixed native C with exactly one modified mask-cardinality guard: 28->1, other C kernel/model code unchanged. Each arm is 1 QNg64-n8 projection and 195 Q4, with equal weights/inputs.",
+  "native_source_restriction": "Qv5 mixed source SHA pinned, patched exactly cardinality guard and its two log messages; all q4/n8 original kernel support objects and original 196 model topology unchanged, no main/operational writes",
+  "predicted_measure": "All six Qv6 128 source Fisher gains strictly positive for changing isolated Q4 tensor to n8; high vs low contrast ratio per role tests monotonic alignment with actual end-to-end NLL change, not a calibrated NLL prediction. Correlation across n=6 exploratory with no significance claims.",
+  "primary_actual_measure": "For every question, actual fullmodel correct single-token NLL under full vocabulary normalization, difference (one_n8−allQ4); secondary A/B/C/D accuracy and exact n8=1/q4=195 log count",
+  "statistical_plan": "Same 16 distinct articles, within-role high vs low on matched questions; bootstrap B=5000 seed 20261023 NLL differences, Spearman source gain vs observed NLL recovery, nonparametric paired signs; descriptive only",
+  "source_to_eval_data_overlap": false,
+  "evaluation_limitations": "Only 16 public test questions and six cherry-stratified extreme tensors selected source-only; RACE test is not private model-pretraining-unseen; estimates are noisy and not independent cross-model performance. Singleton n8 masks violate 28-n8 target budget but give true local interventions at varying memory overhead; do not conflate effects with feasible global 28bit allocator.",
+  "causal_interpretation": "Each n8 intervention differs from allQ4 in exactly one projection tensor quantized code in the original BEGLIN C architecture, so measured delta is a one-tensor end-to-end intervention at fixed inputs/model, not necessarily causal attribution to source proxy or broader task distribution.",
+  "operational_policy": "Never merge to main, change immutable Tailnet Commander operator release, automatic live precision routing, or on-device GPU. Preserve original Qv5 C and all old masks.",
+  "pass_gate": "6 independently source-selected singleton-native C arms + allQ4 score 16 questions, SHA-backed original binary and native logs, negative-case audits; source proxy ranking is evaluated against exact actual native NLL and conclusion retained even if negative"
+}
