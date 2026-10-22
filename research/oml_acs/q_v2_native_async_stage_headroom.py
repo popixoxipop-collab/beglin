@@ -17,12 +17,12 @@ from collections import Counter
 ROOT=Path(__file__).resolve().parents[2]
 ASYNC=ROOT/"lab_local/q_v2_async_stage_20261022/async_sibling_stage_costs_private.json"
 SCHEDULE=ROOT/"configs/research/BEGLIN_Q_V2_FROZEN_PARALLEL_STAGE_SCHEDULE_20261022.json"
-OLD=ROOT/"lab_local/q_v2_actual_native_async_retry1_20261022/source_frozen_actual_async_on_off_receipt_retry1.json"
+OLD=ROOT/"lab_local/q_v2_actual_native_async_retry1_20261022/actual_async_guard_receipt.json"
 OUT=ROOT/"lab_local/q_v2_selective_native_async_20261022/optimistic_async_stage_headroom_receipt.json"
 SHA={
  "micro":"380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
  "schedule":"c36e76aea0b051e85bf94f95fa6973ad8918342213067c45e805674bdc47bfc5",
- "native":"8f03f93670400c3e2b34f83bdc1d8fc65e1dd0bd915556dafd4f73b0201bab00"
+ "native":"6e9ed2794964aa4c3efba307744db61388730ada2aa18c81f4f65838c5da5341"
 }
 REQUIRED_GAIN=1.05
 def sha(b:bytes)->str:return hashlib.sha256(b).hexdigest()
@@ -59,7 +59,7 @@ def compute():
              optimistic_stage_level_saving_ms=saving,
              per_layer=samples)
         total_saving+=saving
-    vals=actual["best_of_three_single_token_ms_by_mode_ABBA"]
+    vals=actual["means_ms"]
     serial=vals["off"]
     if not math.isclose(serial,93.62,abs_tol=.01):raise RuntimeError("reference native serial mean drift")
     required=serial*(1-1/REQUIRED_GAIN)
@@ -72,7 +72,7 @@ def compute():
        total_optimistic_independent_stage_saving_ms=total_saving,
        remaining_scheduling_join_overhead_allowance_ms_at_5pct=total_saving-required,
        idealized_full_model_speed_ratio_with_zero_async_overhead=optimistic_speedup,
-       actual_prior_native_onoff_ratio=actual["measured_native_parallel_speed_ratio"],
+       actual_prior_native_onoff_ratio=actual["measured_overall_ratio_OFF_div_ON"],
        stages=results,
        not_a_hard_speed_upper_bound=True,
        no_production_async_auto_admission=True,
