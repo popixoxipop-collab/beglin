@@ -1,0 +1,24 @@
+name: BEGLIN Qv5 public evidence
+on:
+  push:
+    branches:
+      - "research/qv5-*"
+    paths:
+      - "configs/research/BEGLIN_QV5_*"
+      - "docs/research/BEGLIN_QV5_*"
+      - "tests/research/test_q_v5_public_contract.py"
+      - ".github/workflows/beglin-qv5-public-contract.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-qv5-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Qv5 source/model/policy/held-input public negative-contract regression
+        run: python -m unittest discover -s tests/research -p 'test_q_v5_public_contract.py' -v

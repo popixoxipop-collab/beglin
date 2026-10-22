@@ -1,0 +1,21 @@
+{
+  "BF16_original_HF_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "dataset_commit_sha256": "210d026faf9955653af8916fad021475a3f00453",
+  "dataset_repo": "allenai/ai2_arc",
+  "development_candidate_eligible": 291,
+  "development_items": 40,
+  "development_receipt_sha256": "a00985cc73f80518f448c2b8a1295cf894283723f87b5af53321d486ce0187ae",
+  "no_V6_existing_unknown_24_explicitly_opened": true,
+  "preregistration_sha256": "a886418affc9f665d64ce4ca9eb0b5ea2aef4ae97bc59bf58ea1affb53bf19ef",
+  "production_touched": false,
+  "schema": "BEGLIN-Qv5-public-input-freeze/1",
+  "selected_dev_ids_sha256": "9ea6efa3610bfda26b039ddc750279b868a2cf871082130d04b56668651cac4e",
+  "selected_source_ids_sha256": "afc963a521f747257afd3c9554a4c67d855fd478d4d81b66cec41fe1422c0845",
+  "selected_validation_answers_not_exposed_in_public_source_policy": true,
+  "source_and_development_distinct": true,
+  "source_candidate_eligible": 1093,
+  "source_items": 24,
+  "source_receipt_sha256": "631bb02d22b696ddcabfd3d7ab759218fd75e1e8f3d8384cbf4a5df4de3f6994",
+  "status": "BOTH_SPLITS_FROZEN_BEFORE_ORIGINAL_BF16_FISHER",
+  "tokenizer_sha256": "a8506e7111b80c6d8635951a02eab0f4e1a8e4e5772da83846579e97b16f61bf"
+}

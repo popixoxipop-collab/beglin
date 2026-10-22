@@ -1,0 +1,19 @@
+{
+  "accuracy": 0.8,
+  "correct": 32,
+  "correct_label_NLL": 1.3377713675678025,
+  "dev_frozen_sha256": "a00985cc73f80518f448c2b8a1295cf894283723f87b5af53321d486ce0187ae",
+  "device": "Apple MPS BF16 Torch 2.13; no native BEGLIN quantization",
+  "elapsed_wall_s": 6.56,
+  "local_source_original_BF16_cache": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "no_any_model_weight_changes": true,
+  "no_production_promotion": true,
+  "original_BF16_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "original_dataset_sha": "210d026faf9955653af8916fad021475a3f00453",
+  "original_private_oracle_sha256": "d91345156ff3b75ed78e45be047710a2adb81ce3c613add5380af44b847a95a4",
+  "schema": "BEGLIN-Qv5-original-BF16-HF-40-ARC-developer-oracle/1",
+  "source_gradients_not_recomputed": true,
+  "source_only_fisher_mask_sha256": "88fdc38e6f55a16b0bdd4f7385e70f6de053db577a26d334a3ef3cb831113533",
+  "status": "INDEPENDENT_OFFICIAL_BF16_MPS_FORWARD_REFERENCE_ONLY",
+  "total": 40
+}

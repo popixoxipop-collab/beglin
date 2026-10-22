@@ -1,0 +1,51 @@
+{
+  "schema": "BEGLIN-Qv5-fisher-alignment-source-only-preregistration/1",
+  "status": "LOCKED_BEFORE_ARC_LABEL_CALIBRATION_AND_NATIVE_VALIDATION",
+  "created_date": "2026-10-22",
+  "bf16_original_model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "bf16_official_rev": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "bf16_eoe_cache_snapshot": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "original_C_quant_source_hashes": {
+    "gguf_transcode.c": "7371cc352226e912dbf42762e5e63a70e91acb5c90691d90e32401e18af7ec5f",
+    "qng64_dense.c": "cb985ec48cfa1f1f9ebe8411d12da5d3f73720c8acdcad51fc279a2b25ff8956"
+  },
+  "dataset_repo": "allenai/ai2_arc",
+  "dataset_sha": "210d026faf9955653af8916fad021475a3f00453",
+  "subset": "ARC-Challenge",
+  "source_split": "train",
+  "source_questions": 24,
+  "development_split": "validation",
+  "development_questions": 40,
+  "selector": "sha256(dataset_sha || split || canonical_example_id) ascending, A/B/C/D exactly, <=208 prompt tokens, no duplicate text, no source/dev overlap",
+  "input_format": "Qwen chat-template user question and four labelled options; assistant single-letter A/B/C/D correct answer token; all alternatives must be single tokens with exact common prefix",
+  "sample_scores": "BF16 original-only cross entropy of correct one-token label, per-item gradient g of each projection W; empirical directional Fisher E[(g·(Q4(W)-W))²] and E[(g·(Q8(W)-W))²]; quantization exact native C encoders Q4G64 and qNg64 n8",
+  "objective": "maximize sum of directional Fisher penalty reductions Q4 to n8 under exact 28 upgrades/196, original <=830570496 bytes, estimated <=100ms sequential CPU and <=50ms native CPU async stage; no downstream perturbed-model intervention",
+  "source_prompt_count_min": 24,
+  "source_only_freeze": true,
+  "per_prompt_grad_squared_not_true_Fisher": true,
+  "independent_development_is_not_final_holdout": true,
+  "legacy_V6_24_unknown_not_used": true,
+  "prior_OML_dev_labels_not_used": true,
+  "no_inference_until_policy_SHA_frozen": true,
+  "production_write_allowed": false,
+  "auto_promotion": false,
+  "async_default_enabled": false,
+  "baselines": [
+    "original_bf16_widened_F32",
+    "all_Q4G64",
+    "seed73_role_random",
+    "Qv2_diag",
+    "Qv3_cov",
+    "Qv5_grad_directional"
+  ],
+  "native_eval_limits": {
+    "total_four_choice_cases": 40,
+    "max_native_Qwen_seq": 256,
+    "native_CPU_only": true,
+    "no_reuse_of_previous_Qv4_8_item_development": true
+  },
+  "criteria": {
+    "directional_fisher_rank_odd_even_spearman_advisory_threshold": 0.3,
+    "deploy_gate": "DENY_UNTIL_EXTERNAL_HOLDOUT_AND_SUSTAINED_COST_PROOF"
+  }
+}
