@@ -1,0 +1,18 @@
+{
+  "accuracy": 0.7083333333333334,
+  "actual_model_forward_dtype": "BF16 MPS from unchanged original HF source",
+  "case_count": 48,
+  "correct_count": 34,
+  "dataset_revision": "218ec52e09a7e7462a5400043bb9a69a41d06b76",
+  "elapsed_seconds": 8.09,
+  "frozen_source_only_new_mask_SHA256": "9db954db6ba690d92dd96ee1638b76afe53de2d637aab462b4e83de90cc35922",
+  "held_input_SHA256": "45c95170a2eb01b4c79ad44719ab9a1877e568f2583a90d84340d7448e0d1a33",
+  "mean_correct_answer_NLL": 1.2270666790185107,
+  "no_live_engine_changed": true,
+  "no_native_CPU_numerical_parity_assertion": true,
+  "no_original_model_weight_mutation": true,
+  "private_original_BF16_receipt_SHA256": "170d9fc14fcbd7a759aca1d8b1b099a9323f1dffd2a830c6f31d5b8099f4edc5",
+  "schema": "BEGLIN-Qv8-original-BF16-Qwen-48-HellaSwag-standalone/1",
+  "source_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "status": "REFERENCE_ORIGINAL_BF16_48_NARRATIVE_ANSWERS"
+}

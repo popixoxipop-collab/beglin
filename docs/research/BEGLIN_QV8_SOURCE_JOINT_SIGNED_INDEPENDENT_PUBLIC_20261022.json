@@ -1,0 +1,20 @@
+{
+  "cross_tensor_Gram_offdiag_norm": 3732.8659566242677,
+  "gradients_per_case": 196,
+  "no_global_optimality_claim": true,
+  "no_held_data_or_labels_used": true,
+  "no_operational_changes": true,
+  "old_mask_objectives": {
+    "qv5_24": 3870.675599839962,
+    "qv6_128": 2579.7642843851827,
+    "qv6_64": 2650.881112965208
+  },
+  "original_source_gradient_cases": 96,
+  "private_source_audit_SHA256": "8ddb85e35146024c9881830396cee8ccb9425e5bb41337227bf1085a3ac99a15",
+  "schema": "BEGLIN-Qv8-separate-original-BF16-signed-source-96x196-gradient-audit/1",
+  "selected_policy_SHA": "9db954db6ba690d92dd96ee1638b76afe53de2d637aab462b4e83de90cc35922",
+  "source_Q4_full_squared_loss": 4752.271318593831,
+  "source_new_joint_squared_loss": 87.25695173841945,
+  "source_private_SHA": "e693fdf6798690c86ad2b53bb4a8e90cc208994956944f519841968ce680ed83",
+  "status": "PASS_RAW_96x196_SIGNED_CROSS_TENSOR_SOURCE_AND_MASK_COST_CONTRACT"
+}

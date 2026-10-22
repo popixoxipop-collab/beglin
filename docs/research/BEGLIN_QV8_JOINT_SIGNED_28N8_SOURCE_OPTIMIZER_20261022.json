@@ -1,0 +1,1448 @@
+{
+  "auto_serving_promotion_forbidden": true,
+  "diag_term_frobenius_norm": 707.2469883821476,
+  "elapsed_s": 0.54,
+  "final_original_Apple_kernel_costs": {
+    "isolated_async_stage_ms": 49.96880987500059,
+    "memory_bytes": 765493248,
+    "serial_estimate_ms": 86.70247770737424
+  },
+  "full_original_model_layer_count": 28,
+  "held48_HellaSwag_SHA256": "45c95170a2eb01b4c79ad44719ab9a1877e568f2583a90d84340d7448e0d1a33",
+  "mask_sha256": "9db954db6ba690d92dd96ee1638b76afe53de2d637aab462b4e83de90cc35922",
+  "no_held_data_labels_or_logits_loaded": true,
+  "no_main_or_immutable_release_changes": true,
+  "objective_global_loss_change_squared_empirical_mean_Q4": 4752.271318593831,
+  "original_model_rev": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "pairwise_cross_term_frobenius_norm": 3732.8659566242677,
+  "prelock_sha256": "9b833f5fc2729d13320c87e368baaff952c890ed068586622badfc7da63b4db1",
+  "schema": "BEGLIN-Qv8-first-order-cross-tensor-signed-task-loss-source-local-search/1",
+  "selected_best_start": "qv6_64",
+  "selected_ids": [
+    [
+      "q_proj",
+      17
+    ],
+    [
+      "k_proj",
+      0
+    ],
+    [
+      "k_proj",
+      6
+    ],
+    [
+      "k_proj",
+      7
+    ],
+    [
+      "k_proj",
+      16
+    ],
+    [
+      "k_proj",
+      18
+    ],
+    [
+      "k_proj",
+      19
+    ],
+    [
+      "k_proj",
+      21
+    ],
+    [
+      "k_proj",
+      23
+    ],
+    [
+      "k_proj",
+      25
+    ],
+    [
+      "k_proj",
+      27
+    ],
+    [
+      "v_proj",
+      5
+    ],
+    [
+      "v_proj",
+      7
+    ],
+    [
+      "v_proj",
+      8
+    ],
+    [
+      "v_proj",
+      9
+    ],
+    [
+      "v_proj",
+      10
+    ],
+    [
+      "v_proj",
+      11
+    ],
+    [
+      "v_proj",
+      12
+    ],
+    [
+      "v_proj",
+      16
+    ],
+    [
+      "v_proj",
+      18
+    ],
+    [
+      "v_proj",
+      19
+    ],
+    [
+      "v_proj",
+      20
+    ],
+    [
+      "v_proj",
+      25
+    ],
+    [
+      "o_proj",
+      11
+    ],
+    [
+      "o_proj",
+      15
+    ],
+    [
+      "gate_proj",
+      1
+    ],
+    [
+      "gate_proj",
+      20
+    ],
+    [
+      "up_proj",
+      1
+    ]
+  ],
+  "selected_source_signed_loss_squared": 87.25695173841996,
+  "source_96_signed_private_sha256": "e693fdf6798690c86ad2b53bb4a8e90cc208994956944f519841968ce680ed83",
+  "source_96_signed_public_sha256": "0e056473ec9e14a786245969b2c8413abc55fe08f6748f5b990c0f8e9b911982",
+  "source_diagonal_no_cross_objective_comparison_only": false,
+  "source_old_MILP_objective_competitors": {
+    "qv5_24": {
+      "costs": {
+        "isolated_async_stage_ms": 49.9313200000003,
+        "memory_bytes": 757039104,
+        "serial_estimate_ms": 82.99982456168647
+      },
+      "mask_SHA256": "88fdc38e6f55a16b0bdd4f7385e70f6de053db577a26d334a3ef3cb831113533",
+      "signed_joint_source_objective": 3870.67559983996
+    },
+    "qv6_128": {
+      "costs": {
+        "isolated_async_stage_ms": 49.99066337500014,
+        "memory_bytes": 757039104,
+        "serial_estimate_ms": 82.99871993252803
+      },
+      "mask_SHA256": "8b9e2404f9a38d7b57784b7d663efa19661553ccaa7dc79bfcbf6e6180fc7997",
+      "signed_joint_source_objective": 2579.7642843851836
+    },
+    "qv6_64": {
+      "costs": {
+        "isolated_async_stage_ms": 49.99520537500037,
+        "memory_bytes": 757825536,
+        "serial_estimate_ms": 83.4090367851057
+      },
+      "mask_SHA256": "74fb949e45d13f63a26d412effc39377492ea71bda20ae3690f56fddf6303e08",
+      "signed_joint_source_objective": 2650.8811129652076
+    }
+  },
+  "source_optimization_exact_global": false,
+  "source_optimization_feasible_pairwise_1swap_local_only": true,
+  "source_quadratic_Gram_full": false,
+  "source_signed_task_gradient_cross_tensor_pairwise_covariance": true,
+  "source_starts": [
+    {
+      "best_improving_exchanges_accepted": [
+        {
+          "add": [
+            "o_proj",
+            11
+          ],
+          "drop": [
+            "o_proj",
+            20
+          ],
+          "signed_joint_loss_change": -762.4278039681022
+        },
+        {
+          "add": [
+            "up_proj",
+            1
+          ],
+          "drop": [
+            "down_proj",
+            2
+          ],
+          "signed_joint_loss_change": -476.7039468410519
+        },
+        {
+          "add": [
+            "q_proj",
+            17
+          ],
+          "drop": [
+            "v_proj",
+            0
+          ],
+          "signed_joint_loss_change": -510.8503183995407
+        },
+        {
+          "add": [
+            "k_proj",
+            6
+          ],
+          "drop": [
+            "k_proj",
+            17
+          ],
+          "signed_joint_loss_change": -196.91559193657366
+        },
+        {
+          "add": [
+            "gate_proj",
+            20
+          ],
+          "drop": [
+            "up_proj",
+            25
+          ],
+          "signed_joint_loss_change": -174.20132517773152
+        },
+        {
+          "add": [
+            "k_proj",
+            23
+          ],
+          "drop": [
+            "v_proj",
+            21
+          ],
+          "signed_joint_loss_change": -127.24011779472906
+        },
+        {
+          "add": [
+            "gate_proj",
+            1
+          ],
+          "drop": [
+            "v_proj",
+            4
+          ],
+          "signed_joint_loss_change": -119.76442927293986
+        },
+        {
+          "add": [
+            "v_proj",
+            12
+          ],
+          "drop": [
+            "v_proj",
+            15
+          ],
+          "signed_joint_loss_change": -48.347515416494204
+        },
+        {
+          "add": [
+            "k_proj",
+            19
+          ],
+          "drop": [
+            "v_proj",
+            13
+          ],
+          "signed_joint_loss_change": -33.15061290768719
+        },
+        {
+          "add": [
+            "k_proj",
+            25
+          ],
+          "drop": [
+            "v_proj",
+            22
+          ],
+          "signed_joint_loss_change": -27.0377049793558
+        },
+        {
+          "add": [
+            "v_proj",
+            27
+          ],
+          "drop": [
+            "k_proj",
+            13
+          ],
+          "signed_joint_loss_change": -17.714911384461015
+        },
+        {
+          "add": [
+            "v_proj",
+            5
+          ],
+          "drop": [
+            "v_proj",
+            16
+          ],
+          "signed_joint_loss_change": -6.624208094183623
+        },
+        {
+          "add": [
+            "k_proj",
+            2
+          ],
+          "drop": [
+            "v_proj",
+            17
+          ],
+          "signed_joint_loss_change": -8.910359130323766
+        },
+        {
+          "add": [
+            "o_proj",
+            15
+          ],
+          "drop": [
+            "o_proj",
+            0
+          ],
+          "signed_joint_loss_change": -42.373774035943526
+        },
+        {
+          "add": [
+            "k_proj",
+            18
+          ],
+          "drop": [
+            "k_proj",
+            7
+          ],
+          "signed_joint_loss_change": -6.986482823823453
+        },
+        {
+          "add": [
+            "v_proj",
+            16
+          ],
+          "drop": [
+            "k_proj",
+            2
+          ],
+          "signed_joint_loss_change": -4.022243831260472
+        },
+        {
+          "add": [
+            "k_proj",
+            7
+          ],
+          "drop": [
+            "v_proj",
+            27
+          ],
+          "signed_joint_loss_change": -0.35281523258604075
+        }
+      ],
+      "feasible_swaps": 17,
+      "final_score": 87.25695173841996,
+      "last_cost": {
+        "isolated_async_stage_ms": 49.96880987500059,
+        "memory_bytes": 765493248,
+        "serial_estimate_ms": 86.70247770737424
+      },
+      "proven_global_optimum": false,
+      "start_name": "qv6_64",
+      "start_score": 2650.8811129652076
+    },
+    {
+      "best_improving_exchanges_accepted": [
+        {
+          "add": [
+            "o_proj",
+            11
+          ],
+          "drop": [
+            "o_proj",
+            20
+          ],
+          "signed_joint_loss_change": -648.4102120746248
+        },
+        {
+          "add": [
+            "up_proj",
+            1
+          ],
+          "drop": [
+            "down_proj",
+            2
+          ],
+          "signed_joint_loss_change": -455.63365822010996
+        },
+        {
+          "add": [
+            "gate_proj",
+            1
+          ],
+          "drop": [
+            "v_proj",
+            0
+          ],
+          "signed_joint_loss_change": -491.5917479489671
+        },
+        {
+          "add": [
+            "q_proj",
+            17
+          ],
+          "drop": [
+            "o_proj",
+            21
+          ],
+          "signed_joint_loss_change": -213.49070457849098
+        },
+        {
+          "add": [
+            "k_proj",
+            6
+          ],
+          "drop": [
+            "k_proj",
+            17
+          ],
+          "signed_joint_loss_change": -160.6832480722802
+        },
+        {
+          "add": [
+            "k_proj",
+            21
+          ],
+          "drop": [
+            "v_proj",
+            21
+          ],
+          "signed_joint_loss_change": -185.75868351501336
+        },
+        {
+          "add": [
+            "v_proj",
+            12
+          ],
+          "drop": [
+            "v_proj",
+            4
+          ],
+          "signed_joint_loss_change": -85.5106398275386
+        },
+        {
+          "add": [
+            "k_proj",
+            23
+          ],
+          "drop": [
+            "v_proj",
+            13
+          ],
+          "signed_joint_loss_change": -55.81106671075746
+        },
+        {
+          "add": [
+            "o_proj",
+            27
+          ],
+          "drop": [
+            "o_proj",
+            23
+          ],
+          "signed_joint_loss_change": -63.78395137020213
+        },
+        {
+          "add": [
+            "o_proj",
+            13
+          ],
+          "drop": [
+            "v_proj",
+            22
+          ],
+          "signed_joint_loss_change": -30.70533924701069
+        },
+        {
+          "add": [
+            "v_proj",
+            5
+          ],
+          "drop": [
+            "v_proj",
+            16
+          ],
+          "signed_joint_loss_change": -17.856175261672696
+        },
+        {
+          "add": [
+            "k_proj",
+            25
+          ],
+          "drop": [
+            "v_proj",
+            15
+          ],
+          "signed_joint_loss_change": -15.090383615025434
+        },
+        {
+          "add": [
+            "k_proj",
+            18
+          ],
+          "drop": [
+            "v_proj",
+            8
+          ],
+          "signed_joint_loss_change": -17.059820749023928
+        },
+        {
+          "add": [
+            "k_proj",
+            2
+          ],
+          "drop": [
+            "v_proj",
+            17
+          ],
+          "signed_joint_loss_change": -7.952000837809944
+        },
+        {
+          "add": [
+            "v_proj",
+            18
+          ],
+          "drop": [
+            "v_proj",
+            9
+          ],
+          "signed_joint_loss_change": -25.478627481889944
+        },
+        {
+          "add": [
+            "q_proj",
+            13
+          ],
+          "drop": [
+            "o_proj",
+            13
+          ],
+          "signed_joint_loss_change": -7.168000568131786
+        }
+      ],
+      "feasible_swaps": 16,
+      "final_score": 97.7800243066331,
+      "last_cost": {
+        "isolated_async_stage_ms": 49.91373675000041,
+        "memory_bytes": 764706816,
+        "serial_estimate_ms": 86.3278313337799
+      },
+      "proven_global_optimum": false,
+      "start_name": "qv6_128",
+      "start_score": 2579.7642843851836
+    },
+    {
+      "best_improving_exchanges_accepted": [
+        {
+          "add": [
+            "v_proj",
+            25
+          ],
+          "drop": [
+            "v_proj",
+            11
+          ],
+          "signed_joint_loss_change": -1337.4969853794357
+        },
+        {
+          "add": [
+            "v_proj",
+            21
+          ],
+          "drop": [
+            "k_proj",
+            17
+          ],
+          "signed_joint_loss_change": -803.7712074974281
+        },
+        {
+          "add": [
+            "o_proj",
+            15
+          ],
+          "drop": [
+            "o_proj",
+            14
+          ],
+          "signed_joint_loss_change": -425.7985368447076
+        },
+        {
+          "add": [
+            "k_proj",
+            23
+          ],
+          "drop": [
+            "v_proj",
+            0
+          ],
+          "signed_joint_loss_change": -393.3642174333563
+        },
+        {
+          "add": [
+            "v_proj",
+            12
+          ],
+          "drop": [
+            "k_proj",
+            11
+          ],
+          "signed_joint_loss_change": -191.25016132757867
+        },
+        {
+          "add": [
+            "k_proj",
+            6
+          ],
+          "drop": [
+            "v_proj",
+            3
+          ],
+          "signed_joint_loss_change": -147.15154447738422
+        },
+        {
+          "add": [
+            "o_proj",
+            13
+          ],
+          "drop": [
+            "q_proj",
+            18
+          ],
+          "signed_joint_loss_change": -117.5196617765505
+        },
+        {
+          "add": [
+            "q_proj",
+            17
+          ],
+          "drop": [
+            "o_proj",
+            18
+          ],
+          "signed_joint_loss_change": -72.26366192592141
+        },
+        {
+          "add": [
+            "v_proj",
+            20
+          ],
+          "drop": [
+            "k_proj",
+            10
+          ],
+          "signed_joint_loss_change": -53.20681298903811
+        },
+        {
+          "add": [
+            "k_proj",
+            25
+          ],
+          "drop": [
+            "v_proj",
+            1
+          ],
+          "signed_joint_loss_change": -47.536580395956975
+        },
+        {
+          "add": [
+            "k_proj",
+            2
+          ],
+          "drop": [
+            "v_proj",
+            14
+          ],
+          "signed_joint_loss_change": -41.062942808689826
+        },
+        {
+          "add": [
+            "o_proj",
+            6
+          ],
+          "drop": [
+            "o_proj",
+            7
+          ],
+          "signed_joint_loss_change": -25.566751046939793
+        },
+        {
+          "add": [
+            "q_proj",
+            14
+          ],
+          "drop": [
+            "o_proj",
+            8
+          ],
+          "signed_joint_loss_change": -17.899977927667496
+        },
+        {
+          "add": [
+            "k_proj",
+            19
+          ],
+          "drop": [
+            "v_proj",
+            15
+          ],
+          "signed_joint_loss_change": -8.724881479115275
+        },
+        {
+          "add": [
+            "k_proj",
+            7
+          ],
+          "drop": [
+            "v_proj",
+            13
+          ],
+          "signed_joint_loss_change": -21.775596976558255
+        },
+        {
+          "add": [
+            "k_proj",
+            9
+          ],
+          "drop": [
+            "v_proj",
+            23
+          ],
+          "signed_joint_loss_change": -6.378133062957424
+        },
+        {
+          "add": [
+            "k_proj",
+            18
+          ],
+          "drop": [
+            "k_proj",
+            7
+          ],
+          "signed_joint_loss_change": -12.986388058471961
+        }
+      ],
+      "feasible_swaps": 17,
+      "final_score": 146.92155843220326,
+      "last_cost": {
+        "isolated_async_stage_ms": 49.82829937500043,
+        "memory_bytes": 757039104,
+        "serial_estimate_ms": 83.03658342910322
+      },
+      "proven_global_optimum": false,
+      "start_name": "qv5_24",
+      "start_score": 3870.67559983996
+    },
+    {
+      "best_improving_exchanges_accepted": [
+        {
+          "add": [
+            "v_proj",
+            21
+          ],
+          "drop": [
+            "v_proj",
+            11
+          ],
+          "signed_joint_loss_change": -1755.2304285420055
+        },
+        {
+          "add": [
+            "v_proj",
+            25
+          ],
+          "drop": [
+            "v_proj",
+            23
+          ],
+          "signed_joint_loss_change": -1112.5244926587618
+        },
+        {
+          "add": [
+            "v_proj",
+            18
+          ],
+          "drop": [
+            "k_proj",
+            17
+          ],
+          "signed_joint_loss_change": -604.5310173569493
+        },
+        {
+          "add": [
+            "o_proj",
+            15
+          ],
+          "drop": [
+            "o_proj",
+            14
+          ],
+          "signed_joint_loss_change": -475.31858552674925
+        },
+        {
+          "add": [
+            "k_proj",
+            21
+          ],
+          "drop": [
+            "k_proj",
+            12
+          ],
+          "signed_joint_loss_change": -300.86544414120453
+        },
+        {
+          "add": [
+            "v_proj",
+            12
+          ],
+          "drop": [
+            "k_proj",
+            11
+          ],
+          "signed_joint_loss_change": -207.545671610093
+        },
+        {
+          "add": [
+            "k_proj",
+            6
+          ],
+          "drop": [
+            "q_proj",
+            18
+          ],
+          "signed_joint_loss_change": -157.878438576975
+        },
+        {
+          "add": [
+            "o_proj",
+            13
+          ],
+          "drop": [
+            "k_proj",
+            10
+          ],
+          "signed_joint_loss_change": -111.42596507168035
+        },
+        {
+          "add": [
+            "k_proj",
+            23
+          ],
+          "drop": [
+            "v_proj",
+            1
+          ],
+          "signed_joint_loss_change": -82.24558076997855
+        },
+        {
+          "add": [
+            "v_proj",
+            20
+          ],
+          "drop": [
+            "v_proj",
+            14
+          ],
+          "signed_joint_loss_change": -70.28992231883629
+        },
+        {
+          "add": [
+            "q_proj",
+            17
+          ],
+          "drop": [
+            "o_proj",
+            7
+          ],
+          "signed_joint_loss_change": -63.78957713879269
+        },
+        {
+          "add": [
+            "k_proj",
+            25
+          ],
+          "drop": [
+            "k_proj",
+            26
+          ],
+          "signed_joint_loss_change": -42.96460918204202
+        },
+        {
+          "add": [
+            "k_proj",
+            27
+          ],
+          "drop": [
+            "k_proj",
+            22
+          ],
+          "signed_joint_loss_change": -28.78953313866751
+        },
+        {
+          "add": [
+            "k_proj",
+            19
+          ],
+          "drop": [
+            "v_proj",
+            15
+          ],
+          "signed_joint_loss_change": -25.420778512852884
+        },
+        {
+          "add": [
+            "q_proj",
+            14
+          ],
+          "drop": [
+            "o_proj",
+            8
+          ],
+          "signed_joint_loss_change": -20.77171045160529
+        },
+        {
+          "add": [
+            "k_proj",
+            2
+          ],
+          "drop": [
+            "v_proj",
+            2
+          ],
+          "signed_joint_loss_change": -14.865597371115728
+        },
+        {
+          "add": [
+            "v_proj",
+            10
+          ],
+          "drop": [
+            "v_proj",
+            13
+          ],
+          "signed_joint_loss_change": -22.350284104990706
+        },
+        {
+          "add": [
+            "k_proj",
+            9
+          ],
+          "drop": [
+            "q_proj",
+            23
+          ],
+          "signed_joint_loss_change": -5.955743057174882
+        },
+        {
+          "add": [
+            "o_proj",
+            27
+          ],
+          "drop": [
+            "k_proj",
+            1
+          ],
+          "signed_joint_loss_change": -13.520018619278906
+        }
+      ],
+      "feasible_swaps": 19,
+      "final_score": 117.22503924289822,
+      "last_cost": {
+        "isolated_async_stage_ms": 49.847705500000416,
+        "memory_bytes": 757039104,
+        "serial_estimate_ms": 83.03658342910322
+      },
+      "proven_global_optimum": false,
+      "start_name": "source_shuffle_17",
+      "start_score": 5233.508437392653
+    },
+    {
+      "best_improving_exchanges_accepted": [
+        {
+          "add": [
+            "up_proj",
+            1
+          ],
+          "drop": [
+            "down_proj",
+            2
+          ],
+          "signed_joint_loss_change": -649.6369249644595
+        },
+        {
+          "add": [
+            "o_proj",
+            11
+          ],
+          "drop": [
+            "k_proj",
+            17
+          ],
+          "signed_joint_loss_change": -388.5578234730938
+        },
+        {
+          "add": [
+            "gate_proj",
+            1
+          ],
+          "drop": [
+            "k_proj",
+            15
+          ],
+          "signed_joint_loss_change": -277.6814597244535
+        },
+        {
+          "add": [
+            "q_proj",
+            17
+          ],
+          "drop": [
+            "o_proj",
+            14
+          ],
+          "signed_joint_loss_change": -218.0297956662601
+        },
+        {
+          "add": [
+            "k_proj",
+            21
+          ],
+          "drop": [
+            "v_proj",
+            4
+          ],
+          "signed_joint_loss_change": -137.1063455256994
+        },
+        {
+          "add": [
+            "k_proj",
+            6
+          ],
+          "drop": [
+            "q_proj",
+            3
+          ],
+          "signed_joint_loss_change": -105.73605920107411
+        },
+        {
+          "add": [
+            "k_proj",
+            23
+          ],
+          "drop": [
+            "v_proj",
+            13
+          ],
+          "signed_joint_loss_change": -80.80068586864061
+        },
+        {
+          "add": [
+            "o_proj",
+            27
+          ],
+          "drop": [
+            "o_proj",
+            23
+          ],
+          "signed_joint_loss_change": -63.12469261544648
+        },
+        {
+          "add": [
+            "v_proj",
+            5
+          ],
+          "drop": [
+            "q_proj",
+            20
+          ],
+          "signed_joint_loss_change": -47.528616473419305
+        },
+        {
+          "add": [
+            "k_proj",
+            25
+          ],
+          "drop": [
+            "v_proj",
+            22
+          ],
+          "signed_joint_loss_change": -37.56868089333285
+        },
+        {
+          "add": [
+            "o_proj",
+            6
+          ],
+          "drop": [
+            "q_proj",
+            11
+          ],
+          "signed_joint_loss_change": -29.712461777017516
+        },
+        {
+          "add": [
+            "v_proj",
+            18
+          ],
+          "drop": [
+            "k_proj",
+            3
+          ],
+          "signed_joint_loss_change": -21.80076475767799
+        },
+        {
+          "add": [
+            "k_proj",
+            2
+          ],
+          "drop": [
+            "v_proj",
+            17
+          ],
+          "signed_joint_loss_change": -28.58983082061982
+        },
+        {
+          "add": [
+            "v_proj",
+            20
+          ],
+          "drop": [
+            "v_proj",
+            8
+          ],
+          "signed_joint_loss_change": -25.45869846579267
+        },
+        {
+          "add": [
+            "q_proj",
+            14
+          ],
+          "drop": [
+            "k_proj",
+            13
+          ],
+          "signed_joint_loss_change": -17.21115819108525
+        },
+        {
+          "add": [
+            "k_proj",
+            14
+          ],
+          "drop": [
+            "v_proj",
+            16
+          ],
+          "signed_joint_loss_change": -0.48369793910944736
+        },
+        {
+          "add": [
+            "k_proj",
+            19
+          ],
+          "drop": [
+            "k_proj",
+            25
+          ],
+          "signed_joint_loss_change": -1.7640357518218375
+        },
+        {
+          "add": [
+            "k_proj",
+            9
+          ],
+          "drop": [
+            "k_proj",
+            14
+          ],
+          "signed_joint_loss_change": -1.5340125164520693
+        }
+      ],
+      "feasible_swaps": 18,
+      "final_score": 96.15861610155298,
+      "last_cost": {
+        "isolated_async_stage_ms": 49.51191375000039,
+        "memory_bytes": 763723776,
+        "serial_estimate_ms": 85.87199731555259
+      },
+      "proven_global_optimum": false,
+      "start_name": "source_shuffle_41",
+      "start_score": 2228.4843607270077
+    },
+    {
+      "best_improving_exchanges_accepted": [
+        {
+          "add": [
+            "v_proj",
+            21
+          ],
+          "drop": [
+            "v_proj",
+            11
+          ],
+          "signed_joint_loss_change": -1974.2279338046508
+        },
+        {
+          "add": [
+            "v_proj",
+            25
+          ],
+          "drop": [
+            "v_proj",
+            23
+          ],
+          "signed_joint_loss_change": -1220.376106846277
+        },
+        {
+          "add": [
+            "o_proj",
+            15
+          ],
+          "drop": [
+            "o_proj",
+            18
+          ],
+          "signed_joint_loss_change": -662.6389511350511
+        },
+        {
+          "add": [
+            "k_proj",
+            23
+          ],
+          "drop": [
+            "k_proj",
+            12
+          ],
+          "signed_joint_loss_change": -458.43530960574935
+        },
+        {
+          "add": [
+            "v_proj",
+            18
+          ],
+          "drop": [
+            "o_proj",
+            14
+          ],
+          "signed_joint_loss_change": -285.22975176602796
+        },
+        {
+          "add": [
+            "k_proj",
+            21
+          ],
+          "drop": [
+            "q_proj",
+            18
+          ],
+          "signed_joint_loss_change": -207.56206734915594
+        },
+        {
+          "add": [
+            "v_proj",
+            12
+          ],
+          "drop": [
+            "k_proj",
+            11
+          ],
+          "signed_joint_loss_change": -153.90561745772987
+        },
+        {
+          "add": [
+            "q_proj",
+            17
+          ],
+          "drop": [
+            "k_proj",
+            10
+          ],
+          "signed_joint_loss_change": -101.14207701321058
+        },
+        {
+          "add": [
+            "o_proj",
+            0
+          ],
+          "drop": [
+            "o_proj",
+            20
+          ],
+          "signed_joint_loss_change": -66.22814194000787
+        },
+        {
+          "add": [
+            "o_proj",
+            11
+          ],
+          "drop": [
+            "v_proj",
+            26
+          ],
+          "signed_joint_loss_change": -91.80394796978862
+        },
+        {
+          "add": [
+            "k_proj",
+            25
+          ],
+          "drop": [
+            "v_proj",
+            3
+          ],
+          "signed_joint_loss_change": -41.74481581780294
+        },
+        {
+          "add": [
+            "k_proj",
+            19
+          ],
+          "drop": [
+            "k_proj",
+            26
+          ],
+          "signed_joint_loss_change": -36.25446101414423
+        },
+        {
+          "add": [
+            "v_proj",
+            20
+          ],
+          "drop": [
+            "k_proj",
+            22
+          ],
+          "signed_joint_loss_change": -27.43103188645503
+        },
+        {
+          "add": [
+            "o_proj",
+            27
+          ],
+          "drop": [
+            "q_proj",
+            8
+          ],
+          "signed_joint_loss_change": -16.171456598307728
+        },
+        {
+          "add": [
+            "k_proj",
+            2
+          ],
+          "drop": [
+            "v_proj",
+            14
+          ],
+          "signed_joint_loss_change": -20.355243565738874
+        },
+        {
+          "add": [
+            "o_proj",
+            26
+          ],
+          "drop": [
+            "q_proj",
+            23
+          ],
+          "signed_joint_loss_change": -5.716959049362504
+        },
+        {
+          "add": [
+            "k_proj",
+            27
+          ],
+          "drop": [
+            "q_proj",
+            2
+          ],
+          "signed_joint_loss_change": -4.132334286960717
+        },
+        {
+          "add": [
+            "o_proj",
+            6
+          ],
+          "drop": [
+            "k_proj",
+            16
+          ],
+          "signed_joint_loss_change": -12.691999529748509
+        },
+        {
+          "add": [
+            "k_proj",
+            14
+          ],
+          "drop": [
+            "k_proj",
+            8
+          ],
+          "signed_joint_loss_change": -1.9998551812593472
+        },
+        {
+          "add": [
+            "v_proj",
+            27
+          ],
+          "drop": [
+            "v_proj",
+            24
+          ],
+          "signed_joint_loss_change": -1.1016797500766629
+        },
+        {
+          "add": [
+            "q_proj",
+            8
+          ],
+          "drop": [
+            "o_proj",
+            26
+          ],
+          "signed_joint_loss_change": -0.8282043578762668
+        }
+      ],
+      "feasible_swaps": 21,
+      "final_score": 126.36148868246028,
+      "last_cost": {
+        "isolated_async_stage_ms": 49.84770550000043,
+        "memory_bytes": 757039104,
+        "serial_estimate_ms": 83.03658342910322
+      },
+      "proven_global_optimum": false,
+      "start_name": "source_shuffle_73",
+      "start_score": 5516.339434607842
+    }
+  ],
+  "status": "SOURCE_ONLY_28N8_STRICT_FEASIBLE_LOCAL_SWAP_DONE_NO_EVAL_OPENED",
+  "strict_28N8_and_168Q4": true
+}
