@@ -1,0 +1,112 @@
+{
+  "articles": 16,
+  "batch": "pilot16",
+  "bootstrap_draws": 10000,
+  "context": "Partial pilot results inspected before full 256; preregistration wording deviates from code; this is not independent confirmation",
+  "five_random_controls": {
+    "random137": {
+      "exploratory_sign_flip_Holm_p": 0.42755724427557246,
+      "exploratory_sign_flip_one_sided_p": 0.1688831116888311,
+      "paired_bootstrap_95_unadjusted": [
+        -0.2628451295392387,
+        0.9253685691551222
+      ],
+      "paired_mean_random_minus_source_NLL": 0.3140262402086522,
+      "random_correct": 7,
+      "random_mean_NLL": 3.1112639661037416,
+      "source_better_question_count": 10,
+      "source_minus_random_correct": 1,
+      "source_worse_question_count": 6
+    },
+    "random211": {
+      "exploratory_sign_flip_Holm_p": 0.42755724427557246,
+      "exploratory_sign_flip_one_sided_p": 0.14558544145585442,
+      "paired_bootstrap_95_unadjusted": [
+        -0.3088282170415306,
+        1.1091821524743657
+      ],
+      "paired_mean_random_minus_source_NLL": 0.4069652267301924,
+      "random_correct": 8,
+      "random_mean_NLL": 3.2042029526252818,
+      "source_better_question_count": 12,
+      "source_minus_random_correct": 0,
+      "source_worse_question_count": 4
+    },
+    "random389": {
+      "exploratory_sign_flip_Holm_p": 0.42755724427557246,
+      "exploratory_sign_flip_one_sided_p": 0.12498750124987501,
+      "paired_bootstrap_95_unadjusted": [
+        -0.1800143955656866,
+        0.7357608240908748
+      ],
+      "paired_mean_random_minus_source_NLL": 0.28562143491697056,
+      "random_correct": 8,
+      "random_mean_NLL": 3.082859160812059,
+      "source_better_question_count": 10,
+      "source_minus_random_correct": 0,
+      "source_worse_question_count": 6
+    },
+    "random577": {
+      "exploratory_sign_flip_Holm_p": 0.42755724427557246,
+      "exploratory_sign_flip_one_sided_p": 0.10688931106889311,
+      "paired_bootstrap_95_unadjusted": [
+        -0.13362664877165373,
+        1.475240513143999
+      ],
+      "paired_mean_random_minus_source_NLL": 0.5906139679345769,
+      "random_correct": 8,
+      "random_mean_NLL": 3.387851693829666,
+      "source_better_question_count": 10,
+      "source_minus_random_correct": 0,
+      "source_worse_question_count": 6
+    },
+    "random73": {
+      "exploratory_sign_flip_Holm_p": 0.10198980101989802,
+      "exploratory_sign_flip_one_sided_p": 0.020397960203979604,
+      "paired_bootstrap_95_unadjusted": [
+        0.20681439074624963,
+        1.7264182094647444
+      ],
+      "paired_mean_random_minus_source_NLL": 0.9061351267167153,
+      "random_correct": 8,
+      "random_mean_NLL": 3.7033728526118037,
+      "source_better_question_count": 9,
+      "source_minus_random_correct": 0,
+      "source_worse_question_count": 7
+    }
+  },
+  "matched_packed_projection_bytes": 765493248,
+  "matched_role_counts": {
+    "gate_proj": 2,
+    "k_proj": 10,
+    "o_proj": 2,
+    "q_proj": 1,
+    "up_proj": 1,
+    "v_proj": 12
+  },
+  "mean_random_gold_fullvocab_NLL": 3.2979101251965104,
+  "multiplicity": "Holm over five one-sided paired sign-flip comparisons; approximate Monte Carlo",
+  "no_dynamic_precision_switch_proven": true,
+  "no_live_promotion": true,
+  "no_per_item_losses_exported": true,
+  "original_receipt_sha256": {
+    "pilot16:random137": "219381e761f775e5f6df99045f9b17eef895a7691b6471514e39ced6e3aa0644",
+    "pilot16:random211": "6dd1284eb5025cd4488a11e0455bf02c5085a3f3b278abe8d4bb0c43df786f37",
+    "pilot16:random389": "c5cd0b7ba4aa5ed442e928a341432c97e6b960238c05ce873dfe5cb6ad83e59f",
+    "pilot16:random577": "315e506af0ce562b58699ab8d48927b292fb9247470300bd1492a66102e9d62d",
+    "pilot16:random73": "e27e71368fa53c2bc7399f30451bc8aac67f7f9deb79210cf4bd752c2cb06e46",
+    "pilot16:source_qv8": "b76b94946215c57cdfe13e7503e2c3230d940d5d120031686ff188339de786ee"
+  },
+  "preexecution_private_lock_sha256": "79826eb944ac2a4f87b637a430471f069a3789da37cdb12a9b7d1060d49db9b8",
+  "schema": "BEGLIN-Qv13-five-frozen-equal-byte-random-controls-exploratory/1",
+  "sign_flip_assumption": "requires null sign exchangeability, not guaranteed; exploratory p-values only",
+  "sign_flip_draws": 10000,
+  "source_correct": 8,
+  "source_improvement_vs_mean_random_NLL": 0.5006723993014216,
+  "source_improvement_vs_mean_random_bootstrap95": [
+    0.0934590699052641,
+    0.9242287243739764
+  ],
+  "source_mean_gold_fullvocab_NLL": 2.7972377258950893,
+  "status": "PILOT_EXPLORATORY_ALL_SIX_REAL_NATIVE"
+}
