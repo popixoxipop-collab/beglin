@@ -1,0 +1,20 @@
+{
+  "schema": "BEGLIN-Qv12-public-source-provenance-real-original-BEGLIN-C-2N8-recompile/1",
+  "status": "SOURCE_PINNED_ONLY_CARDINALITY_2N8_REAL_QWEN28_NATIVE_CPU_BINARY_BUILT",
+  "prelock_sha256": "a565bdec341d675ce52a37132b06355760c2fef96b8e4329c17508a237e4374f",
+  "source_model_HF_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "original_Qv5_mixed_C_source_sha256": "375b3dfb02ac2c0fc90f3f500718578fe62d38cdcac541099fb896797470dbeb",
+  "original_Qv5_allQ4_C_binary_sha256": "408e74ae8f268b350ec2fc39c4843b048983e23a84802dbd9c42d067a79fcf7c",
+  "original_Qv11_1N8_C_binary_sha256": "a054e68789fd6bc20a4bd815da5108b63361b14227b1fc4ab9e68a3b7b9a2711",
+  "new_Qv12_C_source_sha256": "a5fd8b56f57526f822be31f156d954cc32b354045f16cc2b257ee7536121bbab",
+  "new_Qv12_2N8_C_binary_sha256": "d40fd6d42e08b0bc9d5dd3c7f8e0a4f5bcaabb2d9de7310d89f033e02500e961",
+  "single_semantic_C_change": "cardinality mask check total_n8 28 -> 2",
+  "only_diagnostic_logging_changes": true,
+  "original_C_NEON_Q4_N8_kernels_unchanged": true,
+  "original_model_weights_unchanged": true,
+  "native_layer_count": 28,
+  "native_projection_role_count": 196,
+  "no_production_promotion": true,
+  "raw_C_source_binary_remains_private": true,
+  "private_original_build_receipt_SHA256": "a50dc5dae449e10450f2abebca30c2ff0b4c20769f1cb3fca0c8626364c0e260"
+}

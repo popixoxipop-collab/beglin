@@ -1,0 +1,16 @@
+{
+  "accuracy": 0.6875,
+  "correct": 11,
+  "different_arithmetic_from_original_BEGLIN_C_Q4_widened_F32": true,
+  "elapsed_wall_s": 4.55,
+  "frozen_new_RACEtest16_input_SHA256": "0650f791937f0d924706db6462b7f5e370fc58c1819b1228e91402d4937ca63e",
+  "mean_fullvocab_correct_answer_NLL": 1.2665107838104177,
+  "n": 16,
+  "not_sustained_C_CPU_speed_measurement": true,
+  "operator_release_unchanged": true,
+  "original_checkpoint_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "original_model_unmodified": true,
+  "private_original_reference_receipt_SHA256": "f92ac7d3d41d6ef459d06c781d304d6bf01d7e2386cdbf240bcedb441be8c241",
+  "schema": "BEGLIN-Qv12-unmodified-HF-BF16-MPS-model-Qwen-new-RACE16/1",
+  "status": "REFERENCE_ORIGINAL_BF16_QWEN_NEW_DISJOINT_RACE16_MODEL_COMPLETE"
+}

@@ -1,0 +1,86 @@
+{
+  "actual_max_RSS_not_measured": true,
+  "live_precision_auto_promotion": false,
+  "native_one_two_bit_arm_costs": {
+    "down_proj_10": {
+      "incremental_n8_weight_bytes": 6881280,
+      "n8_role_count": 1,
+      "not_runtime_RSS_or_model_act_bytes": true,
+      "projected_packed_projection_weight_bytes": 743866368,
+      "q4_baseline_native_projection_bytes": 736985088,
+      "q4_role_count": 195
+    },
+    "down_proj_10__k_proj_0": {
+      "incremental_n8_weight_bytes": 7077888,
+      "n8_role_count": 2,
+      "not_runtime_RSS_or_model_act_bytes": true,
+      "projected_packed_projection_weight_bytes": 744062976,
+      "q4_baseline_native_projection_bytes": 736985088,
+      "q4_role_count": 194
+    },
+    "down_proj_10__v_proj_20": {
+      "incremental_n8_weight_bytes": 7077888,
+      "n8_role_count": 2,
+      "not_runtime_RSS_or_model_act_bytes": true,
+      "projected_packed_projection_weight_bytes": 744062976,
+      "q4_baseline_native_projection_bytes": 736985088,
+      "q4_role_count": 194
+    },
+    "k_proj_0": {
+      "incremental_n8_weight_bytes": 196608,
+      "n8_role_count": 1,
+      "not_runtime_RSS_or_model_act_bytes": true,
+      "projected_packed_projection_weight_bytes": 737181696,
+      "q4_baseline_native_projection_bytes": 736985088,
+      "q4_role_count": 195
+    },
+    "q4": {
+      "incremental_n8_weight_bytes": 0,
+      "n8_role_count": 0,
+      "not_runtime_RSS_or_model_act_bytes": true,
+      "projected_packed_projection_weight_bytes": 736985088,
+      "q4_baseline_native_projection_bytes": 736985088,
+      "q4_role_count": 196
+    },
+    "v_proj_20": {
+      "incremental_n8_weight_bytes": 196608,
+      "n8_role_count": 1,
+      "not_runtime_RSS_or_model_act_bytes": true,
+      "projected_packed_projection_weight_bytes": 737181696,
+      "q4_baseline_native_projection_bytes": 736985088,
+      "q4_role_count": 195
+    },
+    "v_proj_20__k_proj_0": {
+      "incremental_n8_weight_bytes": 393216,
+      "n8_role_count": 2,
+      "not_runtime_RSS_or_model_act_bytes": true,
+      "projected_packed_projection_weight_bytes": 737378304,
+      "q4_baseline_native_projection_bytes": 736985088,
+      "q4_role_count": 194
+    }
+  },
+  "native_original_kernel_cost_verified": true,
+  "not_official_28n8_serving_configuration": true,
+  "original_BEGLIN_Q4_projection_baseline_bytes": 736985088,
+  "resource_fairness_note": "Different roles add different packed bytes, cannot interpret high absolute improvement as equal-byte improvement.",
+  "schema": "BEGLIN-Qv12-real-original-Apple-Qwen28-source-kernel-weight-costs/1",
+  "separate_original_role_byte_costs": {
+    "down_proj": {
+      "increment_n8": 6881280,
+      "n8": 14622720,
+      "q4": 7741440
+    },
+    "k_proj": {
+      "increment_n8": 196608,
+      "n8": 417792,
+      "q4": 221184
+    },
+    "v_proj": {
+      "increment_n8": 196608,
+      "n8": 417792,
+      "q4": 221184
+    }
+  },
+  "source_PRELOCK_SHA256": "a565bdec341d675ce52a37132b06355760c2fef96b8e4329c17508a237e4374f",
+  "status": "SOURCE_ONLY_7ARM_ACTUAL_Q4_N8_WEIGHT_AND_GROUP_SCALE_LEDGER"
+}

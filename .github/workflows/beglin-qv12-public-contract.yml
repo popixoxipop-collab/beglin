@@ -1,0 +1,25 @@
+name: BEGLIN Qv12 Real Two-N8 Native Interaction Contracts
+on:
+  push:
+    branches:
+      - "research/qv12-*"
+    paths:
+      - "configs/research/BEGLIN_QV12_*"
+      - "docs/research/BEGLIN_QV12_*"
+      - "research/oml_acs/q_v12_*"
+      - "tests/research/test_q_v12_public_contract.py"
+      - ".github/workflows/beglin-qv12-public-contract.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify frozen new RACE16, original C 0/1/2n8 provenance, seven native outcome contracts
+        run: python -m unittest discover -s tests/research -p 'test_q_v12_public_contract.py' -v
