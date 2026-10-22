@@ -1,0 +1,23 @@
+{
+  "ARC_original_rev": "210d026faf9955653af8916fad021475a3f00453",
+  "ARC_train_eligible": 1093,
+  "OpenBookQA_eligible": 500,
+  "OpenBookQA_rev": "388097ea7776314e93a529163e0fea805b8a6454",
+  "cross48_hash": "c09831bf86c6eedebed433dc2a0398a0992afb19fddc9f86750c2d137d71d1b0",
+  "cross48_idsha": "ed14077e3f28f1a1214c9b37cd99aed7f065d8f8505e28d21e54aba7fb057527",
+  "cross_prompt_length_range": [
+    56,
+    133
+  ],
+  "development_labels_not_used_to_select_models": true,
+  "original_model_rev": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "production_changed": false,
+  "protocol_SHA256": "2e35764878191717ef7b84ed546e72e2a1c513523ecb17d24b54489bd29f319b",
+  "research_only": true,
+  "schema": "BEGLIN-Qv6-original-nested-128-and-cross-corpus-48-pre-model-freeze/1",
+  "source128_hash": "78d267bef54240cfb32b292c5d1885b6716fadd9bbd78ec7b3b1bf97822a1ab2",
+  "source128_idsha": "8975c5c0e13cab8ddf56e7df8a79e447e60b3f665e56d31da0772cd30b689631",
+  "source24_prefix_exact": true,
+  "source64_prefix_sha256": "40b473839a0992a1c6725711bee1e0749bba4d093d340a7df54d191c89510bce",
+  "status": "FROZEN_SOURCE_NESTED_AND_CROSSCORPUS_BEFORE_ANY_NEW_FISHER_OR_EVAL"
+}

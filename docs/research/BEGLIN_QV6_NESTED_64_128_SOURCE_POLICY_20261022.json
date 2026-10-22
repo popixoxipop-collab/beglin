@@ -1,0 +1,2000 @@
+{
+  "Qv6_prelock_SHA256": "2e35764878191717ef7b84ed546e72e2a1c513523ecb17d24b54489bd29f319b",
+  "all_24_64_128_have_exactly_28_n8": true,
+  "auto_precision_promotion": false,
+  "constrained_selected_overlap": {
+    "24_128": {
+      "policy_28_overlap": 12,
+      "policy_jaccard": 0.2727272727272727,
+      "source_gradient_rank_spearman": 0.4135055662249281
+    },
+    "24_64": {
+      "policy_28_overlap": 13,
+      "policy_jaccard": 0.3023255813953488,
+      "source_gradient_rank_spearman": 0.3511335654917961
+    },
+    "64_128": {
+      "policy_28_overlap": 22,
+      "policy_jaccard": 0.6470588235294118,
+      "source_gradient_rank_spearman": 0.8896397293786708
+    }
+  },
+  "cross_corpus_48_frozen_private_SHA256": "c09831bf86c6eedebed433dc2a0398a0992afb19fddc9f86750c2d137d71d1b0",
+  "evaluation_48_OpenBookQA_logits_not_opened": true,
+  "original_Qv5_24_mask_sha256": "88fdc38e6f55a16b0bdd4f7385e70f6de053db577a26d334a3ef3cb831113533",
+  "original_Qv5_24_source_milp_evidence_sha256": "a270a28698a3d737faeaec259a666c34edaa740ad334c117b5e1a8f404833959",
+  "original_source_128_aggregate_SHA256": "301d141987d3d063fb4944e30cc231b6163e90d44d19686fe5eebcb5f1e4aca9",
+  "original_source_128_private_SHA256": "196376b30e6654aa10f985e5c258ead65b48afd1bfb6965fb329727aea67b2f1",
+  "production_write_allowed": false,
+  "schema": "BEGLIN-Qv6-source-only-nested-24-64-128-HiGHS-Apple-NEON-MILP/1",
+  "scientific_adoption_status": "NO_VERDICT_REQUIRE_CROSS_DATASET_PROOF",
+  "selected_policies": {
+    "128": {
+      "estimated_native_projection_bytes": 757039104,
+      "isolated_async_stage_total_cost_ms": 49.99066337500014,
+      "mask_sha256": "8b9e2404f9a38d7b57784b7d663efa19661553ccaa7dc79bfcbf6e6180fc7997",
+      "native_full_layer_stage_plan": [
+        {
+          "bits": "488",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 0,
+          "observed_stage_median_ms": 0.20933850000004472,
+          "stage": "qkv"
+        },
+        {
+          "bits": "8",
+          "dispatcher": "serial_one_role",
+          "layer": 0,
+          "observed_stage_median_ms": 0.5708749999999985,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 0,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 0,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 1,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 1,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 1,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 1,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 2,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 2,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 2,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "8",
+          "dispatcher": "serial_one_role",
+          "layer": 2,
+          "observed_stage_median_ms": 3.4694478750000313,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 3,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 3,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 3,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 3,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 4,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 4,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 4,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 4,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 5,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 5,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 5,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 5,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 6,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 6,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 6,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 6,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 7,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 7,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 7,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 7,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 8,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 8,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 8,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 8,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 9,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 9,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 9,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 9,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 10,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 10,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 10,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 10,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 11,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 11,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 11,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 11,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 12,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 12,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 12,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 12,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 13,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 13,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 13,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 13,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "844",
+          "dispatcher": "parallel_q4_1t",
+          "layer": 14,
+          "observed_stage_median_ms": 0.6104427499999954,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 14,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 14,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 14,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 15,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "8",
+          "dispatcher": "serial_one_role",
+          "layer": 15,
+          "observed_stage_median_ms": 0.5708749999999985,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 15,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 15,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 16,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "8",
+          "dispatcher": "serial_one_role",
+          "layer": 16,
+          "observed_stage_median_ms": 0.5708749999999985,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 16,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 16,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "488",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 17,
+          "observed_stage_median_ms": 0.20933850000004472,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 17,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 17,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 17,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 18,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 18,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 18,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 18,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 19,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 19,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 19,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 19,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 20,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "8",
+          "dispatcher": "serial_one_role",
+          "layer": 20,
+          "observed_stage_median_ms": 0.5708749999999985,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 20,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 20,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 21,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "8",
+          "dispatcher": "serial_one_role",
+          "layer": 21,
+          "observed_stage_median_ms": 0.5708749999999985,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 21,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 21,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 22,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 22,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 22,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 22,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 23,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "8",
+          "dispatcher": "serial_one_role",
+          "layer": 23,
+          "observed_stage_median_ms": 0.5708749999999985,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 23,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 23,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 24,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "8",
+          "dispatcher": "serial_one_role",
+          "layer": 24,
+          "observed_stage_median_ms": 0.5708749999999985,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 24,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 24,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 25,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 25,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 25,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 25,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 26,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 26,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 26,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 26,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "484",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 27,
+          "observed_stage_median_ms": 0.18910937499999614,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 27,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 27,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 27,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        }
+      ],
+      "new_source_candidate_set": [
+        [
+          "q_proj",
+          14
+        ],
+        [
+          "k_proj",
+          0
+        ],
+        [
+          "k_proj",
+          17
+        ],
+        [
+          "k_proj",
+          27
+        ],
+        [
+          "v_proj",
+          0
+        ],
+        [
+          "v_proj",
+          4
+        ],
+        [
+          "v_proj",
+          7
+        ],
+        [
+          "v_proj",
+          8
+        ],
+        [
+          "v_proj",
+          9
+        ],
+        [
+          "v_proj",
+          10
+        ],
+        [
+          "v_proj",
+          11
+        ],
+        [
+          "v_proj",
+          13
+        ],
+        [
+          "v_proj",
+          15
+        ],
+        [
+          "v_proj",
+          16
+        ],
+        [
+          "v_proj",
+          17
+        ],
+        [
+          "v_proj",
+          19
+        ],
+        [
+          "v_proj",
+          20
+        ],
+        [
+          "v_proj",
+          21
+        ],
+        [
+          "v_proj",
+          22
+        ],
+        [
+          "v_proj",
+          25
+        ],
+        [
+          "o_proj",
+          0
+        ],
+        [
+          "o_proj",
+          15
+        ],
+        [
+          "o_proj",
+          16
+        ],
+        [
+          "o_proj",
+          20
+        ],
+        [
+          "o_proj",
+          21
+        ],
+        [
+          "o_proj",
+          23
+        ],
+        [
+          "o_proj",
+          24
+        ],
+        [
+          "down_proj",
+          2
+        ]
+      ],
+      "normalization_max_abs_source_Fisher": 101.9897125111643,
+      "original_no_current_crossdataset_results_seen": true,
+      "predicted_single_token_serial_ms": 82.99871993252803,
+      "role_counts": {
+        "down_proj": 1,
+        "gate_proj": 0,
+        "k_proj": 3,
+        "o_proj": 7,
+        "q_proj": 1,
+        "up_proj": 0,
+        "v_proj": 16
+      },
+      "source_only_gap": 0.0
+    },
+    "64": {
+      "estimated_native_projection_bytes": 757825536,
+      "isolated_async_stage_total_cost_ms": 49.99520537500037,
+      "mask_sha256": "74fb949e45d13f63a26d412effc39377492ea71bda20ae3690f56fddf6303e08",
+      "native_full_layer_stage_plan": [
+        {
+          "bits": "488",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 0,
+          "observed_stage_median_ms": 0.20933850000004472,
+          "stage": "qkv"
+        },
+        {
+          "bits": "8",
+          "dispatcher": "serial_one_role",
+          "layer": 0,
+          "observed_stage_median_ms": 0.5708749999999985,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 0,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 0,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 1,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 1,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 1,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 1,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 2,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 2,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 2,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "8",
+          "dispatcher": "serial_one_role",
+          "layer": 2,
+          "observed_stage_median_ms": 3.4694478750000313,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 3,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 3,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 3,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 3,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 4,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 4,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 4,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 4,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 5,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 5,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 5,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 5,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 6,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 6,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 6,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 6,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "488",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 7,
+          "observed_stage_median_ms": 0.20933850000004472,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 7,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 7,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 7,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 8,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 8,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 8,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 8,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 9,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 9,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 9,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 9,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 10,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 10,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 10,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 10,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 11,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 11,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 11,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 11,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 12,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 12,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 12,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 12,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "488",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 13,
+          "observed_stage_median_ms": 0.20933850000004472,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 13,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 13,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 13,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 14,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 14,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 14,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 14,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 15,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 15,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 15,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 15,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "488",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 16,
+          "observed_stage_median_ms": 0.20933850000004472,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 16,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 16,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 16,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "488",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 17,
+          "observed_stage_median_ms": 0.20933850000004472,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 17,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 17,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 17,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 18,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 18,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 18,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 18,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 19,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 19,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 19,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 19,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 20,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "8",
+          "dispatcher": "serial_one_role",
+          "layer": 20,
+          "observed_stage_median_ms": 0.5708749999999985,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 20,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 20,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "488",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 21,
+          "observed_stage_median_ms": 0.20933850000004472,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 21,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 21,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 21,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 22,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 22,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 22,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 22,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 23,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 23,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 23,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 23,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 24,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 24,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 24,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 24,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "448",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 25,
+          "observed_stage_median_ms": 0.20861974999997202,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 25,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "48",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 25,
+          "observed_stage_median_ms": 3.427703124999959,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 25,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "444",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 26,
+          "observed_stage_median_ms": 0.18793237499997728,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 26,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 26,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 26,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        },
+        {
+          "bits": "484",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 27,
+          "observed_stage_median_ms": 0.18910937499999614,
+          "stage": "qkv"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 27,
+          "observed_stage_median_ms": 0.12338549999998949,
+          "stage": "o"
+        },
+        {
+          "bits": "44",
+          "dispatcher": "parallel_q4_6t",
+          "layer": 27,
+          "observed_stage_median_ms": 0.7867656249999633,
+          "stage": "ffn_gu"
+        },
+        {
+          "bits": "4",
+          "dispatcher": "serial_one_role",
+          "layer": 27,
+          "observed_stage_median_ms": 0.44023437500007034,
+          "stage": "down"
+        }
+      ],
+      "new_source_candidate_set": [
+        [
+          "k_proj",
+          0
+        ],
+        [
+          "k_proj",
+          7
+        ],
+        [
+          "k_proj",
+          13
+        ],
+        [
+          "k_proj",
+          16
+        ],
+        [
+          "k_proj",
+          17
+        ],
+        [
+          "k_proj",
+          21
+        ],
+        [
+          "k_proj",
+          27
+        ],
+        [
+          "v_proj",
+          0
+        ],
+        [
+          "v_proj",
+          4
+        ],
+        [
+          "v_proj",
+          7
+        ],
+        [
+          "v_proj",
+          8
+        ],
+        [
+          "v_proj",
+          9
+        ],
+        [
+          "v_proj",
+          10
+        ],
+        [
+          "v_proj",
+          11
+        ],
+        [
+          "v_proj",
+          13
+        ],
+        [
+          "v_proj",
+          15
+        ],
+        [
+          "v_proj",
+          16
+        ],
+        [
+          "v_proj",
+          17
+        ],
+        [
+          "v_proj",
+          18
+        ],
+        [
+          "v_proj",
+          19
+        ],
+        [
+          "v_proj",
+          20
+        ],
+        [
+          "v_proj",
+          21
+        ],
+        [
+          "v_proj",
+          22
+        ],
+        [
+          "v_proj",
+          25
+        ],
+        [
+          "o_proj",
+          0
+        ],
+        [
+          "o_proj",
+          20
+        ],
+        [
+          "up_proj",
+          25
+        ],
+        [
+          "down_proj",
+          2
+        ]
+      ],
+      "normalization_max_abs_source_Fisher": 200.38679765102296,
+      "original_no_current_crossdataset_results_seen": true,
+      "predicted_single_token_serial_ms": 83.4090367851057,
+      "role_counts": {
+        "down_proj": 1,
+        "gate_proj": 0,
+        "k_proj": 7,
+        "o_proj": 2,
+        "q_proj": 0,
+        "up_proj": 1,
+        "v_proj": 17
+      },
+      "source_only_gap": 0.0
+    }
+  },
+  "source_24_64_128_rank_stability": {
+    "128": {
+      "gain_max": 101.9897125111643,
+      "gain_min": 0.32085383241386456,
+      "odd_even_sample_Fisher_rank_spearman": 0.6273442293746863,
+      "plain_top28_tensor_index_set": [
+        170,
+        28,
+        154,
+        165,
+        185,
+        76,
+        184,
+        104,
+        194,
+        119,
+        132,
+        84,
+        192,
+        157,
+        141,
+        66,
+        144,
+        123,
+        113,
+        65,
+        153,
+        78,
+        151,
+        167,
+        179,
+        75,
+        133,
+        183
+      ],
+      "score_positive_count": 196,
+      "source_gradient_mean": 15.0959781667047
+    },
+    "24": {
+      "gain_max": 1.1484931810915022,
+      "gain_min": 0.0008094682833711312,
+      "odd_even_sample_Fisher_rank_spearman": 0.4796802907027708,
+      "plain_top28_tensor_index_set": [
+        169,
+        28,
+        56,
+        170,
+        142,
+        194,
+        153,
+        100,
+        161,
+        172,
+        177,
+        75,
+        67,
+        123,
+        121,
+        157,
+        92,
+        151,
+        195,
+        84,
+        124,
+        158,
+        63,
+        74,
+        95,
+        159,
+        156,
+        113
+      ],
+      "score_positive_count": 196,
+      "source_gradient_mean": 0.06926074783870868
+    },
+    "64": {
+      "gain_max": 200.38679765102296,
+      "gain_min": 0.12911260908686262,
+      "odd_even_sample_Fisher_rank_spearman": 0.5032759843492259,
+      "plain_top28_tensor_index_set": [
+        170,
+        165,
+        154,
+        185,
+        184,
+        192,
+        104,
+        84,
+        144,
+        76,
+        133,
+        119,
+        123,
+        73,
+        65,
+        124,
+        179,
+        134,
+        194,
+        67,
+        28,
+        132,
+        153,
+        141,
+        114,
+        149,
+        56,
+        64
+      ],
+      "score_positive_count": 196,
+      "source_gradient_mean": 16.613582994973655
+    }
+  },
+  "source_nested_pairwise_rank": {
+    "24_128": {
+      "full_196_spearman": 0.4135055662249281,
+      "unconstrained_top28_jaccard": 0.21739130434782608,
+      "unconstrained_top28_overlap": 10
+    },
+    "24_64": {
+      "full_196_spearman": 0.3511335654917961,
+      "unconstrained_top28_jaccard": 0.19148936170212766,
+      "unconstrained_top28_overlap": 9
+    },
+    "64_128": {
+      "full_196_spearman": 0.8896397293786708,
+      "unconstrained_top28_jaccard": 0.5555555555555556,
+      "unconstrained_top28_overlap": 20
+    }
+  },
+  "status": "FROZEN_64_128_POLICIES_BEFORE_NEW_OPENBOOKQA_VALIDATION"
+}

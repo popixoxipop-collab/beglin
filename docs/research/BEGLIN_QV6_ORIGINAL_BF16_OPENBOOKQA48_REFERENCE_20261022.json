@@ -1,0 +1,18 @@
+{
+  "accuracy": 0.7291666666666666,
+  "correct": 35,
+  "dataset_revision": "388097ea7776314e93a529163e0fea805b8a6454",
+  "different_arithmetic_than_BEGLIN_widened_F32": true,
+  "elapsed_s": 8.59,
+  "framework": "Transformers BF16 on MPS",
+  "frozen_crosscorpus_data_SHA256": "c09831bf86c6eedebed433dc2a0398a0992afb19fddc9f86750c2d137d71d1b0",
+  "frozen_source_only_MILP_SHA256": "56f63d90ebf779f41d692e3fc8f38f33a2152f4d492bd914d9b87b6a4beef4df",
+  "model_HF_source_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "original_BF16_correct_oneletter_NLL": 0.9721511603087644,
+  "private_receipt_SHA256": "e4f6bd4d4c75659ad4ddbdf2c3d29def025b5b4c64c225ce5bdf849ca77ec502",
+  "production_mutated": false,
+  "schema": "BEGLIN-Qv6-independent-original-BF16-MPS-OpenBookQA48/1",
+  "status": "PASS_UNMODIFIED_ORIGINAL_BF16_MODEL_OODISH_SCIENCE_CROSSCORPUS",
+  "total": 48,
+  "weights_mutated": false
+}

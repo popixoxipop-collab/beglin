@@ -1,0 +1,69 @@
+{
+  "schema": "BEGLIN-Qv6-Fisher-sample-size-cross-dataset-study/1",
+  "created": "2026-10-22",
+  "status": "PRELOCK_BEFORE_128_SOURCE_EXTENSION_AND_NEW_CROSS_DATASET_EVALUATION",
+  "parent_qv5_commit": "3f5bc53cf8c80930b7472f7731cdf93f869f4b5a",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "official_BF16_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "BF16_EOE_snapshot": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "source_dataset": "allenai/ai2_arc",
+  "source_dataset_revision": "210d026faf9955653af8916fad021475a3f00453",
+  "source_split": "train",
+  "nested_source_sample_sizes": [
+    24,
+    64,
+    128
+  ],
+  "source_selection": "Identical Qv5 ARC question encoding, SHA256(dataset_rev+'/'+split+'/'+ID), sort ascending; first 24 must byte-identically reproduce Qv5 source train.",
+  "source_24_private_receipt_sha256": "631bb02d22b696ddcabfd3d7ab759218fd75e1e8f3d8384cbf4a5df4de3f6994",
+  "source_24_Fisher_receipt_sha256": "6d87dfef842fcce932cdb85c9a42bc3ede380493917ae608663e2072f8143417",
+  "source_24_Fisher_public_sha256": "e7854ea1404ac057bdb960eba7e1d34283c109e2149a839878936293b94362e4",
+  "cross_dataset": "allenai/openbookqa",
+  "cross_dataset_revision": "388097ea7776314e93a529163e0fea805b8a6454",
+  "cross_dataset_subset": "main",
+  "cross_dataset_split": "validation",
+  "cross_dataset_count": 48,
+  "cross_dataset_selection": "SHA256(dataset_rev+'/validation/'+ID) order; identical single-letter A/B/C/D Qwen prompt contract; min 18/max 208 tokens; no overlap by canonical question hash with ARC source or prior ARC dev.",
+  "cross_dataset_classification": "UNSEEN_CROSS_CORPUS_EXPLORATORY_VALIDATION_ONLY__SIMILAR_SCIENCE_DOMAIN_NOT_OOD_PROVEN",
+  "prior_arc_development_split_SHA256": "a00985cc73f80518f448c2b8a1295cf894283723f87b5af53321d486ce0187ae",
+  "source_Fisher": "empirical directional sensitivity E[(grad_correct_label_BF16 • native_quant_residual)^2], Q4 vs qNg64-n8; signed per-prompt BF16 backward; no per-tensor final-model intervention",
+  "allocator_constraints": {
+    "n8": 28,
+    "n4": 168,
+    "packed_projection_budget_bytes": 830570496,
+    "serial_proxy_ms_max": 100,
+    "stage_proxy_ms_max": 50
+  },
+  "policy_arms": [
+    "all_Q4",
+    "original_Qv5_24_Fisher",
+    "Qv6_64_Fisher",
+    "Qv6_128_Fisher"
+  ],
+  "primary_analysis": "rank Spearman 24->64,24->128,64->128 and odd/even within; top28 source policy Jaccard, cross-dataset answer-only correct-letter NLL and four-choice accuracy",
+  "secondary_analysis": "pairwise sample-level bootstrap 95 CI for Qv6_128 minus best baseline, no repeated tuning",
+  "first_24_gradient_reuse": true,
+  "first_24_grad_recomputation": false,
+  "source_128_grad_sample_target": 104,
+  "baseline_original_model_unchanged": true,
+  "main_and_live_unchanged": true,
+  "production_write_allowed": false,
+  "auto_promotion": false,
+  "old_V6_24_final_unknown_do_not_read": true,
+  "previous_Qv4_8dev_not_reused": true,
+  "previous_Qv5_40dev_not_reused": true,
+  "limitations": [
+    "48 OpenBookQA validation is cross-corpus but science-domain overlap with ARC remains; not a distribution-wide OOD generalization test",
+    "All selected masks frozen source-only; held question correct labels not used for tuning",
+    "Only one model, tiny sample sizes, first-order Fisher proxy, no true Hessian and no GPU runtime dynamic bits"
+  ],
+  "stop_conditions": [
+    "any missing source SHA or Qv5 first24 identity mismatch",
+    "nonfinite per-item gradients",
+    "data split collision",
+    "MILP no exact optimality",
+    "any native mask provenance mismatch",
+    "failure in audit or unsafe filesystem permissions"
+  ],
+  "success_gate": "NO_DEPLOY; scientific adoption only with independent later dataset/model plus cost/correctness evidence"
+}
