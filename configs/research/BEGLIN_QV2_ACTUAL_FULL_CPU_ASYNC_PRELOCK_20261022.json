@@ -1,0 +1,21 @@
+{
+  "schema": "BEGLIN-Qv2-isolated-full-model-CPU-async-actual/1",
+  "date": "2026-10-22",
+  "status": "PRELOCK_FOR_EXECUTION_PARITY_AND_KERNEL_TIMING_AFTER_V2_QUALITY_REJECTION",
+  "original_source_lab_C_sha256": "d8e149092c73d858dfb7a066f697f2b95e0668ffa747b9d66ddc4ee3617f447a",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "bf16_source_revision": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "policy_sha256": "cb9268c9177d47705e548c2a90a6b22772569b3f2bb54dfef2767ca53ffa3e76",
+  "previous_6policy_PPL_source_private_SHA256": "1dfb72b95b11262bbde56e2e47fa52965c96a4fe6c21f089b999ba1c816c9185",
+  "target": "Implement actual forward_token stage dependencies: after shared attn norm, Q in main worker, K and V on distinct background workers; after post-attn norm, gate in main, up in background worker. Wait at exact dependency barrier. No next layer speculative concurrent execution.",
+  "isolation": "Patch original SHA-pinned previous research C copy ONLY. Never patch tracked production qwen_infer.c, main, model checkpoint, or immutable runtime. New output directory private 0700; all generated tokens and logits 0600.",
+  "worker_policy": "Three persistent background pthread workers K,V,UP, each with private q4pool 6 threads; existing global q4pool only main thread. Original q4 GEMV algorithm same. Native n8 predecoded SIMD dispatch used with atomic safe counters. No shared mutable q4pool.job across concurrent calls.",
+  "scope": "single-token Qwen forward_token CPU path only, not batched forward_tokens nor Metal GPU, nor automating mixed policy selection",
+  "numeric_criteria": {
+    "full_vocab_logits": "all 151936 element finite; max absolute vs serial <=0.001; rel L2<=0.0001; argmax identical",
+    "source_ppl": "same 8 prelocked public evaluation windows, 131 teacher-forced prediction positions; relative PPL difference <=0.0001"
+  },
+  "timing": "same BEGLIN bench 1 single decode, prior 83.50ms baseline; measure native async with same model, policy and input. Success never assumed. Report concurrency stage log proof and actually measured wall latency.",
+  "known_quality_failure": "v2 NLL worse than all Q4 and role-balanced random; any runtime speed improvement does NOT make v2 deployable; no promotion",
+  "previous_blocked_output_sensitivity_retried": false
+}
