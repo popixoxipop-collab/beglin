@@ -1,0 +1,111 @@
+{
+  "PPL_equal_async_vs_serial": true,
+  "dominance_comparator_metrics": {
+    "all_Q4": {
+      "bytes": 736985088,
+      "ms": 72.1,
+      "ppl": 727.9173,
+      "rss": 4829249536
+    },
+    "v2_activation_MILP": {
+      "bytes": 776896512,
+      "ms": 89.54,
+      "ppl": 827.4999,
+      "rss": 4869095424
+    }
+  },
+  "existing_V6_used_24_provenance_not_known": true,
+  "five_real_native_cases": {
+    "all_Q4G64": {
+      "NLL": 6.590187442842743,
+      "PPL": 727.9173,
+      "bench_ms": 72.1,
+      "maxRSS": 4829249536,
+      "native_tok_s": 13.87,
+      "source_output_binary_SHA256": "d59f463ba5a13d6559c00229f047802c0ebbb74362b00257fd2aaa4b06fc1e9d"
+    },
+    "former_weight_kernel_aware": {
+      "NLL": 6.429095089600854,
+      "PPL": 619.613,
+      "bench_ms": 103.63,
+      "maxRSS": 4860772352,
+      "native_tok_s": 9.65,
+      "source_output_binary_SHA256": "172613dc69f79f38c8553ff7087e653ec9c0031ca80aec8efd2f76f948599f14"
+    },
+    "frozen_seed73_random": {
+      "NLL": 6.314818977432272,
+      "PPL": 552.702,
+      "bench_ms": 149.65,
+      "maxRSS": 4923555840,
+      "native_tok_s": 6.682,
+      "source_output_binary_SHA256": "8c16013a343b924b8117f66edcbfd7fb11a86f991127b9cd97fb6ec5552b6664"
+    },
+    "original_BF16_widened_F32": {
+      "NLL": 5.853247623077063,
+      "PPL": 348.3639,
+      "bench_ms": 245.58,
+      "maxRSS": 9272279040,
+      "native_tok_s": 4.072,
+      "source_output_binary_SHA256": "d59f463ba5a13d6559c00229f047802c0ebbb74362b00257fd2aaa4b06fc1e9d"
+    },
+    "v2_activation_async_MILP": {
+      "NLL": 6.718408986405289,
+      "PPL": 827.4999,
+      "bench_ms": 89.54,
+      "maxRSS": 4869095424,
+      "native_tok_s": 11.168,
+      "source_output_binary_SHA256": "172613dc69f79f38c8553ff7087e653ec9c0031ca80aec8efd2f76f948599f14"
+    }
+  },
+  "full_model_sustained_latency_or_task_AUROC_measured": false,
+  "immutable_tailnet_release_or_repo_main_modified": false,
+  "independent_final_IID_OOD_test_verified": false,
+  "limitations": [
+    "Only eight synthetic prompts/131 positions from publicly frozen research development, not independent final task accuracy.",
+    "PPL is full teacher-forced chat-template token distribution, not a task-specific assistant-only NLL.",
+    "One-token benchmark uses best-of-three internally; two ABBA samples/mode cannot establish sustained throughput confidence interval.",
+    "The 1.05 async threshold is a post-hoc engineering guard rather than preregistered hypothesis.",
+    "Whole-model Q4 has fewer logical projection bytes and lower RSS but differs in quantization quality tradeoffs outside the tested inputs.",
+    "Actual private per-tensor source-BF16 activations remain private; no prohibited historical V6 24 records opened.",
+    "Not safe to enable production/model promotion; no Metal GPU, multi-request race or cold-boot tests."
+  ],
+  "locked_evaluation_window_count": 8,
+  "native_actual_parallel_QKV_and_gateup_executed": true,
+  "native_async_meets_min_speedup": false,
+  "optimized_precision_policy_auto_promotion": "denied",
+  "optional_tradeoff": "frozen random mixed improves PPL but costs more RAM and is slower than all-Q4; not universally dominant",
+  "original_BF16_checkpoint_modified": false,
+  "original_source_model_snapshot": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "output_logits_byte_equal_async_vs_serial": true,
+  "paired_actual_one_token_native_ms": {
+    "ABBA_serial_div_async_ratio": 1.0027083001433805,
+    "async_ABBA_mean": 94.155,
+    "async_first_pair": 92.66,
+    "async_three_run_mean": 93.65666666666668,
+    "samples_per_mode": 3,
+    "serial_ABBA_mean": 94.41,
+    "serial_div_async_mean_ratio": 0.9996084991280206,
+    "serial_first_pair": 92.04,
+    "serial_three_run_mean": 93.62
+  },
+  "posthoc_conservative_async_min_speedup": 1.05,
+  "private_sha256": "0371c3a13a5bb79013edff649cbf141d27810cfd4858f01b5d4e839cacc41d6d",
+  "regression_tests": "8/8 PASS",
+  "research_default_async": "disabled",
+  "same_input_all_five_native_ppl_runs": true,
+  "schema": "BEGLIN-Qv2-independent-native-Pareto-async-admission/1",
+  "scientific_Q_quality_verdict": "NO_VERDICT",
+  "source_activation_quality_policy_sha256": "9324c5ec891d638f2713d3bbd4187399e1aae8a9a74df129dfabc4e8ea870212",
+  "source_only_MILP_precision_candidate_dominated_by_all_Q4": true,
+  "source_sha_by_receipt": {
+    "abba": "8f03f93670400c3e2b34f83bdc1d8fc65e1dd0bd915556dafd4f73b0201bab00",
+    "bench": "22098c95f37a524f491c09a8775a854ab4ea6eca83ed948895e370e25653e943",
+    "guard": "6e9ed2794964aa4c3efba307744db61388730ada2aa18c81f4f65838c5da5341",
+    "input": "352d2f1b2161ce47233dd25ffe377971b54f321ef3e6ea833c379619d4daa23b",
+    "pair": "26096060a809b380cbf5bef749b87f09dcec1a253c3ecc99d6ef20652daec692",
+    "ppl": "043ee279a2f5a7e0880286aa0c1b5e5cae7692dbf4775bf53c49a27b803383a9",
+    "selective": "2217e93a9a140f11299073b5b99e19b9fa33c7fdb79db6cd02781f3afb6024c5"
+  },
+  "status": "PASS_SOURCE_AND_NATIVE_EVIDENCE__FAIL_CANDIDATE_SPEED_QUALITY_GATES",
+  "total_token_positions": 131
+}
