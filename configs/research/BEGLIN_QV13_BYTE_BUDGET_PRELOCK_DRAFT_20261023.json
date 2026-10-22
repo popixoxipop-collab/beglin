@@ -1,0 +1,87 @@
+{
+  "schema": "BEGLIN-Qv13-byte-budget-equal-cost-prelock-DRAFT/1",
+  "status": "DRAFT_DESIGN_NOT_FROZEN_NO_NEW_NATIVE_RUN",
+  "date": "2026-10-23",
+  "parent_branch": "research/qv12-two-n8-interaction-20261023",
+  "parent_commit": "5eed082b9d655c3f4b8f2cff8ddd32fc2ad4df7c",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "model_HF_rev": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "cpu_precision": "original BEGLIN native Q4/n8 packed kernels, 28 layers, 196 role tensors",
+  "qv12_source_public_audit_sha256": "89771cd5dafed2b8ee299d328125803ee039aaa2efc9195c5847a2bce83f8bac",
+  "qv12_packed_cost_public_sha256": "29caa29298420cdbcd2bb6b7c1789a99667036d515925ef6c2b93d52d4175073",
+  "qv12_exploratory_only": true,
+  "no_qv12_selection_feedback_into_confirmatory_hypothesis": true,
+  "research_question": "At equal true incremental packed-weight byte budgets, does source-calibrated selection of original BEGLIN native 8-bit tensors outperform fixed 28-n8, equal-byte seeded random allocation and simple singleton-gain/byte greedy on genuinely new RACE items, without accuracy or serving cost regression?",
+  "requires_precise_role_byte_ledger_all_196": true,
+  "proposed_calibration_data": {
+    "source": "separate RACE train/validation-derived articles only",
+    "role": "select masks and fit any gains/interactions",
+    "overlap_with_Qv11_Qv12_article_ids": "forbidden",
+    "freeze_before_heldout": true
+  },
+  "proposed_eval_data": {
+    "in_distribution": "at least 128 distinct new RACE middle/test passages",
+    "shift": "at least 128 distinct new RACE high/test passages",
+    "exclude_all_qv11_qv12_eval_article_ids": true,
+    "freeze_input_ids_sha_and_prompt_token_hashes": true,
+    "selection_must_not_look_at_eval_labels_or_losses": true,
+    "untruncated_prompts_and_distinct_single_token_ABCD": true
+  },
+  "fixed_reference_masks": [
+    {
+      "name": "all_Q4",
+      "count_n8": 0
+    },
+    {
+      "name": "original_BEGLIN_28_n8",
+      "count_n8": 28
+    }
+  ],
+  "comparison_policies": [
+    "source_calibrated_singleton_gain_per_added_byte_greedy",
+    "source_calibrated_pair-aware_shrunk_interaction_only_if_independently_supported",
+    "seeded_equal-byte_random_masks_at_least_5",
+    "fixed_original_BEGLIN_28_n8",
+    "all_Q4"
+  ],
+  "fairness": {
+    "must_match_actual_packed_incremental_bytes": true,
+    "require_budget_feasible_all_masks": true,
+    "report_28_n8_count_comparison_separately": true,
+    "all_Q8_only_if_original_native_kernel_support_verified": true,
+    "forbid_packed_byte_equal_to_RSS_claim": true,
+    "measure_peak_RSS_p50_p95_cold_warm_on_CPU_and_Metal_separately": true
+  },
+  "primary_metric": "paired mean full-vocab correct-answer next-token NLL (per passage), strongest applicable equal-byte baseline",
+  "secondary_metrics": [
+    "accuracy_ABCD_argmax",
+    "multiple_choice_conditional_NLL",
+    "gold_minus_best_distractor_margin",
+    "logit_mass_outside_ABCD",
+    "per_passage_NLL_variance",
+    "calibration",
+    "peak_RSS",
+    "sustained_tokens_per_second",
+    "cold_warm_p50_p95",
+    "mask_switch_overhead_if_dynamic"
+  ],
+  "statistics": {
+    "unit": "article",
+    "resamples": 10000,
+    "seed": 20261023,
+    "predefine_multiplicity": "Holm across primary candidate policy comparisons",
+    "must_include_95CI": true,
+    "do_not_treat_shared_examples_as_independent": true,
+    "no_hypothesis_changing_after_eval": true
+  },
+  "acceptance_draft": {
+    "NLL_vs_strongest_equal_byte_baseline": "at least 2% relative paired mean improvement with adjusted 95% CI favoring candidate",
+    "accuracy": "no >2 percentage-point regression; if CI too wide, INCONCLUSIVE",
+    "systems": "budget obeyed and actual latency/RSS measured; do not claim runtime gain from weight ledger alone"
+  },
+  "state_approvals": "Research draft only; fixed masks and future data must be fully enumerated and frozen in a separate signed run manifest before any confirmatory evaluations",
+  "dynamic_policy_gate": "Only after static same-budget result. Per-input switching must be real native execution with measured switch overhead and no target-label lookahead.",
+  "no_main_merge": true,
+  "no_live_promotion": true,
+  "no_tailnet_release_change": true
+}
