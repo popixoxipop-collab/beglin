@@ -1,0 +1,20 @@
+{
+  "HF_dataset_revision": "218ec52e09a7e7462a5400043bb9a69a41d06b76",
+  "candidate_full_prompt_count": 48,
+  "eval_count": 48,
+  "frozen_ARC96_SHA256": "8da2f96b6ec02a5a45a2308e84074a1de14e7a93dc30e9517960596e3b2cee0c",
+  "frozen_HellaSwag48_SHA256": "45c95170a2eb01b4c79ad44719ab9a1877e568f2583a90d84340d7448e0d1a33",
+  "held48_id_digest": "af628f3fafab753c42763da5066fda951fd999dfe7215c8d9f3a5f17230e26f6",
+  "held_min_max_prompt_tokens": [
+    84,
+    170
+  ],
+  "no_prior_ARC_or_OpenBookQA_eval_prompts_used": true,
+  "preregistration_sha256": "9b833f5fc2729d13320c87e368baaff952c890ed068586622badfc7da63b4db1",
+  "production_untouched": true,
+  "schema": "BEGLIN-Qv8-original-ARC96-and-new-HellaSwag48-dataset-lock/1",
+  "source96_id_digest": "dc13b7898e5441461ad8fc5b0156d53c61b459944d3a84b081455bc0dd84e041",
+  "source_and_eval_dataset_different": true,
+  "source_count": 96,
+  "status": "SOURCE_AND_OUTOFDOMAIN_EVALUATION_FROZEN_BEFORE_SIGNED_GRADIENT"
+}

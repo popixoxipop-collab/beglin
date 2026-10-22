@@ -1,0 +1,25 @@
+name: BEGLIN Qv8 Signed Joint Source Public Contracts
+on:
+  push:
+    branches:
+      - "research/qv8-*"
+    paths:
+      - "configs/research/BEGLIN_QV8_*"
+      - "docs/research/BEGLIN_QV8_*"
+      - "research/oml_acs/q_v8_*"
+      - "tests/research/test_q_v8_public_contract.py"
+      - ".github/workflows/beglin-qv8-public-contract.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify frozen BF16 signed joint Qv8 and native CPU contract
+        run: python -m unittest discover -s tests/research -p 'test_q_v8_public_contract.py' -v

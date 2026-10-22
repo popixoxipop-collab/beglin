@@ -1,0 +1,18 @@
+{
+  "ARC96_source_SHA256": "8da2f96b6ec02a5a45a2308e84074a1de14e7a93dc30e9517960596e3b2cee0c",
+  "Qv5_original_196_tensor_quant_native_SHA_source": "6d87dfef842fcce932cdb85c9a42bc3ede380493917ae608663e2072f8143417",
+  "elapsed_s": 509.43,
+  "eval_logits_unopened": true,
+  "first_order_joint_Q4_source_rms": 68.93671966806828,
+  "full_source_private_SHA256": "e693fdf6798690c86ad2b53bb4a8e90cc208994956944f519841968ce680ed83",
+  "mean_cross_tensor_abs_correlation": 0.44932195624277727,
+  "no_model_weights_mutated": true,
+  "no_operational_state_changed": true,
+  "original_model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "prelock_sha256": "9b833f5fc2729d13320c87e368baaff952c890ed068586622badfc7da63b4db1",
+  "scalar_signed_directional_dot_dtype": "original BF16 MPS gradient promoted FP32, source native residual FP16 promoted FP32, FP64 signed dot",
+  "schema": "BEGLIN-Qv8-original-BF16-signed-joint-error-196x96/1",
+  "source_loss_original_BF16_mean_NLL": 1.1637864818133135,
+  "status": "SOURCE_ONLY_196x96_SIGNED_NATIVE_Q4N8_DELTA_VERIFIED",
+  "unopened_HellaSwag48_SHA256": "45c95170a2eb01b4c79ad44719ab9a1877e568f2583a90d84340d7448e0d1a33"
+}

@@ -1,0 +1,86 @@
+{
+  "held_48_SHA256": "45c95170a2eb01b4c79ad44719ab9a1877e568f2583a90d84340d7448e0d1a33",
+  "joint_selected_mask_SHA256": "9db954db6ba690d92dd96ee1638b76afe53de2d637aab462b4e83de90cc35922",
+  "main_and_operator_release_unchanged": true,
+  "native_summary": {
+    "q4": {
+      "N": 48,
+      "accuracy": 0.4791666666666667,
+      "correct": 23,
+      "mean_correct_token_NLL": 2.167169571775209
+    },
+    "qv6_diag128": {
+      "N": 48,
+      "accuracy": 0.4791666666666667,
+      "correct": 23,
+      "mean_correct_token_NLL": 1.8955625276148844
+    },
+    "qv6_diag64": {
+      "N": 48,
+      "accuracy": 0.5,
+      "correct": 24,
+      "mean_correct_token_NLL": 1.8641062191498017
+    },
+    "qv8_signed96": {
+      "N": 48,
+      "accuracy": 0.5208333333333334,
+      "correct": 25,
+      "mean_correct_token_NLL": 1.9541098449055267
+    }
+  },
+  "new_dataset_different_domain_but_development_only": true,
+  "no_actual_Apple_Metal_AutoBitSwitch": true,
+  "no_auto_promotion": true,
+  "no_valid_cpu_speed_claim_from_quality_benchmark": true,
+  "original_BF16_external_reference_NLL": 1.2270666790185107,
+  "original_BF16_external_reference_correct": 34,
+  "original_model_HF_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "paired_joints": {
+    "q4": {
+      "McNemar_exact_two_sided_p": 0.6875,
+      "accuracy_delta_new_minus_base": 2,
+      "gain_only_cases": 4,
+      "joint_minus_baseline_mean_NLL": -0.2130597268696821,
+      "loss_only_cases": 2,
+      "new_mask_lower_NLL_case_count": 25,
+      "paired_bootstrap95_percentile": [
+        -0.5848239704411895,
+        0.18703173254735853
+      ]
+    },
+    "qv6_diag128": {
+      "McNemar_exact_two_sided_p": 0.7265625,
+      "accuracy_delta_new_minus_base": 2,
+      "gain_only_cases": 5,
+      "joint_minus_baseline_mean_NLL": 0.058547317290642144,
+      "loss_only_cases": 3,
+      "new_mask_lower_NLL_case_count": 21,
+      "paired_bootstrap95_percentile": [
+        -0.4067139018428845,
+        0.5328557089114905
+      ]
+    },
+    "qv6_diag64": {
+      "McNemar_exact_two_sided_p": 1.0,
+      "accuracy_delta_new_minus_base": 1,
+      "gain_only_cases": 4,
+      "joint_minus_baseline_mean_NLL": 0.0900036257557249,
+      "loss_only_cases": 3,
+      "new_mask_lower_NLL_case_count": 22,
+      "paired_bootstrap95_percentile": [
+        -0.21568953048065143,
+        0.4139588285322653
+      ]
+    }
+  },
+  "prelock_SHA256": "9b833f5fc2729d13320c87e368baaff952c890ed068586622badfc7da63b4db1",
+  "private_original_full_independent_audit_SHA256": "b1f0fcb82937f429998c74f70b21499fbf795018c5d83b419be2de679673da51",
+  "quality_generalization_established": false,
+  "schema": "BEGLIN-Qv8-independent-signed-first-order-source-and-4-arm-native-HellaSwag48/1",
+  "separate_C_widenedF32_vs_HF_BF16_numerical_paths": true,
+  "source_96_SHA256": "8da2f96b6ec02a5a45a2308e84074a1de14e7a93dc30e9517960596e3b2cee0c",
+  "source_independent_public_SHA256": "6ae7a5d03a104b95b1183c89548e5b545a41ab161d35e572f4e6b3c0a6427736",
+  "source_joint_local_only_not_global_optimum": true,
+  "source_pre_eval_erratum_SHA256": "9baf2d951c57ccacfc03626cb70ce110bb52fc16c834161d3933acb9ca2ca735",
+  "status": "PASS_96x196_SIGNED_SOURCE_AND_4x48_ACTUAL_QWEN_CPU_NATIVE_LOGS"
+}

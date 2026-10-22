@@ -1,0 +1,27 @@
+{
+  "best_feasible_exchange_J_change": 0.35281523258589687,
+  "best_feasible_exchange_roles": [
+    [
+      "k_proj",
+      7
+    ],
+    [
+      "v_proj",
+      27
+    ]
+  ],
+  "blocked_async_stage_DAG": 3482,
+  "blocked_memory": 0,
+  "blocked_serial_cost": 0,
+  "frozen_selected_mask_SHA256": "9db954db6ba690d92dd96ee1638b76afe53de2d637aab462b4e83de90cc35922",
+  "frozen_source_optimizer_receipt_SHA256": "c8eb0ad2737c3082772b40e8543f8a74d2b615c9d4c8b5e2ce9e29caf3ef0c88",
+  "independent_source_J": 87.25695173841945,
+  "independently_measured_feasible_swaps": 1222,
+  "no_global_optimality_claim": true,
+  "no_immutable_release_modification": true,
+  "no_test_responses_or_new_evaluation_loaded": true,
+  "possible_selected_to_unselected_swaps": 4704,
+  "schema": "BEGLIN-Qv8-source-only-exhaustive-feasible-pairwise-local-certificate/1",
+  "source_96_signed_private_SHA256": "e693fdf6798690c86ad2b53bb4a8e90cc208994956944f519841968ce680ed83",
+  "status": "PASS_4704_POSSIBLE_ONE_SWAP_PAIRS_NO_FEASIBLE_IMPROVEMENT"
+}

@@ -1,0 +1,12 @@
+{
+  "correct_label": "qv6_64",
+  "held_HellaSwag_not_run_yet": true,
+  "new_source_report_SHA256": "c8eb0ad2737c3082772b40e8543f8a74d2b615c9d4c8b5e2ce9e29caf3ef0c88",
+  "old_source_report_SHA256": "b47fa44d4778d6ec1ad6555b2c9d37808de74853d191d212f0135dce569c6f07",
+  "original_label": "qv5_24",
+  "schema": "BEGLIN-Qv8-before-first-held-inference-metadata-only-source-erratum/1",
+  "selected_mask_sha256_unchanged": "9db954db6ba690d92dd96ee1638b76afe53de2d637aab462b4e83de90cc35922",
+  "source_cost_and_optimization_unmodified": true,
+  "source_start_minimum_final_score": 87.25695173841996,
+  "status": "CORRECTED_START_LABEL_ONLY_NO_MASK_OR_RESULT_CHANGED"
+}
