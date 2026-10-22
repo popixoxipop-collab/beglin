@@ -1,0 +1,50 @@
+{
+  "schema": "BEGLIN-Q-v2-activation-aware-stage-DAG-MILP-prelock/1",
+  "date": "2026-10-22",
+  "status": "SOURCE_METRICS_AVAILABLE__NEW_POLICY_AND_EVALUATION_NOT_YET_RUN",
+  "source_origins": {
+    "bf16_model": "Qwen/Qwen2.5-1.5B-Instruct@989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "activation_calibration": "12 public prompts, 461 original BF16 token positions, 196 input-channel diagonal moments, no labels",
+    "quality_scores_sha256": "94ffe5c18ee4f92fadee912d1046d2ed104f3934e968081e87dfd1ac07ed1bf0",
+    "native_async_stages_sha256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+    "native_role_cost_profile_sha256": "280ca338745d0ebb2c44986d18e8b240135fe7fa4b1077f49f65f5d8fb3eff93",
+    "source_previous_v1_quality": "original source-weight-only, NOT use old target PPL/argmax for optimization"
+  },
+  "solver": {
+    "grouped_stage_binary_options": "each of 28 layers selects 1/8 QKV combination, 1/4 gate-up combination, 1/2 output projection, and 1/2 FFN down projection; 448 binary variables and 112 one-of constraints",
+    "local_quality_objective": "maximize sum over selected role_layer of diagonal BF16 activation-weighted local quantization error reduction",
+    "async_DAG": "Q/K/V can overlap then joined by attention; O follows attention, gate/up can overlap after post-attn normalization; down follows gate/up; layers serial",
+    "same_stage_thread_modes": [
+      "serial_q4_6t",
+      "parallel_q4_1t",
+      "parallel_q4_6t"
+    ],
+    "cost_choice": "minimum measured 7-round source-role stage median; 3 independent Q4 pools avoid race",
+    "offline_not_live_runtime_async": true,
+    "constraints": {
+      "exact_n8_tensors": 28,
+      "n4_tensors": 168,
+      "actual_packed_projection_memory_bytes_at_most": 830570496,
+      "serial_native_predicted_single_decode_ms_at_most": 100,
+      "native_parallel_sibling_stage_sum_28layers_ms_at_most": 50
+    },
+    "serial_predicted_method": "source 7-role native q4/8 additive delta, previous full-model Q4 75.26ms and role-matched 28n8 116.18ms calibration gamma=1.039406406482483",
+    "async_stage_predicted_method": "sum over decoder layers of measured best native QKV stage, measured best gate-up stage, measured O and down one-role kernels; not a full-model async ETA",
+    "solver_engine": "SciPy HiGHS mixed integer, require status=optimal and absolute constraint verification before freezing",
+    "tie_breaking": "fixed deterministic tiny linear index perturbation <=1e-9 and sorted output; report solver gap"
+  },
+  "controls": [
+    "old all4 native Qwen",
+    "old 28n8 role-balanced random",
+    "old 28n8 kernel-aware v1 weight-only",
+    "new 28n8 activation-aware+async graph"
+  ],
+  "quality_evaluation": "After policy SHA freeze evaluate only fixed eight evaluation_public_only prompts from earlier Q v2 protocol; also old 21-token synthetic windows as diagnostic with explicit reuse flag. No optimization based on eval outputs.",
+  "validation_hierarchy": "native full-model sequential engine first; actual async full-model scheduler considered separately only after correctness/race audit; native stage concurrency does not establish full model async speedup",
+  "safety": "no production/main/release/model source edits, no blocked previous per-tensor final-logit intervention, no old V6/holdout, private model-derived data 0600, aggregate only public",
+  "limitations": [
+    "Diagonal moment metric is not full-model response sensitivity",
+    "Stage CPU thread contention may change with different layer inputs/model cache",
+    "Any claim of full async runtime TPS requires actual full-engine concurrency integration and measurement"
+  ]
+}
