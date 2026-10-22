@@ -1,0 +1,49 @@
+{
+  "schema": "BEGLIN_QV2_ASYNC_GRAPH_MILP_PRELOCK/1",
+  "status": "FROZEN_BEFORE_NEW_NATIVE_QUALITY_EVALUATION",
+  "source": {
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "quality_aggregate_sha256": "94ffe5c18ee4f92fadee912d1046d2ed104f3934e968081e87dfd1ac07ed1bf0",
+    "parallel_stage_private_receipt_sha256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+    "native_role_cost_source": "docs/research/BEGLIN_Q_KERNEL_AWARE_ALLOCATOR_NATIVE_EVIDENCE_20261022.json"
+  },
+  "dag": {
+    "stages": [
+      "concurrent_QKV",
+      "serial_attention_and_o",
+      "concurrent_gate_up",
+      "serial_SwiGLU_and_down"
+    ],
+    "actual_parallel_full_decoder_exists": false,
+    "concurrency_stages_measured_on_Apple_CPU": true,
+    "async_time_is_hypothetical_full_model_not_measured": true,
+    "Q4_thread_pools_separate_by_concurrent_role": true
+  },
+  "milp": {
+    "method": "SciPy HiGHS 0/1 multiple-choice 28 layers x128 7-bit masks",
+    "maximize": "source-only activation diagonal local Q4->n8 output reconstruction error reduction",
+    "exact_n8_count": 28,
+    "memory_max_bytes": 830570496,
+    "predicted_native_serial_ms_max": 100,
+    "predicted_hypothetical_async_ms_max": 80,
+    "baseline_allQ4_native_ms": 75.26,
+    "role_latency_correction_gamma": 1.039406406482483,
+    "time_limit_seconds": 120,
+    "acceptable_mip_relative_gap": 0.005,
+    "policies": [
+      "serial_quality",
+      "parallel_quality"
+    ],
+    "numerical_budget_warning": "costs based on representative role0 microbench, not full-model concurrency"
+  },
+  "evaluation": {
+    "prompts": "8 different public evaluation prompts already frozen by configs/research/BEGLIN_Q_ACTIVATION_ASYNC_PARALLEL_V2_PRELOCK_20261022.json",
+    "never_calibrate_on_eval": true,
+    "preserve_worse_NLL_as_failure": true,
+    "no_final_IID_OOD_or_V6_24": true,
+    "no_blocked_full_model_single_tensor_interventions": true,
+    "no_production_main_or_immutable_release_changes": true,
+    "scientific_quality_claim": "NO_VERDICT"
+  }
+}
