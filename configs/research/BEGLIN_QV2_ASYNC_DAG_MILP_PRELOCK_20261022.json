@@ -1,0 +1,62 @@
+{
+  "schema": "BEGLIN-QV2-async-DAG-activation-milp-prelock/1",
+  "date": "2026-10-22",
+  "status": "FROZEN_BEFORE_POLICY_AND_HELD_EVAL",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "role_order": [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj"
+  ],
+  "choices_per_layer": 128,
+  "layers": 28,
+  "total_upgrade_n8": 28,
+  "projection_memory_max_bytes": 830570496,
+  "quality_score_source": "docs/research/BEGLIN_Q_V2_BF16_ACTIVATION_LOCAL_AGGREGATE_20261022.json",
+  "async_cost_source": "docs/research/BEGLIN_Q_V2_ASYNC_NATIVE_STAGE_COSTS_20261022.json",
+  "serial_cost_source": "docs/research/BEGLIN_Q_KERNEL_AWARE_ALLOCATOR_NATIVE_EVIDENCE_20261022.json",
+  "solver": "SciPy HiGHS binary multiple-choice MILP; accept exact optimal status only; no test-score-guided tuning",
+  "serial_fullQ4_ms": 75.26,
+  "serial_frozen_random_mixed_ms": 116.18,
+  "serial_cost_scale": "calibrate only with allQ4 and original 4-per-role seeded random native measurement",
+  "primary_limits": {
+    "native_serial_predicted_ms_max": 100,
+    "asynchronous_DAG_predicted_ms_max": 85
+  },
+  "control_limits": {
+    "native_serial_predicted_ms_max": 85
+  },
+  "stage_graph": "norm => independent Q/K/V joint stage => attention => O => norm => independent gate/up joint stage => down => next layer",
+  "stage_dispatch": "Use only observed best native independent-pool costs per bitmask; never assume parallel across decoder layers",
+  "eval_public_prompts": [
+    "The green bicycle was parked beside a bookstore.",
+    "Explain the purpose of an electrical transformer.",
+    "A quiet forest path led to a wooden bridge.",
+    "Write a brief description of a successful team meeting.",
+    "How can scientists distinguish causation from correlation?",
+    "Describe a city bus arriving during heavy rain.",
+    "Give one reason reproducible research is valuable.",
+    "A chef prepared a savory soup with fresh vegetables."
+  ],
+  "baseline_evaluations": [
+    "source BF16 widened F32",
+    "all native Q4",
+    "old frozen random mixed",
+    "new async policy",
+    "new serial-control policy"
+  ],
+  "boundaries": [
+    "No old V6 final or unlabeled 24 used test IDs",
+    "Do not retry blocked per-tensor causal-output intervention",
+    "No main or immutable production release change",
+    "Source BF16 activation diagonal local proxy is not true downstream model sensitivity",
+    "Apple CPU whole model currently serial: async predicted cost is not observed full-model async throughput",
+    "All candidate manifests SHA-frozen before eight evaluation prompt scoring"
+  ],
+  "final_quality_verdict": "NO_VERDICT_UNTIL_INDEPENDENT_DATA"
+}
