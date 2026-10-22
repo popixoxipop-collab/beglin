@@ -1,0 +1,33 @@
+{
+  "schema": "BEGLIN-Qv7-TinyLlama-CPU-ABBA-64token-native-research-prelock/1",
+  "date": "2026-10-22",
+  "status": "LOCKED_BEFORE_TIMED_NATIVE_RUNS",
+  "model_revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+  "source_prelocked_tinyllama_calibration_64_sha256": "59c1d22197ba83ac3769049c01de4ae98414c678066ef6faa48fa2a0859bbe41",
+  "Fisher_mask_sha256": "17d11a604cfcce68fb52971a5fd34cf57df7ec36ce5e870b4b5dcaa19c38bd4c",
+  "native_C_instrumented_q4_SHA256": "bc8c1d9800bbc1f7bbb685f2f09c014cf7d71d623dc2fc582d459df9ee12a6c4",
+  "native_C_instrumented_fisher_mixed_SHA256": "a275ebdaa9b71bd8a27734ae9beb636b61c959e7823a1523751162cfd19c7841",
+  "native_real_model_original_BF16_Llama": true,
+  "conditions": [
+    "q4",
+    "fisher_22n8"
+  ],
+  "blocks": 2,
+  "order_per_block": [
+    "q4",
+    "fisher_22n8",
+    "fisher_22n8",
+    "q4"
+  ],
+  "warmup_tokens": 8,
+  "decode_tokens_per_native_trial": 64,
+  "native_trial_repetitions_per_process": 3,
+  "total_native_processes": 8,
+  "primary_metric": "within-process 3 x 64 instrumented native CPU decode forward+lm_head token latency mean/p50/p95 (argmax selection overhead excluded; repeated original source prompt)",
+  "secondary_metric": "BEGLIN original bench reported best of 3 tps and maximum resident set size via macOS /usr/bin/time -l",
+  "admission_warning_load_average1_threshold": 12,
+  "highload_leads_to_performance_verdict_inconclusive": true,
+  "no_CPU_affinity_claim": true,
+  "no_operator_main_or_live_changes": true,
+  "auto_promotion": false
+}

@@ -1,0 +1,17 @@
+{
+  "actual_native_instrumented_token_count_each": 768,
+  "all_timed_processes_ABBA_order_correct": true,
+  "high_host_load_fraction_over_limit": 1.0,
+  "maxRSS_is_whole_process_including_weights_head_KV_not_only_projection_bytes": true,
+  "model_base_not_modified": true,
+  "original_7_input_tensors_kernel_source_unchanged": true,
+  "private_full_recomputation_receipt_SHA256": "8353cce6597f18ff3254c02f305bdc4d2669932b59759b0efaa5bb68be198630",
+  "private_source_ABBA_full_sha256": "1cd3a2e8a5286ea969f4496699b2966f7089ff34677ce0446601eb2fddadeaca",
+  "quality_or_serving_speed_promotion_allowed": false,
+  "schema": "BEGLIN-Qv7-independent-original-CPU-2ABBA-source-n8-Q4-proof/1",
+  "source_TinyLlama_model_rev": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+  "status": "PASS_REAL_8_NATIVE_PROCESSES_1536_TIMED_TOKENS__LATENCY_ADMISSION_FAILCLOSED",
+  "token_p50_p95_forward_plus_logits_excludes_argmax": true,
+  "two_native_architecture_Q4_n8_C_programs_verified": true,
+  "user_visible_interpretation": "Real repeated warm single-request CPU token distribution, host load confounded; NOT a low-load serving benchmark"
+}

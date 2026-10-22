@@ -1,0 +1,124 @@
+{
+  "baseline_q4_projection_bytes": 544997376,
+  "mask_sha256": "17d11a604cfcce68fb52971a5fd34cf57df7ec36ce5e870b4b5dcaa19c38bd4c",
+  "mip_gap": 0.0,
+  "model_native_latency_not_measured_by_this_source_model": true,
+  "model_revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+  "n8_count": 22,
+  "production_promotion": false,
+  "q4_count": 132,
+  "rolebalanced_22_upgrade_memory_cap_bytes": 611319808,
+  "schema": "BEGLIN-Qv7-original-BF16-Llama-154-Fisher-native-NEON-MILP/1",
+  "selected_ids": [
+    [
+      "k_proj",
+      5
+    ],
+    [
+      "k_proj",
+      12
+    ],
+    [
+      "v_proj",
+      0
+    ],
+    [
+      "v_proj",
+      1
+    ],
+    [
+      "v_proj",
+      2
+    ],
+    [
+      "v_proj",
+      3
+    ],
+    [
+      "v_proj",
+      4
+    ],
+    [
+      "v_proj",
+      5
+    ],
+    [
+      "v_proj",
+      6
+    ],
+    [
+      "v_proj",
+      7
+    ],
+    [
+      "v_proj",
+      9
+    ],
+    [
+      "v_proj",
+      11
+    ],
+    [
+      "v_proj",
+      12
+    ],
+    [
+      "v_proj",
+      13
+    ],
+    [
+      "v_proj",
+      14
+    ],
+    [
+      "v_proj",
+      16
+    ],
+    [
+      "v_proj",
+      17
+    ],
+    [
+      "v_proj",
+      20
+    ],
+    [
+      "o_proj",
+      11
+    ],
+    [
+      "o_proj",
+      14
+    ],
+    [
+      "up_proj",
+      12
+    ],
+    [
+      "down_proj",
+      2
+    ]
+  ],
+  "selected_projection_bytes": 565444608,
+  "selected_projection_cost_ms": 42.1149100875482,
+  "selected_role_counts": {
+    "down_proj": 1,
+    "gate_proj": 0,
+    "k_proj": 2,
+    "o_proj": 2,
+    "q_proj": 0,
+    "up_proj": 1,
+    "v_proj": 16
+  },
+  "solver_status": 0,
+  "source_154_public_sha256": "ffea901472a57eef1e7f09e9a492919f2dc96e9ac9c1317725d45abd7af4cb75",
+  "source_fisher_154_private_sha256": "8bfd09f3de1d0db2b8687eda57996784fc457e62b85c54eba9d7eb0e482b328a",
+  "source_measured_projection_cost_budget_ms": 42.506120710944145,
+  "source_normalization_max_absolute_gain": 0.10187678538556731,
+  "source_original_Llama_seven_native_costs_sha256": "7f03c4d5acb20088c28bdcbbfd4879c94c95841b121cc1276464301dc56eb494",
+  "source_q4_projection_cost_ms": 34.00489656875531,
+  "source_split_half_rank_spearman": 0.9694981805038733,
+  "status": "SOURCE_ONLY_EXACT_LLAMA_22N8_MASK_FROZEN_BEFORE_CROSSCORPUS_NATIVE_QUALITY",
+  "trained_only_original_BF16_no_quantized_forward": true,
+  "unseen_48_test_accuracy_not_opened_by_optimizer": true
+}

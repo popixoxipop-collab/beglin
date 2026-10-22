@@ -1,0 +1,18 @@
+{
+  "case_count": 48,
+  "correct_count": 14,
+  "correct_label_NLL": 4.2595869700113935,
+  "dataset": "OpenBookQA test",
+  "decoder_layers": 22,
+  "device": "Apple MPS BF16 PyTorch original",
+  "elapsed_seconds": 5.1,
+  "frozen_test48_sha256": "8807002e79afadcb2d150b32dffdefa204afb0d70678375a608b7900f18d0ab0",
+  "no_live_promotion": true,
+  "no_original_weight_changes": true,
+  "official_revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+  "private_receipt_sha256": "9bbeceaf319c9d74c215d9dbfd7b6b77442a786cca22a030898b2e04e0e11e41",
+  "schema": "BEGLIN-Qv7-original-HF-TinyLlama-BF16-MPS-48/1",
+  "source_arch": "llama",
+  "source_model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+  "status": "ACTUAL_ORIGINAL_LLAMA_FAMILY_BF16_UNMODIFIED_MODEL_COMPLETE"
+}

@@ -1,0 +1,26 @@
+{
+  "schema": "BEGLIN-Qv7-original-BF16-128-source-disjoint-half-seed-repartition/1",
+  "status": "FROZEN_BEFORE_SEED_PARTITION_POLICY_GENERATION",
+  "date": "2026-10-22",
+  "original_model": "Qwen/Qwen2.5-1.5B-Instruct@989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "original_128_source_private_SHA256": "196376b30e6654aa10f985e5c258ead65b48afd1bfb6965fb329727aea67b2f1",
+  "source_dataset": "ARC-Challenge train SHA frozen Qv6",
+  "partition_random_seeds": [
+    17,
+    41,
+    73
+  ],
+  "sample_size_each": 64,
+  "complement_pair_disjoint": true,
+  "independence_warning": "Each seed's two halves are disjoint in original 128 records; different seeds reuse the same 128 records so they are NOT 6 statistically independent source datasets.",
+  "score_function": "mean per_source signed-directional-square improvement over 64 sample rows, Q4 vs n8",
+  "source_only": true,
+  "model_evaluation_held_labels_unopened": true,
+  "MILP_exact_28_n8": true,
+  "memory_ceiling_bytes": 830570496,
+  "serial_latency_ceiling_ms": 100,
+  "stage_latency_ceiling_ms": 50,
+  "metrics": "half-half Spearman correlation, full 196 rank; 28-selected overlap and Jaccard; source-only costs; no held quality assessment",
+  "no_auto_promotion": true,
+  "no_main_or_release_mutation": true
+}

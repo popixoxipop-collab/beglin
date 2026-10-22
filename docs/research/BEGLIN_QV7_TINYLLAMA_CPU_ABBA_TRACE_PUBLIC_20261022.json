@@ -1,0 +1,42 @@
+{
+  "actual_native_timed_processes": 8,
+  "actual_timed_token_count": 1536,
+  "host_high_load_any_process": true,
+  "model_revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+  "native_per_token_forward_logit_latency_excludes_argmax": true,
+  "no_CPU_or_GPU_affinity_control": true,
+  "not_full_persistent_multi_request_serving": true,
+  "operational_runtime_changed": false,
+  "original_private_process_logs_summary_SHA256": "1cd3a2e8a5286ea969f4496699b2966f7089ff34677ce0446601eb2fddadeaca",
+  "performance_admission_verdict": "INCONCLUSIVE_LOAD_CONTENDED",
+  "preregistration_sha256": "5603f4044383ad31928291caabd0a90df6d6a9a1ba580fba5015e3f40eced175",
+  "schema": "BEGLIN-Qv7-real-TinyLlama-native-2ABBA-64tokens-3rep-CPU-RSS/1",
+  "source_only_Fisher_n8_mask_sha256": "17d11a604cfcce68fb52971a5fd34cf57df7ec36ce5e870b4b5dcaa19c38bd4c",
+  "source_policy_latencies_predicted_separately_not_verified_as_actual": true,
+  "status": "REAL_8_NATIVE_PROCESS_24_WARM_DECODE_TRACES_COMPLETE",
+  "summary": {
+    "fisher_22n8": {
+      "actual_instrumented_tokens": 768,
+      "best_of3_tps_median": 23.878500000000003,
+      "native_max_RSS_bytes_median": 3429122048,
+      "process_trials": 4,
+      "trial_mean_ms_median": 42.6900858945,
+      "trial_p50_ms_median": 40.510999737,
+      "trial_p95_ms_median": 59.072999982
+    },
+    "q4": {
+      "actual_instrumented_tokens": 768,
+      "best_of3_tps_median": 31.0565,
+      "native_max_RSS_bytes_median": 3420078080,
+      "process_trials": 4,
+      "trial_mean_ms_median": 32.675101577999996,
+      "trial_p50_ms_median": 30.8205001055,
+      "trial_p95_ms_median": 41.153499856500005
+    }
+  },
+  "warmups_per_process": 8,
+  "within_block_mixed_vs_q4_reported_bestof3_tps_fraction_diff": [
+    -0.25824760553387727,
+    -0.23112713924621242
+  ]
+}

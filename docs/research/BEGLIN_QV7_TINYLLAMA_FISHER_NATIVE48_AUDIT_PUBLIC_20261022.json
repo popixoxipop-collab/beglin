@@ -1,0 +1,42 @@
+{
+  "Fisher_correct_delta_vs_Q4": -1,
+  "Fisher_mcnemar_exact_p": 1.0,
+  "Fisher_mcnemar_gain_only": 0,
+  "Fisher_mcnemar_lost_only": 1,
+  "Fisher_minus_Q4_95pct_bootstrap_interval": [
+    0.016613888290109773,
+    0.2856150488063625
+  ],
+  "Fisher_minus_Q4_mean_NLL": 0.15081054495273605,
+  "actual_native_summary": {
+    "fisher_22n8": {
+      "N": 48,
+      "NLL": 7.2459598816302835,
+      "correct": 15
+    },
+    "q4": {
+      "N": 48,
+      "NLL": 7.095149336677545,
+      "correct": 16
+    }
+  },
+  "cross_family_kernel_inference_implemented": true,
+  "cross_family_mixed_accuracy_generalization_established": false,
+  "cross_family_original_BF16_reference": {
+    "NLL": 4.2595869700113935,
+    "correct": 14
+  },
+  "fisher_quality_gain_proven": false,
+  "frozen_22mask_SHA256": "17d11a604cfcce68fb52971a5fd34cf57df7ec36ce5e870b4b5dcaa19c38bd4c",
+  "held_48_sha256": "8807002e79afadcb2d150b32dffdefa204afb0d70678375a608b7900f18d0ab0",
+  "live_operator_and_main_unchanged": true,
+  "original_model_revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+  "private_full_independent_audit_sha256": "df47d4f665a51e7b05a57c8d1afd43d92353f4680b20f8681192e68071a67e51",
+  "schema": "BEGLIN-Qv7-independent-cross-family-22N8-Llama-native-test48/1",
+  "single_test_case_prior_Q4_smoke_consumption_declared": true,
+  "source_154_fisher_full_sha256": "8bfd09f3de1d0db2b8687eda57996784fc457e62b85c54eba9d7eb0e482b328a",
+  "source_64_half_rank_correlation": 0.9694981805038733,
+  "source_64_sha256": "59c1d22197ba83ac3769049c01de4ae98414c678066ef6faa48fa2a0859bbe41",
+  "source_milp_SHA256": "a16be807e8a4b79790e712fa1c115abed9ef4337b973ce03d0cdb783567f6642",
+  "status": "PASS_SOURCE_ONLY_154x64_FISHER_MILP_AND_TWO_NATIVE_LLAMACPU_48"
+}
