@@ -1,0 +1,17 @@
+{
+  "GGN_source_only_mask_sha256": "0553e76e9a9d225e6c6e16a5b5a2ccb75e1794d16ee5c5608bc637a56504c4b2",
+  "correct": 38,
+  "device": "PyTorch original BF16 Apple MPS",
+  "elapsed_s": 9.79,
+  "mean_correct_answer_full_vocab_NLL": 0.6786893802366952,
+  "n": 48,
+  "numerical_parity_with_native_quantized_C_not_claimed": true,
+  "official_model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "original_model_weights_mutated": false,
+  "pinned_MMLU_frozen_inputs_SHA256": "2203bf54dfbc20e07488a234a012011efd78b098876e981de8ebed12cf8045c9",
+  "private_original_reference_receipt_sha256": "4573573485919756bfa3e3e5779cb3540bbb0165f6823a15b1b576891b675ab9",
+  "schema": "BEGLIN-Qv9-original-BF16-Qwen-MMLU48-reference/1",
+  "source_dataset": "MMLU test high_school_psychology and high_school_computer_science",
+  "status": "ACTUAL_ORIGINAL_UNMODIFIED_HF_BF16_MMLU48_REFERENCE",
+  "subject_count_each": 24
+}

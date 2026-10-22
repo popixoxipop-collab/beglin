@@ -1,0 +1,75 @@
+{
+  "auto_promotion": false,
+  "diagnostic24_never_used_to_fit": true,
+  "diagnostic_private_receipt_SHA256": "62d6b1be35f2034d059ee6e4486676afddda51125b26366c46585a56732a9e57",
+  "full_vocabulary_Hessian_NOT_computed": true,
+  "mask_SHA256": "0553e76e9a9d225e6c6e16a5b5a2ccb75e1794d16ee5c5608bc637a56504c4b2",
+  "only_source24_train_selects_mask": true,
+  "policy_SHA256": "add6def86a098f8cb1c9ddfc62cae7c5eb99d75efc10623a0d2b278a5b351257",
+  "quality_superiority_unproven": true,
+  "schema": "BEGLIN-Qv9-independent-24plus24-conditional-GGN-196-projection-source-audit/1",
+  "source_proxy_vs_diagnostic_metrics": {
+    "fisher128": {
+      "diagnostic": {
+        "joint_GGN_mean": 43.63342558643844,
+        "ridge_GGN_mean": 203.78007665883476,
+        "robust_GGN": 120.52944216949757
+      },
+      "train": {
+        "joint_GGN_mean": 1.021527634037612,
+        "ridge_GGN_mean": 1.5811019803380197,
+        "robust_GGN": 1.725238565103893
+      }
+    },
+    "fisher64": {
+      "diagnostic": {
+        "joint_GGN_mean": 10.192444869441479,
+        "ridge_GGN_mean": 209.17353802976967,
+        "robust_GGN": 84.13086274768783
+      },
+      "train": {
+        "joint_GGN_mean": 0.9062812035585625,
+        "ridge_GGN_mean": 1.621769702214807,
+        "robust_GGN": 1.592591249453101
+      }
+    },
+    "ggn24": {
+      "diagnostic": {
+        "joint_GGN_mean": 74.75148714607785,
+        "ridge_GGN_mean": 221.7452299237497,
+        "robust_GGN": 143.9793955784184
+      },
+      "train": {
+        "joint_GGN_mean": 0.05526251191418676,
+        "ridge_GGN_mean": 1.5133412266925605,
+        "robust_GGN": 0.5656585080623134
+      }
+    },
+    "q4": {
+      "diagnostic": {
+        "joint_GGN_mean": 156.52632515239702,
+        "ridge_GGN_mean": 264.108711111226,
+        "robust_GGN": 222.7073507271482
+      },
+      "train": {
+        "joint_GGN_mean": 3.4259168168161076,
+        "ridge_GGN_mean": 2.0166480070523973,
+        "robust_GGN": 5.039230833192973
+      }
+    },
+    "signed96": {
+      "diagnostic": {
+        "joint_GGN_mean": 22.891154815863146,
+        "ridge_GGN_mean": 225.1785918980552,
+        "robust_GGN": 108.3071940121184
+      },
+      "train": {
+        "joint_GGN_mean": 0.5300562748703621,
+        "ridge_GGN_mean": 1.6576879293186584,
+        "robust_GGN": 1.215309227075037
+      }
+    }
+  },
+  "status": "PASS_48_ACTUAL_BF16_SOURCE_CASES_AND_144_JACOBIAN_BACKWARDS_REPLAYED",
+  "train_private_receipt_SHA256": "3d1c9bc2ff023b0b1b2efad0116a69cdb0d3ea2e0c025a6a82b7e8492548feb3"
+}

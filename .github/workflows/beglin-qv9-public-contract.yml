@@ -1,0 +1,25 @@
+name: BEGLIN Qv9 GGN Public Contracts
+on:
+  push:
+    branches:
+      - "research/qv9-*"
+    paths:
+      - "configs/research/BEGLIN_QV9_*"
+      - "docs/research/BEGLIN_QV9_*"
+      - "research/oml_acs/q_v9_*"
+      - "tests/research/test_q_v9_public_contract.py"
+      - ".github/workflows/beglin-qv9-public-contract.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check original BF16 four-choice GGN source and MMLU frozen contracts
+        run: python -m unittest discover -s tests/research -p 'test_q_v9_public_contract.py' -v

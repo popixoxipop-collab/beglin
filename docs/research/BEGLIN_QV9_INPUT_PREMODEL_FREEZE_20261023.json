@@ -1,0 +1,35 @@
+{
+  "MMLU_crossdomain48_private_SHA256": "2203bf54dfbc20e07488a234a012011efd78b098876e981de8ebed12cf8045c9",
+  "MMLU_rev": "c30699e8356da336a370243923dbaf21066bb9fe",
+  "Qwen_original_rev": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "eval_count": 48,
+  "model_logit_or_accuracy_accessed": false,
+  "original_source64_128_176_sequence_proven": true,
+  "prelock_sha256": "73dc2829da79637a97d68f903f72fed753eace2b154caec111c1fe60a7f4f983",
+  "private_input_token_arrays_not_published": true,
+  "production_runtime_unchanged": true,
+  "schema": "BEGLIN-Qv9-ARC24-train24-diagnostic-MMLU48-pre-model-freeze/1",
+  "source128_sha256": "78d267bef54240cfb32b292c5d1885b6716fadd9bbd78ec7b3b1bf97822a1ab2",
+  "source_dataset_rev": "210d026faf9955653af8916fad021475a3f00453",
+  "source_diagnostic24_private_SHA256": "4714dc2be1ef4708c0099f153b15a1bd0f36b2143b006d000781bc592bf9be79",
+  "source_subjects": [
+    "high_school_psychology",
+    "high_school_computer_science"
+  ],
+  "source_train24_private_SHA256": "87ed0d782636470b4e31db8bd6b69f0fd069dc30b167bdcb7aed1a81b53fe254",
+  "status": "ALL_THREE_COHORTS_FROZEN_BEFORE_BF16_GGN_BACKWARD_AND_NATIVE",
+  "subject_eligible_counts": {
+    "high_school_computer_science": {
+      "eligible_examined": 24,
+      "total": 100
+    },
+    "high_school_psychology": {
+      "eligible_examined": 24,
+      "total": 545
+    }
+  },
+  "test_prompt_token_range": [
+    53,
+    207
+  ]
+}

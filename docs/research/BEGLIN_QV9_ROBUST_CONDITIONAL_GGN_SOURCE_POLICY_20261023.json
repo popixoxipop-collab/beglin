@@ -1,0 +1,2555 @@
+{
+  "Gauss_Newton_positive_semidefinite_probability_curvature": true,
+  "MMLU_eval_48_logits_unopened": true,
+  "conditional_GGN_does_not_include_unselected_other_vocab_logits": true,
+  "elapsed_source_optimizer_s": 14.86,
+  "final_Apple_native_source_costs": {
+    "isolated_async_stage_ms": 49.20820512500015,
+    "memory_bytes": 762740736,
+    "serial_estimate_ms": 85.41284940984997
+  },
+  "fixed_ridge_alpha": 0.35,
+  "global_optimality_proved": false,
+  "input_source_24_private_sha256": "3d1c9bc2ff023b0b1b2efad0116a69cdb0d3ea2e0c025a6a82b7e8492548feb3",
+  "input_source_24_public_sha256": "ff2cd94b9b1ae80bee62ac4abcc47d1030e3624d9662c5f4dc8b26559ef5d15d",
+  "mask_sha256": "0553e76e9a9d225e6c6e16a5b5a2ccb75e1794d16ee5c5608bc637a56504c4b2",
+  "n8_projection_count": 28,
+  "no_fullmodel_single_tensor_interventions": true,
+  "objective_formula": "0.65*max(GGN_odd12_mean,GGN_even12_mean)+0.35*sum_i(original_conditional_output_GGN_for_individual_tensor)",
+  "original_checkpoint_rev": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "prelock_sha256": "73dc2829da79637a97d68f903f72fed753eace2b154caec111c1fe60a7f4f983",
+  "prior_mask_source_objectives": {
+    "allQ4": {
+      "components": {
+        "GGN_even12": 6.6667754318840515,
+        "GGN_mean": 3.425916816816429,
+        "GGN_odd12": 0.18505820174880713,
+        "ridge_diagonal_GGN": 2.0166480070524093
+      },
+      "objective": 5.039230833192977
+    },
+    "qv5_24": {
+      "components": {
+        "GGN_even12": 2.3696157048708604,
+        "GGN_mean": 1.359964126258056,
+        "GGN_odd12": 0.35031254764525155,
+        "ridge_diagonal_GGN": 1.6816455129203354
+      },
+      "objective": 2.1288261376881765
+    },
+    "qv6_128": {
+      "components": {
+        "GGN_even12": 1.8028505722855215,
+        "GGN_mean": 1.0215276340375954,
+        "GGN_odd12": 0.24020469578966905,
+        "ridge_diagonal_GGN": 1.5811019803380244
+      },
+      "objective": 1.7252385651038975
+    },
+    "qv6_64": {
+      "components": {
+        "GGN_even12": 1.5768797748891104,
+        "GGN_mean": 0.906281203558489,
+        "GGN_odd12": 0.23568263222786748,
+        "ridge_diagonal_GGN": 1.6217697022148116
+      },
+      "objective": 1.5925912494531058
+    },
+    "qv8_signed96": {
+      "components": {
+        "GGN_even12": 0.9771053104823205,
+        "GGN_mean": 0.5300562748703636,
+        "GGN_odd12": 0.08300723925840676,
+        "ridge_diagonal_GGN": 1.6576879293186624
+      },
+      "objective": 1.21530922707504
+    }
+  },
+  "production_promotion": false,
+  "q4_projection_count": 168,
+  "schema": "BEGLIN-Qv9-conditioned-choice-output-GGN-minimax-ridge-local-28n8/1",
+  "selected_best_start": "qv8_signed96",
+  "selected_components": {
+    "GGN_even12": 0.05536781341525795,
+    "GGN_mean": 0.055262511914225175,
+    "GGN_odd12": 0.0551572104131924,
+    "ridge_diagonal_GGN": 1.5133412266925674
+  },
+  "selected_original_model_roles": [
+    [
+      "q_proj",
+      0
+    ],
+    [
+      "k_proj",
+      3
+    ],
+    [
+      "k_proj",
+      7
+    ],
+    [
+      "v_proj",
+      0
+    ],
+    [
+      "v_proj",
+      2
+    ],
+    [
+      "v_proj",
+      5
+    ],
+    [
+      "v_proj",
+      6
+    ],
+    [
+      "v_proj",
+      7
+    ],
+    [
+      "v_proj",
+      8
+    ],
+    [
+      "v_proj",
+      9
+    ],
+    [
+      "v_proj",
+      11
+    ],
+    [
+      "v_proj",
+      12
+    ],
+    [
+      "v_proj",
+      15
+    ],
+    [
+      "v_proj",
+      16
+    ],
+    [
+      "v_proj",
+      17
+    ],
+    [
+      "v_proj",
+      19
+    ],
+    [
+      "v_proj",
+      20
+    ],
+    [
+      "v_proj",
+      23
+    ],
+    [
+      "v_proj",
+      24
+    ],
+    [
+      "v_proj",
+      26
+    ],
+    [
+      "o_proj",
+      8
+    ],
+    [
+      "o_proj",
+      11
+    ],
+    [
+      "o_proj",
+      15
+    ],
+    [
+      "o_proj",
+      16
+    ],
+    [
+      "o_proj",
+      17
+    ],
+    [
+      "o_proj",
+      24
+    ],
+    [
+      "gate_proj",
+      20
+    ],
+    [
+      "up_proj",
+      20
+    ]
+  ],
+  "selected_regularized_GGN_risk": 0.5656585080623162,
+  "source_1swap_local_optimality_only": true,
+  "source_all_possible_starts": [
+    {
+      "accepted_improving_1swaps": [
+        {
+          "added": [
+            "v_proj",
+            5
+          ],
+          "removed": [
+            "v_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.43898212991352636
+        },
+        {
+          "added": [
+            "o_proj",
+            16
+          ],
+          "removed": [
+            "o_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.28647396751420295
+        },
+        {
+          "added": [
+            "v_proj",
+            12
+          ],
+          "removed": [
+            "v_proj",
+            13
+          ],
+          "source_regularized_choice_GGN_decrease": 0.14266113346077502
+        },
+        {
+          "added": [
+            "k_proj",
+            3
+          ],
+          "removed": [
+            "k_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.07184520216584378
+        },
+        {
+          "added": [
+            "v_proj",
+            23
+          ],
+          "removed": [
+            "v_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.02795635853235312
+        },
+        {
+          "added": [
+            "v_proj",
+            26
+          ],
+          "removed": [
+            "v_proj",
+            25
+          ],
+          "source_regularized_choice_GGN_decrease": 0.010255405239157578
+        },
+        {
+          "added": [
+            "k_proj",
+            23
+          ],
+          "removed": [
+            "k_proj",
+            16
+          ],
+          "source_regularized_choice_GGN_decrease": 0.004571017596791238
+        },
+        {
+          "added": [
+            "v_proj",
+            6
+          ],
+          "removed": [
+            "v_proj",
+            21
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0037704102289243258
+        },
+        {
+          "added": [
+            "up_proj",
+            2
+          ],
+          "removed": [
+            "up_proj",
+            25
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0036823436454411773
+        },
+        {
+          "added": [
+            "k_proj",
+            15
+          ],
+          "removed": [
+            "k_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.012848616024837778
+        },
+        {
+          "added": [
+            "k_proj",
+            11
+          ],
+          "removed": [
+            "v_proj",
+            16
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0017122420341426636
+        },
+        {
+          "added": [
+            "k_proj",
+            22
+          ],
+          "removed": [
+            "k_proj",
+            23
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0015212612895209032
+        },
+        {
+          "added": [
+            "v_proj",
+            17
+          ],
+          "removed": [
+            "k_proj",
+            27
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0010358274412208823
+        }
+      ],
+      "costs": {
+        "isolated_async_stage_ms": 49.99612187500027,
+        "memory_bytes": 757825536,
+        "serial_estimate_ms": 83.4090367851057
+      },
+      "final_objective": 0.585275334366368,
+      "global_optimum_proven": false,
+      "selected_ids": [
+        [
+          "k_proj",
+          3
+        ],
+        [
+          "k_proj",
+          7
+        ],
+        [
+          "k_proj",
+          11
+        ],
+        [
+          "k_proj",
+          13
+        ],
+        [
+          "k_proj",
+          15
+        ],
+        [
+          "k_proj",
+          21
+        ],
+        [
+          "k_proj",
+          22
+        ],
+        [
+          "v_proj",
+          4
+        ],
+        [
+          "v_proj",
+          5
+        ],
+        [
+          "v_proj",
+          6
+        ],
+        [
+          "v_proj",
+          7
+        ],
+        [
+          "v_proj",
+          8
+        ],
+        [
+          "v_proj",
+          9
+        ],
+        [
+          "v_proj",
+          10
+        ],
+        [
+          "v_proj",
+          11
+        ],
+        [
+          "v_proj",
+          12
+        ],
+        [
+          "v_proj",
+          15
+        ],
+        [
+          "v_proj",
+          17
+        ],
+        [
+          "v_proj",
+          18
+        ],
+        [
+          "v_proj",
+          19
+        ],
+        [
+          "v_proj",
+          20
+        ],
+        [
+          "v_proj",
+          22
+        ],
+        [
+          "v_proj",
+          23
+        ],
+        [
+          "v_proj",
+          26
+        ],
+        [
+          "o_proj",
+          16
+        ],
+        [
+          "o_proj",
+          20
+        ],
+        [
+          "up_proj",
+          2
+        ],
+        [
+          "down_proj",
+          2
+        ]
+      ],
+      "source_risk_components": {
+        "GGN_even12": 0.04515359076168831,
+        "GGN_mean": 0.0455220866260083,
+        "GGN_odd12": 0.04589058249032826,
+        "ridge_diagonal_GGN": 1.5869898735647274
+      },
+      "start": "qv6_64",
+      "start_objective": 1.5925912494531058
+    },
+    {
+      "accepted_improving_1swaps": [
+        {
+          "added": [
+            "v_proj",
+            5
+          ],
+          "removed": [
+            "v_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.4729874448379632
+        },
+        {
+          "added": [
+            "o_proj",
+            11
+          ],
+          "removed": [
+            "o_proj",
+            23
+          ],
+          "source_regularized_choice_GGN_decrease": 0.3055846226641865
+        },
+        {
+          "added": [
+            "o_proj",
+            8
+          ],
+          "removed": [
+            "o_proj",
+            21
+          ],
+          "source_regularized_choice_GGN_decrease": 0.17727997284829256
+        },
+        {
+          "added": [
+            "k_proj",
+            3
+          ],
+          "removed": [
+            "k_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.10581874304265626
+        },
+        {
+          "added": [
+            "v_proj",
+            12
+          ],
+          "removed": [
+            "o_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.04455020673374366
+        },
+        {
+          "added": [
+            "q_proj",
+            0
+          ],
+          "removed": [
+            "k_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.013588210690447133
+        },
+        {
+          "added": [
+            "k_proj",
+            22
+          ],
+          "removed": [
+            "q_proj",
+            14
+          ],
+          "source_regularized_choice_GGN_decrease": 0.006566405415446286
+        },
+        {
+          "added": [
+            "o_proj",
+            17
+          ],
+          "removed": [
+            "v_proj",
+            25
+          ],
+          "source_regularized_choice_GGN_decrease": 0.006147845698262322
+        },
+        {
+          "added": [
+            "k_proj",
+            7
+          ],
+          "removed": [
+            "k_proj",
+            27
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0027330469981576844
+        },
+        {
+          "added": [
+            "v_proj",
+            26
+          ],
+          "removed": [
+            "o_proj",
+            11
+          ],
+          "source_regularized_choice_GGN_decrease": 0.002951925990734905
+        },
+        {
+          "added": [
+            "q_proj",
+            19
+          ],
+          "removed": [
+            "v_proj",
+            21
+          ],
+          "source_regularized_choice_GGN_decrease": 0.001397896329635273
+        },
+        {
+          "added": [
+            "v_proj",
+            24
+          ],
+          "removed": [
+            "v_proj",
+            10
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0003085873819511642
+        },
+        {
+          "added": [
+            "v_proj",
+            17
+          ],
+          "removed": [
+            "v_proj",
+            22
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0017259727385959822
+        },
+        {
+          "added": [
+            "v_proj",
+            6
+          ],
+          "removed": [
+            "v_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0010885126064399397
+        },
+        {
+          "added": [
+            "k_proj",
+            11
+          ],
+          "removed": [
+            "o_proj",
+            15
+          ],
+          "source_regularized_choice_GGN_decrease": 0.002569735641695048
+        },
+        {
+          "added": [
+            "v_proj",
+            18
+          ],
+          "removed": [
+            "q_proj",
+            19
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0019236328336575959
+        },
+        {
+          "added": [
+            "v_proj",
+            2
+          ],
+          "removed": [
+            "k_proj",
+            11
+          ],
+          "source_regularized_choice_GGN_decrease": 0.00198335407833905
+        },
+        {
+          "added": [
+            "q_proj",
+            17
+          ],
+          "removed": [
+            "k_proj",
+            7
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0010207343818131598
+        }
+      ],
+      "costs": {
+        "isolated_async_stage_ms": 49.539902874999996,
+        "memory_bytes": 756056064,
+        "serial_estimate_ms": 82.61143281792125
+      },
+      "final_objective": 0.5750117141918798,
+      "global_optimum_proven": false,
+      "selected_ids": [
+        [
+          "q_proj",
+          0
+        ],
+        [
+          "q_proj",
+          17
+        ],
+        [
+          "k_proj",
+          3
+        ],
+        [
+          "k_proj",
+          22
+        ],
+        [
+          "v_proj",
+          2
+        ],
+        [
+          "v_proj",
+          4
+        ],
+        [
+          "v_proj",
+          5
+        ],
+        [
+          "v_proj",
+          6
+        ],
+        [
+          "v_proj",
+          7
+        ],
+        [
+          "v_proj",
+          8
+        ],
+        [
+          "v_proj",
+          9
+        ],
+        [
+          "v_proj",
+          11
+        ],
+        [
+          "v_proj",
+          12
+        ],
+        [
+          "v_proj",
+          13
+        ],
+        [
+          "v_proj",
+          15
+        ],
+        [
+          "v_proj",
+          16
+        ],
+        [
+          "v_proj",
+          17
+        ],
+        [
+          "v_proj",
+          18
+        ],
+        [
+          "v_proj",
+          19
+        ],
+        [
+          "v_proj",
+          20
+        ],
+        [
+          "v_proj",
+          24
+        ],
+        [
+          "v_proj",
+          26
+        ],
+        [
+          "o_proj",
+          8
+        ],
+        [
+          "o_proj",
+          16
+        ],
+        [
+          "o_proj",
+          17
+        ],
+        [
+          "o_proj",
+          20
+        ],
+        [
+          "o_proj",
+          24
+        ],
+        [
+          "down_proj",
+          2
+        ]
+      ],
+      "source_risk_components": {
+        "GGN_even12": 0.04392034996602348,
+        "GGN_mean": 0.044774787077021296,
+        "GGN_odd12": 0.04562922418801912,
+        "ridge_diagonal_GGN": 1.5581506241990497
+      },
+      "start": "qv6_128",
+      "start_objective": 1.7252385651038975
+    },
+    {
+      "accepted_improving_1swaps": [
+        {
+          "added": [
+            "o_proj",
+            16
+          ],
+          "removed": [
+            "o_proj",
+            15
+          ],
+          "source_regularized_choice_GGN_decrease": 0.25044635439248975
+        },
+        {
+          "added": [
+            "v_proj",
+            15
+          ],
+          "removed": [
+            "k_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.17145349895660744
+        },
+        {
+          "added": [
+            "v_proj",
+            0
+          ],
+          "removed": [
+            "gate_proj",
+            1
+          ],
+          "source_regularized_choice_GGN_decrease": 0.08011729071822205
+        },
+        {
+          "added": [
+            "v_proj",
+            2
+          ],
+          "removed": [
+            "k_proj",
+            27
+          ],
+          "source_regularized_choice_GGN_decrease": 0.04147876345655299
+        },
+        {
+          "added": [
+            "k_proj",
+            11
+          ],
+          "removed": [
+            "k_proj",
+            19
+          ],
+          "source_regularized_choice_GGN_decrease": 0.019544544031515954
+        },
+        {
+          "added": [
+            "k_proj",
+            3
+          ],
+          "removed": [
+            "k_proj",
+            18
+          ],
+          "source_regularized_choice_GGN_decrease": 0.01606099355116941
+        },
+        {
+          "added": [
+            "v_proj",
+            1
+          ],
+          "removed": [
+            "k_proj",
+            16
+          ],
+          "source_regularized_choice_GGN_decrease": 0.01102451282024619
+        },
+        {
+          "added": [
+            "v_proj",
+            6
+          ],
+          "removed": [
+            "v_proj",
+            18
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0069476018420886465
+        },
+        {
+          "added": [
+            "o_proj",
+            24
+          ],
+          "removed": [
+            "o_proj",
+            11
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0072549754031216995
+        },
+        {
+          "added": [
+            "gate_proj",
+            10
+          ],
+          "removed": [
+            "up_proj",
+            1
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0034491642787274346
+        },
+        {
+          "added": [
+            "v_proj",
+            23
+          ],
+          "removed": [
+            "v_proj",
+            25
+          ],
+          "source_regularized_choice_GGN_decrease": 0.00533744198774222
+        },
+        {
+          "added": [
+            "q_proj",
+            0
+          ],
+          "removed": [
+            "q_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0017959695873942527
+        },
+        {
+          "added": [
+            "v_proj",
+            24
+          ],
+          "removed": [
+            "k_proj",
+            23
+          ],
+          "source_regularized_choice_GGN_decrease": 0.002668321669649032
+        },
+        {
+          "added": [
+            "up_proj",
+            20
+          ],
+          "removed": [
+            "gate_proj",
+            10
+          ],
+          "source_regularized_choice_GGN_decrease": 0.008947789915814797
+        },
+        {
+          "added": [
+            "o_proj",
+            8
+          ],
+          "removed": [
+            "k_proj",
+            21
+          ],
+          "source_regularized_choice_GGN_decrease": 0.010770737500159555
+        },
+        {
+          "added": [
+            "o_proj",
+            17
+          ],
+          "removed": [
+            "k_proj",
+            25
+          ],
+          "source_regularized_choice_GGN_decrease": 0.002884236766608539
+        },
+        {
+          "added": [
+            "v_proj",
+            17
+          ],
+          "removed": [
+            "v_proj",
+            1
+          ],
+          "source_regularized_choice_GGN_decrease": 0.003610064821681469
+        },
+        {
+          "added": [
+            "o_proj",
+            11
+          ],
+          "removed": [
+            "v_proj",
+            24
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0019208090611501083
+        },
+        {
+          "added": [
+            "v_proj",
+            26
+          ],
+          "removed": [
+            "k_proj",
+            6
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0011678212616628159
+        },
+        {
+          "added": [
+            "o_proj",
+            7
+          ],
+          "removed": [
+            "k_proj",
+            11
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0008930331610702558
+        },
+        {
+          "added": [
+            "v_proj",
+            24
+          ],
+          "removed": [
+            "v_proj",
+            10
+          ],
+          "source_regularized_choice_GGN_decrease": 0.000993506933938959
+        },
+        {
+          "added": [
+            "o_proj",
+            15
+          ],
+          "removed": [
+            "o_proj",
+            7
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0008832868951103023
+        }
+      ],
+      "costs": {
+        "isolated_async_stage_ms": 49.20820512500015,
+        "memory_bytes": 762740736,
+        "serial_estimate_ms": 85.41284940984997
+      },
+      "final_objective": 0.5656585080623162,
+      "global_optimum_proven": false,
+      "selected_ids": [
+        [
+          "q_proj",
+          0
+        ],
+        [
+          "k_proj",
+          3
+        ],
+        [
+          "k_proj",
+          7
+        ],
+        [
+          "v_proj",
+          0
+        ],
+        [
+          "v_proj",
+          2
+        ],
+        [
+          "v_proj",
+          5
+        ],
+        [
+          "v_proj",
+          6
+        ],
+        [
+          "v_proj",
+          7
+        ],
+        [
+          "v_proj",
+          8
+        ],
+        [
+          "v_proj",
+          9
+        ],
+        [
+          "v_proj",
+          11
+        ],
+        [
+          "v_proj",
+          12
+        ],
+        [
+          "v_proj",
+          15
+        ],
+        [
+          "v_proj",
+          16
+        ],
+        [
+          "v_proj",
+          17
+        ],
+        [
+          "v_proj",
+          19
+        ],
+        [
+          "v_proj",
+          20
+        ],
+        [
+          "v_proj",
+          23
+        ],
+        [
+          "v_proj",
+          24
+        ],
+        [
+          "v_proj",
+          26
+        ],
+        [
+          "o_proj",
+          8
+        ],
+        [
+          "o_proj",
+          11
+        ],
+        [
+          "o_proj",
+          15
+        ],
+        [
+          "o_proj",
+          16
+        ],
+        [
+          "o_proj",
+          17
+        ],
+        [
+          "o_proj",
+          24
+        ],
+        [
+          "gate_proj",
+          20
+        ],
+        [
+          "up_proj",
+          20
+        ]
+      ],
+      "source_risk_components": {
+        "GGN_even12": 0.05536781341525795,
+        "GGN_mean": 0.055262511914225175,
+        "GGN_odd12": 0.0551572104131924,
+        "ridge_diagonal_GGN": 1.5133412266925674
+      },
+      "start": "qv8_signed96",
+      "start_objective": 1.21530922707504
+    },
+    {
+      "accepted_improving_1swaps": [
+        {
+          "added": [
+            "v_proj",
+            20
+          ],
+          "removed": [
+            "v_proj",
+            13
+          ],
+          "source_regularized_choice_GGN_decrease": 0.6785993682286113
+        },
+        {
+          "added": [
+            "v_proj",
+            9
+          ],
+          "removed": [
+            "v_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.43120683654671077
+        },
+        {
+          "added": [
+            "v_proj",
+            8
+          ],
+          "removed": [
+            "k_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.25176475406486054
+        },
+        {
+          "added": [
+            "down_proj",
+            4
+          ],
+          "removed": [
+            "down_proj",
+            1
+          ],
+          "source_regularized_choice_GGN_decrease": 0.07311529794104288
+        },
+        {
+          "added": [
+            "v_proj",
+            12
+          ],
+          "removed": [
+            "o_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.035867760267097704
+        },
+        {
+          "added": [
+            "k_proj",
+            7
+          ],
+          "removed": [
+            "o_proj",
+            18
+          ],
+          "source_regularized_choice_GGN_decrease": 0.016321277917264898
+        },
+        {
+          "added": [
+            "o_proj",
+            24
+          ],
+          "removed": [
+            "v_proj",
+            18
+          ],
+          "source_regularized_choice_GGN_decrease": 0.012296480399419218
+        },
+        {
+          "added": [
+            "v_proj",
+            17
+          ],
+          "removed": [
+            "k_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.009811372558307663
+        },
+        {
+          "added": [
+            "v_proj",
+            16
+          ],
+          "removed": [
+            "v_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.008160988197207675
+        },
+        {
+          "added": [
+            "o_proj",
+            17
+          ],
+          "removed": [
+            "v_proj",
+            1
+          ],
+          "source_regularized_choice_GGN_decrease": 0.004674621189194594
+        },
+        {
+          "added": [
+            "v_proj",
+            2
+          ],
+          "removed": [
+            "v_proj",
+            3
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0030930947193804625
+        },
+        {
+          "added": [
+            "v_proj",
+            26
+          ],
+          "removed": [
+            "v_proj",
+            10
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0031285612345947067
+        },
+        {
+          "added": [
+            "k_proj",
+            3
+          ],
+          "removed": [
+            "v_proj",
+            23
+          ],
+          "source_regularized_choice_GGN_decrease": 0.00040724363553079623
+        },
+        {
+          "added": [
+            "o_proj",
+            27
+          ],
+          "removed": [
+            "q_proj",
+            18
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0017198401681119968
+        },
+        {
+          "added": [
+            "v_proj",
+            6
+          ],
+          "removed": [
+            "o_proj",
+            7
+          ],
+          "source_regularized_choice_GGN_decrease": 0.002115291515124018
+        },
+        {
+          "added": [
+            "k_proj",
+            19
+          ],
+          "removed": [
+            "k_proj",
+            7
+          ],
+          "source_regularized_choice_GGN_decrease": 0.001292346361991048
+        },
+        {
+          "added": [
+            "k_proj",
+            22
+          ],
+          "removed": [
+            "k_proj",
+            21
+          ],
+          "source_regularized_choice_GGN_decrease": 1.929179006276982e-05
+        },
+        {
+          "added": [
+            "v_proj",
+            23
+          ],
+          "removed": [
+            "k_proj",
+            10
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0002133163817334971
+        },
+        {
+          "added": [
+            "v_proj",
+            24
+          ],
+          "removed": [
+            "v_proj",
+            26
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0007461468371788849
+        }
+      ],
+      "costs": {
+        "isolated_async_stage_ms": 49.569330000000136,
+        "memory_bytes": 756056064,
+        "serial_estimate_ms": 82.54343822887995
+      },
+      "final_objective": 0.5942722477347511,
+      "global_optimum_proven": false,
+      "selected_ids": [
+        [
+          "k_proj",
+          3
+        ],
+        [
+          "k_proj",
+          11
+        ],
+        [
+          "k_proj",
+          19
+        ],
+        [
+          "k_proj",
+          22
+        ],
+        [
+          "v_proj",
+          2
+        ],
+        [
+          "v_proj",
+          5
+        ],
+        [
+          "v_proj",
+          6
+        ],
+        [
+          "v_proj",
+          7
+        ],
+        [
+          "v_proj",
+          8
+        ],
+        [
+          "v_proj",
+          9
+        ],
+        [
+          "v_proj",
+          11
+        ],
+        [
+          "v_proj",
+          12
+        ],
+        [
+          "v_proj",
+          14
+        ],
+        [
+          "v_proj",
+          15
+        ],
+        [
+          "v_proj",
+          16
+        ],
+        [
+          "v_proj",
+          17
+        ],
+        [
+          "v_proj",
+          19
+        ],
+        [
+          "v_proj",
+          20
+        ],
+        [
+          "v_proj",
+          23
+        ],
+        [
+          "v_proj",
+          24
+        ],
+        [
+          "o_proj",
+          8
+        ],
+        [
+          "o_proj",
+          11
+        ],
+        [
+          "o_proj",
+          14
+        ],
+        [
+          "o_proj",
+          16
+        ],
+        [
+          "o_proj",
+          17
+        ],
+        [
+          "o_proj",
+          24
+        ],
+        [
+          "o_proj",
+          27
+        ],
+        [
+          "down_proj",
+          4
+        ]
+      ],
+      "source_risk_components": {
+        "GGN_even12": 0.05112540995995041,
+        "GGN_mean": 0.05134046785138038,
+        "GGN_odd12": 0.05155552574281034,
+        "ridge_diagonal_GGN": 1.6021747314340695
+      },
+      "start": "qv5_24",
+      "start_objective": 2.1288261376881765
+    },
+    {
+      "accepted_improving_1swaps": [
+        {
+          "added": [
+            "o_proj",
+            24
+          ],
+          "removed": [
+            "v_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.6469460292211056
+        },
+        {
+          "added": [
+            "o_proj",
+            11
+          ],
+          "removed": [
+            "o_proj",
+            23
+          ],
+          "source_regularized_choice_GGN_decrease": 0.35398673008479653
+        },
+        {
+          "added": [
+            "v_proj",
+            8
+          ],
+          "removed": [
+            "k_proj",
+            27
+          ],
+          "source_regularized_choice_GGN_decrease": 0.23900230730798278
+        },
+        {
+          "added": [
+            "v_proj",
+            12
+          ],
+          "removed": [
+            "k_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.14562188073408078
+        },
+        {
+          "added": [
+            "o_proj",
+            8
+          ],
+          "removed": [
+            "o_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.08746992026804856
+        },
+        {
+          "added": [
+            "v_proj",
+            15
+          ],
+          "removed": [
+            "o_proj",
+            1
+          ],
+          "source_regularized_choice_GGN_decrease": 0.04299747182979796
+        },
+        {
+          "added": [
+            "v_proj",
+            26
+          ],
+          "removed": [
+            "v_proj",
+            25
+          ],
+          "source_regularized_choice_GGN_decrease": 0.006716447507431833
+        },
+        {
+          "added": [
+            "v_proj",
+            13
+          ],
+          "removed": [
+            "k_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.005824750464109463
+        },
+        {
+          "added": [
+            "k_proj",
+            3
+          ],
+          "removed": [
+            "q_proj",
+            14
+          ],
+          "source_regularized_choice_GGN_decrease": 0.006832137130418636
+        },
+        {
+          "added": [
+            "q_proj",
+            11
+          ],
+          "removed": [
+            "k_proj",
+            14
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0035770912919935727
+        },
+        {
+          "added": [
+            "o_proj",
+            17
+          ],
+          "removed": [
+            "k_proj",
+            10
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0037012373946565535
+        },
+        {
+          "added": [
+            "v_proj",
+            24
+          ],
+          "removed": [
+            "k_proj",
+            23
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0014413062872542515
+        },
+        {
+          "added": [
+            "v_proj",
+            17
+          ],
+          "removed": [
+            "k_proj",
+            5
+          ],
+          "source_regularized_choice_GGN_decrease": 0.003347773019392375
+        },
+        {
+          "added": [
+            "q_proj",
+            0
+          ],
+          "removed": [
+            "o_proj",
+            15
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0018609715765083301
+        },
+        {
+          "added": [
+            "v_proj",
+            18
+          ],
+          "removed": [
+            "v_proj",
+            26
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0009632523028187956
+        }
+      ],
+      "costs": {
+        "isolated_async_stage_ms": 49.96624675000007,
+        "memory_bytes": 757039104,
+        "serial_estimate_ms": 83.03271722704869
+      },
+      "final_objective": 0.5788029022913448,
+      "global_optimum_proven": false,
+      "selected_ids": [
+        [
+          "q_proj",
+          0
+        ],
+        [
+          "q_proj",
+          11
+        ],
+        [
+          "k_proj",
+          3
+        ],
+        [
+          "k_proj",
+          7
+        ],
+        [
+          "v_proj",
+          4
+        ],
+        [
+          "v_proj",
+          5
+        ],
+        [
+          "v_proj",
+          6
+        ],
+        [
+          "v_proj",
+          7
+        ],
+        [
+          "v_proj",
+          8
+        ],
+        [
+          "v_proj",
+          9
+        ],
+        [
+          "v_proj",
+          11
+        ],
+        [
+          "v_proj",
+          12
+        ],
+        [
+          "v_proj",
+          13
+        ],
+        [
+          "v_proj",
+          15
+        ],
+        [
+          "v_proj",
+          16
+        ],
+        [
+          "v_proj",
+          17
+        ],
+        [
+          "v_proj",
+          18
+        ],
+        [
+          "v_proj",
+          19
+        ],
+        [
+          "v_proj",
+          20
+        ],
+        [
+          "v_proj",
+          22
+        ],
+        [
+          "v_proj",
+          24
+        ],
+        [
+          "o_proj",
+          8
+        ],
+        [
+          "o_proj",
+          11
+        ],
+        [
+          "o_proj",
+          16
+        ],
+        [
+          "o_proj",
+          17
+        ],
+        [
+          "o_proj",
+          20
+        ],
+        [
+          "o_proj",
+          24
+        ],
+        [
+          "down_proj",
+          2
+        ]
+      ],
+      "source_risk_components": {
+        "GGN_even12": 0.05160197009856766,
+        "GGN_mean": 0.05408797946140367,
+        "GGN_odd12": 0.056573988824239675,
+        "ridge_diagonal_GGN": 1.5486565987302545
+      },
+      "start": "source_randomstart_17",
+      "start_objective": 2.1290922087117408
+    },
+    {
+      "accepted_improving_1swaps": [
+        {
+          "added": [
+            "v_proj",
+            9
+          ],
+          "removed": [
+            "o_proj",
+            23
+          ],
+          "source_regularized_choice_GGN_decrease": 0.5036863456332519
+        },
+        {
+          "added": [
+            "o_proj",
+            24
+          ],
+          "removed": [
+            "k_proj",
+            16
+          ],
+          "source_regularized_choice_GGN_decrease": 0.3274198342798089
+        },
+        {
+          "added": [
+            "v_proj",
+            5
+          ],
+          "removed": [
+            "o_proj",
+            21
+          ],
+          "source_regularized_choice_GGN_decrease": 0.19402650480908545
+        },
+        {
+          "added": [
+            "o_proj",
+            11
+          ],
+          "removed": [
+            "k_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.11579291037826023
+        },
+        {
+          "added": [
+            "v_proj",
+            12
+          ],
+          "removed": [
+            "v_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.03432570106943389
+        },
+        {
+          "added": [
+            "q_proj",
+            17
+          ],
+          "removed": [
+            "k_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.014142750202292609
+        },
+        {
+          "added": [
+            "v_proj",
+            26
+          ],
+          "removed": [
+            "v_proj",
+            25
+          ],
+          "source_regularized_choice_GGN_decrease": 0.005725525660713493
+        },
+        {
+          "added": [
+            "o_proj",
+            17
+          ],
+          "removed": [
+            "q_proj",
+            25
+          ],
+          "source_regularized_choice_GGN_decrease": 0.00363173729035271
+        },
+        {
+          "added": [
+            "k_proj",
+            22
+          ],
+          "removed": [
+            "k_proj",
+            18
+          ],
+          "source_regularized_choice_GGN_decrease": 0.003911799740541122
+        },
+        {
+          "added": [
+            "k_proj",
+            3
+          ],
+          "removed": [
+            "k_proj",
+            6
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0016170464909605053
+        },
+        {
+          "added": [
+            "v_proj",
+            17
+          ],
+          "removed": [
+            "k_proj",
+            27
+          ],
+          "source_regularized_choice_GGN_decrease": 0.005025772351519131
+        },
+        {
+          "added": [
+            "v_proj",
+            24
+          ],
+          "removed": [
+            "v_proj",
+            21
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0005589308024014361
+        },
+        {
+          "added": [
+            "v_proj",
+            18
+          ],
+          "removed": [
+            "v_proj",
+            10
+          ],
+          "source_regularized_choice_GGN_decrease": 0.002117414635399606
+        },
+        {
+          "added": [
+            "k_proj",
+            21
+          ],
+          "removed": [
+            "k_proj",
+            9
+          ],
+          "source_regularized_choice_GGN_decrease": 0.001235547227904643
+        },
+        {
+          "added": [
+            "o_proj",
+            8
+          ],
+          "removed": [
+            "o_proj",
+            11
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0029554745858969556
+        },
+        {
+          "added": [
+            "v_proj",
+            6
+          ],
+          "removed": [
+            "v_proj",
+            4
+          ],
+          "source_regularized_choice_GGN_decrease": 0.00036516775843442595
+        },
+        {
+          "added": [
+            "v_proj",
+            13
+          ],
+          "removed": [
+            "v_proj",
+            22
+          ],
+          "source_regularized_choice_GGN_decrease": 0.003083007273825933
+        },
+        {
+          "added": [
+            "q_proj",
+            0
+          ],
+          "removed": [
+            "q_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0020660445030371566
+        },
+        {
+          "added": [
+            "v_proj",
+            2
+          ],
+          "removed": [
+            "o_proj",
+            7
+          ],
+          "source_regularized_choice_GGN_decrease": 0.000944958063762602
+        },
+        {
+          "added": [
+            "v_proj",
+            4
+          ],
+          "removed": [
+            "o_proj",
+            15
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0010649339362199806
+        },
+        {
+          "added": [
+            "q_proj",
+            17
+          ],
+          "removed": [
+            "k_proj",
+            21
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0004207680094024946
+        }
+      ],
+      "costs": {
+        "isolated_async_stage_ms": 49.539902874999996,
+        "memory_bytes": 756056064,
+        "serial_estimate_ms": 82.61143281792125
+      },
+      "final_objective": 0.5750117141918798,
+      "global_optimum_proven": false,
+      "selected_ids": [
+        [
+          "q_proj",
+          0
+        ],
+        [
+          "q_proj",
+          17
+        ],
+        [
+          "k_proj",
+          3
+        ],
+        [
+          "k_proj",
+          22
+        ],
+        [
+          "v_proj",
+          2
+        ],
+        [
+          "v_proj",
+          4
+        ],
+        [
+          "v_proj",
+          5
+        ],
+        [
+          "v_proj",
+          6
+        ],
+        [
+          "v_proj",
+          7
+        ],
+        [
+          "v_proj",
+          8
+        ],
+        [
+          "v_proj",
+          9
+        ],
+        [
+          "v_proj",
+          11
+        ],
+        [
+          "v_proj",
+          12
+        ],
+        [
+          "v_proj",
+          13
+        ],
+        [
+          "v_proj",
+          15
+        ],
+        [
+          "v_proj",
+          16
+        ],
+        [
+          "v_proj",
+          17
+        ],
+        [
+          "v_proj",
+          18
+        ],
+        [
+          "v_proj",
+          19
+        ],
+        [
+          "v_proj",
+          20
+        ],
+        [
+          "v_proj",
+          24
+        ],
+        [
+          "v_proj",
+          26
+        ],
+        [
+          "o_proj",
+          8
+        ],
+        [
+          "o_proj",
+          16
+        ],
+        [
+          "o_proj",
+          17
+        ],
+        [
+          "o_proj",
+          20
+        ],
+        [
+          "o_proj",
+          24
+        ],
+        [
+          "down_proj",
+          2
+        ]
+      ],
+      "source_risk_components": {
+        "GGN_even12": 0.04392034996602348,
+        "GGN_mean": 0.044774787077021296,
+        "GGN_odd12": 0.04562922418801912,
+        "ridge_diagonal_GGN": 1.5581506241990497
+      },
+      "start": "source_randomstart_41",
+      "start_objective": 1.799129888894385
+    },
+    {
+      "accepted_improving_1swaps": [
+        {
+          "added": [
+            "down_proj",
+            4
+          ],
+          "removed": [
+            "gate_proj",
+            10
+          ],
+          "source_regularized_choice_GGN_decrease": 1.3034562997432397
+        },
+        {
+          "added": [
+            "v_proj",
+            20
+          ],
+          "removed": [
+            "v_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.701827072167633
+        },
+        {
+          "added": [
+            "v_proj",
+            19
+          ],
+          "removed": [
+            "o_proj",
+            23
+          ],
+          "source_regularized_choice_GGN_decrease": 0.38777907155387403
+        },
+        {
+          "added": [
+            "v_proj",
+            5
+          ],
+          "removed": [
+            "k_proj",
+            0
+          ],
+          "source_regularized_choice_GGN_decrease": 0.26783263967983373
+        },
+        {
+          "added": [
+            "o_proj",
+            11
+          ],
+          "removed": [
+            "k_proj",
+            16
+          ],
+          "source_regularized_choice_GGN_decrease": 0.16366847724821876
+        },
+        {
+          "added": [
+            "v_proj",
+            15
+          ],
+          "removed": [
+            "v_proj",
+            14
+          ],
+          "source_regularized_choice_GGN_decrease": 0.094000477132268
+        },
+        {
+          "added": [
+            "k_proj",
+            11
+          ],
+          "removed": [
+            "o_proj",
+            21
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0468328609266615
+        },
+        {
+          "added": [
+            "v_proj",
+            12
+          ],
+          "removed": [
+            "q_proj",
+            14
+          ],
+          "source_regularized_choice_GGN_decrease": 0.016469880578665386
+        },
+        {
+          "added": [
+            "v_proj",
+            17
+          ],
+          "removed": [
+            "k_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.008404425468757415
+        },
+        {
+          "added": [
+            "o_proj",
+            17
+          ],
+          "removed": [
+            "v_proj",
+            3
+          ],
+          "source_regularized_choice_GGN_decrease": 0.005258496371110644
+        },
+        {
+          "added": [
+            "k_proj",
+            3
+          ],
+          "removed": [
+            "v_proj",
+            25
+          ],
+          "source_regularized_choice_GGN_decrease": 0.005186885056402746
+        },
+        {
+          "added": [
+            "q_proj",
+            17
+          ],
+          "removed": [
+            "o_proj",
+            22
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0033825191600018734
+        },
+        {
+          "added": [
+            "v_proj",
+            2
+          ],
+          "removed": [
+            "k_proj",
+            1
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0031274732671137118
+        },
+        {
+          "added": [
+            "o_proj",
+            20
+          ],
+          "removed": [
+            "v_proj",
+            10
+          ],
+          "source_regularized_choice_GGN_decrease": 0.012177918921476127
+        },
+        {
+          "added": [
+            "v_proj",
+            13
+          ],
+          "removed": [
+            "v_proj",
+            22
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0037775196406806266
+        },
+        {
+          "added": [
+            "q_proj",
+            0
+          ],
+          "removed": [
+            "q_proj",
+            17
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0008185406767577952
+        },
+        {
+          "added": [
+            "o_proj",
+            8
+          ],
+          "removed": [
+            "o_proj",
+            11
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0012631704334293836
+        },
+        {
+          "added": [
+            "q_proj",
+            8
+          ],
+          "removed": [
+            "o_proj",
+            15
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0007570341832953131
+        },
+        {
+          "added": [
+            "v_proj",
+            24
+          ],
+          "removed": [
+            "v_proj",
+            23
+          ],
+          "source_regularized_choice_GGN_decrease": 0.0005238199521995224
+        },
+        {
+          "added": [
+            "v_proj",
+            26
+          ],
+          "removed": [
+            "k_proj",
+            7
+          ],
+          "source_regularized_choice_GGN_decrease": 0.000909604857053381
+        },
+        {
+          "added": [
+            "o_proj",
+            27
+          ],
+          "removed": [
+            "q_proj",
+            8
+          ],
+          "source_regularized_choice_GGN_decrease": 0.001114004873647212
+        }
+      ],
+      "costs": {
+        "isolated_async_stage_ms": 49.99112162500009,
+        "memory_bytes": 757039104,
+        "serial_estimate_ms": 82.99871993252803
+      },
+      "final_objective": 0.5808279770314874,
+      "global_optimum_proven": false,
+      "selected_ids": [
+        [
+          "q_proj",
+          0
+        ],
+        [
+          "k_proj",
+          3
+        ],
+        [
+          "k_proj",
+          10
+        ],
+        [
+          "k_proj",
+          11
+        ],
+        [
+          "v_proj",
+          2
+        ],
+        [
+          "v_proj",
+          4
+        ],
+        [
+          "v_proj",
+          5
+        ],
+        [
+          "v_proj",
+          7
+        ],
+        [
+          "v_proj",
+          8
+        ],
+        [
+          "v_proj",
+          9
+        ],
+        [
+          "v_proj",
+          11
+        ],
+        [
+          "v_proj",
+          12
+        ],
+        [
+          "v_proj",
+          13
+        ],
+        [
+          "v_proj",
+          15
+        ],
+        [
+          "v_proj",
+          16
+        ],
+        [
+          "v_proj",
+          17
+        ],
+        [
+          "v_proj",
+          19
+        ],
+        [
+          "v_proj",
+          20
+        ],
+        [
+          "v_proj",
+          24
+        ],
+        [
+          "v_proj",
+          26
+        ],
+        [
+          "o_proj",
+          0
+        ],
+        [
+          "o_proj",
+          8
+        ],
+        [
+          "o_proj",
+          16
+        ],
+        [
+          "o_proj",
+          17
+        ],
+        [
+          "o_proj",
+          20
+        ],
+        [
+          "o_proj",
+          24
+        ],
+        [
+          "o_proj",
+          27
+        ],
+        [
+          "down_proj",
+          4
+        ]
+      ],
+      "source_risk_components": {
+        "GGN_even12": 0.05024150413942549,
+        "GGN_mean": 0.051498290731746915,
+        "GGN_odd12": 0.05275507732406834,
+        "ridge_diagonal_GGN": 1.5615347907738368
+      },
+      "start": "source_randomstart_73",
+      "start_objective": 3.609396168923807
+    }
+  ],
+  "source_diagnostic_24_unopened": true,
+  "source_folds": [
+    12,
+    12
+  ],
+  "source_only_choice_GGN_not_full_vocab": true,
+  "source_training_cases": 24,
+  "status": "GGN_SOURCE_ONLY_FROZEN_BEFORE_DIAG_OR_MMLU",
+  "strict_same_resource_constraints_as_Qv8": true
+}
