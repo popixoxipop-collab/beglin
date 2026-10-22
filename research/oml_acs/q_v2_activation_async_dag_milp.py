@@ -178,9 +178,7 @@ def solve_one(name:str,cfg:dict,basebytes:int,choices:list,quality:np.ndarray,
       projection_bytes=measured_mem,
       predicted_native_serial_ms=float(serial),
       predicted_hypothetical_parallel_graph_ms=float(parallel),
-      observed_joint_stage_kernel_schedules={
-        "qkv":{str(k):stage["stages"]["qkv"][k]["best_mode"] for k in stage["stages"]["qkv"]} if False else "see canonical source stage cost profile"
-      },
+      native_QKV_FFN_stage_dispatch_policy="each layer selects its measured best native serial or independent Q4 threadpool parallel mode",
       frozen_policy_sha256=sha(policy_txt.encode()),
       frozen_policy_text=policy_txt,
       solver=dict(status=int(sol.status),message=str(sol.message),
