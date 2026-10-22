@@ -1,0 +1,66 @@
+{
+  "diagnostic24_original_private_SHA256": "e719de54dcfbddb94db05fcb21ee07ab35d809159a44ab6b8a770469bda987be",
+  "diagnostic_robustly_beats_both_q4_and_fisher64": true,
+  "grouped_7way_probability_masses_original_fullvocab": true,
+  "independent_private_receipt_sha256": "98090e4511f4c44e0cca7ba72ccfcd0cd0f4c165e390db3ab12b13f401baed1c",
+  "mask_sha256": "5801452577e1957fc635d1e295ae7cde2d8a50c294b04d9a65e8e48dc7b32196",
+  "no_RACE_eval_outputs_used": true,
+  "no_live_promotion_allowed": true,
+  "not_true_quantized_fullmodel_KL": true,
+  "schema": "BEGLIN-Qv10-48-original-BF16-source7group-independent-audit/1",
+  "source24_original_private_SHA256": "696da1054cfa1ce23d2d847923b4e65003f4eabaf46a26104939469b70cfc862",
+  "source_policy_sha256": "ae35b59d98d2b08ded60f4af10b2485ecf4c1c176eb7f113a810b33f51259ece",
+  "source_to_diagnostic": {
+    "fisher64": {
+      "diagnostic": {
+        "fraction_large_shift": 1.0,
+        "mean_KL": 5.859074090973091,
+        "mean_trust": 26.789850125672555,
+        "objective": 42.901545289126446,
+        "original_fullvocab_answer_mass": 0.9991019174348329
+      },
+      "train": {
+        "fraction_large_shift": 1.0,
+        "mean_KL": 7.550018537196251,
+        "mean_trust": 70.3145031584947,
+        "objective": 146.2318460308789,
+        "original_fullvocab_answer_mass": 0.9987043927989726
+      }
+    },
+    "q4": {
+      "diagnostic": {
+        "fraction_large_shift": 0.9583333333333334,
+        "mean_KL": 16.365614737147112,
+        "mean_trust": 376.3586499229287,
+        "objective": 650.0376274136044,
+        "original_fullvocab_answer_mass": 0.9991019174348329
+      },
+      "train": {
+        "fraction_large_shift": 1.0,
+        "mean_KL": 10.937647268750878,
+        "mean_trust": 171.20642843431563,
+        "objective": 343.0381148897266,
+        "original_fullvocab_answer_mass": 0.9987043927989726
+      }
+    },
+    "qv10": {
+      "diagnostic": {
+        "fraction_large_shift": 1.0,
+        "mean_KL": 15.488970309779267,
+        "mean_trust": 15.0122778746225,
+        "objective": 32.21446660608104,
+        "original_fullvocab_answer_mass": 0.9991019174348329
+      },
+      "train": {
+        "fraction_large_shift": 1.0,
+        "mean_KL": 0.2544401484277454,
+        "mean_trust": 0.11566928803346448,
+        "objective": 0.3723427407752232,
+        "original_fullvocab_answer_mass": 0.9987043927989726
+      }
+    }
+  },
+  "source_train_diagnostic_previous_Qv9_used_before": true,
+  "status": "PASS_SOURCE_24_AND_DIAG_24_BF16_7GROUP_SIGNED_NATIVE_RESIDUAL_RECALC",
+  "within_OTHER_curvature_missing": true
+}

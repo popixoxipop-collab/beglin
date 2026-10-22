@@ -1,0 +1,16 @@
+{
+  "Apple_MPS_original_BF16_model_unchanged": true,
+  "accuracy": 0.875,
+  "correct": 42,
+  "elapsed_s": 15.24,
+  "full_vocab_correct_letter_mean_NLL": 0.821231444655325,
+  "native_C_widened_FP32_ne_not_identical": true,
+  "no_operational_promotion": true,
+  "original_private_ref_SHA256": "84aa46957ea9c30b24650c617868e23ef580758708626f4f61e0ed8103cf2e5f",
+  "schema": "BEGLIN-Qv10-unchanged-BF16-Qwen-RACE48-original-model-reference/1",
+  "source_RACE48_SHA256": "acdfd36477df4f440eeb9d03ad68342a34ce2435028eff1b8cef0de4c9f859de",
+  "source_model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "source_only_Top2OTHER_mask_SHA256": "5801452577e1957fc635d1e295ae7cde2d8a50c294b04d9a65e8e48dc7b32196",
+  "status": "REAL_ORIGINAL_BF16_MODEL_RACE48_REFERENCE_FINISHED",
+  "total": 48
+}
