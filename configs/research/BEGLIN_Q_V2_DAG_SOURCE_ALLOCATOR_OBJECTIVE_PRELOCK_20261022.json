@@ -1,0 +1,42 @@
+{
+  "schema": "beglin-q-v2-dag-source-allocation-objective/1",
+  "date": "2026-10-22",
+  "status": "FROZEN_BEFORE_NEW_V2_MODEL_EVALUATION",
+  "inputs": {
+    "source_activation_196_aggregate_sha256": "94ffe5c18ee4f92fadee912d1046d2ed104f3934e968081e87dfd1ac07ed1bf0",
+    "native_apple_parallel_stage_full_sha256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+    "native_apple_kernel_role_sha256": "280ca338745d0ebb2c44986d18e8b240135fe7fa4b1077f49f65f5d8fb3eff93",
+    "source_weight_196_sha256": "720de694838d3a85156afae3732974f3867db1c8ce4957e55778da77724a0d8a",
+    "calibration_prompts_protocol_sha256": "0d9177b152286ccd413028e74838529e2a5aad57b42ec793df3095f99208d4af"
+  },
+  "n8_exact_count": 28,
+  "n4_count": 168,
+  "projection_memory_ceiling_bytes": 830570496,
+  "serial_predicted_latency_ceiling_ms": 100,
+  "allq4_single_token_reference_ms": 75.26,
+  "equal_role_mixed_single_token_reference_ms": 116.18,
+  "serial_latency_gamma": 1.039406406482483,
+  "async_stage_cost": "sum per-layer true measured concurrent Q/K/V stage and gate/up stage, plus serial o/down; Q4 native 1/6 thread independent pools; asynchronous whole-model runtime NOT claimed",
+  "async_baseline": "all Q4 75.26ms minus 28 x (measured QKV serial6t minus fastest concurrency and FFN serial6t minus fastest concurrency)",
+  "async_penalty_quality_units_per_ms": 0.006,
+  "serial_penalty_grid_quality_units_per_ms": [
+    0,
+    0.002,
+    0.004,
+    0.008,
+    0.016,
+    0.032,
+    0.064
+  ],
+  "decision": "For each fixed serial penalty solve exact 28-of-196 and memory DP across 28 layers (128 local masks each). Select feasible candidate with maximum source activation-aware quality gain minus fixed async penalty; deterministic tie on lower async cost then mask key. Not globally exact for hard serial bound across penalty grid.",
+  "selection_freeze": "Record source-only role/layer list, masks, SHA, memory, predicted serial and async potential BEFORE evaluating PPL/logits",
+  "candidate_compare": "Independent public eight prompts frozen in BEGLIN_Q_ACTIVATION_ASYNC_PARALLEL_V2_PRELOCK_20261022.json; all q4, previous role-balanced random, source BF16 widened F32, selected v2 policy",
+  "guardrails": {
+    "no_retries_of_blocked_full_logit_single_tensor_intervention": true,
+    "no_V6_final_or_old_private_label_data": true,
+    "no_production_or_main_writes": true,
+    "activation_score_is_diagonal_local_proxy_not_causal_llm_quality": true,
+    "concurrency_only_valid_for_independent_QKV_or_gate_up_and_not_full_runtime": true,
+    "evaluate_only_after_policy_file_sha_recorded": true
+  }
+}
