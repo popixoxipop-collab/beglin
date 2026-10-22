@@ -1,0 +1,378 @@
+{
+  "actual_original_BF16_source_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "blocked_fullmodel_per_tensor_interventions_not_retried": true,
+  "config_schema": "BEGLIN-QV2-async-DAG-activation-milp-prelock/1",
+  "eval_prompts_not_loaded_for_selection": true,
+  "layer_choices_per_decoder": 128,
+  "native_cost_scale_gamma": 1.0392282110231081,
+  "original_activation_calibration_sha256": "ee7b177b4dde984a5d83e0cdb5983d2ae00c34ee752fef9113a79568a1d12663",
+  "original_async_native_stage_sha256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+  "original_frozen_role_balanced_random_ms": 116.18,
+  "original_q4_baseline_native_ms": 75.26,
+  "original_q4_projection_bytes": 736985088,
+  "original_source_sha256": {
+    "prelock": "b112b43da633fd6b2d57dcb1e38e09b12437953a315dbedecfc8dbc0311c3a8c",
+    "quality_scores": "94ffe5c18ee4f92fadee912d1046d2ed104f3934e968081e87dfd1ac07ed1bf0",
+    "role_profile": "0cf95f659c3ad4f54706a17f61299becb95d7e3187fde0b706f95efa6555fa52",
+    "stage_profile": "a1778f97f2efb0574063e2b62d5e1eea3c274fd32f9b603f70c6fa358f87d326"
+  },
+  "policies": [
+    {
+      "frozen_policy_sha256": "e044675ea5b47a5aca0ca75980a55070b932d1a4dc330815bbb097acbf75df7b",
+      "n8_role_counts": {
+        "down_proj": 1,
+        "gate_proj": 0,
+        "k_proj": 1,
+        "o_proj": 0,
+        "q_proj": 2,
+        "up_proj": 3,
+        "v_proj": 21
+      },
+      "n8_role_layer_pairs": [
+        [
+          "k_proj",
+          0
+        ],
+        [
+          "up_proj",
+          1
+        ],
+        [
+          "down_proj",
+          1
+        ],
+        [
+          "up_proj",
+          2
+        ],
+        [
+          "v_proj",
+          3
+        ],
+        [
+          "up_proj",
+          3
+        ],
+        [
+          "v_proj",
+          4
+        ],
+        [
+          "v_proj",
+          5
+        ],
+        [
+          "v_proj",
+          6
+        ],
+        [
+          "v_proj",
+          7
+        ],
+        [
+          "v_proj",
+          8
+        ],
+        [
+          "v_proj",
+          9
+        ],
+        [
+          "v_proj",
+          10
+        ],
+        [
+          "v_proj",
+          11
+        ],
+        [
+          "v_proj",
+          12
+        ],
+        [
+          "v_proj",
+          13
+        ],
+        [
+          "v_proj",
+          14
+        ],
+        [
+          "v_proj",
+          15
+        ],
+        [
+          "v_proj",
+          16
+        ],
+        [
+          "v_proj",
+          17
+        ],
+        [
+          "v_proj",
+          18
+        ],
+        [
+          "v_proj",
+          19
+        ],
+        [
+          "v_proj",
+          20
+        ],
+        [
+          "v_proj",
+          21
+        ],
+        [
+          "v_proj",
+          22
+        ],
+        [
+          "q_proj",
+          23
+        ],
+        [
+          "v_proj",
+          23
+        ],
+        [
+          "q_proj",
+          25
+        ]
+      ],
+      "name": "async_DAG",
+      "native_QKV_FFN_stage_dispatch_policy": "each layer selects its measured best native serial or independent Q4 threadpool parallel mode",
+      "native_mask_for_28_layers": [
+        32,
+        3,
+        2,
+        18,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        80,
+        0,
+        64,
+        0,
+        0
+      ],
+      "predicted_hypothetical_parallel_graph_ms": 84.98265489284384,
+      "predicted_native_serial_ms": 89.52364621878125,
+      "projection_bytes": 771194880,
+      "solver": {
+        "elapsed_seconds": 0.236,
+        "message": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+        "mip_dual_bound": -1.5303247975129999,
+        "mip_gap": 0,
+        "node_count": 1,
+        "status": 0
+      },
+      "source_activation_local_quality_gain": 1.530324797513,
+      "status": "MILP_OPTIMAL_CERTIFIED"
+    },
+    {
+      "frozen_policy_sha256": "06f07fcfab7fdba22528c6c80e09582f18cfa77d0760a26e4ec35bc6a80dd72c",
+      "n8_role_counts": {
+        "down_proj": 0,
+        "gate_proj": 0,
+        "k_proj": 1,
+        "o_proj": 1,
+        "q_proj": 2,
+        "up_proj": 2,
+        "v_proj": 22
+      },
+      "n8_role_layer_pairs": [
+        [
+          "k_proj",
+          0
+        ],
+        [
+          "up_proj",
+          2
+        ],
+        [
+          "v_proj",
+          3
+        ],
+        [
+          "up_proj",
+          3
+        ],
+        [
+          "v_proj",
+          4
+        ],
+        [
+          "v_proj",
+          5
+        ],
+        [
+          "v_proj",
+          6
+        ],
+        [
+          "v_proj",
+          7
+        ],
+        [
+          "v_proj",
+          8
+        ],
+        [
+          "v_proj",
+          9
+        ],
+        [
+          "v_proj",
+          10
+        ],
+        [
+          "v_proj",
+          11
+        ],
+        [
+          "v_proj",
+          12
+        ],
+        [
+          "v_proj",
+          13
+        ],
+        [
+          "v_proj",
+          14
+        ],
+        [
+          "v_proj",
+          15
+        ],
+        [
+          "v_proj",
+          16
+        ],
+        [
+          "v_proj",
+          17
+        ],
+        [
+          "v_proj",
+          18
+        ],
+        [
+          "v_proj",
+          19
+        ],
+        [
+          "v_proj",
+          20
+        ],
+        [
+          "v_proj",
+          21
+        ],
+        [
+          "v_proj",
+          22
+        ],
+        [
+          "q_proj",
+          23
+        ],
+        [
+          "v_proj",
+          23
+        ],
+        [
+          "v_proj",
+          24
+        ],
+        [
+          "q_proj",
+          25
+        ],
+        [
+          "o_proj",
+          26
+        ]
+      ],
+      "name": "serial_only",
+      "native_QKV_FFN_stage_dispatch_policy": "each layer selects its measured best native serial or independent Q4 threadpool parallel mode",
+      "native_mask_for_28_layers": [
+        32,
+        0,
+        2,
+        18,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        80,
+        16,
+        64,
+        8,
+        0
+      ],
+      "predicted_hypothetical_parallel_graph_ms": 79.57661662913165,
+      "predicted_native_serial_ms": 83.86663992795866,
+      "projection_bytes": 758808576,
+      "solver": {
+        "elapsed_seconds": 0.037,
+        "message": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+        "mip_dual_bound": -1.504435941051,
+        "mip_gap": 0,
+        "node_count": 1,
+        "status": 0
+      },
+      "source_activation_local_quality_gain": 1.5044359410510002,
+      "status": "MILP_OPTIMAL_CERTIFIED"
+    }
+  ],
+  "production_model_unchanged": true,
+  "role_order": [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj"
+  ],
+  "schema": "BEGLIN-QV2-activation-aware-async-DAG-MILP/1",
+  "scientific_quality_verdict": "NO_VERDICT",
+  "status": "OPTIMAL_SOURCE_ONLY_POLICIES_FROZEN_BEFORE_EVAL",
+  "total_binary_decision_variables": 3584,
+  "total_upgraded_n8": 28
+}
