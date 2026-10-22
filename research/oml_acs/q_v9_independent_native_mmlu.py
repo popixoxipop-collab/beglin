@@ -87,11 +87,21 @@ def run():
   raise RuntimeError("BF16 original MMLU source reference differs")
  for a,q in zip(ref["per_case_original_BF16"],original):
   if a["original_question_id_sha256"]!=sha(q["id"].encode()):raise RuntimeError("BF16 comparison different MMLU case")
+ subject_summary={}
+ for mode,val in out.items():
+  subjects={}
+  for category in ("high_school_psychology","high_school_computer_science"):
+   indices=[i for i,item in enumerate(original) if item["subject"]==category]
+   if len(indices)!=24:raise RuntimeError("source prelock MMLU subject quota missing")
+   subjects[category]={"n":24,
+    "correct":int(sum(val["per_question_correct"][i] for i in indices)),
+    "mean_fullvocab_correct_NLL":float(np.mean([val["per_question_NLL"][i] for i in indices]))}
+  subject_summary[mode]=subjects
  record={"schema":"BEGLIN-Qv9-independent-source-GGN-and-five-native-MMLU48-audit/1",
   "status":"PASS_SOURCE_AND_ORIGINAL_MMLU48_FIVE_NATIVE_POLICY_AUDIT",
   "source_48_BF16_GGN_audit_SHA256":sha(SA.read_bytes()),
   "Qv9_source_policy_sha256":sha(PO.read_bytes()),"mask_sha256":policy["mask_sha256"],
-  "native_original_full_results":out,"paired_comparisons":comparison,
+  "native_original_full_results":out,"paired_comparisons":comparison,"posthoc_subject_descriptive_summary":subject_summary,
   "original_BF16_reference_correct":ref["correct"],"original_BF16_reference_NLL":ref["mean_correct_answer_full_vocab_NLL"],
   "native_fullvocab_NLL_not_conditional_choice_GGN":True,
   "generalization_established":False,"native_CPU_speed_win_established":False,

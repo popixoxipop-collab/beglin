@@ -74,6 +74,24 @@ class Qv9PortableContracts(unittest.TestCase):
   self.assertEqual(s["status"],"PASS_SOURCE_AND_ORIGINAL_MMLU48_FIVE_NATIVE_POLICY_AUDIT")
   self.assertEqual(len(s["native_summary"]),5)
   self.assertFalse(s["generalization_established"])
+ def test_postmask_trust_region_exceeds_small_shift_regime(self):
+  path=D/"BEGLIN_QV9_CHOICE_GGN_TRUST_REGION_WARNING_20261023.json"
+  self.assertTrue(path.is_file())
+  d=json.loads(path.read_text())
+  self.assertEqual(d["status"],"FAIL_CLOSED_OUTPUT_GGN_LOCAL_TAYLOR_TRUST_WARNING")
+  self.assertEqual(d["original_ggn_source_only_policy_sha256"],sha(POL))
+  self.assertEqual(d["original_selected_mask_sha256"],sha(MASK))
+  self.assertFalse(d["evaluation_48_MMLU_model_outputs_used"])
+  self.assertTrue(d["post_hoc_rule_not_preregistered"])
+  self.assertFalse(d["new_Qv9_promotion_allowed"])
+  self.assertTrue(d["Qv9_independent_source_diagnostic_fraction_gt1"]>=.25)
+  self.assertTrue(d["GGN_choice_space_not_fullvocab"])
+ def test_ggn_trust_linearized_not_exact_native_kl(self):
+  path=D/"BEGLIN_QV9_GGN_QUADRATIC_TRUST_REGION_DIAGNOSTIC_20261023.json"
+  d=json.loads(path.read_text())
+  self.assertTrue(d["exact_choice_KL_is_only_on_original_first_order_Jdelta_logits_not_fullmodel_native_logits"])
+  self.assertTrue(d["no_held_MMLU_logit_used"])
+  self.assertGreater(d["source_and_diagnostic"]["diagnostic"]["Qv9_GGN24"]["median_max_abs_relative_logit_shift"],1)
  def test_no_production_promotion(self):
   self.assertFalse(self.pol["production_promotion"])
   self.assertTrue(self.pol["MMLU_eval_48_logits_unopened"])

@@ -1,0 +1,103 @@
+{
+  "GGN_choice_space_not_fullvocab": true,
+  "Qv9_independent_diagnostic_KL_over_GGN": 0.1253259994347802,
+  "Qv9_independent_source_diagnostic_fraction_gt1": 1.0,
+  "advisory_threshold_approximation_ratio_range": [
+    0.5,
+    2.0
+  ],
+  "advisory_threshold_large_shift_fraction": 0.25,
+  "all_splits_and_policies": {
+    "diagnostic/Fisher128": {
+      "GGN_quadratic_mean": 43.63334932730721,
+      "KL_over_local_quadratic_ratio": 0.15721102807180343,
+      "fraction_relative_logit_shift_above_1": 0.9583333333333334,
+      "fraction_relative_logit_shift_above_4": 0.625,
+      "linearized_four_choice_exact_KL_mean": 6.859643705962099,
+      "posthoc_sanity_warning_triggered": true
+    },
+    "diagnostic/Fisher64": {
+      "GGN_quadratic_mean": 10.19242683243692,
+      "KL_over_local_quadratic_ratio": 0.48359744880370065,
+      "fraction_relative_logit_shift_above_1": 0.9583333333333334,
+      "fraction_relative_logit_shift_above_4": 0.625,
+      "linearized_four_choice_exact_KL_mean": 4.929031613284878,
+      "posthoc_sanity_warning_triggered": true
+    },
+    "diagnostic/Qv8signed96": {
+      "GGN_quadratic_mean": 22.891155402742317,
+      "KL_over_local_quadratic_ratio": 0.08750758533507583,
+      "fraction_relative_logit_shift_above_1": 0.9166666666666666,
+      "fraction_relative_logit_shift_above_4": 0.625,
+      "linearized_four_choice_exact_KL_mean": 2.0031497348239555,
+      "posthoc_sanity_warning_triggered": true
+    },
+    "diagnostic/Qv9_GGN24": {
+      "GGN_quadratic_mean": 74.75139045060453,
+      "KL_over_local_quadratic_ratio": 0.1253259994347802,
+      "fraction_relative_logit_shift_above_1": 1.0,
+      "fraction_relative_logit_shift_above_4": 0.625,
+      "linearized_four_choice_exact_KL_mean": 9.368292717361498,
+      "posthoc_sanity_warning_triggered": true
+    },
+    "diagnostic/allQ4": {
+      "GGN_quadratic_mean": 156.52606054535357,
+      "KL_over_local_quadratic_ratio": 0.0883662667740446,
+      "fraction_relative_logit_shift_above_1": 1.0,
+      "fraction_relative_logit_shift_above_4": 0.7083333333333334,
+      "linearized_four_choice_exact_KL_mean": 13.831623623240972,
+      "posthoc_sanity_warning_triggered": true
+    },
+    "train/Fisher128": {
+      "GGN_quadratic_mean": 1.0214683555465063,
+      "KL_over_local_quadratic_ratio": 7.8124552797025135,
+      "fraction_relative_logit_shift_above_1": 1.0,
+      "fraction_relative_logit_shift_above_4": 0.6666666666666666,
+      "linearized_four_choice_exact_KL_mean": 7.980175847338347,
+      "posthoc_sanity_warning_triggered": true
+    },
+    "train/Fisher64": {
+      "GGN_quadratic_mean": 0.9062248936419945,
+      "KL_over_local_quadratic_ratio": 8.332411867818127,
+      "fraction_relative_logit_shift_above_1": 0.9583333333333334,
+      "fraction_relative_logit_shift_above_4": 0.75,
+      "linearized_four_choice_exact_KL_mean": 7.5510390586947755,
+      "posthoc_sanity_warning_triggered": true
+    },
+    "train/Qv8signed96": {
+      "GGN_quadratic_mean": 0.5300122218329348,
+      "KL_over_local_quadratic_ratio": 10.34790920999538,
+      "fraction_relative_logit_shift_above_1": 1.0,
+      "fraction_relative_logit_shift_above_4": 0.7916666666666666,
+      "linearized_four_choice_exact_KL_mean": 5.484518351715141,
+      "posthoc_sanity_warning_triggered": true
+    },
+    "train/Qv9_GGN24": {
+      "GGN_quadratic_mean": 0.05524594650365122,
+      "KL_over_local_quadratic_ratio": 80.50996297386702,
+      "fraction_relative_logit_shift_above_1": 0.9583333333333334,
+      "fraction_relative_logit_shift_above_4": 0.75,
+      "linearized_four_choice_exact_KL_mean": 4.447849107465198,
+      "posthoc_sanity_warning_triggered": true
+    },
+    "train/allQ4": {
+      "GGN_quadratic_mean": 3.4257804836574888,
+      "KL_over_local_quadratic_ratio": 3.1809567458577708,
+      "fraction_relative_logit_shift_above_1": 1.0,
+      "fraction_relative_logit_shift_above_4": 0.7083333333333334,
+      "linearized_four_choice_exact_KL_mean": 10.897259539318185,
+      "posthoc_sanity_warning_triggered": true
+    }
+  },
+  "evaluation_48_MMLU_model_outputs_used": false,
+  "new_Qv9_promotion_allowed": false,
+  "no_auto_promotion": true,
+  "no_exact_native_model_KL_claim": true,
+  "no_model_weights_or_original_policy_modified": true,
+  "original_ggn_source_only_policy_sha256": "add6def86a098f8cb1c9ddfc62cae7c5eb99d75efc10623a0d2b278a5b351257",
+  "original_selected_mask_sha256": "0553e76e9a9d225e6c6e16a5b5a2ccb75e1794d16ee5c5608bc637a56504c4b2",
+  "original_source_diagnostic_sha256": "143b5a308a2d692ba78e9e081138613ee4509b18d00148c42fc0e0a53798652e",
+  "post_hoc_rule_not_preregistered": true,
+  "schema": "BEGLIN-Qv9-original-BF16-choice-conditional-GGN-postmask-trust-advisory/1",
+  "status": "FAIL_CLOSED_OUTPUT_GGN_LOCAL_TAYLOR_TRUST_WARNING"
+}
