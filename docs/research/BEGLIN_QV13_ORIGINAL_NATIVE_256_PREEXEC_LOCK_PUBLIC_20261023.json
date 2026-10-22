@@ -1,0 +1,148 @@
+{
+  "Qv12_RACE_test_not_reused": true,
+  "fixed_source28_packed_bytes": 765493248,
+  "frozen_masks_sha_and_bytes": {
+    "original_v2": {
+      "incremental_packed_bytes": 39911424,
+      "mask_sha256": "9324c5ec891d638f2713d3bbd4187399e1aae8a9a74df129dfabc4e8ea870212",
+      "n8_count": 28,
+      "projection_packed_bytes": 776896512,
+      "role_counts": {
+        "down_proj": 1,
+        "k_proj": 1,
+        "q_proj": 1,
+        "up_proj": 4,
+        "v_proj": 21
+      }
+    },
+    "random137": {
+      "incremental_packed_bytes": 28508160,
+      "mask_sha256": "9abbd72b221d5ff1fe93bed9223ab3e32701d834cc599cc795ca8b418005397e",
+      "n8_count": 28,
+      "projection_packed_bytes": 765493248,
+      "role_counts": {
+        "gate_proj": 2,
+        "k_proj": 10,
+        "o_proj": 2,
+        "q_proj": 1,
+        "up_proj": 1,
+        "v_proj": 12
+      }
+    },
+    "random211": {
+      "incremental_packed_bytes": 28508160,
+      "mask_sha256": "ac3ab51cb26759d8f49a9dbe9ccf3ee561db58e0ee9119edeca122d6bf7de6f8",
+      "n8_count": 28,
+      "projection_packed_bytes": 765493248,
+      "role_counts": {
+        "gate_proj": 2,
+        "k_proj": 10,
+        "o_proj": 2,
+        "q_proj": 1,
+        "up_proj": 1,
+        "v_proj": 12
+      }
+    },
+    "random389": {
+      "incremental_packed_bytes": 28508160,
+      "mask_sha256": "d0e24bf7fd8c7fd0d172968785eb09a34680c56320323ed1845a4d789d5bdf31",
+      "n8_count": 28,
+      "projection_packed_bytes": 765493248,
+      "role_counts": {
+        "gate_proj": 2,
+        "k_proj": 10,
+        "o_proj": 2,
+        "q_proj": 1,
+        "up_proj": 1,
+        "v_proj": 12
+      }
+    },
+    "random577": {
+      "incremental_packed_bytes": 28508160,
+      "mask_sha256": "906a3f2ec3d14fa097b58f6646ca475d796b46b4e848c45264fada33c9116831",
+      "n8_count": 28,
+      "projection_packed_bytes": 765493248,
+      "role_counts": {
+        "gate_proj": 2,
+        "k_proj": 10,
+        "o_proj": 2,
+        "q_proj": 1,
+        "up_proj": 1,
+        "v_proj": 12
+      }
+    },
+    "random73": {
+      "incremental_packed_bytes": 28508160,
+      "mask_sha256": "5086bc9e1764edbfbcbeb7089d3a9aabba7978d773e904d600b2bfdc899b2fde",
+      "n8_count": 28,
+      "projection_packed_bytes": 765493248,
+      "role_counts": {
+        "gate_proj": 2,
+        "k_proj": 10,
+        "o_proj": 2,
+        "q_proj": 1,
+        "up_proj": 1,
+        "v_proj": 12
+      }
+    },
+    "source_qv8": {
+      "incremental_packed_bytes": 28508160,
+      "mask_sha256": "9db954db6ba690d92dd96ee1638b76afe53de2d637aab462b4e83de90cc35922",
+      "n8_count": 28,
+      "projection_packed_bytes": 765493248,
+      "role_counts": {
+        "gate_proj": 2,
+        "k_proj": 10,
+        "o_proj": 2,
+        "q_proj": 1,
+        "up_proj": 1,
+        "v_proj": 12
+      }
+    }
+  },
+  "native_input_manifests": {
+    "arc128": {
+      "count": 128,
+      "manifest_sha256": "081c7ce746db1a3abc0622c9daf6ea18440bb09268130050e9d5b1871bdb3287"
+    },
+    "ob128": {
+      "count": 128,
+      "manifest_sha256": "3a89e85e941945081bf1411e9de64cda294e18f7c1a587c8d5dd908c138505c5"
+    },
+    "pilot16": {
+      "count": 16,
+      "manifest_sha256": "938d7c540547b2c1cb24549aacd25a566ff197cadcd7d12dfe86afc293ebcfe6"
+    }
+  },
+  "no_native_Qv13_inference_before_this_freeze": true,
+  "no_per_question_text_or_labels_public": true,
+  "not_operational_promotion": true,
+  "packed_projection_reference_bytes": 736985088,
+  "prelock_sha256": "5cb944375fa271c4528b4846f4b3c22cdf8179d4a38a2f5c17babbc03c4df92a",
+  "private_qv13_full_lock_sha256": "79826eb944ac2a4f87b637a430471f069a3789da37cdb12a9b7d1060d49db9b8",
+  "same_byte_random_control_seed_count": 5,
+  "schema": "BEGLIN-Qv13-real-native-Qwen28-pre-eval-256-lock-public/1",
+  "selected_domains": {
+    "arc128": {
+      "eligible_count": 1163,
+      "id_order_sha256": "9fd1df47dd148089616815070892789610af339978d62bebb954d1ce2085ef35",
+      "prompt_tokens_min_max": [
+        53,
+        148
+      ],
+      "selected_count": 128,
+      "sha256": "c73ffe160af0c2ef3147cd04dc87bc2825abbd51722e3d2fe4bd8e7694fd3f1a"
+    },
+    "ob128": {
+      "eligible_count": 500,
+      "id_order_sha256": "cc6ed96d115e72118c8740f631a97a9824ea10acd2b7d34cf9b4362d89c2a24b",
+      "prompt_tokens_min_max": [
+        51,
+        98
+      ],
+      "selected_count": 128,
+      "sha256": "c298a1f14094d5ee4d186c978dfd708ef9b576c9fd185ea4a6e1e3bb4615a68f"
+    }
+  },
+  "status": "SOURCE_POLICY_AND_256_ARC_OPENBOOKQA_SHA_LOCKED_BEFORE_INFERENCE"
+}
