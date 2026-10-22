@@ -1,0 +1,175 @@
+{
+  "actual_private_independent_full_receipt_sha256": "57e4766da993561ff3264288fdb2d1c446ee89b0b44cf90aa29436d11718d9e9",
+  "authentic_original_C_0N8_1N8_2N8_binary_SHA256": {
+    "pair": "d40fd6d42e08b0bc9d5dd3c7f8e0a4f5bcaabb2d9de7310d89f033e02500e961",
+    "q4": "408e74ae8f268b350ec2fc39c4843b048983e23a84802dbd9c42d067a79fcf7c",
+    "single": "a054e68789fd6bc20a4bd815da5108b63361b14227b1fc4ab9e68a3b7b9a2711"
+  },
+  "automatic_precision_live_promotion": false,
+  "exact_output_is_real_endtask_NLL_not_GGN_proxy": true,
+  "low_load_latency_and_Genuine_Metal_speed_not_evaluated": true,
+  "native_pairwise_interaction_exact_finite_differences": {
+    "down_proj_10__k_proj_0": {
+      "actual_doubleton_NLL_recovery": 0.17427431434175816,
+      "ci_excludes_zero": false,
+      "exact_nonzero_sign_test_p": 0.210113525390625,
+      "interaction_excess_NLL_mean": 0.00975876401040783,
+      "interaction_excess_NLL_paired_bootstrap95": [
+        -0.02118739011902894,
+        0.04586654809983881
+      ],
+      "interaction_sign": "subadditive_improvement",
+      "naive_sum_singleton_NLL_recovery": 0.184033078352166,
+      "native_pair_correct": 7,
+      "nonadditivity_nonzero_numerically": true,
+      "per_article_subadditive_count": 11,
+      "per_article_superadditive_count": 5,
+      "singleton_components": [
+        "down_proj_10",
+        "k_proj_0"
+      ]
+    },
+    "down_proj_10__v_proj_20": {
+      "actual_doubleton_NLL_recovery": 0.2932994194599567,
+      "ci_excludes_zero": false,
+      "exact_nonzero_sign_test_p": 0.454498291015625,
+      "interaction_excess_NLL_mean": 0.01627467624144392,
+      "interaction_excess_NLL_paired_bootstrap95": [
+        -0.00765934237150043,
+        0.04053443310724231
+      ],
+      "interaction_sign": "subadditive_improvement",
+      "naive_sum_singleton_NLL_recovery": 0.30957409570140065,
+      "native_pair_correct": 7,
+      "nonadditivity_nonzero_numerically": true,
+      "per_article_subadditive_count": 10,
+      "per_article_superadditive_count": 6,
+      "singleton_components": [
+        "down_proj_10",
+        "v_proj_20"
+      ]
+    },
+    "v_proj_20__k_proj_0": {
+      "actual_doubleton_NLL_recovery": 0.213466402330719,
+      "ci_excludes_zero": false,
+      "exact_nonzero_sign_test_p": 1.0,
+      "interaction_excess_NLL_mean": 0.004907333420755465,
+      "interaction_excess_NLL_paired_bootstrap95": [
+        -0.011568481019681274,
+        0.020997803687767387
+      ],
+      "interaction_sign": "subadditive_improvement",
+      "naive_sum_singleton_NLL_recovery": 0.21837373575147448,
+      "native_pair_correct": 7,
+      "nonadditivity_nonzero_numerically": true,
+      "per_article_subadditive_count": 8,
+      "per_article_superadditive_count": 8,
+      "singleton_components": [
+        "v_proj_20",
+        "k_proj_0"
+      ]
+    }
+  },
+  "native_singleton_gains_on_new_RACE": {
+    "down_proj_10": {
+      "correct_change": 0,
+      "gain_95CI": [
+        -0.0957274786370492,
+        0.4090957316537156
+      ],
+      "improves_per_article_count": 8,
+      "mean_NLL_gain_allQ4_minus_singleN8": 0.13761671915104606
+    },
+    "k_proj_0": {
+      "correct_change": 0,
+      "gain_95CI": [
+        -0.03231948780553894,
+        0.13592595292036855
+      ],
+      "improves_per_article_count": 6,
+      "mean_NLL_gain_allQ4_minus_singleN8": 0.04641635920111993
+    },
+    "v_proj_20": {
+      "correct_change": 0,
+      "gain_95CI": [
+        -0.004457074351886975,
+        0.3747653899915255
+      ],
+      "improves_per_article_count": 10,
+      "mean_NLL_gain_allQ4_minus_singleN8": 0.17195737655035453
+    }
+  },
+  "native_summary": {
+    "down_proj_10": {
+      "correct": 7,
+      "log_sha256": "912c29e4fac7209f4239bfb2ed12c2dc7d6d8f6fb9f92ef178d83d3370b7a100",
+      "mean_fullvocab_correct_token_NLL": 1.5543751034674018,
+      "n": 16,
+      "n8_count": 1,
+      "q4_count": 195
+    },
+    "down_proj_10__k_proj_0": {
+      "correct": 7,
+      "log_sha256": "ceb6f2e43c7a56aec6715f8ed69caab7b2dac1c64fb85b26dc3892dc2e300616",
+      "mean_fullvocab_correct_token_NLL": 1.5177175082766898,
+      "n": 16,
+      "n8_count": 2,
+      "q4_count": 194
+    },
+    "down_proj_10__v_proj_20": {
+      "correct": 7,
+      "log_sha256": "967f10ab7fd850ea8487bdfd423ab0db1bc73181a17f6ef876e31e1133938c4d",
+      "mean_fullvocab_correct_token_NLL": 1.3986924031584913,
+      "n": 16,
+      "n8_count": 2,
+      "q4_count": 194
+    },
+    "k_proj_0": {
+      "correct": 7,
+      "log_sha256": "ad3831b9790cfc44430bb9f15115d381942bb7437073da5af3640e43d48d907b",
+      "mean_fullvocab_correct_token_NLL": 1.645575463417328,
+      "n": 16,
+      "n8_count": 1,
+      "q4_count": 195
+    },
+    "q4": {
+      "correct": 7,
+      "log_sha256": "165c0c1c64bcf616c0bc59f5f346b92e7137e3b48d53d8da0a68a5108e27a429",
+      "mean_fullvocab_correct_token_NLL": 1.691991822618448,
+      "n": 16,
+      "n8_count": 0,
+      "q4_count": 196
+    },
+    "v_proj_20": {
+      "correct": 7,
+      "log_sha256": "2f588a80385b253e508fcdb4596ce6d7ae1a4c1f3ab7ddaf3e2a0e518f7f0149",
+      "mean_fullvocab_correct_token_NLL": 1.5200344460680935,
+      "n": 16,
+      "n8_count": 1,
+      "q4_count": 195
+    },
+    "v_proj_20__k_proj_0": {
+      "correct": 7,
+      "log_sha256": "49540737ff4c30905cadf1b44a178f98a3f9e8d8281581b6e99d4c0482b42f39",
+      "mean_fullvocab_correct_token_NLL": 1.478525420287729,
+      "n": 16,
+      "n8_count": 2,
+      "q4_count": 194
+    }
+  },
+  "new_RACEtest16_not_used_to_select_tensors": true,
+  "new_RACEtest16_private_sha256": "0650f791937f0d924706db6462b7f5e370fc58c1819b1228e91402d4937ca63e",
+  "number_pair_ci_excludes_zero": 0,
+  "observed_nonzero_pair_interaction_count": 3,
+  "only_pairs_two_n8_vs_singletons_one_n8_not_official_28n8_budget": true,
+  "paired_article_bootstrap_resamples": 5000,
+  "prelock_sha256": "a565bdec341d675ce52a37132b06355760c2fef96b8e4329c17508a237e4374f",
+  "preselected_three_roles_from_previous_RACE16_only": true,
+  "prior_Qv11_articleIDs_disjoint": true,
+  "same_model_multiple_existing_Qv11_Qv12_public_test_not_generalization": true,
+  "sample_size_16_articles_no_multi_test_adjustment": true,
+  "schema": "BEGLIN-Qv12-real-native-Qwen28-twoN8-interactions-7arm-RACEtest16-independently-audited/1",
+  "seed": 20261023,
+  "source_original_model_and_C_NEON_kernels_not_changed": true,
+  "status": "PASS_7X16_ORIGINAL_BEGLIN_C_TRUE_SINGLE_AND_PAIR_TWO_N8_INTERACTION"
+}

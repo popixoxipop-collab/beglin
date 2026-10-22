@@ -1,0 +1,37 @@
+{
+  "RACE_new_test16_private_SHA256": "0650f791937f0d924706db6462b7f5e370fc58c1819b1228e91402d4937ca63e",
+  "native_endtask_NLL_not_observed_at_freeze": true,
+  "new_test16_article_id_order_sha256": "0531388fba1a6b543b900e3feb67206c44dcb20bda993da6c01acd972852d083",
+  "new_test16_disjoint_original_article_ids": true,
+  "new_test16_distinct_article_count": 16,
+  "new_test16_prompt_len_range": [
+    161,
+    208
+  ],
+  "no_operational_promotion": true,
+  "number_prior_articles_excluded_during_selection": 25,
+  "number_valid_eligible_before_16_article_selection": 43,
+  "old_Qv11_RACE_test16_SHA256": "0de242b608837bd29ed72db99f1e910626753e2b27ea6ada9a24bdf864c96499",
+  "old_Qv11_source_outcome_SHA256": "026d3454a63168acee908e57696f61a73e3c8f883eab27b453e8b77ddda2fe15",
+  "prelock_SHA256": "a565bdec341d675ce52a37132b06355760c2fef96b8e4329c17508a237e4374f",
+  "preselected_source_observed_singleton_outcome_reused": true,
+  "preselected_tensors": [
+    {
+      "layer": 10,
+      "observed_Qv11_prior_source16_improvement_NLL": 0.3620749266253205,
+      "role": "down_proj"
+    },
+    {
+      "layer": 20,
+      "observed_Qv11_prior_source16_improvement_NLL": 0.24365650534419672,
+      "role": "v_proj"
+    },
+    {
+      "layer": 0,
+      "observed_Qv11_prior_source16_improvement_NLL": 0.17514799742835097,
+      "role": "k_proj"
+    }
+  ],
+  "schema": "BEGLIN-Qv12-prelocked-three-native-singleton-and-three-pair-original-RACEtest16/1",
+  "status": "FROZEN_THREE_TENSORS_SIX_NATIVE_UPGRADES_AND_16_NEW_RACE_ARTICLES_BEFORE_EXECUTION"
+}

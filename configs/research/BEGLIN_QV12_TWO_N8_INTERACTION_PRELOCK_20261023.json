@@ -1,0 +1,58 @@
+{
+  "schema": "BEGLIN-Qv12-two-tensor-native-Qwen-pair-interaction-prereg/1",
+  "date": "2026-10-23",
+  "status": "FROZEN_PAIR_AND_NEW_RACE_TEST_DESIGN_BEFORE_NATIVE_2N8_AND_1N8_RUN",
+  "parent_research_commit": "6b2c9e86e4cac7196044f88b492232c1a5d2d9da",
+  "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+  "model_HF_rev": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "prior_Qv11_7arm_true_N8_public_audit_SHA256": "026d3454a63168acee908e57696f61a73e3c8f883eab27b453e8b77ddda2fe15",
+  "prior_Qv11_original_test16_private_SHA256": "0de242b608837bd29ed72db99f1e910626753e2b27ea6ada9a24bdf864c96499",
+  "selection_basis": "Rank original Qv11 RACEtest16 actual fullmodel native allQ4-minus-single-N8 mean correct answer next-token fullvocab NLL, retain best single for three different roles. This uses previous Qv11 development evaluation and MUST be considered prior-data-driven, not independent source-only.",
+  "three_preselected_intervention_tensors": [
+    {
+      "role": "down_proj",
+      "layer": 10,
+      "observed_Qv11_prior_source16_improvement_NLL": 0.3620749266253205
+    },
+    {
+      "role": "v_proj",
+      "layer": 20,
+      "observed_Qv11_prior_source16_improvement_NLL": 0.24365650534419672
+    },
+    {
+      "role": "k_proj",
+      "layer": 0,
+      "observed_Qv11_prior_source16_improvement_NLL": 0.17514799742835097
+    }
+  ],
+  "planned_arms": [
+    "q4",
+    "down_proj_10",
+    "v_proj_20",
+    "k_proj_0",
+    "down_proj_10__v_proj_20",
+    "down_proj_10__k_proj_0",
+    "v_proj_20__k_proj_0"
+  ],
+  "precision_contract": "Q4 arm exactly 0 n8 +196 Q4; singleton exactly 1 n8 +195 Q4; pair exactly 2 n8 +194 Q4; all other original model code, quantization kernels and BF16 source weights unchanged.",
+  "C_native_build_contract": "Original SHA-audited Qv5 mixed C research source copied twice: cardinality assert total_n8!=28 -> !=1 or !=2; no other semantic modifications, allow log messages only; original Q4 base C executable unchanged. Compare masks/roles/logs SHA in independent audit.",
+  "held_dataset": "ehovy/race",
+  "held_revision": "2fec9fd81f1dc971569a9b729c43f2f0e6436637",
+  "held_config": "middle",
+  "held_split": "test",
+  "held_article_count": 16,
+  "held_selection": "Official revision original RACE middle test, choose next 16 DISTINCT valid complete untruncated articles by SHA256(rev+'/test/'+article_id+'/'+question), explicitly excluding every article ID in prior Qv11 sealed RACEtest16. Use same original Qwen ChatML <=208 tokens, four distinct single-token A/B/C/D completion labels.",
+  "held_not_pristine_model_pretraining": "Public RACEtest16 is newly selected relative to Qv11 but could have been seen in base-model pretraining; 16 examples exploratory, not globally untouched validation.",
+  "per_question_loss": "Original actual BEGLIN native full vocabulary normalized correct answer letter teacher forced NLL; accuracy argmax among A/B/C/D.",
+  "interaction_definition": "For each pair i,j and each article s, I_ij(s)=NLL_Q4+i+j(s)-NLL_Q4+i(s)-NLL_Q4+j(s)+NLL_Q4(s). Mean I<0 indicates superadditive NLL gain (negative interaction); I>0 indicates subadditive NLL gain. Compare only within same exact article/token data.",
+  "interaction_subtlety": "This finite difference isolates joint effect of quantization decisions relative to full Q4, not pure Hessian or inherent causal importance of trained model weights; the 1/2-n8 C binaries have different mask-cardinality guard but identical original NEON kernels and model arithmetic.",
+  "expected_additive_pair_gain": "Predicted combined NLL improvement G_i+G_j using single N8 gains G_i=NLL_Q4-NLL_i measured prospectively on new held cohort, not previous Qv11 development means. Test pair actual G_ij and interaction residual.",
+  "statistics": "Bootstrap 5000 paired-by-article resamples, fixed seed 20261023 for pair I_ij means and singleton recovery. Optionally exact paired sign test; all 3 pair comparisons are exploratory and no multiple test correction.",
+  "source_to_eval_leakage_policy": "Previous RACE16 source-selected pairs, evaluation new disjoint RACE test16 with prior article IDs excluded; do not refit or reselect pairs from new test outputs.",
+  "constraints": "Total 2-n8 in pair is not budget-matched to official 28-n8 mixed policy; role shapes yield differing incremental memory and latency. Do not claim improved 28-of-196 allocator or final throughput.",
+  "no_live_promotion": true,
+  "no_main_merge": true,
+  "no_operator_release_change": true,
+  "no_automatic_precision_serving": true,
+  "privacy": "Original BF16 model weights, raw source C library binaries, per-question native logs and tokens under lab_local only; public commit has prelock, separate CPU intervention code, aggregate SHA audit and negative/positive handoff."
+}
