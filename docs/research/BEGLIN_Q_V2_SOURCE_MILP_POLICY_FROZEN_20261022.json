@@ -1,0 +1,68 @@
+{
+  "async_full_model_not_implemented": true,
+  "date": "2026-10-22",
+  "eval_prompts_not_used_in_source_optimizer": true,
+  "n8_selected": 28,
+  "native_MIP_gap": 0,
+  "native_async_stage_receipt_SHA256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+  "native_mip_status": 0,
+  "native_source_quality_receipt_SHA256": "7b3ad80294275807cb3775601915b18ec3caeeef430849d8cea48389b3623616",
+  "original_196_tensors": 196,
+  "packed_projection_budget_bytes": 830570496,
+  "packed_projection_bytes": 776896512,
+  "policy_is_from_source_only_12_public_calibration_prompts": true,
+  "policy_mask_SHA256": "9324c5ec891d638f2713d3bbd4187399e1aae8a9a74df129dfabc4e8ea870212",
+  "policy_text": "q_proj 25\nk_proj 0\nv_proj 3\nv_proj 4\nv_proj 5\nv_proj 6\nv_proj 7\nv_proj 8\nv_proj 9\nv_proj 10\nv_proj 11\nv_proj 12\nv_proj 13\nv_proj 14\nv_proj 15\nv_proj 16\nv_proj 17\nv_proj 18\nv_proj 19\nv_proj 20\nv_proj 21\nv_proj 22\nv_proj 23\nup_proj 1\nup_proj 2\nup_proj 3\nup_proj 5\ndown_proj 1\n",
+  "private_full_MILP_receipt_SHA256": "749d8648478b1a4b8c521de56b50821d224f85f8f247859a1d5c7d16994e068e",
+  "q4_selected": 168,
+  "schema": "BEGLIN-Qv2-activation-async-source-frozen-policy/1",
+  "scientific_Q_quality_VERDICT": "NO_VERDICT",
+  "score_independently_recomputed_from_published_source_196_numbers": true,
+  "selected_per_role_layers": {
+    "down_proj": [
+      1
+    ],
+    "gate_proj": [],
+    "k_proj": [
+      0
+    ],
+    "o_proj": [],
+    "q_proj": [
+      25
+    ],
+    "up_proj": [
+      1,
+      2,
+      3,
+      5
+    ],
+    "v_proj": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23
+    ]
+  },
+  "source_async_graph_hypothetical_predicted_ms": 89.71108574999988,
+  "source_calibration_quality_diagonal_gain": 1.536327206456,
+  "source_original_Qwen_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "source_serial_predicted_ms": 91.93007907197867,
+  "status": "MIP_OPTIMAL_SOURCE_ONLY_BEFORE_NATIVE_EVAL"
+}
