@@ -1,0 +1,124 @@
+{
+  "baseline_projection_packed_bytes": 736985088,
+  "data": {
+    "down_proj_10": {
+      "added_bytes": 6881280,
+      "correct": 7,
+      "gain_q4": 0.13761671915104623,
+      "n8_count": 1,
+      "nll": 1.5543751034674018
+    },
+    "down_proj_10__k_proj_0": {
+      "added_bytes": 7077888,
+      "correct": 7,
+      "gain_q4": 0.17427431434175822,
+      "n8_count": 2,
+      "nll": 1.5177175082766898
+    },
+    "down_proj_10__v_proj_20": {
+      "added_bytes": 7077888,
+      "correct": 7,
+      "gain_q4": 0.29329941945995675,
+      "n8_count": 2,
+      "nll": 1.3986924031584913
+    },
+    "k_proj_0": {
+      "added_bytes": 196608,
+      "correct": 7,
+      "gain_q4": 0.04641635920111997,
+      "n8_count": 1,
+      "nll": 1.645575463417328
+    },
+    "q4": {
+      "added_bytes": 0,
+      "correct": 7,
+      "gain_q4": 0.0,
+      "n8_count": 0,
+      "nll": 1.691991822618448
+    },
+    "v_proj_20": {
+      "added_bytes": 196608,
+      "correct": 7,
+      "gain_q4": 0.1719573765503546,
+      "n8_count": 1,
+      "nll": 1.5200344460680935
+    },
+    "v_proj_20__k_proj_0": {
+      "added_bytes": 393216,
+      "correct": 7,
+      "gain_q4": 0.21346640233071912,
+      "n8_count": 2,
+      "nll": 1.478525420287729
+    }
+  },
+  "dominated_by": {
+    "down_proj_10": [
+      "v_proj_20",
+      "v_proj_20__k_proj_0"
+    ],
+    "down_proj_10__k_proj_0": [
+      "down_proj_10__v_proj_20",
+      "v_proj_20__k_proj_0"
+    ],
+    "k_proj_0": [
+      "v_proj_20"
+    ]
+  },
+  "limitation": "Out-of-sample superiority, original 28-n8 mask, native RSS and throughput NOT measured",
+  "pareto_frontier": [
+    "q4",
+    "v_proj_20",
+    "v_proj_20__k_proj_0",
+    "down_proj_10__v_proj_20"
+  ],
+  "private_aggregate_only": {
+    "all_seven_conditions_same_correct_items": true,
+    "paired_comparisons": [
+      {
+        "articles_candidate_better": 7,
+        "articles_candidate_worse": 9,
+        "bootstrap95": [
+          -0.17142155058620046,
+          0.3972203875444857
+        ],
+        "candidate": "v_proj_20__k_proj_0",
+        "comparator": "down_proj_10",
+        "mean_NLL_advantage": 0.07584968317967296,
+        "note": "Post-hoc unadjusted article-paired percentile bootstrap, 10000 draws; CI crossing zero is inconclusive"
+      },
+      {
+        "articles_candidate_better": 7,
+        "articles_candidate_worse": 9,
+        "bootstrap95": [
+          -0.20001416716723522,
+          0.3316056966357216
+        ],
+        "candidate": "v_proj_20__k_proj_0",
+        "comparator": "down_proj_10__k_proj_0",
+        "mean_NLL_advantage": 0.03919208798896087,
+        "note": "Post-hoc unadjusted article-paired percentile bootstrap, 10000 draws; CI crossing zero is inconclusive"
+      },
+      {
+        "articles_candidate_better": 7,
+        "articles_candidate_worse": 9,
+        "bootstrap95": [
+          -0.21300244853759148,
+          0.3276170741181196
+        ],
+        "candidate": "v_proj_20",
+        "comparator": "down_proj_10",
+        "mean_NLL_advantage": 0.034340657399308486,
+        "note": "Post-hoc unadjusted article-paired percentile bootstrap, 10000 draws; CI crossing zero is inconclusive"
+      }
+    ],
+    "raw_data_exported": false,
+    "source_sha256": "57e4766da993561ff3264288fdb2d1c446ee89b0b44cf90aa29436d11718d9e9"
+  },
+  "sample_n_articles": 16,
+  "schema": "BEGLIN-Qv12-exploratory-packed-byte-pareto/1",
+  "source_sha256": {
+    "audit": "89771cd5dafed2b8ee299d328125803ee039aaa2efc9195c5847a2bce83f8bac",
+    "cost": "29caa29298420cdbcd2bb6b7c1789a99667036d515925ef6c2b93d52d4175073"
+  },
+  "status": "EXPLORATORY_QV12_COHORT_ONLY_NOT_QV13_POLICY_VALIDATION"
+}
