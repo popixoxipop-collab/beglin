@@ -1,0 +1,37 @@
+{
+  "correct": 81,
+  "date_KST": "2026-10-23",
+  "evaluation_group": "ARC-Challenge test 128",
+  "frozen_ARC_input_sha256": "081c7ce746db1a3abc0622c9daf6ea18440bb09268130050e9d5b1871bdb3287",
+  "heldout_except_pilot_first8": {
+    "correct": 78,
+    "mean_gold_fullvocab_NLL": 1.8465034624785976,
+    "n": 120,
+    "not_an_independent_pre_registered_success_claim": true
+  },
+  "independent_audit": "original C per-question NLL/logits choice and source SHA contract re-parsed",
+  "interpretation": "One policy observed; no comparative 128 or 256 policy advantage; fullvocab gold-token NLL is not multiple-choice conditional NLL",
+  "mean_gold_fullvocab_NLL": 1.9555345736439933,
+  "n": 128,
+  "native_binary_sha256": "408e74ae8f268b350ec2fc39c4843b048983e23a84802dbd9c42d067a79fcf7c",
+  "native_layer_count": 28,
+  "native_log_sha256": "fed8309f60844d47f6a2606151cff545db286b6f401998c3c1786de1da82c5b6",
+  "native_policy": "all Q4 (n8 0, Q4 196)",
+  "native_receipt_sha256": "8a150740e8086583d971d190a6e0f5578569ad9d476c8eadacbbe41a0173ced5",
+  "no_raw_case_or_tokens_or_individual_predictions_exported": true,
+  "no_runtime_release_or_model_kernel_change": true,
+  "packed_projection_bytes": 736985088,
+  "peak_process_rss_observed_bytes": 4836507648,
+  "pilot_first8_exact_repeat": {
+    "n": 8,
+    "same_NLL_all": true,
+    "same_correct_all": true
+  },
+  "schema": "BEGLIN-Qv13-first-full-ARC128-original-Q4-native-C-public-checkpoint/1",
+  "source_branch": "research/qv13-byte-budget-20261023",
+  "source_model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "source_prelock_sha256": "5cb944375fa271c4528b4846f4b3c22cdf8179d4a38a2f5c17babbc03c4df92a",
+  "source_private_lock_sha256": "79826eb944ac2a4f87b637a430471f069a3789da37cdb12a9b7d1060d49db9b8",
+  "status": "Q4_ARC128_NATIVE_128_GOLD_NLL_REPARSED_ONLY_1_OF_16_FULL_ARMS",
+  "wall_seconds": 517.204
+}
