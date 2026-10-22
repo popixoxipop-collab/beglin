@@ -42,7 +42,7 @@ def verify_source():
         raise RuntimeError("original prelock not authoritative")
     if policy["status"]!="SOURCE_ONLY_OPTIMAL_MILP_POLICY_FROZEN_BEFORE_NEW_EVAL":
         raise RuntimeError("v3 selected after viewing model output")
-    if policy["source_policy_mask_sha256"]!=MASK_SHA or policy["original_source_sha256"] if False else False:
+    if policy["source_policy_mask_sha256"]!=MASK_SHA:
         raise RuntimeError("impossible branch")
     ids=json.loads(private(ORIGINAL_INPUTS/"pre_eval_input_receipt.json"))
     if sha(private(ORIGINAL_INPUTS/"pre_eval_input_receipt.json"))!=INPUT_SHA:
