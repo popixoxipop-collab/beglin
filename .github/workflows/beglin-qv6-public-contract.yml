@@ -1,0 +1,25 @@
+name: BEGLIN Qv6 Fisher Public Contracts
+on:
+  push:
+    branches:
+      - "research/qv6-*"
+    paths:
+      - "configs/research/BEGLIN_QV6_*"
+      - "docs/research/BEGLIN_QV6_*"
+      - "research/oml_acs/q_v6_*"
+      - "tests/research/test_q_v6_public_contract.py"
+      - ".github/workflows/beglin-qv6-public-contract.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify public BF16 Fisher source and fixed 48 OpenBookQA Qv6 contracts
+        run: python -m unittest discover -s tests/research -p 'test_q_v6_public_contract.py' -v

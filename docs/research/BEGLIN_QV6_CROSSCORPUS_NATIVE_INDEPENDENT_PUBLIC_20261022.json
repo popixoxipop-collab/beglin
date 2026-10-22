@@ -1,0 +1,96 @@
+{
+  "Fisher_source_independent_audit_sha256": "4b192a47e63af3b1b1074f1647ca77954b483b6ffde2f51c88dcf5701d4c7088",
+  "HF_original_BF16_NLL": 0.9721511603087644,
+  "HF_original_BF16_correct": 35,
+  "automated_live_promotion": false,
+  "constrained_policy_overlap": {
+    "24_128": {
+      "policy_28_overlap": 12,
+      "policy_jaccard": 0.2727272727272727,
+      "source_gradient_rank_spearman": 0.4135055662249281
+    },
+    "24_64": {
+      "policy_28_overlap": 13,
+      "policy_jaccard": 0.3023255813953488,
+      "source_gradient_rank_spearman": 0.3511335654917961
+    },
+    "64_128": {
+      "policy_28_overlap": 22,
+      "policy_jaccard": 0.6470588235294118,
+      "source_gradient_rank_spearman": 0.8896397293786708
+    }
+  },
+  "generalization_quality_superiority_proven": false,
+  "native_six": false,
+  "native_summary": {
+    "q4": {
+      "accuracy": 0.5208333333333334,
+      "correct": 25,
+      "correct_answer_NLL": 1.5684085936526906
+    },
+    "v5_fisher_24": {
+      "accuracy": 0.625,
+      "correct": 30,
+      "correct_answer_NLL": 1.5167810821300665
+    },
+    "v6_fisher_128": {
+      "accuracy": 0.6666666666666666,
+      "correct": 32,
+      "correct_answer_NLL": 1.3018424380955258
+    },
+    "v6_fisher_64": {
+      "accuracy": 0.6041666666666666,
+      "correct": 29,
+      "correct_answer_NLL": 1.1286276834246445
+    }
+  },
+  "notes": "One model and one other science-domain corpus, 48 development questions; no speed/Metal claim",
+  "original_private_audit_sha256": "01ee40a0890074001527ba8fdd18d2a5fad12759c0080fd27c6c7c11ce05d0f3",
+  "paired_q4_comparisons": {
+    "v5_fisher_24": {
+      "candidate_lower_NLL_in_items": 32,
+      "candidate_minus_Q4_NLL_mean": -0.05162751152262529,
+      "candidate_minus_Q4_correct_count": 5,
+      "paired_bootstrap_95_percentile": [
+        -0.455913092916955,
+        0.3724163717483655
+      ]
+    },
+    "v6_fisher_128": {
+      "candidate_lower_NLL_in_items": 34,
+      "candidate_minus_Q4_NLL_mean": -0.2665661555571652,
+      "candidate_minus_Q4_correct_count": 7,
+      "paired_bootstrap_95_percentile": [
+        -0.5672659923922804,
+        0.03068243017342285
+      ]
+    },
+    "v6_fisher_64": {
+      "candidate_lower_NLL_in_items": 36,
+      "candidate_minus_Q4_NLL_mean": -0.4397809102280467,
+      "candidate_minus_Q4_correct_count": 4,
+      "paired_bootstrap_95_percentile": [
+        -0.7522892537015378,
+        -0.1417747360285366
+      ]
+    }
+  },
+  "schema": "BEGLIN-Qv6-independent-source-and-native-crosscorpus-audit/1",
+  "source64_and_128_milp_sha256": "56f63d90ebf779f41d692e3fc8f38f33a2152f4d492bd914d9b87b6a4beef4df",
+  "source_input_frozen_sha256": "c09831bf86c6eedebed433dc2a0398a0992afb19fddc9f86750c2d137d71d1b0",
+  "source_odd_even_reliability": {
+    "128": {
+      "negative_gain_tensors": 0,
+      "source_odd_even_spearman": 0.6273442293746863
+    },
+    "24": {
+      "negative_gain_tensors": 0,
+      "source_odd_even_spearman": 0.4796802907027708
+    },
+    "64": {
+      "negative_gain_tensors": 0,
+      "source_odd_even_spearman": 0.5032759843492259
+    }
+  },
+  "status": "PASS_4_POLICY_48_REAL_APPLE_C_NATIVE_EXECUTIONS_AND_BF16_SOURCE_AUDIT"
+}
