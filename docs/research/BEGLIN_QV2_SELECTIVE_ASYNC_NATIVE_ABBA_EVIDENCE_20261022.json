@@ -1,0 +1,155 @@
+{
+  "V6_24_consumed_holdout_or_real_task_AUROC_touched": false,
+  "actual_fastest_exploratory": "gu6",
+  "actual_modes": {
+    "both1": {
+      "observed_samples_ms": [
+        132.16,
+        131.33
+      ],
+      "serial_div_candidate_mean_ratio": 0.6963072602375802,
+      "two_sweep_mean_ms": 131.745
+    },
+    "both6": {
+      "observed_samples_ms": [
+        92.25,
+        102.86
+      ],
+      "serial_div_candidate_mean_ratio": 0.9403413459074368,
+      "two_sweep_mean_ms": 97.555
+    },
+    "frozen": {
+      "observed_samples_ms": [
+        92.83,
+        91.34
+      ],
+      "serial_div_candidate_mean_ratio": 0.9961991638160395,
+      "two_sweep_mean_ms": 92.08500000000001
+    },
+    "gu1": {
+      "observed_samples_ms": [
+        125.3,
+        126.51
+      ],
+      "serial_div_candidate_mean_ratio": 0.7286049005202335,
+      "two_sweep_mean_ms": 125.905
+    },
+    "gu6": {
+      "observed_samples_ms": [
+        91.56,
+        91.47
+      ],
+      "serial_div_candidate_mean_ratio": 1.0024039774900289,
+      "two_sweep_mean_ms": 91.515
+    },
+    "qkv1": {
+      "observed_samples_ms": [
+        97.55,
+        98.2
+      ],
+      "serial_div_candidate_mean_ratio": 0.9372669220945083,
+      "two_sweep_mean_ms": 97.875
+    },
+    "qkv6": {
+      "observed_samples_ms": [
+        92.08,
+        108.73
+      ],
+      "serial_div_candidate_mean_ratio": 0.91364971863951,
+      "two_sweep_mean_ms": 100.405
+    },
+    "serial": {
+      "observed_samples_ms": [
+        91.39,
+        92.08
+      ],
+      "serial_div_candidate_mean_ratio": 1,
+      "two_sweep_mean_ms": 91.735
+    }
+  },
+  "candidate_eligible_to_auto_enable": false,
+  "date": "2026-10-22",
+  "fastest_exploratory_speed_ratio": 1.0024039774900289,
+  "first_logits_sha256": "b46dc07b9b5ff32271a807d18c49444d8f0c33d0fb5533b17d83006de5d33d1e",
+  "first_vocab_logits_151936_bitwise_equal_serial_vs_fastest": true,
+  "guard_default_BEGLIN_QV2_NATIVE_ASYNC": "0",
+  "guard_default_BEGLIN_QV2_NATIVE_STAGE_POLICY": "serial",
+  "limitations": [
+    "Mode fastest derived from same public development bench inputs, and two sweeps of native best-of-three one-token timing are not enough for reliable sustained throughput.",
+    "CPU real pthread QKV and GateUp parallel stage tests are valid but net speed gain is <5% conservative engineering threshold; runtime default stays OFF.",
+    "Observed stage time savings are calibrated from layer0 standalone projections, not full-model per-layer or multi-request latency.",
+    "Production cannot be auto-activated; independent fresh stress, thermal, parallel user requests and CPU/Metal interactions remain untested.",
+    "Same source-only quantization mask across modes; this experiment is not adaptive per-input bit relocation.",
+    "Source-activation diagonal proxy and real mixed-model quality still fail to beat prior random and q4 controls on the public development set.",
+    "No provenance audit of old V6 24 consumed identities, no independent IID/OOD task AUROC; no final Q research hypothesis acceptance."
+  ],
+  "main_and_immutable_operator_unchanged": true,
+  "measurement_scope": "same frozen precision bitmask, same original Qwen BF16 source weights, same native binary; two reverse-order sweeps, native fastest-of-three one-token benchmark per run",
+  "meets_required_5pct_in_both_sweeps": false,
+  "native_PPL_serial_equals_candidate": 827.4999,
+  "native_Q4_parallelism": "Per-role independent Q4 1-thread or 6-thread pools; pthread QKV and GateUp join barriers before consumers",
+  "native_cpu": "Apple Silicon EOE (Qwen2.5-1.5B 28-layer)",
+  "native_thread_dispatch_evidence": {
+    "both_only_joined_each_trial": [
+      [
+        2184,
+        2184
+      ],
+      [
+        2184,
+        2184
+      ]
+    ],
+    "gateup_only_joined_each_trial": [
+      2184,
+      2184
+    ],
+    "qkv_only_joined_each_trial": [
+      2184,
+      2184
+    ]
+  },
+  "original_model_checkpoint_modified": false,
+  "posthoc_PPL_max_RSS_bytes": {
+    "gu6": 4869816320,
+    "serial": 4869275648
+  },
+  "previous_eight_prompt_native_quality_PPL": {
+    "all_q4": 727.9173,
+    "former_seed73_random_mixed": 552.702,
+    "original_bf16_widened_F32": 348.3639,
+    "v2_activation_ASYNC_MILP": 827.4999
+  },
+  "previous_mixed_precision_policy_quality_superiority": false,
+  "prior_blocked_per_tensor_causal_full_model_logit_intervention_retried": false,
+  "private_evidence_receipts_SHA256": {
+    "bench": "4273cbc5b002e2b4a64344f181a9e2a44cc0e75834feb13e166ddd0fabac0eed",
+    "build": "634e751d3befa18ce225ddeeb97fc120b677286719039f6933324423a955a19e",
+    "gate": "2217e93a9a140f11299073b5b99e19b9fa33c7fdb79db6cd02781f3afb6024c5",
+    "headroom": "68958cb5f24b95a70170be7f8c035a78105006bacf9c3ae38a8c2203209dde7c",
+    "independent": "82af3dd1dac03ee1982153f68cb084522b3f5cbec96c28412e781ec7de11fa85"
+  },
+  "protocol_prelock_SHA256": "140d65b63aa3cd5dfdfae4b0edd7bb13de7157a7600e3dfd485965de208621d6",
+  "public_eight_prompt_teacher_forced_positions": 131,
+  "research_native_binary_sha256": "64fff02ea6072469bbf8e033ea0769c87082aba868d84096427a4c58a9a3b39a",
+  "research_source_SHA256": "9e72eef553e3faa880e5f9ca3e49ff33346d618f2d3923f1d6bf0f172650958e",
+  "schema": "BEGLIN-Qv2-source-frozen-selective-native-async-stage-evidence/1",
+  "source_5pct_full_latency_required_saving_ms": 4.458095238095243,
+  "source_Amdahl_projection_is_not_hard_bound": true,
+  "source_QKV_GU_isolated_stage_saving_projection_ms": 4.589575375000932,
+  "source_Qwen_BF16_cache_revision": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "source_optimistic_full_speed_ratio_without_overhead": 1.0515506400686334,
+  "source_policy_sha256": "9324c5ec891d638f2713d3bbd4187399e1aae8a9a74df129dfabc4e8ea870212",
+  "source_remaining_join_and_contention_headroom_ms": 0.13148013690568838,
+  "status": "PASS_TECHNICAL_NATIVE_PARALLEL_STAGE_EXECUTION_BUT_NO_SPEED_ADMISSION",
+  "unchanged_source_only_policy_bits": {
+    "n8": 28,
+    "q4": 168
+  },
+  "verified_regressions": {
+    "failclosed_admission": "5/5 PASS",
+    "kernel_aware_old": "8/8 PASS",
+    "stage_native_test": "8/8 PASS",
+    "total": "21/21 PASS"
+  }
+}
