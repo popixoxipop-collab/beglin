@@ -1,0 +1,25 @@
+name: BEGLIN Qv7 Cross-Family Evidence
+on:
+  push:
+    branches:
+      - "research/qv7-*"
+    paths:
+      - "configs/research/BEGLIN_QV7_*"
+      - "docs/research/BEGLIN_QV7_*"
+      - "research/oml_acs/q_v7_*"
+      - "tests/research/test_q_v7_public_contract.py"
+      - ".github/workflows/beglin-qv7-public-contract.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check public cross-model BF16 Fisher and native C evidence
+        run: python -m unittest discover -s tests/research -p test_q_v7_public_contract.py -v

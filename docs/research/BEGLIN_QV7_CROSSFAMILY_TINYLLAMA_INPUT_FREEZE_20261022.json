@@ -1,0 +1,24 @@
+{
+  "automatic_policy_promotion_off": true,
+  "decoder_layers": 22,
+  "held_count": 48,
+  "held_eligible_four_option_candidates": 48,
+  "held_ids_sha256": "3fa1f3ec44e4cbd3f5c659a5957a65b10b0042c67caf41b99f9ee67c81da392f",
+  "held_private_sha256": "8807002e79afadcb2d150b32dffdefa204afb0d70678375a608b7900f18d0ab0",
+  "held_prompt_token_range": [
+    69,
+    120
+  ],
+  "live_release_unchanged": true,
+  "model_revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+  "model_type": "llama",
+  "no_source_or_model_logits_accessed": true,
+  "original_model_metadata_config_sha256": "486bedda3a6988332e60d9638a09ca4b260d34ebcf1b19e22cf3b140b63d8fe9",
+  "prelock_sha256": "1b5fa904cf11f25292720efc75f658fc10cedc8923236b4d5b0ae7e70d3e88c6",
+  "previous_OpenBookQA_val_ids_not_reused": true,
+  "schema": "BEGLIN-Qv7-cross-family-ARC64-test48-source-freeze/1",
+  "source_count": 64,
+  "source_ids_sha256": "40b473839a0992a1c6725711bee1e0749bba4d093d340a7df54d191c89510bce",
+  "source_private_sha256": "59c1d22197ba83ac3769049c01de4ae98414c678066ef6faa48fa2a0859bbe41",
+  "status": "FROZEN_LLAMA_MODEL_SOURCE64_AND_UNSEEN_TEST48_BEFORE_CALIBRATION"
+}

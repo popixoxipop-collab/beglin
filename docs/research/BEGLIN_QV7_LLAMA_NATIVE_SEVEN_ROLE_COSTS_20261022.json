@@ -1,0 +1,469 @@
+{
+  "actual_full_model_runtime_not_measured_here": true,
+  "layers": 22,
+  "native_kernel_library_sha256": "45187fab7f0e8a08c57a56b6fc79c11ccd794a0c8e7deec7e023e4850d36b80b",
+  "no_autopromotion": true,
+  "original_native_C_source_sha256": {
+    "gguf_transcode.c": "7371cc352226e912dbf42762e5e63a70e91acb5c90691d90e32401e18af7ec5f",
+    "qng64_dense.c": "cb985ec48cfa1f1f9ebe8411d12da5d3f73720c8acdcad51fc279a2b25ff8956",
+    "research/oml_acs/q_kernel_aware_profile_native.c": "7e4231bd5b6b447ec3163def72a5a57b7a996406641751bf2c0783c488b1df22",
+    "research/oml_acs/qng64_n8_repacked_neon.c": "19a3cdf92af1764233d0eac3e61339387c9de52568022508bea3538470e85c76"
+  },
+  "role_kernel_cost_measured": [
+    {
+      "example_input_type": "12 independent fixed-seed synthetic activation vectors; source BF16 weights authentic; no downstream labels",
+      "layer": 0,
+      "n8_with_f32_scales_bytes": 4456448,
+      "native_n8_repack_once_ms": 1.133000012487173,
+      "not_full_model_serving_timing": true,
+      "q4_with_f32_scales_bytes": 2359296,
+      "real_original_native_kernel_costs": {
+        "n8_repacked": {
+          "max_ms": 1.0675520946582158,
+          "median_ms": 1.0546353878453374,
+          "min_ms": 1.0229756589978933,
+          "repeated_kernel_medians_ms": [
+            1.0297187448789675,
+            1.0229756589978933,
+            1.0429062337304156,
+            1.0546353878453374,
+            1.064086837383608,
+            1.060493018788596,
+            1.0617639248569806,
+            1.0675520946582158,
+            1.0492152456815045
+          ]
+        },
+        "q4_1t": {
+          "max_ms": 0.6254131440073252,
+          "median_ms": 0.6221840934207042,
+          "min_ms": 0.6197847348327438,
+          "repeated_kernel_medians_ms": [
+            0.6254131440073252,
+            0.6210485783716043,
+            0.620232584575812,
+            0.6197847348327438,
+            0.6224166524286071,
+            0.6221840934207042,
+            0.624350660170118,
+            0.622326391749084,
+            0.6209930870682001
+          ]
+        },
+        "q4_6t": {
+          "max_ms": 0.17034374953558049,
+          "median_ms": 0.16546524905910096,
+          "min_ms": 0.16454855600992838,
+          "repeated_kernel_medians_ms": [
+            0.16952783335000277,
+            0.17034374953558049,
+            0.16526385055234036,
+            0.16454855600992838,
+            0.16546524905910096,
+            0.16887501503030458,
+            0.16759374799827734,
+            0.16531941946595907,
+            0.1646180171519518
+          ]
+        }
+      },
+      "role": "q_proj",
+      "shape": [
+        2048,
+        2048
+      ],
+      "source_original_BF16_weight_sha256": "9953c04a86d879f46184e1ea2c23eec01b463c00e9dba77a79cefcfdf17537d0"
+    },
+    {
+      "example_input_type": "12 independent fixed-seed synthetic activation vectors; source BF16 weights authentic; no downstream labels",
+      "layer": 0,
+      "n8_with_f32_scales_bytes": 557056,
+      "native_n8_repack_once_ms": 0.14224974438548088,
+      "not_full_model_serving_timing": true,
+      "q4_with_f32_scales_bytes": 294912,
+      "real_original_native_kernel_costs": {
+        "n8_repacked": {
+          "max_ms": 0.13743049930781126,
+          "median_ms": 0.134881935082376,
+          "min_ms": 0.13098609633743763,
+          "repeated_kernel_medians_ms": [
+            0.13098609633743763,
+            0.13259033827732006,
+            0.134881935082376,
+            0.1352049099902312,
+            0.13487498896817365,
+            0.13604864943772554,
+            0.13544088384757438,
+            0.13485065816591182,
+            0.13743049930781126
+          ]
+        },
+        "q4_1t": {
+          "max_ms": 0.08228824784358342,
+          "median_ms": 0.08086107360819976,
+          "min_ms": 0.08058683791508277,
+          "repeated_kernel_medians_ms": [
+            0.08228824784358342,
+            0.08137151598930359,
+            0.08081248961389065,
+            0.08086107360819976,
+            0.08058683791508277,
+            0.08137842329839866,
+            0.080649236527582,
+            0.08071524401505788,
+            0.08143057736257713
+          ]
+        },
+        "q4_6t": {
+          "max_ms": 0.060992975098391376,
+          "median_ms": 0.05736108869314194,
+          "min_ms": 0.05302776116877794,
+          "repeated_kernel_medians_ms": [
+            0.05981252373506626,
+            0.055017415434122086,
+            0.05736108869314194,
+            0.060992975098391376,
+            0.05302776116877794,
+            0.05479517858475447,
+            0.05428124374399582,
+            0.05999657635887464,
+            0.059892345840732254
+          ]
+        }
+      },
+      "role": "k_proj",
+      "shape": [
+        256,
+        2048
+      ],
+      "source_original_BF16_weight_sha256": "aaab0c2f98322e005a07b95673eace2eb3676302eb9c5439679c1915915268f8"
+    },
+    {
+      "example_input_type": "12 independent fixed-seed synthetic activation vectors; source BF16 weights authentic; no downstream labels",
+      "layer": 0,
+      "n8_with_f32_scales_bytes": 557056,
+      "native_n8_repack_once_ms": 0.19283313304185867,
+      "not_full_model_serving_timing": true,
+      "q4_with_f32_scales_bytes": 294912,
+      "real_original_native_kernel_costs": {
+        "n8_repacked": {
+          "max_ms": 0.13916326376299062,
+          "median_ms": 0.1356631595020493,
+          "min_ms": 0.13311459527661404,
+          "repeated_kernel_medians_ms": [
+            0.13674302802731594,
+            0.13916326376299062,
+            0.13311459527661404,
+            0.13393749638150135,
+            0.1352465090652307,
+            0.1369200957318147,
+            0.1356631595020493,
+            0.1353368085498611,
+            0.137156224809587
+          ]
+        },
+        "q4_1t": {
+          "max_ms": 0.08614240990330775,
+          "median_ms": 0.081927088710169,
+          "min_ms": 0.08082983549684286,
+          "repeated_kernel_medians_ms": [
+            0.08213194087147713,
+            0.08092708109567563,
+            0.08082983549684286,
+            0.08101043446610372,
+            0.081927088710169,
+            0.0809374808644255,
+            0.08614240990330775,
+            0.08551388358076413,
+            0.08343749990065892
+          ]
+        },
+        "q4_6t": {
+          "max_ms": 0.06304514439155658,
+          "median_ms": 0.0583923344189922,
+          "min_ms": 0.05661106357971827,
+          "repeated_kernel_medians_ms": [
+            0.0583923344189922,
+            0.06246524086842934,
+            0.057763924511770405,
+            0.05809376792361339,
+            0.06210415934522947,
+            0.06304514439155658,
+            0.05885419280578693,
+            0.058152868101994194,
+            0.05661106357971827
+          ]
+        }
+      },
+      "role": "v_proj",
+      "shape": [
+        256,
+        2048
+      ],
+      "source_original_BF16_weight_sha256": "315cbc419c3f54e067025bfe0d6f5fae41272e171ee59ed58eae4884de0cb15d"
+    },
+    {
+      "example_input_type": "12 independent fixed-seed synthetic activation vectors; source BF16 weights authentic; no downstream labels",
+      "layer": 0,
+      "n8_with_f32_scales_bytes": 4456448,
+      "native_n8_repack_once_ms": 1.2706252746284008,
+      "not_full_model_serving_timing": true,
+      "q4_with_f32_scales_bytes": 2359296,
+      "real_original_native_kernel_costs": {
+        "n8_repacked": {
+          "max_ms": 1.034107602511843,
+          "median_ms": 1.022371502282719,
+          "min_ms": 1.020520847911636,
+          "repeated_kernel_medians_ms": [
+            1.0330764343962073,
+            1.034107602511843,
+            1.0218611763169367,
+            1.0222118580713868,
+            1.0270312583694856,
+            1.0245000012218952,
+            1.020520847911636,
+            1.022239603723089,
+            1.022371502282719
+          ]
+        },
+        "q4_1t": {
+          "max_ms": 0.6425937560076515,
+          "median_ms": 0.6198054955651363,
+          "min_ms": 0.6184514301518599,
+          "repeated_kernel_medians_ms": [
+            0.6256075963998834,
+            0.6425937560076515,
+            0.6200416634480158,
+            0.618534783522288,
+            0.6200972323616346,
+            0.6198054955651363,
+            0.6191528324658672,
+            0.6184514301518599,
+            0.6186250053967038
+          ]
+        },
+        "q4_6t": {
+          "max_ms": 0.17779506742954254,
+          "median_ms": 0.16972577820221582,
+          "min_ms": 0.16655900981277227,
+          "repeated_kernel_medians_ms": [
+            0.17140281852334738,
+            0.16938541860630116,
+            0.16946873317162195,
+            0.17290969844907522,
+            0.17779506742954254,
+            0.16972577820221582,
+            0.1707812383150061,
+            0.16932643484324217,
+            0.16655900981277227
+          ]
+        }
+      },
+      "role": "o_proj",
+      "shape": [
+        2048,
+        2048
+      ],
+      "source_original_BF16_weight_sha256": "77fb6a30a2bf484b590f4d468a50bc29d7fd0873e6334f06a97e0ea732dabb82"
+    },
+    {
+      "example_input_type": "12 independent fixed-seed synthetic activation vectors; source BF16 weights authentic; no downstream labels",
+      "layer": 0,
+      "n8_with_f32_scales_bytes": 12255232,
+      "native_n8_repack_once_ms": 3.2748328521847725,
+      "not_full_model_serving_timing": true,
+      "q4_with_f32_scales_bytes": 6488064,
+      "real_original_native_kernel_costs": {
+        "n8_repacked": {
+          "max_ms": 2.8949721793954573,
+          "median_ms": 2.825885429047048,
+          "min_ms": 2.8202812342594066,
+          "repeated_kernel_medians_ms": [
+            2.8583507519215345,
+            2.8949721793954573,
+            2.8231805578495064,
+            2.825885429047048,
+            2.8570624999701977,
+            2.8357048286125064,
+            2.822243026457727,
+            2.8202812342594066,
+            2.8211631579324603
+          ]
+        },
+        "q4_1t": {
+          "max_ms": 1.7770625030001004,
+          "median_ms": 1.7035659402608871,
+          "min_ms": 1.6980000073090196,
+          "repeated_kernel_medians_ms": [
+            1.7035659402608871,
+            1.6980000073090196,
+            1.7111110889042418,
+            1.7136076542859275,
+            1.6998611002539594,
+            1.707788168763121,
+            1.701326419909795,
+            1.6991597367450595,
+            1.7770625030001004
+          ]
+        },
+        "q4_6t": {
+          "max_ms": 0.36987852460394305,
+          "median_ms": 0.36720143786321086,
+          "min_ms": 0.36173267289996147,
+          "repeated_kernel_medians_ms": [
+            0.36173267289996147,
+            0.36548256563643616,
+            0.3686910107110937,
+            0.36987852460394305,
+            0.3661145844186346,
+            0.36231249881287414,
+            0.3691006762286027,
+            0.36926730535924435,
+            0.36720143786321086
+          ]
+        }
+      },
+      "role": "gate_proj",
+      "shape": [
+        5632,
+        2048
+      ],
+      "source_original_BF16_weight_sha256": "29b0224f4d3d3bf9ef0812520a97c2cf4a4997bfea0638649d182af0ef3ee491"
+    },
+    {
+      "example_input_type": "12 independent fixed-seed synthetic activation vectors; source BF16 weights authentic; no downstream labels",
+      "layer": 0,
+      "n8_with_f32_scales_bytes": 12255232,
+      "native_n8_repack_once_ms": 4.540208727121353,
+      "not_full_model_serving_timing": true,
+      "q4_with_f32_scales_bytes": 6488064,
+      "real_original_native_kernel_costs": {
+        "n8_repacked": {
+          "max_ms": 2.9319305904209614,
+          "median_ms": 2.8487048499907055,
+          "min_ms": 2.819822907137374,
+          "repeated_kernel_medians_ms": [
+            2.8487048499907055,
+            2.839357669775685,
+            2.9099027548606196,
+            2.9319305904209614,
+            2.819822907137374,
+            2.8207499999552965,
+            2.843798603862524,
+            2.8629791534816227,
+            2.861246505441765
+          ]
+        },
+        "q4_1t": {
+          "max_ms": 1.7326805197323363,
+          "median_ms": 1.7030173136542242,
+          "min_ms": 1.6947430558502674,
+          "repeated_kernel_medians_ms": [
+            1.72646875338008,
+            1.6992986590291064,
+            1.7030173136542242,
+            1.6947430558502674,
+            1.7010520678013563,
+            1.6992950889592369,
+            1.709156242820124,
+            1.7312951774025958,
+            1.7326805197323363
+          ]
+        },
+        "q4_6t": {
+          "max_ms": 0.42141667411973077,
+          "median_ms": 0.36143748244891566,
+          "min_ms": 0.35442706818381947,
+          "repeated_kernel_medians_ms": [
+            0.3647742560133338,
+            0.35646876009802025,
+            0.35442706818381947,
+            0.3558646033828457,
+            0.3597256727516651,
+            0.3707535021627943,
+            0.42141667411973077,
+            0.37071527913212776,
+            0.36143748244891566
+          ]
+        }
+      },
+      "role": "up_proj",
+      "shape": [
+        5632,
+        2048
+      ],
+      "source_original_BF16_weight_sha256": "e301ccb7428c2cd7c38dcfaa09d7a4a531c6c01afbf3e0fada946e782383280c"
+    },
+    {
+      "example_input_type": "12 independent fixed-seed synthetic activation vectors; source BF16 weights authentic; no downstream labels",
+      "layer": 0,
+      "n8_with_f32_scales_bytes": 12255232,
+      "native_n8_repack_once_ms": 3.4480001777410507,
+      "not_full_model_serving_timing": true,
+      "q4_with_f32_scales_bytes": 6488064,
+      "real_original_native_kernel_costs": {
+        "n8_repacked": {
+          "max_ms": 2.9053472680971026,
+          "median_ms": 2.8921735550587377,
+          "min_ms": 2.889083349145949,
+          "repeated_kernel_medians_ms": [
+            2.9053472680971026,
+            2.8957847195367017,
+            2.8927256741250553,
+            2.899493013198177,
+            2.889597167571386,
+            2.891788142733276,
+            2.889083349145949,
+            2.8897604206576943,
+            2.8921735550587377
+          ]
+        },
+        "q4_1t": {
+          "max_ms": 1.7814583067471783,
+          "median_ms": 1.7643194102371733,
+          "min_ms": 1.7573298343146841,
+          "repeated_kernel_medians_ms": [
+            1.7637708224356174,
+            1.7695867378885548,
+            1.7669166748722394,
+            1.7643194102371733,
+            1.7573298343146841,
+            1.7592639196664095,
+            1.7814583067471783,
+            1.7797604280834396,
+            1.7633506407340367
+          ]
+        },
+        "q4_6t": {
+          "max_ms": 0.3928507600600521,
+          "median_ms": 0.36609374607602757,
+          "min_ms": 0.3627951567371686,
+          "repeated_kernel_medians_ms": [
+            0.3655763187756141,
+            0.36609374607602757,
+            0.37378127065797645,
+            0.3627951567371686,
+            0.3928507600600521,
+            0.36450692762931186,
+            0.3670659304286043,
+            0.36750702808300656,
+            0.3629722244416674
+          ]
+        }
+      },
+      "role": "down_proj",
+      "shape": [
+        2048,
+        5632
+      ],
+      "source_original_BF16_weight_sha256": "999e5272224bbf8968387b90529ac741698423a7fcb87021c77018e4fa78bb38"
+    }
+  ],
+  "roles": 7,
+  "schema": "BEGLIN-Qv7-TinyLlama-real-Apple-q4n8-role-median-kernel-costs/1",
+  "source_model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+  "source_model_revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+  "source_private_full_receipt_sha256": "3e738c3dc02c9d5cded0f8f83e618066e752ec5e1918b7b22019be016d9f6d15",
+  "status": "SEVEN_REAL_SOURCE_BF16_LLAMA_ROLE_NATIVE_KERNELS_PROFILLED",
+  "unquantized_source_model_weight_unchanged": true
+}
