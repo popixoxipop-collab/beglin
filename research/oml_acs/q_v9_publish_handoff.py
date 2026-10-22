@@ -46,7 +46,7 @@ def main():
  verdict=("이번 48개 개발 문항에서 Qv9은 Q4보다 정답 NLL이 낮지만 독립 모델군 우위는 증명하지 못함"
    if new["mean_fullvocab_correct_nexttoken_NLL"]<bq4["mean_fullvocab_correct_nexttoken_NLL"]
    else "이번 48개 개발 문항에서 Qv9은 전체 Q4의 정답 NLL을 이기지 못함")
- txt=f"""# BEGLIN Qv9 — 4선택지 출력 Gauss–Newton 곡률, 보정 과적합 진단, MMLU48 실기기 검증
+ txt=rf"""# BEGLIN Qv9 — 4선택지 출력 Gauss–Newton 곡률, 보정 과적합 진단, MMLU48 실기기 검증
 
 **연구일:** 2026-10-23 · **분리 브랜치:** \`research/qv9-ggn-robust-20261023\` · main·운영 릴리스 변경/자동 승격 **없음**.
 
@@ -56,11 +56,11 @@ def main():
 
 Qwen 원본 BF16 학습 소스에서 한 개의 4선택지 프롬프트당 BF16 forward 1회와 상대 logit(각 A−D,B−D,C−D) 역전파 **3회**를 실행해 실제 native C Q4G64/n8 오차와 내적했다. 이 연산은 원본 BF16 모델만 읽고, 단일 텐서를 실제 C 전체 모델 출력에 삽입하거나 모델 가중치를 수정하지 않는다.
 
-\(u_{{s,k}}(x)=\sum_{{i=1}}^{{196}} \nabla_{{W_i}}(z_{{s,k}}-z_{{s,D}})^\top \delta W_i(x)\), 선택지 \(k∈\{{A,B,C}}\), \(u_{{s,D}}=0\).
+\(u_{{s,k}}(x)=\\sum_{{i=1}}^{{196}} \\nabla_{{W_i}}(z_{{s,k}}-z_{{s,D}})^\\top \\delta W_i(x)\), 선택지 \(k∈\{{A,B,C}}\), \(u_{{s,D}}=0\).
 
-\(G_{{s}}(x)=\frac12[\sum_k p_{{s,k}} u_{{s,k}}^2-(\sum_k p_{{s,k}}u_{{s,k}})^2]\), \(\ p=\mathrm{{softmax}}(z_A,z_B,z_C,z_D)\).
+\(G_{{s}}(x)=\\frac12[\\sum_k p_{{s,k}} u_{{s,k}}^2-(\\sum_k p_{{s,k}}u_{{s,k}})^2]\), \(\ p=\\mathrm{{softmax}}(z_A,z_B,z_C,z_D)\).
 
-이 식은 4선택지 조건부 출력 분포의 **실제 원본 로짓 Jacobian에 기반한 GGN PSD 대리값**이다. 전체 어휘 152K 로짓에 대한 정확한 Hessian이나 실제 native 모델 NLL이 아니다. \(\delta W\)가 큰 경우 선형 출력 근사가 무너질 수 있고, 조건부 네 선택지 분포와 전체 어휘 NLL은 다르다.
+이 식은 4선택지 조건부 출력 분포의 **실제 원본 로짓 Jacobian에 기반한 GGN PSD 대리값**이다. 전체 어휘 152K 로짓에 대한 정확한 Hessian이나 실제 native 모델 NLL이 아니다. \(\\delta W\)가 큰 경우 선형 출력 근사가 무너질 수 있고, 조건부 네 선택지 분포와 전체 어휘 NLL은 다르다.
 
 사전 고정 목적함수는 학습 24개 홀짝 12문항 중 **악화된 반쪽의 평균 GGN**에 0.65, 서로 독립 텐서의 isolated GGN 합계에 0.35를 배정한다. 이는 무제한 tensor 간 상쇄에 지나치게 의존하는 선택을 제한하려는 고정 규칙이다. 계수는 진단24나 평가48 결과에 맞춰 조정하지 않았다.
 

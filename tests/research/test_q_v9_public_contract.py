@@ -92,6 +92,22 @@ class Qv9PortableContracts(unittest.TestCase):
   self.assertTrue(d["exact_choice_KL_is_only_on_original_first_order_Jdelta_logits_not_fullmodel_native_logits"])
   self.assertTrue(d["no_held_MMLU_logit_used"])
   self.assertGreater(d["source_and_diagnostic"]["diagnostic"]["Qv9_GGN24"]["median_max_abs_relative_logit_shift"],1)
+ def test_original_source_local_cert_is_not_global(self):
+  data=json.loads((D/"BEGLIN_QV9_GGN_EXHAUSTIVE_LOCAL_SWAP_CERT_20261023.json").read_text())
+  self.assertEqual(data["status"],"PASS_EXHAUSTIVE_ALL_4704_SOURCE_1SWAP_CANDIDATES_NO_IMPROVEMENT")
+  self.assertEqual(data["source_one_swap_total_eligible_pairs"],4704)
+  self.assertGreater(data["minimum_feasible_next_1swap_GGN_change"],0)
+  self.assertTrue(data["source_local_not_global_binary_optimum"])
+ def test_relative_logit_large_shifts_warn_against_quadratic(self):
+  data=json.loads((D/"BEGLIN_QV9_GGN_QUADRATIC_TRUST_REGION_DIAGNOSTIC_20261023.json").read_text())
+  measured=data["source_and_diagnostic"]["train"]["Qv9_GGN24"]
+  self.assertGreater(measured["fraction_abs_4choice_relative_logit_shift_gt_4"],0.5)
+  self.assertTrue(data["exact_choice_KL_is_only_on_original_first_order_Jdelta_logits_not_fullmodel_native_logits"])
+ def test_diagnostic_failed_to_dominate_prior_fisher64(self):
+  p=D/"BEGLIN_QV9_INDEPENDENT_OUTPUT_GGN_TRAIN_DIAGNOSTIC_20261023.json"
+  d=json.loads(p.read_text())["source_proxy_vs_diagnostic_metrics"]
+  self.assertLess(d["ggn24"]["train"]["robust_GGN"],d["fisher64"]["train"]["robust_GGN"])
+  self.assertGreater(d["ggn24"]["diagnostic"]["robust_GGN"],d["fisher64"]["diagnostic"]["robust_GGN"])
  def test_no_production_promotion(self):
   self.assertFalse(self.pol["production_promotion"])
   self.assertTrue(self.pol["MMLU_eval_48_logits_unopened"])
