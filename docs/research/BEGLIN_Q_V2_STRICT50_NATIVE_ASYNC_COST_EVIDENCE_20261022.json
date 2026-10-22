@@ -1,0 +1,102 @@
+{
+  "actual_full_model_parallel_speed_claim": false,
+  "date": "2026-10-22",
+  "dynamic_per_input_precision_switch_tested": false,
+  "global_MILP": {
+    "N4_projection_count": 168,
+    "N8_projection_count": 28,
+    "exact_packed_projection_weight_bytes": 757825536,
+    "measured_standalone_parallel_stage_DAG_sum_ms": 49.701761999999945,
+    "memory_ceiling_bytes": 830570496,
+    "mip_relative_gap": 0,
+    "native_448_binary_stage_options": 448,
+    "parallel_stage_sum_is_not_full_model_latency": true,
+    "predicted_serial_latency_ceiling_ms": 100,
+    "predicted_serial_token_ms": 83.30589129035857,
+    "role_to_N8_selected_count": {
+      "down_proj": 0,
+      "gate_proj": 0,
+      "k_proj": 1,
+      "o_proj": 1,
+      "q_proj": 1,
+      "up_proj": 2,
+      "v_proj": 23
+    },
+    "sibling_stage_cost_ceiling_ms": 50,
+    "source_local_activation_quality_gain": 1.4948392618670003,
+    "status": "optimal"
+  },
+  "independent_native_8_regressions": "8/8 PASS",
+  "limitations": [
+    "Local diagonal activation energy objective is not whole-model causal quality.",
+    "Native BEGLIN Q4/8 CPU original packed kernels only; do not claim Metal GPU or cross-model transfer.",
+    "The 49.70ms is the 28-layer sum of isolated independent stage wall times, not true full-model async execution.",
+    "New 8-prompt developmental text was previously used in the research branch, not independent final evaluation.",
+    "Real decode timing is one token best of three, not sustained throughput or statistical evidence.",
+    "Original V6 consumed 24 row IDs not recovered."
+  ],
+  "main_or_live_release_changed": false,
+  "model": "Qwen2.5-1.5B-Instruct (28 layers, 196 role-layer tensors)",
+  "native_full_Qwen_CPU": {
+    "NLL_nats_per_token": 6.6937733812602955,
+    "PPL": 807.363,
+    "evaluated_positions": 131,
+    "first_full_vocab_logits_SHA256": "d83657da3d5f6614208104404be5fe58c72dabdd98ddef98bf6ab7e66727de28",
+    "first_prompt_KL_widened_F32_to_model": 0.6433730608067417,
+    "measured_one_token_best_of_3_ms": 83.24,
+    "measured_token_rate": 12.013,
+    "original_C_binary_SHA256": "172613dc69f79f38c8553ff7087e653ec9c0031ca80aec8efd2f76f948599f14",
+    "peak_PPL_process_RSS_bytes": 4850778112,
+    "public_8_prompt_evaluation_reused_from_related_dev": true,
+    "sequential_only": true
+  },
+  "official_full_BF16_math_tested": false,
+  "official_source_BF16_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "old_V6_24_consumed_rows_not_authoritatively_excluded": true,
+  "original_controls_same_eight_public_windows_PPL": {
+    "all_Q4G64": 727.9173,
+    "prior_Seed73_mixed": 552.702,
+    "prior_v2_async_MILP90": 827.4999,
+    "source_BF16_widened_F32": 348.3639,
+    "strict50": 807.363
+  },
+  "original_per_tensor_final_model_logit_intervention_blocker_not_retried": true,
+  "parallel_stage_optimistic_headroom": {
+    "modeled_ideal_only_not_hard_upper_bound": true,
+    "optimistic_barrier_and_CPU_contention_allowance_ms": 0.14277660119154412,
+    "potential_saved_stage_ms": 4.1065861250010744,
+    "required_full_model_saved_ms_for_5pct_speed_gate": 3.9638095238095303,
+    "stage": {
+      "ffn_gu": {
+        "candidate_parallel_stage_sum_ms": 27.311312499998948,
+        "potential_saved_ms": 1.8959595000005862,
+        "serial_observed_stage_sum_ms": 29.207271999999534
+      },
+      "qkv": {
+        "candidate_parallel_stage_sum_ms": 6.161603499999281,
+        "potential_saved_ms": 2.2106266250004882,
+        "serial_observed_stage_sum_ms": 8.372230124999769
+      }
+    }
+  },
+  "prior_whole_model_pthread_parallel_measurement": {
+    "different_precision_mask_than_strict50": true,
+    "mean_async_ms": 93.6567,
+    "mean_serial_ms": 93.62,
+    "speed_gate_default_OFF": true
+  },
+  "private_audit_receipt_SHA256": "92a809f09343cd5fd7aa2e65008974262ae2f7bbc5dfac0f25755cc506790a01",
+  "private_pre_eval_source_policy_receipt_SHA256": "7d19591c22846f8d001256f4c4addacfa7babeebf49eae9b3783128e9c464ea4",
+  "schema": "BEGLIN-Q-v2-strict-50ms-source-calibrated-async-precision-native-evidence/1",
+  "scientific_Q_verdict": "NO_VERDICT",
+  "selected_role_layer_policy_SHA256": "cb9268c9177d47705e548c2a90a6b22772569b3f2bb54dfef2767ca53ffa3e76",
+  "source_calibration": {
+    "CPU_parallel_stages_private_receipt_SHA256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+    "module_count": 196,
+    "original_BF16_forward_hook_token_positions": 461,
+    "public_calibration_prompts": 12,
+    "quality_local_diagonal_source_SHA256": "94ffe5c18ee4f92fadee912d1046d2ed104f3934e968081e87dfd1ac07ed1bf0",
+    "source_moments_SHA256": "ee7b177b4dde984a5d83e0cdb5983d2ae00c34ee752fef9113a79568a1d12663"
+  },
+  "status": "PASS_ENGINEERING_SOURCE_AND_NATIVE_EVAL__QUALITY_AND_FULL_ASYNC_SPEED_NOT_PROVEN"
+}
