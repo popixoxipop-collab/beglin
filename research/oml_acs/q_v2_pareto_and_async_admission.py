@@ -127,9 +127,18 @@ def audit():
     # This is a *post hoc* safety threshold for research candidate eligibility.
     off=sum(speed_off)/len(speed_off)
     on=sum(speed_on)/len(speed_on)
-    actual_ratio=off/on
+    abba_ratio=off/on
+    if abs(abba_ratio-abba["measured_native_parallel_speed_ratio"])>1e-10:
+        raise RuntimeError("ABBA native timing receipt already contradicted")
+    # Independent first pair is a third native measurement for each mode;
+    # it is not in the 4-run ABBA list. Compare both windows separately.
+    first_off=float(p["before_after"]["bench"]["serial"]["single_decode_best_of_3_ms"])
+    first_on=float(p["before_after"]["bench"]["async"]["single_decode_best_of_3_ms"])
+    off_three=(sum(speed_off)+first_off)/3
+    on_three=(sum(speed_on)+first_on)/3
+    actual_ratio=off_three/on_three
     if abs(actual_ratio-z["guard"]["measured_overall_ratio_OFF_div_ON"])>1e-10:
-        raise RuntimeError("existing pairwise native timing already contradicted")
+        raise RuntimeError("three independent native timing receipts disagree")
     if abs(float(p["before_after"]["bench"]["async"]["single_decode_best_of_3_ms"])-92.66)>1e-8:
         raise RuntimeError("native full-model async sample changed")
     if abs(float(p["before_after"]["bench"]["serial"]["single_decode_best_of_3_ms"])-92.04)>1e-8:
@@ -168,10 +177,12 @@ def audit():
             "serial_first_pair":p["before_after"]["bench"]["serial"]["single_decode_best_of_3_ms"],
             "async_first_pair":p["before_after"]["bench"]["async"]["single_decode_best_of_3_ms"],
             "serial_ABBA_mean":off,"async_ABBA_mean":on,
+            "ABBA_serial_div_async_ratio":abba_ratio,
+            "serial_three_run_mean":off_three,"async_three_run_mean":on_three,
             "serial_div_async_mean_ratio":actual_ratio,
-            "samples_per_mode":2},
+            "samples_per_mode":3},
         posthoc_conservative_async_min_speedup=ASYNC_RELATIVE_BENEFIT_REQUIRED,
-        native_async_meets_min_speedup=bool(actual_ratio>=ASYNC_RELATIVE_BENEFIT_REQUIRED),
+        native_async_meets_min_speedup=bool(actual_ratio>=ASYNC_RELATIVE_BENEFIT_REQUIRED and abba_ratio>=ASYNC_RELATIVE_BENEFIT_REQUIRED),
         research_default_async="disabled",
         optimized_precision_policy_auto_promotion="denied",
         optional_tradeoff="frozen random mixed improves PPL but costs more RAM and is slower than all-Q4; not universally dominant",
