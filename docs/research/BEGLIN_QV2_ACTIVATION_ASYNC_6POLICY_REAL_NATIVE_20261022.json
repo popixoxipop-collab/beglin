@@ -1,0 +1,129 @@
+{
+  "BF16_calibration_prompts": 12,
+  "BF16_calibration_token_positions": 461,
+  "actual_Qwen_original_BF16_weight_revision": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "actual_original_28_decoder_layers": true,
+  "actual_v2": {
+    "PPL_process_peak_RSS_bytes": 4851662848,
+    "actual_NLL_nats": 6.6937733812602955,
+    "actual_PPL": 807.363,
+    "best_of_three_one_token_ms": 83.5,
+    "best_of_three_one_token_tok_s": 11.976047904191617,
+    "full_model_batch_async_engine_enabled": false
+  },
+  "assembly": "native BEGLIN C on Apple Silicon CPU; model source BF16 widened to FP32 for F32 baseline; Q4G64 and in-place N8 repacked NEON for mixed cases",
+  "concurrent_stage_truth": "Native Apple CPU q/k/v and gate/up independent stage concurrency was measured with separate Q4 pools. The BEGLIN whole-model run remained serial; no end-to-end async full-model TPS claim.",
+  "controls": {
+    "all_q4": {
+      "NLL": 6.590187442842743,
+      "PPL_public_131_tokens": 727.9173,
+      "RSS_bytes": 4829249536,
+      "binary_sha256": "d59f463ba5a13d6559c00229f047802c0ebbb74362b00257fd2aaa4b06fc1e9d",
+      "evaluation_case_receipt_sha256": "51e077ddbc212fa6488a7ad6f6f92cb2b8c4fe5b2ea235b5af0710b357d239aa"
+    },
+    "role_balanced_proxy": {
+      "NLL": 6.558669181057787,
+      "PPL_public_131_tokens": 705.3324,
+      "RSS_bytes": 4922884096,
+      "binary_sha256": "8c16013a343b924b8117f66edcbfd7fb11a86f991127b9cd97fb6ec5552b6664",
+      "evaluation_case_receipt_sha256": "5281092519eea04b41079c413b00e7959af3ea8e496e67affffc0007b7a198e7"
+    },
+    "role_balanced_random": {
+      "NLL": 6.314818977432272,
+      "PPL_public_131_tokens": 552.702,
+      "RSS_bytes": 4922982400,
+      "binary_sha256": "8c16013a343b924b8117f66edcbfd7fb11a86f991127b9cd97fb6ec5552b6664",
+      "evaluation_case_receipt_sha256": "5b9906664000560b34412417d89af3ccee2492ee262dcd5013d37a04795180d2"
+    },
+    "source_f32": {
+      "NLL": 5.853247623077063,
+      "PPL_public_131_tokens": 348.3639,
+      "RSS_bytes": 9273081856,
+      "binary_sha256": "d59f463ba5a13d6559c00229f047802c0ebbb74362b00257fd2aaa4b06fc1e9d",
+      "evaluation_case_receipt_sha256": "77907a685d975a5161cc484a6d952265fbb8ee45e5fd5e73b69f4ec3027fcf83"
+    },
+    "v1_kernel_weight": {
+      "NLL": 6.429095089600854,
+      "PPL_public_131_tokens": 619.613,
+      "RSS_bytes": 4860805120,
+      "binary_sha256": "172613dc69f79f38c8553ff7087e653ec9c0031ca80aec8efd2f76f948599f14",
+      "evaluation_case_receipt_sha256": "a3fb297ee94959a05dc18478d9f1ae9b2ba93bf266f01ea893ae541380c8b8a3"
+    },
+    "v2_async_activation": {
+      "NLL": 6.6937733812602955,
+      "PPL_public_131_tokens": 807.363,
+      "RSS_bytes": 4851662848,
+      "binary_sha256": "172613dc69f79f38c8553ff7087e653ec9c0031ca80aec8efd2f76f948599f14",
+      "evaluation_case_receipt_sha256": "29aecd1d8bf70e878ecd2e8d6851649b0cc67b53fd1b7f20ddfb8e5f9a7e2209"
+    }
+  },
+  "date": "2026-10-22",
+  "fixed_evaluation_input_window_sha256": [
+    "b5b3f1320334d5d4126e154fb00cad884163c24a721eb5c59e897458471aeda1",
+    "a624d729c430ac651054cc789a6e4d2411a392aeb885117cf031b222a62407e9",
+    "97a2c15ce9fe8dd2dcb44010b579fa510a97652f778cafd3173ccf5db9fd27c7",
+    "2ce8bfeef5d4a2099bad17edda17e83f65ddfa6d6346d68abb92f923823650a8",
+    "1bfabb128c41eeb9d75ff4003d120473d07eb6715aaf521b52f1d829c0ab5973",
+    "400cab23d1a8ff1158c3f353a0888cbc5db536dc44ad21e8b9858aa313e8427f",
+    "4a47b03364e148c5b938d850cb2f61e76135632ba27f843091d30be517101299",
+    "452180fdb5dfb5ab2b68d8a3a7f97f7b99564b106ae6b2b805c4cda235f8fa85"
+  ],
+  "immutable_release_activated": false,
+  "limitations": [
+    "131 teacher forced token positions across eight public synthetic prompts, not statistically robust independent task generalization",
+    "Original F32 baseline widens BF16 source weights, not native BF16 GPU/CPU arithmetic",
+    "Qv2 quality proxy ignores layerwise nonlinear propagation and cross-channel covariance",
+    "Native sample input role cost from first layer and in-flight Python thread scheduling do not establish full decoder async speed",
+    "Older V6 24 used rows cannot be authoritatively excluded; no final holdout accessed",
+    "No model source/runtime release changed; v2 measured dominated by Q4 on shown point estimates, not promoted"
+  ],
+  "main_changed": false,
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "native_evaluation_runner_sha256": "c1f14ba5217cbd79f1017c42335de5c4a056b2a86a311d96bb16ea0d21d6711c",
+  "pre_eval_source_full_policy_public_sha256": "b33c8f6cb36047ad2776b2620fe0015e99b2bc2b7128c31b1ae78232bd3c8853",
+  "pre_eval_source_private_receipt_sha256": "7d19591c22846f8d001256f4c4addacfa7babeebf49eae9b3783128e9c464ea4",
+  "predicted": {
+    "async_stage_total_is_NOT_fullmodel_latency": true,
+    "isolated_async_stage_total_ms": 49.701761999999924,
+    "serial_fullmodel_ms": 83.30589129035857
+  },
+  "preselected_native_policy_sha256": "cb9268c9177d47705e548c2a90a6b22772569b3f2bb54dfef2767ca53ffa3e76",
+  "privacy": "BF16 activation NPZ/activation full matrices, private masks and original C model outputs remain private; public aggregate scores/costs only",
+  "private_native_evaluation_summary_sha256": "1dfb72b95b11262bbde56e2e47fa52965c96a4fe6c21f089b999ba1c816c9185",
+  "production_changed": false,
+  "public_fixed_evaluation_prompts": 8,
+  "public_teacher_forced_predictions": 131,
+  "quality_negative": {
+    "governance": "REJECT_PROMOTION_KEEP_OLDER_EXPERIMENTS_IMMUTABLE",
+    "v2_PPL_over_all4": 1.1091411071010404,
+    "v2_PPL_over_matched_random": 1.4607564293235777,
+    "v2_more_projection_memory_than_all4": true,
+    "v2_observed_single_token_latency_ms_gt_prior_all4_75p26": true,
+    "v2_worse_NLL_than_all4": true,
+    "v2_worse_NLL_than_matched_random": true
+  },
+  "schema": "BEGLIN-Qv2-original-BF16-activation-plus-real-async-stage-source-and-native-eval/1",
+  "scientific_Q_final_verdict": "NO_VERDICT",
+  "selected_tensors": {
+    "bits4": 168,
+    "bits8": 28,
+    "counts_by_role": {
+      "down_proj": 0,
+      "gate_proj": 0,
+      "k_proj": 1,
+      "o_proj": 1,
+      "q_proj": 1,
+      "up_proj": 2,
+      "v_proj": 23
+    },
+    "measured_source_quality_proxy_gain": 1.494839261867,
+    "mode": "activation-aware local diagonal weighted error, not causal full output",
+    "projection_weight_bytes": 757825536
+  },
+  "status": "SOURCE_OPTIMAL_POLICY_TECHNICALLY_EXECUTES__PROMOTION_REJECTED_FOR_QUALITY",
+  "validation": {
+    "all_six_same_input_files": true,
+    "six_native_case_audit_8_tests": "PASS",
+    "source_only_MILP_independent_8_tests": "PASS"
+  }
+}
