@@ -1,0 +1,103 @@
+{
+  "actual_native_same_10_public_prompts_187_prediction_positions": {
+    "f32": {
+      "first_prompt_KL_widenedF32_to_policy_nats": 0,
+      "nll_nats": 5.7402526135743095,
+      "peak_RSS_bytes": 9274769408,
+      "ppl": 311.143,
+      "warmed_single_token_best_of_three_ms": 234.94
+    },
+    "q4": {
+      "first_prompt_KL_widenedF32_to_policy_nats": 0.6814047805992427,
+      "nll_nats": 6.4669193852300495,
+      "peak_RSS_bytes": 4829282304,
+      "ppl": 643.4983,
+      "warmed_single_token_best_of_three_ms": 367.73
+    },
+    "role_random": {
+      "first_prompt_KL_widenedF32_to_policy_nats": 0.24855291148437855,
+      "nll_nats": 6.228097111243447,
+      "peak_RSS_bytes": 4922982400,
+      "ppl": 506.7902,
+      "warmed_single_token_best_of_three_ms": 139.99
+    },
+    "v2_diag": {
+      "first_prompt_KL_widenedF32_to_policy_nats": 0.2068673704958921,
+      "nll_nats": 6.498662498821197,
+      "peak_RSS_bytes": 4092362752,
+      "ppl": 664.2526,
+      "warmed_single_token_best_of_three_ms": 91.32
+    },
+    "v3_cov": {
+      "first_prompt_KL_widenedF32_to_policy_nats": 0.3855045908427594,
+      "nll_nats": 6.487821451962572,
+      "peak_RSS_bytes": 4066246656,
+      "ppl": 657.0903,
+      "warmed_single_token_best_of_three_ms": 83.78
+    }
+  },
+  "date": "2026-10-22",
+  "independent_private_audit_sha256": "ea8f9048b3623d5687a714d2d97e956c46d63046c01e657f48bad0ec6f915398",
+  "limitations": [
+    "Ten new public synthetic prompt windows, 187 teacher-forced positions, are a development probe, not benchmark generalization.",
+    "Qv3 native source local projection estimates include empirical off-diagonal activation covariance but NOT downstream end-to-end causal error; covariance calculation used FP16 residual caching/FP32 matmul, not F64 exact.",
+    "Current EOE CPU had severe unrelated concurrent workload (system load averages ~496 during Q4); native warmed one-token timings cannot support credible cross-policy latency speedup claims. A dedicated quiet-host repeated ABBA throughput/p95 evaluation is required.",
+    "Full-model async QKV/GU pthread candidate already independently verified bit-exact in Qv2, but no stable throughput gain; default remains OFF.",
+    "Source BF16 checkpoint widened to F32 is not a native BF16 arithmetic baseline.",
+    "Do not reopen legacy V6 24 unknown-consumed IDs or use them for final quality acceptance.",
+    "Do not promote any Qv3 policy into production; observed NLL worse than seed73 role-balanced baseline and Q4."
+  ],
+  "local_Apple_BF16_copy_snapshot": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "official_BF16_Qwen_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "operational_safety": {
+    "V6_24_used_question_identifiers_authoritatively_available": false,
+    "blocked_per_tensor_full_model_intervention_retried": false,
+    "immutable_operator_release_changed": false,
+    "main_changed": false,
+    "native_async_default_enabled": false,
+    "original_final_IID_OOD_test_used": false,
+    "source_original_BF16_weights_changed": false
+  },
+  "original_early_v3_full_cov_source_preregistration_sha256": "5e8824f74b7d80dac191bf944a48d418f87212ca5ed53835f7ab7edf8eb0c267",
+  "original_native_five_mode_private_evidence_sha256": "cb853fa97788fe1e992a0b9e8c57f58992f72193b34d14803c41b772d67d8b84",
+  "original_source_covariance_196_score_aggregate_sha256": "070c67fc48dfee801365bfd20c5642cd366af12a124465ef7958f427d090c564",
+  "original_source_covariance_private_full_sha256": "50d9ee947528e1ab05f618fb317dc933ff95330552fa5ea7ba08a3c1003f5b6d",
+  "pre_native_frozen_5_mode_manifest_sha256": "95305077307866f876b6ad06af71d76ce81fbc2673d25aff66f2dec40be550a9",
+  "pre_native_ten_public_eval_input_receipt_sha256": "c2b33c5b15a5bcbba02df53d4122a1c1807f4595894c257af40f988c97c5d2cc",
+  "pre_native_v3_mask_sha256": "82ae93e06afa7380175afa57535c1f0d1f7fd4320b8d28f981cdc8ee0cf24ef3",
+  "quality_comparison": {
+    "v3_better_than_Q4_in_this_187_token_PPL": false,
+    "v3_better_than_seed73_random_in_this_187_token_PPL": false,
+    "v3_better_than_v2_in_this_187_token_PPL": true,
+    "v3_less_accurate_first_prompt_KL_than_v2": true,
+    "v3_ppl_improvement_relative_to_v2": 0.010782494490800747
+  },
+  "quality_verdict": "NOT_ESTABLISHED",
+  "regression_tests": "8/8 PASS",
+  "schema": "BEGLIN-Qv3-empirical-covariance-source-only-frozen-ten-public-native-result/1",
+  "source_MILP_frozen_manifest_sha256": "efdb1b934d5bf944863f453e12a831945cae1c533edd721b9f93cffc7c71ee40",
+  "source_full_cov_local_proxy_spearman_vs_previous_diag": 0.7571452477906432,
+  "source_precision_allocation": {
+    "bits4_projection_tensors": 168,
+    "bits8_projection_tensors": 28,
+    "isolated_async_graph_makespan_predicted_ms": 49.99930412500009,
+    "n8_role_counts": {
+      "down_proj": 0,
+      "gate_proj": 0,
+      "k_proj": 1,
+      "o_proj": 6,
+      "q_proj": 3,
+      "up_proj": 1,
+      "v_proj": 17
+    },
+    "projection_weight_bytes": 758022144,
+    "sequential_native_one_token_predicted_ms": 83.3536177143251,
+    "source_only_MILP_mip_gap": 0
+  },
+  "status": "5_NATIVE_MODELS_TESTED_8_AUDIT_REGRESSIONS_PASS__QUALITY_ADVANTAGE_NOT_ESTABLISHED",
+  "tooling": [
+    "research/oml_acs/q_v3_native_frozen_ten_eval.py",
+    "research/oml_acs/q_v3_native_ten_independent_audit.py",
+    "tests/research/test_q_v3_native_ten_audit.py"
+  ]
+}
