@@ -1,0 +1,55 @@
+{
+  "schema": "beglin-Q-v2-async-activation-MILP-freeze/1",
+  "date": "2026-10-22",
+  "status": "LOCKED_BEFORE_NEW_POLICY_AND_PUBLIC_HELDOUT_EVALUATION",
+  "source": {
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "local_BF16_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "quality_scores_config": "configs/research/BEGLIN_Q_V2_ACTIVATION_WEIGHTED_SOURCE_SCORES_20261022.json",
+    "native_async_cost_config": "configs/research/BEGLIN_Q_V2_ASYNC_NATIVE_REAL_COSTS_20261022.json",
+    "no_test_prompt_or_task_labels_used": true
+  },
+  "constraints": {
+    "exact_n8_tensors": 28,
+    "other_4bit_tensors": 168,
+    "packed_projection_weight_bytes_max": 830570496,
+    "predicted_serial_decode_ms_max": 100,
+    "predicted_async_DAG_decode_ms_max": 100,
+    "original_BF16_unchanged": true
+  },
+  "graph": {
+    "per_layer": "parallel Q/K/V -> attention -> O -> parallel gate/up -> down; 28 layers remain sequential",
+    "kernel_costs": "Measured native BEGLIN independent stage QKV 8 combinations and FFN 4 combinations, with separate native Q4 pools; measured single O/down",
+    "native_full_model_still_serial": true,
+    "async_predicted": "75.26ms all-Q4 measured plus sum of stage-time deltas from original all-Q4 schedule; not actual async full decoder",
+    "serial_guard": "75.26ms +1.039406406482483 * sum selected per-role native n8 - six-thread Q4 medians"
+  },
+  "solve": {
+    "method": "HiGHS binary MILP 28x (QKV8 + FFN4 + O2 + down2) one-hot choices, exact 28 upgraded, bytes and two time guards",
+    "policies": [
+      {
+        "name": "quality_first",
+        "objective": "maximize source diagonal BF16 activation-weighted local error gain"
+      },
+      {
+        "name": "latency_preferring",
+        "objective": "minimize predicted async DAG latency while preserving at least 95% of quality_first gain"
+      }
+    ],
+    "source_score_retention": 0.95,
+    "heldout": "Existing predeclared 8 public synthetic prompts, never used to choose allocation",
+    "no_policy_tuning_after_test": true
+  },
+  "protected_workstreams": [
+    "historical V6 used 24 inputs",
+    "blocked single-tensor causal output sensitivity",
+    "original main",
+    "immutable operator release",
+    "raw activation vectors and private labels"
+  ],
+  "scientific_limitations": [
+    "diagonal activation-weighted error does not measure causal downstream quality",
+    "parallel DAG speed is prediction until full engine actually async",
+    "tiny public synthetic calibration has no final task statistics"
+  ]
+}
