@@ -1,0 +1,86 @@
+{
+  "cohort": {
+    "balance_correct_answers": {
+      "A": 4,
+      "B": 4
+    },
+    "candidate_token_windows": 16,
+    "prompt_losses_scored": false,
+    "public_authored_dev_questions": 8
+  },
+  "date": "2026-10-22",
+  "kind": "EXPLORATORY_DEV_NOT_FINAL_HOLDOUT",
+  "limitations": [
+    "Only eight authored easy binary prompts; no IID/OOD generalization",
+    "One-token answer protocol cannot establish free-form or multi-token accuracy",
+    "Qv2 lower NLL than BF16-widened-F32 could reflect confidence, not broadly higher quality",
+    "Independent audit recomputes native-reported NLL, not logits from another implementation",
+    "No clean-host sustained p50/p95, Metal GPU, dynamic bit switching, energy or serving memory",
+    "Historical 187-token full-prompt PPL is a different task and should not be numerically equated"
+  ],
+  "observations": {
+    "historical_full_prompt_PPL_and_answer_only_NLL_not_equivalent": true,
+    "old_full_prompt_187_token_PPL": {
+      "f32": 311.143,
+      "q4": 643.4983,
+      "role_random": 506.7902,
+      "v2_diag": 664.2526,
+      "v3_cov": 657.0903
+    },
+    "v2_better_than_v3_answer_nll": true,
+    "v3_better_than_q4_answer_nll": true,
+    "v3_better_than_random_answer_nll": true
+  },
+  "results": {
+    "f32": {
+      "accuracy": 1.0,
+      "correct_answer_mean_nll": 0.02269045921072621,
+      "mean_margin": 9.204328775405884
+    },
+    "q4": {
+      "accuracy": 0.875,
+      "correct_answer_mean_nll": 0.2627870852542989,
+      "mean_margin": 7.389427661895752
+    },
+    "role_random": {
+      "accuracy": 0.875,
+      "correct_answer_mean_nll": 0.24745700753886254,
+      "mean_margin": 8.521505117416382
+    },
+    "v2_diag": {
+      "accuracy": 1.0,
+      "correct_answer_mean_nll": 0.00534157781319419,
+      "mean_margin": 8.167359113693237
+    },
+    "v3_cov": {
+      "accuracy": 1.0,
+      "correct_answer_mean_nll": 0.07968109396182965,
+      "mean_margin": 7.946507215499878
+    }
+  },
+  "safety": {
+    "auto_promotion": false,
+    "immutable_release_unchanged": true,
+    "legacy_V6_24_not_used": true,
+    "main_unchanged": true,
+    "original_weights_unchanged": true,
+    "private_logs_and_token_ids_not_uploaded": true
+  },
+  "schema": "BEGLIN-Qv4-masked-answer-development-evidence/1",
+  "source": {
+    "input_manifest_sha256": "a6e6ab1e0b2054faabaf460fde280f19d9411ed26862c1cd1aa2b3118fa88f39",
+    "masked_scoring": "one A or B answer token per candidate, prompt loss excluded",
+    "model": "Qwen2.5-1.5B-Instruct 28-layer native Apple CPU",
+    "model_binary_family": "base f32/q4 and common mixed binary for random/v2/v3",
+    "native_separate_audit_sha256": "ae8523e7e83a28ecdd366ff33ac5b467b0faf505a0933a03544752e8823e6bac",
+    "official_bf16_rev": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "prelock_sha256": "984adbb205bc14e3ff76c1654a3143529fdd07a8ba017e445462cb3707c3677c",
+    "same_token_ids_per_mode": true
+  },
+  "verification": {
+    "native_model_modes": "5/5 complete",
+    "original_receipt_audit": "PASS",
+    "separate_parser_audit": "PASS",
+    "unit_regressions": "13/13 PASS"
+  }
+}
