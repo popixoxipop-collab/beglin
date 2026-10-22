@@ -1,0 +1,37 @@
+{
+  "RACE_article_ID_order_sha256": "dafa0e7ebf8bba34c5c97a7f831fd6d4c63df06a1068d4c3df621ff69daaf1db",
+  "RACE_middletest_question_count": 16,
+  "RACE_test16_private_SHA256": "0de242b608837bd29ed72db99f1e910626753e2b27ea6ada9a24bdf864c96499",
+  "no_native_output_seen": true,
+  "num_eligible_questions_before_unique_article": 18,
+  "operator_main_model_unchanged": true,
+  "original_Fisher128_source_evidence_public_SHA256": "301d141987d3d063fb4944e30cc231b6163e90d44d19686fe5eebcb5f1e4aca9",
+  "original_test_data_revision": "2fec9fd81f1dc971569a9b729c43f2f0e6436637",
+  "prelock_SHA256": "2cd480dc4c72b5383014a1325d350e51a0b47b1335ec0013a6d069773b546a39",
+  "prompt_min_max_token_length": [
+    126,
+    207
+  ],
+  "schema": "BEGLIN-Qv11-original-16-new-RACE-articles-and-6-source-1N8-interventions/1",
+  "selected_source_extremes": {
+    "down_proj": {
+      "high_gain": 101.9897125111643,
+      "high_layer": 2,
+      "low_gain": 2.699793854084367,
+      "low_layer": 10
+    },
+    "k_proj": {
+      "high_gain": 98.19722845276516,
+      "high_layer": 0,
+      "low_gain": 0.3733405946428726,
+      "low_layer": 1
+    },
+    "v_proj": {
+      "high_gain": 65.90750075536619,
+      "high_layer": 20,
+      "low_gain": 0.32085383241386456,
+      "low_layer": 27
+    }
+  },
+  "status": "FROZEN_SOURCE_SIGNED_SCORE_6_SINGLETON_C_PROBES_AND_RACE_TEST16"
+}

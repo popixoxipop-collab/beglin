@@ -1,0 +1,24 @@
+name: BEGLIN Qv11 Singleton Native Research Contracts
+on:
+  push:
+    branches:
+      - "research/qv11-*"
+    paths:
+      - "configs/research/BEGLIN_QV11_*"
+      - "docs/research/BEGLIN_QV11_*"
+      - "tests/research/test_q_v11_public_contract.py"
+      - ".github/workflows/beglin-qv11-public-contract.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify preregistered BF16 source ranks, RACE16 and true 1-bit native provenance
+        run: python -m unittest discover -s tests/research -p 'test_q_v11_public_contract.py' -v

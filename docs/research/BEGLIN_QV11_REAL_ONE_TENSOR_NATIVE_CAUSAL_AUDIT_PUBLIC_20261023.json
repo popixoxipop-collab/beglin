@@ -1,0 +1,140 @@
+{
+  "automated_live_precision_promotion": false,
+  "fullQ4_baseline_correct": 8,
+  "fullQ4_baseline_mean_fullvocab_NLL": 2.4325947732200754,
+  "independent_private_original_native_audit_SHA256": "604fd45711d40ab40494afb3d438a4c65f4184972a369c3bcab82b1abd3e2f9c",
+  "isolated_true_one_tensor_quant_N8_binary_SHA256": "a054e68789fd6bc20a4bd815da5108b63361b14227b1fc4ab9e68a3b7b9a2711",
+  "measured_per_tensor_fullmodel_actual_NLL_effect": {
+    "down_proj_10": {
+      "actual_N8_improvement_fullQ4_minus_N8": 0.3620749266253205,
+      "actual_change_correct_count": 0,
+      "actual_one_tensor_N8_minus_fullQ4_mean_fullvocab_NLL": -0.3620749266253205,
+      "actual_singleton_mask_SHA256": "4aac83bb0340371e7d5263795e5a66550f4106638a65e129c526a73a0a0589f6",
+      "layer": 10,
+      "native_one_N8_binary_SHA256": "a054e68789fd6bc20a4bd815da5108b63361b14227b1fc4ab9e68a3b7b9a2711",
+      "number_RACE_passages_singleton_NLL_better": 13,
+      "paired_bootstrap95_delta_NLL": [
+        -0.8477936807384928,
+        -0.04090454001799737
+      ],
+      "role": "down_proj",
+      "source_BF16_Fisher128_proposed_gain": 2.699793854084367
+    },
+    "down_proj_2": {
+      "actual_N8_improvement_fullQ4_minus_N8": 0.26793492943902997,
+      "actual_change_correct_count": -1,
+      "actual_one_tensor_N8_minus_fullQ4_mean_fullvocab_NLL": -0.26793492943902997,
+      "actual_singleton_mask_SHA256": "5146d05b7ce3183054d859d679fbc20ae2d68baebbe93207653b3c7820cfa774",
+      "layer": 2,
+      "native_one_N8_binary_SHA256": "a054e68789fd6bc20a4bd815da5108b63361b14227b1fc4ab9e68a3b7b9a2711",
+      "number_RACE_passages_singleton_NLL_better": 8,
+      "paired_bootstrap95_delta_NLL": [
+        -0.593447664808073,
+        0.05821365043626491
+      ],
+      "role": "down_proj",
+      "source_BF16_Fisher128_proposed_gain": 101.9897125111643
+    },
+    "k_proj_0": {
+      "actual_N8_improvement_fullQ4_minus_N8": 0.17514799742835097,
+      "actual_change_correct_count": 0,
+      "actual_one_tensor_N8_minus_fullQ4_mean_fullvocab_NLL": -0.17514799742835097,
+      "actual_singleton_mask_SHA256": "3fb98d8f97370f62952c0eb688adc1176fde85814355f5c8fd3c21da3c1ce46e",
+      "layer": 0,
+      "native_one_N8_binary_SHA256": "a054e68789fd6bc20a4bd815da5108b63361b14227b1fc4ab9e68a3b7b9a2711",
+      "number_RACE_passages_singleton_NLL_better": 9,
+      "paired_bootstrap95_delta_NLL": [
+        -0.4639355478273557,
+        0.03758951714616291
+      ],
+      "role": "k_proj",
+      "source_BF16_Fisher128_proposed_gain": 98.19722845276516
+    },
+    "k_proj_1": {
+      "actual_N8_improvement_fullQ4_minus_N8": -0.004761193632495549,
+      "actual_change_correct_count": 0,
+      "actual_one_tensor_N8_minus_fullQ4_mean_fullvocab_NLL": 0.004761193632495549,
+      "actual_singleton_mask_SHA256": "fcf05d547334eaccd056a15d3f3483258fc62384d6c89c2624958971b48c0d71",
+      "layer": 1,
+      "native_one_N8_binary_SHA256": "a054e68789fd6bc20a4bd815da5108b63361b14227b1fc4ab9e68a3b7b9a2711",
+      "number_RACE_passages_singleton_NLL_better": 13,
+      "paired_bootstrap95_delta_NLL": [
+        -0.037025636251909064,
+        0.057177170743810235
+      ],
+      "role": "k_proj",
+      "source_BF16_Fisher128_proposed_gain": 0.3733405946428726
+    },
+    "v_proj_20": {
+      "actual_N8_improvement_fullQ4_minus_N8": 0.24365650534419672,
+      "actual_change_correct_count": -1,
+      "actual_one_tensor_N8_minus_fullQ4_mean_fullvocab_NLL": -0.24365650534419672,
+      "actual_singleton_mask_SHA256": "aac38a02edc1415bac1e35090ffa01e0392383e3a65e0372b2c1455a2f06f8da",
+      "layer": 20,
+      "native_one_N8_binary_SHA256": "a054e68789fd6bc20a4bd815da5108b63361b14227b1fc4ab9e68a3b7b9a2711",
+      "number_RACE_passages_singleton_NLL_better": 9,
+      "paired_bootstrap95_delta_NLL": [
+        -0.6293413556794816,
+        0.0955051880635187
+      ],
+      "role": "v_proj",
+      "source_BF16_Fisher128_proposed_gain": 65.90750075536619
+    },
+    "v_proj_27": {
+      "actual_N8_improvement_fullQ4_minus_N8": -0.022274746678025044,
+      "actual_change_correct_count": 0,
+      "actual_one_tensor_N8_minus_fullQ4_mean_fullvocab_NLL": 0.022274746678025044,
+      "actual_singleton_mask_SHA256": "2bb1abad44e6192cc3921dfa47f7746984e6f1f41cfa182fb03ccc6d498e4854",
+      "layer": 27,
+      "native_one_N8_binary_SHA256": "a054e68789fd6bc20a4bd815da5108b63361b14227b1fc4ab9e68a3b7b9a2711",
+      "number_RACE_passages_singleton_NLL_better": 7,
+      "paired_bootstrap95_delta_NLL": [
+        0.005215226252690331,
+        0.04459856248237045
+      ],
+      "role": "v_proj",
+      "source_BF16_Fisher128_proposed_gain": 0.32085383241386456
+    }
+  },
+  "model_single_tensor_native_intervention_proven": true,
+  "no_generalized_precision_quality_advantage_established": true,
+  "no_production_or_main_model_mutation": true,
+  "one_test_cohort16_and_six_prior_source_extreme_roles_small_exploratory": true,
+  "only_one_actual_quantized_projection_tensor_changed_each_arm": true,
+  "original_RACE_test16_SHA256": "0de242b608837bd29ed72db99f1e910626753e2b27ea6ada9a24bdf864c96499",
+  "original_beG_C_model_checkpoint_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "prelock_SHA256": "2cd480dc4c72b5383014a1325d350e51a0b47b1335ec0013a6d069773b546a39",
+  "real_native_original_BF16_weight_C_Q4_binary_sha256": "408e74ae8f268b350ec2fc39c4843b048983e23a84802dbd9c42d067a79fcf7c",
+  "schema": "BEGLIN-Qv11-independent-six-1N8-source-sensitivity-vs-real-C-Qwen28-native/1",
+  "single_tier_role_memory_differs_between_roles_not_a_matched_28N8_budget": true,
+  "source_Qv6_128_Fisher_public_SHA256": "301d141987d3d063fb4944e30cc231b6163e90d44d19686fe5eebcb5f1e4aca9",
+  "source_scores_vs_native_RACE_improvements_Spearman_6points": 0.6,
+  "status": "REAL_SINGLE_TENSOR_1N8_VS_ALLQ4_16RACE_7ARMS_INDEPENDENT_AUDIT_PASS",
+  "within_role_high_vs_low_source_proxy_recovery_alignment": {
+    "down_proj": {
+      "actual_high_n8_more_helpful_on_RACE16": false,
+      "actual_source_high_NLL_recovery": 0.26793492943902997,
+      "actual_source_low_NLL_recovery": 0.3620749266253205,
+      "source_gain_high": 101.9897125111643,
+      "source_gain_low": 2.699793854084367,
+      "source_predicts_high_benefits_more": true
+    },
+    "k_proj": {
+      "actual_high_n8_more_helpful_on_RACE16": true,
+      "actual_source_high_NLL_recovery": 0.17514799742835097,
+      "actual_source_low_NLL_recovery": -0.004761193632495549,
+      "source_gain_high": 98.19722845276516,
+      "source_gain_low": 0.3733405946428726,
+      "source_predicts_high_benefits_more": true
+    },
+    "v_proj": {
+      "actual_high_n8_more_helpful_on_RACE16": true,
+      "actual_source_high_NLL_recovery": 0.24365650534419672,
+      "actual_source_low_NLL_recovery": -0.022274746678025044,
+      "source_gain_high": 65.90750075536619,
+      "source_gain_low": 0.32085383241386456,
+      "source_predicts_high_benefits_more": true
+    }
+  },
+  "within_role_predicted_rank_concordance_count": 2
+}
