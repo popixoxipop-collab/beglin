@@ -1,0 +1,15 @@
+{
+  "all_possible_swaps": 4704,
+  "best_feasible_swap_objective_delta": 0.02311776652083114,
+  "feasible_swaps_under_native_CPU_budget": 1551,
+  "native_held_RACE48_not_read": true,
+  "no_live_auto_promotion": true,
+  "not_global_QUBO_or_full_model_loss_optimality_proof": true,
+  "number_improving_feasible_swaps": 0,
+  "schema": "BEGLIN-Qv10-independent-all4704-tensor-mask-1swap-source-certificate/1",
+  "source_mask_sha256": "5801452577e1957fc635d1e295ae7cde2d8a50c294b04d9a65e8e48dc7b32196",
+  "source_objective_Qv10_reproduced": 0.3723427407752232,
+  "source_only_optimizer_policy_sha256": "ae35b59d98d2b08ded60f4af10b2485ecf4c1c176eb7f113a810b33f51259ece",
+  "source_train24_private_sha256": "696da1054cfa1ce23d2d847923b4e65003f4eabaf46a26104939469b70cfc862",
+  "status": "PASS_4704_ALL_POSSIBLE_SOURCE_1SWAPS_NO_FEASIBLE_IMPROVEMENT"
+}

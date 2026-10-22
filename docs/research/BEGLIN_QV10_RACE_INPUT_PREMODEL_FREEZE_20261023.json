@@ -1,0 +1,20 @@
+{
+  "RACE48_private_SHA256": "acdfd36477df4f440eeb9d03ad68342a34ce2435028eff1b8cef0de4c9f859de",
+  "eligible_prompt_candidates": 81,
+  "eval_48_distinct_article_count": 48,
+  "held_48_articleIDs_SHA256": "63ec497c9be7eff20ef1d895f066b5737f82227e10eceff2740d457a5e9918cd",
+  "main_and_live_unchanged": true,
+  "original_48_RACE_revision": "2fec9fd81f1dc971569a9b729c43f2f0e6436637",
+  "prereg_sha": "4ef4d31a4b9d0be2e015ffaac84a8ee86feb86047a8a8aae4a50318144d5d207",
+  "prompt_min_max": [
+    116,
+    208
+  ],
+  "schema": "BEGLIN-Qv10-original-source-and-RACE48-input-freeze/1",
+  "source_diag24_private_SHA256": "4714dc2be1ef4708c0099f153b15a1bd0f36b2143b006d000781bc592bf9be79",
+  "source_ids_SHA256": "bd353a9a6d1bd1ef61074456dd1bfa4705eb1ecf7e235e9750e6db303a762e5a",
+  "source_train_24_and_diag_24_have_prior_Qv9_analyses": true,
+  "status": "ALL_3_COHORTS_SHA_LOCKED_BEFORE_TOPK_PLUS_OTHER_MODEL_EXECUTION",
+  "test_model_performance_unseen": true,
+  "train24_private_SHA256": "87ed0d782636470b4e31db8bd6b69f0fd069dc30b167bdcb7aed1a81b53fe254"
+}

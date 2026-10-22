@@ -1,0 +1,62 @@
+{
+  "RACE_same_model_family_Qwen_not_multi_model_generalization": true,
+  "each_eval_article_distinct": true,
+  "frozen_RACE48_original_sha256": "acdfd36477df4f440eeb9d03ad68342a34ce2435028eff1b8cef0de4c9f859de",
+  "full_vocab_prob_mass_preserved_only_at_original_BF16_grouping": true,
+  "model_original_Qwen_BF16_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "native_generalization_and_speed_superiority_unproved": true,
+  "native_summary": {
+    "fisher64": {
+      "accuracy": 0.7708333333333334,
+      "correct": 37,
+      "correct_letter_mean_fullvocab_NLL": 0.9383128447968812,
+      "n": 48,
+      "native_bin_sha256": "f64bae90250d83c051b55fc4907837ab1482a991dc27f35aee637860e40c1221"
+    },
+    "q4": {
+      "accuracy": 0.6666666666666666,
+      "correct": 32,
+      "correct_letter_mean_fullvocab_NLL": 1.183725255948745,
+      "n": 48,
+      "native_bin_sha256": "408e74ae8f268b350ec2fc39c4843b048983e23a84802dbd9c42d067a79fcf7c"
+    },
+    "qv10_top2other_trust": {
+      "accuracy": 0.7291666666666666,
+      "correct": 35,
+      "correct_letter_mean_fullvocab_NLL": 1.0368505701083348,
+      "n": 48,
+      "native_bin_sha256": "f64bae90250d83c051b55fc4907837ab1482a991dc27f35aee637860e40c1221"
+    }
+  },
+  "no_auto_promotion": true,
+  "paired_comparisons": {
+    "fisher64": {
+      "McNemar_exact_two_sided_p": 0.625,
+      "paired_bootstrap95_interval": [
+        -0.11953456876022393,
+        0.3484913729987217
+      ],
+      "qv10_lower_NLL_in_articles": 32,
+      "qv10_minus_baseline_correct": -2,
+      "qv10_minus_baseline_mean_fullvocab_NLL": 0.09853772531145348
+    },
+    "q4": {
+      "McNemar_exact_two_sided_p": 0.453125,
+      "paired_bootstrap95_interval": [
+        -0.4513857227956619,
+        0.14436690090897633
+      ],
+      "qv10_lower_NLL_in_articles": 35,
+      "qv10_minus_baseline_correct": 3,
+      "qv10_minus_baseline_mean_fullvocab_NLL": -0.1468746858404105
+    }
+  },
+  "private_independent_audit_SHA256": "b25623705ff571d26d06ab6713d021d9fa18719c56c0c9627967789e3c696eec",
+  "schema": "BEGLIN-Qv10-independent-original-BF16-7group-source-and-3arm-C-RACE48-audit/1",
+  "separate_original_BF16_correct_token_mean_NLL": 0.821231444655325,
+  "separate_original_BF16_model_correct": 42,
+  "source_grouped_BF16_train_diag_public_SHA256": "8b4cce9494bd2a8d4129cdfade431ad00954296465801a72a45a54e9d29c4679",
+  "source_only_Top2OTHER_policy_public_SHA256": "ae35b59d98d2b08ded60f4af10b2485ecf4c1c176eb7f113a810b33f51259ece",
+  "status": "PASS_144_REAL_ORIGINAL_BEGLIN_C_RACE_NEXTTOKEN_LOGS_AND_BF16_SOURCE_AUDIT",
+  "system_load_not_controlled_for_latency": true
+}

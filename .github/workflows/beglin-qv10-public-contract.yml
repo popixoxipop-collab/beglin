@@ -1,0 +1,24 @@
+name: BEGLIN Qv10 TopK OTHER Evidence
+on:
+  push:
+    branches:
+      - "research/qv10-*"
+    paths:
+      - "configs/research/BEGLIN_QV10_*"
+      - "docs/research/BEGLIN_QV10_*"
+      - "tests/research/test_q_v10_public_contract.py"
+      - ".github/workflows/beglin-qv10-public-contract.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify Qv10 provenance and evidence
+        run: python -m unittest discover -s tests/research -p 'test_q_v10_public_contract.py' -v
