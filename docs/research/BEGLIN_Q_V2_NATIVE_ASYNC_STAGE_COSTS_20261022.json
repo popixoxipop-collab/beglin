@@ -1,0 +1,131 @@
+{
+  "actual_full_model_concurrent_inference_verified": false,
+  "all_measured_on_original_source_L0": true,
+  "both_3_and_2_role_stages": true,
+  "date": "2026-10-22",
+  "independent_native_q4_pool_per_concurrent_role": true,
+  "measured_stage_uses_python_ThreadPoolExecutor_and_unique_q4pools": true,
+  "native_library_sha256": "0ab561e3fc77c8da7d7e50664c161c76cca108c7703865b5bdc0d6b75db1fcea",
+  "notes": [
+    "The stage latency includes Python ThreadPoolExecutor scheduling and independent 6-thread pools.",
+    "Parallel stage times are direct microbenchmarks, not automatically additive to full-model scheduler.",
+    "No native full decoder asynchronous DAG execution has been implemented."
+  ],
+  "original_private_receipt_sha256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+  "schema": "BEGLIN-Q-v2-native-async-independent-stage-costs/1",
+  "source_BF16_model_revision": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "stage_costs": {
+    "ffn_gu": {
+      "44": {
+        "parallel_q4_1t_median_ms": 2.1278802499999916,
+        "parallel_q4_6t_median_ms": 0.7867656249999633,
+        "serial_q4_6t_median_ms": 0.8352396249999838,
+        "speedup_best_vs_serial": 1.061611741107808,
+        "verified_best_mode": "parallel_q4_6t",
+        "verified_best_stage_ms": 0.7867656249999633
+      },
+      "48": {
+        "parallel_q4_1t_median_ms": 3.4613176250000155,
+        "parallel_q4_6t_median_ms": 3.427703124999959,
+        "serial_q4_6t_median_ms": 3.7455208749999636,
+        "speedup_best_vs_serial": 1.092720325655393,
+        "verified_best_mode": "parallel_q4_6t",
+        "verified_best_stage_ms": 3.427703124999959
+      },
+      "84": {
+        "parallel_q4_1t_median_ms": 3.4137761250000453,
+        "parallel_q4_6t_median_ms": 3.4418333749999253,
+        "serial_q4_6t_median_ms": 3.750109374999977,
+        "speedup_best_vs_serial": 1.0985223511105102,
+        "verified_best_mode": "parallel_q4_1t",
+        "verified_best_stage_ms": 3.4137761250000453
+      },
+      "88": {
+        "parallel_q4_1t_median_ms": 3.4804478750000145,
+        "parallel_q4_6t_median_ms": 3.4821718749999953,
+        "serial_q4_6t_median_ms": 6.618166750000043,
+        "speedup_best_vs_serial": 1.9015273285769336,
+        "verified_best_mode": "parallel_q4_1t",
+        "verified_best_stage_ms": 3.4804478750000145
+      }
+    },
+    "qkv": {
+      "444": {
+        "parallel_q4_1t_median_ms": 0.39392712500002647,
+        "parallel_q4_6t_median_ms": 0.18793237499997728,
+        "serial_q4_6t_median_ms": 0.24151562499996615,
+        "speedup_best_vs_serial": 1.2851198469662044,
+        "verified_best_mode": "parallel_q4_6t",
+        "verified_best_stage_ms": 0.18793237499997728
+      },
+      "448": {
+        "parallel_q4_1t_median_ms": 0.38585424999998397,
+        "parallel_q4_6t_median_ms": 0.20861974999997202,
+        "serial_q4_6t_median_ms": 0.29005212499999544,
+        "speedup_best_vs_serial": 1.3903387622697965,
+        "verified_best_mode": "parallel_q4_6t",
+        "verified_best_stage_ms": 0.20861974999997202
+      },
+      "484": {
+        "parallel_q4_1t_median_ms": 0.3863176249999656,
+        "parallel_q4_6t_median_ms": 0.18910937499999614,
+        "serial_q4_6t_median_ms": 0.2848489999999759,
+        "speedup_best_vs_serial": 1.506265884491352,
+        "verified_best_mode": "parallel_q4_6t",
+        "verified_best_stage_ms": 0.18910937499999614
+      },
+      "488": {
+        "parallel_q4_1t_median_ms": 0.3859010000000218,
+        "parallel_q4_6t_median_ms": 0.20933850000004472,
+        "serial_q4_6t_median_ms": 0.3246406250000389,
+        "speedup_best_vs_serial": 1.5507927352110076,
+        "verified_best_mode": "parallel_q4_6t",
+        "verified_best_stage_ms": 0.20933850000004472
+      },
+      "844": {
+        "parallel_q4_1t_median_ms": 0.6104427499999954,
+        "parallel_q4_6t_median_ms": 0.6262292499999988,
+        "serial_q4_6t_median_ms": 0.6916353749999993,
+        "speedup_best_vs_serial": 1.133006125472052,
+        "verified_best_mode": "parallel_q4_1t",
+        "verified_best_stage_ms": 0.6104427499999954
+      },
+      "848": {
+        "parallel_q4_1t_median_ms": 0.6117239999999802,
+        "parallel_q4_6t_median_ms": 0.6247343749999912,
+        "serial_q4_6t_median_ms": 0.7425052499999696,
+        "speedup_best_vs_serial": 1.2137912686113241,
+        "verified_best_mode": "parallel_q4_1t",
+        "verified_best_stage_ms": 0.6117239999999802
+      },
+      "884": {
+        "parallel_q4_1t_median_ms": 0.6120677500000005,
+        "parallel_q4_6t_median_ms": 0.62377075000003,
+        "serial_q4_6t_median_ms": 0.7374635000000351,
+        "speedup_best_vs_serial": 1.2048723364366682,
+        "verified_best_mode": "parallel_q4_1t",
+        "verified_best_stage_ms": 0.6120677500000005
+      },
+      "888": {
+        "parallel_q4_1t_median_ms": 0.6129687499999981,
+        "parallel_q4_6t_median_ms": 0.6126562500000099,
+        "serial_q4_6t_median_ms": 0.7700365000000153,
+        "speedup_best_vs_serial": 1.2568818158633048,
+        "verified_best_mode": "parallel_q4_6t",
+        "verified_best_stage_ms": 0.6126562500000099
+      }
+    }
+  },
+  "stage_mapping": {
+    "ffn_gu": [
+      "gate_proj",
+      "up_proj"
+    ],
+    "qkv": [
+      "q_proj",
+      "k_proj",
+      "v_proj"
+    ]
+  },
+  "status": "PASS_ACTUAL_CPU_ASYNC_STAGE_BENCHMARK"
+}
