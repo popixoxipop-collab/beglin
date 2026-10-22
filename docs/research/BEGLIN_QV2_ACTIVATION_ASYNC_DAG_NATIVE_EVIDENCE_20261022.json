@@ -1,0 +1,182 @@
+{
+  "actual_full_model_async_GPU_Metal_not_implemented": true,
+  "code_paths": [
+    "research/oml_acs/q_v2_capture_activation_diag.py",
+    "research/oml_acs/q_v2_score_activation_local.py",
+    "research/oml_acs/q_v2_async_stage_native.c",
+    "research/oml_acs/q_v2_async_stage_benchmark.py",
+    "research/oml_acs/q_v2_activation_async_dag_milp.py",
+    "research/oml_acs/q_v2_native_held_eval_prepare.py",
+    "research/oml_acs/q_v2_native_held_eval_run.py",
+    "research/oml_acs/q_v2_native_held_eval_independent_audit.py"
+  ],
+  "date": "2026-10-22",
+  "frozen_MILP_github_source_sha256": "7975e04d3bf2e13f5e80050218c9ed0fc9ede22e405c92099e8a5b7e69c68cde",
+  "frozen_MILP_linux_source_receipt_SHA256": "c81e63801902ef3db88bbf0c400b8163646f9f073feb58b5413cbef2d89725d8",
+  "full_model": "28 layers; 196 Q4G64/n8 source-BF16 weight tensor roles; tied head constant",
+  "limitations": [
+    "Native async stage wall-time was measured with independent native q4 pools for layer0, but whole BEGLIN Qwen decoder does not yet execute stages concurrently.",
+    "Source-layer activation score uses BF16 input-channel diagonal second moments; no cross-channel covariance, gradient Hessian or causal per-tensor final-logit intervention.",
+    "Source 12 public calibration prompts, held 8 synthetic public evaluation prompts; no general real task AUROC or IID/OOD benchmark.",
+    "Old known prior 24 V6 used row IDs not authoritatively recovered; no final claim.",
+    "F32 baseline widens BF16 model weights to FP32 arithmetic, not native BF16 full-model execution.",
+    "Native single-token speed is best of three warmed trials, not stable long-generation TPS/energy or multi-request concurrency.",
+    "Observed PPL failure against older random role policy is real and intentionally preserved."
+  ],
+  "locked_eval_fixture_SHA256": "191f836b2fc34491ec2fbaa530b78e15e56db11e1322b34ce2146a05e983baa4",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "model_quality_beats_frozen_random": false,
+  "native_Qwen_apples_to_apples_eight_public_eval": {
+    "device": "Apple Silicon CPU Mac13,1",
+    "modes": {
+      "async_DAG": {
+        "KL_widened_F32_to_policy_nats": 0.3235639445024429,
+        "full_vocab_logits_sha256": "2eb6d798a95f004207bd64b974ffaab38e65c29acf4291cf67dca4e3e0913cfa",
+        "full_vocab_top1_token_id": 785,
+        "measured_native_best_of_3_ms": 89,
+        "measured_native_best_of_3_tokens_s": 11.236,
+        "measured_public_eval_NLL_nats": 6.685487968656638,
+        "measured_public_eval_ppl": 800.7013,
+        "observed_PPL_peak_RSS_bytes": 4863524864,
+        "shared_8_pinned_public_prompts": true,
+        "source_original_BF16_teacher_same": true
+      },
+      "f32": {
+        "KL_widened_F32_to_policy_nats": 0,
+        "full_vocab_logits_sha256": "0546060939035926d21519ca834a701eb0ee595031e75359a7908667478ffaa2",
+        "full_vocab_top1_token_id": 785,
+        "measured_native_best_of_3_ms": 205.04,
+        "measured_native_best_of_3_tokens_s": 4.877,
+        "measured_public_eval_NLL_nats": 5.853247623077063,
+        "measured_public_eval_ppl": 348.3639,
+        "observed_PPL_peak_RSS_bytes": 9274703872,
+        "shared_8_pinned_public_prompts": true,
+        "source_original_BF16_teacher_same": true
+      },
+      "old_random": {
+        "KL_widened_F32_to_policy_nats": 0.7024733034769481,
+        "full_vocab_logits_sha256": "14f50fa542c8aee6ab8841052252a0e5bf778944e3e61b2b5d1e00f699cb95a3",
+        "full_vocab_top1_token_id": 32,
+        "measured_native_best_of_3_ms": 116.74,
+        "measured_native_best_of_3_tokens_s": 8.566,
+        "measured_public_eval_NLL_nats": 6.314818977432272,
+        "measured_public_eval_ppl": 552.702,
+        "observed_PPL_peak_RSS_bytes": 4746035200,
+        "shared_8_pinned_public_prompts": true,
+        "source_original_BF16_teacher_same": true
+      },
+      "q4": {
+        "KL_widened_F32_to_policy_nats": 0.674379610663686,
+        "full_vocab_logits_sha256": "dac3e34971c5dbeed064823375c3efb9b0a293b0bb99dc9187f10a0fa4df872f",
+        "full_vocab_top1_token_id": 785,
+        "measured_native_best_of_3_ms": 72.44,
+        "measured_native_best_of_3_tokens_s": 13.805,
+        "measured_public_eval_NLL_nats": 6.590187442842743,
+        "measured_public_eval_ppl": 727.9173,
+        "observed_PPL_peak_RSS_bytes": 4829167616,
+        "shared_8_pinned_public_prompts": true,
+        "source_original_BF16_teacher_same": true
+      },
+      "serial_only": {
+        "KL_widened_F32_to_policy_nats": 0.5512917545261682,
+        "full_vocab_logits_sha256": "e51ebe367d11ddb88d8b94e03dabe05c68942f6526808cb65c981a1ebe479881",
+        "full_vocab_top1_token_id": 785,
+        "measured_native_best_of_3_ms": 83.14,
+        "measured_native_best_of_3_tokens_s": 12.028,
+        "measured_public_eval_NLL_nats": 6.6729021878136106,
+        "measured_public_eval_ppl": 790.687,
+        "observed_PPL_peak_RSS_bytes": 4659609600,
+        "shared_8_pinned_public_prompts": true,
+        "source_original_BF16_teacher_same": true
+      }
+    },
+    "prediction_positions": 131,
+    "prompt_count": 8,
+    "same_prompt_ids_for_all_five": true,
+    "source_model": "BF16 source Qwen, F32 widened baseline; original source snapshot fixed"
+  },
+  "native_end_to_end_sequential_only": true,
+  "native_parallel_QKV_FFN_measured_as_independent_stages": true,
+  "old_V6_24_used_ids_unknown_and_holdout_not_opened": true,
+  "optimizer_source_quality_gain_is_local_diagonal_activation_error_not_NLL": true,
+  "original_bf16_calibration_prompts": 12,
+  "original_bf16_calibration_tokens": 461,
+  "original_model_main_production_untouched": true,
+  "private_independent_EOE_native_audit_sha256": "218c5be39f7ebfdc54254865d5b43d912c1dad859b2baad4ac63ae73c8a2a585",
+  "private_original_native_five_results_sha256": "4fbaae62ad6545beb48a9d1ad4fb07d54b5d6982061ac93486110e60cf438a18",
+  "regressions": {
+    "EOE_native_quality": "8/8 PASS",
+    "linux_MILP": "8/8 PASS"
+  },
+  "schema": "BEGLIN-QV2-activation-diagonal-async-kernel-aware-native-evidence/1",
+  "scientific_Q_hypothesis_verdict": "NO_VERDICT",
+  "source_196_activation_quality_scoring_sha256": "7b3ad80294275807cb3775601915b18ec3caeeef430849d8cea48389b3623616",
+  "source_activation_moment_sha256": "ee7b177b4dde984a5d83e0cdb5983d2ae00c34ee752fef9113a79568a1d12663",
+  "source_actual_native_qkv_ffn_parallel_stage_SHA256": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+  "source_policy_canonical": [
+    {
+      "milp_gap": 0,
+      "name": "async_DAG",
+      "native_measured_stage_overlap_savings_unscaled_ms": 4.369580500000911,
+      "policy_sha256": "e044675ea5b47a5aca0ca75980a55070b932d1a4dc330815bbb097acbf75df7b",
+      "predicted_full_model_async_advantage_ms": 4.540991325937412,
+      "predicted_hypothetical_parallel_graph_ms": 84.98265489284384,
+      "predicted_native_serial_ms": 89.52364621878125,
+      "projection_bytes": 771194880,
+      "role_counts": {
+        "down_proj": 1,
+        "gate_proj": 0,
+        "k_proj": 1,
+        "o_proj": 0,
+        "q_proj": 2,
+        "up_proj": 3,
+        "v_proj": 21
+      },
+      "source_activation_local_error_reduction": 1.530324797513,
+      "stage_kernel_scheduler_mode_counts": {
+        "ffn_gu": {
+          "parallel_q4_6t": 28
+        },
+        "qkv": {
+          "parallel_q4_1t": 2,
+          "parallel_q4_6t": 26
+        }
+      },
+      "total_n8": 28,
+      "total_q4": 168
+    },
+    {
+      "milp_gap": 0,
+      "name": "serial_only",
+      "native_measured_stage_overlap_savings_unscaled_ms": 4.128085875000963,
+      "policy_sha256": "06f07fcfab7fdba22528c6c80e09582f18cfa77d0760a26e4ec35bc6a80dd72c",
+      "predicted_full_model_async_advantage_ms": 4.290023298827009,
+      "predicted_hypothetical_parallel_graph_ms": 79.57661662913165,
+      "predicted_native_serial_ms": 83.86663992795866,
+      "projection_bytes": 758808576,
+      "role_counts": {
+        "down_proj": 0,
+        "gate_proj": 0,
+        "k_proj": 1,
+        "o_proj": 1,
+        "q_proj": 2,
+        "up_proj": 2,
+        "v_proj": 22
+      },
+      "source_activation_local_error_reduction": 1.5044359410510002,
+      "stage_kernel_scheduler_mode_counts": {
+        "ffn_gu": {
+          "parallel_q4_6t": 28
+        },
+        "qkv": {
+          "parallel_q4_1t": 2,
+          "parallel_q4_6t": 26
+        }
+      },
+      "total_n8": 28,
+      "total_q4": 168
+    }
+  ],
+  "source_rev": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "status": "SOURCE_MILP_AND_NATIVE_VERIFIED__NO_QUALITY_ADVANTAGE"
+}
