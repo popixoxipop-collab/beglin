@@ -1,0 +1,147 @@
+{
+  "schema": "beglin-q-v2-real-native-async-role-costs/1",
+  "date": "2026-10-22",
+  "status": "MEASURED_BEFORE_V2_POLICY_SELECTION",
+  "source_file_eoe_SHA256": {
+    "stage": "380670d42ccd2f12c4a015600be3d921f672c570a3d3a4a1652c61e217791808",
+    "role": "280ca338745d0ebb2c44986d18e8b240135fe7fa4b1077f49f65f5d8fb3eff93"
+  },
+  "scope": "Qwen2.5-1.5B original BF16 role-0 tensors on EOE Mac13,1 native BEGLIN CPU, eight inputs seven rounds",
+  "concurrency": "QKV and gate/up independently used ThreadPoolExecutor with separate native q4pool per role; measured stage wall time includes dispatch overhead",
+  "pipeline_not_actually_async": true,
+  "per_stage_bits": {
+    "qkv": [
+      4,
+      8,
+      12
+    ],
+    "ffn_gu": [
+      4,
+      8,
+      12
+    ]
+  },
+  "stage": {
+    "ffn_gu": {
+      "44": {
+        "mode": "parallel_q4_6t",
+        "ms": 0.786765625,
+        "serial_ms": 0.835239625
+      },
+      "48": {
+        "mode": "parallel_q4_6t",
+        "ms": 3.427703125,
+        "serial_ms": 3.745520875
+      },
+      "84": {
+        "mode": "parallel_q4_1t",
+        "ms": 3.413776125,
+        "serial_ms": 3.750109375
+      },
+      "88": {
+        "mode": "parallel_q4_1t",
+        "ms": 3.480447875,
+        "serial_ms": 6.61816675
+      }
+    },
+    "qkv": {
+      "444": {
+        "mode": "parallel_q4_6t",
+        "ms": 0.187932375,
+        "serial_ms": 0.241515625
+      },
+      "448": {
+        "mode": "parallel_q4_6t",
+        "ms": 0.20861975,
+        "serial_ms": 0.290052125
+      },
+      "484": {
+        "mode": "parallel_q4_6t",
+        "ms": 0.189109375,
+        "serial_ms": 0.284849
+      },
+      "488": {
+        "mode": "parallel_q4_6t",
+        "ms": 0.2093385,
+        "serial_ms": 0.324640625
+      },
+      "844": {
+        "mode": "parallel_q4_1t",
+        "ms": 0.61044275,
+        "serial_ms": 0.691635375
+      },
+      "848": {
+        "mode": "parallel_q4_1t",
+        "ms": 0.611724,
+        "serial_ms": 0.74250525
+      },
+      "884": {
+        "mode": "parallel_q4_1t",
+        "ms": 0.61206775,
+        "serial_ms": 0.7374635
+      },
+      "888": {
+        "mode": "parallel_q4_6t",
+        "ms": 0.61265625,
+        "serial_ms": 0.7700365
+      }
+    }
+  },
+  "role": {
+    "down_proj": {
+      "n8": 3.4694478750000313,
+      "n8bytes": 14622720,
+      "q4_1t": 2.135494874999977,
+      "q4_6t": 0.44023437500007034,
+      "q4bytes": 7741440
+    },
+    "gate_proj": {
+      "n8": 3.318447875000019,
+      "n8bytes": 14622720,
+      "q4_1t": 1.9960416250000002,
+      "q4_6t": 0.41853649999995524,
+      "q4bytes": 7741440
+    },
+    "k_proj": {
+      "n8": 0.10030724999998686,
+      "n8bytes": 417792,
+      "q4_1t": 0.0626406249999989,
+      "q4_6t": 0.05759887500000893,
+      "q4bytes": 221184
+    },
+    "o_proj": {
+      "n8": 0.5708749999999985,
+      "n8bytes": 2506752,
+      "q4_1t": 0.3463801249999898,
+      "q4_6t": 0.12338549999998949,
+      "q4bytes": 1327104
+    },
+    "q_proj": {
+      "n8": 0.5705105000000099,
+      "n8bytes": 2506752,
+      "q4_1t": 0.345557250000017,
+      "q4_6t": 0.08978125000000392,
+      "q4bytes": 1327104
+    },
+    "up_proj": {
+      "n8": 3.3153281250000166,
+      "n8bytes": 14622720,
+      "q4_1t": 2.018026000000006,
+      "q4_6t": 0.4154011250000478,
+      "q4bytes": 7741440
+    },
+    "v_proj": {
+      "n8": 0.10034375000000928,
+      "n8bytes": 417792,
+      "q4_1t": 0.06327087499999329,
+      "q4_6t": 0.05816675000000493,
+      "q4bytes": 221184
+    }
+  },
+  "notes": [
+    "Schedule is a layer-node-level predicted model until a real asynchronous whole-decoder worker is measured.",
+    "Stage latency profile is one source layer 0 for each role; deep-layer activations may differ.",
+    "All Q4 and qNg64 n8 bytes already SHA pinned; no real model output used in policy selection."
+  ],
+  "production_unchanged": true
+}
