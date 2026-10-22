@@ -68,4 +68,26 @@ class OriginalNativeOneN8Contracts(unittest.TestCase):
   self.assertEqual(len(x["within_role_high_vs_low_source_proxy_recovery_alignment"]),3)
   self.assertTrue(x["model_single_tensor_native_intervention_proven"])
   self.assertFalse(x["automated_live_precision_promotion"])
+ def test_postnative_role_pair_bootstrap_evidence(self):
+  p=D/"BEGLIN_QV11_ROLE_RANK_PAIRED_BOOTSTRAP_PUBLIC_20261023.json"
+  a=json.loads(p.read_text())
+  self.assertEqual(a["status"],"PAIRWISE_TRUE_C_16ARTICLE_6INTERVENTION_BOOTSTRAP_COMPLETE")
+  self.assertEqual(a["paired_source_bootstrap_n"],5000)
+  self.assertEqual(a["sample_size_original_test_articles"],16)
+  self.assertEqual(a["pair_direction_concordance"],2)
+  self.assertEqual(a["pair_direction_total"],3)
+  self.assertAlmostEqual(a["six_source_Fisher_vs_actual_C_NLL_gain_Spearman"],.6)
+  self.assertFalse(a["promotion_denied"]==False)
+  self.assertTrue(a["source_Fisher_global_ranking_not_established"])
+  self.assertLess(a["six_probe_rank_Spearman_question_bootstrap_95CI"][0],0)
+  self.assertGreater(a["six_probe_rank_Spearman_question_bootstrap_95CI"][1],0)
+  self.assertFalse(a["within_role_high_vs_low_all_paired"]["down_proj"]["rank_direction_correct"])
+ def test_final_handoff_preserves_non_generalization(self):
+  p=D/"BEGLIN_QV11_REAL_SINGLE_TENSOR_NATIVE_HANDOFF_20261023.md"
+  data=p.read_text()
+  self.assertIn("16문항",data)
+  self.assertIn("2/3",data)
+  self.assertIn("112개",data)
+  self.assertIn("운영",data)
+  self.assertNotIn("범용 성능 입증",data)
 if __name__=="__main__":unittest.main(verbosity=2)

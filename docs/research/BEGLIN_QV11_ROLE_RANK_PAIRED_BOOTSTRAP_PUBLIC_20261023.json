@@ -1,0 +1,61 @@
+{
+  "bootstrap_seed": 20261023,
+  "evaluation_RACE_test_not_unseen_by_model_pretraining": true,
+  "no_multiple_comparisons_significance_claim": true,
+  "only_six_source_preselected_extremes": true,
+  "pair_direction_concordance": 2,
+  "pair_direction_total": 3,
+  "paired_source_bootstrap_n": 5000,
+  "promotion_denied": true,
+  "sample_size_original_test_articles": 16,
+  "schema": "BEGLIN-Qv11-actual-original-C-one-tensor-Fisher-vs-downstream-role-rank/1",
+  "six_probe_rank_Spearman_question_bootstrap_95CI": [
+    -0.08571428571428573,
+    0.942857142857143
+  ],
+  "six_source_Fisher_vs_actual_C_NLL_gain_Spearman": 0.6,
+  "source_Fisher_global_ranking_not_established": true,
+  "source_prelock_SHA256": "2cd480dc4c72b5383014a1325d350e51a0b47b1335ec0013a6d069773b546a39",
+  "source_private_authentic_C_independent_audit_SHA256": "604fd45711d40ab40494afb3d438a4c65f4184972a369c3bcab82b1abd3e2f9c",
+  "source_public_independent_C_audit_SHA256": "026d3454a63168acee908e57696f61a73e3c8f883eab27b453e8b77ddda2fe15",
+  "source_quant_singleton_not_runtime_28n8_budget_matched": true,
+  "status": "PAIRWISE_TRUE_C_16ARTICLE_6INTERVENTION_BOOTSTRAP_COMPLETE",
+  "within_role_high_vs_low_all_paired": {
+    "down_proj": {
+      "high_n8_better_per_case_count": 4,
+      "high_source_layer": 2,
+      "low_n8_better_per_case_count": 12,
+      "low_source_layer": 10,
+      "mean_high_minus_low_native_NLL": 0.09413999718629051,
+      "paired_bootstrap_95CI": [
+        -0.3994400041935498,
+        0.7335893071630746
+      ],
+      "rank_direction_correct": false
+    },
+    "k_proj": {
+      "high_n8_better_per_case_count": 9,
+      "high_source_layer": 0,
+      "low_n8_better_per_case_count": 7,
+      "low_source_layer": 1,
+      "mean_high_minus_low_native_NLL": -0.17990919106084652,
+      "paired_bootstrap_95CI": [
+        -0.5197325780873161,
+        0.06958433403250518
+      ],
+      "rank_direction_correct": true
+    },
+    "v_proj": {
+      "high_n8_better_per_case_count": 9,
+      "high_source_layer": 20,
+      "low_n8_better_per_case_count": 7,
+      "low_source_layer": 27,
+      "mean_high_minus_low_native_NLL": -0.26593125202222173,
+      "paired_bootstrap_95CI": [
+        -0.6637353598108199,
+        0.07675947018674754
+      ],
+      "rank_direction_correct": true
+    }
+  }
+}
