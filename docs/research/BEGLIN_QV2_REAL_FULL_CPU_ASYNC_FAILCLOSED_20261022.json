@@ -1,0 +1,106 @@
+{
+  "schema": "BEGLIN-Qv2-real-native-whole-decoder-asynchronous-failclosed-public-evidence/1",
+  "status": "NOT_READY_DEFAULT_SERIAL",
+  "date": "2026-10-22",
+  "source_private_audit_receipt_sha256": "cc5cb236d3bb9115fcb638f7e700db96a36a1b1ac3ab7d6a3ffc5df1caca8377",
+  "source_research_audit_script_sha256": "103ba2d7c1a0ceb0accb35dc32de0055816dbcb2e6d728a45054eb7587c39540",
+  "model": "Qwen2.5-1.5B-Instruct",
+  "model_snapshot": "4ae77cb209f06199b8df1c94e21ff341332a3a89",
+  "frozen_precision_policy_sha256": "cb9268c9177d47705e548c2a90a6b22772569b3f2bb54dfef2767ca53ffa3e76",
+  "native_provenance": {
+    "native_model_Q4pool_private_per_pthread": true,
+    "native_thread_count_background": 3,
+    "original_source_model_and_operational_engine_unchanged": true,
+    "whole_model_hybrid_and_repeat_same_binary": "4cfc89d2ee4137745d7830a32b799beab20fe681d7c3c87581ce8cd67fffe718",
+    "whole_model_serial_and_both_async_same_binary": "17a7df7487963ea5b7e30073f046408b022559eca6d5a51b954114a08d53e1e1"
+  },
+  "native_source_receipt_shas": {
+    "actual_audit": "af142423b54012ca28bdcf3b17c8be6824df1b4e51abbca6eb6a70426314c391",
+    "actual_build": "effe1a219234d2b751cd0f7f995d258785caa43322a71c0f0afc5a850b285f12",
+    "hybrid_build": "4169bec8a80b4bc624a0a8c7df721817be77e0b81d9fffa24c6e242fec45d46a",
+    "repeat": "b13abf47bd2369a95a041741d65dfb9ee55e86a6a233da7742319165382564b2"
+  },
+  "native_151936_logits_all_conditions_bitwise_identical": {
+    "ffn_only": {
+      "bitwise_equal_to_original": true,
+      "logit_sha256": "a9ba83b59a03faa84956bb5fc5e4f3ad2867a5b3e53c18455ddde11608d18653",
+      "top1_id": 9707
+    },
+    "qkv_and_ffn_async": {
+      "bitwise_equal_to_original": true,
+      "logit_sha256": "a9ba83b59a03faa84956bb5fc5e4f3ad2867a5b3e53c18455ddde11608d18653",
+      "top1_id": 9707
+    },
+    "qkv_only": {
+      "bitwise_equal_to_original": true,
+      "logit_sha256": "a9ba83b59a03faa84956bb5fc5e4f3ad2867a5b3e53c18455ddde11608d18653",
+      "top1_id": 9707
+    },
+    "serial": {
+      "bitwise_equal_to_original": true,
+      "logit_sha256": "a9ba83b59a03faa84956bb5fc5e4f3ad2867a5b3e53c18455ddde11608d18653",
+      "top1_id": 9707
+    }
+  },
+  "native_threaded_joints_and_benchmarks": {
+    "FFN_only_PPL_measured": false,
+    "PPL_131_serial_and_both_parallel": 807.363,
+    "QKV_initial_speed_gain_fraction": 0.048100340964442045,
+    "QKV_only_PPL_131_public_positions": 807.363,
+    "QKV_repeat_speed_gain_fraction": -0.16268761962324962,
+    "actual_initial_native_bench_best_of_three_ms": {
+      "both_parallel": 90.14,
+      "ffn_only": 105.82,
+      "qkv_only": 82.12,
+      "serial": 86.07
+    },
+    "all_same_source_precision_and_eval_inputs": true,
+    "best_of_three_short_bench_nonreproducible_QKV_speedup": true,
+    "real_FFN_only_worker_joins": {
+      "bench": 1596,
+      "dump": 280
+    },
+    "real_QKV_worker_joins": {
+      "bench": 1596,
+      "dump": 280,
+      "ppl": 3892
+    },
+    "same_binary_repeat_bench_best_of_three_ms": {
+      "both_control": 90.32,
+      "qkv_repeat": 99.27,
+      "serial_control": 83.12
+    },
+    "same_executable_repeat_receipt_sha256": "b13abf47bd2369a95a041741d65dfb9ee55e86a6a233da7742319165382564b2"
+  },
+  "PPL_on_original_131_public_development_positions": {
+    "frozen_v2_Qwen_all_stage_modes_same": 807.363,
+    "all_Q4_reference": 727.9173,
+    "role_balanced_random_reference": 552.702,
+    "F32_widened_from_BF16_reference": 348.3639
+  },
+  "regression": "9/9 PASS original source-bound independent checks, --require-ready returns exit 2",
+  "scientific_Q_verdict": "NO_VERDICT",
+  "observed_full_decoder_actual_pthread_async_verified": true,
+  "observed_full_decoder_parallel_speed_gain_established": false,
+  "gate": "NOT_READY_DEFAULT_SERIAL",
+  "recommended_default": "SERIAL",
+  "reasons": [
+    "v2_offline_precision_policy_fails_original_development_131_position_NLL_ceiling",
+    "v2_precision_policy_dominated_by_all_Q4_on_original_short_development_quality_memory_speed",
+    "full_QKV_and_FFN_parallel_native_benchmark_slower_than_serial",
+    "QKV_only_short_best_of_three_speedup_not_reproduced_on_same_binary_repeat",
+    "no_repeated_sustained_decode_latency_confidence_interval_or_concurrent_requests",
+    "native_pthread_worker_sanitizer_and_oversubscription_safety_not_certified",
+    "no_heldout_real_task_AUROC_or_original_V6_24_contamination_audit",
+    "no_Metal_GPU_async_or_multi_batch_forward_path_validation"
+  ],
+  "limitations": [
+    "Initial short QKV-only speed benefit was contradicted by one controlled same-executable repeat; neither result is a stable p95/CI.",
+    "Native QKV/FFN worker barriers are real and produce bit-identical logits, but data-race sanitization was not run.",
+    "FFN-only short decode and logit parity measured; FFN-only PPL was not measured because it was already slower.",
+    "No automagic live optimization, no background task left running and no production release activation."
+  ],
+  "scope": "isolated Apple CPU native single-token forward_token 28 layers, three K/V/UP independent pthreads with private Q4 pools, source BF16 snapshot; no batched GEMM async or metal GPU",
+  "no_original_or_production_changes": true,
+  "prior_security_blocked_full_model_tensor_intervention_not_retried": true
+}
