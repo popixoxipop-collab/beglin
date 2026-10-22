@@ -1,0 +1,151 @@
+{
+  "async_independent_stage_sum_ms": 49.701761999999924,
+  "async_not_fullmodel_latency": true,
+  "date": "2026-10-22",
+  "evaluation_prompts_sha256": "d15dd4e7dd436095f3a7215e93e4671770b016f6e56d0fa0fd2d3e14fadeb726",
+  "evaluation_used_in_optimization": false,
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "n4_tensors": 168,
+  "n8_tensors": 28,
+  "native_stage_cost_sha256": "cc5e82cceaec836549eeaf5616a1570739ee58da62aae38bdb7a751013cc056d",
+  "original_BF16_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "original_V6_holdout_touched": false,
+  "original_source_quality_proxy_gain": 1.494839261867,
+  "packed_projection_weight_bytes": 757825536,
+  "production_changed": false,
+  "proof": {
+    "binary_stage_variables": 448,
+    "gap": 0,
+    "milp_status": 0,
+    "source_only_status": "SOURCE_ONLY_PROVED_MILP_OPTIMUM__NOT_YET_MODEL_EVALUATED"
+  },
+  "research_PRIVATE_receipt_sha256": "7d19591c22846f8d001256f4c4addacfa7babeebf49eae9b3783128e9c464ea4",
+  "role_counts": {
+    "down_proj": 0,
+    "gate_proj": 0,
+    "k_proj": 1,
+    "o_proj": 1,
+    "q_proj": 1,
+    "up_proj": 2,
+    "v_proj": 23
+  },
+  "schema": "BEGLIN-Qv2-async-activation-selection-public/1",
+  "selected_n8_role_layer_ids": [
+    [
+      "q_proj",
+      25
+    ],
+    [
+      "k_proj",
+      0
+    ],
+    [
+      "v_proj",
+      2
+    ],
+    [
+      "v_proj",
+      3
+    ],
+    [
+      "v_proj",
+      4
+    ],
+    [
+      "v_proj",
+      5
+    ],
+    [
+      "v_proj",
+      6
+    ],
+    [
+      "v_proj",
+      7
+    ],
+    [
+      "v_proj",
+      8
+    ],
+    [
+      "v_proj",
+      9
+    ],
+    [
+      "v_proj",
+      10
+    ],
+    [
+      "v_proj",
+      11
+    ],
+    [
+      "v_proj",
+      12
+    ],
+    [
+      "v_proj",
+      13
+    ],
+    [
+      "v_proj",
+      14
+    ],
+    [
+      "v_proj",
+      15
+    ],
+    [
+      "v_proj",
+      16
+    ],
+    [
+      "v_proj",
+      17
+    ],
+    [
+      "v_proj",
+      18
+    ],
+    [
+      "v_proj",
+      19
+    ],
+    [
+      "v_proj",
+      20
+    ],
+    [
+      "v_proj",
+      21
+    ],
+    [
+      "v_proj",
+      22
+    ],
+    [
+      "v_proj",
+      23
+    ],
+    [
+      "v_proj",
+      24
+    ],
+    [
+      "o_proj",
+      26
+    ],
+    [
+      "up_proj",
+      2
+    ],
+    [
+      "up_proj",
+      3
+    ]
+  ],
+  "selected_policy_sha256": "cb9268c9177d47705e548c2a90a6b22772569b3f2bb54dfef2767ca53ffa3e76",
+  "serial_fullmodel_estimate_ms": 83.30589129035857,
+  "source_activation_scores_sha256": "f859949b6a07a8fe2476e90c112cb513679a9c4758dc8d412a0e59b4b48458fc",
+  "status": "PRE_EVALUATION_FROZEN_SOURCE_ONLY"
+}
