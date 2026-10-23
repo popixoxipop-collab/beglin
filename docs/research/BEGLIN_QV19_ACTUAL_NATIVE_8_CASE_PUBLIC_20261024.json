@@ -1,0 +1,22 @@
+{
+  "actual_native_wall_s": 111.12904450017959,
+  "cache_drops": 0,
+  "cache_misses": 0,
+  "correct": 8,
+  "derived_native_exe_sha256": "c333c5a95aca340e59352c7e0e716521b3f57028002a53e307a9f962a2c654c2",
+  "full_precision_switch_forward_logit_exclusive": true,
+  "mean_gold_NLL": 0.001969528362390539,
+  "model_source_Qv17_signed_asset_and_operating_release_unchanged": true,
+  "original_C_log_sha256": "9071bb5142a8e8a82b5c46ab2661ccbb25e056b2e14cb12b56f46e68dccd67f8",
+  "original_gold_NLL_exact_cases": 8,
+  "peak_cache_mib": 90.046875,
+  "poison": 0,
+  "real_native_EOE_workers": 2,
+  "same_process_actual_simultaneous_forwards": false,
+  "schema": "BEGLIN-Qv19-real-Apple-Qwen28-2-pthread-exclusive-model-lifetime/1",
+  "shared_KV_forward_inflight_max": 1,
+  "signed_dev_binary_envelope_sha256": "55a9f6573dcbd1cdbc1daf248f76de71af05e40fb4b3e4c2f192f855abaa7297",
+  "source_original_Qv17_C_sha256": "0c9d797c0066fdb1f8ca5972bdf7611ae75431050d0d55c0f0fdef0653f6bdaa",
+  "status": "REAL_ORIGINAL_NATIVE_QWEN28_MUTEX_LEASE_8_OF_8_SOURCE_STATIC_EXACT",
+  "unique_stable_epoch_count": 8
+}
