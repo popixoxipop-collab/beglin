@@ -1,0 +1,27 @@
+{
+  "Qv18_antireplay_requirement": "In real service, a durable tamper-resistant monotonic minimum revision is required; this test is an IN-MEMORY trust-store simulation only",
+  "ephemeral_second_private_key_stored_on_disk": false,
+  "ephemeral_second_public_key_sha256": "1d23cdc3ff4d578668bc25087750e3c5d9f578cafc3a9c4777363733d138c588",
+  "existing_Qv17_original_root_revoked_in_operation": false,
+  "new_dev_v2_signed_release_envelope_sha256": "a7fbb1d5ebb80eeddd971fa96b4412e67e4fd9c6792b917fa87a4411dcfed9bd",
+  "new_production_release_key_issued": false,
+  "no_model_or_operator_release_change": true,
+  "original_Qv17_signed_manifest_SHA256": "491deb61dbc30fad08b4a5d819b270b64167d5551b422823ae0b431f4a5c6824",
+  "original_developer_public_trust_root_sha256": "5f535c54985ac18257b50c4bd7969ec4ce57aecb766def485c68c8b0a4ad4847",
+  "original_real_signed_artifact_SHA256": "49c409a79588b79dcefeba60e09b71459ac8df2d02ac0bda5e2cc1ab8076a86b",
+  "original_signed_artifacts_unchanged": true,
+  "schema": "BEGLIN-Qv18-offline-local-developer-key-revision-policy-negative-unit-test/1",
+  "status": "ALL_10_ED25519_ROTATION_REVOCATION_ROLLBACK_BINDING_TESTS_PASS",
+  "test_cases": {
+    "authentic_but_stale_sequence_REJECTED": true,
+    "authentic_but_wrong_mask_REJECTED": true,
+    "authentic_but_wrong_model_REJECTED": true,
+    "authentic_but_wrong_native_binary_REJECTED": true,
+    "new_v2_key_REJECTED_under_unrotated_v1_roots": true,
+    "old_v1_key_REVOKED_in_new_trust_store": true,
+    "tampered_epoch_without_resigning_REJECTED": true,
+    "valid_v2_release_ACCEPTED_after_trust_root_rotation": true,
+    "wrong_packed_artifact_digest_REJECTED": true,
+    "wrong_signature_public_key_REJECTED": true
+  }
+}
