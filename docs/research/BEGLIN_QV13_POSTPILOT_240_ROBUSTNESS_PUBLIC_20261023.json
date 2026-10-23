@@ -1,0 +1,225 @@
+{
+  "data": "Frozen ARC-Challenge test 120 + OpenBookQA test 120, first 8 per domain excluded",
+  "five_random_control_aggregate": {
+    "Qv8_vs_average_random_mean_NLL": 0.15803943219339972,
+    "mean_random_minus_Qv8_NLL_by_dataset": {
+      "arc128": 0.13168297502775345,
+      "ob128": 0.18439588935904597
+    }
+  },
+  "limitations": [
+    "Descriptive robust statistics; not a new preregistered primary hypothesis",
+    "NLL is gold next-token full-vocab softmax, not conditional four-option NLL",
+    "Models use fixed masks; dynamic request-level selection not demonstrated",
+    "Results can be driven by a small set of outlier high-loss questions",
+    "Public test questions may have appeared in model pretraining",
+    "Original prereg explanation has SHA/order errata (preserved separately)",
+    "Pairwise 240 selection was defined after observing 16 pilot results",
+    "Latency and GPU precision-switch costs are not evaluated"
+  ],
+  "n": 240,
+  "no_main_merge_or_runtime_release_change": true,
+  "original_Qwen_layers": 28,
+  "paired_comparison": {
+    "original_v2": {
+      "Qv8_correct_minus_comparator": -13,
+      "Qv8_lower_NLL_items": 114,
+      "comparator_lower_NLL_items": 126,
+      "interpretation": "positive comparator_minus_Qv8 favors Qv8 for NLL",
+      "mean_comparator_minus_Qv8_NLL": -0.3857948685906285,
+      "median_paired_diff": -0.00018161089642791656,
+      "n": 240,
+      "per_dataset_mean_diff": {
+        "arc128": -0.3584969827783903,
+        "ob128": -0.4130927544028667
+      },
+      "top5_positive_diffs_fraction_of_net_sum": -0.17862074679970127,
+      "trimmed10pct_paired_mean": -0.235981322491472,
+      "winsor10pct_paired_mean": -0.3534841425571595
+    },
+    "q4": {
+      "Qv8_correct_minus_comparator": -7,
+      "Qv8_lower_NLL_items": 133,
+      "comparator_lower_NLL_items": 107,
+      "interpretation": "positive comparator_minus_Qv8 favors Qv8 for NLL",
+      "mean_comparator_minus_Qv8_NLL": 0.017875136288775868,
+      "median_paired_diff": 5.2364100936314945e-05,
+      "n": 240,
+      "per_dataset_mean_diff": {
+        "arc128": 0.04372387155959461,
+        "ob128": -0.007973598982042878
+      },
+      "top5_positive_diffs_fraction_of_net_sum": 5.956592959524496,
+      "trimmed10pct_paired_mean": -0.005326242453038819,
+      "winsor10pct_paired_mean": -0.005591906974197771
+    },
+    "random137": {
+      "Qv8_correct_minus_comparator": -3,
+      "Qv8_lower_NLL_items": 105,
+      "comparator_lower_NLL_items": 135,
+      "interpretation": "positive comparator_minus_Qv8 favors Qv8 for NLL",
+      "mean_comparator_minus_Qv8_NLL": 0.09248252516624818,
+      "median_paired_diff": -8.06137524762073e-05,
+      "n": 240,
+      "per_dataset_mean_diff": {
+        "arc128": 0.018280518511930407,
+        "ob128": 0.16668453182056595
+      },
+      "top5_positive_diffs_fraction_of_net_sum": 1.0624501838333151,
+      "trimmed10pct_paired_mean": 0.07570124458691997,
+      "winsor10pct_paired_mean": 0.1208057250033497
+    },
+    "random211": {
+      "Qv8_correct_minus_comparator": 2,
+      "Qv8_lower_NLL_items": 134,
+      "comparator_lower_NLL_items": 106,
+      "interpretation": "positive comparator_minus_Qv8 favors Qv8 for NLL",
+      "mean_comparator_minus_Qv8_NLL": 0.24409522989903024,
+      "median_paired_diff": 3.2770576977679236e-05,
+      "n": 240,
+      "per_dataset_mean_diff": {
+        "arc128": 0.20846293909813826,
+        "ob128": 0.2797275206999222
+      },
+      "top5_positive_diffs_fraction_of_net_sum": 0.42962031410318535,
+      "trimmed10pct_paired_mean": 0.19547508212033518,
+      "winsor10pct_paired_mean": 0.2641811059414059
+    },
+    "random389": {
+      "Qv8_correct_minus_comparator": -4,
+      "Qv8_lower_NLL_items": 102,
+      "comparator_lower_NLL_items": 138,
+      "interpretation": "positive comparator_minus_Qv8 favors Qv8 for NLL",
+      "mean_comparator_minus_Qv8_NLL": 0.06828460178815018,
+      "median_paired_diff": -0.00013410361688029603,
+      "n": 240,
+      "per_dataset_mean_diff": {
+        "arc128": 0.01253125247443245,
+        "ob128": 0.12403795110186792
+      },
+      "top5_positive_diffs_fraction_of_net_sum": 1.4949971382815461,
+      "trimmed10pct_paired_mean": 0.019547697451052972,
+      "winsor10pct_paired_mean": 0.056877372485197156
+    },
+    "random577": {
+      "Qv8_correct_minus_comparator": -12,
+      "Qv8_lower_NLL_items": 116,
+      "comparator_lower_NLL_items": 124,
+      "interpretation": "positive comparator_minus_Qv8 favors Qv8 for NLL",
+      "mean_comparator_minus_Qv8_NLL": 0.15681856152035015,
+      "median_paired_diff": -9.631377649520664e-06,
+      "n": 240,
+      "per_dataset_mean_diff": {
+        "arc128": 0.16194320084505778,
+        "ob128": 0.15169392219564248
+      },
+      "top5_positive_diffs_fraction_of_net_sum": 0.7768302865053452,
+      "trimmed10pct_paired_mean": 0.06491588897141722,
+      "winsor10pct_paired_mean": 0.1523094596497422
+    },
+    "random73": {
+      "Qv8_correct_minus_comparator": -7,
+      "Qv8_lower_NLL_items": 89,
+      "comparator_lower_NLL_items": 151,
+      "interpretation": "positive comparator_minus_Qv8 favors Qv8 for NLL",
+      "mean_comparator_minus_Qv8_NLL": 0.22851624259322004,
+      "median_paired_diff": -0.00028921532225737796,
+      "n": 240,
+      "per_dataset_mean_diff": {
+        "arc128": 0.25719696420920857,
+        "ob128": 0.1998355209772315
+      },
+      "top5_positive_diffs_fraction_of_net_sum": 0.4239391320262079,
+      "trimmed10pct_paired_mean": 0.15974045630552483,
+      "winsor10pct_paired_mean": 0.2733474130230494
+    }
+  },
+  "per_arm": {
+    "original_v2": {
+      "correct": 157,
+      "count_gold_token_NLL_over10": 4,
+      "count_gold_token_NLL_over5": 30,
+      "mean_gold_token_fullvocab_NLL": 1.550576772538611,
+      "median_gold_token_fullvocab_NLL": 0.06833161536090632,
+      "n": 240,
+      "p95_gold_token_fullvocab_NLL": 8.804488856767902,
+      "projection_packed_bytes": 776896512
+    },
+    "q4": {
+      "correct": 151,
+      "count_gold_token_NLL_over10": 9,
+      "count_gold_token_NLL_over5": 40,
+      "mean_gold_token_fullvocab_NLL": 1.9542467774180154,
+      "median_gold_token_fullvocab_NLL": 0.08447064598255577,
+      "n": 240,
+      "p95_gold_token_fullvocab_NLL": 8.817558994382953,
+      "projection_packed_bytes": 736985088
+    },
+    "random137": {
+      "correct": 147,
+      "count_gold_token_NLL_over10": 10,
+      "count_gold_token_NLL_over5": 42,
+      "mean_gold_token_fullvocab_NLL": 2.028854166295488,
+      "median_gold_token_fullvocab_NLL": 0.03289635379328415,
+      "n": 240,
+      "p95_gold_token_fullvocab_NLL": 9.65430556373095,
+      "projection_packed_bytes": 765493248
+    },
+    "random211": {
+      "correct": 142,
+      "count_gold_token_NLL_over10": 10,
+      "count_gold_token_NLL_over5": 47,
+      "mean_gold_token_fullvocab_NLL": 2.18046687102827,
+      "median_gold_token_fullvocab_NLL": 0.04736054656647986,
+      "n": 240,
+      "p95_gold_token_fullvocab_NLL": 9.08248991039169,
+      "projection_packed_bytes": 765493248
+    },
+    "random389": {
+      "correct": 148,
+      "count_gold_token_NLL_over10": 7,
+      "count_gold_token_NLL_over5": 42,
+      "mean_gold_token_fullvocab_NLL": 2.00465624291739,
+      "median_gold_token_fullvocab_NLL": 0.044661655410224294,
+      "n": 240,
+      "p95_gold_token_fullvocab_NLL": 9.250585148841397,
+      "projection_packed_bytes": 765493248
+    },
+    "random577": {
+      "correct": 156,
+      "count_gold_token_NLL_over10": 8,
+      "count_gold_token_NLL_over5": 48,
+      "mean_gold_token_fullvocab_NLL": 2.09319020264959,
+      "median_gold_token_fullvocab_NLL": 0.03630229505219783,
+      "n": 240,
+      "p95_gold_token_fullvocab_NLL": 9.204702599503683,
+      "projection_packed_bytes": 765493248
+    },
+    "random73": {
+      "correct": 151,
+      "count_gold_token_NLL_over10": 15,
+      "count_gold_token_NLL_over5": 45,
+      "mean_gold_token_fullvocab_NLL": 2.1648878837224594,
+      "median_gold_token_fullvocab_NLL": 0.010251279545099832,
+      "n": 240,
+      "p95_gold_token_fullvocab_NLL": 10.371034867088522,
+      "projection_packed_bytes": 765493248
+    },
+    "source_qv8": {
+      "correct": 144,
+      "count_gold_token_NLL_over10": 7,
+      "count_gold_token_NLL_over5": 39,
+      "mean_gold_token_fullvocab_NLL": 1.9363716411292395,
+      "median_gold_token_fullvocab_NLL": 0.1197777508207508,
+      "n": 240,
+      "p95_gold_token_fullvocab_NLL": 9.12162406465417,
+      "projection_packed_bytes": 765493248
+    }
+  },
+  "private_preexecution_lock_sha256": "79826eb944ac2a4f87b637a430471f069a3789da37cdb12a9b7d1060d49db9b8",
+  "raw_item_text_tokens_and_losses_not_published": true,
+  "schema": "BEGLIN-Qv13-postpilot-240-robust-NLL-accuracy-native-C-independently-reparsed/1",
+  "source_prelock_sha256": "5cb944375fa271c4528b4846f4b3c22cdf8179d4a38a2f5c17babbc03c4df92a",
+  "source_public_freeze_sha256": "9d045e1056e5ec8bc3a093a8a3d198277cbbc4083fb054a929b566cb2bb03c8c",
+  "status": "ALL_16_NATIVE_C_LOGS_REPARSED_ROBUST_EXPLORATORY_NO_DYNAMISM_CLAIM"
+}
