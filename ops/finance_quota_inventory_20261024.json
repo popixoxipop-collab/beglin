@@ -1,0 +1,281 @@
+{
+  "artifact_deleted": false,
+  "billing_modified": false,
+  "count": 426,
+  "highest_30": [
+    {
+      "created_at": "2026-10-18T06:43:28Z",
+      "digest": "sha256:ca5740825018f0dccec4654831f5a8800c25954b82ad4a726ad8fb9dbb7997e2",
+      "expired": false,
+      "id": 12127159454,
+      "name": "qt-fullmaps",
+      "run_id": 39103563691,
+      "size": 26343061
+    },
+    {
+      "created_at": "2026-10-19T08:04:27Z",
+      "digest": "sha256:dd9aec04fa5c8d66a19f364fab98bc002fcb8b7e3e579a4cc387d7b4df495a13",
+      "expired": false,
+      "id": 12171655869,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 39220051926,
+      "size": 7809126
+    },
+    {
+      "created_at": "2026-10-18T23:08:43Z",
+      "digest": "sha256:ce7772958d3863c9fa689a88794050b296e4f8f973ad0cc621c99053c20acbb4",
+      "expired": false,
+      "id": 12153853017,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 39175190877,
+      "size": 7808874
+    },
+    {
+      "created_at": "2026-10-06T08:40:47Z",
+      "digest": "sha256:e36fb511edb32f6b60ce07fdae2d008f128fc2002162d5434a3846a752d7c5d2",
+      "expired": false,
+      "id": 11399619844,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37437205974,
+      "size": 7808766
+    },
+    {
+      "created_at": "2026-10-05T20:01:01Z",
+      "digest": "sha256:5d0b4bb953b8eb2c2d34caddb144d3518e32c5c52926f92ef011f39625b9af9e",
+      "expired": false,
+      "id": 11368976146,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37366988344,
+      "size": 7808741
+    },
+    {
+      "created_at": "2026-10-17T17:04:17Z",
+      "digest": "sha256:e324ca7a935b92de4fee94474cc46ff412e9486656ca7d596354f1a07ea5e9e8",
+      "expired": false,
+      "id": 12108052556,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 39052098148,
+      "size": 7808733
+    },
+    {
+      "created_at": "2026-10-06T08:08:42Z",
+      "digest": "sha256:a36934cad743bd918e7d2b8d987a3f13a2d2295c7753305b9b3f480393b8ee16",
+      "expired": false,
+      "id": 11398570521,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37433584930,
+      "size": 7808718
+    },
+    {
+      "created_at": "2026-10-06T06:25:37Z",
+      "digest": "sha256:72a2334123ddf515c2668cd139bd18b95077e2df74d08e225eabf1719ed49246",
+      "expired": false,
+      "id": 11393733753,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37423259446,
+      "size": 7808702
+    },
+    {
+      "created_at": "2026-10-05T20:06:46Z",
+      "digest": "sha256:e9a705a6a4d31daa302678f451e538715d13f2866478512b56b62f082068cefc",
+      "expired": false,
+      "id": 11368846931,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37367540574,
+      "size": 7808685
+    },
+    {
+      "created_at": "2026-10-06T05:52:48Z",
+      "digest": "sha256:fe276e66310c76ac348b33b84fcdd579d626df5e79f8a5237be8813d82bdf7e0",
+      "expired": false,
+      "id": 11393076320,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37420274574,
+      "size": 7808667
+    },
+    {
+      "created_at": "2026-10-18T23:06:22Z",
+      "digest": "sha256:3a07957355f6343ddce2141e2255a03e35e324d29219ab01cda9d8cadacca288",
+      "expired": false,
+      "id": 12153539750,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 39175051872,
+      "size": 7808651
+    },
+    {
+      "created_at": "2026-10-05T19:51:09Z",
+      "digest": "sha256:f3003aa0cdca96d8cbb17ea075d60cf010150310c847340ac23cfea5a503f037",
+      "expired": false,
+      "id": 11368037469,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37365710688,
+      "size": 7808647
+    },
+    {
+      "created_at": "2026-10-06T00:46:17Z",
+      "digest": "sha256:b3ea5cd95ee38d804378a23ac41990ab517200c4211c8592ae4f0c63245ce984",
+      "expired": false,
+      "id": 11383456535,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37395557242,
+      "size": 7808646
+    },
+    {
+      "created_at": "2026-10-18T23:47:14Z",
+      "digest": "sha256:3eb55203cda39b9394e5f92dd418015d6a58e395d5e543c48e217fa31dd79c92",
+      "expired": false,
+      "id": 12155091215,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 39177890195,
+      "size": 7808641
+    },
+    {
+      "created_at": "2026-10-06T06:07:23Z",
+      "digest": "sha256:2338baf5376266661cddaaa445feac3f5bfb6a0b430cffffb90460b1e428828e",
+      "expired": false,
+      "id": 11393640919,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37421933554,
+      "size": 7808635
+    },
+    {
+      "created_at": "2026-10-18T23:05:34Z",
+      "digest": "sha256:ababb0cc5ba5861bd63ee738d0e35950d7ae60314847eedf02b73de56830296b",
+      "expired": false,
+      "id": 12153534417,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 39174958487,
+      "size": 7808631
+    },
+    {
+      "created_at": "2026-10-05T19:39:10Z",
+      "digest": "sha256:28e88da40ffafc0dd0bc6023e984ddf58b83801f8e3dbb439bc1bd6bb3291fba",
+      "expired": false,
+      "id": 11368295348,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37364699984,
+      "size": 7808631
+    },
+    {
+      "created_at": "2026-10-18T23:34:19Z",
+      "digest": "sha256:8307cf4dd90d10e032edf0213df9188953c05297e7e0aad1d0fa24b0e2eb24f4",
+      "expired": false,
+      "id": 12154866534,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 39177036741,
+      "size": 7808629
+    },
+    {
+      "created_at": "2026-10-18T22:29:26Z",
+      "digest": "sha256:3612896b0333affc5d7bcb4ee68897e4251f7264b26ae9eb505391859c58f571",
+      "expired": false,
+      "id": 12152089319,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 39172395185,
+      "size": 7808626
+    },
+    {
+      "created_at": "2026-10-18T17:19:02Z",
+      "digest": "sha256:76a88e7e0bcc43a28d46e29162c1ca44099a71eed4ecb11d53fc4e5e55160cc0",
+      "expired": false,
+      "id": 12144546869,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 39148964693,
+      "size": 7808611
+    },
+    {
+      "created_at": "2026-10-06T09:45:23Z",
+      "digest": "sha256:fb0917ee1637c88f330a0fc910e45bf0469fb77a44691ea0632be2f8abba2c7a",
+      "expired": false,
+      "id": 11402573057,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37444606410,
+      "size": 7808610
+    },
+    {
+      "created_at": "2026-10-19T00:19:03Z",
+      "digest": "sha256:d11b678e60fe1b2f24825f760e54c09ff860ee4111f86ffe6f3adde959321d31",
+      "expired": false,
+      "id": 12155688724,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 39180145017,
+      "size": 7808589
+    },
+    {
+      "created_at": "2026-10-18T22:33:37Z",
+      "digest": "sha256:5384cc65f4bcd5754e2b26fea4392f6241ce7dba9b1215f13c73e8f50c0df751",
+      "expired": false,
+      "id": 12152019891,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 39172675406,
+      "size": 7808582
+    },
+    {
+      "created_at": "2026-10-05T19:59:27Z",
+      "digest": "sha256:3da39a5bca7ebc1671448bab851348a602d141c33438c6d7f53b05879d60e943",
+      "expired": false,
+      "id": 11368956092,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37366604373,
+      "size": 7808581
+    },
+    {
+      "created_at": "2026-10-05T19:56:29Z",
+      "digest": "sha256:7d406158daa83c776cd2e9f77e6054893fd6170655fa75d5f11bf92ba2b742d5",
+      "expired": false,
+      "id": 11367319882,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37366532140,
+      "size": 7808581
+    },
+    {
+      "created_at": "2026-10-18T23:27:56Z",
+      "digest": "sha256:28aa6ab6a96b25d61af91de95cddd32d2a337cf6d0ce6dd025b7035eb87f0ac1",
+      "expired": false,
+      "id": 12154523116,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 39176532747,
+      "size": 7808570
+    },
+    {
+      "created_at": "2026-10-05T20:21:25Z",
+      "digest": "sha256:7e5f2b3db75221dbcc5aea6a2de1b4f38cdbfa12c6ac438aea31a7cb7c7a1ca7",
+      "expired": false,
+      "id": 11369795249,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37368809008,
+      "size": 7808570
+    },
+    {
+      "created_at": "2026-10-06T01:20:13Z",
+      "digest": "sha256:1a86416e14a43d2f9c141610dc318165404b825d6bc90c2a088f90395c06b0e0",
+      "expired": false,
+      "id": 11384686140,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37398536034,
+      "size": 7808557
+    },
+    {
+      "created_at": "2026-10-19T00:20:26Z",
+      "digest": "sha256:23238ea2c70f6d8c579f0c88ce10d90bbb8db84c3c9a4b75440df08ed7e454ee",
+      "expired": false,
+      "id": 12154849835,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 39180256782,
+      "size": 7808554
+    },
+    {
+      "created_at": "2026-10-04T20:21:33Z",
+      "digest": "sha256:62c1123b726c3cf3e1c4263bac8395a097c23ed4841c326e966585468ee6c1a5",
+      "expired": false,
+      "id": 11314116335,
+      "name": "qt-qwen25-real-mixed-mlx-evidence",
+      "run_id": 37231737458,
+      "size": 7808554
+    }
+  ],
+  "measured_bytes": 1062577115,
+  "note": "READ_ONLY. Per-repository count does not equal account-wide billed storage.",
+  "repository": "popixoxipop-collab/beglin",
+  "schema": "beglin.actions-artifact-inventory/1"
+}
