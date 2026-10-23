@@ -108,7 +108,7 @@ def audit():
  receipt=json.loads((RUN/"PUBLIC_AGGREGATE.json").read_text())
  need(receipt["original_C_log_sha256"]==sha(LOG) and
       receipt["signed_dev_binary_envelope_sha256"]==SIGN_SHA and
-      receipt["reference_Qv16_original_C_gold_NLL_exact"]==8,
+      receipt["original_gold_NLL_exact_cases"]==8,
       "first_Qv19_main_receipt")
  return {"schema":"BEGLIN-Qv19-second-independent-original-Qwen28-native-C-two-pthread-lease-audit/1",
  "status":"ORIGINAL_APPLE_QWEN28_TWO_PTHREAD_MODEL_LIFETIME_LEASE_NLL_AND_SECURITY_PASS",
