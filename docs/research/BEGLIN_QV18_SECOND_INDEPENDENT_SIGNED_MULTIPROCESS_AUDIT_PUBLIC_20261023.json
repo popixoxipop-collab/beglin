@@ -1,0 +1,34 @@
+{
+  "Qv16_original_C_static_gold_NLL_exact_total": 16,
+  "independent_2_native_format_denials_fail_closed": true,
+  "independent_C_log_SHA256s": [
+    "adc90425bc1b5580a7c0907c2411b27d60289cdc95e0dad72768fb1107352e6d",
+    "51b54676b2a34c0480b6397d0cce9d2d4fbfdbd9804db9a80d12bf2347162f7c"
+  ],
+  "limits": [
+    "Two separate C processes share one disk packed asset; this does NOT validate two threads in one model process or shared KV-cache",
+    "Q4_THREADS=2 for each worker: numerical parity was rechecked but peak throughput/p95 is not a production benchmark",
+    "Developer-only signature and an IN-MEMORY simulated trust-root rotation; production organizational keys and tamper-resistant rollback state do not exist in this test",
+    "Native C verifies SHA256 and binary layout, but Ed25519 is in the trusted launcher, not native",
+    "Physical power-off cold-boot and GPU Metal residency are not tested",
+    "No new calibrated quality-aware precision selector nor cross-model accuracy advantage proven"
+  ],
+  "max_aggregate_process_tree_RSS_MiB_from_first_sampler": 9477.71875,
+  "native_Qwen28_actual_8_case_rows_each": 8,
+  "native_actual_exe_SHA256": "16085378788b64b229f321b49c11540e286edffbff832db4e41fbf8d2a87643b",
+  "native_process_count": 2,
+  "no_operator_release_change": true,
+  "no_original_secrets_or_raw_question_rows_published": true,
+  "offline_ephemeral_dev_signing_key_rotation_and_stale_version_cases": 10,
+  "original_C_correct_per_worker": [
+    8,
+    8
+  ],
+  "original_Qv17_signed_asset_and_model_unchanged": true,
+  "original_full_3GB_BF16_model_SHA256": "073400b311d049b6379b8f3f7ad5a0258268031dd009b99389cfd4030144850a",
+  "same_83_5MiB_local_Ed25519_dev_signed_pack_SHA256": "49c409a79588b79dcefeba60e09b71459ac8df2d02ac0bda5e2cc1ab8076a86b",
+  "schema": "BEGLIN-Qv18-second-independent-Qwen28-C-signed-artifact-multiprocess-and-negative-cases/1",
+  "second_generator_exact_matching_untrusted_sha_cannot_disable_layout_check": true,
+  "simultaneous_original_C_process_overlap_s": 104.692602667,
+  "status": "ORIGINAL_C_TWO_SIGNED_READERS_AND_NATIVE_VERSION_ROLE_DENIALS_INDEPENDENT_PASS"
+}
