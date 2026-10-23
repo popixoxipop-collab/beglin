@@ -1,0 +1,280 @@
+{
+  "five_matched_random": {
+    "random137": {
+      "paired_NLL_gain_source_over_random": 0.09248252516624815,
+      "paired_accuracy_discordance": {
+        "comparator_only_correct": 15,
+        "mcnemar_exact_two_sided_exploratory_p": 0.7011080384254456,
+        "source_only_correct": 12
+      },
+      "sign_flip_Holm_adjusted_p_exploratory": 0.3127687231276872,
+      "sign_flip_one_sided_p_exploratory": 0.1563843615638436,
+      "source_better_items": 105,
+      "source_correct_minus_random": -3,
+      "source_worse_items": 135,
+      "stratified_bootstrap95": [
+        -0.08095195706582534,
+        0.2712864292341902
+      ]
+    },
+    "random211": {
+      "paired_NLL_gain_source_over_random": 0.24409522989903007,
+      "paired_accuracy_discordance": {
+        "comparator_only_correct": 12,
+        "mcnemar_exact_two_sided_exploratory_p": 0.8450189828872681,
+        "source_only_correct": 14
+      },
+      "sign_flip_Holm_adjusted_p_exploratory": 0.020997900209979003,
+      "sign_flip_one_sided_p_exploratory": 0.004199580041995801,
+      "source_better_items": 134,
+      "source_correct_minus_random": 2,
+      "source_worse_items": 106,
+      "stratified_bootstrap95": [
+        0.06897718941044761,
+        0.4188087712612516
+      ]
+    },
+    "random389": {
+      "paired_NLL_gain_source_over_random": 0.06828460178815018,
+      "paired_accuracy_discordance": {
+        "comparator_only_correct": 12,
+        "mcnemar_exact_two_sided_exploratory_p": 0.5034446716308594,
+        "source_only_correct": 8
+      },
+      "sign_flip_Holm_adjusted_p_exploratory": 0.3127687231276872,
+      "sign_flip_one_sided_p_exploratory": 0.21027897210278973,
+      "source_better_items": 102,
+      "source_correct_minus_random": -4,
+      "source_worse_items": 138,
+      "stratified_bootstrap95": [
+        -0.09782734542255973,
+        0.23686931054412197
+      ]
+    },
+    "random577": {
+      "paired_NLL_gain_source_over_random": 0.15681856152035012,
+      "paired_accuracy_discordance": {
+        "comparator_only_correct": 22,
+        "mcnemar_exact_two_sided_exploratory_p": 0.050102459732443094,
+        "source_only_correct": 10
+      },
+      "sign_flip_Holm_adjusted_p_exploratory": 0.16198380161983802,
+      "sign_flip_one_sided_p_exploratory": 0.05399460053994601,
+      "source_better_items": 116,
+      "source_correct_minus_random": -12,
+      "source_worse_items": 124,
+      "stratified_bootstrap95": [
+        -0.032262624358559845,
+        0.34869238444653616
+      ]
+    },
+    "random73": {
+      "paired_NLL_gain_source_over_random": 0.22851624259322,
+      "paired_accuracy_discordance": {
+        "comparator_only_correct": 17,
+        "mcnemar_exact_two_sided_exploratory_p": 0.24778856337070465,
+        "source_only_correct": 10
+      },
+      "sign_flip_Holm_adjusted_p_exploratory": 0.0387961203879612,
+      "sign_flip_one_sided_p_exploratory": 0.0096990300969903,
+      "source_better_items": 89,
+      "source_correct_minus_random": -7,
+      "source_worse_items": 151,
+      "stratified_bootstrap95": [
+        0.03405196234525762,
+        0.4236142882957794
+      ]
+    }
+  },
+  "limits": [
+    "This analysis was devised after 16 pilot results were inspected; not a pristine pre-registered final claim",
+    "Qv13 source prelock has documented implementation-text errata",
+    "Public test data may have appeared in base-model pretraining",
+    "Results are for static tensor masks, not per-request dynamic changes",
+    "Projection packed bytes are not total peak RSS or guaranteed speedups",
+    "Source-vs-random sign-flip p-values require conditional sign exchangeability; exploratory only",
+    "No per-item question, token sequence or predictions exported"
+  ],
+  "n_excluded_pilot": 16,
+  "n_postpilot": 240,
+  "no_live_precision_promotion": true,
+  "original_C_receipt_SHA256": {
+    "arc128:original_v2": "51d9859f5301d41ed83fab99da2924cfa17262daec142a57f5a47e64a340bc63",
+    "arc128:q4": "8a150740e8086583d971d190a6e0f5578569ad9d476c8eadacbbe41a0173ced5",
+    "arc128:random137": "1fef9fc4e77d9fa59833ca425e76917a12a9bcba4707caf00351d28aa6a6cad4",
+    "arc128:random211": "e8e2bae6ab99db47b93107e530025547838cefbccffee4f5c25a27a6fb75e1ad",
+    "arc128:random389": "2455078a7a5e6969f5571df7a4452d5a1da3c7d81c83035abe15ad62e26a8725",
+    "arc128:random577": "bbc7a07b6dc2d8758eceba6035eacc295e866d2ab877c601665166c0620b2c14",
+    "arc128:random73": "e64041fda5dfc99211287e342177eae33a130e984ec99b24bcd047352d50bc85",
+    "arc128:source_qv8": "eb76d61f4598d2b0be0c4fd7beaa530e8ee83081adebcf290646da6ff9a17bbf",
+    "ob128:original_v2": "e59a92566b7ffbdecbec2ff80e3d855fa30e204b21f96f8ebdb88114bae3abae",
+    "ob128:q4": "fe9cc1019b5835142a5cec4d14fdb12c48f5410ede467f5625220e6ed3e09c41",
+    "ob128:random137": "5a9ca5aa4e649c1d6ea8ad19314635ea58cfdebc2db9698dffd5b1ddcd04a983",
+    "ob128:random211": "3fe2ee5e2ba9252a572a4bbf408333898f156d3c4abb79c2998d328c8fb701db",
+    "ob128:random389": "2571f853ec357f43b485ee3b3512affeec108511eef8030a8204106ace91d746",
+    "ob128:random577": "e59658da72755450cb07f535322c8c49c0597a46b93c357d43cc42732b0694f1",
+    "ob128:random73": "ce64032a0ccde1d439fc956aae0bae4a1e7cb47fb029e1539c8ac19bfc86950a",
+    "ob128:source_qv8": "b9a91ed08996d10098458184c2846620d3151df141bf22e4a75c7439e98fc2ee"
+  },
+  "original_input_SHA256": {
+    "arc128": "081c7ce746db1a3abc0622c9daf6ea18440bb09268130050e9d5b1871bdb3287",
+    "ob128": "3a89e85e941945081bf1411e9de64cda294e18f7c1a587c8d5dd908c138505c5"
+  },
+  "per_arm": {
+    "original_v2": {
+      "correct": 157,
+      "mean_correct_fullvocab_NLL": 1.55057677253861,
+      "n_postpilot": 240,
+      "per_dataset": {
+        "arc128": {
+          "correct": 82,
+          "mean_NLL": 1.4442826081406113,
+          "n": 120
+        },
+        "ob128": {
+          "correct": 75,
+          "mean_NLL": 1.65687093693661,
+          "n": 120
+        }
+      },
+      "projection_packed_bytes": 776896512
+    },
+    "q4": {
+      "correct": 151,
+      "mean_correct_fullvocab_NLL": 1.9542467774180166,
+      "n_postpilot": 240,
+      "per_dataset": {
+        "arc128": {
+          "correct": 78,
+          "mean_NLL": 1.8465034624785976,
+          "n": 120
+        },
+        "ob128": {
+          "correct": 73,
+          "mean_NLL": 2.0619900923574344,
+          "n": 120
+        }
+      },
+      "projection_packed_bytes": 736985088
+    },
+    "random137": {
+      "correct": 147,
+      "mean_correct_fullvocab_NLL": 2.0288541662954875,
+      "n_postpilot": 240,
+      "per_dataset": {
+        "arc128": {
+          "correct": 78,
+          "mean_NLL": 1.821060109430932,
+          "n": 120
+        },
+        "ob128": {
+          "correct": 69,
+          "mean_NLL": 2.2366482231600426,
+          "n": 120
+        }
+      },
+      "projection_packed_bytes": 765493248
+    },
+    "random211": {
+      "correct": 142,
+      "mean_correct_fullvocab_NLL": 2.1804668710282695,
+      "n_postpilot": 240,
+      "per_dataset": {
+        "arc128": {
+          "correct": 74,
+          "mean_NLL": 2.0112425300171406,
+          "n": 120
+        },
+        "ob128": {
+          "correct": 68,
+          "mean_NLL": 2.3496912120393976,
+          "n": 120
+        }
+      },
+      "projection_packed_bytes": 765493248
+    },
+    "random389": {
+      "correct": 148,
+      "mean_correct_fullvocab_NLL": 2.00465624291739,
+      "n_postpilot": 240,
+      "per_dataset": {
+        "arc128": {
+          "correct": 79,
+          "mean_NLL": 1.815310843393434,
+          "n": 120
+        },
+        "ob128": {
+          "correct": 69,
+          "mean_NLL": 2.1940016424413447,
+          "n": 120
+        }
+      },
+      "projection_packed_bytes": 765493248
+    },
+    "random577": {
+      "correct": 156,
+      "mean_correct_fullvocab_NLL": 2.0931902026495903,
+      "n_postpilot": 240,
+      "per_dataset": {
+        "arc128": {
+          "correct": 79,
+          "mean_NLL": 1.9647227917640606,
+          "n": 120
+        },
+        "ob128": {
+          "correct": 77,
+          "mean_NLL": 2.22165761353512,
+          "n": 120
+        }
+      },
+      "projection_packed_bytes": 765493248
+    },
+    "random73": {
+      "correct": 151,
+      "mean_correct_fullvocab_NLL": 2.164887883722459,
+      "n_postpilot": 240,
+      "per_dataset": {
+        "arc128": {
+          "correct": 78,
+          "mean_NLL": 2.0599765551282117,
+          "n": 120
+        },
+        "ob128": {
+          "correct": 73,
+          "mean_NLL": 2.2697992123167072,
+          "n": 120
+        }
+      },
+      "projection_packed_bytes": 765493248
+    },
+    "source_qv8": {
+      "correct": 144,
+      "mean_correct_fullvocab_NLL": 1.9363716411292395,
+      "n_postpilot": 240,
+      "per_dataset": {
+        "arc128": {
+          "correct": 75,
+          "mean_NLL": 1.8027795909190028,
+          "n": 120
+        },
+        "ob128": {
+          "correct": 69,
+          "mean_NLL": 2.0699636913394768,
+          "n": 120
+        }
+      },
+      "projection_packed_bytes": 765493248
+    }
+  },
+  "primary_descriptive_estimand": "Qv8 source minus mean of five matched random models, paired fullvocab answer-token NLL; positive random-minus-source favors Qv8",
+  "sample": "ARC-Challenge test 120 + OpenBookQA test 120, excluding first eight pilot items of each domain",
+  "schema": "BEGLIN-Qv13-postpilot-240-independent-original-C-aggregate/1",
+  "source_gain_vs_5random_mean_NLL": 0.1580394321933997,
+  "source_gain_vs_5random_stratified95": [
+    0.04270873365173893,
+    0.27835808987739824
+  ],
+  "source_prelock_SHA256": "5cb944375fa271c4528b4846f4b3c22cdf8179d4a38a2f5c17babbc03c4df92a",
+  "source_private_lock_SHA256": "79826eb944ac2a4f87b637a430471f069a3789da37cdb12a9b7d1060d49db9b8",
+  "status": "POSTPILOT_240_REAL_28L_C_EVALUATION_REPARSED_EXPLORATORY_NOT_PRISTINE_PREREG"
+}
