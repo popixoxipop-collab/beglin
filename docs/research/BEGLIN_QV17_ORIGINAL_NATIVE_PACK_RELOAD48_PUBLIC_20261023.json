@@ -1,0 +1,42 @@
+{
+  "actual_cache_drops": 0,
+  "actual_cache_hits": 1880,
+  "actual_cache_requantizations": 0,
+  "actual_inactive_cache_peak_mib": 90.046875,
+  "actual_native_log_SHA256": "03cfb9fe4c9143d107379339a1bb4dc6f52d98756f1b8bf8de8b1a79b997a23f",
+  "actual_request_switch_total_ms": 13.625,
+  "artifact_size": 87541016,
+  "correct": 34,
+  "frozen_Qv16_inputs_sha256": "a95f678f656b8d04f74f0bb643542cdd12bde8e317c8d7fa013795c4c4b3c296",
+  "local_developer_signed_manifest_validation": {
+    "certificate_scope": "local research dev key only",
+    "model_verified_full_content_sha256": true,
+    "pack_sha256": "49c409a79588b79dcefeba60e09b71459ac8df2d02ac0bda5e2cc1ab8076a86b",
+    "payload_mib": 83.484375,
+    "signed_manifest_SHA256": "491deb61dbc30fad08b4a5d819b270b64167d5551b422823ae0b431f4a5c6824",
+    "status": "ED25519_LOCAL_DEVELOPER_SIGNATURE_AND_PACK_SHA256_VERIFIED",
+    "verifier_total_ms": 1488.393
+  },
+  "mean_gold_fullvocab_NLL": 1.2628019266720496,
+  "mode": "reload",
+  "n": 48,
+  "native_process_peak_RSS_MiB": 4725.34375,
+  "native_process_wall_seconds": 267.9668950000778,
+  "native_read": {
+    "SHA256_check_ms": 42.956,
+    "entries": 40,
+    "payload_bytes": 87539712,
+    "total_read_ms": 54.557
+  },
+  "native_write": null,
+  "no_original_model_or_operator_live_release_change": true,
+  "not_per_request_dynamic_utility_allocator": true,
+  "original_C_source_sha256": "0c9d797c0066fdb1f8ca5972bdf7611ae75431050d0d55c0f0fdef0653f6bdaa",
+  "original_native_executable_sha256": "16085378788b64b229f321b49c11540e286edffbff832db4e41fbf8d2a87643b",
+  "private_receipt_sha256": "f19c41e0d87b6e97cfa47c3f9de4b0d595c0892599030d469d89417428d87cbe",
+  "schema": "BEGLIN-Qv17-actual-original-C-persistent-precision-cache-create-or-reload/1",
+  "source_original_Qv16_48_C_choice_correctness_exact": true,
+  "source_original_Qv16_48_C_per_case_NLL_exact": true,
+  "startup_model_snapshot_full_SHA_verification_cost_separate": true,
+  "status": "ED25519_VERIFIED_NATIVE_SHA_LOADED_48_INPUT_STATIC_PARITY_PASS"
+}
