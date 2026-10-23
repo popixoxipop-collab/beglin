@@ -84,7 +84,8 @@ def main(cohort):
  "BEGLIN_QV14_MASK_RANDOM":str(ROOT/"masks/static_random.txt"),
  "BEGLIN_QV15_CACHE_MIB":"96","BEGLIN_QV16_PREWARM":"0",
  "BEGLIN_QV17_PACK_LOAD":str(pack),"BEGLIN_QV17_PACK_SHA256":PINS["pack"],
- "BEGLIN_QV19_ENABLE_EXCLUSIVE_MODEL_REQUESTS":"1"})
+ "BEGLIN_QV19_ENABLE_EXCLUSIVE_MODEL_REQUESTS":"1",
+ "BEGLIN_QV20_POLICY_SHA256":shaf(POLICY)})
  t=time.monotonic()
  proc=subprocess.Popen([str(EXE),"qv20_prompt_aware_choice","24"],
    cwd=str(QW),env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
