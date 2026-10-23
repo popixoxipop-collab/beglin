@@ -1,0 +1,33 @@
+{
+  "Ed25519_local_dev_signed_derived_binary_envelope_SHA256": "55a9f6573dcbd1cdbc1daf248f76de71af05e40fb4b3e4c2f192f855abaa7297",
+  "Qv19_model_poisoned": false,
+  "cache_evictions": 0,
+  "cache_misses": 0,
+  "conservative_serial_forward_only_not_true_parallel_logits": true,
+  "derived_real_Apple_arm64_C_binary_SHA256": "c333c5a95aca340e59352c7e0e716521b3f57028002a53e307a9f962a2c654c2",
+  "exclusive_inflight_global_KV_and_WT_peak": 1,
+  "first_original_C_main_receipt_SHA256": "9e6a237b18fcc6585cb5e826fc60306502500f8ab056d2e073d9cb3ffbf793e0",
+  "guard_lock_wait_max_ms": 21233.145,
+  "guard_lock_wait_median_ms": 11020.7755,
+  "guarded_forward_median_ms": 11021.0705,
+  "local_dev_signing_only_not_production_CA": true,
+  "model_original_source_SHA256": "0c9d797c0066fdb1f8ca5972bdf7611ae75431050d0d55c0f0fdef0653f6bdaa",
+  "native_inactive_cache_peak_MiB": 90.046875,
+  "no_model_checkpoint_source_or_immutable_operator_release_changed": true,
+  "no_other_unguarded_command_entrypoints_certified": true,
+  "no_precision_profile_epoch_mutation_mid_request": true,
+  "no_shared_KV_race_detected_in_serialized_8_case_scope": true,
+  "original_2_worker_request_counts": {
+    "worker0": 4,
+    "worker1": 4
+  },
+  "original_Qwen_28_layer_CPU_C_native_rows_reparsed": 8,
+  "original_case_text_tokens_individual_NLL_not_exported": true,
+  "original_gold_NLL_scorer_unchanged_SHA256": "10c84007027d15a9327c15ec687c2327e19390de65f03bf9d95aee4bd4c9fe72",
+  "original_source_frozen_Qv16_static_gold_NLL_exact": 8,
+  "real_C_log_SHA256": "9071bb5142a8e8a82b5c46ab2661ccbb25e056b2e14cb12b56f46e68dccd67f8",
+  "schema": "BEGLIN-Qv19-second-independent-original-Qwen28-native-C-two-pthread-lease-audit/1",
+  "signed_original_Qv17_inactive_packed_cache_SHA256": "49c409a79588b79dcefeba60e09b71459ac8df2d02ac0bda5e2cc1ab8076a86b",
+  "status": "ORIGINAL_APPLE_QWEN28_TWO_PTHREAD_MODEL_LIFETIME_LEASE_NLL_AND_SECURITY_PASS",
+  "unique_sequential_precision_epochs": 8
+}
