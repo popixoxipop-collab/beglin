@@ -34,6 +34,16 @@ Source `tools/qv20_fit_prompt_policy.py` SHA-256 `10c3276d6e61aac036bcb5bb53b07c
 
 **Additional host-access issue:** owner-only `/Volumes/D50/TailnetCommander/work/beglin-qv20-prompt-aware-20261024` and its generated files now sometimes return `PermissionError: [Errno 1] Operation not permitted` in EOE connected **short-read command and read_file**. Their `stat` shows ownership `eoe`, mode 0600, macOS provenance attribute. This tool restriction's cause is **not definitively diagnosed**. Neither permissions/extended attributes nor scheduler policy were altered/bypassed to obtain results. Before resuming, verify that a managed job has legitimate read access; do not rely on a short-read tool's access if it fails.
 
+## Follow-up execution incident (2026-10-24 KST)
+
+After a fresh managed `resource_plan` briefly reported EOE CPU capacity for the one-core `random73` calibration, an authorized `resource_submit` using the pinned `tools/qv20_actual_static_native_onecore.py` returned **`STORAGE_PREPARE_FAILED`** during managed storage scratch preparation, before a worker started. Registered job `job_612b2edc1ca096a4af656638363fda73` was independently confirmed **`FAILED`** with `termination_reason=storage_prepare_failed`, `worker_pid=null`, `child_pid=null`, and no native exit code. It **did not produce an actual random73 model score** and must not count as a completed experiment.
+
+The storage-pool error may be related to, but is not proved caused by, the separately observed macOS `Operation not permitted` when reading owner-only D50 research files in the connected tool. Original signed sources/inputs and their provenance attributes were not modified; no privilege escalation, extended-attribute change, undocumented storage-pool switch or process workaround was attempted.
+
+A pure **synthetic-only** prefix-feature contract test also passed **132 deterministic five-feature vectors**, strict ±0.10 sign-threshold choice, and zero-information ridge fallback to either static policy. It ran without loading any model or heldout cases and was committed as `tools/qv20_prompt_feature_synthetic_test.py`. This is **not** real Qv20 calibration evidence.
+
+The Qv20 research builder in GitHub was further corrected to keep the original Qv19 guarded command's 85-token policy unaffected and enable the Qv20 prompt-conditioned routing only under `qv20_prompt_aware_choice` plus an exact `BEGLIN_QV20_POLICY_SHA256` environment guard. Its matching Qv20 heldout runner was updated. These commits have **not** been reapplied as a signed native Qv20 binary on EOE; a connected source-sync request was blocked by the safety gate. Native compilation/real heldout evaluation remain `NOT_RUN`.
+
 ## Next executable sequence (strictly in order)
 
 1. Wait for the managed EOE CPU scheduler to admit a legitimate **1-core/1-thread** or **2-core/2-thread** ARC train32 random73 job, using the existing frozen inputs and exact original C binary SHA `f64bae90250d83c051b55fc4907837ab1482a991dc27f35aee637860e40c1221`. Validate per-question original C logs, immutable receipt, role counts and mask SHA. Do not rerun original Qv8 unless a specific numerical mismatch requires it.
