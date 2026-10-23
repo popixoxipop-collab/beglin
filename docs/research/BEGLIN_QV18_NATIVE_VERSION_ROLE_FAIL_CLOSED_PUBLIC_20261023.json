@@ -1,0 +1,38 @@
+{
+  "Ed25519_rejects_both_untrusted_copies_before_C_under_trusted_launcher": true,
+  "direct_native_only_checks_SHA256_and_binary_format_not_signature": true,
+  "n": 2,
+  "negative_tests": [
+    {
+      "C_loading_and_rejection_wall_s": 17.438571041915566,
+      "Qwen28_native_process_exit_code": 1,
+      "mutation_byte_offset": 8,
+      "native_C_error": "packed header size/schema/cap mismatch",
+      "native_original_case_scores_computed": 0,
+      "original_C_negative_log_SHA256": "0108f7d3baedb28882dd5069f3c771da8d9d662a00ba69d2516ad7e0e26015e8",
+      "result": "NATIVE_C_REJECTS_MALFORMED_FORMAT_BEFORE_INFERENCE",
+      "scenario": "header_version_2",
+      "supplied_C_expected_SHA256_matches_mutated_copy": true,
+      "temporary_malicious_copy_deleted": true
+    },
+    {
+      "C_loading_and_rejection_wall_s": 13.133821458090097,
+      "Qwen28_native_process_exit_code": 1,
+      "mutation_byte_offset": 24,
+      "native_C_error": "wrong tensor index/precision/shape/cap in packed entry",
+      "native_original_case_scores_computed": 0,
+      "original_C_negative_log_SHA256": "8aae2021a8679c6e59581245ea27ece1e5580551077e754308911d47376719d5",
+      "result": "NATIVE_C_REJECTS_MALFORMED_FORMAT_BEFORE_INFERENCE",
+      "scenario": "first_tensor_wrong_role_id",
+      "supplied_C_expected_SHA256_matches_mutated_copy": true,
+      "temporary_malicious_copy_deleted": true
+    }
+  ],
+  "no_live_operator_kernel_or_credential_change": true,
+  "no_scores_from_invalid_artifacts": true,
+  "original_C_sha256": "16085378788b64b229f321b49c11540e286edffbff832db4e41fbf8d2a87643b",
+  "original_owner_only_signed_artifact_unmodified": true,
+  "original_pack_SHA256": "49c409a79588b79dcefeba60e09b71459ac8df2d02ac0bda5e2cc1ab8076a86b",
+  "schema": "BEGLIN-Qv18-original-Qwen28-C-untrusted-pack-format-version-role-rejections/1",
+  "status": "BOTH_ACTUAL_NATIVE_FORMAT_GUARDS_FAIL_CLOSED_WITH_MATCHING_UNTRUSTED_SHA"
+}
