@@ -1,0 +1,14 @@
+{
+  "Qv19_negative_native_C_log_SHA256": "6b5397f08e1577a3d7dc41a1d4873ac5da1c6b195dee54a74b736f9425f129df",
+  "local_dev_binary_envelope_SHA256": "55a9f6573dcbd1cdbc1daf248f76de71af05e40fb4b3e4c2f192f855abaa7297",
+  "local_dev_signed_new_binary_verified": true,
+  "model_lease_missing_gate_rejected": true,
+  "native_Qv19_derived_binary_SHA256": "c333c5a95aca340e59352c7e0e716521b3f57028002a53e307a9f962a2c654c2",
+  "native_denial_wall_s": 13.113836250267923,
+  "native_gold_scoring_completed": 0,
+  "native_process_exit_code": 2,
+  "no_main_model_or_immutable_operator_release_changed": true,
+  "original_Qv17_signed_pack_SHA256_unchanged": "49c409a79588b79dcefeba60e09b71459ac8df2d02ac0bda5e2cc1ab8076a86b",
+  "schema": "BEGLIN-Qv19-actual-original-C-missing-request-lifetime-optin-negative/1",
+  "status": "REAL_APPLE_QWEN28_QV19_MISSING_EXCLUSIVE_LEASE_GATE_DENIED_BEFORE_ANY_MODEL_SCORING"
+}
