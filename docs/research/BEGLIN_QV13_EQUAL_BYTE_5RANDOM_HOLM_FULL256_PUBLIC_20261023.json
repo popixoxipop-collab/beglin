@@ -1,0 +1,118 @@
+{
+  "articles": 256,
+  "batch": "full256",
+  "bootstrap_draws": 10000,
+  "context": "Partial pilot results inspected before full 256; preregistration wording deviates from code; this is not independent confirmation",
+  "five_random_controls": {
+    "random137": {
+      "exploratory_sign_flip_Holm_p": 0.21157884211578842,
+      "exploratory_sign_flip_one_sided_p": 0.10578942105789421,
+      "paired_bootstrap_95_unadjusted": [
+        -0.06347838911021644,
+        0.2794665734284552
+      ],
+      "paired_mean_random_minus_source_NLL": 0.1063290073563984,
+      "random_correct": 154,
+      "random_mean_NLL": 2.096504778783502,
+      "source_better_question_count": 115,
+      "source_minus_random_correct": -2,
+      "source_worse_question_count": 141
+    },
+    "random211": {
+      "exploratory_sign_flip_Holm_p": 0.00999900009999,
+      "exploratory_sign_flip_one_sided_p": 0.001999800019998,
+      "paired_bootstrap_95_unadjusted": [
+        0.08223402839933718,
+        0.4266719724350104
+      ],
+      "paired_mean_random_minus_source_NLL": 0.2542746047009777,
+      "random_correct": 150,
+      "random_mean_NLL": 2.2444503761280825,
+      "source_better_question_count": 146,
+      "source_minus_random_correct": 2,
+      "source_worse_question_count": 110
+    },
+    "random389": {
+      "exploratory_sign_flip_Holm_p": 0.21157884211578842,
+      "exploratory_sign_flip_one_sided_p": 0.16728327167283272,
+      "paired_bootstrap_95_unadjusted": [
+        -0.07543284093687441,
+        0.24442110549120266
+      ],
+      "paired_mean_random_minus_source_NLL": 0.08186815385870146,
+      "random_correct": 156,
+      "random_mean_NLL": 2.0720439252858065,
+      "source_better_question_count": 112,
+      "source_minus_random_correct": -4,
+      "source_worse_question_count": 144
+    },
+    "random577": {
+      "exploratory_sign_flip_Holm_p": 0.0827917208279172,
+      "exploratory_sign_flip_one_sided_p": 0.027597240275972403,
+      "paired_bootstrap_95_unadjusted": [
+        -0.004764864605825284,
+        0.38065630605196255
+      ],
+      "paired_mean_random_minus_source_NLL": 0.1839307744212393,
+      "random_correct": 164,
+      "random_mean_NLL": 2.174106545848345,
+      "source_better_question_count": 126,
+      "source_minus_random_correct": -12,
+      "source_worse_question_count": 130
+    },
+    "random73": {
+      "exploratory_sign_flip_Holm_p": 0.013998600139986002,
+      "exploratory_sign_flip_one_sided_p": 0.0034996500349965005,
+      "paired_bootstrap_95_unadjusted": [
+        0.0790928227563369,
+        0.4653983158052406
+      ],
+      "paired_mean_random_minus_source_NLL": 0.2708674228509384,
+      "random_correct": 159,
+      "random_mean_NLL": 2.261043194278044,
+      "source_better_question_count": 98,
+      "source_minus_random_correct": -7,
+      "source_worse_question_count": 158
+    }
+  },
+  "matched_packed_projection_bytes": 765493248,
+  "matched_role_counts": {
+    "gate_proj": 2,
+    "k_proj": 10,
+    "o_proj": 2,
+    "q_proj": 1,
+    "up_proj": 1,
+    "v_proj": 12
+  },
+  "mean_random_gold_fullvocab_NLL": 2.1696297640647555,
+  "multiplicity": "Holm over five one-sided paired sign-flip comparisons; approximate Monte Carlo",
+  "no_dynamic_precision_switch_proven": true,
+  "no_live_promotion": true,
+  "no_per_item_losses_exported": true,
+  "original_receipt_sha256": {
+    "arc128:random137": "1fef9fc4e77d9fa59833ca425e76917a12a9bcba4707caf00351d28aa6a6cad4",
+    "arc128:random211": "e8e2bae6ab99db47b93107e530025547838cefbccffee4f5c25a27a6fb75e1ad",
+    "arc128:random389": "2455078a7a5e6969f5571df7a4452d5a1da3c7d81c83035abe15ad62e26a8725",
+    "arc128:random577": "bbc7a07b6dc2d8758eceba6035eacc295e866d2ab877c601665166c0620b2c14",
+    "arc128:random73": "e64041fda5dfc99211287e342177eae33a130e984ec99b24bcd047352d50bc85",
+    "arc128:source_qv8": "eb76d61f4598d2b0be0c4fd7beaa530e8ee83081adebcf290646da6ff9a17bbf",
+    "ob128:random137": "5a9ca5aa4e649c1d6ea8ad19314635ea58cfdebc2db9698dffd5b1ddcd04a983",
+    "ob128:random211": "3fe2ee5e2ba9252a572a4bbf408333898f156d3c4abb79c2998d328c8fb701db",
+    "ob128:random389": "2571f853ec357f43b485ee3b3512affeec108511eef8030a8204106ace91d746",
+    "ob128:random577": "e59658da72755450cb07f535322c8c49c0597a46b93c357d43cc42732b0694f1",
+    "ob128:random73": "ce64032a0ccde1d439fc956aae0bae4a1e7cb47fb029e1539c8ac19bfc86950a",
+    "ob128:source_qv8": "b9a91ed08996d10098458184c2846620d3151df141bf22e4a75c7439e98fc2ee"
+  },
+  "preexecution_private_lock_sha256": "79826eb944ac2a4f87b637a430471f069a3789da37cdb12a9b7d1060d49db9b8",
+  "schema": "BEGLIN-Qv13-five-frozen-equal-byte-random-controls-exploratory/1",
+  "sign_flip_assumption": "requires null sign exchangeability, not guaranteed; exploratory p-values only",
+  "sign_flip_draws": 10000,
+  "source_correct": 152,
+  "source_improvement_vs_mean_random_NLL": 0.17945399263765097,
+  "source_improvement_vs_mean_random_bootstrap95": [
+    0.06666216521722051,
+    0.2957924284133985
+  ],
+  "source_mean_gold_fullvocab_NLL": 1.9901757714271056,
+  "status": "NEW_DATA_RESULT_DESCRIPTIVE_NOT_CONFIRMATORY"
+}
