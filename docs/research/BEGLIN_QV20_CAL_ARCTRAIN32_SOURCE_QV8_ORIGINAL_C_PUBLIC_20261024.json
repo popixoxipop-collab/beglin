@@ -1,0 +1,18 @@
+{
+  "actual_native_peak_RSS_MiB": 4638.421875,
+  "actual_native_process_wall_s": 445.87022224999964,
+  "arm": "static_source",
+  "cohort": "cal_arc_train",
+  "correct": 19,
+  "mean_NLL": 1.530421487531689,
+  "n": 32,
+  "no_model_kernel_or_operator_release_changes": true,
+  "original_Qwen28_C_executable_sha256": "f64bae90250d83c051b55fc4907837ab1482a991dc27f35aee637860e40c1221",
+  "private_scores_receipt_SHA256": "e580e5c133755c585097b2457abc0ff33db700d682c12511d3c9aa420137a9ca",
+  "real_native_Q4_N8_weights_active": true,
+  "real_native_original_C_log_SHA256": "76d6f6328856e300d69150c088fadb0abc609656ee60591a24a14b2395eedb16",
+  "schema": "BEGLIN-Qv20-actual-original-Qwen28-C-single-static-mask-case-scores/1",
+  "source_frozen_private_SHA256": "6bedf97854f140939b248001a491b6f7ae38a078b502a8af9a85d3a47cc99f28",
+  "source_public_preexec_SHA256": "2aae8540fef6bce9c15e4c71becd873f62d69da556056583a41bae810ec5da1a",
+  "state": "ACTUAL_ORIGINAL_QWEN28_C_STATIC_STATIC_SOURCE_PASS"
+}
