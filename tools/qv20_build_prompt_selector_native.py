@@ -91,15 +91,19 @@ def run():
  need(raw.count(needle)==1,"only_original_native_selector_anchor")
  hook="static void *qv19_native_worker_run("
  need(raw.count(hook)==1,"native_model_lifetime_bridge_unique")
- modified=raw.replace(needle,"call.target=qv20_source_only_choice(ids,n);call.tokens=ids;",1)
- modified=modified.replace(hook,choice_source(d)+"\n"+hook,1)
+ modified=raw.replace(needle,"call.target=(qv20_policy_enabled ? qv20_source_only_choice(ids,n) : (n>=85?1:0));call.tokens=ids;",1)
+ modified=modified.replace(hook,"static int qv20_policy_enabled=0;\n"+choice_source(d)+"\n"+hook,1)
  mode='} else if (!strcmp(mode,"qv19_guarded_choice")) {'
  need(modified.count(mode)==1,"original_native_command_selector_unique")
  # Isolated Qv20 native mode; same guarded function, but separate explicit opt-in.
  modified=modified.replace(mode,
    '} else if (!strcmp(mode,"qv20_prompt_aware_choice")) {\n'
+   '        const char *v=getenv("BEGLIN_QV20_POLICY_SHA256");\n'
+   '        if(!v || strcmp(v,"'+sha(POLICY)+'")){fprintf(stderr,"FATAL: Qv20 frozen policy SHA gate\\n");exit(4);}\n'
+   '        qv20_policy_enabled=1;\n'
    '        int requests=argc>2?atoi(argv[2]):-1;\n'
    '        qv19_native_guarded_real_C(base,xtmp,logits,requests);\n'
+   '        qv20_policy_enabled=0;\n'
    '    '+mode,1)
  a="            for(int p=0;p<n;p++)forward_token(ids[p],p,xtmp,0);"
  b='        if(qv14_active)fprintf(stderr,"[QV14-DYNAMIC-TOTAL]'
