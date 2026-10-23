@@ -1,0 +1,17 @@
+{
+  "compile_log_SHA256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "derived_C_SHA256": "07a69e0a67cac0c448d6c7f6ec23cc506d95cf9a3bfa905acbb1d41abbbd7702",
+  "derived_binary_SHA256": "f9ad286158e98e1597ab2f2e97f22d1aa0ce5fb46e7b617ec66a0921a955f7b4",
+  "gpu_not_supported": true,
+  "link_log_SHA256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "new_command": "qv14_dynamic_choice",
+  "no_main_merge_or_operator_release_change": true,
+  "original_Qv5_mixed_binary_SHA256": "f64bae90250d83c051b55fc4907837ab1482a991dc27f35aee637860e40c1221",
+  "original_Qv5_mixed_source_SHA256": "375b3dfb02ac2c0fc90f3f500718578fe62d38cdcac541099fb896797470dbeb",
+  "precision_switch_mechanism": "live WT in-process, source BF16 dequant per changing tensor then Q4G64 or qNg64 n8 transcode; old packed buffer free, no dual whole-model retained",
+  "real_switch_vs_static_numeric_accuracy_not_yet_verified": true,
+  "schema": "BEGLIN-Qv14-original-Qwen28-C-inprocess-precision-repack-native-build/1",
+  "source_only_dispatch": "prefix_len >=85 random73 else source_qv8",
+  "status": "ISOLATED_NATIVE_CPU_Q4_N8_DYNAMIC_REAL_WT_REPACK_COMPILED_NOT_YET_EVALUATED",
+  "unchanged_original_N8_NEON_and_Q4_kernel_objects": true
+}
