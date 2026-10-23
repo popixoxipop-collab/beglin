@@ -35,7 +35,7 @@ def evaluate(mode):
  need(sha(COHORT/"frozen_inputs_private.json")==LOCKSHA,"input freeze")
  need(sha(COHORT/"frozen_manifest_PUBLIC.json")==PUBSHA,"public freeze")
  lock=json.loads((COHORT/"frozen_inputs_private.json").read_text())
- rows=lock["rows"];need(len(rows)==24,"n=24")
+ rows=lock["exact_input_rows"];need(len(rows)==24,"n=24")
  for k,sha_val in MASKSHA.items():need(sha(COHORT/"masks"/(k+".txt"))==sha_val,"mask sha "+k)
  src=COHORT/mode
  for i,row in enumerate(rows):
