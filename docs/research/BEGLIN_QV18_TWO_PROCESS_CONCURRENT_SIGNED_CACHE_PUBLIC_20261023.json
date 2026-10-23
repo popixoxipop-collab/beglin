@@ -1,0 +1,45 @@
+{
+  "Q4_POOL_SPIN": 0,
+  "Q4_THREADS_per_worker": 2,
+  "both_native_alive_monitor_samples": 481,
+  "each_frozen_question_count": 8,
+  "independent_C_gold_NLL_total_verified": 16,
+  "local_developer_Ed25519_signed_manifest_verified_per_worker": true,
+  "no_model_training_or_generalized_quality_claim": true,
+  "no_operator_release_or_original_source_changed": true,
+  "not_client_request_queue_or_shared_KV_cache_stress": true,
+  "not_same_process_thread_concurrency": true,
+  "one_SHARED_owner_only_packed_artifact_SHA256": "49c409a79588b79dcefeba60e09b71459ac8df2d02ac0bda5e2cc1ab8076a86b",
+  "original_Qv16_static_C_NLL_exact_count_per_worker": [
+    8,
+    8
+  ],
+  "original_Qwen28_C_selected_correct_per_worker": [
+    8,
+    8
+  ],
+  "original_native_2_workers_overlap_seconds": 104.692602667,
+  "original_owner_only_signed_pack_SHA256_unchanged": true,
+  "peak_aggregate_process_tree_RSS_MiB": 9477.71875,
+  "per_worker_original_native_Qwen28_C_byte_identical": true,
+  "process_count": 2,
+  "schema": "BEGLIN-Qv18-original-native-Qwen28-C-two-signed-readers-real-concurrent/1",
+  "status": "TWO_INDEPENDENT_SIGNED_CACHE_READERS_REAL_NATIVE_OVERLAP_AND_16_ORIGINAL_C_SCORES_PASS",
+  "wall_s": 107.17962895799428,
+  "worker_native_packed_read_ms": [
+    98.512,
+    208.919
+  ],
+  "worker_native_process_peak_RSS_MiB": [
+    4722.578125,
+    4722.734375
+  ],
+  "worker_native_wall_s": [
+    104.692602792,
+    105.016940917
+  ],
+  "worker_signed_model_integrity_check_ms": [
+    1857.415959,
+    1857.41725
+  ]
+}
