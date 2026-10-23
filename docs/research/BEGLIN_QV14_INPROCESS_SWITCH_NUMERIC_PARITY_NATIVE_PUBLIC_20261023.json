@@ -1,0 +1,90 @@
+{
+  "actual_real_Qwen28_n8_roles_each_request": [
+    28,
+    28,
+    28,
+    28
+  ],
+  "actual_real_Qwen28_q4_roles_each_request": [
+    168,
+    168,
+    168,
+    168
+  ],
+  "actual_source_derived_native_executable_sha256": "0955e6d5b0caf4c5f947b1f740c566d224dcd0b47a656b5760de720bf944ac90",
+  "exact_source_only_selected_masks": [
+    "source_qv8",
+    "random73",
+    "source_qv8",
+    "random73"
+  ],
+  "input_lengths": [
+    72,
+    103,
+    70,
+    90
+  ],
+  "literal_diagnostic_backslash_n_caused_first_Python_runner_to_FAIL": true,
+  "native_CPP_or_engine_process_returncode_separate_from_runner": true,
+  "no_general_accuracy_or_tps_claim": true,
+  "no_live_promotion": true,
+  "observed_switch_ms_each_request": [
+    0.134,
+    2393.609,
+    2396.209,
+    2391.081
+  ],
+  "original_C_correct_of_four": 4,
+  "original_C_scoring_rows": 4,
+  "original_case_tokens_answers_and_scores_not_exported": true,
+  "original_fullvocab_correct_single_token_mean_NLL": 0.08021079507621316,
+  "original_unmodified_native_log_sha256": "024014274e3743817bcff95373f6a6a981aaf9bb6ac926316176cff22a7c79c8",
+  "per_case_parity_metadata": [
+    {
+      "abs_gold_NLL_difference_to_separate_static_C": 0.0,
+      "case_index": 0,
+      "same_correct_label_choice": true,
+      "selected_mask": "source_qv8"
+    },
+    {
+      "abs_gold_NLL_difference_to_separate_static_C": 0.0,
+      "case_index": 1,
+      "same_correct_label_choice": true,
+      "selected_mask": "random73"
+    },
+    {
+      "abs_gold_NLL_difference_to_separate_static_C": 0.0,
+      "case_index": 2,
+      "same_correct_label_choice": true,
+      "selected_mask": "source_qv8"
+    },
+    {
+      "abs_gold_NLL_difference_to_separate_static_C": 0.0,
+      "case_index": 3,
+      "same_correct_label_choice": true,
+      "selected_mask": "random73"
+    }
+  ],
+  "private_inputs_sha256": "e12ba4ae07dba6476c4452357ce77b32f2a4c7ba64c5c1bb013e74cf1245e032",
+  "public_manifest_sha256": "83fb76b032f628a4bf1b4b3d00471a635e010bb40f8ae27cf7b50030131c4dd5",
+  "real_WT_count_repacked_each_request": [
+    0,
+    40,
+    40,
+    40
+  ],
+  "runtime_CPU_ONLY": true,
+  "same_label_correct_for_all4": true,
+  "schema": "BEGLIN-Qv14-inprocess-native-original-C-independent-audit/1",
+  "static_controls_completed": [
+    "static_source",
+    "static_random"
+  ],
+  "static_numeric_controls_confirmed": true,
+  "status": "INPROCESS_Q4_N8_SWITCH_REAL_C_NUMERIC_PARITY_PASS",
+  "switches": 3,
+  "total_distinct_repack_events": 120,
+  "total_switch_ms": 7181.033,
+  "wall_seconds_not_measured_in_this_independent_parser": true,
+  "worst_abs_gold_NLL_vs_static_C": 0.0
+}
