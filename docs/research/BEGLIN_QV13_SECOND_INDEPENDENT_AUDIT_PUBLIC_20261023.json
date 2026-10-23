@@ -1,0 +1,115 @@
+{
+  "actual_original_28layer_native_16_C_runs": 16,
+  "fullvocab_correct_single_token_NLL_rows_recomputed_from_original_C_log": 2048,
+  "independent_4_choice_accuracy_correct_all256": {
+    "original_v2": 165,
+    "q4": 159,
+    "random137": 154,
+    "random211": 150,
+    "random389": 156,
+    "random577": 164,
+    "random73": 159,
+    "source_qv8": 152
+  },
+  "independent_mean_fullvocab_correct_token_NLL_all256": {
+    "original_v2": 1.6057934876896391,
+    "q4": 2.0108615504009397,
+    "random137": 2.096504778783504,
+    "random211": 2.244450376128083,
+    "random389": 2.072043925285807,
+    "random577": 2.1741065458483444,
+    "random73": 2.2610431942780433,
+    "source_qv8": 1.9901757714271051
+  },
+  "matched_role_layer_random_masks_independently_reconstructed": {
+    "matched_random_seeds_reproduced": 5,
+    "q4_bytes": 736985088,
+    "qv8_vs_random_same_role_and_packed_bytes": true,
+    "source_bytes": 765493248,
+    "source_role_counts": {
+      "gate_proj": 2,
+      "k_proj": 10,
+      "o_proj": 2,
+      "q_proj": 1,
+      "up_proj": 1,
+      "v_proj": 12
+    },
+    "v2_bytes": 776896512
+  },
+  "no_raw_tokens_answers_or_per_case_model_scores_exported": true,
+  "other_caveats": [
+    "Static masks not per-request dynamic precision",
+    "Current accuracy not better than Q4 or original V2",
+    "Comparison to Q4 uses separate original Q4/mixed compiled C binaries, with localized five-hunk quantization-loader differences",
+    "NLL is full-vocabulary gold A/B/C/D token rather than conditional multiple choice NLL",
+    "Exact external BF16 weight-file source revision across ALL tensors not newly certified here",
+    "Public test may have appeared in model pretraining",
+    "No per-request switching cost, total system memory budget, high-confidence throughput or Metal GPU evaluation"
+  ],
+  "prelock_digest": "5cb944375fa271c4528b4846f4b3c22cdf8179d4a38a2f5c17babbc03c4df92a",
+  "protocol_caveat": "Prereg SHA field for original Qv8 is incorrect and seed role order + sorted dataset hash text differ from executable freeze. Separate immutable provenance errata exists.",
+  "public_freeze_digest": "9d045e1056e5ec8bc3a093a8a3d198277cbbc4083fb054a929b566cb2bb03c8c",
+  "research_only_no_main_merge": true,
+  "schema": "BEGLIN-Qv13-new-independent-full-native-Qwen28-C-recheck/1",
+  "sealed_private_input_and_mask_digest": "79826eb944ac2a4f87b637a430471f069a3789da37cdb12a9b7d1060d49db9b8",
+  "source_dataset_and_tokenization_independently_reconstructed": {
+    "arc128": {
+      "eligible": 1163,
+      "no_truncation": true,
+      "selected_exact_sha": 128,
+      "token_and_gold_label_match": 128,
+      "total_original": 1172
+    },
+    "ob128": {
+      "eligible": 500,
+      "no_truncation": true,
+      "selected_exact_sha": 128,
+      "token_and_gold_label_match": 128,
+      "total_original": 500
+    }
+  },
+  "source_model_and_operator_runtime_not_modified": true,
+  "source_original_C_base_vs_mixed_diff_hunks": 5,
+  "statistical_caveat": "Question-pair bootstrap estimates mean over prompts CONDITIONAL on these five fixed random masks, NOT an inference over all random masks. Finite mask-level rank among six comparisons cannot yield a one-sided p below 1/6.",
+  "stratified_bootstrap_and_finite_mask_rank_analysis": {
+    "all256": {
+      "ARC_mean": 0.1702094915258432,
+      "CI_40k_stratified_question_bootstrap_95": [
+        0.06684885123568994,
+        0.2971862074728037
+      ],
+      "OpenBookQA_mean": 0.188698493749459,
+      "Q4_correct": 159,
+      "QV8_NLL_lower_than_random73_items": 98,
+      "V2_correct": 165,
+      "finite_mask_sample_source_rank": 1,
+      "mask_level_rank_p_floor_if_label_exchangeable": 0.16666666666666666,
+      "mean_random_minus_qv8_NLL": 0.1794539926376511,
+      "n": 256,
+      "random73_NLL_lower_items": 158,
+      "random73_vs_Qv8_exact_NLL_sign_test_two_sided_p": 0.00021313312318785906,
+      "source_correct": 152,
+      "source_vs_Q4_mean_NLL": 0.020685778973834487
+    },
+    "postpilot240": {
+      "ARC_mean": 0.13168297502775347,
+      "CI_40k_stratified_question_bootstrap_95": [
+        0.04057110876412552,
+        0.2786620584304759
+      ],
+      "OpenBookQA_mean": 0.18439588935904597,
+      "Q4_correct": 151,
+      "QV8_NLL_lower_than_random73_items": 89,
+      "V2_correct": 157,
+      "finite_mask_sample_source_rank": 1,
+      "mask_level_rank_p_floor_if_label_exchangeable": 0.16666666666666666,
+      "mean_random_minus_qv8_NLL": 0.15803943219339972,
+      "n": 240,
+      "random73_NLL_lower_items": 151,
+      "random73_vs_Qv8_exact_NLL_sign_test_two_sided_p": 7.563032299772966e-05,
+      "source_correct": 144,
+      "source_vs_Q4_mean_NLL": 0.017875136288775868
+    }
+  },
+  "verdict": "ENGINE_EVIDENCE_PASS__AVERAGE_NLL_MATCHED_RANDOM_SAMPLE_ADVANTAGE_EXPLORATORY__GENERAL_OPTIMALITY_NOT_DEMONSTRATED__ACCURACY_GAIN_NOT_DEMONSTRATED__DYNAMIC_PRECISION_NOT_DEMONSTRATED"
+}
