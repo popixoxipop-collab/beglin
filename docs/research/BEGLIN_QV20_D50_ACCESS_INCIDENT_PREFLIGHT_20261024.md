@@ -2,7 +2,7 @@
 
 **Observed:** 2026-10-24 KST  
 **Branch:** `research/qv20-prompt-aware-equal-byte-20261024`  
-**State:** `BLOCKED_ACCESS_EP ERM` (formal preflight: `NOT_READY_EXTERNAL_STORAGE_ACCESS`) / original random73 calibration **NOT SCORED**.
+**State:** `BLOCKED_ACCESS_EPERM` (formal preflight: `NOT_READY_EXTERNAL_STORAGE_ACCESS`) / original random73 calibration **NOT SCORED**.
 
 ## What was actually verified
 
