@@ -1,0 +1,14 @@
+{
+  "derived_paired_C_SHA256": "cf4a3bafa1e20887d97f44b66bcc29dccaef6b93027dbb9471f873e0ba219d7f",
+  "fixed_mask_role_cardinality_checked_at_runtime": true,
+  "native_paired_executable_SHA256": "daba57fd5bd747d3e6923de05114f9d313c9dac4765d63b5fa2f84060f69af67",
+  "no_operator_release_or_original_weights_changed": true,
+  "one_hunk_source_diff": true,
+  "only_semantic_change": "global downgrades then global upgrades -> same-role downgrade+upgrade pairs preserving active 28n8 and keeping inactive cache under 96 MiB",
+  "original_quant_cache_C_v1_SHA256": "0b1a069384d042b1b1164eb6ca05499000f21219e5692773476021edfeaafd79",
+  "schema": "BEGLIN-Qv15-original-C-paired-WT-bounded-inactive-cache-build/2",
+  "source_diff_SHA256": "ddd6e407937a6e33ddb87023916c79ba9731c1e605ec0aa7f4cfe4d472fae6aa",
+  "state": "REAL_C_COMPILED_BINARY_NOT_BENCHMARKED",
+  "unchanged_native_kernel_objects": 23,
+  "unchanged_wt_packed_quant_math": true
+}
