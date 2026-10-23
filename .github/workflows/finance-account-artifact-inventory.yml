@@ -50,6 +50,7 @@ jobs:
           report={"schema":"beglin.actions-artifact-inventory/1",
                   "repository":repo,"count":seen,"measured_bytes":total,
                   "highest_30":sorted(artifacts,key=lambda x:x["size"],reverse=True)[:30],
+                  "all_artifacts":sorted(artifacts,key=lambda x:(-x["size"],x["id"])),
                   "note":"READ_ONLY. Per-repository count does not equal account-wide billed storage.",
                   "artifact_deleted":False,"billing_modified":False}
           # Artifacts remain untouched. Save a compact reviewable inventory
