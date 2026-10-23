@@ -1,0 +1,24 @@
+{
+  "all_original_artifacts_digest_preserved": true,
+  "bit_flip_byte_offset": 4096,
+  "limits": [
+    "trusted Python launcher enforces Ed25519 before native C is spawned; direct native invocation has independent SHA256 checking but no direct Ed25519 verification",
+    "local development Ed25519 key is not an organizational release certificate",
+    "malicious code controlling the key or loader trust root remains outside this test's threat model",
+    "negative tests inspect a temporary copy and do not modify the original artifact or original kernel"
+  ],
+  "local_dev_Ed25519_original_signature_accepted": true,
+  "modified_manifest_signature_rejected": true,
+  "no_original_model_service_or_operator_release_change": true,
+  "original_dev_public_key_SHA256": "5f535c54985ac18257b50c4bd7969ec4ce57aecb766def485c68c8b0a4ad4847",
+  "original_native_pack_SHA256": "49c409a79588b79dcefeba60e09b71459ac8df2d02ac0bda5e2cc1ab8076a86b",
+  "original_signature_SHA256": "2c346634543b222890a99e0536fcca7ec6488b09a7cac05aa5562fe31c0b168c",
+  "original_signed_manifest_SHA256": "491deb61dbc30fad08b4a5d819b270b64167d5551b422823ae0b431f4a5c6824",
+  "pack_file_bytes": 87541016,
+  "schema": "BEGLIN-Qv17-local-Ed25519-signed-packed-asset-tamper-test/1",
+  "single_bit_file_tamper_SHA256_rejected": true,
+  "status": "ALL_3_ADVERSARIAL_OFFLINE_TAMPER_DENIALS_PASS",
+  "temporary_tampered_copy_destroyed": true,
+  "test_copy_and_hash_ms": 85.575,
+  "wrong_developer_root_signature_rejected": true
+}
