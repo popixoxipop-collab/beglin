@@ -1,0 +1,72 @@
+{
+  "budgets_MiB": {
+    "32": {
+      "cache_hits": 770,
+      "cold_quantization_misses": 150,
+      "correct_choices": 17,
+      "discards_due_to_hard_cap": 115,
+      "gold_fullvocab_correct_NLL_mean": 1.5905526351031558,
+      "native_process_peak_RSS_MiB": 4680.703125,
+      "native_process_wall_s": 234.72766008321196,
+      "native_total_switch_ms": 40492.225,
+      "number_exact_numeric_parity": 24,
+      "owner_only_native_log_sha256": "e23757d15d4384ad964935d5bba65dc5cde60d0d5282bd77b6e1b9499c748c68",
+      "peak_inactive_quantized_cache_MiB": 28.0078125,
+      "switch_time_reduction_pct_vs_uncached_Qv14": 26.382247348129383
+    },
+    "64": {
+      "cache_hits": 831,
+      "cold_quantization_misses": 89,
+      "correct_choices": 17,
+      "discards_due_to_hard_cap": 51,
+      "gold_fullvocab_correct_NLL_mean": 1.5905526351031558,
+      "native_process_peak_RSS_MiB": 4716.34375,
+      "native_process_wall_s": 205.14928616723046,
+      "native_total_switch_ms": 20412.679,
+      "number_exact_numeric_parity": 24,
+      "owner_only_native_log_sha256": "4af05693deff46af0cbe90d693ab26c93950d5db951b3c008728304c4d196127",
+      "peak_inactive_quantized_cache_MiB": 63.28125,
+      "switch_time_reduction_pct_vs_uncached_Qv14": 62.88829389879085
+    },
+    "96": {
+      "cache_hits": 880,
+      "cold_quantization_misses": 40,
+      "correct_choices": 17,
+      "discards_due_to_hard_cap": 0,
+      "gold_fullvocab_correct_NLL_mean": 1.5905526351031558,
+      "native_process_peak_RSS_MiB": 4725.859375,
+      "native_process_wall_s": 136.842259041965,
+      "native_total_switch_ms": 2424.341,
+      "number_exact_numeric_parity": 24,
+      "owner_only_native_log_sha256": "b9e1890190c5e167abdbdcea9365391feaf28f99dc5b54f2da8e8ce1872a7e02",
+      "peak_inactive_quantized_cache_MiB": 90.046875,
+      "switch_time_reduction_pct_vs_uncached_Qv14": 95.59237517617792
+    }
+  },
+  "cache96_wall_time_reduction_vs_previous_uncached_Qv14_pct": 26.590876960379827,
+  "extra_RSS_MiB_96_over_Qv14_static_Qv8": 86.953125,
+  "limits": [
+    "same old validation sample, no new quality-generalization claim",
+    "wall time mixes uncontrolled host load; directly instrumented switch time is the stronger measurement",
+    "inactive cache bytes add to resident model and transient F32 dequant scratch",
+    "quality router is fixed token-length heuristic, not a trained utility estimator",
+    "cold first profile swap still requantizes 40 tensors and costs about 2.4 seconds",
+    "only serial Apple Silicon CPU original C, Metal and concurrent requests not evaluated",
+    "no production promotion or immutable release changes"
+  ],
+  "original_uncached_Qv14_v3": {
+    "RSS_MiB": 4696.453125,
+    "process_wall_s": 186.41042608302087,
+    "switch_ms": 55003.34300000001
+  },
+  "reference_original_static_Qv8": {
+    "RSS_MiB": 4638.90625,
+    "wall_s": 131.65761866699904
+  },
+  "sample": "previously source-frozen 24 ARC-Challenge validation questions; mechanics repeat, not new heldout quality",
+  "schema": "BEGLIN-Qv15-bounded-inactive-precision-cache-CPU-memory-latency-frontier/1",
+  "source_C_native_binary_SHA256": "daba57fd5bd747d3e6923de05114f9d313c9dac4765d63b5fa2f84060f69af67",
+  "source_Qv14_input_lock_SHA256": "e836a4bb6ea86c43f5a9c28ecbbc235c4c9d7fd306dfc006511027e3bddf3dc6",
+  "source_cache_builder_C_SHA256": "cf4a3bafa1e20887d97f44b66bcc29dccaef6b93027dbb9471f873e0ba219d7f",
+  "status": "REAL_QWEN28_CPU_NATIVE_C_3_CACHE_CAPS_ORIGINAL_STATIC_NUMERIC_PARITY_PASS"
+}
