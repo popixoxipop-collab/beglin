@@ -1,0 +1,17 @@
+{
+  "artifact_digest_unchanged": true,
+  "derived_original_Qwen28_C_executable_SHA256": "16085378788b64b229f321b49c11540e286edffbff832db4e41fbf8d2a87643b",
+  "fatal_diagnostic": "FATAL: Qv17 packed cache pinned packed SHA256 mismatch",
+  "intentional_wrong_expected_pack_SHA256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "local_dev_signer_private_key_never_exposed": true,
+  "native_private_log_SHA256": "fb6e0be92f2b7b51fbef4504eccffd83489b0b24923c53316aee3afd1b228116",
+  "native_process_wall_s": 13.672521541360766,
+  "native_wrong_digest_rejected": true,
+  "no_operating_release_change": true,
+  "original_gold_C_evaluations_completed": 0,
+  "original_pack_SHA256": "49c409a79588b79dcefeba60e09b71459ac8df2d02ac0bda5e2cc1ab8076a86b",
+  "run_exit_code": 1,
+  "schema": "BEGLIN-Qv17-native-Apple-C-wrong-SHA256-direct-invocation-denial/1",
+  "status": "REAL_NATIVE_WRONG_EXPECTED_SHA256_FAIL_CLOSED_BEFORE_ANY_GOLD_SCORE",
+  "test_direct_native_bypass_not_a_signature_verification_test": true
+}
