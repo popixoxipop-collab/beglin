@@ -1,0 +1,58 @@
+name: Research-only Finance account Actions quota inventory
+on:
+  push:
+    branches:
+      - research/finance-quota-inventory-20261024
+    paths:
+      - .github/workflows/finance-account-artifact-inventory.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Bounded authenticated read-only inventory (never delete)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json,os,sys,urllib.request,urllib.error
+          repo="popixoxipop-collab/beglin"
+          total=0; seen=0; sha_set=set(); artifacts=[]
+          for page in range(1,21):
+              request=urllib.request.Request(
+                  "https://api.github.com/repos/"+repo+"/actions/artifacts?per_page=100&page="+str(page),
+                  headers={"Accept":"application/vnd.github+json",
+                           "Authorization":"Bearer "+os.environ["GH_TOKEN"],
+                           "User-Agent":"finance-quota-read-only-inventory/1",
+                           "X-GitHub-Api-Version":"2022-11-28"})
+              with urllib.request.urlopen(request,timeout=12) as response:
+                  payload=json.load(response)
+              items=payload.get("artifacts",[])
+              assert isinstance(items,list) and len(items)<=100
+              for item in items:
+                  i=item["id"]
+                  assert type(i) is int and i not in sha_set
+                  sha_set.add(i)
+                  n=item.get("size_in_bytes")
+                  assert type(n) is int and n>=0
+                  artifacts.append({"id":i,"size":n,"name":item.get("name"),
+                     "created_at":item.get("created_at"),"expired":item.get("expired"),
+                     "digest":item.get("digest"),"run_id":(item.get("workflow_run") or {}).get("id")})
+                  total+=n
+              seen+=len(items)
+              if len(items)<100:break
+          else:raise RuntimeError("PAGINATION_BOUND_UNVERIFIED")
+          report={"schema":"beglin.actions-artifact-inventory/1",
+                  "repository":repo,"count":seen,"measured_bytes":total,
+                  "highest_30":sorted(artifacts,key=lambda x:x["size"],reverse=True)[:30],
+                  "note":"READ_ONLY. Per-repository count does not equal account-wide billed storage.",
+                  "artifact_deleted":False,"billing_modified":False}
+          print("FINANCE_QUOTA_READONLY_INVENTORY="+json.dumps(report,sort_keys=True))
+          if total > 500_000_000:
+              print("BEGLIN_ALONE_EXCEEDS_FREE_INCLUDED_QUOTA_NOT_ADMISSION")
+          PY
