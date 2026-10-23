@@ -1,0 +1,28 @@
+{
+  "actual_inprocess_switch_not_run_yet": true,
+  "dataset": "ARC-Challenge validation (not Qv13 test)",
+  "eligible_rows": 295,
+  "input_id_order_sha256": "0d0fda9412af1b62a52404163829680c43d6e14a9822eaa343189d01f4ff6b82",
+  "input_length_tokens": [
+    72,
+    103,
+    70,
+    90
+  ],
+  "long_mask": "random73",
+  "mask_sha256": {
+    "random73": "5086bc9e1764edbfbcbeb7089d3a9aabba7978d773e904d600b2bfdc899b2fde",
+    "source_qv8": "9db954db6ba690d92dd96ee1638b76afe53de2d637aab462b4e83de90cc35922"
+  },
+  "n": 4,
+  "not_a_model_accuracy_generalization_experiment": true,
+  "original_dataset_rows": 299,
+  "private_input_sha256": "e12ba4ae07dba6476c4452357ce77b32f2a4c7ba64c5c1bb013e74cf1245e032",
+  "request_selection": "two <85 and two >=85, SHA-sorted by source-only question/id; alternating short/long",
+  "schema": "BEGLIN-Qv14-native-in-process-dynamic-ARC-val4-preexec-PUBLIC-1",
+  "short_mask": "source_qv8",
+  "source_Qv8_and_random73_same_projected_bytes": 765493248,
+  "source_model_and_operator_release_untouched": true,
+  "status": "SEALED_4_REQUESTS_AND_TWO_FIXED_MASKS_BEFORE_NATIVE_EXECUTION",
+  "threshold": 85
+}
