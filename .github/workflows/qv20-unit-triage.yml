@@ -6,6 +6,8 @@ on:
       - research/qv20-prompt-aware-equal-byte-20261024
     paths:
       - tools/qv20_unit_receipt_triage.py
+      - tools/qv20_unit_failure_triage.py
+      - tools/test_qv20_unit_failure_triage.py
       - .github/workflows/qv20-unit-triage.yml
   workflow_dispatch:
 
@@ -21,5 +23,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Self-test receipt SHA binding and interruption classification
+      - name: Verify receipt SHA and interruption attribution (5 self-tests)
         run: python -B tools/qv20_unit_receipt_triage.py --self-test
+      - name: Verify fail-closed TAP summary and receipt (10 unit tests)
+        run: python -B tools/test_qv20_unit_failure_triage.py -v
