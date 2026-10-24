@@ -1,0 +1,81 @@
+{
+  "catastrophic_delta_ge": 0.75,
+  "crossfit_bootstrap_lower_percentile": 2.5,
+  "crossfit_bootstrap_reps": 20000,
+  "crossfit_bootstrap_seed": 20261025,
+  "crossfit_min_nll_gain_vs_better_static": 0.04,
+  "crossfit_random_selection_min": 12,
+  "crossfit_severe_harm_selected_max_fraction": 0.1,
+  "dataset_sha256": {
+    "arc_train": "2bb1e5e8875ff5944d3a6bf469ef6ea811217be8bc083abd01722ac62cdaa873",
+    "ob_train": "076d0bfdd6c1059aa7a233f6b779b3712abe9205bf69737145cfe85b849854e8"
+  },
+  "evaluated_once_on_splits": [
+    "eval_arc_train48",
+    "eval_ob_train48"
+  ],
+  "exclude_qv20_calibration_manifest_sha256": "6bedf97854f140939b248001a491b6f7ae38a078b502a8af9a85d3a47cc99f28",
+  "failure_mode": "BEST_STATIC_Q4N8_MASK_FALLBACK",
+  "feature_count": 13,
+  "feature_input": "prefix_token_ids_only",
+  "fitted_on_splits": [
+    "cal_arc_train96"
+  ],
+  "fold_count": 5,
+  "frozen_before_any_qv21_native_score": true,
+  "length_stratum_threshold": 85,
+  "logistic_C": 0.3,
+  "logistic_max_iter": 300,
+  "logistic_solver": "lbfgs",
+  "model_or_operating_release_promotion": "FORBIDDEN_UNTIL_NATIVE_HELDOUT_AUDIT",
+  "model_type": "ridge_mean_delta_plus_logistic_severe_harm",
+  "original_native_c_sha256": "f64bae90250d83c051b55fc4907837ab1482a991dc27f35aee637860e40c1221",
+  "prefix_limits": [
+    18,
+    208
+  ],
+  "projection_packed_bytes_each": 765493248,
+  "qv20_eval24_arc_and_ob": "DO_NOT_READ",
+  "ridge_alpha": 12.0,
+  "ridge_label_clip": [
+    -3.0,
+    3.0
+  ],
+  "schema": "BEGLIN-Qv21-preregistered-tail-risk-two-fixed-Q4N8-masks/1",
+  "selection_seed": "BEGLIN_QV21_20261025_INDEPENDENT_HOLDOUT_V1",
+  "source": "Qv20 train32 exploratory negative finding; Qv21 calibration outcomes not observed at design time",
+  "splits": {
+    "cal_arc_train96": {
+      "arc_train": {
+        "long": 48,
+        "short": 48
+      },
+      "partition": "first"
+    },
+    "eval_arc_train48": {
+      "arc_train": {
+        "long": 24,
+        "short": 24
+      },
+      "partition": "after_calibration"
+    },
+    "eval_ob_train48": {
+      "ob_train": {
+        "long": 24,
+        "short": 24
+      },
+      "partition": "first"
+    }
+  },
+  "static_masks": {
+    "static_random": "5086bc9e1764edbfbcbeb7089d3a9aabba7978d773e904d600b2bfdc899b2fde",
+    "static_source": "9db954db6ba690d92dd96ee1638b76afe53de2d637aab462b4e83de90cc35922"
+  },
+  "std_floor": 0.05,
+  "study_id": "BEGLIN_QV21_20261025_INDEPENDENT_HOLDOUT_V1",
+  "switch_predicted_delta_lt": -0.2,
+  "switch_predicted_severe_probability_lt": 0.15,
+  "tokenizer_sha256": "a8506e7111b80c6d8635951a02eab0f4e1a8e4e5772da83846579e97b16f61bf",
+  "truth_claim_limit": "no dynamic gain, no equal total RAM, no Metal or cross-family generalization before actual evaluation",
+  "written_date_kst": "2026-10-25"
+}
