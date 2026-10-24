@@ -42,9 +42,10 @@
       "source_digest": "sha256:dd9aec04fa5c8d66a19f364fab98bc002fcb8b7e3e579a4cc387d7b4df495a13",
       "source_run_id": 39220051926,
       "name": "qt-qwen25-real-mixed-mlx-evidence",
-      "github_release_sha_verified": false,
+      "github_release_sha_verified": true,
       "off_github_sha_verified": false,
-      "deleted": false
+      "deleted": false,
+      "release_receipt_ref": "EOE Finance/Status/FINANCE_BEG_FILE12171655869_TRIPLE_ARCHIVE_2026-10-23.json (historical release and off-GitHub receipt; fresh off-GitHub reread pending)"
     },
     {
       "rank": 3,
@@ -53,9 +54,10 @@
       "source_digest": "sha256:ce7772958d3863c9fa689a88794050b296e4f8f973ad0cc621c99053c20acbb4",
       "source_run_id": 39175190877,
       "name": "qt-qwen25-real-mixed-mlx-evidence",
-      "github_release_sha_verified": false,
+      "github_release_sha_verified": true,
       "off_github_sha_verified": false,
-      "deleted": false
+      "deleted": false,
+      "release_receipt_ref": "ops/beglin-actions-12153853017-release-backed-receipt.json"
     },
     {
       "rank": 4,
@@ -1674,5 +1676,6 @@
       "off_github_sha_verified": false,
       "deleted": false
     }
-  ]
+  ],
+  "github_draft_release_sha_verified_count": 2
 }
