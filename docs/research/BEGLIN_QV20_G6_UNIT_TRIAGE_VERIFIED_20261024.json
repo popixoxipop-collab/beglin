@@ -1,0 +1,73 @@
+{
+  "schema": "BEGLIN-Qv20-G6-isolated-unit-triage/1",
+  "observed_date": "2026-10-24",
+  "session_id": "dev_2989c592f98a467997553b20049ccdaf",
+  "base_release": "g6-0.9.0-operator.900387",
+  "unit_receipt_id": "test_f51d0598d37e4fc2b38e37f38bf60cf8",
+  "receipt_state": "FAIL",
+  "receipt_exit_code": 1,
+  "receipt_timed_out": true,
+  "receipt_stdout_sha256": "8350b945fc953e7784ddbefe47c289fa2d1bc1986fe010ab4d3687d332e8e29a",
+  "readback_sha_match": true,
+  "raw_log_bytes": 94427,
+  "node_tap_summary": {
+    "tests": 264,
+    "pass": 113,
+    "fail": 19,
+    "cancelled": 132,
+    "skipped": 0,
+    "duration_ms": 899517.054125
+  },
+  "before_interrupt_failure_headers": 18,
+  "after_interrupt_failure_headers": 273,
+  "after_interrupt_headers_are_not_independent_tests": true,
+  "isolated_regressions": [
+    {
+      "test": "ALIENWARE operator bridge uses the same non-admin POSIX protocol implementation",
+      "baseline": "6/6 suite PASS",
+      "development": "suite FAIL",
+      "classification": "PROVEN_DEVELOPMENT_ONLY_PARITY_REGRESSION",
+      "action": "preserve pinned Windows operator bridge and shared POSIX contract; do not bypass parity test"
+    },
+    {
+      "test": "R2 workspace manifest fails closed when pinned Herdr identity mismatches",
+      "baseline": "PASS, 12453.97ms",
+      "development": "PASS, 20803.43ms",
+      "classification": "FAILED_DURING_BROAD_RUN_BUT_PASSED_ISOLATED",
+      "action": "treat broad-run failure as separately unproven; inspect contention"
+    }
+  ],
+  "scheduler_latest_check": {
+    "observed_at_utc": "2026-10-24T10:59:10.181Z",
+    "recommended_host": null,
+    "eoelive_eligible": false,
+    "blockers": [
+      "offline",
+      "insufficient_free_ram",
+      "insufficient_free_cpu"
+    ],
+    "random73_real_scored": false
+  },
+  "focused_development_evidence": {
+    "python_budget_tests": "5/5 PASS",
+    "node_scheduler_tests": "7/7 PASS",
+    "server_owned": {
+      "policy": "PASS",
+      "preflight": "PASS",
+      "codex-boundary": "PASS",
+      "mcp-stdio": "PASS",
+      "unit": "FAIL"
+    }
+  },
+  "qv20_original_static_calibration": {
+    "arm": "static_source",
+    "correct": 19,
+    "n": 32,
+    "mean_gold_token_nll": 1.53042149
+  },
+  "actual_random73_calibration": "NOT_RUN",
+  "frozen_policy": "NOT_TRAINED",
+  "heldout_48": "SEALED_UNTOUCHED",
+  "production_release_changed": false,
+  "promotion_allowed": false
+}
