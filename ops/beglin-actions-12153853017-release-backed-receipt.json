@@ -1,0 +1,14 @@
+{
+  "bytes": 7808874,
+  "d50_or_wd_black_backup_verified": false,
+  "github_private_draft_release_tag": "archive-beglin-actions-quota-20261024",
+  "github_quota_remediated": false,
+  "independently_reopened_release_sha_ok": true,
+  "original_actions_artifact_deleted": false,
+  "original_artifact_id": 12153853017,
+  "release_asset_name": "beglin-actions-12153853017.zip",
+  "release_zip_crc_ok": true,
+  "schema": "beglin.finance-quota-archive-receipt/1",
+  "sha256": "ce7772958d3863c9fa689a88794050b296e4f8f973ad0cc621c99053c20acbb4",
+  "source_zip_crc_ok": true
+}
