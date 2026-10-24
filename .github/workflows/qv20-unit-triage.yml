@@ -1,0 +1,25 @@
+name: BEGLIN Qv20 Unit Receipt Triage Offline
+
+on:
+  push:
+    branches:
+      - research/qv20-prompt-aware-equal-byte-20261024
+    paths:
+      - tools/qv20_unit_receipt_triage.py
+      - .github/workflows/qv20-unit-triage.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-triage-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Self-test receipt SHA binding and interruption classification
+        run: python -B tools/qv20_unit_receipt_triage.py --self-test
