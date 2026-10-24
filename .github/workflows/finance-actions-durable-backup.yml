@@ -1,0 +1,108 @@
+name: Ops - Private Beglin Actions ZIP preservation (no deletion)
+on:
+  push:
+    branches:
+      - research/finance-quota-inventory-20261024
+    paths:
+      - .github/workflows/finance-actions-durable-backup.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  first-asset-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: popixoxipop-collab/beglin
+      TARGET_TAG: archive-beglin-actions-quota-20261024
+    steps:
+      - name: Verify repository and preserve 1 ZIP on a DRAFT release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "$GH_REPO"
+          test "$GITHUB_REF" = "refs/heads/research/finance-quota-inventory-20261024"
+          gh api "repos/$GH_REPO/actions/artifacts/12153853017" > /tmp/source.json
+          python3 - <<'PY'
+          import json
+          s=json.load(open('/tmp/source.json'))
+          assert s['id']==12153853017 and not s['expired']
+          assert s['size_in_bytes']==7808874
+          assert s['digest']=='sha256:ce7772958d3863c9fa689a88794050b296e4f8f973ad0cc621c99053c20acbb4'
+          print("GITHUB_SOURCE_METADATA_SHA_MATCH")
+          PY
+          mkdir -p /tmp/beglin-source /tmp/beglin-reopened
+          gh api "repos/$GH_REPO/actions/artifacts/12153853017/zip" > /tmp/beglin-source/beglin-actions-12153853017.zip
+          python3 - <<'PY'
+          import hashlib,zipfile
+          p='/tmp/beglin-source/beglin-actions-12153853017.zip'
+          b=open(p,'rb').read()
+          assert len(b)==7808874
+          assert hashlib.sha256(b).hexdigest()=='ce7772958d3863c9fa689a88794050b296e4f8f973ad0cc621c99053c20acbb4'
+          with zipfile.ZipFile(p) as z:
+              assert z.testzip() is None and len(z.namelist())>0
+          print('ORIGINAL_ACTIONS_ZIP_SHA_SIZE_CRC_VERIFIED')
+          PY
+          if ! gh release view "$TARGET_TAG" --repo "$GH_REPO" --json isDraft --jq '.isDraft' > /tmp/release-draft 2>/dev/null; then
+            gh release create "$TARGET_TAG" --repo "$GH_REPO" --target 95b1301d617d38cc8fe7612a51492e51788face4 --draft --title "Private Beglin Actions provenance backup (2026-10-24)" --notes "Archive originals with ZIP SHA and CRC. Not a product release. Originals are not deleted by this workflow."
+            echo true > /tmp/release-draft
+          fi
+          test "$(cat /tmp/release-draft)" = "true"
+          if ! gh release view "$TARGET_TAG" --repo "$GH_REPO" --json assets --jq '.assets[].name' | grep -qx 'beglin-actions-12153853017.zip'; then
+             gh release upload "$TARGET_TAG" --repo "$GH_REPO" /tmp/beglin-source/beglin-actions-12153853017.zip
+          fi
+          gh release download "$TARGET_TAG" --repo "$GH_REPO" --pattern 'beglin-actions-12153853017.zip' --dir /tmp/beglin-reopened
+          python3 - <<'PY'
+          import hashlib,zipfile,json,subprocess,os
+          p='/tmp/beglin-reopened/beglin-actions-12153853017.zip'
+          b=open(p,'rb').read()
+          assert len(b)==7808874
+          assert hashlib.sha256(b).hexdigest()=='ce7772958d3863c9fa689a88794050b296e4f8f973ad0cc621c99053c20acbb4'
+          with zipfile.ZipFile(p) as z: assert z.testzip() is None
+          release=json.loads(subprocess.check_output(['gh','release','view',os.environ['TARGET_TAG'],'--repo',os.environ['GH_REPO'],'--json','isDraft,assets']))
+          assert release['isDraft']
+          asset=next(a for a in release['assets'] if a['name']=='beglin-actions-12153853017.zip')
+          assert asset['size']==7808874
+          result={'schema':'beglin.finance-quota-archive-receipt/1','original_artifact_id':12153853017,
+                  'sha256':'ce7772958d3863c9fa689a88794050b296e4f8f973ad0cc621c99053c20acbb4',
+                  'bytes':7808874,'github_private_draft_release_tag':os.environ['TARGET_TAG'],
+                  'release_asset_name':asset['name'],'source_zip_crc_ok':True,
+                  'release_zip_crc_ok':True,'independently_reopened_release_sha_ok':True,
+                  'd50_or_wd_black_backup_verified':False,'original_actions_artifact_deleted':False,
+                  'github_quota_remediated':False}
+          with open('/tmp/verified-receipt.json','w') as out:json.dump(result,out,sort_keys=True,indent=2)
+          print('GITHUB_PRIVATE_RELEASE_ZIP_INDEPENDENT_READBACK_VERIFIED')
+          PY
+      - name: Preserve receipt as Git blob on this quarantine branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,json,os,urllib.request,urllib.error
+          repo='popixoxipop-collab/beglin'
+          name='ops/beglin-actions-12153853017-release-backed-receipt.json'
+          url='https://api.github.com/repos/'+repo+'/contents/'+name
+          headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                   'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
+          raw=open('/tmp/verified-receipt.json','rb').read()
+          report=json.loads(raw)
+          assert report['original_actions_artifact_deleted'] is False
+          data={'message':'Ops: attest original artifact preservation on private Draft Release, no deletion',
+                'branch':'research/finance-quota-inventory-20261024',
+                'content':base64.b64encode(raw).decode()}
+          try:
+              with urllib.request.urlopen(urllib.request.Request(
+                  url+'?ref=research/finance-quota-inventory-20261024',headers=headers),timeout=10) as res:
+                  data['sha']=json.load(res)['sha']
+          except urllib.error.HTTPError as exc:
+              if exc.code!=404:raise
+          req=urllib.request.Request(url,headers=headers,
+                                     data=json.dumps(data).encode(),method='PUT')
+          with urllib.request.urlopen(req,timeout=15) as res:
+              print('GITHUB_PERSISTED_PRIVATE_BACKUP_RECEIPT_SHA='+json.load(res)['commit']['sha'])
+          PY
