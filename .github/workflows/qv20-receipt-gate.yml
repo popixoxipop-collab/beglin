@@ -1,0 +1,26 @@
+name: BEGLIN Qv20 Offline Native Receipt Gate
+
+on:
+  push:
+    branches:
+      - research/qv20-prompt-aware-equal-byte-20261024
+    paths:
+      - tools/qv20_native_calibration_receipt_gate.py
+      - tools/test_qv20_native_calibration_receipt_gate.py
+      - .github/workflows/qv20-receipt-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-native-receipt-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate 8 synthetic-only no-heldout original-C receipt gates
+        run: python -B tools/test_qv20_native_calibration_receipt_gate.py
