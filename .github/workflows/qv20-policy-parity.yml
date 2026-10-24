@@ -1,0 +1,26 @@
+name: BEGLIN Qv20 Offline C/Python Policy Parity
+
+on:
+  push:
+    branches:
+      - research/qv20-prompt-aware-equal-byte-20261024
+    paths:
+      - tools/qv20_codegen_parity_test.py
+      - tools/qv20_build_prompt_selector_native.py
+      - .github/workflows/qv20-policy-parity.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-selector-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile original generated Qv20 C selector, compare 536 Python outcomes
+        run: python -B tools/qv20_codegen_parity_test.py
