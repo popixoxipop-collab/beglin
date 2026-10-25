@@ -1,0 +1,29 @@
+name: BEGLIN Qv21 Offline Tail-Risk Contracts
+on:
+  push:
+    branches:
+      - research/qv21-tailrisk-prefix-selector-preregister-20261025
+    paths:
+      - qv21_spec.json
+      - tools/qv21_policy.py
+      - tools/qv21_calibration_gate.py
+      - tools/qv21_fit.py
+      - tools/qv21_native_static.py
+      - tests/test_qv21_branch.py
+      - .github/workflows/qv21-offline-policy-gate.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-policy-and-native-receipt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pin tested numeric dependencies
+        run: python -m pip install --only-binary=:all: numpy==2.3.5 scikit-learn==1.8.0 psutil
+      - name: Test all 18 offline-only policy and receipt contracts
+        run: python -B tests/test_qv21_branch.py -v
