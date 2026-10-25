@@ -24,6 +24,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Pin tested numeric dependencies
-        run: python -m pip install --only-binary=:all: numpy==2.3.5 scikit-learn==1.8.0 psutil
+        run: |
+          python -m pip install --only-binary=:all: numpy==2.3.5 scikit-learn==1.8.0 psutil
       - name: Test all 18 offline-only policy and receipt contracts
         run: python -B tests/test_qv21_branch.py -v
