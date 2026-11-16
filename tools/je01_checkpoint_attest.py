@@ -71,7 +71,10 @@ def inspect(*, model_snapshot, allowed_model_root, runtime_binary,
     routed = cfg.get("n_routed_experts")
     top_k = cfg.get("num_experts_per_tok")
     if type(routed) is not int or routed != 64 or (
-        type(top_k) is not int or not 1 <= top_k <= 64
+        type(top_k) is not int or top_k != 6
+    ) or cfg.get("norm_topk_prob") is not False or (
+        type(cfg.get("first_k_dense_replace")) is not int or
+        cfg["first_k_dense_replace"] != 1
     ):
         raise ValueError("JE01_UNEXPECTED_ROUTED_EXPERT_CONFIG")
     weights = index.get("weight_map") if isinstance(index, dict) else None
@@ -98,6 +101,8 @@ def inspect(*, model_snapshot, allowed_model_root, runtime_binary,
     model_identity = {
         "model_type": cfg["model_type"], "n_routed_experts": routed,
         "num_experts_per_tok": top_k,
+        "norm_topk_prob": cfg["norm_topk_prob"],
+        "first_k_dense_replace": cfg["first_k_dense_replace"],
         "config_sha256": sha256_file(config_path),
         "tokenizer_sha256": sha256_file(tokenizer_path),
         "index_sha256": sha256_file(index_path),
