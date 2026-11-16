@@ -16,6 +16,9 @@ from typing import Mapping
 
 SCHEMA = "BEGLIN-B11-Qv21-StudentT-OneSided-Conformal-Veto/1"
 FROZEN_QV21_SPEC_SHA256 = "408c661e66259784480b18eefc15f75d3bc7d034124194baaf3a218637e2f2d0"
+FROZEN_NATIVE_C_SHA256 = "f64bae90250d83c051b55fc4907837ab1482a991dc27f35aee637860e40c1221"
+FROZEN_MASK_SHA256 = {"static_source": "9db954db6ba690d92dd96ee1638b76afe53de2d637aab462b4e83de90cc35922", "static_random": "5086bc9e1764edbfbcbeb7089d3a9aabba7978d773e904d600b2bfdc899b2fde"}
+FROZEN_PROJECTION_BYTES_EACH = 765493248
 ALPHA = 0.05
 MIN_PER_STRATUM = 20
 PRED_DELTA_LT = -0.20
@@ -138,10 +141,68 @@ def _check_audit_ids(rows_ids, forbidden):
         raise ValueError("B11_FORBIDDEN_ID_REUSE")
 
 
-def fit(fit_rows, *, policy_sha256, cohort_manifest_sha256, forbidden_ids=()):
+def verify_qv21_admission(private_bytes, public_bytes):
+    """Bind original Qv21 private predictor to native-calibration public receipt.
+
+    Paired content hashes prove consistency of the supplied bytes, NOT
+    independent execution provenance; trust in native receipts requires
+    external original-C Qv21 receipt audit.
+    """
+    if not isinstance(private_bytes, bytes) or not isinstance(public_bytes, bytes):
+        raise ValueError("B11_QV21_POLICY_BYTES_REQUIRED")
+    priv_sha = hashlib.sha256(private_bytes).hexdigest()
+    pub_sha = hashlib.sha256(public_bytes).hexdigest()
+    try:
+        priv = json.loads(private_bytes)
+        pub = json.loads(public_bytes)
+    except (ValueError, UnicodeError, TypeError) as exc:
+        raise ValueError("B11_QV21_POLICY_JSON_INVALID") from exc
+    if not isinstance(priv, dict) or not isinstance(pub, dict):
+        raise ValueError("B11_QV21_POLICY_OBJECT_INVALID")
+    expected = {k: v for k, v in priv.items() if k != "predictor"}
+    expected.update(private_policy_sha256=priv_sha, evaluation_unopened_when_frozen=True)
+    if pub != expected:
+        raise ValueError("B11_QV21_PUBLIC_PRIVATE_MISMATCH")
+    checks = {
+        "schema": priv.get("schema") == "BEGLIN-Qv21-tailrisk-prefix-only-regularized-ridge-logistic-frozen/1",
+        "spec": priv.get("study_spec_SHA256") == FROZEN_QV21_SPEC_SHA256,
+        "native_c": priv.get("native_original_C_sha256") == FROZEN_NATIVE_C_SHA256,
+        "masks": priv.get("mask_sha256") == FROZEN_MASK_SHA256,
+        "packed_bytes": priv.get("candidate_projection_packed_bytes_each") == FROZEN_PROJECTION_BYTES_EACH,
+        "calibration_only": priv.get("calibration_only_actual_original_C_verified") is True,
+        "calibration_n": type(priv.get("calibration_n")) is int and priv.get("calibration_n") == 96,
+        "holdouts_unopened": priv.get("qv20_holdout_opened_at_fit") is False and
+                            priv.get("qv21_evaluation_opened_at_fit") is False,
+        "admitted": priv.get("policy_dynamic_admitted") is True,
+        "mode": priv.get("selected_active_mode") == "CALIBRATED_TAIL_RISK_ROUTER",
+        "public_source_sha": isinstance(priv.get("source_preexec_public_sha256"), str) and
+                             bool(HEX_SHA.fullmatch(priv["source_preexec_public_sha256"])),
+    }
+    gate = priv.get("crossfit")
+    checks["gate"] = isinstance(gate, dict) and gate.get("accepted") is True and (
+        isinstance(gate.get("checks"), dict) and bool(gate["checks"])
+        and all(val is True for val in gate["checks"].values())
+    )
+    if not all(checks.values()):
+        raise ValueError("B11_QV21_NATIVE_ADMISSION_REQUIRED:" + ",".join(
+            sorted(k for k, v in checks.items() if not v)))
+    if not isinstance(priv.get("predictor"), dict):
+        raise ValueError("B11_QV21_FROZEN_PREDICTOR_MISSING")
+    return {"private_policy_sha256": priv_sha,
+            "public_policy_sha256": pub_sha,
+            "original_c_sha256": FROZEN_NATIVE_C_SHA256,
+            "qv21_native_calibration_admitted": True}
+
+
+def fit(fit_rows, *, policy_sha256, cohort_manifest_sha256,
+        qv21_private_policy_bytes=None, qv21_public_policy_bytes=None, forbidden_ids=()):
+
     """Fit only on NEW B11 source data; no Qv21 calibration/evaluation data."""
     _sha(policy_sha256, "B11_QV21_POLICY_SHA")
     _sha(cohort_manifest_sha256, "B11_COHORT_SHA")
+    admission = verify_qv21_admission(qv21_private_policy_bytes, qv21_public_policy_bytes)
+    if policy_sha256 != admission["private_policy_sha256"]:
+        raise ValueError("B11_QV21_PROOF_SHA_MISMATCH")
     groups, ids = _validated_rows(fit_rows, observed=True)
     _check_audit_ids(ids, forbidden_ids)
     if any(len(rows) < MIN_PER_STRATUM for rows in groups.values()):
@@ -150,6 +211,7 @@ def fit(fit_rows, *, policy_sha256, cohort_manifest_sha256, forbidden_ids=()):
         "schema": SCHEMA, "phase": "fit",
         "qv21_spec_sha256": FROZEN_QV21_SPEC_SHA256,
         "qv21_policy_sha256": policy_sha256,
+        "qv21_admission": admission,
         "cohort_manifest_sha256": cohort_manifest_sha256,
         "fit_ids": sorted(ids),
         "fit_ids_sha256": _digest(sorted(ids)),
@@ -168,6 +230,10 @@ def _check_state(state, phase):
     if state.get("qv21_spec_sha256") != FROZEN_QV21_SPEC_SHA256:
         raise ValueError("B11_QV21_PREREG_DRIFT")
     _sha(state.get("qv21_policy_sha256"), "B11_QV21_POLICY_SHA")
+    evidence = state.get("qv21_admission")
+    if not isinstance(evidence, dict) or evidence.get("qv21_native_calibration_admitted") is not True or (
+        evidence.get("private_policy_sha256") != state.get("qv21_policy_sha256")):
+        raise ValueError("B11_QV21_NATIVE_ADMISSION_MISSING")
     clean = dict(state)
     signature = clean.pop("state_sha256", None)
     if signature != _digest(clean):
