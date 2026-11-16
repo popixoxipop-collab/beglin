@@ -44,9 +44,9 @@ def fixtures(arc_n=210, ob_n=100):
         ]
         # Avoid overlapping prior-exclusion qv21 split IDs.
         if name.startswith("qv21_"):
-            offset = {"qv21_cal_arc_train96": 0,
-                      "qv21_eval_arc_train48": 400,
-                      "qv21_eval_ob_train48": 800}[name]
+            offset = {"qv21_cal_arc_train96": 1000,
+                      "qv21_eval_arc_train48": 1400,
+                      "qv21_eval_ob_train48": 1800}[name]
             exclusions[name] = [excluded(corpus, i + 10000 + offset, 44) for i in range(n)]
     return arc, ob, exclusions
 
