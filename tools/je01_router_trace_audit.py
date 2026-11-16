@@ -150,6 +150,9 @@ def compare_frozen_router_traces(baseline_events, alternative_events, *,
             sample = event["sample_sha256"]
             if sample not in ids:
                 raise ValueError("JE01_ROUTER_UNFROZEN_SAMPLE")
+            if (type(event["layer"]) is not int or event["layer"] < 0 or
+                type(event["token_pos"]) is not int or event["token_pos"] < 0):
+                raise ValueError("JE01_ROUTER_KEY_INVALID")
             key = (sample, event["layer"], event["token_pos"])
             if key in result:
                 raise ValueError("JE01_ROUTER_EVENT_DUPLICATE")
@@ -158,6 +161,16 @@ def compare_frozen_router_traces(baseline_events, alternative_events, *,
                 set(choices)
             ) != TOP_K or any(type(c) is not int or not 0 <= c < 64 for c in choices):
                 raise ValueError("JE01_INVALID_ROUTER_CHOICES")
+            probs = event["router_probs64"]
+            if (not isinstance(probs, list) or len(probs) != ROUTED_EXPERTS or
+                any(type(p) not in (int, float) or not math.isfinite(p) or p < 0
+                    for p in probs) or abs(sum(probs) - 1) > 1e-5):
+                raise ValueError("JE01_ROUTER_SOFTMAX_INVALID")
+            ordered = sorted(range(ROUTED_EXPERTS), key=lambda e: (-probs[e], e))
+            if probs[ordered[TOP_K-1]] - probs[ordered[TOP_K]] <= 1e-12:
+                raise ValueError("JE01_ROUTER_TOPK_BOUNDARY_TIE")
+            if set(choices) != set(ordered[:TOP_K]):
+                raise ValueError("JE01_ROUTER_TRACE_CHOICES_DO_NOT_MATCH_SCORES")
             result[key] = frozenset(choices)
         return result
     base, alt = collect(baseline_events), collect(alternative_events)
