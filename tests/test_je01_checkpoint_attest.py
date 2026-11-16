@@ -31,7 +31,8 @@ class AttestationTests(unittest.TestCase):
         self.bin.write_bytes(b"mock-binary-no-native-execution")
         write(self.snap / "config.json", json.dumps({
             "model_type": "deepseek_v2", "n_routed_experts": 64,
-            "num_experts_per_tok": 6}))
+            "num_experts_per_tok": 6,
+            "norm_topk_prob": False, "first_k_dense_replace": 1}))
         write(self.snap / "tokenizer.json", '{"version":"mock-only"}\n')
         write(self.snap / "model.safetensors.index.json", json.dumps({
             "metadata": {"total_size": 6},
@@ -85,6 +86,22 @@ class AttestationTests(unittest.TestCase):
     def test_wrong_expert_count_denied(self):
         write(self.snap / "config.json", '{"model_type":"deepseek_v2","n_routed_experts":16,"num_experts_per_tok":2}')
         with self.assertRaisesRegex(ValueError, "UNEXPECTED_ROUTED_EXPERT"):
+            je.inspect(**self.params)
+
+    def test_wrong_topk_is_not_deepseek_v2_lite(self):
+        write(self.snap / "config.json", json.dumps({
+            "model_type": "deepseek_v2", "n_routed_experts": 64,
+            "num_experts_per_tok": 8, "norm_topk_prob": False,
+            "first_k_dense_replace": 1}))
+        with self.assertRaisesRegex(ValueError, "UNEXPECTED_ROUTED"):
+            je.inspect(**self.params)
+
+    def test_topk_renorm_mode_must_be_exact(self):
+        write(self.snap / "config.json", json.dumps({
+            "model_type": "deepseek_v2", "n_routed_experts": 64,
+            "num_experts_per_tok": 6, "norm_topk_prob": True,
+            "first_k_dense_replace": 1}))
+        with self.assertRaisesRegex(ValueError, "UNEXPECTED_ROUTED"):
             je.inspect(**self.params)
 
     def test_traversal_shard_denied(self):
