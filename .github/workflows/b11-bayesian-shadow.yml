@@ -1,0 +1,24 @@
+name: B11 Bayesian veto synthetic contracts
+
+on:
+  push:
+    branches:
+      - research/b11-bayesian-risk-veto-20261117
+  pull_request:
+    branches:
+      - research/qv21-tailrisk-prefix-selector-preregister-20261025
+
+permissions:
+  contents: read
+
+jobs:
+  offline-b11-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run pure-Python B11 contract suite without native model access
+        run: python -m unittest discover -s tests -p 'test_b11_bayesian_veto.py' -v
