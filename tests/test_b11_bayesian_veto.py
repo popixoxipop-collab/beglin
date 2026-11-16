@@ -50,8 +50,8 @@ class B11Contracts(unittest.TestCase):
             p = trained["posteriors"][group]
             self.assertEqual(p["n"], 25)
             self.assertEqual(p["df"], 29)
-            self.assertGreater(p["predictive_scale"], 0)
-            self.assertTrue(math.isfinite(b.student_t_nll(-0.4, -0.3, p)))
+            self.assertGreater(b._student_predict(p, 44 if group == "short" else 124)[1], 0)
+            self.assertTrue(math.isfinite(b.student_t_nll(-0.4, -0.3, p, prefix_len=44)))
             self.assertEqual(frozen["calibration"][group]["order_statistic"], 25)
 
     def test_reproducibility(self):
@@ -153,6 +153,22 @@ class B11Contracts(unittest.TestCase):
         _, frozen = model()
         with self.assertRaises(ValueError):
             b.score_sealed_holdout(frozen, [row("a")], {}, policy_sha256=POLICY)
+
+    def test_length_dependent_student_t_width_non_cancelling(self):
+        # Same frozen calibration, same Qv21 prediction, different length => different bound.
+        _, frozen = model()
+        low = b.predict(frozen, row("novel-a", plen=44), policy_sha256=POLICY)
+        edge = b.predict(frozen, row("novel-b", plen=84), policy_sha256=POLICY)
+        self.assertNotAlmostEqual(low["student_t_predictive_scale"],
+                                  edge["student_t_predictive_scale"], places=9)
+        self.assertNotAlmostEqual(low["upper_delta"], edge["upper_delta"], places=9)
+
+    def test_duplicate_holdout_ids_cannot_replace_unscored_sample(self):
+        _, frozen = model()
+        bad = [row("duplicate"), row("duplicate")]
+        truth = {"duplicate": -0.3, "missing": 0.75}
+        with self.assertRaisesRegex(ValueError, "DUPLICATE"):
+            b.score_sealed_holdout(frozen, bad, truth, policy_sha256=POLICY)
 
     def test_original_source_unchanged_contract(self):
         self.assertIn("Qv21", b.__doc__)
