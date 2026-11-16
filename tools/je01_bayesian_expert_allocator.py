@@ -13,7 +13,7 @@ import math
 from typing import Mapping
 
 SCHEMA = "BEGLIN-JE01-independent-expert-exact-byte-Bayesian-shadow/1"
-ALLOWED_BITS = frozenset(range(2, 16)) | {32}
+ALLOWED_BITS = frozenset((2, 3, 4, 5, 6, 7, 8, 16, 32))
 MIN_NATIVE_CALIBRATION = 32
 MAX_PILOT_EXPERTS = 8
 RISK_MULTIPLIER = 2.0
@@ -79,7 +79,7 @@ def _check_profile(profile):
         }:
             raise ValueError("JE01_EXPERT_SLOT_FIELDS")
         layer, e = slot["layer"], slot["expert_id"]
-        if type(layer) is not int or type(e) is not int or layer < 0 or e < 0 or e >= 64:
+        if type(layer) is not int or type(e) is not int or layer < 1 or e < 0 or e >= 64:
             raise ValueError("JE01_EXPERT_ID")
         if (layer, e) in seen:
             raise ValueError("JE01_DUPLICATE_EXPERT_SLOT")
