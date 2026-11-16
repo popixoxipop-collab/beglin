@@ -102,8 +102,10 @@ class RouterAudit(unittest.TestCase):
     def test_one_cross_model_expert_flip_is_detected(self):
         baseline = traces()
         cand = copy.deepcopy(baseline)
-        old = cand[25]["selected_expert_ids"]
-        cand[25]["selected_expert_ids"] = old[:-1] + [18]
+        # A real changed routing decision must carry matching 64-way
+        # probabilities, not just a forged expert ID.
+        cand[25] = trace(26)
+        cand[25]["sample_sha256"] = IDS[25]
         report = rt.compare_frozen_router_traces(baseline, cand,
                                                   expected_sample_sha256=IDS)
         self.assertEqual(report["topk_flip_count"], 1)
