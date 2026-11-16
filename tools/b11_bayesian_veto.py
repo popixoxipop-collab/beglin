@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""B11 offline, veto-only Bayesian risk bridge for the frozen BEGLIN Qv21 selector.
+
+NO native inference, production hot-path changes, Qv20/Qv21 heldout reads,
+weight/Router changes, or implicit reuse of B9/B10 image-model calibration.
+Fit, calibration and evaluation records must come from separately audited,
+disjoint real C receipts; all in this module is pure and side-effect free.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import re
+from typing import Mapping
+
+SCHEMA = "BEGLIN-B11-Qv21-StudentT-OneSided-Conformal-Veto/1"
+FROZEN_QV21_SPEC_SHA256 = "408c661e66259784480b18eefc15f75d3bc7d034124194baaf3a218637e2f2d0"
+ALPHA = 0.05
+MIN_PER_STRATUM = 20
+PRED_DELTA_LT = -0.20
+PRED_SEVERE_LT = 0.15
+MAX_PREFIX_LEN = 208
+STRATUM_BOUNDARY = 85
+PRIOR = {"mu0": 0.0, "kappa0": 1.0, "alpha0": 2.0, "beta0": 1.0}
+HEX_SHA = re.compile(r"^[a-f0-9]{64}$")
+ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+
+def _digest(obj):
+    return hashlib.sha256(
+        json.dumps(obj, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        .encode("utf-8")
+    ).hexdigest()
+
+
+def _sha(value, name):
+    if not isinstance(value, str) or not HEX_SHA.fullmatch(value):
+        raise ValueError(name + "_INVALID")
+    return value
+
+
+def _finite(value, name):
+    if type(value) not in (float, int) or not math.isfinite(value):
+        raise ValueError(name + "_INVALID")
+    return float(value)
+
+
+def _check_record(row, *, observed):
+    if not isinstance(row, Mapping):
+        raise ValueError("B11_RECORD_TYPE")
+    expected = {"sample_id", "prefix_len", "predicted_delta"}
+    if observed:
+        expected.add("observed_delta")
+    else:
+        expected.add("predicted_severe_probability")
+    if set(row) != expected:
+        raise ValueError("B11_RECORD_FIELDS_FAIL_CLOSED")
+    if not isinstance(row["sample_id"], str) or not ID_PATTERN.fullmatch(row["sample_id"]):
+        raise ValueError("B11_SAMPLE_ID_INVALID")
+    n = row["prefix_len"]
+    if type(n) is not int or not 18 <= n <= MAX_PREFIX_LEN:
+        raise ValueError("B11_PREFIX_LEN_INVALID")
+    _finite(row["predicted_delta"], "B11_PREDICTION")
+    if observed:
+        _finite(row["observed_delta"], "B11_OBSERVED_DELTA")
+    else:
+        p = _finite(row["predicted_severe_probability"], "B11_RISK")
+        if not 0 <= p <= 1:
+            raise ValueError("B11_RISK_RANGE")
+    return "short" if n < STRATUM_BOUNDARY else "long"
+
+
+def _validated_rows(rows, *, observed):
+    if not isinstance(rows, (list, tuple)) or not rows:
+        raise ValueError("B11_ROWS_EMPTY")
+    groups = {"short": [], "long": []}
+    ids = set()
+    for row in rows:
+        group = _check_record(row, observed=observed)
+        if row["sample_id"] in ids:
+            raise ValueError("B11_DUPLICATE_SAMPLE_ID")
+        ids.add(row["sample_id"])
+        groups[group].append(row)
+    return groups, ids
+
+
+def _posterior(values):
+    """Conjugate Normal-Inverse-Gamma; Student-t predictive on delta residual."""
+    n = len(values)
+    xbar = sum(values) / n
+    sse = sum((x - xbar) ** 2 for x in values)
+    k0, a0, b0, m0 = (PRIOR[k] for k in ("kappa0", "alpha0", "beta0", "mu0"))
+    k = k0 + n
+    mu = (k0 * m0 + n * xbar) / k
+    a = a0 + n / 2
+    b = b0 + 0.5 * sse + 0.5 * (k0 * n / k) * (xbar - m0) ** 2
+    scale = math.sqrt(b * (k + 1) / (a * k))
+    if not (scale > 0 and math.isfinite(scale)):
+        raise ValueError("B11_POSTERIOR_SCALE")
+    return {"n": n, "mu": mu, "kappa": k, "alpha": a, "beta": b,
+            "df": 2 * a, "predictive_scale": scale}
+
+
+def _check_audit_ids(rows_ids, forbidden):
+    blocked = set(forbidden)
+    if rows_ids.intersection(blocked):
+        raise ValueError("B11_FORBIDDEN_ID_REUSE")
+
+
+def fit(fit_rows, *, policy_sha256, cohort_manifest_sha256, forbidden_ids=()):
+    """Fit only on NEW B11 source data; no Qv21 calibration/evaluation data."""
+    _sha(policy_sha256, "B11_QV21_POLICY_SHA")
+    _sha(cohort_manifest_sha256, "B11_COHORT_SHA")
+    groups, ids = _validated_rows(fit_rows, observed=True)
+    _check_audit_ids(ids, forbidden_ids)
+    if any(len(rows) < MIN_PER_STRATUM for rows in groups.values()):
+        raise ValueError("B11_FIT_STRATUM_TOO_SMALL")
+    state = {
+        "schema": SCHEMA, "phase": "fit",
+        "qv21_spec_sha256": FROZEN_QV21_SPEC_SHA256,
+        "qv21_policy_sha256": policy_sha256,
+        "cohort_manifest_sha256": cohort_manifest_sha256,
+        "fit_ids": sorted(ids),
+        "fit_ids_sha256": _digest(sorted(ids)),
+        "posteriors": {
+            name: _posterior([float(r["observed_delta"] - r["predicted_delta"]) for r in rs])
+            for name, rs in groups.items()
+        },
+    }
+    state["state_sha256"] = _digest(state)
+    return state
+
+
+def _check_state(state, phase):
+    if not isinstance(state, Mapping) or state.get("schema") != SCHEMA or state.get("phase") != phase:
+        raise ValueError("B11_STATE_PHASE_OR_SCHEMA")
+    if state.get("qv21_spec_sha256") != FROZEN_QV21_SPEC_SHA256:
+        raise ValueError("B11_QV21_PREREG_DRIFT")
+    _sha(state.get("qv21_policy_sha256"), "B11_QV21_POLICY_SHA")
+    clean = dict(state)
+    signature = clean.pop("state_sha256", None)
+    if signature != _digest(clean):
+        raise ValueError("B11_STATE_HASH_MISMATCH")
+    return state
+
+
+def calibrate(fitted, calibration_rows, *, forbidden_ids=()):
+    """Lock split-conformal upper residual ranks on disjoint calibration IDs."""
+    _check_state(fitted, "fit")
+    groups, ids = _validated_rows(calibration_rows, observed=True)
+    if set(fitted["fit_ids"]).intersection(ids):
+        raise ValueError("B11_FIT_CAL_OVERLAP")
+    _check_audit_ids(ids, forbidden_ids)
+    calibration = {}
+    for name, rs in groups.items():
+        n = len(rs)
+        if n < MIN_PER_STRATUM:
+            raise ValueError("B11_CAL_STRATUM_TOO_SMALL")
+        post = fitted["posteriors"][name]
+        scale = post["predictive_scale"]
+        scores = sorted((r["observed_delta"] - r["predicted_delta"] - post["mu"]) / scale
+                        for r in rs)
+        k = math.ceil((n + 1) * (1 - ALPHA))
+        if k > n:
+            raise ValueError("B11_CAL_INFINITE_QUANTILE")
+        calibration[name] = {"n": n, "order_statistic": k, "normalized_upper_q": scores[k - 1]}
+    frozen = {key: val for key, val in fitted.items() if key != "state_sha256"}
+    frozen.update(phase="frozen", calibration_ids=sorted(ids),
+                  calibration_ids_sha256=_digest(sorted(ids)), calibration=calibration,
+                  confidence=1 - ALPHA)
+    frozen["state_sha256"] = _digest(frozen)
+    return frozen
+
+
+def predict(frozen, row, *, policy_sha256):
+    """No gold, correct, observed_delta, or runtime label accepted."""
+    _check_state(frozen, "frozen")
+    if _sha(policy_sha256, "B11_QV21_POLICY_SHA") != frozen["qv21_policy_sha256"]:
+        raise ValueError("B11_POLICY_BINDING_DRIFT")
+    group = _check_record(row, observed=False)
+    if row["sample_id"] in frozen["fit_ids"] or row["sample_id"] in frozen["calibration_ids"]:
+        raise ValueError("B11_TRAIN_ID_AS_PREDICTION")
+    p, delta = row["predicted_severe_probability"], row["predicted_delta"]
+    prior_selection = delta < PRED_DELTA_LT and p < PRED_SEVERE_LT
+    post = frozen["posteriors"][group]
+    q = frozen["calibration"][group]["normalized_upper_q"]
+    upper = delta + post["mu"] + q * post["predictive_scale"]
+    safe = bool(prior_selection and upper < PRED_DELTA_LT)
+    return {"sample_id": row["sample_id"], "group": group,
+            "baseline_qv21_select_random73": bool(prior_selection),
+            "b11_shadow_select_random73": safe, "upper_delta": upper,
+            "student_t_df": post["df"], "student_t_predictive_scale": post["predictive_scale"],
+            "vetoed": bool(prior_selection and not safe),
+            "frozen_sha256": frozen["state_sha256"]}
+
+
+def student_t_nll(observed_delta, predicted_delta, posterior):
+    """Descriptive NLL of posterior residual predictive, not a gain claim."""
+    residual = _finite(observed_delta, "B11_OBSERVED") - _finite(predicted_delta, "B11_PREDICTED")
+    scale, df = posterior["predictive_scale"], posterior["df"]
+    z = (residual - posterior["mu"]) / scale
+    return (math.lgamma(df / 2) - math.lgamma((df + 1) / 2)
+            + 0.5 * math.log(df * math.pi) + math.log(scale)
+            + (df + 1) / 2 * math.log1p(z * z / df))
+
+
+def score_sealed_holdout(frozen, predictions, observed_by_id, *, policy_sha256):
+    """Read-only evaluation; returns metrics, never changes thresholds or state."""
+    if not isinstance(observed_by_id, dict) or len(predictions) != len(observed_by_id):
+        raise ValueError("B11_HOLDOUT_PAIRING")
+    counts = {"short": [0, 0], "long": [0, 0]}
+    total_veto = total_base = total_new = severe_new = 0
+    for row in predictions:
+        result = predict(frozen, row, policy_sha256=policy_sha256)
+        ident = result["sample_id"]
+        if ident not in observed_by_id:
+            raise ValueError("B11_HOLDOUT_ID_MISSING")
+        actual = _finite(observed_by_id[ident], "B11_HOLDOUT_TRUTH")
+        count = counts[result["group"]]
+        count[1] += 1
+        count[0] += int(actual <= result["upper_delta"])
+        total_base += int(result["baseline_qv21_select_random73"])
+        total_new += int(result["b11_shadow_select_random73"])
+        total_veto += int(result["vetoed"])
+        severe_new += int(result["b11_shadow_select_random73"] and actual >= 0.75)
+    if sum(x[1] for x in counts.values()) != len(observed_by_id):
+        raise RuntimeError("B11_HOLDOUT_TOTAL_MISMATCH")
+    return {"schema": SCHEMA, "frozen_sha256": frozen["state_sha256"],
+            "group_coverage": {g: {"covered": c[0], "n": c[1],
+                                   "fraction": c[0] / c[1] if c[1] else None}
+                               for g, c in counts.items()},
+            "baseline_random73_count": total_base,
+            "shadow_random73_count": total_new, "veto_count": total_veto,
+            "shadow_severe_event_count": severe_new,
+            "shadow_severe_event_fraction": severe_new / total_new if total_new else None,
+            "no_real_model_claim": True}
