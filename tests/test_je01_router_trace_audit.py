@@ -109,6 +109,24 @@ class RouterAudit(unittest.TestCase):
         self.assertEqual(report["topk_flip_count"], 1)
         self.assertFalse(report["no_observed_flip"])
 
+    def test_forged_alternative_route_is_not_silent_no_flip(self):
+        baseline = traces()
+        candidate = copy.deepcopy(baseline)
+        # A fake output cannot claim a different top-k selection while leaving
+        # its 64-way probabilities unchanged.
+        candidate[11]["selected_expert_ids"][-1] = 31
+        with self.assertRaisesRegex(ValueError, "CHOICES_DO_NOT_MATCH_SCORES"):
+            rt.compare_frozen_router_traces(
+                baseline, candidate, expected_sample_sha256=IDS)
+
+    def test_alternative_softmax_is_checked(self):
+        baseline = traces()
+        candidate = copy.deepcopy(baseline)
+        candidate[12]["router_probs64"][0] = float("nan")
+        with self.assertRaisesRegex(ValueError, "SOFTMAX_INVALID"):
+            rt.compare_frozen_router_traces(
+                baseline, candidate, expected_sample_sha256=IDS)
+
     def test_router_events_must_align_exactly(self):
         baseline = traces()
         candidate = copy.deepcopy(baseline[:-1])
