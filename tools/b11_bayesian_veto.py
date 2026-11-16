@@ -196,7 +196,16 @@ def calibrate(fitted, calibration_rows, *, forbidden_ids=()):
         k = math.ceil((n + 1) * (1 - ALPHA))
         if k > n:
             raise ValueError("B11_CAL_INFINITE_QUANTILE")
-        calibration[name] = {"n": n, "order_statistic": k, "normalized_upper_q": scores[k - 1]}
+        raw_sorted = sorted(r["observed_delta"] - r["predicted_delta"] for r in rs)
+        calibration[name] = {"n": n, "order_statistic": k,
+                             "normalized_upper_q": scores[k - 1],
+                             "raw_upper_q": raw_sorted[k - 1]}
+    pooled = sorted(r["observed_delta"] - r["predicted_delta"] for r in calibration_rows)
+    pooled_k = math.ceil((len(pooled) + 1) * (1 - ALPHA))
+    if pooled_k > len(pooled):
+        raise ValueError("B11_RAW_POOLED_INFINITE_QUANTILE")
+    calibration["raw_pooled"] = {"n": len(pooled), "order_statistic": pooled_k,
+                                 "raw_upper_q": pooled[pooled_k - 1]}
     frozen = {key: val for key, val in fitted.items() if key != "state_sha256"}
     frozen.update(phase="frozen", calibration_ids=sorted(ids),
                   calibration_ids_sha256=_digest(sorted(ids)), calibration=calibration,
@@ -219,12 +228,18 @@ def predict(frozen, row, *, policy_sha256):
     q = frozen["calibration"][group]["normalized_upper_q"]
     mean, scale = _student_predict(post, row["prefix_len"])
     upper = delta + mean + q * scale
+    pooled_upper = delta + frozen["calibration"]["raw_pooled"]["raw_upper_q"]
+    stratified_raw_upper = delta + frozen["calibration"][group]["raw_upper_q"]
     safe = bool(prior_selection and upper < PRED_DELTA_LT)
     return {"sample_id": row["sample_id"], "group": group,
             "baseline_qv21_select_random73": bool(prior_selection),
             "b11_shadow_select_random73": safe, "upper_delta": upper,
             "student_t_df": post["df"], "student_t_predictive_scale": scale,
             "vetoed": bool(prior_selection and not safe),
+            "raw_pooled_upper_delta": pooled_upper,
+            "raw_stratified_upper_delta": stratified_raw_upper,
+            "raw_pooled_shadow_select_random73": bool(prior_selection and pooled_upper < PRED_DELTA_LT),
+            "raw_stratified_shadow_select_random73": bool(prior_selection and stratified_raw_upper < PRED_DELTA_LT),
             "frozen_sha256": frozen["state_sha256"]}
 
 
@@ -246,6 +261,9 @@ def score_sealed_holdout(frozen, predictions, observed_by_id, *, policy_sha256):
     if not isinstance(observed_by_id, dict) or len(predictions) != len(observed_by_id):
         raise ValueError("B11_HOLDOUT_PAIRING")
     counts = {"short": [0, 0], "long": [0, 0]}
+    raw_coverage = {"pooled": {"short": [0, 0], "long": [0, 0]},
+                    "stratified": {"short": [0, 0], "long": [0, 0]}}
+    raw_selected = {"pooled": 0, "stratified": 0}
     total_veto = total_base = total_new = severe_new = 0
     evaluated_ids = set()
     for row in predictions:
@@ -260,6 +278,13 @@ def score_sealed_holdout(frozen, predictions, observed_by_id, *, policy_sha256):
         count = counts[result["group"]]
         count[1] += 1
         count[0] += int(actual <= result["upper_delta"])
+        for method, key, sel in (
+            ("pooled", "raw_pooled_upper_delta", "raw_pooled_shadow_select_random73"),
+            ("stratified", "raw_stratified_upper_delta", "raw_stratified_shadow_select_random73"),
+        ):
+            raw_coverage[method][result["group"]][1] += 1
+            raw_coverage[method][result["group"]][0] += int(actual <= result[key])
+            raw_selected[method] += int(result[sel])
         total_base += int(result["baseline_qv21_select_random73"])
         total_new += int(result["b11_shadow_select_random73"])
         total_veto += int(result["vetoed"])
@@ -270,6 +295,13 @@ def score_sealed_holdout(frozen, predictions, observed_by_id, *, policy_sha256):
             "group_coverage": {g: {"covered": c[0], "n": c[1],
                                    "fraction": c[0] / c[1] if c[1] else None}
                                for g, c in counts.items()},
+            "raw_controls": {
+                name: {"group_coverage": {
+                    group: {"covered": counts[0], "n": counts[1],
+                            "fraction": counts[0]/counts[1] if counts[1] else None}
+                    for group, counts in groups.items()},
+                    "shadow_random73_count": raw_selected[name]}
+                for name, groups in raw_coverage.items()},
             "baseline_random73_count": total_base,
             "shadow_random73_count": total_new, "veto_count": total_veto,
             "shadow_severe_event_count": severe_new,
