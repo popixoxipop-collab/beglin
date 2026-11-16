@@ -25,7 +25,13 @@ def _synthetic_qv21_policy_pair(admitted=True):
         "candidate_projection_packed_bytes_each": b.FROZEN_PROJECTION_BYTES_EACH,
         "mask_sha256": b.FROZEN_MASK_SHA256,
         "native_original_C_sha256": b.FROZEN_NATIVE_C_SHA256,
-        "crossfit": {"accepted": admitted, "checks": {
+        "static_fallback_index": 0,
+        "crossfit": {"accepted": admitted, "best_static_index": 0,
+                     "observed_crossfit_gain": 0.05 if admitted else 0.0,
+                     "bootstrap_95_lower_bound": 0.001 if admitted else 0.0,
+                     "selected_random73_count": 12 if admitted else 0,
+                     "selected_severe_rate": 0.0 if admitted else 1.0,
+                     "checks": {
             "minimum_crossfit_NLL_gain": admitted,
             "positive_bootstrap_lower_bound": admitted,
             "minimum_random73_uses": admitted,
