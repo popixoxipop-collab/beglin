@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """B11 synthetic contract tests. NO model runs or access to Qv21 heldout data."""
 import copy
+import hashlib
+import json
 import math
 import pathlib
 import sys
@@ -10,7 +12,40 @@ HERE = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HERE / "tools"))
 import b11_bayesian_veto as b
 
-POLICY = "a" * 64
+def _synthetic_qv21_policy_pair(admitted=True):
+    """Fixture-only, never the native Qv21 receipt."""
+    private = {
+        "schema": "BEGLIN-Qv21-tailrisk-prefix-only-regularized-ridge-logistic-frozen/1",
+        "study_spec_SHA256": b.FROZEN_QV21_SPEC_SHA256,
+        "source_preexec_public_sha256": "c" * 64,
+        "calibration_only_actual_original_C_verified": True,
+        "calibration_n": 96,
+        "qv20_holdout_opened_at_fit": False,
+        "qv21_evaluation_opened_at_fit": False,
+        "candidate_projection_packed_bytes_each": b.FROZEN_PROJECTION_BYTES_EACH,
+        "mask_sha256": b.FROZEN_MASK_SHA256,
+        "native_original_C_sha256": b.FROZEN_NATIVE_C_SHA256,
+        "crossfit": {"accepted": admitted, "checks": {
+            "minimum_crossfit_NLL_gain": admitted,
+            "positive_bootstrap_lower_bound": admitted,
+            "minimum_random73_uses": admitted,
+            "bounded_selected_tail_event_frequency": admitted}},
+        "predictor": {"means": [0.0] * 13, "scales": [1.0] * 13},
+        "policy_dynamic_admitted": admitted,
+        "selected_active_mode": (
+            "CALIBRATED_TAIL_RISK_ROUTER" if admitted else "CALIBRATION_BEST_STATIC"
+        ),
+    }
+    raw = (json.dumps(private, indent=2, sort_keys=True) + "\n").encode()
+    public = {k: v for k, v in private.items() if k != "predictor"}
+    public["private_policy_sha256"] = hashlib.sha256(raw).hexdigest()
+    public["evaluation_unopened_when_frozen"] = True
+    public_raw = (json.dumps(public, indent=2, sort_keys=True) + "\n").encode()
+    return raw, public_raw
+
+
+PRIVATE, PUBLIC = _synthetic_qv21_policy_pair()
+POLICY = hashlib.sha256(PRIVATE).hexdigest()
 MANIFEST = "b" * 64
 
 
@@ -27,7 +62,8 @@ def data(prefix, n=25, shift=0.0):
 
 def model(fit_shift=0.0, cal_shift=0.0):
     trained = b.fit(data("fit", shift=fit_shift),
-                    policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST)
+                    policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST,
+                    qv21_private_policy_bytes=PRIVATE, qv21_public_policy_bytes=PUBLIC)
     frozen = b.calibrate(trained, data("cal", shift=cal_shift))
     return trained, frozen
 
@@ -61,13 +97,15 @@ class B11Contracts(unittest.TestCase):
         self.assertNotEqual(x[0]["state_sha256"], x[1]["state_sha256"])
 
     def test_fit_cal_overlap_denied(self):
-        fitted = b.fit(data("same"), policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST)
+        fitted = b.fit(data("same"), policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST,
+                    qv21_private_policy_bytes=PRIVATE, qv21_public_policy_bytes=PUBLIC)
         with self.assertRaisesRegex(ValueError, "OVERLAP"):
             b.calibrate(fitted, data("same"))
 
     def test_forbidden_source_ids_denied(self):
         with self.assertRaisesRegex(ValueError, "FORBIDDEN"):
             b.fit(data("fit"), policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST,
+                    qv21_private_policy_bytes=PRIVATE, qv21_public_policy_bytes=PUBLIC,
                   forbidden_ids=["fit-short-1"])
         fitted = model()[0]
         with self.assertRaisesRegex(ValueError, "FORBIDDEN"):
@@ -75,9 +113,11 @@ class B11Contracts(unittest.TestCase):
 
     def test_no_real_receipts_no_shadow_policy(self):
         with self.assertRaises(ValueError):
-            b.fit([], policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST)
+            b.fit([], policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST,
+                    qv21_private_policy_bytes=PRIVATE, qv21_public_policy_bytes=PUBLIC)
         with self.assertRaisesRegex(ValueError, "STRATUM"):
-            b.fit(data("few", n=19), policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST)
+            b.fit(data("few", n=19), policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST,
+                    qv21_private_policy_bytes=PRIVATE, qv21_public_policy_bytes=PUBLIC)
 
     def test_strict_prediction_label_firewall(self):
         _, frozen = model()
@@ -132,7 +172,8 @@ class B11Contracts(unittest.TestCase):
         bad = data("fit")
         bad[0]["observed_delta"] = float("nan")
         with self.assertRaises(ValueError):
-            b.fit(bad, policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST)
+            b.fit(bad, policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST,
+                    qv21_private_policy_bytes=PRIVATE, qv21_public_policy_bytes=PUBLIC)
         _, frozen = model()
         with self.assertRaises(ValueError):
             b.predict(frozen, row(risk=math.inf), policy_sha256=POLICY)
@@ -214,7 +255,8 @@ class B11Contracts(unittest.TestCase):
         self.assertEqual(frozen, before)
 
     def test_raw_controls_detect_stratum_shift(self):
-        fitted = b.fit(data("train"), policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST)
+        fitted = b.fit(data("train"), policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST,
+                    qv21_private_policy_bytes=PRIVATE, qv21_public_policy_bytes=PUBLIC)
         calibration = data("recal")
         for r in calibration:
             if r["prefix_len"] < 85:
@@ -224,6 +266,39 @@ class B11Contracts(unittest.TestCase):
             frozen["calibration"]["short"]["raw_upper_q"],
             frozen["calibration"]["long"]["raw_upper_q"])
         self.assertTrue(math.isfinite(frozen["calibration"]["raw_pooled"]["raw_upper_q"]))
+
+    def test_admission_pair_rejected_when_qv21_fail_closed(self):
+        rejected_priv, rejected_pub = _synthetic_qv21_policy_pair(admitted=False)
+        with self.assertRaisesRegex(ValueError, "NATIVE_ADMISSION_REQUIRED"):
+            b.verify_qv21_admission(rejected_priv, rejected_pub)
+
+    def test_missing_native_policy_bytes_denied_at_fit(self):
+        with self.assertRaisesRegex(ValueError, "POLICY_BYTES_REQUIRED"):
+            b.fit(data("missing"), policy_sha256=POLICY,
+                  cohort_manifest_sha256=MANIFEST)
+
+    def test_public_private_policy_tamper_rejected(self):
+        tampered_pub = json.loads(PUBLIC)
+        tampered_pub["private_policy_sha256"] = "0" * 64
+        malformed = (json.dumps(tampered_pub, sort_keys=True) + "\n").encode()
+        with self.assertRaisesRegex(ValueError, "PUBLIC_PRIVATE_MISMATCH"):
+            b.verify_qv21_admission(PRIVATE, malformed)
+
+    def test_accepted_policy_must_bind_exact_private_sha(self):
+        wrong = "d" * 64
+        with self.assertRaisesRegex(ValueError, "PROOF_SHA_MISMATCH"):
+            b.fit(data("mismatch"), policy_sha256=wrong,
+                  cohort_manifest_sha256=MANIFEST,
+                  qv21_private_policy_bytes=PRIVATE,
+                  qv21_public_policy_bytes=PUBLIC)
+
+    def test_admission_evidence_survives_freeze(self):
+        _, state = model()
+        self.assertTrue(state["qv21_admission"]["qv21_native_calibration_admitted"])
+        self.assertEqual(state["qv21_admission"]["private_policy_sha256"], POLICY)
+        self.assertEqual(state["qv21_admission"]["original_c_sha256"],
+                         b.FROZEN_NATIVE_C_SHA256)
+        self.assertTrue(b.predict(state, row(), policy_sha256=POLICY))
 
     def test_original_source_unchanged_contract(self):
         self.assertIn("Qv21", b.__doc__)
