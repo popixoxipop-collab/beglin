@@ -85,21 +85,51 @@ def _validated_rows(rows, *, observed):
     return groups, ids
 
 
-def _posterior(values):
-    """Conjugate Normal-Inverse-Gamma; Student-t predictive on delta residual."""
-    n = len(values)
-    xbar = sum(values) / n
-    sse = sum((x - xbar) ** 2 for x in values)
-    k0, a0, b0, m0 = (PRIOR[k] for k in ("kappa0", "alpha0", "beta0", "mu0"))
-    k = k0 + n
-    mu = (k0 * m0 + n * xbar) / k
-    a = a0 + n / 2
-    b = b0 + 0.5 * sse + 0.5 * (k0 * n / k) * (xbar - m0) ** 2
-    scale = math.sqrt(b * (k + 1) / (a * k))
-    if not (scale > 0 and math.isfinite(scale)):
-        raise ValueError("B11_POSTERIOR_SCALE")
-    return {"n": n, "mu": mu, "kappa": k, "alpha": a, "beta": b,
-            "df": 2 * a, "predictive_scale": scale}
+def _log_length(prefix_len):
+    return math.log(prefix_len / STRATUM_BOUNDARY)
+
+
+def _posterior(rows):
+    """2x2 Bayesian residual regression with a Student-t predictive.
+
+    Prior: coefficients | variance ~ N(0,variance*I2); variance ~ IG(2,1).
+    Fixed basis (1,log(prefix_len/85)); no expert-to-expert covariance.
+    """
+    n = len(rows)
+    a00, a01, a11 = 1.0 + n, 0.0, 1.0
+    b0, b1, y2 = 0.0, 0.0, 0.0
+    for row in rows:
+        z = _log_length(row["prefix_len"])
+        residual = row["observed_delta"] - row["predicted_delta"]
+        a01 += z
+        a11 += z*z
+        b0 += residual
+        b1 += z*residual
+        y2 += residual*residual
+    determinant = a00*a11 - a01*a01
+    if determinant <= 0 or not math.isfinite(determinant):
+        raise ValueError("B11_POSTERIOR_PRECISION")
+    v00, v01, v11 = a11/determinant, -a01/determinant, a00/determinant
+    c0, c1 = v00*b0+v01*b1, v01*b0+v11*b1
+    unexplained = y2 - (b0*c0+b1*c1)
+    if unexplained < -1e-8:
+        raise ValueError("B11_NEGATIVE_RESIDUAL_ENERGY")
+    alpha = PRIOR["alpha0"]+n/2
+    beta = PRIOR["beta0"]+max(0.0, unexplained)/2
+    return {"n":n, "coefficients":[c0,c1], "covariance":[v00,v01,v11],
+            "alpha":alpha, "beta":beta, "df":2*alpha}
+
+
+def _student_predict(posterior, prefix_len):
+    z = _log_length(prefix_len)
+    c0,c1 = posterior["coefficients"]
+    v00,v01,v11 = posterior["covariance"]
+    mean = c0+c1*z
+    variance_multiplier = 1.0 + v00 + 2.0*v01*z + v11*z*z
+    scale = math.sqrt(posterior["beta"]/posterior["alpha"] * variance_multiplier)
+    if not math.isfinite(mean) or not math.isfinite(scale) or scale <= 0:
+        raise ValueError("B11_STUDENT_PREDICTIVE_INVALID")
+    return mean, scale
 
 
 def _check_audit_ids(rows_ids, forbidden):
@@ -124,7 +154,7 @@ def fit(fit_rows, *, policy_sha256, cohort_manifest_sha256, forbidden_ids=()):
         "fit_ids": sorted(ids),
         "fit_ids_sha256": _digest(sorted(ids)),
         "posteriors": {
-            name: _posterior([float(r["observed_delta"] - r["predicted_delta"]) for r in rs])
+            name: _posterior(rs)
             for name, rs in groups.items()
         },
     }
@@ -158,9 +188,11 @@ def calibrate(fitted, calibration_rows, *, forbidden_ids=()):
         if n < MIN_PER_STRATUM:
             raise ValueError("B11_CAL_STRATUM_TOO_SMALL")
         post = fitted["posteriors"][name]
-        scale = post["predictive_scale"]
-        scores = sorted((r["observed_delta"] - r["predicted_delta"] - post["mu"]) / scale
-                        for r in rs)
+        scores = []
+        for r in rs:
+            mean, scale = _student_predict(post, r["prefix_len"])
+            scores.append((r["observed_delta"] - r["predicted_delta"] - mean) / scale)
+        scores.sort()
         k = math.ceil((n + 1) * (1 - ALPHA))
         if k > n:
             raise ValueError("B11_CAL_INFINITE_QUANTILE")
@@ -185,21 +217,25 @@ def predict(frozen, row, *, policy_sha256):
     prior_selection = delta < PRED_DELTA_LT and p < PRED_SEVERE_LT
     post = frozen["posteriors"][group]
     q = frozen["calibration"][group]["normalized_upper_q"]
-    upper = delta + post["mu"] + q * post["predictive_scale"]
+    mean, scale = _student_predict(post, row["prefix_len"])
+    upper = delta + mean + q * scale
     safe = bool(prior_selection and upper < PRED_DELTA_LT)
     return {"sample_id": row["sample_id"], "group": group,
             "baseline_qv21_select_random73": bool(prior_selection),
             "b11_shadow_select_random73": safe, "upper_delta": upper,
-            "student_t_df": post["df"], "student_t_predictive_scale": post["predictive_scale"],
+            "student_t_df": post["df"], "student_t_predictive_scale": scale,
             "vetoed": bool(prior_selection and not safe),
             "frozen_sha256": frozen["state_sha256"]}
 
 
-def student_t_nll(observed_delta, predicted_delta, posterior):
-    """Descriptive NLL of posterior residual predictive, not a gain claim."""
+def student_t_nll(observed_delta, predicted_delta, posterior, *, prefix_len):
+    """Descriptive NLL, using sample-dependent 2x2 posterior predictive."""
     residual = _finite(observed_delta, "B11_OBSERVED") - _finite(predicted_delta, "B11_PREDICTED")
-    scale, df = posterior["predictive_scale"], posterior["df"]
-    z = (residual - posterior["mu"]) / scale
+    if type(prefix_len) is not int or not 18 <= prefix_len <= MAX_PREFIX_LEN:
+        raise ValueError("B11_PREFIX_LEN_INVALID")
+    mean, scale = _student_predict(posterior, prefix_len)
+    df = posterior["df"]
+    z = (residual - mean) / scale
     return (math.lgamma(df / 2) - math.lgamma((df + 1) / 2)
             + 0.5 * math.log(df * math.pi) + math.log(scale)
             + (df + 1) / 2 * math.log1p(z * z / df))
@@ -211,9 +247,13 @@ def score_sealed_holdout(frozen, predictions, observed_by_id, *, policy_sha256):
         raise ValueError("B11_HOLDOUT_PAIRING")
     counts = {"short": [0, 0], "long": [0, 0]}
     total_veto = total_base = total_new = severe_new = 0
+    evaluated_ids = set()
     for row in predictions:
         result = predict(frozen, row, policy_sha256=policy_sha256)
         ident = result["sample_id"]
+        if ident in evaluated_ids:
+            raise ValueError("B11_HOLDOUT_DUPLICATE_ID")
+        evaluated_ids.add(ident)
         if ident not in observed_by_id:
             raise ValueError("B11_HOLDOUT_ID_MISSING")
         actual = _finite(observed_by_id[ident], "B11_HOLDOUT_TRUTH")
@@ -224,7 +264,7 @@ def score_sealed_holdout(frozen, predictions, observed_by_id, *, policy_sha256):
         total_new += int(result["b11_shadow_select_random73"])
         total_veto += int(result["vetoed"])
         severe_new += int(result["b11_shadow_select_random73"] and actual >= 0.75)
-    if sum(x[1] for x in counts.values()) != len(observed_by_id):
+    if evaluated_ids != set(observed_by_id) or sum(x[1] for x in counts.values()) != len(observed_by_id):
         raise RuntimeError("B11_HOLDOUT_TOTAL_MISMATCH")
     return {"schema": SCHEMA, "frozen_sha256": frozen["state_sha256"],
             "group_coverage": {g: {"covered": c[0], "n": c[1],
