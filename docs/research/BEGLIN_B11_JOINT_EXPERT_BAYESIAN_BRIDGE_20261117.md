@@ -1,6 +1,6 @@
 # B11 × BEGLIN — Bayesian Student-t / Conformal veto-only bridge
 
-**Status: CODE-ONLY / OFFLINE SYNTHETIC TESTS PENDING / REAL NATIVE INFERENCE NOT RUN / NO DEPLOYMENT.**
+**Status: CODE-ONLY / OFFLINE SYNTHETIC CONTRACTS ONLY / REAL NATIVE INFERENCE NOT RUN / NO DEPLOYMENT.**
 **Date:** 2026-11-17 KST.
 **Source branch:** research/qv21-tailrisk-prefix-selector-preregister-20261025, commit 7e65e5f0926060bb5d5b9f4473108c9a0c75911b.
 
@@ -31,11 +31,14 @@ Qv8 and random73 are *candidate precision masks*, not DiT-MoE routed Experts. B1
 ### Fixed method
 
 1. New original-C paired observations for both frozen masks yield delta = random73 gold-token NLL minus Qv8 gold-token NLL. The existing frozen Qv21 model supplies predicted delta and predicted severe-harm probability from prefix token IDs ONLY.
-2. Fit length-stratified Normal-Inverse-Gamma residual posteriors on a completely separate B11 fitting split (short prefix 18..84, long 85..208). Fixed prior (mu0,kappa0,alpha0,beta0)=(0,1,2,1). Each posterior predictive is Student-t; this is not a posterior over full network weights.
-3. On a distinct B11 calibration split, form one-sided normalized residuals (actual delta - predicted delta - posterior_mu)/posterior_predictive_scale. Select empirical sorted score at index ceil((N+1)*0.95), separately per length stratum. This finite-sample split-conformal upper bound has group-wise marginal coverage only under within-group exchangeability assumptions.
-4. At inference, bound = predicted_delta + posterior_mu + frozen_conformal_q * posterior_predictive_scale. B11 can select random73 only if the original Qv21 rule already selected it AND bound < -0.20. Thus B11 may veto an unsafe switch but can never create a switch absent in the baseline.
+2. Fit **independent per-stratum 2x2 Bayesian residual regressions** on a completely separate B11 fitting split (short prefix 18..84, long 85..208). Basis x=(1, log(prefix_len/85)), prior coefficients|variance ~ N(0,variance*I2), variance ~ IG(alpha0=2,beta0=1). The resulting input-conditioned predictive is Student-t, with mean x^T beta and scale sqrt(beta_post/alpha_post * (1+x^T covariance_post x)). This posterior covers two regression coefficients per stratum, **not** pretrained network weights.
+3. On a distinct B11 calibration split, form one-sided normalized residuals (actual delta - predicted delta - input_specific_posterior_mean)/input_specific_predictive_scale. Select empirical sorted score at index ceil((N+1)*0.95), separately per length stratum. This finite-sample split-conformal upper bound has group-wise marginal coverage only under within-group exchangeability assumptions.
+4. At inference, bound = predicted_delta + input_specific_posterior_mean + frozen_conformal_q * input_specific_predictive_scale. B11 can select random73 only if the original Qv21 rule already selected it AND bound < -0.20. Thus B11 may veto an unsafe switch but can never create a switch absent in the baseline.
 5. Fail closed on SHA drift, nonfinite values, overlapping fit/calibration/sample IDs, uncalibrated groups or prediction records containing outcome labels. A separate sealed-holdout scorer may open the observed deltas; the runtime prediction API cannot.
 6. Keep a raw pooled conformal control and a length-stratified normalized control for external comparison. The latter is implemented in the shadow module; pooled control is a required independent experiment arm, not yet implemented.
+
+
+**Degeneracy check:** With a *constant* posterior mean/scale inside each stratum, normalized conformal scores rescale back into the same raw residual quantile and Bayesian parameters cancel. B11 explicitly uses the two-parameter length-dependent Student-t predictive to make the posterior affect the conditional upper bound. Whether that conditionalization improves real calibration is NOT established; raw pooled and stratified conformal ablations remain mandatory.
 
 Implementation: tools/b11_bayesian_veto.py.
 Synthetic safety tests: tests/test_b11_bayesian_veto.py.
