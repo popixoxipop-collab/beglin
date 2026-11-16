@@ -1,6 +1,6 @@
 # B11 × BEGLIN — Bayesian Student-t / Conformal veto-only bridge
 
-**Status: CODE-ONLY / OFFLINE SYNTHETIC CONTRACTS ONLY / REAL NATIVE INFERENCE NOT RUN / NO DEPLOYMENT.**
+**Status: B11 CODE/CI PASS BUT NO_PROMOTION; ORIGINAL Qv21 NATIVE CAL96×2 PASS, Qv21 DYNAMIC GATE FAIL; NO B11 NEW ORIGINAL-C SCORES / NO DEPLOYMENT.**
 **Date:** 2026-11-17 KST.
 **Source branch:** research/qv21-tailrisk-prefix-selector-preregister-20261025, commit 7e65e5f0926060bb5d5b9f4473108c9a0c75911b.
 
@@ -19,6 +19,20 @@ The source model is pretrained DiT-MoE-S/2-8E2A, an image diffusion model, NOT B
 B9 execution ID: job_c340032a2d0ef50fd0806152b02e9867; frozen method SHA256: 24d6bfb13f0eabcee134b15d4397193138c5d441f5a8b24704bb112040b35f7d.
 B10 execution ID: job_57784d4194909a6f9da88baba8a3a846; result SHA256: d6ef706681508b46de39b6a31e7f6b84d29395914ed300367ca9a49cec913701.
 Neither modifies a model or Router. Do not generalize the B10 two-breed OOD result to 10 breeds or to language models.
+
+
+## 2026-11-17 newly recovered native evidence — crucial negative result
+
+After original publication of this protocol, the EOE D50 original-Qv21 policy was found and verified read-only (private policy SHA256 003310c75b754172007787bcc75bc517c0b0847adc2aaea31a61c6ef829419d8; public policy SHA256 b287a98c4377d2748877034e95b5f7c9a005a369ab45e2f78c8fc554713d9ef5).
+
+- Actual Qv21 original C cal96: Qv8 NLL 1.6790517345 (56 correct), random73 NLL 1.8080851244 (59 correct)
+- Official 5-fold crossfit dynamic NLL 1.6910129989; gain against best static **-0.0119613**, bootstrap 95% lower **-0.150955**
+- Risk: 18 random73 selections with 3 large losses = **16.67%**; official limit <=10%
+- Official frozen policy: **CALIBRATION_BEST_STATIC**, static source index 0, policy_dynamic_admitted=False
+- Therefore B11's strict admitted-Qv21 prerequisite FAILS. **No B11 fit, calibration, 400-case original C execution, evaluation or deployment.**
+- Full original-96 exploratory analysis, receipt hashes, independent static-only 48+48, and correct in-sample-versus-out-of-fold distinction: [BEGLIN_QV21_REAL_NATIVE_NEGATIVE_B11_HOLD_20261117.md](BEGLIN_QV21_REAL_NATIVE_NEGATIVE_B11_HOLD_20261117.md).
+
+The pure B11 code now additionally verifies the hash-consistent Qv21 private/public frozen policy bytes, original native C and mask pins, all four official gate booleans, numeric thresholds and the frozen fallback index before allowing fit. Offline CI includes false-admission and tamper tests. This PR must remain Draft/NO_PROMOTION and should not be merged as an actual optimizer.
 
 ## BEGLIN-specific research question
 
