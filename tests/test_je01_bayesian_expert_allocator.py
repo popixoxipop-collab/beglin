@@ -76,6 +76,18 @@ class JE01Contracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "BITS_DUPLICATE"):
             je.optimize_exact_bytes(p)
 
+    def test_native_expert_tier_9_not_in_direct_expert_bits(self):
+        p = example()
+        p["slots"][0]["options"][1]["bits"] = 9
+        with self.assertRaisesRegex(ValueError, "BITS_DUPLICATE_OR_UNSUPPORTED"):
+            je.optimize_exact_bytes(p)
+
+    def test_first_layer_is_dense_and_must_not_be_called_routed(self):
+        p = example()
+        p["slots"][0]["layer"] = 0
+        with self.assertRaisesRegex(ValueError, "EXPERT_ID"):
+            je.optimize_exact_bytes(p)
+
     def test_duplicate_expert_key_fail(self):
         p = example()
         p["slots"][1]["expert_id"] = 3
