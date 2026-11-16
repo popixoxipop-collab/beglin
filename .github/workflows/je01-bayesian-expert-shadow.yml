@@ -18,4 +18,4 @@ jobs:
         with:
           python-version: '3.11'
       - name: Offline JE01 pure Python contract tests
-        run: python -m unittest discover -s tests -p 'test_je01_bayesian_expert_allocator.py' -v
+        run: python -m unittest discover -s tests -p 'test_je01_*.py' -v
