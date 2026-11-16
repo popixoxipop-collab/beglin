@@ -170,6 +170,61 @@ class B11Contracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "DUPLICATE"):
             b.score_sealed_holdout(frozen, bad, truth, policy_sha256=POLICY)
 
+    def test_raw_pooled_and_stratified_controls_are_frozen(self):
+        _, frozen = model()
+        self.assertEqual(frozen["calibration"]["raw_pooled"]["n"], 50)
+        self.assertEqual(frozen["calibration"]["short"]["n"], 25)
+        self.assertEqual(frozen["calibration"]["long"]["n"], 25)
+        for plen, group in ((44, "short"), (124, "long")):
+            qv21 = row("new-raw-" + group, plen=plen, delta=-0.35, risk=0.01)
+            result = b.predict(frozen, qv21, policy_sha256=POLICY)
+            self.assertAlmostEqual(result["raw_pooled_upper_delta"],
+                                   -0.35 + frozen["calibration"]["raw_pooled"]["raw_upper_q"])
+            self.assertAlmostEqual(result["raw_stratified_upper_delta"],
+                                   -0.35 + frozen["calibration"][group]["raw_upper_q"])
+            self.assertTrue(result["baseline_qv21_select_random73"])
+            for key in ("raw_pooled_shadow_select_random73",
+                        "raw_stratified_shadow_select_random73",
+                        "b11_shadow_select_random73"):
+                self.assertIn(result[key], (True, False))
+
+    def test_raw_controls_never_create_selection_when_qv21_refuses(self):
+        _, frozen = model()
+        for plen in (18, 44, 84, 85, 124, 208):
+            for delta, prob in ((-0.19, 0.01), (-0.30, 0.15),
+                                (-0.10, 0.99)):
+                out = b.predict(frozen, row("raw-%d-%s-%s" %
+                                            (plen, delta, prob), plen=plen,
+                                            delta=delta, risk=prob),
+                                policy_sha256=POLICY)
+                self.assertFalse(out["baseline_qv21_select_random73"])
+                self.assertFalse(out["raw_pooled_shadow_select_random73"])
+                self.assertFalse(out["raw_stratified_shadow_select_random73"])
+                self.assertFalse(out["b11_shadow_select_random73"])
+
+    def test_raw_holdout_ablation_report_is_immutable(self):
+        _, frozen = model()
+        before = copy.deepcopy(frozen)
+        entries = [row("holdout-%d" % i, plen=44 if i % 2 == 0 else 124)
+                   for i in range(20)]
+        truth = {r["sample_id"]: -0.35 for r in entries}
+        result = b.score_sealed_holdout(frozen, entries, truth, policy_sha256=POLICY)
+        self.assertEqual(result["raw_controls"]["pooled"]["group_coverage"]["short"]["n"], 10)
+        self.assertEqual(result["raw_controls"]["stratified"]["group_coverage"]["long"]["n"], 10)
+        self.assertEqual(frozen, before)
+
+    def test_raw_controls_detect_stratum_shift(self):
+        fitted = b.fit(data("train"), policy_sha256=POLICY, cohort_manifest_sha256=MANIFEST)
+        calibration = data("recal")
+        for r in calibration:
+            if r["prefix_len"] < 85:
+                r["observed_delta"] += 0.6
+        frozen = b.calibrate(fitted, calibration)
+        self.assertNotAlmostEqual(
+            frozen["calibration"]["short"]["raw_upper_q"],
+            frozen["calibration"]["long"]["raw_upper_q"])
+        self.assertTrue(math.isfinite(frozen["calibration"]["raw_pooled"]["raw_upper_q"]))
+
     def test_original_source_unchanged_contract(self):
         self.assertIn("Qv21", b.__doc__)
         self.assertEqual(b.PRED_SEVERE_LT, 0.15)
