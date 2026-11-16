@@ -183,6 +183,27 @@ def verify_qv21_admission(private_bytes, public_bytes):
         isinstance(gate.get("checks"), dict) and bool(gate["checks"])
         and all(val is True for val in gate["checks"].values())
     )
+    checks["static_fallback"] = (
+        type(priv.get("static_fallback_index")) is int
+        and priv["static_fallback_index"] in (0, 1)
+        and isinstance(gate, dict)
+        and type(gate.get("best_static_index")) is int
+        and priv["static_fallback_index"] == gate["best_static_index"]
+    )
+    checks["native_gate_thresholds"] = (
+        isinstance(gate, dict)
+        and type(gate.get("observed_crossfit_gain")) in (float, int)
+        and math.isfinite(gate["observed_crossfit_gain"])
+        and gate["observed_crossfit_gain"] >= 0.04
+        and type(gate.get("bootstrap_95_lower_bound")) in (float, int)
+        and math.isfinite(gate["bootstrap_95_lower_bound"])
+        and gate["bootstrap_95_lower_bound"] > 0
+        and type(gate.get("selected_random73_count")) is int
+        and gate["selected_random73_count"] >= 12
+        and type(gate.get("selected_severe_rate")) in (float, int)
+        and math.isfinite(gate["selected_severe_rate"])
+        and 0 <= gate["selected_severe_rate"] <= 0.10
+    )
     if not all(checks.values()):
         raise ValueError("B11_QV21_NATIVE_ADMISSION_REQUIRED:" + ",".join(
             sorted(k for k, v in checks.items() if not v)))
@@ -191,6 +212,7 @@ def verify_qv21_admission(private_bytes, public_bytes):
     return {"private_policy_sha256": priv_sha,
             "public_policy_sha256": pub_sha,
             "original_c_sha256": FROZEN_NATIVE_C_SHA256,
+            "qv21_static_fallback_index": priv["static_fallback_index"],
             "qv21_native_calibration_admitted": True}
 
 
