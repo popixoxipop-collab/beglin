@@ -21,4 +21,4 @@ jobs:
         with:
           python-version: '3.11'
       - name: Run pure-Python B11 contract suite without native model access
-        run: python -m unittest discover -s tests -p 'test_b11_bayesian_veto.py' -v
+        run: python -m unittest discover -s tests -p 'test_b11_*.py' -v
