@@ -20,6 +20,7 @@ from pathlib import Path
 import platform
 import struct
 import subprocess
+import re
 
 import numpy as np
 
@@ -213,7 +214,27 @@ def save_unique(path, arr):
             "sha256": file_sha(path)}
 
 
+def enforce_safe_memory():
+    """Fail closed on real macOS pressure before each BF16 expert extraction."""
+    if platform.system() != "Darwin":
+        raise ValueError("JE01_ACTUAL_BF16_HOST_MUST_BE_MACOS")
+    try:
+        output = subprocess.check_output(
+            ["/usr/bin/memory_pressure", "-Q"], text=True, timeout=8
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError("JE01_MEMORY_PRESSURE_SENSOR_UNAVAILABLE") from exc
+    match = re.search(r"System-wide memory free percentage:\\s*(\\d+)%", output)
+    if not match:
+        raise ValueError("JE01_MEMORY_PRESSURE_SENSOR_UNPARSEABLE")
+    free = int(match.group(1))
+    if free < 35:
+        raise ValueError("JE01_MEMORY_PRESSURE_FREE_BELOW_35PCT")
+    return free
+
+
 def make_artifacts(out_dir: Path):
+    enforce_safe_memory()
     ledger = read_verified_ledger(LEDGER)
     slots = validate_ledger(ledger)
     source = attestation()
@@ -243,6 +264,7 @@ def make_artifacts(out_dir: Path):
         results = []
         totals = {str(n): 0 for n in TIERS}
         for slot in slots:
+            enforce_safe_memory()
             for role in ("gate_proj", "up_proj", "down_proj"):
                 raw = tensor_raw(weightmap, handles, slot["layer"], slot["expert"], role)
                 tensor_sha = hashlib.sha256(raw).hexdigest()
