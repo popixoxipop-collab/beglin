@@ -147,3 +147,23 @@ Actual relevant prior native-model control from EOE Downloads report BEGLIN_QV26
 **New native feasibility blocker identified:** Before using the 512 frozen corpus on the original running BEGLIN binary, independently attest the exact tokenizer-derived input lengths and whether each frozen prompt can be scored with 32 positions, or certify a separate isolated longer-context backend with uninstrumented-baseline logit parity. DO NOT silently truncate or relabel the pre-registered inputs. A new alternate short-context conditioning policy must be preregistered before use. New deepseek route metadata should report actual 64-way router scores, not infer Expert identity from a proxy.
 
 **Corrected current gate:** P0_BF16_SOURCE_CHECKPOINT_SHA_PASS / P0_XOX_EXISTING_QUANTIZED_MODEL_FOUND / P1_512_INPUTS_AND_FULL_SOURCE_FILES_SHA_PASS / P0_QUANTIZED_BINARY_PARITY_NOT_VERIFIED / P2_NATIVE_JE01_ROUTER_AND_PAIRED_NLL_NOT_RUN / NO_PROMOTION. Existing serving route and immutable Tailnet operating release unchanged.
+
+
+## P2 original DeepSeek token-window feasibility — 2026-11-17 KST
+
+The original BEGLIN production-compatible DeepSeek persistent GPU worker in the 2026-11-11 QV26B source had a **hard 32-position ragged/cbatch limit**. Its own frozen QV26 long prompt trial failed at 80 tokens. A new real-model tokenizer-only prereg replay of the *existing frozen 512 inputs* was run on EOE in the managed read-only job job_809788fb70b00589c74b5f0538d2469a, SUCCEEDED/exit 0, using the full actual BF16 DeepSeek tokenizer JSON verified at SHA 41f3bf64213da8c012d8bd0871a58a1fdf70463e8f08f110ddbb1082f529f669. This exact run re-fetched all 34 pinned source pages, regenerated all 512 previously selected SHA-identical source rows and prompts, and **used no answer/gold labels**.
+
+[Actual token-window receipt](JE01_ACTUAL_512_NATIVE_TOKEN_FEASIBILITY_20261117.json) has canonical receipt SHA **b0da7e361afbad5faae69f86d08651a21e5c6f95ffa15e7eab3bec51a7401064**.
+
+| Frozen cohort | Total | Raw input plus assumed BOS and one gold target fits 32 | Does not fit 32 | Median raw tokens |
+|---|---:|---:|---:|---:|
+| WikiText calibration | 256 | 24 | 232 | 101 |
+| WikiText heldout | 128 | 6 | 122 | 94.5 |
+| HellaSwag OOD | 128 | 24 | 104 | 57 |
+| **Total** | **512** | **54** | **458** | — |
+
+This is a *feasibility-only* precheck, NOT 54 real forward passes or real Bayesian NLL scores. It is a conservative lower-bound fit based on the HF tokenizer without special tokens plus one assumed BOS and one next-token gold; exact BEGLIN native token ID parity and BOS semantics remain unverified. For HellaSwag, a full ending answer would require additional positions beyond this prompt-only count, so even 24/128 is an upper bound for an untruncated multi-token target.
+
+**Important source-level correction:** BEGLIN native code distinguishes MOE_MAXPOS=160 (single-sequence CPU path) from MOE_CBATCH_MAXPOS=32 (ragged/cbatch), and mlx_moe.cpp has separate MLA_L0_MAXPOS=32 for Metal's eager attention path in the inspected QV26 source. Increasing MOE_MAXPOS alone does not fix persistent GPU cbatch; raising MOE_CBATCH_MAXPOS blindly can substantially enlarge batch K/V storage and risk production memory. There is no evidence that simply changing one integer creates a safe JE01 216-token Metal model.
+
+**Gate decision:** keep the originally preregistered 512 IDs and prompts exactly as frozen. Do not silently truncate, select only the 54 short prompts, or rewrite scoring labels. Existing 32-position persistent worker is officially **NOT_FEASIBLE for the full P2 protocol**. The next allowed engineering task is an **isolated, uninstalled longer-context native BEGLIN reference path** which (a) can score at least 216 raw input tokens plus target, (b) independently passes identical short-prefix logit parity and exact tokenizer IDs versus original current native worker, (c) records exact precision-map and Expert route telemetry without production writes, and (d) completes a clean resource-plan admission and memory-cap check before any heldout scores. If it cannot be made resource-safe, keep JE01 HOLD, do not weaken the predeclared sample counts or NLL thresholds.
