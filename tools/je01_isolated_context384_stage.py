@@ -92,6 +92,14 @@ def patch_sources(qwen, mlx, cmake):
                         "OUTPUT_NAME qwen_infer_gpu_je01_context384)\n"
                         "target_link_libraries(qwen_infer_gpu PRIVATE mlx",
                         where="cmake.output_isolation")
+    cmake += """
+# JE01 isolated-only model-free Metal host-memory / single-slot probe.
+add_executable(je01_native_context384_probe
+  tools/je01_native_metal384_probe.cpp
+  $<TARGET_OBJECTS:mlx_moe_obj>)
+target_include_directories(je01_native_context384_probe PRIVATE .)
+target_link_libraries(je01_native_context384_probe PRIVATE mlx)
+"""
     return {"qwen_infer.c": qwen, "mlx_moe.cpp": mlx, "CMakeLists.txt": cmake}
 
 
