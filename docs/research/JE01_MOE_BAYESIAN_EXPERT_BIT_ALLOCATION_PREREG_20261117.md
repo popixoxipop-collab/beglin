@@ -89,3 +89,24 @@ XOX read-only *admitted* metadata job job_900786c808f71b9c2fe86774941785f6 finis
 Final state: P0_OFFLINE_GUARDS_PASS / P0_ACTUAL_MODEL_SHA_NOT_VERIFIED / P1_NATIVE_ROUTER_TRACES_NOT_RUN / P2_FULL_FORWARD_OOD_NOT_RUN / NO_PROMOTION.
 
 The original JE01 method, controls, target sample counts 256/128/128, thresholds and safety rules remain unchanged. New scoring is blocked until the scheduler authorizes actual model-cache inventory, the real full-checkpoint identity is sealed, and an isolated native route trace is proven parity-equivalent.
+
+
+## P1 input-only row-slice freeze — 512 real inputs, 2026-11-17 KST
+
+**Confirmed advance:** The XOX managed read-only dataset job job_d5d3ec2b9c494eb826577ef79bcf3868 completed SUCCEEDED/exit 0 in 3722 ms (0.3155 process-tree CPU core-seconds; peak RSS ~28.47 MB). A SHA-verified copy of tools/je01_data_freeze.py (Git blob 00c2c299eb7bc93aa0f9be87efc5fde2a1f75437) queried the public Hugging Face dataset-viewer API. No real DeepSeek weights or loss labels were used for selection, and no model was run.
+
+Committed provenance: [JE01_FROZEN_WIKITEXT_HELLASWAG_512_20261117.json](JE01_FROZEN_WIKITEXT_HELLASWAG_512_20261117.json). Manifest canonical SHA256 **a9397bfabdd012f60d3dd3d33bcfab455ac1046eced30373d553217dd9409147**.
+
+| Frozen source | Version x-revision | Input count | Row cohort SHA256 |
+|---|---|---:|---|
+| WikiText-103-raw training | b08601e04326c79dfdd32d625aee71d232d685c3 | **256 calibration** | ed59b82a8c8cd5effc5a7087e41003fe76470ded1aef24cb85398e9b677f1a07 |
+| WikiText-103-raw validation | b08601e04326c79dfdd32d625aee71d232d685c3 | **128 holdout** | fa98276743518ec452fbe70463ce6e997ba026d84e95b7f576aae86f437adf3c |
+| HellaSwag validation | 218ec52e09a7e7462a5400043bb9a69a41d06b76 | **128 OOD holdout** | e8dc68aee55a5ca90c654418c7e958012dedd74234d3ade35db75e3855d7fe1a |
+
+All 34 queried API pages returned exact frozen x-revision, partial=false and expected row indexes. Each page-response SHA, selected prompt SHA and deterministic row-index ID is stored. **All 512 selected source IDs and prompt IDs are unique.** HellaSwag gold label was never accessed for choosing rows.
+
+Recorded raw-page limitation: 10 predetermined WikiText validation 100-row windows contained a 22-row overlap. This predeclared sampler was not changed after the result. The selected row/prompt ID guard ensures the actual selected cohorts are disjoint; candidate counts are per-page records and can include overlap.
+
+**Material incomplete gate:** The full underlying Parquet file-byte SHA was not independently measured, even though selected page-response and prompt SHA values are sealed. The sampler must be described as a *row-slice freeze*, NOT as complete full-source-byte attestation. The real DeepSeek indexed checkpoint SHA, MLX backend parity, Expert routing trace, per-Expert paired NLL, full-model improvement and latency remain NOT_VERIFIED. Do not promote or edit baseline Expert weights.
+
+Supporting source/tests: tools/je01_data_freeze.py; tests/test_je01_data_freeze.py. Native run ID job_d5d3ec2b9c494eb826577ef79bcf3868. Current decision: **P1_ROW_IDS_512_FROZEN / P1_FULL_PARQUET_SHA_NOT_VERIFIED / P0_NATIVE_MODEL_SHA_NOT_VERIFIED / P2_FULL_FORWARD_NOT_RUN / NO_PROMOTION**.
