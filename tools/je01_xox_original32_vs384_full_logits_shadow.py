@@ -115,13 +115,19 @@ def patch_source(qwen,mlx,cmake,arm):
         raise ValueError("JE01_EXPECTED_TWO_ARGMAX_LOCATIONS:"+str(qwen.count(anchor)))
     loc=qwen.rfind(anchor)
     qwen=qwen[:loc]+qwen[loc:].replace(anchor,repl,1)
-    qwen=precisely(qwen,
+    # The same cleanup text appears in eight *other* MoE gate helpers.
+    # Scope the exact change to the unique GPU online gate, fail closed.
+    begin=qwen.index("static int run_moe_gpu_cbatch_online_gate(")
+    end=qwen.index("// V5i Phase B:",begin)
+    isolated=qwen[begin:end]
+    isolated=precisely(isolated,
       '    free(x_embed); free(gpu_logits);\n    return 1;\n',
       '    if (je01_full_logit_file) {\n'
       '        if (fflush(je01_full_logit_file)!=0 || fsync(fileno(je01_full_logit_file))!=0) exit(1);\n'
       '        if (fclose(je01_full_logit_file)!=0) exit(1);\n'
       '    }\n'
-      '    free(x_embed); free(gpu_logits);\n    return 1;\n',1,"shadow_logits_flush")
+      '    free(x_embed); free(gpu_logits);\n    return 1;\n',1,"shadow_logits_flush_online_only")
+    qwen=qwen[:begin]+isolated+qwen[end:]
     if arm==32:
         qwen=precisely(qwen,"#define MOE_MAXPOS 384","#define MOE_MAXPOS 160",1,"CPU_32_BASE")
         qwen=precisely(qwen,"#define MOE_CBATCH_MAXPOS 384","#define MOE_CBATCH_MAXPOS 32",1,"GPU_32_MAX")
