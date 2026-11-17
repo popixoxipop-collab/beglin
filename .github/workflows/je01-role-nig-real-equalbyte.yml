@@ -1,0 +1,72 @@
+name: JE01 physical NIG Expert role 43.25MB samebyte four policy files
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_role_nig_actual_equalbyte_files.py'
+      - '.github/workflows/je01-role-nig-real-equalbyte.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  four-prelabel-role-policy-physical-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-real-original-bf16-q3q5-48-native-role-tiers
+          run-id: 44176129643
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/real_src
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-real-q3q5-role-NIG-proxy-train32-test32
+          run-id: 44178616827
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/nig
+      - name: Materialize four original-source role-level bitmaps into real 43,253,760B binaries
+        run: |
+          set -euo pipefail
+          python tools/je01_role_nig_actual_equalbyte_files.py \
+            --source "$RUNNER_TEMP/real_src/je01_real_q3q5" \
+            --nig-receipt "$RUNNER_TEMP/nig/je01_role_nig_evaluation.json" \
+            --output "$RUNNER_TEMP/je01_role_policy_binaries" \
+            | tee "$RUNNER_TEMP/je01_role_binary_receipts.log"
+      - name: Independently audit each file/physical bytes and scope
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,os,pathlib
+          base=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_role_policy_binaries"
+          r=json.loads((base/"JE01_REAL_Q35_FOUR_ROLE_POLICIES_PHYSICAL_RECEIPT.json").read_text())
+          signed=r.pop("receipt_sha256")
+          calculated=hashlib.sha256(json.dumps(r,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert signed==calculated
+          assert r["status"]=="FOUR_NIG_AND_CONTROL_REAL_BF16_43MB_ROLE_LEVEL_BUNDLES_PASS"
+          assert r["total_policies"]==4 and r["same_physical_bytes_per_policy"]==43253760
+          for policy in r["bundles"]:
+            path=base/policy["file"]
+            assert path.is_file() and not path.is_symlink()
+            assert path.stat().st_size==policy["physical_bytes"]==43253760
+            assert hashlib.sha256(path.read_bytes()).hexdigest()==policy["sha256"]
+            assert len(policy["source_role_regions"])==48
+            assert policy["3bit_role_count"]==6 and policy["5bit_role_count"]==18
+          assert r["real_native_full_gold_NLL"]=="NOT_MEASURED"
+          assert r["real_full_27layer_model_forward"]=="NOT_RUN"
+          assert not r["bayesian_model_NLL_improvement_claim"] and not r["production_modified"]
+          print("JE01_NIG_Q35_FOUR_ACTUAL_BYTE_MATCHED_SHA_AUDIT_PASS",signed)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-four-real-q35-NIG-Expert-role-exactbyte-bundles
+          path: |
+            ${{ runner.temp }}/je01_role_policy_binaries/*
+            ${{ runner.temp }}/je01_role_binary_receipts.log
+          retention-days: 14
+          if-no-files-found: error
