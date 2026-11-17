@@ -186,3 +186,48 @@ After sealing the full original 512-input gold/ending context lengths (max 331 B
 An attempted EOE D50 isolated source clone job job_be7e97d11507baa8924441be0831d271 failed after the Git network clone timed out; this did not modify operating source/weights. Subsequent isolated native build and GPU tests succeeded on GitHub macOS-arm64 runner using exact Git source instead. EOE inventory did find /opt/homebrew/bin/python3.11 with local MLX and mlx_lm available; D50 GGUF and source BF16 are present, but the BEGLIN compressed routed-Expert AF package was only **confirmed** on XOX, where managed job admission reports no eligible SSD storage pool at the reserve threshold. Do not bypass this policy to run heavy experiments.
 
 **Current gate:** P0_ORIGINAL_BF16_SHA_PASS / P1_FULL_SOURCE_SHA_AND_512_FROZEN_PASS / P2A_NATIVE_ARM64_MLX_384_GPU_KV_PASS / P2B_REAL_MODEL_FORWARD_LOGIT_PARITY_NOT_RUN / P2C_EXPERT_PAIRED_NLL_NOT_RUN / NO_PRODUCTION_PROMOTION.
+
+
+## 2026-11-17 — Real BF16 Expert FFN precision proxy and new-input falsification
+
+This is a **separate exploratory proxy**, NOT an amendment to JE01's preregistered 256+128+128 **full-model gold-token NLL** gates. The original model checkpoint and full model-image SHA pins, full public evaluation-source hashes, and the independent JE01 holdouts remain unchanged and unused by this proxy.
+
+### Real weights / synthetic input evidence
+
+Managed EOE read-only job \`job_e48e673f3b756f065cb29f2e5bc187de\`: SUCCEEDED, exit 0. It accessed the genuine full-attested BF16 DeepSeek-V2-Lite source at \`/Volumes/D50/deepseek_v2lite_bf16_safetensors\`, source SHA \`36e7e3cafb5c01d3249d2d538ccb77fcb4c5ce2d1df213ea0881b2b85e6debfc\`. It read gate/up/down BF16 matrices for **layer 11 Experts 0,7,15,23,31,39,47,55** from the indexed shard without ever loading the entire 31GB checkpoint; all 24 consumed matrices have individual BF16-byte SHA hashes in the receipt.
+
+Each Expert FFN was evaluated on **16 deterministically generated synthetic RMS-normalized hidden vectors (seed 20261117)**, comparing original BF16 FFN outputs against independently quantized affine min/max per-64-coefficient **4, 6, and 8bit proxy** matrices.
+
+| Proxy precision | Mean across 8 Experts: relative output RMSE vs original BF16 |
+|---|---:|
+| 4-bit | **0.1445032** (14.45%) |
+| 6-bit | **0.0344652** (3.45%) |
+| 8-bit | **0.00851887** (0.85%) |
+
+Full evidence: [JE01_ACTUAL_BF16_EXPERT_8_FFN_PRECISION_PROXY_20261117.json](JE01_ACTUAL_BF16_EXPERT_8_FFN_PRECISION_PROXY_20261117.json), receipt SHA \`555e11d05ca3228a4cb8a828d6a2a3eef153ff5e4f21b4aa547f5820fdecaf2d\`.
+
+### Equal-formula-byte mixed allocation and independent unseen synthetic inputs
+
+A later, separately measured **16-vector synthetic heldout seed 20261118** was not used in bit selection. The first seed's **Expert-specific observed output MSE** chose **4-bit** for Experts **0,15,39,55** (lowest incremental loss) and **8-bit** for **7,23,31,47**. The proxy group packing formula uses one n-bit plane per value plus **two FP32 scale/bias parameters per 64-group**, giving 60,555,264 *theoretical proxy bytes* for both 4×4bit+4×8bit and all 8 Experts at 6bit. **No BEGLIN native compressed packed-byte identity has been measured.**
+
+Managed EOE read-only heldout job \`job_cc6c6bdf5f1898cf1b7e143c6c1dda56\`: SUCCEEDED, exit 0. On actual BF16 Expert matrices and completely new synthetic inputs:
+
+| Budget-comparable proxy condition | Mean heldout relative FFN output **MSE** |
+|---|---:|
+| Mean of all 70 4×4bit/4×8bit possible assignments | **0.010658290** |
+| Training-selected 4×4bit/4×8bit allocation | **0.009793141** |
+| Uniform 6-bit (same theoretical proxy bytes) | **0.001198055** |
+
+The selected mixed layout ranked **1 of all 70** equal-proxy-byte 4/8 assignments on the new synthetic inputs, with an **8.12% relative MSE reduction vs the 70-plan mean**. However, the **uniform middle 6bit** layout still has **8.17× less MSE** than the optimized 4/8 mix. The train-selected 4/8 layout is **not** the best layout once 6bit alternatives are permitted. The synthetic heldout was introduced after reviewing the first seed, so this is **exploratory independent-input testing**, not a fully prospective third-party trial.
+
+Heldout evidence: [JE01_REAL_BF16_EXPERT_8_EQUALBUDGET_HELDOUT_20261117.json](JE01_REAL_BF16_EXPERT_8_EQUALBUDGET_HELDOUT_20261117.json), canonical SHA \`441b08e520a512f10377fb801aab0ed1ba3d24852f8280abf524be42cca5c64a\`. Native weight data and source snippets are not copied into GitHub; receipts contain only measurement scores and per-tensor digests. Source: \`tools/je01_real_pretrained_expert_ffn_proxy.py\` and \`tools/je01_real_expert_proxy_heldout.py\`, with fail-closed receipt tests \`tests/test_je01_real_bf16_expert_proxy_evidence.py\` (latest offline JE01 suite 70/70 PASS).
+
+### Why neither result authorizes JE01 promotion
+
+- **Pretrained Expert weights were real** but Expert **hidden activations were artificial**, not sampled from the source model's router. The selected eight Experts are a fixed exploratory set, not the unlabeled router-frequency selected top eight pre-registered for JE01.
+- The simple per-64 group affine reconstructor is **not** BEGLIN's native 2–15bit qNg64 implementation or bit-packed memory measurement. The proxy byte equality is a formula, not an actual compressed artifact or equal-runtime-memory result.
+- The observed scalar is **FFN output MSE/RMSE**, **not** logit NLL, routed full-model loss, calibration, OOD or runtime latency. Cross-Expert interactions, co-routing, and the Bayesian posterior over real paired gold-token NLL remain **unmeasured**.
+- The separate EOE cached MLX \`DeepSeek-V2-Lite-Chat-4bit-mlx\` has now been fully streamed and SHA pinned, but its tokenizer and source checkpoint identities differ from the BEGLIN source, so it must never be substituted for the JE01 model parity gate. Reference receipt: [JE01_EXTERNAL_MLX_CHAT_4BIT_FULL_SHA_20261117.json](JE01_EXTERNAL_MLX_CHAT_4BIT_FULL_SHA_20261117.json), SHA \`8e58b547b733e6bf10aa727381bd788bbb43376d59ec96d385c15acfb9f19063\`.
+- Two bounded EOE MLX-LM Python model import preflights timed out **before model load** (\`job_8297f499f08fb3941f6e9d1cee1004c3\` 90s, \`job_0b962868fb6182e367e2ddd6f4022fb0\` 70s). \`mlx.core\` imported in ~0.02s in the second probe, but the MLX-LM model import never completed. This does not establish that pretrained full-forward is impossible; it establishes that no successful EOE reference full-forward was recorded in these runs. No admission override.
+
+**Decision:** ORIGINAL_JE01_P2_FULL_FORWARD=NOT_RUN, NATIVE_EXPERT_NLL=NOT_MEASURED, PROXY_EXPERT_BIT_SENSITIVITY=PASS, PROXY_MIX_4_8_VS_RANDOM=BETTER, PROXY_UNIFORM_6BIT_VS_MIX_4_8=BETTER, PRODUCTION=HOLD. The next real gate remains the isolated pretrained BEGLIN full-model 384-position original-tokenizer parity and routed paired NLL evaluation, followed by the prespecified same-source/OOD quality and latency checks.
