@@ -85,7 +85,7 @@ Tensor make_tensor(const std::string &name, const std::vector<float> &data,
     }
     return t;
 }
-void bind(const std::string &key, Tensor &&src) {
+void register_gpu_tensor_exact(const std::string &key, Tensor &&src) {
     need(!registry.count(key), "JE01_BIND_DUPLICATE");
     auto result=registry.emplace(key,std::move(src));
     Tensor &t=result.first->second;
@@ -187,20 +187,20 @@ int main() {
         for(int role=0;role<3;role++) {
             auto dense=dense_for_role(role);
             std::string base=std::string("je01.")+ROLES[role]+".all4";
-            bind(base,make_tensor(base,dense,E,4));
+            register_gpu_tensor_exact(base,make_tensor(base,dense,E,4));
             for(const auto &[expert,bits] : std::array<std::pair<int,int>,3>{
                     {{7,2},{21,6},{55,8}}}) {
                 const size_t a=(size_t)expert*N*N;
                 std::vector<float> one(dense.begin()+a,dense.begin()+a+N*N);
                 std::string key=std::string("je01.")+ROLES[role]+".expert"
                     +std::to_string(expert)+".n"+std::to_string(bits);
-                bind(key,make_tensor(key,one,1,bits));
+                register_gpu_tensor_exact(key,make_tensor(key,one,1,bits));
             }
         }
         if (registry.size()!=12) {
-            std::fprintf(stderr, "JE01_ACTUAL_GPU_PROBE_BINDING_COUNT=%zu\\n", registry.size());
+            std::fprintf(stderr, "JE01_ACTUAL_GPU_PROBE_BINDING_COUNT=%zu\n", registry.size());
             for(const auto &item: registry)
-                std::fprintf(stderr, "JE01_GPU_PROBE_BOUND_KEY=%s\\n", item.first.c_str());
+                std::fprintf(stderr, "JE01_GPU_PROBE_BOUND_KEY=%s\n", item.first.c_str());
         }
         need(registry.size()==12,"JE01_MIXED_BINDING_COUNT");
         std::vector<float> x(N);
