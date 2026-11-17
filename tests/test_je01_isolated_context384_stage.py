@@ -51,6 +51,8 @@ class Context384Safety(unittest.TestCase):
                       result["mlx_moe.cpp"])
         self.assertIn("#define MLA_L0_MAXPOS 384", result["mlx_moe.cpp"])
         self.assertIn(je.REQUIRED_BINARY_NAME, result["CMakeLists.txt"])
+        self.assertIn("add_executable(je01_native_context384_probe", result["CMakeLists.txt"])
+        self.assertTrue((ROOT/"tools"/"je01_native_metal384_probe.cpp").is_file())
         self.assertIn("#define GQA_L0_MAXPOS",result["mlx_moe.cpp"])
         self.assertNotIn("#define GQA_L0_MAXPOS 384",result["mlx_moe.cpp"])
         self.assertNotIn("install(",result["CMakeLists.txt"])
