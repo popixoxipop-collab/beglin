@@ -60,10 +60,14 @@ def patch_sources(qwen, mlx, cmake):
                         "static int g_moe_cb_slots_cap = MOE_BATCH_MAX;",
                         "static int g_moe_cb_slots_cap = 1; // JE01 isolated B=1; no serving",
                         where="qwen.slot_default")
-    qwen = exactly_one(qwen,
-                        'if (B < 1 || B > MOE_BATCH_MAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS',
-                        'if (B != 1) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS',
-                        where="qwen.cbatch_launch_fence")
+    # Four separate CPU/GPU cbatch launch gates share this exact source form.
+    # Every one must reject >1; protecting only one would leave other modes
+    # allocating 384-position KV for 64 or 256 slots.
+    old_guard = 'if (B < 1 || B > MOE_BATCH_MAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS'
+    new_guard = 'if (B != 1) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS'
+    if qwen.count(old_guard) != 4:
+        raise ValueError("JE01_UNPINNED_SOURCE_ANCHOR:qwen.all_cbatch_fences")
+    qwen = qwen.replace(old_guard, new_guard)
     # GPU fixed attention full-window shape. Only MLA (DeepSeek) is touched;
     # GQA config is intentionally preserved, avoiding invalid cross-architecture claims.
     mlx = exactly_one(mlx, "#define MLA_L0_MAXPOS 32",
