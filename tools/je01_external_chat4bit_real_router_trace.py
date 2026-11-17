@@ -136,6 +136,13 @@ def run():
             raise ValueError("JE01_ROUTER_NONFINITE")
         prob_sum=sum(row)
         if abs(prob_sum-1.0)>1e-4:
+            signal("ROUTER_SOFTMAX_ROUNDING_DIAGNOSTIC",
+                   position=t,probability_sum=prob_sum,
+                   absolute_sum_error=abs(prob_sum-1.0),
+                   softmax_dtype=str(distribution.dtype),
+                   min_probability=min(row),max_probability=max(row),
+                   reference_selected=chosen,
+                   reference_selected_weights=chosen_probs)
             raise ValueError("JE01_ROUTER_PROB_NOT_NORMALIZED")
         top6=sorted(range(64),key=lambda i:(-row[i],i))[:6]
         if set(top6)!=set(chosen):
