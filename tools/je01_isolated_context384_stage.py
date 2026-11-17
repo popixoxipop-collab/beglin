@@ -101,7 +101,7 @@ def sha256(b):
 
 def stage(*, checkout, scratch, expected_commit):
     source = Path(checkout).resolve(strict=True)
-    target = Path(scratch).absolute()
+    target = Path(scratch).resolve(strict=False)  # canonicalize /var -> /private/var on macOS
     if source == target or source in target.parents:
         raise ValueError("JE01_SOURCE_DESTINATION_CONFLICT")
     if not source.is_dir() or target.exists() or target.is_symlink():
