@@ -6,10 +6,12 @@ import math
 from pathlib import Path
 import tempfile
 import unittest
+import sys
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
 SPEC = importlib.util.spec_from_file_location(
     "je01_selected_bf16_native_artifacts", ROOT / "tools/je01_selected_bf16_native_artifacts.py"
 )
