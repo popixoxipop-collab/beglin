@@ -30,11 +30,28 @@ jobs:
           repository: popixoxipop-collab/beglin
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: ${{ runner.temp }}/je01_real_bundles
+      - name: Resolve only two known GitHub artifact directory layouts
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/je01_real_bundles"
+          direct="$root/JE01_REAL_Q3Q5_EQUALBYTE_BUNDLE_RECEIPT.json"
+          nested="$root/real_q3q5_bundles/JE01_REAL_Q3Q5_EQUALBYTE_BUNDLE_RECEIPT.json"
+          if [[ -f "$direct" && ! -f "$nested" ]]; then
+            source="$root"
+          elif [[ -f "$nested" && ! -f "$direct" ]]; then
+            source="$root/real_q3q5_bundles"
+          else
+            echo "JE01_ARTIFACT_ROOT_MISSING_OR_AMBIGUOUS"
+            find "$root" -maxdepth 2 -type f -name 'JE01_REAL_Q3Q5_EQUALBYTE_BUNDLE_RECEIPT.json' -print
+            exit 2
+          fi
+          echo "JE01_REAL_Q35_SOURCE_ROOT=$source" >> "$GITHUB_ENV"
+          echo "JE01_SOURCE_ROOT_RESOLVED"
       - name: Independently verify actual physical source SHA and generate 24 real-role map
         run: |
           set -euo pipefail
           python tools/je01_real_q3q5_metal_manifest_prep.py \
-            --source "$RUNNER_TEMP/je01_real_bundles/real_q3q5_bundles" \
+            --source "$JE01_REAL_Q35_SOURCE_ROOT" \
             --tsv "$RUNNER_TEMP/je01_real_binding.tsv"
       - name: Prepare isolated 384 original BEGLIN MLX source only
         run: |
@@ -67,7 +84,7 @@ jobs:
           cmake --build "$RUNNER_TEMP/je01_real_metal_build" \
             --target je01_real_weight_n3n5_metal_probe --parallel 2
           "$RUNNER_TEMP/je01_real_metal_build/je01_real_weight_n3n5_metal_probe" \
-            "$RUNNER_TEMP/je01_real_bundles/real_q3q5_bundles/route_frequency.bin" \
+            "$JE01_REAL_Q35_SOURCE_ROOT/route_frequency.bin" \
             "$RUNNER_TEMP/je01_real_binding.tsv" | tee "$RUNNER_TEMP/je01_real_weight_metal_result.log"
           python - <<'PY'
           import os,json,pathlib
