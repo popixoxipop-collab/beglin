@@ -135,7 +135,14 @@ def run():
         if any(not math.isfinite(float(p)) or p<0 for p in row):
             raise ValueError("JE01_ROUTER_NONFINITE")
         prob_sum=sum(row)
-        if abs(prob_sum-1.0)>1e-4:
+        # Original native reference MoEGate returns a float16 softmax; FP16
+        # element-wise rounding can shift sum(64 entries) by >1e-4 even
+        # with mathematically normalized true probabilities. The recorded
+        # 1.0001554489135742 at position 0 grounds an explicit FP16-only
+        # 0.001 tolerance, while float32 retains 1e-4; no renormalization.
+        dtype_name=str(distribution.dtype)
+        sum_tolerance=0.001 if dtype_name=="mlx.core.float16" else 1e-4
+        if abs(prob_sum-1.0)>sum_tolerance:
             signal("ROUTER_SOFTMAX_ROUNDING_DIAGNOSTIC",
                    position=t,probability_sum=prob_sum,
                    absolute_sum_error=abs(prob_sum-1.0),
@@ -179,6 +186,9 @@ def run():
         "reference_mlx_active_bytes":mx.get_active_memory(),
         "reference_mlx_peak_bytes":mx.get_peak_memory(),
         "reference_mlx_memory_limit_bytes":MEM_CAP,
+        "router_softmax_dtype":str(distribution.dtype),
+        "router_probability_sum_tolerance":0.001 if str(distribution.dtype)=="mlx.core.float16" else 1e-4,
+        "max_observed_probability_sum_error":max(abs(x["probability_sum"]-1) for x in events),
         "router_events":events,
         "JE01_training_or_holdout_inputs_used":False,
         "original_beglin_native_logits_parity":"NOT_MEASURED",
