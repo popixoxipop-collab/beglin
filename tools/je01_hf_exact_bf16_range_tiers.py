@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""JE01 immutable upstream BF16 range-attested 8-Expert native codec artifact trial.
+"""JE01 original DeepSeek-V2-Lite-Chat BF16 full-SHA range-attested native codec trial.
 
 Original BF16 HF revision and all four shard SHA256/lengths must match JE01's
 already EOE-attested real model. Every remote HEAD must identify the exact
@@ -33,8 +33,8 @@ from je01_native_exact_byte_presolve import (
     canonical, read_verified_ledger, validate_ledger, projected_slot_bytes
 )
 
-REVISION = "419ef8b6b7a816343af14bc1a4436d4e33affb5d"
-HF_REPO = "deepseek-ai/DeepSeek-V2-Lite"
+REVISION = "85864749cd611b4353ce1decdb286193298f64c7"
+HF_REPO = "deepseek-ai/DeepSeek-V2-Lite-Chat"
 SCHEMA = "beglin-je01-exact-attested-HF-range-actual-bf16-native-nbit/1"
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "docs/research/JE01_ORIGINAL_AF_EIGHT_EXPERT_REAL_BASELINE_PACKED_BYTE_LEDGER_20261118.json"
