@@ -50,6 +50,8 @@ class Context384Safety(unittest.TestCase):
         self.assertIn("if (A != 1 || !slot || slot[0] != 0 || !spos",
                       result["mlx_moe.cpp"])
         self.assertIn("#define MLA_L0_MAXPOS 384", result["mlx_moe.cpp"])
+        self.assertIn("mlx_gpu_je01_materialize_fused_mla_kv", result["mlx_moe.cpp"])
+        self.assertNotIn("mlx_gpu_je01_materialize_fused_mla_kv",m)
         self.assertIn(je.REQUIRED_BINARY_NAME, result["CMakeLists.txt"])
         self.assertIn("add_executable(je01_native_context384_probe", result["CMakeLists.txt"])
         self.assertTrue((ROOT/"tools"/"je01_native_metal384_probe.cpp").is_file())
@@ -79,7 +81,8 @@ class Context384Safety(unittest.TestCase):
             src.joinpath("mlx_moe.cpp").write_text(
                 '#define MLA_L0_MAXPOS 32\n'
                 'if (B < 1 || B > 64) return 0;\n'
-                'if (A < 1 || A > 64 || l < 0 || l >= MLA_MAXLAYERS) return 0;')
+                'if (A < 1 || A > 64 || l < 0 || l >= MLA_MAXLAYERS) return 0;\n'
+                '    g_fused_kv_inited_B = B;\n}\n\n// D-gpu-5-hotpath:')
             src.joinpath("CMakeLists.txt").write_text(
                 'add_executable(qwen_infer_gpu\n a)\n'
                 'target_link_libraries(qwen_infer_gpu PRIVATE mlx)\n')
