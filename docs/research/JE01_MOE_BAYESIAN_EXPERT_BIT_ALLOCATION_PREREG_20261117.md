@@ -231,3 +231,19 @@ Heldout evidence: [JE01_REAL_BF16_EXPERT_8_EQUALBUDGET_HELDOUT_20261117.json](JE
 - Two bounded EOE MLX-LM Python model import preflights timed out **before model load** (\`job_8297f499f08fb3941f6e9d1cee1004c3\` 90s, \`job_0b962868fb6182e367e2ddd6f4022fb0\` 70s). \`mlx.core\` imported in ~0.02s in the second probe, but the MLX-LM model import never completed. This does not establish that pretrained full-forward is impossible; it establishes that no successful EOE reference full-forward was recorded in these runs. No admission override.
 
 **Decision:** ORIGINAL_JE01_P2_FULL_FORWARD=NOT_RUN, NATIVE_EXPERT_NLL=NOT_MEASURED, PROXY_EXPERT_BIT_SENSITIVITY=PASS, PROXY_MIX_4_8_VS_RANDOM=BETTER, PROXY_UNIFORM_6BIT_VS_MIX_4_8=BETTER, PRODUCTION=HOLD. The next real gate remains the isolated pretrained BEGLIN full-model 384-position original-tokenizer parity and routed paired NLL evaluation, followed by the prespecified same-source/OOD quality and latency checks.
+
+
+### Posthoc exhaustive three-tier negative control: 1,107 formula-equal bit plans
+
+Following the independent synthetic-input heldout, an exhaustive diagnostic enumerated **all 3^8 = 6,561 candidate 4/6/8-bit maps** for the same eight pretrained BF16 Expert weight tensors, restricting to **sum(bits)=48**, i.e. 1,107 equal-formula-byte assignments. The optimization objective is the **unweighted mean per-Expert relative FFN output MSE**, deliberately independent of actual router frequencies (unknown). The full grid is posthoc analysis of the existing synthetic-activation measurements, NOT a new full-pretrained-model, prospective JE01 NLL trial.
+
+[JE01_REAL_BF16_EXPERT8_FULLGRID_6BIT_DECISION_20261117.json](JE01_REAL_BF16_EXPERT8_FULLGRID_6BIT_DECISION_20261117.json) records both training-selected and heldout diagnostic optima. **Uniform 6bit for all eight Experts won in both**:
+
+| Exact proxy-formula bit sum 48 condition | Train MSE | New synthetic-input heldout MSE |
+|---|---:|---:|
+| Uniform 6bit, best of 1,107 | **0.001192629** | **0.001198055** |
+| Best non-uniform map on training: promote E7 6→8 and demote E55 6→4 | 0.002698156 | 0.002556908 |
+
+Even the *best* nonuniform choice evaluated on the heldout costs at least **2.119×** uniform 6bit heldout MSE. This sharpens the preceding restricted 4/8-mix finding: choosing the right Experts matters when the tiers are forced to extremes, but once native-available intermediate 6bit is allowed, the **simple uniform midpoint is stronger than all unequal tier maps under this proxy**. This is compatible with the large asymmetry between the 6→4 demotion error and the 6→8 promotion benefit. It is not proof that all6 is globally optimal on actual BEGLIN NLL; real routed activation frequency, decoder nonlinear interactions, and native qNg64 quantization may alter the ranking.
+
+The P2 decision stays **HOLD**. Next measurement must use the unchanged 512 input SHA manifest, native BEGLIN 384-context full model and tokenizer parity, real routed 64-way scores, same-bytes actual packed artifacts and paired NLL; the proxy cannot replace these gates.
