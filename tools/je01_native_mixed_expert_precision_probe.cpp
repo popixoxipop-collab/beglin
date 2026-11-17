@@ -197,6 +197,11 @@ int main() {
                 bind(key,make_tensor(key,one,1,bits));
             }
         }
+        if (registry.size()!=12) {
+            std::fprintf(stderr, "JE01_ACTUAL_GPU_PROBE_BINDING_COUNT=%zu\\n", registry.size());
+            for(const auto &item: registry)
+                std::fprintf(stderr, "JE01_GPU_PROBE_BOUND_KEY=%s\\n", item.first.c_str());
+        }
         need(registry.size()==12,"JE01_MIXED_BINDING_COUNT");
         std::vector<float> x(N);
         for(int i=0;i<N;i++) x[i]=(float)(std::sin((i+1)*.29)+.17*std::cos((i+1)*.13));
