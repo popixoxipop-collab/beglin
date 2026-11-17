@@ -57,7 +57,7 @@ def resolve(root):
                scale["offsets"][1]-scale["offsets"][0]!=out*(inp//64)*4:
                 raise ValueError("JE01_REAL_WEIGHT_ROLE_PHYSICAL_BYTES_DRIFT")
             lines.append(f"{l}\t{e}\t{role}\t{bit}\t{out}\t{inp}\t{packed['offsets'][0]}\t{packed['offsets'][1]}\t{scale['offsets'][0]}\t{scale['offsets'][1]}")
-    target=sorted((l,e,r,int(bit)) for l,e,r,bit,*_ in [x.split("\t") for x in lines] if int(l)==24 and int(e)==26)
+    target=sorted((int(l),int(e),r,int(bit)) for l,e,r,bit,*_ in [x.split("\t") for x in lines] if int(l)==24 and int(e)==26)
     if target!=[(24,26,"down_proj",5),(24,26,"gate_proj",3),(24,26,"up_proj",3)]:
         raise ValueError("JE01_MIXED_REAL_E26_ROLE_PRESELECTION_DRIFT")
     return file,lines
