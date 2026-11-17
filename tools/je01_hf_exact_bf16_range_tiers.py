@@ -39,7 +39,7 @@ SCHEMA = "beglin-je01-exact-attested-HF-range-actual-bf16-native-nbit/1"
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "docs/research/JE01_ORIGINAL_AF_EIGHT_EXPERT_REAL_BASELINE_PACKED_BYTE_LEDGER_20261118.json"
 ALLOWED_REDIRECT_HOSTS = (
-    "cas-bridge.xethub.hf.co", "cdn-lfs.hf.co",
+    "cas-bridge.xethub.hf.co", "cdn-lfs.hf.co", "us.aws.cdn.hf.co",
     "cas-server.xethub.hf.co", "huggingface.co"
 )
 MAX_TENSOR_BYTES = 5_767_168
