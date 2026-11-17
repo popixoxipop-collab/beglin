@@ -137,7 +137,7 @@ def build(arm,before):
     outdir=RUNROOT/("build"+str(arm))
     if folder.exists() or outdir.exists():raise ValueError("JE01_SHADOW_BUILD_ALREADY_EXISTS")
     shutil.copytree(SOURCES,folder,symlinks=False)
-    patched=patch_source(*(folder/k).read_text() for k in SOURCE_SHAS,arm=arm)
+    patched=patch_source(*[(folder/k).read_text() for k in SOURCE_SHAS],arm=arm)
     for name,body in patched.items():
         (folder/name).write_text(body)
     subprocess.run(["/opt/homebrew/bin/cmake","-S",str(folder),"-B",str(outdir),
