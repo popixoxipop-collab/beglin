@@ -1,0 +1,9 @@
+# JE01 — alternate-source BF16 SHA-pinned HTTP range experiment (2026-11-18 KST)
+
+This is a research-only independent access path for original EOE-attested BF16 weight segments, NOT a new source model or permission to loosen any JE01 gate.
+
+Upstream is EXACT pinned DeepSeek-V2-Lite revision `419ef8b6b7a816343af14bc1a4436d4e33affb5d`. `tools/je01_hf_exact_bf16_range_tiers.py` requires the original EOE-attested safetensors index SHA, original four full-shard SHA256 and lengths. For each shard used, a real Hugging Face HEAD must emit the matching `X-Linked-Etag` (full source SHA) and `X-Linked-Size`; downloader must follow its signed approved CDN HTTPS redirect and receive exact HTTP 206 with matching `Content-Range`. It reads only 24 selected BF16 tensors, validates dtype/shape/offsets, calls source-pinned BEGLIN native gguf_transcode.c for 2/6/8bit and SHA-attests physical saved artifacts. Any mismatch is fatal; no silent fallback to another model/revision and no request for authentication keys.
+
+GitHub Actions on a managed public runner does NOT use the EOE CPU reservation, but remains isolated from BEGLIN operating workers. This is independent compute, not changing fleet reservation state. EOE's original admitted scratch extraction job stays queued with idempotency key `je01-eoe-bf16-codecs-99a4da4-20261118` and must NOT be duplicated on EOE or otherwise force-dispatched.
+
+**Scientific status:** Only successful execution output and SHA-attested files may be called actual alternate BF16-source weight artifacts. Bit-budget matching remains a combination-level requirement, and these newly made per-role artifacts still cannot establish original q4 AF identity or full model NLL improvements. The separate Metal probe on Apple arm64 already proved mixed per-ID synthetic matvec only. Continue frozen 256+128+128 study and no promotion.
