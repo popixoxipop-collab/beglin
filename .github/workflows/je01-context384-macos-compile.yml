@@ -1,0 +1,79 @@
+name: JE01 isolated 384-pos BEGLIN native arm64 compile
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/je01-moe-bayesian-bit-allocation-20261117
+    paths:
+      - "tools/je01_isolated_context384_stage.py"
+      - "tests/test_je01_isolated_context384_stage.py"
+      - ".github/workflows/je01-context384-macos-compile.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-mlx-build:
+    runs-on: macos-15-arm64
+    timeout-minutes: 25
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      CMAKE_BUILD_PARALLEL_LEVEL: "2"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Pin checkout + static safety contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          python -m unittest discover -s tests -p 'test_je01_isolated_context384_stage.py' -v
+          python tools/je01_isolated_context384_stage.py \
+            --checkout "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP/je01_384_source" \
+            --expected-commit "$(git rev-parse HEAD)" \
+            > "$RUNNER_TEMP/je01_stage.json"
+          python -c 'import json,sys;p=json.load(open(sys.argv[1]));assert p["stage_status"]=="SOURCE_STAGED_NOT_COMPILED"; assert p["allowed_slots"]==1;assert p["target_positions"]==384;assert p["per_slot_kv_bytes"]==251658240; print("JE01_ISOLATED_SOURCE_STAGE_PASS")' \
+            "$RUNNER_TEMP/je01_stage.json"
+      - name: Install arm64 isolated MLX and CMake toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'cmake>=3.20,<5' 'ninja>=1.10' 'mlx==0.32.1'
+          python -c 'import mlx,os; p=os.path.join(list(mlx.__path__)[0],"share","cmake"); assert os.path.isdir(p),p; print("MLX_CMAKE_DIR",p)'
+      - name: Build research-only BEGLIN native Apple Metal binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import platform
+          assert platform.system()=="Darwin"
+          assert platform.machine()=="arm64", platform.machine()
+          PY
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os;print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S "$RUNNER_TEMP/je01_384_source" \
+                -B "$RUNNER_TEMP/je01_384_build" \
+                -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$RUNNER_TEMP/je01_384_build" \
+                --target qwen_infer_gpu --parallel 2
+          BIN="$RUNNER_TEMP/je01_384_build/qwen_infer_gpu_je01_context384"
+          test -f "$BIN"
+          file "$BIN"
+          shasum -a 256 "$BIN"
+          otool -L "$BIN" | head -n 24
+          echo "JE01_NATIVE_ARM64_BUILD_PASS_NO_MODEL_FORWARDED"
+      - name: Upload isolated build + audit (not install)
+        uses: actions/upload-artifact@v4
+        with:
+          name: je01-384-arm64-compile-only
+          path: |
+            ${{ runner.temp }}/je01_stage.json
+            ${{ runner.temp }}/je01_384_build/qwen_infer_gpu_je01_context384
+          retention-days: 14
+          if-no-files-found: error
