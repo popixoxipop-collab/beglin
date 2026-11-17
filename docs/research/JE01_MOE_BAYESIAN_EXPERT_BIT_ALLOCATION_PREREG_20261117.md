@@ -67,3 +67,25 @@ If any gate fails, keep unchanged baseline. Never use this pilot planner to perf
 Research-only implementation: tools/je01_bayesian_expert_allocator.py.
 Synthetic contracts: tests/test_je01_bayesian_expert_allocator.py.
 This code can produce an exact-byte proposed bit layout with independent Student-t risk scores on synthetic observations. Synthetic CI is **not** native-model evidence.
+
+
+## 2026-11-17 P0 audit follow-up (observations, not a change to preregistered test gates)
+
+DeepSeek-V2-Lite's official [config.json](https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite/blob/main/config.json) specifies 64 routed Experts with Top-6, two always-on shared Experts, a dense first layer, and no normalization of selected Top-K probabilities. BEGLIN's native GPU backend is Apple MLX/Metal; an Alienware CUDA evaluation is a separate reference and **not native BEGLIN parity**.
+
+The BEGLIN eager native interface mlx_gpu_layer_step() can return the selected Expert IDs and weights, and mlx_gpu_risk_signal_telemetry_get() returns a risk summary. But these existing outputs alone cannot reconstruct all 64 pre-Top-K scores. A separate **isolated, non-production instrumented reference build** is still required to emit all 64 softmax values, selected IDs, and SHA-bound per-question records, then show baseline-logit parity before any candidate calibration.
+
+New shadow-only source:
+- tools/je01_checkpoint_attest.py: hashes indexed safetensors shards, config, tokenizer, binary, and engine git commit with path traversal and symlink-escape checks. Without externally pinned identities it reports discovery only, never native parity PASS.
+- tools/je01_router_trace_audit.py: rejects outcome labels, invalid 64-probability normalizers, top-6 mismatches, duplicate/unfrozen prompts, forged alternative traces; freezes eight pilot Expert slots by independent prompt routing counts, no gold outcomes.
+- tools/je01_bayesian_expert_allocator.py: limited to direct expert precision tiers 2/3/4/5/6/7/8/16/32, rejecting layer 0 (dense). The BEGLIN shipped routed Expert precision default is int8; baseline=4 in synthetic fixtures is not a real model baseline assertion.
+
+CI: 43/43 offline synthetic tests PASS at [GitHub Actions run 43983912466](https://github.com/popixoxipop-collab/beglin/actions/runs/43983912466). CI is NOT real DeepSeek model inference.
+
+Fresh Tailnet Commander current/live remained g6-0.9.0-operator.900484. BEGLIN-native Metal GPU resource_plan recommended no host: EOE lacked reservable RAM and CPU; XOX lacked RAM, CPU and eligible storage pool. No GPU job was run.
+
+XOX read-only *admitted* metadata job job_900786c808f71b9c2fe86774941785f6 finished SUCCEEDED, exit 0. Its inspected standard HuggingFace hub contained the matching model name models--mlx-community--Qwen2.5-1.5B-Instruct-4bit, but no DeepSeek name in that directory; this does not prove no DeepSeek exists elsewhere. EOE Hugging Face cache file reads were denied due to a protected symlink component; directory search and CPU work were refused by existing fleet admission. Therefore a local DeepSeek checkpoint, entire safetensors SHA and tokenizer are NOT YET PINNED.
+
+Final state: P0_OFFLINE_GUARDS_PASS / P0_ACTUAL_MODEL_SHA_NOT_VERIFIED / P1_NATIVE_ROUTER_TRACES_NOT_RUN / P2_FULL_FORWARD_OOD_NOT_RUN / NO_PROMOTION.
+
+The original JE01 method, controls, target sample counts 256/128/128, thresholds and safety rules remain unchanged. New scoring is blocked until the scheduler authorizes actual model-cache inventory, the real full-checkpoint identity is sealed, and an isolated native route trace is proven parity-equivalent.
