@@ -4,7 +4,9 @@
 // Native Expert-ID-by-Expert-ID host dispatch is a proof only, NOT full
 // routed-MoE MLX gather integration or model gold NLL.
 #include "mlx_moe.h"
+extern "C" {
 #include "gguf_transcode.h"
+}
 #include <algorithm>
 #include <array>
 #include <cmath>
