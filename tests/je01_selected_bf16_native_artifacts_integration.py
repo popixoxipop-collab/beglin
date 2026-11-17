@@ -3,6 +3,9 @@
 import hashlib
 import importlib.util
 import math
+import json
+import struct
+from unittest.mock import patch
 from pathlib import Path
 import tempfile
 import unittest
@@ -89,6 +92,48 @@ class NativeCodecSelectedBF16Tests(unittest.TestCase):
         scales = np.array([[0.25]], dtype=np.float32)
         decoded = M.decode_native(raw.reshape(-1), scales, (1, 64), 2)
         np.testing.assert_array_equal(decoded[0], vals.astype(np.float32) * 0.25)
+
+    def test_mac_os_pressure_sensor_and_hard_35pct_stop(self):
+        with patch.object(M.platform, "system", return_value="Darwin"):
+            with patch.object(M.subprocess, "check_output",
+                              return_value="System-wide memory free percentage: 45%"):
+                self.assertEqual(M.enforce_safe_memory(), 45)
+            with patch.object(M.subprocess, "check_output",
+                              return_value="System-wide memory free percentage: 34%"):
+                with self.assertRaisesRegex(ValueError, "BELOW_35PCT"):
+                    M.enforce_safe_memory()
+            with patch.object(M.subprocess, "check_output", return_value="No sensor"):
+                with self.assertRaisesRegex(ValueError, "UNPARSEABLE"):
+                    M.enforce_safe_memory()
+
+    def test_attested_shard_handle_retained_until_context_exit(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            idx = json.dumps({"metadata": {"total_size": 31412968448},
+                              "weight_map": {"fake": "model-00001-of-000004.safetensors"}}).encode()
+            cfg = b"{}"
+            name = "model-00001-of-000004.safetensors"
+            header = json.dumps({"padding": "test" * 20}).encode()
+            raw = struct.pack("<Q", len(header)) + header + b"\\x00" * 64
+            (root / "model.safetensors.index.json").write_bytes(idx)
+            (root / "config.json").write_bytes(cfg)
+            (root / name).write_bytes(raw)
+            model = {"index_sha256": hashlib.sha256(idx).hexdigest(),
+                     "config_sha256": hashlib.sha256(cfg).hexdigest(),
+                     "shards": [{"name": name, "size_bytes": len(raw),
+                                 "sha256": hashlib.sha256(raw).hexdigest()}]}
+            with patch.object(M, "SOURCE_ROOT", root):
+                with M.verify_source(model) as (weight_map, headers):
+                    fh = headers[name][0]
+                    self.assertFalse(fh.closed)
+                    self.assertEqual(weight_map["fake"], name)
+                self.assertTrue(fh.closed)
+            with patch.object(M, "SOURCE_ROOT", root):
+                altered = json.loads(json.dumps(model))
+                altered["shards"][0]["sha256"] = "0" * 64
+                with self.assertRaisesRegex(ValueError, "SHA_DRIFT"):
+                    with M.verify_source(altered):
+                        pass
 
     def test_failed_shapes_or_tiers_fail_closed(self):
         good = np.zeros((2, 64), dtype=np.float32)

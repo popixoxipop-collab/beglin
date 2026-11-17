@@ -10,7 +10,7 @@ Only runs on EOE D50 scratch; never overwrites an existing output directory.
 from __future__ import annotations
 
 import argparse
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import ctypes
 import hashlib
 import json
@@ -66,25 +66,34 @@ def attestation():
     return d["model"]
 
 
+@contextmanager
 def verify_source(model):
     root = SOURCE_ROOT
     if not root.is_dir() or root.is_symlink() or root.resolve() != root:
         raise ValueError("JE01_BF16_SOURCE_ROOT_UNAVAILABLE")
     idxpath = secure_regular(root, root / "model.safetensors.index.json")
     cfgpath = secure_regular(root, root / "config.json")
-    if (file_sha(idxpath) != model["index_sha256"] or
-            file_sha(cfgpath) != model["config_sha256"]):
+    idxraw = idxpath.read_bytes()
+    cfgraw = cfgpath.read_bytes()
+    if (hashlib.sha256(idxraw).hexdigest() != model["index_sha256"] or
+            hashlib.sha256(cfgraw).hexdigest() != model["config_sha256"]):
         raise ValueError("JE01_BF16_INDEX_CONFIG_DRIFT")
-    index = json.loads(idxpath.read_text())
+    index = json.loads(idxraw)
     if index.get("metadata", {}).get("total_size") != 31_412_968_448:
         raise ValueError("JE01_BF16_INDEX_TOTAL_DRIFT")
     headers = {}
     with ExitStack() as stack:
         for shard in model["shards"]:
             path = secure_regular(root, root / shard["name"])
-            if path.stat().st_size != shard["size_bytes"] or file_sha(path) != shard["sha256"]:
-                raise ValueError("JE01_BF16_SHARD_SHA_DRIFT:" + shard["name"])
             f = stack.enter_context(path.open("rb"))
+            if os.fstat(f.fileno()).st_size != shard["size_bytes"]:
+                raise ValueError("JE01_BF16_SHARD_SIZE_DRIFT:" + shard["name"])
+            digest = hashlib.sha256()
+            for block in iter(lambda: f.read(2 << 20), b""):
+                digest.update(block)
+            if digest.hexdigest() != shard["sha256"]:
+                raise ValueError("JE01_BF16_SHARD_SHA_DRIFT:" + shard["name"])
+            f.seek(0)
             rawlen = f.read(8)
             if len(rawlen) != 8:
                 raise ValueError("JE01_BF16_SHARD_HEADER_SHORT")
@@ -224,7 +233,7 @@ def enforce_safe_memory():
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise ValueError("JE01_MEMORY_PRESSURE_SENSOR_UNAVAILABLE") from exc
-    match = re.search(r"System-wide memory free percentage:\\s*(\\d+)%", output)
+    match = re.search(r"System-wide memory free percentage:\s*(\d+)%", output)
     if not match:
         raise ValueError("JE01_MEMORY_PRESSURE_SENSOR_UNPARSEABLE")
     free = int(match.group(1))
@@ -245,19 +254,8 @@ def make_artifacts(out_dir: Path):
             not OUTPUT_PARENT.is_dir() or dest.exists()):
         raise ValueError("JE01_OUTPUT_MUST_BE_NEW_D50_SCRATCH_DIRECTORY")
     # Finish source digest attestation BEFORE creating any scratch files.
-    with ExitStack() as stack:
-        weightmap = None
-        handles = {}
-        for weightmap, handles in verify_source(source):
-            pass
-        # verify_source closes files when its generator is exhausted, so re-open
-        # checked shards for the actual bounded tensor reads.
-        for shard in source["shards"]:
-            fh = stack.enter_context((SOURCE_ROOT / shard["name"]).open("rb"))
-            rawlen = fh.read(8)
-            n = struct.unpack("<Q", rawlen)[0]
-            hdr = json.loads(fh.read(n))
-            handles[shard["name"]] = (fh, hdr, 8 + n)
+    with verify_source(source) as (weightmap, handles):
+        # Read tensors from the SAME open descriptors whose full SHA was verified.
         dest.mkdir(mode=0o700)
         lib_path = dest / ("je01_native_quant.dylib" if platform.system() == "Darwin" else "je01_native_quant.so")
         lib = compile_original_quantizer(lib_path)

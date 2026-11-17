@@ -19,3 +19,6 @@ Before native execution, verify admission via Tailnet Commander; minimum system 
 python tools/je01_selected_bf16_native_artifacts.py --out-dir /Volumes/D50/TailnetCommander/work/JE01_BF16_SELECTED8_NBIT_20261118
 ```
 Only run from the exact JE01 research checkout with the pinned C source blob and sealed BF16 source present. A new directory is mandatory; never overwrite or use original model files. **No model-level Bayesian improvement claim without independent paired NLL.**
+
+## Independent source race prevention and memory gate
+Real builder now uses the exact same open file descriptor for per-shard SHA verification and tensor extraction (eliminates a re-open TOCTOU window), and explicitly checks macOS memory_pressure -Q >=35% before full extraction and before each Expert's three roles. CI includes a synthetic shard descriptor-lifetime regression, malicious hash rejection, and 35/34% sensor tests; these tests do not replace actual EOE execution.
