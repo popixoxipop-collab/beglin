@@ -73,7 +73,7 @@ class Context384Safety(unittest.TestCase):
             src.joinpath("qwen_infer.c").write_text(
                 '#define MOE_MAXPOS 160\n#define MOE_CBATCH_MAXPOS 32\n'
                 'static int g_moe_cb_slots_cap = MOE_BATCH_MAX;\n'
-                'if (B < 1 || B > MOE_BATCH_MAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS')
+                ('if (B < 1 || B > MOE_BATCH_MAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS\n' * 4))
             src.joinpath("mlx_moe.cpp").write_text(
                 '#define MLA_L0_MAXPOS 32\n'
                 'if (B < 1 || B > 64) return 0;\n'
