@@ -63,5 +63,49 @@ class RealBF16ProxyReceipts(unittest.TestCase):
         self.assertEqual(len(t["heldout_expert_results"]),8)
 
 
+    def test_all_1107_equal_bit_proxy_allocations_true_optimum(self):
+        import itertools
+        t=verified_json(TRAIN,"555e11d05ca3228a4cb8a828d6a2a3eef153ff5e4f21b4aa547f5820fdecaf2d")
+        h=verified_json(TEST,"441b08e520a512f10377fb801aab0ed1ba3d24852f8280abf524be42cca5c64a")
+        doc=json.loads((ROOT/"JE01_REAL_BF16_EXPERT8_FULLGRID_6BIT_DECISION_20261117.json").read_text())
+        ids=doc["experts"]
+        self.assertEqual(ids,[0,7,15,23,31,39,47,55])
+        tr={r["expert_id"]:r["bit_proxy_loss"] for r in t["results"]}
+        te={r["expert_id"]:r["heldout_relative_output_mse"] for r in h["heldout_expert_results"]}
+        seen=0
+        opt_t=(float("inf"),None)
+        opt_h=(float("inf"),None)
+        nonuniform_min_t=float("inf")
+        nonuniform_min_h=float("inf")
+        six=None
+        for bits in itertools.product((4,6,8), repeat=8):
+            if sum(bits)!=48:
+                continue
+            seen+=1
+            lt=sum(tr[e][str(b)]["relative_output_mse"] for e,b in zip(ids,bits))/8
+            lh=sum(te[e][str(b)] for e,b in zip(ids,bits))/8
+            if lt<opt_t[0]:opt_t=(lt,bits)
+            if lh<opt_h[0]:opt_h=(lh,bits)
+            if all(b==6 for b in bits):six=(lt,lh)
+            else:
+                nonuniform_min_t=min(nonuniform_min_t,lt)
+                nonuniform_min_h=min(nonuniform_min_h,lh)
+        self.assertEqual(seen,1107)
+        self.assertEqual(opt_t[1],(6,)*8)
+        self.assertEqual(opt_h[1],(6,)*8)
+        self.assertTrue(doc["selected_by_training_uniform6"])
+        self.assertTrue(doc["heldout_optimal_uniform6"])
+        self.assertEqual(doc["state_count_with_equal_budget"],1107)
+        self.assertAlmostEqual(doc["uniform6"]["trainMse"],six[0],places=13)
+        self.assertAlmostEqual(doc["uniform6"]["heldoutMse"],six[1],places=13)
+        self.assertAlmostEqual(doc["min_non_uniform_heldout_mse_ratio_to_uniform6"],
+                               nonuniform_min_h/six[1],places=12)
+        self.assertGreater(nonuniform_min_t/six[0],2)
+        self.assertGreater(nonuniform_min_h/six[1],2)
+        self.assertEqual(doc["gold_token_nll"],"NOT_MEASURED")
+        self.assertEqual(doc["pretrained_full_forward"],"NOT_RUN")
+        self.assertFalse(doc["production_promotion_allowed"])
+
+
 if __name__=="__main__":
     unittest.main(verbosity=2)
