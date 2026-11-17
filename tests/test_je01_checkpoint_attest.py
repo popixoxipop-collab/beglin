@@ -123,6 +123,30 @@ class AttestationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "WEIGHT_MAP_EMPTY"):
             je.inspect(**self.params)
 
+    def test_actual_full_31g_bf16_source_receipt_sealed(self):
+        source = (ROOT / "docs" / "research" /
+                  "JE01_REAL_BF16_CHECKPOINT_SHA_20261117.json")
+        real = json.loads(source.read_text(encoding="utf-8"))
+        claimed = real.pop("receipt_sha256")
+        self.assertEqual(claimed, "689c78abe0280c1cc961222f8c8601e54ad89c97641aeee62ef3c4e05951fe7b")
+        self.assertEqual(claimed, je.canonical_sha(real))
+        self.assertEqual(real["schema"], "beglin-je01-native-bf16-checkpoint-sha-v1")
+        self.assertEqual(real["status"], "FULL_BF16_SHA_ONLY")
+        self.assertEqual(real["checkpoint_identity_sha256"],
+                         "36e7e3cafb5c01d3249d2d538ccb77fcb4c5ce2d1df213ea0881b2b85e6debfc")
+        self.assertEqual(real["checkpoint_identity_sha256"], je.canonical_sha(real["model"]))
+        self.assertEqual(real["actual_model_forward"], "NOT_RUN")
+        self.assertEqual(real["native_logit_parity"], "NOT_RUN")
+        self.assertFalse(real["promotion_authorized"])
+        self.assertEqual(real["quantized_weight_binary_identity"], "NOT_VERIFIED")
+        shard_sizes = [8594887408, 8591757448, 8590718520, 5636263200]
+        self.assertEqual([x["size_bytes"] for x in real["model"]["shards"]], shard_sizes)
+        self.assertEqual(sum(shard_sizes), real["raw_model_checkpoint_byte_total"])
+        self.assertEqual(real["model"]["n_routed_experts"], 64)
+        self.assertEqual(real["model"]["num_experts_per_tok"], 6)
+        self.assertEqual(real["model"]["tokenizer_sha256"],
+                         "41f3bf64213da8c012d8bd0871a58a1fdf70463e8f08f110ddbb1082f529f669")
+
     def test_git_commit_must_be_pinned(self):
         self.params["engine_git_commit"] = "main"
         with self.assertRaisesRegex(ValueError, "GIT_COMMIT_UNPINNED"):
