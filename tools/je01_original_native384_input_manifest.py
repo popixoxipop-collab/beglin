@@ -97,7 +97,7 @@ def build(tokenizer_path,config_path,manifest_path,output_root):
                 raise ValueError("JE01_SELECTED_PROMPT_SHA_CHANGED")
             ids=tok.encode(prompt,add_special_tokens=False).ids
             raw_tok_ids.append(ids)
-            if not ids or len(ids)+BOS//100000>=CAP:
+            if not ids or len(ids)+2>CAP:  # BOS + prompt + at least one scored position
                 raise ValueError("JE01_PROMPT_EXCEEDS_384_WITH_BOS_AND_TARGET")
             native_ids=[BOS,*ids]
             if any(v<0 or v>=cfg["vocab_size"] for v in native_ids):
