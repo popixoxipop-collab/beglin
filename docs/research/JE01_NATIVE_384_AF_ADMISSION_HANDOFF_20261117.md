@@ -25,7 +25,9 @@ The preexisting **XOX→EOE** `macstudio` SSH alias (public-key auth plus strict
 - EOE D50 filesystem reported approximately **215 GiB** free and approximately **165 GiB allocatable** under Fleet storage-pool reservations, sufficient for an isolated 11 GiB request.
 - EOE Fleet `resource_plan` nevertheless rejected the 1 CPU / 1 GiB RAM / 11 GiB work-pool model-copy SHA job because **allocatable CPU was 0** (separate existing reservations of four CPU cores across two reservations; do not cancel others).
 - First bounded queue request `je01-eoe-d50-xox-origin-af-transfer-fullsha-20261117-v1` expired after repeated `NO_CAPACITY` and no job dispatch.
-- Second 10-minute request `je01-eoe-d50-xox-original-af-transfer-sealed-v2-20261117` was still `WAITING` on the last direct check shortly before expiry (no backend job ID at that time). **No destination directory or transferred AF files are claimed** without a corresponding `resource_queue` DISPATCHED + `job_output` READY receipt. Reconcile the queue by idempotency key before any retry.
+- Second 10-minute request `je01-eoe-d50-xox-original-af-transfer-sealed-v2-20261117` is now confirmed **EXPIRED** after **6 NO_CAPACITY attempts**. Exact `resource_queue` read at 2026-11-17T05:42:49.763Z returned `backend_job_id=null`, selected_host=`scheduler`; **the EOE verifier never started, and no AF file transfer was launched**. A new idempotency key and fresh admission would be required to retry. Do not bypass this gate.
+
+BOB was also checked as a destination for 11 GiB / 11 GiB RAM native Metal inference and rejected on `missing_tag:mlx`, `insufficient_free_ram` (6.6 GiB allocatable), and `no_eligible_storage_pool`. XOX rejected even with zero new requested storage due to its configured storage reserve; not overridden.
 
 ## New real input staging source
 
