@@ -1,0 +1,55 @@
+name: JE01 real BF16 Expert-role NIG 8-cluster paired bootstrap audit
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_role_nig_cluster_bootstrap.py'
+      - '.github/workflows/je01-role-nig-cluster-bootstrap.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  independent-eight-expert-bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-real-q3q5-role-NIG-proxy-train32-test32
+          run-id: 44178616827
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/src
+      - name: Run paired bootstrap with 8 Expert cluster units and Holm correction
+        run: |
+          set -euo pipefail
+          python tools/je01_role_nig_cluster_bootstrap.py \
+            --source "$RUNNER_TEMP/src/je01_role_nig_evaluation.json" \
+            --output "$RUNNER_TEMP/je01_role_clustered_bootstrap.json" \
+            | tee "$RUNNER_TEMP/je01_role_clustered_bootstrap.log"
+      - name: Independent receipt scientific scope audit
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,hashlib,os,pathlib
+          f=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_role_clustered_bootstrap.json"
+          d=json.loads(f.read_text());sha=d.pop("receipt_sha256")
+          assert sha==hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert d["status"]=="REAL_SOURCE_BF16_ROLE_NIG_INDEP_SYNTHETIC_CLUSTER_BOOTSTRAP_COMPLETE"
+          assert d["cluster_count"]==8 and d["observations_per_cluster"]==32 and d["resamples"]==20000
+          assert len(d["three_NIG_vs_locked_control_comparisons"])==3
+          assert d["source_actual_gold_token_NLL"]=="NOT_MEASURED" and d["not_pre_registered_model_quality_gain"]
+          assert not d["production_modified"]
+          print("JE01_NIG_EXPERT_CLUSTER_BOOTSTRAP_SHA_PASS",sha)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-nig-expert-cluster-bootstrap-20k-synthetic-proxy
+          path: |
+            ${{ runner.temp }}/je01_role_clustered_bootstrap.json
+            ${{ runner.temp }}/je01_role_clustered_bootstrap.log
+          retention-days: 14
+          if-no-files-found: error
