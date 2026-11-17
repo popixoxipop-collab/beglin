@@ -1,0 +1,9 @@
+# JE01 actual-Apple-Metal Expert-ID mixed precision *probe*, 2026-11-18 KST
+
+This is a **new model-free native-GPU primitive proof**, NOT the existing 27-layer DeepSeek pretrained mixed-precision evaluator. It uses a SHA-frozen original JE01 scratch staging helper (one slot / 384 positions; no production file modification) on standard GitHub macos-15 arm64 runners.
+
+`tools/je01_native_mixed_expert_precision_probe.cpp` uses the original BEGLIN q4g64 + qNg64 n2,n6 + q8g64 n8 C quantizers to prepare 3 × E64 q4 synthetic gate/up/down tensors, plus 9 × E1 mixed precision tensors for selected Expert IDs 7,21,55. It binds all 12 real MLX GPU representations via existing `mlx_gpu_bind_af`, uses `mlx_gpu_matvec_probe` for each gate/up/down and chosen Expert, and separately computes a CPU decoder reference for all selected ID outputs. Three untouched selected experts must retain exact q4 fallback. A changed mixed output with bounded GPU-vs-CPU error establishes actual kernel consumption and per-index selector feasibility, but not the full model's mixed gather path. Synthetic Expert IDs intentionally differ from JE01's eight frozen real routed slots.
+
+The per-Expert selection is **host-dispatched, matvec-by-matvec** for this primitive. The original model's `mx::gather_qmm` still uses a single tensor-wide bits field and does not yet use a heterogenous E-ID kernel. This probe should not be mistaken for a production p95 latency-ready implementation or real Bayesian quality evidence.
+
+The native C codec and byte audit was already tested separately on Ubuntu (synthetic tensors). If macos-15 cannot build or execute this Apple Metal test, record failure rather than present compilation as a GPU inference success. Next when actual BF16 tier artifacts are SHA-present: native original AF source parity → scratch original DeepSeek 384 model integration → paired 256 calibration gold NLL → independent 128/128 OOD and latency.

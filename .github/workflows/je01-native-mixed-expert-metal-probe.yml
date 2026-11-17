@@ -1,0 +1,80 @@
+name: JE01 384-scratch 2-4-6-8 per-Expert Metal binding probe
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_native_mixed_expert_precision_probe.cpp'
+      - '.github/workflows/je01-native-mixed-expert-metal-probe.yml'
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  macos-real-metal-synthetic-weights:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pin isolated BEGLIN 384 one-slot source
+        run: |
+          set -euo pipefail
+          python tools/je01_isolated_context384_stage.py --checkout "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP/je01_mixed_source" --expected-commit "$(git rev-parse HEAD)" \
+            > "$RUNNER_TEMP/je01_mixed_stage_receipt.json"
+      - name: Add isolated-only test target (not committed backend)
+        run: |
+          set -euo pipefail
+          cat >> "$RUNNER_TEMP/je01_mixed_source/CMakeLists.txt" <<'CMAKE'
+          add_executable(je01_mixed_expert_precision_probe
+            tools/je01_native_mixed_expert_precision_probe.cpp
+            gguf_transcode.c
+            $<TARGET_OBJECTS:mlx_moe_obj>)
+          target_include_directories(je01_mixed_expert_precision_probe PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR})
+          target_link_libraries(je01_mixed_expert_precision_probe PRIVATE mlx)
+          CMAKE
+      - name: Pin MLX and CMake
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'mlx==0.32.1' 'cmake>=3.20,<5' 'ninja>=1.10'
+          python -c 'import mlx,os; assert os.path.isdir(os.path.join(list(mlx.__path__)[0],"share","cmake"))'
+      - name: Build and RUN real Metal mixed precision matvec proof
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import platform
+          assert platform.system()=="Darwin" and platform.machine()=="arm64"
+          PY
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os;print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S "$RUNNER_TEMP/je01_mixed_source" -B "$RUNNER_TEMP/je01_mixed_build" \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$RUNNER_TEMP/je01_mixed_build" --target je01_mixed_expert_precision_probe --parallel 2
+          "$RUNNER_TEMP/je01_mixed_build/je01_mixed_expert_precision_probe" \
+            | tee "$RUNNER_TEMP/je01_mixed_expert_metal_result.json"
+          python - <<'PY'
+          import os,json
+          x=json.load(open(os.path.join(os.environ["RUNNER_TEMP"],"je01_mixed_expert_metal_result.json")))
+          assert x["status"]=="PASS_REAL_METAL_SYNTHETIC_WEIGHTS"
+          assert x["per_expert_E1_n2_n6_n8_bindings"]==9
+          assert x["unchanged_q4_fallback_expert_count"]==3
+          assert x["fallback_max_abs_diff"]==0
+          assert x["native_mixed_vs_original_max_abs_diff"]>1e-6
+          assert x["actual_pretrained_BF16_or_AF_weights_loaded"] is False
+          assert x["gold_token_NLL"]=="NOT_MEASURED"
+          print("JE01_REAL_METAL_E_ID_MIXED_PRECISION_SYNTHETIC_PROOF_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-isolated-2-4-6-8-expert-metal-probe
+          path: |
+            ${{ runner.temp }}/je01_mixed_stage_receipt.json
+            ${{ runner.temp }}/je01_mixed_expert_metal_result.json
+          retention-days: 14
+          if-no-files-found: error
