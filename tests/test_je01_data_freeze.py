@@ -111,6 +111,40 @@ class PreregisterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "INSUFFICIENT_QUALIFYING_PROMPTS"):
             je.freeze(p)
 
+    def test_actual_committed_512_row_manifest_is_immutable(self):
+        path = ROOT / "docs" / "research" / (
+            "JE01_FROZEN_WIKITEXT_HELLASWAG_512_20261117.json")
+        actual = json.loads(path.read_text(encoding="utf-8"))
+        claimed = actual.pop("manifest_sha256")
+        self.assertEqual(claimed, "a9397bfabdd012f60d3dd3d33bcfab455ac1046eced30373d553217dd9409147")
+        self.assertEqual(claimed, je.digest(actual))
+        self.assertFalse(actual["full_dataset_file_sha_verified"])
+        self.assertFalse(actual["native_model_forward_observed"])
+        self.assertFalse(actual["gold_labels_used_in_sampling"])
+        ids, prompts = [], []
+        for group, size in (("calibration", 256),
+                            ("same_source_holdout", 128),
+                            ("ood_holdout", 128)):
+            src = actual["sources"][group]
+            rows = actual["cohorts"][group]["records"]
+            self.assertEqual(len(rows), size)
+            self.assertEqual(src["source_parquet_sha256"], "NOT_MEASURED")
+            self.assertEqual(actual["cohorts"][group]["cohort_sha256"], je.digest(rows))
+            self.assertEqual(sorted(src["sample_windows"]), sorted(
+                je.planned_offsets(next(s for s in je.SOURCES if s[0] == group))))
+            self.assertEqual(len(src["page_sha256_by_offset"]), len(src["sample_windows"]))
+            for r in rows:
+                self.assertTrue(any(w <= r["row_idx"] < w + 100
+                                    for w in src["sample_windows"]))
+                self.assertEqual(len(r["source_row_id_sha256"]), 64)
+                self.assertEqual(len(r["prompt_sha256"]), 64)
+                ids.append(r["source_row_id_sha256"])
+                prompts.append(r["prompt_sha256"])
+        self.assertEqual(len(ids), 512)
+        self.assertEqual(len(set(ids)), 512)
+        self.assertEqual(len(set(prompts)), 512)
+        self.assertNotIn('"label"', json.dumps(actual))
+
     def test_source_page_revision_must_equal_frozen_commit(self):
         src = je.SOURCES[0]
         off = je.planned_offsets(src)[0]
