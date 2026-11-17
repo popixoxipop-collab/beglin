@@ -61,7 +61,11 @@ jobs:
                 -DCMAKE_BUILD_TYPE=Release \
                 -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
           cmake --build "$RUNNER_TEMP/je01_384_build" \
-                --target qwen_infer_gpu --parallel 2
+                --target qwen_infer_gpu je01_native_context384_probe --parallel 2
+          "$RUNNER_TEMP/je01_384_build/je01_native_context384_probe" \
+            | tee "$RUNNER_TEMP/je01_native_probe.json"
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["status"]=="PASS_NO_MODEL"; assert d["single_slot_accepted"]; assert d["two_or_more_slots_rejected"]; assert d["mla_host_configured"]; assert d["pretrained_model_forward"]=="NOT_RUN"; assert d["theoretical_kv_bytes_per_single_slot"]==251658240; print("JE01_ACTUAL_METAL_DEVICE_HOST_KV_PROBE_PASS")' \
+            "$RUNNER_TEMP/je01_native_probe.json"
           BIN="$RUNNER_TEMP/je01_384_build/qwen_infer_gpu_je01_context384"
           test -f "$BIN"
           file "$BIN"
@@ -74,6 +78,7 @@ jobs:
           name: je01-384-arm64-compile-only
           path: |
             ${{ runner.temp }}/je01_stage.json
+            ${{ runner.temp }}/je01_native_probe.json
             ${{ runner.temp }}/je01_384_build/qwen_infer_gpu_je01_context384
           retention-days: 14
           if-no-files-found: error
