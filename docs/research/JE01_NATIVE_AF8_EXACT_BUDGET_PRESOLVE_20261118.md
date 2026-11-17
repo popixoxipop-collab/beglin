@@ -20,6 +20,12 @@ With eight slots and choices {2,4,6,8}, the formula-level EXACT 43,253,760 B com
 
 The code in tools/je01_native_exact_byte_presolve.py validates the original signed ledger, computes the codec-aware byte projections, enumerates all 65,536 assignments, retains only the 1,317 formula-matched candidates and emits a deterministic catalog SHA. Tests check the true source byte ledger, bit tier metadata, counts, source tampering, and no false claims.
 
+## Critical native runtime integration blocker
+
+Current mlx_moe.cpp binds each routed Expert-role tensor as E=64 with ONE bits value (QTensor.bits). Its existing ffn_gather() sends the entire gathered Expert batch through mx::gather_qmm(..., t.q->bits, ...). This cannot select a different bit-width for individual Expert IDs within that same tensor. The existing MixedQNg64Tensor registry is explicitly probe-only for dense 2-D row/group cells, NOT a full routed-Expert heterogenous precision implementation.
+
+Consequently the 1,317 storage-feasible assignments are NOT currently executable in the original 384-context routed-MoE full model. A scratch-only E-aware override with exactly the selected 8 Expert IDs, native base-q4 fallback for all 56 untouched Experts in each involved layer, and gate/up/down parity plus rollback tests is mandatory before any native alternative NLL. This is a backend engineering blocker beyond capacity admission.
+
 ## Mandatory unresolved gates
 
 1. The eight chosen slots were selected from real native original-AF route events. The older EOE pretrained BF16 Layer11 proxy selected DIFFERENT Expert IDs and therefore cannot supply this study's effects.

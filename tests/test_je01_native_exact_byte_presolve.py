@@ -41,6 +41,9 @@ class NativeAF8PresolveTests(unittest.TestCase):
         self.assertEqual(len(result["projected_catalog_sha256"]), 64)
         self.assertEqual(result["real_2_6_8_packed_weight_artifact_count"], 0)
         self.assertEqual(result["real_expert_precision_paired_NLL"], "NOT_MEASURED")
+        self.assertEqual(result["native_routed_GPU_expert_specific_mixed_overlay"],
+                         "NOT_IMPLEMENTED")
+        self.assertEqual(result["full_MoE_mixed_bit_forward"], "NOT_RUN")
         self.assertFalse(result["bayesian_plan_eligible"])
         self.assertFalse(result["production_promotion_allowed"])
 

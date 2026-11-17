@@ -152,6 +152,8 @@ def presolve(ledger):
         "real_alternative_actual_file_byte_budget_audit": "NOT_RUN",
         "real_expert_precision_paired_NLL": "NOT_MEASURED",
         "heldout_and_ood_labels_accessed": False,
+        "native_routed_GPU_expert_specific_mixed_overlay": "NOT_IMPLEMENTED",
+        "full_MoE_mixed_bit_forward": "NOT_RUN",
         "bayesian_plan_eligible": False,
         "production_promotion_allowed": False,
     }
