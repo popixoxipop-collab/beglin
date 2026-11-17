@@ -24,7 +24,7 @@ WEIGHTS=Path("/Users/xox/vdsp_local_data/moe_base_deepseek")
 CAL256=Path("/Users/xox/vdsp_shadow_runs/precision_allocator_bench/je01_original_router256_20261118_v1")
 GOLD=Path("/Users/xox/vdsp_shadow_runs/precision_allocator_bench/je01_train256_fullgold_NLL_20261118_v1/JE01_ORIGINAL_REAL_TRAIN256_FULL_GOLD_IDS.json")
 FIRST=Path("/Users/xox/vdsp_shadow_runs/precision_allocator_bench/je01_train256_fullgold_NLL_20261118_v1/JE01_ACTUAL_PRETRAINED_ORIGINAL_CAL256_NEXTGOLD_NLL.json")
-ROOT=Path("/Users/xox/vdsp_shadow_runs/precision_allocator_bench/je01_original_fulltarget_teacherforce_20261118_v1")
+ROOT=Path("/Users/xox/vdsp_shadow_runs/precision_allocator_bench/je01_original_fulltarget_teacherforce_20261118_v2")
 SRC_SHA={"qwen_infer.c":"4e91092f7f860a446d97e5d871f249faeab0693d43c0293622a9cf551755622e",
          "mlx_moe.cpp":"c8b92e3ce5832b012713d41551f604855a89043ca316931501305ef501754782",
          "CMakeLists.txt":"f9bb057869f3fbc6a0a8ae55ab0d66247d27b211b092aa7cdfb8ab601fc023de"}
@@ -422,7 +422,6 @@ def main():
     args=parser.parse_args()
     if args.mode=="pilot16":
         ids,recs=preflight()
-        ROOT.mkdir(mode=0o700)
         manifests=prepare(ROOT,recs)
         (ROOT/"MANIFEST_AND_NATIVE_SOURCE_RECEIPT.json").write_text(json.dumps({
            "schema":"JE01-GOLD-TARGET-INPUT-256-RECEIPT/1","real_original_training_cases":256,
