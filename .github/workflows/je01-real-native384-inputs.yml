@@ -7,6 +7,8 @@ on:
     paths:
       - ".github/workflows/je01-real-native384-inputs.yml"
       - "tools/je01_original_native384_input_manifest.py"
+      - "tools/je01_native384_relocate_actual_artifact.py"
+      - "tests/test_je01_native384_artifact_relocation.py"
 permissions:
   contents: read
 jobs:
@@ -88,11 +90,41 @@ jobs:
           (root/"JE01_INDEPENDENT_512_FILE_AUDIT.json").write_text(json.dumps(audit,sort_keys=True,indent=2)+"\n")
           print(json.dumps(audit,sort_keys=True))
           PY
+      - name: Copy actual 512 files to a NEW root and independently regenerate all relocation manifests
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_je01_native384_artifact_relocation.py' -v
+          cp -a "$RUNNER_TEMP/je01_inputs" "$RUNNER_TEMP/je01_relocated_copy"
+          python tools/je01_native384_relocate_actual_artifact.py \
+            --artifact-input-root "$RUNNER_TEMP/je01_relocated_copy" \
+            --new-manifests-directory "$RUNNER_TEMP/je01_rebased_manifests" \
+            | tee "$RUNNER_TEMP/je01_relocation_stdout.json"
+          python - <<'PY'
+          import json,os,pathlib,hashlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          out=root/"je01_rebased_manifests"
+          report=json.loads((out/"JE01_RELOCATION_PASS.json").read_text())
+          sha=report.pop("receipt_sha256")
+          assert hashlib.sha256(json.dumps(report,sort_keys=True,separators=(",",":")).encode()).hexdigest()==sha
+          assert report["status"]=="RELOCATED_512_REAL_NATIVE_FILES_MANIFESTS_PASS"
+          assert report["files"]==512 and report["original_data_modified"] is False
+          assert report["source_receipt_sha256"]=="2f835daf453741d35e292dd2661b927e2a6196000c9917b62b68415968b5ce34"
+          assert report["original_model_forward"]=="NOT_RUN"
+          for cohort,n in (("calibration",256),("same_source_holdout",128),("ood_holdout",128)):
+            lines=(out/(cohort+".manifest")).read_text().splitlines()
+            assert len(lines)==n
+            assert all(path.startswith(str(root/"je01_relocated_copy")+"/") and suffix=="1"
+                       for path,suffix in (line.rsplit(" ",1) for line in lines))
+            assert hashlib.sha256((out/(cohort+".manifest")).read_bytes()).hexdigest()==report["cohorts"][cohort]["absolute_manifest_sha256"]
+          print("JE01_ALL512_MANIFEST_RELOCATION_AFTER_RELOCATION_PASS",sha)
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: je01-real-512-deepseek-native384-int32
           path: |
             ${{ runner.temp }}/je01_inputs/
             ${{ runner.temp }}/je01_stdout.json
+            ${{ runner.temp }}/je01_rebased_manifests/
+            ${{ runner.temp }}/je01_relocation_stdout.json
           retention-days: 14
           if-no-files-found: error
