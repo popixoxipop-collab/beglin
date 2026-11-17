@@ -52,6 +52,17 @@ def verify_manifest(original):
          "calibration":256,"same_source_holdout":128,"ood_holdout":128}:
         raise ValueError("JE01_INVALID_COHORT_COUNTS")
 
+def pack_native_input(ids,vocab_size=102400):
+    if not isinstance(ids,list) or not ids or any(type(i) is not int for i in ids):
+        raise ValueError("JE01_NATIVE_TOKEN_INPUT_INVALID")
+    if len(ids)+2>CAP:  # BOS+prompt+one output position
+        raise ValueError("JE01_PROMPT_EXCEEDS_384_WITH_BOS_AND_TARGET")
+    native_ids=[BOS,*ids]
+    if any(v<0 or v>=vocab_size for v in native_ids):
+        raise ValueError("JE01_TOKEN_OUT_OF_VOCAB_RANGE")
+    return struct.pack("<"+"i"*len(native_ids),*native_ids)
+
+
 def build(tokenizer_path,config_path,manifest_path,output_root):
     from tokenizers import Tokenizer
     tokenizer_path=Path(tokenizer_path)
@@ -97,12 +108,8 @@ def build(tokenizer_path,config_path,manifest_path,output_root):
                 raise ValueError("JE01_SELECTED_PROMPT_SHA_CHANGED")
             ids=tok.encode(prompt,add_special_tokens=False).ids
             raw_tok_ids.append(ids)
-            if not ids or len(ids)+2>CAP:  # BOS + prompt + at least one scored position
-                raise ValueError("JE01_PROMPT_EXCEEDS_384_WITH_BOS_AND_TARGET")
+            raw=pack_native_input(ids,cfg["vocab_size"])
             native_ids=[BOS,*ids]
-            if any(v<0 or v>=cfg["vocab_size"] for v in native_ids):
-                raise ValueError("JE01_TOKEN_OUT_OF_VOCAB_RANGE")
-            raw=struct.pack("<"+"i"*len(native_ids),*native_ids)
             recs.append({
                 "input_id":item["source_row_id_sha256"],
                 "prompt_sha256":item["prompt_sha256"],
