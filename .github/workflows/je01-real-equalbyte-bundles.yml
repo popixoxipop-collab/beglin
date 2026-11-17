@@ -27,8 +27,9 @@ jobs:
       - name: Create exact physical-byte equal-budget bundles from original source artifacts
         run: |
           set -euo pipefail
+          test -f "$RUNNER_TEMP/je01_real72/je01_native_bf16_artifacts/JE01_HF_RANGE_NATIVE_BF16_72_ARTIFACTS.json"
           python tools/je01_real_72_to_equalbyte_bundle.py \
-            --source "$RUNNER_TEMP/je01_real72" \
+            --source "$RUNNER_TEMP/je01_real72/je01_native_bf16_artifacts" \
             --output "$RUNNER_TEMP/je01_actual_equalbyte_bundles" \
             | tee "$RUNNER_TEMP/je01_real_bundles_log.jsonl"
       - name: Independently rehash all bundles and original per-region source bytes
