@@ -82,6 +82,37 @@ def patch_sources(qwen, mlx, cmake):
                       "if (A != 1 || !slot || slot[0] != 0 || !spos || "
                       "l < 0 || l >= MLA_MAXLAYERS) return 0; // JE01 single-slot",
                       where="mlx.ragged_fence")
+    # Only the isolated checkout gets this JE01 audit. It invokes the real
+    # lazy MLA fused-cache materializer, not a synthetic array approximation.
+    gpu_probe_anchor = (
+        "    g_fused_kv_inited_B = B;\n"
+        "}\n\n"
+        "// D-gpu-5-hotpath:"
+    )
+    gpu_probe_replacement = (
+        "    g_fused_kv_inited_B = B;\n"
+        "}\n\n"
+        '// JE01 scratch-only GPU K/V audit; NOT part of original runtime.\n'
+        'extern "C" int mlx_gpu_je01_materialize_fused_mla_kv(\n'
+        '    uint64_t *active_before, uint64_t *active_after, uint64_t *peak_after) {\n'
+        '    if (!active_before || !active_after || !peak_after ||\n'
+        '        g_fused_B != 1 || g_fused_kv_inited ||\n'
+        '        g_mla_n_heads != 16 || g_mla_q_head_dim != 192 ||\n'
+        '        g_mla_v_hd != 128 || MLA_L0_MAXPOS != 384 ||\n'
+        '        !mlx_gpu_available()) return 0;\n'
+        '    try {\n'
+        '        *active_before = mx::get_active_memory();\n'
+        '        ensure_fused_kv_init();\n'
+        '        mx::synchronize();\n'
+        '        *active_after = mx::get_active_memory();\n'
+        '        *peak_after = mx::get_peak_memory();\n'
+        '        return *active_after > *active_before ? 1 : 0;\n'
+        '    } catch (...) { return 0; }\n'
+        '}\n\n'
+        "// D-gpu-5-hotpath:"
+    )
+    mlx = exactly_one(mlx, gpu_probe_anchor, gpu_probe_replacement,
+                      where="mlx.real_fused_mla_gpu_materialization")
     cmake = exactly_one(cmake,
                         "add_executable(qwen_infer_gpu\n",
                         "add_executable(qwen_infer_gpu\n",
