@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   isolated-mlx-build:
-    runs-on: macos-15-arm64
+    runs-on: macos-15  # GitHub standard Apple Silicon M1 arm64 label
     timeout-minutes: 25
     env:
       PYTHONDONTWRITEBYTECODE: "1"
