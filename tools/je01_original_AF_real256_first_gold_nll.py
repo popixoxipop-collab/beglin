@@ -115,7 +115,7 @@ def score():
                 g=gold["cases"][i]
                 if r!=local or vocab!=VOCAB or pos+1!=plen or \
                    g["row"]!=i or g["input_id"]!=m["source_id"] or \
-                   g["native_BOS_prompt_sha256"]!=m["input_file_sha256"] or \
+                   g["native_BOS_prompt_sha256"]!=m["native_input_sha256"] or \
                    g["original_BOS_prompt_positions"]!=plen or \
                    m["positions"]!=plen:
                     raise ValueError("JE01_ORIGINAL_CASE_ID_TOKEN_OFFSET_NOT_PAIRED")
@@ -125,7 +125,7 @@ def score():
                 vec=struct.unpack("<102400f",raw)
                 label_nll=actual_logit_token_nll(vec,target)
                 scores.append({"row":i,"source_id":g["input_id"],
-                     "native_input_sha256":m["input_file_sha256"],
+                     "native_input_sha256":m["native_input_sha256"],
                      "full102400_logits_row_sha256":hashlib.sha256(header+raw).hexdigest(),
                      "prompt_token_length":plen,
                      "gold_target_first_token_id":target,
