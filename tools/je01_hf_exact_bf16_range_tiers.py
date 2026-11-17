@@ -83,6 +83,19 @@ class Shard:
             digest = (hdr.get("X-Linked-Etag") or "").strip('"').lower()
             linked_size = hdr.get("X-Linked-Size")
             if digest != self.sha or linked_size != str(self.size):
+                # Public source metadata only; never log the signed Location URL.
+                print(json.dumps({
+                    "event": "JE01_REMOTE_BF16_FULL_SHARD_IDENTITY_FAILURE",
+                    "shard": self.name,
+                    "pinned_expected_sha256": self.sha,
+                    "remote_x_linked_etag": digest,
+                    "full_sha256_matches": digest == self.sha,
+                    "pinned_expected_bytes": self.size,
+                    "remote_x_linked_size": linked_size,
+                    "full_size_matches": linked_size == str(self.size),
+                    "remote_revision_commit": hdr.get("X-Repo-Commit"),
+                    "response_status": res.status_code
+                }, sort_keys=True), flush=True)
                 raise ValueError("JE01_CDN_FULL_SHARD_SHA_SIZE_MISMATCH:" + self.name)
             self.redirect = hdr.get("Location") or ""
             secure_redirect(self.redirect)
