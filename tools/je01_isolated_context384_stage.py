@@ -60,6 +60,10 @@ def patch_sources(qwen, mlx, cmake):
                         "static int g_moe_cb_slots_cap = MOE_BATCH_MAX;",
                         "static int g_moe_cb_slots_cap = 1; // JE01 isolated B=1; no serving",
                         where="qwen.slot_default")
+    qwen = exactly_one(qwen,
+                        'if (B < 1 || B > MOE_BATCH_MAX) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS',
+                        'if (B != 1) { fprintf(stderr, "FATAL: QWEN_MOE_CB_SLOTS',
+                        where="qwen.cbatch_launch_fence")
     # GPU fixed attention full-window shape. Only MLA (DeepSeek) is touched;
     # GQA config is intentionally preserved, avoiding invalid cross-architecture claims.
     mlx = exactly_one(mlx, "#define MLA_L0_MAXPOS 32",
@@ -94,7 +98,7 @@ def sha256(b):
 def stage(*, checkout, scratch, expected_commit):
     source = Path(checkout).resolve(strict=True)
     target = Path(scratch).absolute()
-    if source == target or source in target.parents and target == source / "build":
+    if source == target or source in target.parents:
         raise ValueError("JE01_SOURCE_DESTINATION_CONFLICT")
     if not source.is_dir() or target.exists() or target.is_symlink():
         raise ValueError("JE01_DESTINATION_MUST_BE_NEW")
@@ -118,13 +122,28 @@ def stage(*, checkout, scratch, expected_commit):
         (source / "mlx_moe.cpp").read_text(),
         (source / "CMakeLists.txt").read_text(),
     )
-    # Keep only a clean checkout's source: exclude .git, user caches/build output,
-    # any checkpoints/weights. No network fetch and no execution occurs.
-    def ignore(directory, entries):
-        excluded = {".git", ".venv", ".pytest_cache", "__pycache__", "build",
-                    "weights", "weights_moe", ".cache", "node_modules"}
-        return set(entries) & excluded
-    shutil.copytree(source, target, ignore=ignore, symlinks=False)
+    # Preserve the exact committed tree only. Never copy untracked checkpoints,
+    # credentials, symlinks into external files, or an uncommitted dirty worktree.
+    for git_args in (["diff", "--quiet"], ["diff", "--cached", "--quiet"]):
+        if subprocess.run(["git", "-C", str(source), *git_args],
+                          timeout=15).returncode != 0:
+            raise ValueError("JE01_CHECKOUT_NOT_CLEAN")
+    tracked = subprocess.run(["git", "-C", str(source), "ls-files", "-z"],
+                             check=True, capture_output=True, timeout=20).stdout
+    names = [x.decode("utf-8") for x in tracked.split(b"\x00") if x]
+    if not names:
+        raise ValueError("JE01_NO_TRACKED_FILES")
+    target.mkdir(parents=True)
+    for name in names:
+        rel = Path(name)
+        if rel.is_absolute() or ".." in rel.parts or not rel.parts:
+            raise ValueError("JE01_TRACKED_PATH_TRAVERSAL")
+        old = source / rel
+        if old.is_symlink() or not old.is_file():
+            raise ValueError("JE01_TRACKED_SYMLINK_OR_MISSING_FILE")
+        new = target / rel
+        new.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(old, new)
     for name, new_text in patches.items():
         f = target / name
         if not f.is_file():
