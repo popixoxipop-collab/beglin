@@ -110,3 +110,23 @@ Recorded raw-page limitation: 10 predetermined WikiText validation 100-row windo
 **Material incomplete gate:** The full underlying Parquet file-byte SHA was not independently measured, even though selected page-response and prompt SHA values are sealed. The sampler must be described as a *row-slice freeze*, NOT as complete full-source-byte attestation. The real DeepSeek indexed checkpoint SHA, MLX backend parity, Expert routing trace, per-Expert paired NLL, full-model improvement and latency remain NOT_VERIFIED. Do not promote or edit baseline Expert weights.
 
 Supporting source/tests: tools/je01_data_freeze.py; tests/test_je01_data_freeze.py. Native run ID job_d5d3ec2b9c494eb826577ef79bcf3868. Current decision: **P1_ROW_IDS_512_FROZEN / P1_FULL_PARQUET_SHA_NOT_VERIFIED / P0_NATIVE_MODEL_SHA_NOT_VERIFIED / P2_FULL_FORWARD_NOT_RUN / NO_PROMOTION**.
+
+
+## P1 completion supplement — four complete Parquet SHA256, same day
+
+**Resolves the preceding row-slice-only limitation for the four source files actually used.** XOX managed job job_bda3b78a6c5c3c60db4f2a3317d72395 (SUCCEEDED, exit 0, ~29 seconds) streamed **321,049,738 bytes** in RAM from the exact immutable Hugging Face dataset revisions without writing source datasets to disk. Each file passed exact byte length, both start/end Parquet magic bytes, and a streaming full-file SHA256. The original GitHub research-only source was git-blob-verified prior to execution. External source data was treated as untrusted; no labels were used in selection and no model was executed.
+
+New independent attestation: [JE01_FULL_SOURCE_PARQUET_SHA_20261117.json](JE01_FULL_SOURCE_PARQUET_SHA_20261117.json); SHA256 of canonical receipt **0924b13ac6022bf18e895c76dbd1498432079cb73c69e43e00fe01b9f63226d5**, bound to the existing frozen 512-row manifest hash a9397bfabdd012f60d3dd3d33bcfab455ac1046eced30373d553217dd9409147.
+
+| Source file | Full bytes | Independently calculated SHA256 |
+|---|---:|---|
+| WikiText-103-raw train shard 0/2 | 156,987,808 | 74da360f23826045b3e6ac6375411fdb15f003030aa74f2596ed08b857cb9212 |
+| WikiText-103-raw train shard 1/2 | 157,088,770 | ba090ac30dbf5461e8dcbdd1a1b8e6f3cf9c2c756d64f0c1220450acd514f720 |
+| WikiText-103-raw validation | 657,209 | 204929b7ff9d6184953f867dedb860e40aa69c078fc1e54b3baaa8fb28511c4c |
+| HellaSwag validation | 6,315,951 | 899813071e1e95efafec90f856e1987d2150fa4d020fc005df6962c259f660cd |
+
+The last two hashes additionally match Hugging Face's published per-file pointer SHA. Full-file hashing here covers exactly these 4 pinned files used for 256/128/128, not every split/config in the public dataset repository.
+
+**Current corrected gate:** P1_SOURCE_FILES_SHA_PASS + P1_512_FROZEN_ROWS_PASS; still P0_ORIGINAL_DEEPSEEK_CHECKPOINT_UNVERIFIED, P0_ORIGINAL_MLX_PARITY_NOT_RUN, P2_PAIRED_EXPERT_NLL_NOT_RUN, and NO_PROMOTION. The earlier row-slice-only observation remains a valid chronological record, but is now superseded for the four underlying source files by this SHA attestation. No BEGLIN runtime or operating release was modified.
+
+Implementation: tools/je01_parquet_source_sha_audit.py; offline contract tests: tests/test_je01_parquet_source_sha_audit.py.
