@@ -27,10 +27,12 @@ jobs:
           python -m pip install --disable-pip-version-check numpy==2.2.6 requests==2.32.3
       - name: Verify SHA-addressed BF16 shard HEAD and strict HTTP byte-range support
         run: |
+          set -euo pipefail
           python tools/je01_hf_exact_bf16_range_tiers.py --mode preflight \
             | tee "$RUNNER_TEMP/je01_bf16_range_preflight.json"
       - name: Build actual 72 native 2/6/8bit artifacts from 24 BF16 selected roles
         run: |
+          set -euo pipefail
           python tools/je01_hf_exact_bf16_range_tiers.py --mode extract \
             --output "$RUNNER_TEMP/je01_native_bf16_artifacts" \
             | tee "$RUNNER_TEMP/je01_bf16_range_real_result.jsonl"
