@@ -82,7 +82,7 @@ class OriginalFullTargetTeacherForcingContracts(unittest.TestCase):
             self.assertIn(needle,source)
         self.assertNotIn("os.system(",source)
         self.assertNotIn("subprocess.Popen(['sudo'",source)
-        self.assertIn("JE01_GOLD_NATIVE_EVIDENCE_RECORD_DRIFT",source)
+        self.assertIn("JE01_REAL_GOLD_NATIVE_EVIDENCE_RECORD_DRIFT",source)
 
 if __name__=="__main__":
     unittest.main(verbosity=2)
