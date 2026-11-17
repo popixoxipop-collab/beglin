@@ -8,6 +8,9 @@
 #include <cstdint>
 #include <sys/resource.h>
 
+extern "C" int mlx_gpu_je01_materialize_fused_mla_kv(
+    uint64_t *active_before, uint64_t *active_after, uint64_t *peak_after);
+
 static long long rss_bytes(void) {
     struct rusage usage;
     if (getrusage(RUSAGE_SELF, &usage) != 0) return -1;
@@ -48,7 +51,23 @@ int main() {
     const long long after = rss_bytes();
     const long long rss_delta = (before >= 0 && after >= 0)
         ? after - before : -1;
-    std::printf("{\"schema\":\"beglin-je01-metal384-host-probe-v1\","
+    uint64_t active_before = 0, active_after = 0, peak_after = 0;
+    if (mlx_gpu_je01_materialize_fused_mla_kv(
+            &active_before, &active_after, &peak_after) != 1) {
+        std::puts("JE01_REAL_FUSED_GPU_KV_MATERIALIZATION_FAILED");
+        return 6;
+    }
+    const unsigned long long gpu_delta = active_after - active_before;
+    // Only 32 materialized K/V arrays at DeepSeek dimensions are counted.
+    // Host RSS alone is not a GPU-allocation proof; constrain actual MLX
+    // active bytes to exclude a tiny unrelated allocation or huge regression.
+    if (gpu_delta < (unsigned long long)planned_kv * 9 / 10 ||
+        gpu_delta > (unsigned long long)planned_kv * 3 / 2) {
+        std::printf("JE01_REAL_GPU_KV_MEMORY_OUT_OF_BOUNDS actual=%llu expected=%lld\n",
+                    gpu_delta, planned_kv);
+        return 7;
+    }
+    std::printf("{\"schema\":\"beglin-je01-metal384-gpu-kv-probe-v2\","
                 "\"status\":\"PASS_NO_MODEL\","
                 "\"mlx_device_available\":true,"
                 "\"single_slot_accepted\":true,"
@@ -56,10 +75,16 @@ int main() {
                 "\"mla_host_configured\":true,"
                 "\"theoretical_kv_bytes_per_single_slot\":%lld,"
                 "\"measured_process_peak_rss_delta_bytes\":%lld,"
+                "\"measured_mlx_gpu_active_before_bytes\":%llu,"
+                "\"measured_mlx_gpu_active_after_bytes\":%llu,"
+                "\"measured_mlx_gpu_active_delta_bytes\":%llu,"
+                "\"measured_mlx_gpu_peak_after_bytes\":%llu,"
                 "\"pretrained_model_forward\":\"NOT_RUN\","
-                "\"metal_full_fused_kv_materialized\":false,"
+                "\"metal_full_fused_kv_materialized\":true,"
                 "\"model_weights_loaded\":false,"
                 "\"production_modified\":false}\n",
-                planned_kv, rss_delta);
+                planned_kv, rss_delta, (unsigned long long)active_before,
+                (unsigned long long)active_after, gpu_delta,
+                (unsigned long long)peak_after);
     return 0;
 }
