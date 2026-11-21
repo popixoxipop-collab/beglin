@@ -54,3 +54,29 @@ Each observed role: native Q4 output MSE > original AF4 > native Q5. For the exa
 **Not measured, must NOT be invented or passed as H3/JE01 performance:** full 256 training actual hidden activations, down_proj SwiGLU inputs, per-token loss gradients, Jacobian-output importance metric, Fisher/Gauss–Newton or empirical Hessian; end-to-end new NLL under an actual Fisher plan, independent same-source128/OOD128, p95 throughput. The 256 router samples provide ONLY last-token routing counts. The real FFN h2 is currently only 16 training samples.
 
 **Recommended next physically grounded order:** collect disjoint additional training-only h2 and true `down_proj` SwiGLU activations with output-bit parity; compute activation covariance by expert/role with same original model; condition output error by router score and covariance (\mathrm{tr}(\Delta W^T\Delta W\Sigma_x)); when feasible obtain native NLL output gradients and compute actual empirical Fisher (or explicitly call the result a proxy), then choose precision/exact bytes before sealed independent validation. Keep existing AF4 as default and PR #94 Draft. Current Tailnet release current/live `g6-0.9.0-operator.900500`, converged, unchanged.
+
+## 5. Original true h2 input covariance: diagonal moment versus full cross-terms
+
+Additional **actual native EOE source** job `job_8c765effcddb9ebe6f4817b5d2b151a4` SUCCEEDED. For each original 16 gate/up role and each of AF4/Q4/Q5 source-weight perturbations, compute the actual output squared-error quadratic with the 45 original true routed h2 records:
+
+\[\operatorname{SSE}_{\mathrm{exact}}=\operatorname{tr}(\Delta W C\Delta W^\top),\quad C=\sum_t p_t h_t h_t^\top.\]
+
+Compare its diagonal input second-moment approximation:
+
+\[\operatorname{SSE}_{\mathrm{diag}}=\operatorname{tr}(\Delta W\operatorname{diag}(C)\Delta W^\top).\]
+
+This checks only *second-moment geometry* of the real original train16 h2 input for native quantization perturbations. The input matrix is not centered and has at most 4–8 observations per Expert, so its full empirical covariance is very low rank. It does **NOT** include a true model-loss gradient, output sensitivity Jacobian, empirical Fisher, Gauss–Newton metric, Hessian, native down_proj SwiGLU input or independent validation.
+
+| True-source weight tier | Mean per-role absolute relative diagonal approximation error | Diagonal/exact ratio range, 16 roles |
+| --- | ---: | --- |
+| Original affine AF4 | **1.5312%** | 0.95718–1.03636 |
+| Native symmetric Q4 | **1.3997%** | 0.98586–1.03933 |
+| Native symmetric Q5 | **1.5373%** | 0.98207–1.04383 |
+
+No measured 16-role example differs by more than 5% in this **input-covariance diagonal approximation**. This is promising computational evidence for a diagonal *input-activation-second-moment* proxy on this tiny training sample, not proof that diagonal weight-space or loss-space **Fisher/Hessian** is adequate; especially, missing down and loss gradients may entirely change importance rankings.
+
+- Full source report canonical receipt `de5d5487ec29e8b554d21cb5142246f0c1017e93a4c3c8c86be6c931a8e9e847`, actual 16 roles ×3 tiers, all original source weights and actual h2 SHA revalidated.
+- [Actual source signed per-role diagonal-vs-exact 45-h2 covariance report](https://github.com/popixoxipop-collab/beglin/blob/research/je01-moe-bayesian-bit-allocation-20261117/docs/research/JE01_TRUE_ORIGINAL_H2_DIAGONAL_VS_FULL_COV_GATEUP_20261122.json).
+- [Independent exact-vs-diagonal signed 16×3 role audit CI run 44963281993 — PASS](https://github.com/popixoxipop-collab/beglin/actions/runs/44963281993).
+
+**Current gate:** 256-router×source-weight DP PASS, original27 45-h2 actual gate/up GEMV PASS, 16-role diagonal input moment approximation PASS **on TRAIN16 only**. True Fisher/Hessian NLL gradient **NOT MEASURED**; no Bayesian precision-policy promotion and no generalization claim. Acquire real native down-proj activations and additional disjoint TRAIN prompts prior to policy optimization, and preserve independent 128+128 seals.
