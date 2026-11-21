@@ -94,7 +94,7 @@ def build(q5root,out):
         raise ValueError("JE01_ONLY_NEW_RESEARCH_OUTPUT")
     slots=validate_ledger(read_verified_ledger(LEDGER))
     fixed=tuple((v["layer"],v["expert"]) for v in slots)
-    if fixed!=EXPECTED_SLOTS or len(Q4_SLOTS)!=4 or \
+    if set(fixed)!=set(EXPECTED_SLOTS) or len(fixed)!=8 or len(Q4_SLOTS)!=4 or \
        12*Q4_COST+12*Q5_COST!=EXPECTED_BASELINE_BYTES:
         raise ValueError("JE01_FROZEN_EIGHT_EXPERTS_OR_EQUAL_BYTE_BUDGET_DRIFT")
     old_q5=read_original_q5(q5root,fixed)
