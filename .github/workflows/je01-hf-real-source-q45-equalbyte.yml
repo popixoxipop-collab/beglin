@@ -1,0 +1,95 @@
+name: JE01 original Chat BF16 physical Q4/Q5 equalbyte 43MB
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_hf_real_source_q45_equalbyte.py'
+      - '.github/workflows/je01-hf-real-source-q45-equalbyte.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  generate-native-12q4-12q5-from-original-real-bf16:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      OPENBLAS_NUM_THREADS: '2'
+      OMP_NUM_THREADS: '2'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Source numeric and HF/array dependencies
+        run: python -m pip install --disable-pip-version-check numpy==2.2.6 requests==2.32.3
+      - name: Retrieve original Chat BF16-source Q5 tier files already immutable verified
+        uses: actions/download-artifact@v4
+        with:
+          name: je01-real-original-bf16-q3q5-48-native-role-tiers
+          run-id: 44176129643
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/old_real_original_tiers
+      - name: Generate original BF16 Q4 nibble and copy exact signed Q5 bitplanes 12 each
+        run: |
+          set -euo pipefail
+          python tools/je01_hf_real_source_q45_equalbyte.py \
+            --prior-q5-source "$RUNNER_TEMP/old_real_original_tiers" \
+            --output "$RUNNER_TEMP/je01_real_q45" \
+            | tee "$RUNNER_TEMP/je01_real_q45_console.txt"
+      - name: Independently reopen and audit actual physical file/regions and scientific scope
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,os,pathlib,math
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_real_q45"
+          manifest=root/"JE01_REAL_Q45_EQUALBYTE_RECEIPT.json"
+          d=json.loads(manifest.read_text())
+          receipt=d.pop("receipt_sha256")
+          calculated=hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert receipt==calculated
+          assert d["status"]=="ORIGINAL_REAL_BF16_Q4G64_Q5G64_12EACH_43MB_SHA_PASS"
+          assert d["scientific_scope"]=="POST_NIG_16TRAIN_PILOT_EXPLORATORY_CHALLENGER_NOT_CONFIRMATORY"
+          assert d["exact_original_AF_eight_expert_budget_bytes"]==43253760
+          assert d["actual_full_binary_bytes"]==43253760
+          assert d["q4_role_count"]==12 and d["q5_role_count"]==12
+          assert d["original_BF16_Chat_index_sha256"]=="d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf"
+          assert d["old_real_Q5_physical_source_receipt"]=="04ddca2f84367f41098357b5fae905e76c1207ef023d648a9f388aaddb3bb0ca"
+          assert d["Q4_MLX_requires_synthetic_bias_minus_eight_scale"] is True
+          assert d["q4_group_bias_persisted_in_blob"] is False
+          assert len(d["tensor_records"])==24 and len(d["physical_regions"])==48
+          assert sum(x["coefficients"] for x in d["tensor_records"])==69206016
+          assert len({(r["layer"],r["expert"],r["role"]) for r in d["tensor_records"]})==24
+          assert all(math.isfinite(x["reconstruction_relative_weight_MSE_to_BF16"]) for x in d["tensor_records"])
+          p=root/"JE01_SOURCE_REAL_Q4Q5_12_12_EXACT_BYTE.bin"
+          assert p.is_file() and not p.is_symlink() and p.stat().st_size==43253760
+          blob=p.read_bytes()
+          assert hashlib.sha256(blob).hexdigest()==d["actual_full_binary_sha256"]
+          spans=[]
+          for r in d["physical_regions"]:
+            a,b=r["offsets"];assert 0<=a<b<=43253760
+            assert hashlib.sha256(blob[a:b]).hexdigest()==r["sha256"]
+            spans.append((a,b))
+          spans.sort()
+          assert spans[0][0]==0 and spans[-1][1]==43253760
+          assert all(spans[k][1]==spans[k+1][0] for k in range(47))
+          tsv=root/"JE01_SOURCE_REAL_Q4Q5_24_ROLES.tsv"
+          assert len(tsv.read_text().splitlines())==24
+          assert hashlib.sha256(tsv.read_bytes()).hexdigest()==d["real_native_tsv_sha256"]
+          assert d["real_27layer_gold_NLL"]=="NOT_MEASURED" and d["heldout_OOD_labels_used"] is False
+          assert not d["production_modified"]
+          print("JE01_TRUE_ORIGINAL_BF16_REAL_12Q4_12Q5_43253760B_SHA_AUDIT_PASS",receipt)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real-original-chat-bf16-12q4-12q5-equalbyte
+          path: |
+            ${{ runner.temp }}/je01_real_q45/JE01_SOURCE_REAL_Q4Q5_12_12_EXACT_BYTE.bin
+            ${{ runner.temp }}/je01_real_q45/JE01_SOURCE_REAL_Q4Q5_24_ROLES.tsv
+            ${{ runner.temp }}/je01_real_q45/JE01_REAL_Q45_EQUALBYTE_RECEIPT.json
+            ${{ runner.temp }}/je01_real_q45_console.txt
+          retention-days: 14
+          if-no-files-found: error
