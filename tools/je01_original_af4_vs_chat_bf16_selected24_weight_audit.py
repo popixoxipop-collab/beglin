@@ -116,9 +116,11 @@ def affine4_original(af,layout,layer,expert,role):
     nib[1::2]=codes>>4
     scale=np.frombuffer(scale,dtype="<f4")
     bias=np.frombuffer(bias,dtype="<f4")
-    if not np.isfinite(scale).all() or not np.isfinite(bias).all() or \
-       (scale<=0).any():
-        raise ValueError("JE01_ORIGINAL_AF4_GROUP_SCALE_OR_BIAS_INVALID")
+    if not np.isfinite(scale).all() or not np.isfinite(bias).all():
+        raise ValueError("JE01_ORIGINAL_AF4_GROUP_SCALE_OR_BIAS_NONFINITE")
+    # The ORIGINAL affine AF4 stores SIGNED per-group scales. On the
+    # real L21/E61 gate, 22,465/45,056 group scales are negative. This
+    # is valid: native code computes (nibble*scale + bias) verbatim.
     # C original BEGLIN moe_decode_af: affine (nibble * scale + bias),
     # no LUT enabled in original online gate; group index is col/64.
     dequant=(nib.reshape(out*ng,64).astype(np.float32)
@@ -172,10 +174,14 @@ def stats(a,b,nibbles,scale,bias):
     # tensor, quantizing this BF16 with the EXISTING ORIGINAL affine
     # scale+bias should yield the stored nibble codes for most elements.
     groups=y.reshape(-1,64)
-    predicted=np.rint((groups-bias.astype(np.float64)[:,None])/
-                       scale.astype(np.float64)[:,None])
+    valid_scale=scale!=0
+    if not valid_scale.any():
+        raise ValueError("JE01_ORIGINAL_AF4_ALL_GROUP_SCALES_ZERO")
+    predicted=np.rint(
+        (groups[valid_scale]-bias[valid_scale].astype(np.float64)[:,None])/
+         scale[valid_scale].astype(np.float64)[:,None])
     np.clip(predicted,0,15,out=predicted)
-    agreement=float(np.mean(predicted.astype(np.uint8)==nibbles))
+    agreement=float(np.mean(predicted.astype(np.uint8)==nibbles[valid_scale]))
     xm=float(np.mean(x));ym=float(np.mean(y))
     cov=float(np.mean((x-xm)*(y-ym)))
     vx=float(np.mean((x-xm)**2));vy=float(np.mean((y-ym)**2))
@@ -190,6 +196,9 @@ def stats(a,b,nibbles,scale,bias):
      "max_absolute_weight_diff":float(np.max(np.abs(delta))),
      "mean_absolute_weight_diff":float(np.mean(np.abs(delta))),
      "original_AF4_nibble_code_agreement_using_BF16_at_AF4_scale_bias":agreement,
+     "original_AF4_nibble_code_agreement_tested_fraction":float(np.mean(valid_scale)),
+     "original_AF4_group_scale_negative_count":int(np.sum(scale<0)),
+     "original_AF4_group_scale_zero_count":int(np.sum(scale==0)),
      "fraction_original_AF4_exact_element_value_equal_BF16":float(np.mean(a==b)),
      "mean_BF16_abs_weight":float(np.mean(source_abs)),
      "original_affine_scale_min":float(np.min(scale)),
