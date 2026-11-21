@@ -87,7 +87,8 @@ def dp(rows):
             "best_nonbaseline_exactbudget":record(states[(0,True)]),
             "tested_final_states":len(states)}
 def run(src,out):
-    if out.exists() or out.is_symlink() or out.parent!=WORK or not src.is_dir():
+    if out.exists() or out.is_symlink() or out.parent!=src.parent or \
+       src.parent!=WORK or not src.is_dir():
         raise ValueError("JE01_NEW_D50_RESEARCH_PATH_ONLY")
     paths={k:src/name for k,name in {"router":"JE01_ROUTER256.json","af":"original_audit.py",
                                      "c":"gguf_transcode.c","h":"gguf_transcode.h"}.items()}
