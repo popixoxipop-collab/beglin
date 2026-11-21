@@ -83,16 +83,40 @@ CPP_HOOK=r'''
 C_INIT=r'''
     const char *je01_h2_path=getenv("JE01_ROUTED_LAST_H2_OUT");
     const int je01_h2_on=je01_h2_path && *je01_h2_path;
-    if(je01_h2_on && (B!=1 || R!=16 || pfB!=1 ||
-                     !mlx_gpu_je01_h2_open(je01_h2_path))) {
-        fprintf(stderr,"FATAL: JE01_ACTUAL_H2_TRACE_B1_R16_PFB1_OPEN_FAILED\n");exit(1);
+    int je01_h2_prompt_last[16]={0};
+    if(je01_h2_on) {
+        if(B!=1 || R!=16 || pfB!=1) {
+            fprintf(stderr,"FATAL: JE01_H2_REAL_B1_R16_PFB1_REQUIRED\n");exit(1);
+        }
+        // Real original input includes the full teacher-forced target text.
+        // True prompt LAST pos = first_gold_start-1, never rq_plen-1.
+        const char *gm=getenv("JE01_ORIGINAL_GOLD_META");
+        FILE *goldmeta=gm && *gm ? fopen(gm,"rb") : NULL;
+        if(!goldmeta) {fprintf(stderr,"FATAL: JE01_H2_ORIGINAL_GOLDMETA_REQUIRED\n");exit(1);}
+        static const char magic[]="JE01_ORIGINAL_FULL_GOLD_TARGETS_META_V1\n";
+        char marker[sizeof(magic)-1];
+        if(fread(marker,1,sizeof(marker),goldmeta)!=sizeof(marker) ||
+           memcmp(marker,magic,sizeof(marker))!=0)
+            {fprintf(stderr,"FATAL: JE01_H2_ORIGINAL_GOLDMETA_MAGIC_DRIFT\n");exit(1);}
+        for(int rr=0;rr<16;rr++) {
+            uint32_t hdr[2];int32_t ids[384];
+            if(fread(hdr,sizeof(uint32_t),2,goldmeta)!=2 ||
+               fread(ids,sizeof(int32_t),384,goldmeta)!=384 ||
+               hdr[0]<2 || hdr[0]>=384 || hdr[1]<1 || hdr[0]+hdr[1]>384)
+                {fprintf(stderr,"FATAL: JE01_H2_ORIGINAL_GOLDMETA_ROW_DRIFT\n");exit(1);}
+            je01_h2_prompt_last[rr]=(int)hdr[0]-1;
+        }
+        if(fgetc(goldmeta)!=EOF || fclose(goldmeta)!=0 ||
+           !mlx_gpu_je01_h2_open(je01_h2_path)) {
+            fprintf(stderr,"FATAL: JE01_H2_REAL_GOLDMETA_OR_OUTPUT_OPEN_FAILED\n");exit(1);
+        }
     }
 '''
 C_STEP=r'''
             if(je01_h2_on) {
                 if(A!=1 || slot_arr[0]!=0 || mcb_req[0]<0 || mcb_req[0]>=16 ||
                    !mlx_gpu_je01_h2_context(mcb_req[0],spos_arr[0],
-                                              rq_plen[mcb_req[0]]-1,pass)) {
+                                              je01_h2_prompt_last[mcb_req[0]],pass)) {
                     fprintf(stderr,"FATAL: JE01_ACTUAL_LAST_H2_CONTEXT_WRONG\n");exit(1);
                 }
             }
