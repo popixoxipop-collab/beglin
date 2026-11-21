@@ -33,7 +33,7 @@ BIAS_PTR_NEW="""// JE01 symmetric native q4g64 only; original AF4 real bias is u
             // bias_off==-1 is not a valid pointer and must NEVER be read.
             void *bias_ptr = bias_off==-1 ? nullptr : (void *)(blob + bias_off);"""
 BIAS_LOAD_OLD="""biases = mx::array(bias_ptr, {(int)E, (int)out, (int)ng}, mx::float32,
-                                 noop_deleter);"""
+                                noop_deleter);"""
 BIAS_LOAD_NEW="""if (bias_off==-1) {
                 biases = mx::multiply(scales, mx::array(-8.0f)); // Q4 symmetric
             } else {
