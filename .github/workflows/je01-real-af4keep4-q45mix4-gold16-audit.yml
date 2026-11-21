@@ -1,0 +1,125 @@
+name: JE01 real original27 AFFINE AF4 keep4 Q4Q5 mix4 656 gold independent receipts audit
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'docs/research/JE01_REAL_ORIGINAL_AF4_PRESERVE4_Q4Q5_MIX4_1266_PHYSICAL_20261122.json'
+      - 'docs/research/JE01_REAL_ORIGINAL27_AFFINEKEEP4_MIX4_GOLD16_OFF_20261122.json'
+      - 'docs/research/JE01_REAL_ORIGINAL27_AFFINEKEEP4_MIX4_GOLD16_ON_20261122.json'
+      - '.github/workflows/je01-real-af4keep4-q45mix4-gold16-audit.yml'
+permissions:
+  contents: read
+jobs:
+  original27-affine-preserved-43mb-656gold-source-and-pairing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Independent exact source receipt, native 60-region geometry, 16-case 656 gold paired NLL
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,math,pathlib
+          root=pathlib.Path("docs/research")
+          def verified(name,digest):
+              path=root/name
+              raw=json.loads(path.read_text())
+              claim=raw.pop("receipt_sha256",None)
+              expected=hashlib.sha256(json.dumps(raw,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+              assert claim==expected==digest,(name,"receipt")
+              return raw
+          source=verified("JE01_REAL_ORIGINAL_AF4_PRESERVE4_Q4Q5_MIX4_1266_PHYSICAL_20261122.json",
+              "4f3fa3ebc443bd9974b53f4ed2f804a9c31994e316fa59d099c9955e167f767b")
+          assert source["status"]=="REAL_ORIGINAL_AF4_12_ROLE_PASS_THROUGH_Q4_6_Q5_6_PRETRAINED_EXACT43MB_CREATED"
+          assert source["candidate_full_file_sha256"]=="24cb38797cddcf6e6a3363df54a24d5d4665a39a3be03739eadbf837830e291a"
+          assert source["original_full_AF4_source_SHA256"]=="9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4"
+          assert source["candidate_full_file_bytes"]==source["logical_eight_expert_original_AF4_budget_bytes"]==43253760
+          assert source["physical_segments"]==60
+          assert source["role_count"]==24 and len(source["per_role"])==24
+          assert source["AF4_preserved_role_count"]==12
+          assert source["Q4_symmetric_role_count"]==6
+          assert source["Q5_symmetric_role_count"]==6
+          assert source["source_AF4_pass_through_roles_physically_included_but_not_rebound_in_experiment"] is True
+          assert source["AF4_experts_keep_original_native_64way_router_unchanged"] is True
+          assert source["heldout_OOD_labels_accessed"] is False and source["production_modified"] is False
+          frozen={
+           "AF4":{(13,28),(20,17),(21,61),(24,26)},
+           "Q4":{(13,22),(24,60)},
+           "Q5":{(12,13),(14,63)}}
+          spans=[];identity=set();sizes={"AF4":0,"Q4":0,"Q5":0}
+          for row in source["per_role"]:
+              ident=(row["layer"],row["expert"])
+              assert ident in frozen[row["codec"]]
+              assert row["role"] in ("gate_proj","up_proj","down_proj")
+              assert (row["layer"],row["expert"],row["role"]) not in identity
+              identity.add((row["layer"],row["expert"],row["role"]))
+              bits=4 if row["codec"] in ("AF4","Q4") else 5
+              assert row["bits"]==bits
+              assert row["physical_bytes"]=={"AF4":1802240,"Q4":1622016,"Q5":1982464}[row["codec"]]
+              assert set(row["source_sha256"])==({"packed","scale","bias"} if row["codec"]=="AF4" else {"packed","scale"})
+              for name in ("packed","scale"):
+                  a,b=row[name]
+                  assert 0<=a<b<=43253760
+                  spans.append((a,b))
+              bias=row["bias"]
+              if row["codec"]=="AF4":
+                  assert bias[0]<bias[1] and bias[1]-bias[0]==180224
+                  spans.append(tuple(bias))
+              else:assert bias==[0,0]
+              sizes[row["codec"]]+=1
+          spans.sort()
+          assert sizes=={"AF4":12,"Q4":6,"Q5":6}
+          assert spans[0][0]==0 and spans[-1][1]==43253760
+          assert len(spans)==60 and all(spans[i][1]==spans[i+1][0] for i in range(59))
+          old=verified("JE01_REAL_ORIGINAL27_AFFINEKEEP4_MIX4_GOLD16_OFF_20261122.json",
+              "adb71aed0abed7de389d0b0bd0918014ed389fdfadd1ae5018f14cf35b31f551")
+          new=verified("JE01_REAL_ORIGINAL27_AFFINEKEEP4_MIX4_GOLD16_ON_20261122.json",
+              "54b360884f3658b418068779999285402330ff3ae7979e98fd5135648acc916f")
+          for mode,d in (("off",old),("mix4",new)):
+              assert d["schema"]=="beglin-je01-original27-real-AF4-preserved4-Q4Q5-overlaid4-fullgold16/1"
+              assert d["mode"]==mode and d["actual_model_complete_27layers"] is True
+              assert d["native_4_experts_rebound_only"] is True
+              assert d["original_4_important_Expert_E64_native_paths_preserved"] is True
+              assert d["gold_train_cases"]==16 and d["gold_tokens"]==656
+              assert d["actual_preserved_original_affine_AF4_roles"]==12
+              assert d["actual_q4_roles"]==6 and d["actual_q5_roles"]==6
+              assert d["actual_compiled_AF4_keep4_mix4_model_sha256"]=="856749a39a393a9a2aff011a5ac590a1a82382a3bea209a75839b10cd4eb9a15"
+              assert d["original_real_affine_AF4_Q4Q5_mix4_source_sha256"]==source["candidate_full_file_sha256"]
+              assert d["production_checkpoint_modified"] is False
+              assert d["true_source_heldout_ood_labels_accessed"] is False
+              assert d["full256_calibration_NLL"]=="NOT_MEASURED_THIS_RUN"
+              assert len(d["per_case"])==len(d["per_gold_target_actual_NLL"])==16
+              assert sum(r["tokens"] for r in d["per_case"])==656
+              for i,(case,gold) in enumerate(zip(d["per_case"],d["per_gold_target_actual_NLL"])):
+                  assert case["row"]==i and len(gold)==case["tokens"]
+                  assert all(math.isfinite(v) and v>=0 for v in gold)
+                  assert abs(math.fsum(gold)-case["measured_mode_NLL_sum"])<1e-8
+                  assert abs(case["measured_mode_NLL_sum"]-case["original_NLL_sum"]-
+                             case["candidate_minus_original_NLL_sum"])<1e-8
+              measured=math.fsum(x["measured_mode_NLL_sum"] for x in d["per_case"])/656
+              baseline=math.fsum(x["original_NLL_sum"] for x in d["per_case"])/656
+              assert abs(measured-d["actual_native_mean_gold_NLL"])<1e-10
+              assert abs(baseline-d["same_EOE_original_native_mean_gold_NLL"])<1e-10
+              assert abs((measured-baseline)-d["paired_mean_NLL_candidate_minus_original"])<1e-10
+              assert d["minimum_memory_free_percent"]>=35
+          assert old["status"]=="PASS_ORIGINAL27_AF4KEEP4_MIX4_BINARY_OFF_GOLD_PARITY"
+          assert new["status"]=="ACTUAL_REAL_ORIGINAL27_AF4KEEP4_Q45MIX4_PILOT16_MEASURED"
+          assert old["real_native_output_sha256"]=="b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c"
+          assert new["real_native_output_sha256"]=="c689432e4405f0ac0a2c2b0669cb628ffa4dd071ca066078ae6c9e20dc591e4e"
+          assert old["actual_native_mean_gold_NLL"]==2.291799702354307
+          assert old["paired_mean_NLL_candidate_minus_original"]==0.0
+          assert all(x["candidate_minus_original_NLL_sum"]==0 for x in old["per_case"])
+          assert abs(new["actual_native_mean_gold_NLL"]-2.295162638977357)<1e-10
+          assert abs(new["paired_mean_NLL_candidate_minus_original"]-0.0033629366230503166)<1e-10
+          assert all(abs(a["original_NLL_sum"]-b["original_NLL_sum"])<1e-12 for a,b in zip(old["per_case"],new["per_case"]))
+          worse=sum(x["candidate_minus_original_NLL_sum"]>0 for x in new["per_case"])
+          better=sum(x["candidate_minus_original_NLL_sum"]<0 for x in new["per_case"])
+          assert (worse,better)==(10,6)
+          print("JE01_TRUE_27L_AFFINE_AF4_KEEP4_Q45_MIX4_656_GOLD_INDEPENDENT_SHA_AND_PAIRED_NLL_PASS")
+          print("ORIGINAL_AF4_NLL",old["actual_native_mean_gold_NLL"])
+          print("AF4_KEEP4_Q4Q5_MIX4_NLL",new["actual_native_mean_gold_NLL"])
+          print("MIX4_DELTA_NLL",new["paired_mean_NLL_candidate_minus_original"])
+          print("NO_PRODUCTION_PROMOTION_POSTHOC_TRAIN16_ONLY")
+          PY
