@@ -162,7 +162,7 @@ def run(mode):
     print(json.dumps({"event":"JE01_ACTUAL_ORIGINAL27_BF16_Q45_TRAIN16_START",
                       "mode":mode,"cases":16,"gold_tokens":656,
                       "native_binary_sha256":CANDIDATE_SHA,
-                      "source_real_nig_sha256":CANDIDATE_FILE_SHA,
+                      "source_real_q45_sha256":CANDIDATE_FILE_SHA,
                       "original_AF_weight_sha256":AF_SHA,
                       "initial_memory_free_percent":low}),flush=True)
     with stdout.open("xb") as out,stderr.open("xb") as err:
@@ -189,7 +189,7 @@ def run(mode):
     marker="JE01_REAL_Q35_EIGHT_EXPERTS_FULL_MODEL_REGISTERED"
     required="RESULT: MoE GPU V5h online cbatch gate complete, B=1 R=16"
     if code!=0 or stop or "FATAL:" in error or required not in error or \
-       ((marker in error)!=(mode=="nig")):
+       ((marker in error)!=(mode=="q45")):
         raise RuntimeError("JE01_REAL_ORIGINAL27_Q45_NATIVE_FAILURE:"
                +mode+"/"+str(stop)+"/"+str(code)+"/stderr:"+error[-1500:])
     original=goldmeta.read_bytes()
