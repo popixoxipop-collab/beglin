@@ -71,7 +71,7 @@ def preflight(mode):
         raise ValueError("JE01_RESEARCH_D50_ROOT_INVALID")
     baseline=signed(BASE/"JE01_EOE_PILOT16_REAL_NLL_RESULT.json",BASELINE_RECEIPT)
     if baseline["status"]!="PASS_EOE_REAL_ORIGINAL_AF384_FULLGOLD_TRAIN16_NLL_PARITY" or \
-       baseline["full_gold_tokens"]!=656 or baseline["cases"]!=16 or \
+       baseline["full_gold_tokens"]!=656 or baseline["real_cases"]!=16 or \
        baseline["original_AF_source_sha256"]!=AF_SHA or \
        baseline["native_eoe_arm64_binary_sha256"]!=OLD_MODEL_SHA or \
        baseline["NIG_candidate_precision_comparison"]!="NOT_MEASURED":
