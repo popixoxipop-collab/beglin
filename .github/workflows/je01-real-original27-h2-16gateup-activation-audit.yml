@@ -1,0 +1,65 @@
+name: JE01 actual original27 16-train routed H2 activation-weighted gate up native error audit
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'docs/research/JE01_ACTUAL_ORIGINAL27_TRUE_H2_16GATEUP_ACTIVATION_WEIGHTED_GEMV_20261122.json'
+      - '.github/workflows/je01-real-original27-h2-16gateup-activation-audit.yml'
+permissions:
+  contents: read
+jobs:
+  true-native-original16-hidden-activation-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify original BF16 and actual h2 45 source receipts, gate/up errors, and scientific limits
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,math,pathlib
+          p=pathlib.Path('docs/research/JE01_ACTUAL_ORIGINAL27_TRUE_H2_16GATEUP_ACTIVATION_WEIGHTED_GEMV_20261122.json')
+          d=json.loads(p.read_text())
+          claim=d.pop("receipt_sha256")
+          calc=hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert claim==calc=="d55f4b506076a3a30f73c582ede270c38d41ac12b06190e959ac5a7383157a89"
+          assert d["status"]=="ACTUAL_ORIGINAL27_ROUTED_H2_45_OBSERVATIONS_GATEUP_16ROLE_GEMV_PROXY_MEASURED"
+          assert d["source_training_prompts"]==16 and d["source_real_routed_h2_observations"]==45
+          assert d["source_actual_h2_trace_sha256"]=="238642649f68d111df3b60f60083a47d3a6074ada881ccb36f813dd606f9a5b4"
+          assert d["actual_original_AF4_checkpoint_sha256"]=="9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4"
+          assert d["source_actual_original_BF16_4shard_full_SHA_reverified"] is True
+          assert d["source_training_gold_NLL_original_bitwise_same"] is True
+          assert d["independent_heldout_OOD_accessed"] is False and d["production_modified"] is False
+          assert len(d["per_role"])==16
+          pairs={};kinds=set();total=0
+          for r in d["per_role"]:
+              key=(r["layer"],r["expert"])
+              kinds.add(r["role"])
+              assert r["role"] in ("gate_proj","up_proj")
+              assert len(r["source_actual_h2_trace_sha256"])==64
+              assert 0<r["actual_routed_prompt_observations"]<16
+              assert math.isfinite(r["router_prob_weight_sum"]) and r["router_prob_weight_sum"]>0
+              for tier in ("AF4","Q4","Q5"):
+                  z=r["actual_activation_output_relative_MSE_"+tier+"_vs_BF16"]
+                  assert math.isfinite(z) and z>0
+              assert r["actual_activation_output_relative_MSE_Q5_vs_BF16"]<r["actual_activation_output_relative_MSE_AF4_vs_BF16"]<r["actual_activation_output_relative_MSE_Q4_vs_BF16"]
+              pairs.setdefault(key,[]).append(r)
+          assert len(pairs)==8 and all(len(v)==2 for v in pairs.values())
+          assert kinds=={"gate_proj","up_proj"}
+          assert sum(v[0]["actual_routed_prompt_observations"] for v in pairs.values())==45
+          x=d["summary"]
+          assert x["actual_original27_hidden_records"]==45
+          assert x["actual_real_FFN_gate_up_role_sensitivity_count"]==16
+          for tier in ("AF4","Q4","Q5"):
+              value=math.sqrt(sum(r["actual_activation_output_relative_MSE_"+tier+"_vs_BF16"] for r in d["per_role"])/16)
+              assert abs(value-x["per_role_normalized_output_MSE_sqrt_mean_"+tier])<1e-12
+          assert x["per_role_normalized_output_MSE_sqrt_mean_Q5"]<x["per_role_normalized_output_MSE_sqrt_mean_AF4"]<x["per_role_normalized_output_MSE_sqrt_mean_Q4"]
+          for item in ("real_down_proj_swiglu_activation","real_256_train_h2_records","true_model_loss_Fisher","true_model_loss_Hessian","loss_gradient","new_27layer_NLL"):
+              assert item in x["not_measured"]
+          assert "NOT_TRUE_FISHER" in d["analysis_scope"]
+          print("JE01_REAL16_NATIVE_ORIGINAL_45_H2_16_GATE_UP_ACTIVATION_GEMV_SHA_AUDIT_PASS",claim)
+          print("REAL_H2_FFN_REL_RMSE",[(k,x["per_role_normalized_output_MSE_sqrt_mean_"+k]) for k in ("AF4","Q4","Q5")])
+          print("HESSIAN_FISHER_NOT_MEASURED_TRUE256_PENDING")
+          PY
