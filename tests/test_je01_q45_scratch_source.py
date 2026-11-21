@@ -22,7 +22,7 @@ class TestJE01Q45Scratch(unittest.TestCase):
         self.assertEqual(a.count("Q4 symmetric"),1)
     def test_duplicate_fails(self):
         with self.assertRaisesRegex(ValueError,"EXPECTED_ONCE"):
-            m.patch(self.cpp+m.BIAS_PTR_OLD)
+            m.patch(self.cpp.replace(m.BIAS_PTR_OLD,m.BIAS_PTR_OLD+'\n'+m.BIAS_PTR_OLD))
     def test_missing_loader_refused(self):
         with self.assertRaises(ValueError):
             m.patch(self.cpp.replace(m.COUNT_OLD,""))
