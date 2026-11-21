@@ -76,7 +76,7 @@ def source_region_index(stage,root,kind,expected_stage,expected_file):
            pe-pb!=out*inn*bits//8 or se-sb!=out*(inn//64)*4:
             raise ValueError("JE01_NATIVE_SOURCE_TSV_LAYOUT_MISMATCH:"+str(key))
         regions[key]={"bits":bits,"packed":(pb,pe),"scale":(sb,se)}
-    if len(regions)!=24:return ValueError("JE01_ORIGINAL_PREEXISTING_SOURCE_24_ROLES_MISSING")
+    if len(regions)!=24:raise ValueError("JE01_ORIGINAL_PREEXISTING_SOURCE_24_ROLES_MISSING")
     return file,regions
 
 def original_AF_layout():
