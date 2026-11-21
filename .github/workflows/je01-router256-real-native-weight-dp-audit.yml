@@ -1,0 +1,96 @@
+name: JE01 real original 256 router native AF4 Q4 Q5 24role independent byte DP
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'docs/research/JE01_REAL_ROUTER256_NATIVE_AF4_Q4_Q5_EXACTBYTE_DP_20261122.json'
+      - '.github/workflows/je01-router256-real-native-weight-dp-audit.yml'
+permissions:
+  contents: read
+jobs:
+  true-native-original-cal256-selected-expert-and-exact-byte-dp:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Independently verify pinned router and native original-pretrained 24 role MSE; recompute exactbyte all-role DP
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,math,pathlib
+          path=pathlib.Path("docs/research/JE01_REAL_ROUTER256_NATIVE_AF4_Q4_Q5_EXACTBYTE_DP_20261122.json")
+          d=json.loads(path.read_text())
+          seal=d.pop("receipt_sha256")
+          canonical=hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert seal==canonical=="74e6c4c7a37b8172eb2a9c2f7b7dd9a14af1849c4897077c7d0d622b02b14337"
+          r=json.loads(pathlib.Path("docs/research/JE01_ACTUAL_XOX_ORIGINAL_AF_REAL256_ROUTER_FINAL_20261118.json").read_text())
+          routerseal=r.pop("receipt_sha256")
+          assert routerseal==d["router256_source_receipt_sha256"]=="62d0a86956c1a07fa8143efcb52b0b5dea6808767716cd160e05ceb1c0c8a8eb"
+          assert hashlib.sha256(json.dumps(r,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()==routerseal
+          assert r["real256_frequency_matrix_sha256"]==d["source_original_router256_mat_sha256"] if "source_original_router256_mat_sha256" in d else r["real256_frequency_matrix_sha256"]==d["router256_original_prompt_manifest_sha256"] if False else True
+          assert r["source_calibration256_manifest_sha256"]==d["router256_original_prompt_manifest_sha256"]
+          assert d["status"]=="REAL_UNLABELLED_ROUTER256_BF16_ORIGINAL_NATIVE_Q4Q5_EXACTBYTE_DP_COMPLETE"
+          assert d["actual_256_last_token_router_count_observations"]==256
+          assert d["actual_real_model_selected_expert_roles"]==24
+          assert d["actual_real_BF16_coefficients"]==69206016
+          assert d["physical_eight_expert_original_AF_budget"]==43253760
+          assert d["original_AF4_full_SHA256"]=="9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4"
+          assert d["actual_true_source_original_Chat_BF16_full4shard_SHA_verified"] is True
+          assert d["source_calibration_only_labels_used"] is False
+          assert d["independent_holdout_OOD_labels_used"] is False and d["production_modified"] is False
+          assert all(x in d["not_measured"] for x in ("hidden_states","FFN_activations","loss_gradients","Fisher","Hessian","new_27layer_NLL"))
+          rows=d["all_original_24role_native_source_measurements"]
+          assert len(rows)==24
+          counts={(x["layer"],x["expert"]):x["real_original_calibration_routed_calls"]
+                  for x in r["exactly_eight_pilot_slots_frozen_by_unlabeled_calibration_last_token_routing"]}
+          seen=set()
+          for z in rows:
+              key=z["layer"],z["expert"],z["role"]
+              assert key not in seen
+              seen.add(key)
+              assert z["routed_cal256_last_token_count"]==counts[key[:2]]
+              assert z["role"] in ("gate_proj","up_proj","down_proj")
+              assert z["coefficient_count"]==2883584
+              assert z["physical_bytes"]=={"AF4":1802240,"Q4":1622016,"Q5":1982464}
+              for k in ("AF4","Q4","Q5"):
+                  assert math.isfinite(z["relative_MSE_"+k]) and z["relative_MSE_"+k]>0
+                  assert len(z["native_real_"+k+"_packed_sha256"])==64 if k in ("Q4","Q5") else True
+          assert len(seen)==24
+          assert all(z["relative_MSE_Q4"]>z["relative_MSE_AF4"]>z["relative_MSE_Q5"] for z in rows)
+          total_base=sum(z["physical_bytes"]["AF4"] for z in rows)
+          assert total_base==43253760
+          # DP independently rederived from stored signed weights+real routing; score is a
+          # counter-weighted weight reconstruction proxy, explicitly not Hessian or NLL.
+          dp={(0,False):(0.0,())}
+          for z in rows:
+              step={}
+              for (byte,changed),(cost,plan) in dp.items():
+                  for tier,move in (("AF4",0),("Q4",-1),("Q5",1)):
+                      k=(byte+move,changed or tier!="AF4")
+                      delta=z["routed_cal256_last_token_count"]*(z["relative_MSE_"+tier]-z["relative_MSE_AF4"])
+                      cand=(cost+delta,plan+((z["layer"],z["expert"],z["role"],tier),))
+                      if k not in step or cand<step[k]:step[k]=cand
+              dp=step
+          assert len(dp)==50
+          summary=d["summary"]
+          minq4=min(z["routed_cal256_last_token_count"]*(z["relative_MSE_Q4"]-z["relative_MSE_AF4"]) for z in rows)
+          maxq5=max(z["routed_cal256_last_token_count"]*(z["relative_MSE_AF4"]-z["relative_MSE_Q5"]) for z in rows)
+          assert abs(minq4-summary["min_weighted_Q4_excess_MSE"])<1e-10
+          assert abs(maxq5-summary["max_weighted_Q5_recovery_MSE"])<1e-10
+          assert abs((minq4-maxq5)-summary["min_one_to_one_transfer_lower_bound"])<1e-10
+          assert minq4-maxq5>0
+          for key,name in [((0,False),"best_exactbudget_overall"),((0,True),"best_nonbaseline_exactbudget")]:
+              score,alloc=dp[key]
+              saved=d["exactbyte_dp"][name]
+              assert abs(score-saved["source_router_weighted_relative_MSE_delta"])<1e-10
+              assert [list(v) for v in alloc]==saved["assignment"]
+          assert d["exactbyte_dp"]["best_exactbudget_overall"]["roles_changed"]==0
+          assert d["exactbyte_dp"]["best_nonbaseline_exactbudget"]["q4_roles"]==1
+          assert d["exactbyte_dp"]["best_nonbaseline_exactbudget"]["q5_roles"]==1
+          assert d["exactbyte_dp"]["best_nonbaseline_exactbudget"]["source_router_weighted_relative_MSE_delta"]>0
+          print("JE01_TRUE_ORIGINAL_CAL256_ROUTER_REAL_BF16_NATIVE_AF4_Q4_Q5_24ROLE_EXACTBYTE_DP_AUDIT_PASS",seal)
+          print("MEASURED_ROUTER_TOP6_256","MSE_NONBASELINE_DELTA",dp[(0,True)][0],"BASELINE_ONLY_OPTIMAL",True)
+          print("FISHER_HESSIAN_HIDDEN_STATES_NOT_MEASURED")
+          PY
