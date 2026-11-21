@@ -36,7 +36,7 @@ jobs:
             echo JE01_NIG_SOURCE_NOT_FOUND;exit 2
           fi
           python tools/je01_eoe_real_nig24_role_tsv.py \
-            --source "$root" --output "$RUNNER_TEMP/JE01_NIG_24_REAL.tsv" \
+            --source "$root" --tsv "$RUNNER_TEMP/JE01_NIG_24_REAL.tsv" \
             | tee "$RUNNER_TEMP/JE01_NIG_SOURCE_VERIFIED.json"
           echo "dab4f50b6233688d789facf37a7fc94e22b0f4aa33298c36e5f69d89063db8cd  $root/NIG_proxy_upper_6roles.bin" | sha256sum --check
       - uses: actions/upload-artifact@v4
