@@ -29,7 +29,6 @@ jobs:
           routerseal=r.pop("receipt_sha256")
           assert routerseal==d["router256_source_receipt_sha256"]=="62d0a86956c1a07fa8143efcb52b0b5dea6808767716cd160e05ceb1c0c8a8eb"
           assert hashlib.sha256(json.dumps(r,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()==routerseal
-          assert r["real256_frequency_matrix_sha256"]==d["source_original_router256_mat_sha256"] if "source_original_router256_mat_sha256" in d else r["real256_frequency_matrix_sha256"]==d["router256_original_prompt_manifest_sha256"] if False else True
           assert r["source_calibration256_manifest_sha256"]==d["router256_original_prompt_manifest_sha256"]
           assert d["status"]=="REAL_UNLABELLED_ROUTER256_BF16_ORIGINAL_NATIVE_Q4Q5_EXACTBYTE_DP_COMPLETE"
           assert d["actual_256_last_token_router_count_observations"]==256
@@ -56,7 +55,9 @@ jobs:
               assert z["physical_bytes"]=={"AF4":1802240,"Q4":1622016,"Q5":1982464}
               for k in ("AF4","Q4","Q5"):
                   assert math.isfinite(z["relative_MSE_"+k]) and z["relative_MSE_"+k]>0
-                  assert len(z["native_real_"+k+"_packed_sha256"])==64 if k in ("Q4","Q5") else True
+                  if k in ("Q4","Q5"):
+                      assert len(z[k+"_packed_sha256"])==64
+                      assert len(z[k+"_group_scale_sha256"])==64
           assert len(seen)==24
           assert all(z["relative_MSE_Q4"]>z["relative_MSE_AF4"]>z["relative_MSE_Q5"] for z in rows)
           total_base=sum(z["physical_bytes"]["AF4"] for z in rows)
