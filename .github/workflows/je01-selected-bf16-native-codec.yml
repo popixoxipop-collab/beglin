@@ -1,0 +1,31 @@
+name: JE01 pinned native-C 2-6-8 artifact codec integration
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_selected_bf16_native_artifacts.py'
+      - 'tools/je01_native_exact_byte_presolve.py'
+      - 'tests/je01_selected_bf16_native_artifacts_integration.py'
+      - 'gguf_transcode.c'
+      - '.github/workflows/je01-selected-bf16-native-codec.yml'
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  offline-native-codec-fixture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned test numeric runtime
+        run: python -m pip install --disable-pip-version-check numpy==2.2.6
+      - name: Original C codec + independent synthetic BF16 decode tests
+        run: python tests/je01_selected_bf16_native_artifacts_integration.py
+      - name: JE01 exact-byte source contract
+        run: python -m unittest discover -s tests -p 'test_je01_native_exact_byte_presolve.py' -v

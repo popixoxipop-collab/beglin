@@ -1,0 +1,5185 @@
+{
+  "actual_bayesian_expert_NLL_effect": "NOT_MEASURED",
+  "actual_native_original_model_Af_weights": true,
+  "all_event_sums_valid": true,
+  "all_native_top6_boundaries_nonnegative": true,
+  "calibration16_manifest_sha256": "44961869cecdacdd03ac6f38c45fada44780a083e0331b18b85d53c1fe00dcc2",
+  "events": [
+    {
+      "min_top6_margin": 0.0003490075469017029,
+      "native_final_prefill_position": 14,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            34,
+            3,
+            39,
+            45,
+            2,
+            18
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.0007589384913444519
+        },
+        {
+          "expert_ids": [
+            45,
+            41,
+            25,
+            2,
+            36,
+            54
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.00256212055683136
+        },
+        {
+          "expert_ids": [
+            24,
+            20,
+            37,
+            43,
+            50,
+            32
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.021038439124822617
+        },
+        {
+          "expert_ids": [
+            15,
+            25,
+            55,
+            6,
+            28,
+            19
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.019695159047842026
+        },
+        {
+          "expert_ids": [
+            33,
+            49,
+            46,
+            2,
+            61,
+            30
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.0017109289765357971
+        },
+        {
+          "expert_ids": [
+            47,
+            38,
+            24,
+            33,
+            14,
+            29
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.0038345586508512497
+        },
+        {
+          "expert_ids": [
+            47,
+            23,
+            44,
+            7,
+            49,
+            10
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.0013373270630836487
+        },
+        {
+          "expert_ids": [
+            38,
+            9,
+            4,
+            14,
+            2,
+            15
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.008306324481964111
+        },
+        {
+          "expert_ids": [
+            51,
+            50,
+            7,
+            17,
+            60,
+            23
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.02314409241080284
+        },
+        {
+          "expert_ids": [
+            18,
+            58,
+            49,
+            34,
+            35,
+            27
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.0015224255621433258
+        },
+        {
+          "expert_ids": [
+            16,
+            41,
+            1,
+            52,
+            13,
+            33
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.001739751547574997
+        },
+        {
+          "expert_ids": [
+            30,
+            48,
+            44,
+            52,
+            18,
+            16
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.0005548242479562759
+        },
+        {
+          "expert_ids": [
+            55,
+            35,
+            6,
+            57,
+            11,
+            62
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.0006645135581493378
+        },
+        {
+          "expert_ids": [
+            55,
+            38,
+            8,
+            31,
+            42,
+            37
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.0011808015406131744
+        },
+        {
+          "expert_ids": [
+            43,
+            38,
+            37,
+            27,
+            42,
+            25
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.0016496703028678894
+        },
+        {
+          "expert_ids": [
+            28,
+            26,
+            33,
+            19,
+            25,
+            56
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.0048117078840732574
+        },
+        {
+          "expert_ids": [
+            61,
+            27,
+            7,
+            24,
+            47,
+            58
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.0036064013838768005
+        },
+        {
+          "expert_ids": [
+            37,
+            20,
+            18,
+            35,
+            14,
+            5
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.0036688894033432007
+        },
+        {
+          "expert_ids": [
+            38,
+            24,
+            39,
+            44,
+            8,
+            57
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.0026316028088331223
+        },
+        {
+          "expert_ids": [
+            38,
+            23,
+            53,
+            13,
+            55,
+            31
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.0003490075469017029
+        },
+        {
+          "expert_ids": [
+            56,
+            0,
+            13,
+            29,
+            6,
+            22
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.011818306520581245
+        },
+        {
+          "expert_ids": [
+            61,
+            45,
+            34,
+            16,
+            12,
+            49
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.005476102232933044
+        },
+        {
+          "expert_ids": [
+            9,
+            10,
+            18,
+            21,
+            14,
+            27
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.006523635238409042
+        },
+        {
+          "expert_ids": [
+            26,
+            23,
+            63,
+            4,
+            9,
+            62
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.0005728006362915039
+        },
+        {
+          "expert_ids": [
+            29,
+            20,
+            11,
+            17,
+            40,
+            31
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.003357101231813431
+        },
+        {
+          "expert_ids": [
+            11,
+            29,
+            0,
+            16,
+            58,
+            2
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.0014400668442249298
+        }
+      ],
+      "request": 0
+    },
+    {
+      "min_top6_margin": 0.00032605044543743134,
+      "native_final_prefill_position": 15,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            15,
+            30,
+            7,
+            59,
+            31,
+            61
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.0005314983427524567
+        },
+        {
+          "expert_ids": [
+            1,
+            27,
+            29,
+            45,
+            38,
+            20
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.00032605044543743134
+        },
+        {
+          "expert_ids": [
+            29,
+            43,
+            32,
+            24,
+            21,
+            50
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.0014848504215478897
+        },
+        {
+          "expert_ids": [
+            4,
+            32,
+            48,
+            62,
+            15,
+            0
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.00590432807803154
+        },
+        {
+          "expert_ids": [
+            13,
+            59,
+            61,
+            34,
+            16,
+            40
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.0005541816353797913
+        },
+        {
+          "expert_ids": [
+            3,
+            14,
+            38,
+            21,
+            29,
+            28
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.024852635338902473
+        },
+        {
+          "expert_ids": [
+            23,
+            53,
+            27,
+            39,
+            49,
+            7
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.007257681339979172
+        },
+        {
+          "expert_ids": [
+            38,
+            1,
+            15,
+            22,
+            7,
+            24
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.014218803495168686
+        },
+        {
+          "expert_ids": [
+            56,
+            63,
+            60,
+            11,
+            30,
+            17
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.01774047687649727
+        },
+        {
+          "expert_ids": [
+            58,
+            49,
+            15,
+            7,
+            14,
+            21
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.0009874776005744934
+        },
+        {
+          "expert_ids": [
+            27,
+            42,
+            30,
+            33,
+            13,
+            14
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.006386127322912216
+        },
+        {
+          "expert_ids": [
+            21,
+            49,
+            5,
+            40,
+            6,
+            52
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.02549353614449501
+        },
+        {
+          "expert_ids": [
+            63,
+            36,
+            60,
+            61,
+            39,
+            50
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.0010792054235935211
+        },
+        {
+          "expert_ids": [
+            20,
+            16,
+            6,
+            41,
+            37,
+            42
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.0014918707311153412
+        },
+        {
+          "expert_ids": [
+            36,
+            27,
+            12,
+            25,
+            59,
+            43
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.013726092875003815
+        },
+        {
+          "expert_ids": [
+            36,
+            25,
+            7,
+            57,
+            56,
+            45
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.017138618975877762
+        },
+        {
+          "expert_ids": [
+            61,
+            35,
+            14,
+            46,
+            58,
+            48
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.0020082779228687286
+        },
+        {
+          "expert_ids": [
+            36,
+            14,
+            45,
+            11,
+            20,
+            3
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.002128906548023224
+        },
+        {
+          "expert_ids": [
+            52,
+            8,
+            57,
+            38,
+            49,
+            44
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.005665251985192299
+        },
+        {
+          "expert_ids": [
+            52,
+            24,
+            23,
+            54,
+            31,
+            3
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.0022963397204875946
+        },
+        {
+          "expert_ids": [
+            0,
+            41,
+            43,
+            29,
+            26,
+            38
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.013303596526384354
+        },
+        {
+          "expert_ids": [
+            47,
+            10,
+            36,
+            59,
+            12,
+            56
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.0035851411521434784
+        },
+        {
+          "expert_ids": [
+            27,
+            48,
+            18,
+            21,
+            1,
+            28
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.010022535920143127
+        },
+        {
+          "expert_ids": [
+            9,
+            21,
+            49,
+            4,
+            35,
+            29
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.002721799537539482
+        },
+        {
+          "expert_ids": [
+            43,
+            55,
+            17,
+            20,
+            47,
+            50
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.00041147321462631226
+        },
+        {
+          "expert_ids": [
+            0,
+            37,
+            15,
+            14,
+            2,
+            16
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.0012666471302509308
+        }
+      ],
+      "request": 1
+    },
+    {
+      "min_top6_margin": 4.8588961362838745e-05,
+      "native_final_prefill_position": 17,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            47,
+            58,
+            34,
+            11,
+            13,
+            40
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 4.8588961362838745e-05
+        },
+        {
+          "expert_ids": [
+            49,
+            58,
+            28,
+            29,
+            37,
+            21
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.0016446299850940704
+        },
+        {
+          "expert_ids": [
+            49,
+            62,
+            27,
+            38,
+            34,
+            17
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.00020760484039783478
+        },
+        {
+          "expert_ids": [
+            35,
+            45,
+            14,
+            46,
+            10,
+            40
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.0027203988283872604
+        },
+        {
+          "expert_ids": [
+            5,
+            35,
+            55,
+            25,
+            40,
+            59
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.002884024754166603
+        },
+        {
+          "expert_ids": [
+            60,
+            6,
+            28,
+            37,
+            59,
+            51
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.0014382023364305496
+        },
+        {
+          "expert_ids": [
+            62,
+            5,
+            60,
+            22,
+            14,
+            24
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.003229806199669838
+        },
+        {
+          "expert_ids": [
+            47,
+            25,
+            22,
+            24,
+            32,
+            7
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.003696480765938759
+        },
+        {
+          "expert_ids": [
+            17,
+            59,
+            0,
+            28,
+            34,
+            56
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.011693453416228294
+        },
+        {
+          "expert_ids": [
+            38,
+            19,
+            22,
+            46,
+            57,
+            21
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.002483127638697624
+        },
+        {
+          "expert_ids": [
+            33,
+            42,
+            31,
+            14,
+            23,
+            44
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.0020626429468393326
+        },
+        {
+          "expert_ids": [
+            37,
+            23,
+            40,
+            19,
+            27,
+            6
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.0010075420141220093
+        },
+        {
+          "expert_ids": [
+            13,
+            61,
+            18,
+            22,
+            50,
+            39
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.002604752779006958
+        },
+        {
+          "expert_ids": [
+            5,
+            36,
+            49,
+            16,
+            6,
+            26
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.005035834386944771
+        },
+        {
+          "expert_ids": [
+            32,
+            26,
+            56,
+            27,
+            58,
+            10
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.003699425607919693
+        },
+        {
+          "expert_ids": [
+            61,
+            55,
+            56,
+            8,
+            21,
+            5
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.0021100472658872604
+        },
+        {
+          "expert_ids": [
+            7,
+            48,
+            17,
+            35,
+            3,
+            13
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.00681394524872303
+        },
+        {
+          "expert_ids": [
+            8,
+            60,
+            6,
+            61,
+            52,
+            22
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.0001901686191558838
+        },
+        {
+          "expert_ids": [
+            44,
+            42,
+            3,
+            57,
+            62,
+            31
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.0040102507919073105
+        },
+        {
+          "expert_ids": [
+            44,
+            30,
+            4,
+            21,
+            31,
+            6
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.009309234097599983
+        },
+        {
+          "expert_ids": [
+            52,
+            22,
+            51,
+            38,
+            25,
+            43
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.0018435623496770859
+        },
+        {
+          "expert_ids": [
+            33,
+            8,
+            12,
+            4,
+            61,
+            2
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.00601297989487648
+        },
+        {
+          "expert_ids": [
+            54,
+            10,
+            18,
+            35,
+            21,
+            46
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.0068777985870838165
+        },
+        {
+          "expert_ids": [
+            25,
+            52,
+            45,
+            24,
+            33,
+            23
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.0016291942447423935
+        },
+        {
+          "expert_ids": [
+            51,
+            17,
+            54,
+            62,
+            19,
+            25
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.033456725999712944
+        },
+        {
+          "expert_ids": [
+            56,
+            58,
+            8,
+            62,
+            35,
+            20
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.00230388343334198
+        }
+      ],
+      "request": 2
+    },
+    {
+      "min_top6_margin": 0.0004370361566543579,
+      "native_final_prefill_position": 19,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            1,
+            20,
+            46,
+            62,
+            43,
+            31
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.0009298454970121384
+        },
+        {
+          "expert_ids": [
+            20,
+            3,
+            63,
+            27,
+            35,
+            60
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.007139377295970917
+        },
+        {
+          "expert_ids": [
+            56,
+            38,
+            31,
+            49,
+            54,
+            14
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.0013205092400312424
+        },
+        {
+          "expert_ids": [
+            2,
+            49,
+            51,
+            4,
+            33,
+            37
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.0009738318622112274
+        },
+        {
+          "expert_ids": [
+            54,
+            16,
+            8,
+            35,
+            44,
+            42
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.011515596881508827
+        },
+        {
+          "expert_ids": [
+            32,
+            27,
+            48,
+            21,
+            13,
+            41
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.01092415302991867
+        },
+        {
+          "expert_ids": [
+            39,
+            16,
+            47,
+            18,
+            23,
+            46
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.0004992131143808365
+        },
+        {
+          "expert_ids": [
+            40,
+            13,
+            54,
+            11,
+            39,
+            30
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.009424841031432152
+        },
+        {
+          "expert_ids": [
+            0,
+            4,
+            30,
+            16,
+            13,
+            50
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.004994293674826622
+        },
+        {
+          "expert_ids": [
+            59,
+            14,
+            33,
+            42,
+            47,
+            19
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.001244913786649704
+        },
+        {
+          "expert_ids": [
+            60,
+            34,
+            49,
+            40,
+            59,
+            61
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.005106080323457718
+        },
+        {
+          "expert_ids": [
+            16,
+            62,
+            12,
+            61,
+            56,
+            57
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.006537590175867081
+        },
+        {
+          "expert_ids": [
+            48,
+            63,
+            58,
+            54,
+            10,
+            15
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.0009888336062431335
+        },
+        {
+          "expert_ids": [
+            51,
+            47,
+            19,
+            7,
+            46,
+            63
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.0043516606092453
+        },
+        {
+          "expert_ids": [
+            24,
+            40,
+            47,
+            55,
+            61,
+            52
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.0020334869623184204
+        },
+        {
+          "expert_ids": [
+            61,
+            63,
+            33,
+            18,
+            40,
+            60
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.0004569347947835922
+        },
+        {
+          "expert_ids": [
+            10,
+            45,
+            0,
+            28,
+            15,
+            9
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.002562231384217739
+        },
+        {
+          "expert_ids": [
+            63,
+            23,
+            49,
+            56,
+            50,
+            2
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.01258082129061222
+        },
+        {
+          "expert_ids": [
+            23,
+            6,
+            22,
+            12,
+            9,
+            2
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.0008256835862994194
+        },
+        {
+          "expert_ids": [
+            55,
+            1,
+            7,
+            29,
+            18,
+            36
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.0028657428920269012
+        },
+        {
+          "expert_ids": [
+            55,
+            30,
+            56,
+            15,
+            10,
+            58
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.0054894909262657166
+        },
+        {
+          "expert_ids": [
+            14,
+            58,
+            6,
+            33,
+            5,
+            42
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.0004370361566543579
+        },
+        {
+          "expert_ids": [
+            5,
+            3,
+            46,
+            33,
+            47,
+            45
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.0022973157465457916
+        },
+        {
+          "expert_ids": [
+            47,
+            1,
+            29,
+            25,
+            60,
+            45
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.0017114337533712387
+        },
+        {
+          "expert_ids": [
+            60,
+            29,
+            45,
+            54,
+            3,
+            6
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.0087558813393116
+        },
+        {
+          "expert_ids": [
+            40,
+            52,
+            32,
+            43,
+            27,
+            17
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.0019403137266635895
+        }
+      ],
+      "request": 3
+    },
+    {
+      "min_top6_margin": 3.252364695072174e-05,
+      "native_final_prefill_position": 21,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            52,
+            38,
+            53,
+            35,
+            29,
+            24
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.0009284447878599167
+        },
+        {
+          "expert_ids": [
+            28,
+            3,
+            57,
+            24,
+            34,
+            18
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.0010486077517271042
+        },
+        {
+          "expert_ids": [
+            47,
+            4,
+            56,
+            13,
+            19,
+            52
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.002801310271024704
+        },
+        {
+          "expert_ids": [
+            9,
+            44,
+            41,
+            8,
+            53,
+            23
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.0011568926274776459
+        },
+        {
+          "expert_ids": [
+            3,
+            10,
+            1,
+            45,
+            60,
+            51
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.00022649019956588745
+        },
+        {
+          "expert_ids": [
+            58,
+            0,
+            24,
+            43,
+            52,
+            10
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.004964543506503105
+        },
+        {
+          "expert_ids": [
+            20,
+            37,
+            51,
+            4,
+            48,
+            45
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.0052241794764995575
+        },
+        {
+          "expert_ids": [
+            46,
+            29,
+            19,
+            18,
+            21,
+            35
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.004160400480031967
+        },
+        {
+          "expert_ids": [
+            54,
+            29,
+            42,
+            46,
+            20,
+            52
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.0006029009819030762
+        },
+        {
+          "expert_ids": [
+            48,
+            33,
+            36,
+            56,
+            40,
+            62
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.004193119704723358
+        },
+        {
+          "expert_ids": [
+            12,
+            26,
+            45,
+            24,
+            6,
+            36
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.0033111609518527985
+        },
+        {
+          "expert_ids": [
+            54,
+            36,
+            60,
+            26,
+            55,
+            17
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.00023280829191207886
+        },
+        {
+          "expert_ids": [
+            4,
+            34,
+            9,
+            20,
+            51,
+            28
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.0005625393241643906
+        },
+        {
+          "expert_ids": [
+            34,
+            12,
+            60,
+            44,
+            1,
+            36
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.005474653095006943
+        },
+        {
+          "expert_ids": [
+            13,
+            41,
+            45,
+            54,
+            62,
+            60
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.0014935564249753952
+        },
+        {
+          "expert_ids": [
+            13,
+            12,
+            52,
+            9,
+            29,
+            39
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.0004312712699174881
+        },
+        {
+          "expert_ids": [
+            33,
+            8,
+            14,
+            12,
+            44,
+            4
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.02232380025088787
+        },
+        {
+          "expert_ids": [
+            28,
+            60,
+            1,
+            45,
+            20,
+            29
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.0026555489748716354
+        },
+        {
+          "expert_ids": [
+            43,
+            15,
+            51,
+            28,
+            0,
+            52
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.001495329663157463
+        },
+        {
+          "expert_ids": [
+            12,
+            34,
+            20,
+            63,
+            28,
+            31
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.0018472224473953247
+        },
+        {
+          "expert_ids": [
+            53,
+            48,
+            40,
+            16,
+            15,
+            24
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 3.252364695072174e-05
+        },
+        {
+          "expert_ids": [
+            27,
+            63,
+            53,
+            36,
+            59,
+            38
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.00031799450516700745
+        },
+        {
+          "expert_ids": [
+            1,
+            48,
+            29,
+            44,
+            8,
+            21
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.002269960939884186
+        },
+        {
+          "expert_ids": [
+            19,
+            31,
+            28,
+            54,
+            35,
+            49
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.0005648341029882431
+        },
+        {
+          "expert_ids": [
+            34,
+            13,
+            26,
+            36,
+            53,
+            61
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.0004133228212594986
+        },
+        {
+          "expert_ids": [
+            0,
+            45,
+            3,
+            42,
+            39,
+            15
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.0007284991443157196
+        }
+      ],
+      "request": 4
+    },
+    {
+      "min_top6_margin": 2.2351741790771484e-05,
+      "native_final_prefill_position": 21,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            34,
+            3,
+            47,
+            9,
+            13,
+            40
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.000822313129901886
+        },
+        {
+          "expert_ids": [
+            52,
+            21,
+            45,
+            22,
+            17,
+            58
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 2.2351741790771484e-05
+        },
+        {
+          "expert_ids": [
+            33,
+            50,
+            27,
+            17,
+            38,
+            62
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.0062746889889240265
+        },
+        {
+          "expert_ids": [
+            29,
+            4,
+            45,
+            40,
+            47,
+            10
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.0013206321746110916
+        },
+        {
+          "expert_ids": [
+            1,
+            25,
+            36,
+            29,
+            40,
+            59
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.0070737991482019424
+        },
+        {
+          "expert_ids": [
+            6,
+            37,
+            8,
+            51,
+            36,
+            28
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.0005741268396377563
+        },
+        {
+          "expert_ids": [
+            2,
+            22,
+            40,
+            23,
+            61,
+            14
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.00029028207063674927
+        },
+        {
+          "expert_ids": [
+            33,
+            24,
+            31,
+            22,
+            32,
+            7
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 9.146705269813538e-05
+        },
+        {
+          "expert_ids": [
+            28,
+            30,
+            37,
+            17,
+            47,
+            56
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.02120089903473854
+        },
+        {
+          "expert_ids": [
+            7,
+            54,
+            57,
+            31,
+            38,
+            21
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.001058485358953476
+        },
+        {
+          "expert_ids": [
+            51,
+            25,
+            14,
+            31,
+            23,
+            44
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.0018303990364074707
+        },
+        {
+          "expert_ids": [
+            6,
+            13,
+            27,
+            37,
+            49,
+            23
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.003539683297276497
+        },
+        {
+          "expert_ids": [
+            26,
+            28,
+            46,
+            5,
+            39,
+            22
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.0005124341696500778
+        },
+        {
+          "expert_ids": [
+            13,
+            56,
+            36,
+            49,
+            26,
+            6
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.005635067820549011
+        },
+        {
+          "expert_ids": [
+            26,
+            46,
+            38,
+            56,
+            58,
+            10
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.0076589323580265045
+        },
+        {
+          "expert_ids": [
+            1,
+            29,
+            52,
+            14,
+            8,
+            21
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.013434326276183128
+        },
+        {
+          "expert_ids": [
+            34,
+            60,
+            12,
+            13,
+            35,
+            3
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.03265394829213619
+        },
+        {
+          "expert_ids": [
+            42,
+            28,
+            23,
+            3,
+            52,
+            22
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.0009160991758108139
+        },
+        {
+          "expert_ids": [
+            62,
+            19,
+            25,
+            7,
+            3,
+            31
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.005649499595165253
+        },
+        {
+          "expert_ids": [
+            2,
+            32,
+            10,
+            8,
+            31,
+            6
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.0013364199548959732
+        },
+        {
+          "expert_ids": [
+            19,
+            7,
+            16,
+            61,
+            46,
+            43
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.0006618350744247437
+        },
+        {
+          "expert_ids": [
+            48,
+            57,
+            10,
+            25,
+            2,
+            4
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.0025057923048734665
+        },
+        {
+          "expert_ids": [
+            54,
+            20,
+            12,
+            35,
+            56,
+            21
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.007925819605588913
+        },
+        {
+          "expert_ids": [
+            59,
+            6,
+            39,
+            25,
+            33,
+            56
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.0006561595946550369
+        },
+        {
+          "expert_ids": [
+            58,
+            41,
+            35,
+            51,
+            62,
+            25
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.005359087139368057
+        },
+        {
+          "expert_ids": [
+            51,
+            19,
+            50,
+            28,
+            35,
+            20
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.011678989976644516
+        }
+      ],
+      "request": 5
+    },
+    {
+      "min_top6_margin": 2.5445595383644104e-05,
+      "native_final_prefill_position": 21,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            11,
+            55,
+            45,
+            13,
+            25,
+            4
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.0008919127285480499
+        },
+        {
+          "expert_ids": [
+            46,
+            62,
+            19,
+            8,
+            0,
+            47
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.009968001395463943
+        },
+        {
+          "expert_ids": [
+            60,
+            46,
+            5,
+            45,
+            1,
+            55
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.005800724029541016
+        },
+        {
+          "expert_ids": [
+            3,
+            18,
+            39,
+            59,
+            52,
+            22
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.006654348224401474
+        },
+        {
+          "expert_ids": [
+            15,
+            43,
+            12,
+            27,
+            39,
+            56
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.021705467253923416
+        },
+        {
+          "expert_ids": [
+            18,
+            50,
+            56,
+            16,
+            37,
+            12
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.0004864223301410675
+        },
+        {
+          "expert_ids": [
+            19,
+            41,
+            42,
+            8,
+            38,
+            26
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.019339751452207565
+        },
+        {
+          "expert_ids": [
+            55,
+            3,
+            6,
+            45,
+            10,
+            20
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.020379256457090378
+        },
+        {
+          "expert_ids": [
+            45,
+            15,
+            35,
+            1,
+            48,
+            58
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.013912957161664963
+        },
+        {
+          "expert_ids": [
+            28,
+            29,
+            11,
+            55,
+            53,
+            60
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.002526175230741501
+        },
+        {
+          "expert_ids": [
+            28,
+            0,
+            4,
+            47,
+            8,
+            35
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.007816867902874947
+        },
+        {
+          "expert_ids": [
+            42,
+            43,
+            38,
+            29,
+            48,
+            7
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.002169683575630188
+        },
+        {
+          "expert_ids": [
+            31,
+            44,
+            29,
+            21,
+            33,
+            1
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.009682953357696533
+        },
+        {
+          "expert_ids": [
+            63,
+            9,
+            33,
+            4,
+            28,
+            15
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.00594840943813324
+        },
+        {
+          "expert_ids": [
+            30,
+            61,
+            6,
+            16,
+            0,
+            38
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.004136903211474419
+        },
+        {
+          "expert_ids": [
+            10,
+            24,
+            41,
+            38,
+            40,
+            17
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.009980149567127228
+        },
+        {
+          "expert_ids": [
+            15,
+            52,
+            40,
+            57,
+            55,
+            25
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.012217063456773758
+        },
+        {
+          "expert_ids": [
+            38,
+            30,
+            50,
+            57,
+            46,
+            53
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.014996590092778206
+        },
+        {
+          "expert_ids": [
+            26,
+            30,
+            61,
+            53,
+            47,
+            14
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.0016639772802591324
+        },
+        {
+          "expert_ids": [
+            42,
+            44,
+            50,
+            22,
+            40,
+            25
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.002246260643005371
+        },
+        {
+          "expert_ids": [
+            59,
+            42,
+            30,
+            55,
+            51,
+            48
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.009029068052768707
+        },
+        {
+          "expert_ids": [
+            9,
+            62,
+            23,
+            55,
+            60,
+            21
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.00962323322892189
+        },
+        {
+          "expert_ids": [
+            46,
+            40,
+            57,
+            23,
+            38,
+            6
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.000933358445763588
+        },
+        {
+          "expert_ids": [
+            6,
+            36,
+            61,
+            37,
+            27,
+            22
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.0019730031490325928
+        },
+        {
+          "expert_ids": [
+            44,
+            42,
+            10,
+            45,
+            12,
+            1
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.009978003799915314
+        },
+        {
+          "expert_ids": [
+            30,
+            54,
+            32,
+            24,
+            52,
+            56
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 2.5445595383644104e-05
+        }
+      ],
+      "request": 6
+    },
+    {
+      "min_top6_margin": 9.069591760635376e-05,
+      "native_final_prefill_position": 22,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            33,
+            46,
+            19,
+            61,
+            7,
+            30
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.006640981882810593
+        },
+        {
+          "expert_ids": [
+            13,
+            14,
+            36,
+            20,
+            31,
+            1
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 9.069591760635376e-05
+        },
+        {
+          "expert_ids": [
+            3,
+            56,
+            17,
+            32,
+            23,
+            38
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.002527613192796707
+        },
+        {
+          "expert_ids": [
+            33,
+            0,
+            25,
+            19,
+            28,
+            1
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.0003806464374065399
+        },
+        {
+          "expert_ids": [
+            8,
+            61,
+            5,
+            2,
+            9,
+            52
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.009020347148180008
+        },
+        {
+          "expert_ids": [
+            32,
+            27,
+            63,
+            29,
+            48,
+            42
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.0002310238778591156
+        },
+        {
+          "expert_ids": [
+            39,
+            44,
+            34,
+            35,
+            27,
+            18
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.0013470128178596497
+        },
+        {
+          "expert_ids": [
+            58,
+            48,
+            15,
+            30,
+            39,
+            4
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.002032618969678879
+        },
+        {
+          "expert_ids": [
+            34,
+            44,
+            10,
+            4,
+            23,
+            7
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.023444294929504395
+        },
+        {
+          "expert_ids": [
+            42,
+            27,
+            49,
+            5,
+            18,
+            16
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.003977231681346893
+        },
+        {
+          "expert_ids": [
+            42,
+            33,
+            52,
+            16,
+            59,
+            40
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.006171431392431259
+        },
+        {
+          "expert_ids": [
+            62,
+            23,
+            22,
+            8,
+            16,
+            31
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.024242782965302467
+        },
+        {
+          "expert_ids": [
+            63,
+            36,
+            61,
+            15,
+            5,
+            24
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.00039215385913848877
+        },
+        {
+          "expert_ids": [
+            32,
+            27,
+            51,
+            5,
+            37,
+            46
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.005943682044744492
+        },
+        {
+          "expert_ids": [
+            43,
+            42,
+            55,
+            26,
+            36,
+            38
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.0021998994052410126
+        },
+        {
+          "expert_ids": [
+            26,
+            18,
+            32,
+            30,
+            5,
+            63
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.00241643562912941
+        },
+        {
+          "expert_ids": [
+            28,
+            58,
+            7,
+            46,
+            10,
+            45
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.0006943773478269577
+        },
+        {
+          "expert_ids": [
+            11,
+            60,
+            0,
+            2,
+            49,
+            8
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.002554388716816902
+        },
+        {
+          "expert_ids": [
+            2,
+            62,
+            34,
+            38,
+            22,
+            42
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.0017768442630767822
+        },
+        {
+          "expert_ids": [
+            23,
+            27,
+            61,
+            55,
+            18,
+            41
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.009820789098739624
+        },
+        {
+          "expert_ids": [
+            41,
+            46,
+            52,
+            30,
+            51,
+            38
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.0014855638146400452
+        },
+        {
+          "expert_ids": [
+            33,
+            61,
+            8,
+            46,
+            10,
+            34
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.008688095957040787
+        },
+        {
+          "expert_ids": [
+            26,
+            21,
+            13,
+            62,
+            60,
+            46
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.009311376139521599
+        },
+        {
+          "expert_ids": [
+            45,
+            47,
+            58,
+            61,
+            26,
+            23
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.0009232629090547562
+        },
+        {
+          "expert_ids": [
+            41,
+            19,
+            6,
+            54,
+            17,
+            55
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.03185110725462437
+        },
+        {
+          "expert_ids": [
+            28,
+            56,
+            27,
+            58,
+            25,
+            43
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.0023496579378843307
+        }
+      ],
+      "request": 7
+    },
+    {
+      "min_top6_margin": 0.00025346502661705017,
+      "native_final_prefill_position": 23,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            37,
+            28,
+            63,
+            10,
+            23,
+            41
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.012488430365920067
+        },
+        {
+          "expert_ids": [
+            56,
+            9,
+            24,
+            32,
+            39,
+            53
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.00847618281841278
+        },
+        {
+          "expert_ids": [
+            39,
+            30,
+            6,
+            59,
+            61,
+            50
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.0008495673537254333
+        },
+        {
+          "expert_ids": [
+            53,
+            6,
+            50,
+            43,
+            61,
+            20
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.011802338063716888
+        },
+        {
+          "expert_ids": [
+            3,
+            36,
+            45,
+            33,
+            23,
+            22
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.0022191405296325684
+        },
+        {
+          "expert_ids": [
+            24,
+            40,
+            62,
+            61,
+            44,
+            7
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.0016807634383440018
+        },
+        {
+          "expert_ids": [
+            15,
+            51,
+            54,
+            4,
+            0,
+            9
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.0030253566801548004
+        },
+        {
+          "expert_ids": [
+            34,
+            51,
+            15,
+            18,
+            24,
+            29
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.002419494092464447
+        },
+        {
+          "expert_ids": [
+            17,
+            57,
+            27,
+            36,
+            21,
+            50
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.0036904029548168182
+        },
+        {
+          "expert_ids": [
+            19,
+            26,
+            52,
+            56,
+            62,
+            7
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.008024994283914566
+        },
+        {
+          "expert_ids": [
+            37,
+            60,
+            62,
+            29,
+            39,
+            21
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.0037477687001228333
+        },
+        {
+          "expert_ids": [
+            10,
+            19,
+            40,
+            14,
+            51,
+            13
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.005557183176279068
+        },
+        {
+          "expert_ids": [
+            22,
+            18,
+            28,
+            38,
+            51,
+            26
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.003582920879125595
+        },
+        {
+          "expert_ids": [
+            16,
+            17,
+            40,
+            63,
+            29,
+            54
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.0002537444233894348
+        },
+        {
+          "expert_ids": [
+            51,
+            59,
+            33,
+            7,
+            21,
+            2
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.00039788708090782166
+        },
+        {
+          "expert_ids": [
+            1,
+            23,
+            29,
+            51,
+            52,
+            3
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.009569153189659119
+        },
+        {
+          "expert_ids": [
+            36,
+            14,
+            54,
+            22,
+            59,
+            39
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.004176052287220955
+        },
+        {
+          "expert_ids": [
+            23,
+            12,
+            62,
+            38,
+            47,
+            4
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.00025346502661705017
+        },
+        {
+          "expert_ids": [
+            3,
+            15,
+            59,
+            4,
+            33,
+            21
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.0010277330875396729
+        },
+        {
+          "expert_ids": [
+            17,
+            37,
+            27,
+            31,
+            26,
+            59
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.0030631087720394135
+        },
+        {
+          "expert_ids": [
+            40,
+            50,
+            63,
+            47,
+            57,
+            61
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.002166900783777237
+        },
+        {
+          "expert_ids": [
+            33,
+            25,
+            18,
+            28,
+            7,
+            10
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.004396289587020874
+        },
+        {
+          "expert_ids": [
+            51,
+            60,
+            21,
+            59,
+            19,
+            17
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.001765357330441475
+        },
+        {
+          "expert_ids": [
+            30,
+            5,
+            2,
+            60,
+            13,
+            58
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.002256639301776886
+        },
+        {
+          "expert_ids": [
+            41,
+            18,
+            37,
+            51,
+            5,
+            58
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.00028290413320064545
+        },
+        {
+          "expert_ids": [
+            60,
+            47,
+            32,
+            50,
+            6,
+            41
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.003264453262090683
+        }
+      ],
+      "request": 8
+    },
+    {
+      "min_top6_margin": 4.730001091957092e-05,
+      "native_final_prefill_position": 23,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            48,
+            58,
+            36,
+            46,
+            7,
+            54
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.0012480057775974274
+        },
+        {
+          "expert_ids": [
+            11,
+            55,
+            28,
+            36,
+            6,
+            54
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.003556562587618828
+        },
+        {
+          "expert_ids": [
+            50,
+            20,
+            24,
+            43,
+            23,
+            32
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 4.730001091957092e-05
+        },
+        {
+          "expert_ids": [
+            31,
+            50,
+            15,
+            1,
+            28,
+            0
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.004500232636928558
+        },
+        {
+          "expert_ids": [
+            2,
+            46,
+            30,
+            9,
+            52,
+            61
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.017970366403460503
+        },
+        {
+          "expert_ids": [
+            42,
+            33,
+            14,
+            29,
+            47,
+            48
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.040178269147872925
+        },
+        {
+          "expert_ids": [
+            23,
+            10,
+            47,
+            27,
+            49,
+            53
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.0018546134233474731
+        },
+        {
+          "expert_ids": [
+            11,
+            38,
+            58,
+            30,
+            15,
+            24
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.0014523044228553772
+        },
+        {
+          "expert_ids": [
+            63,
+            4,
+            7,
+            60,
+            43,
+            23
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.01581285335123539
+        },
+        {
+          "expert_ids": [
+            5,
+            16,
+            43,
+            49,
+            18,
+            35
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.010416951030492783
+        },
+        {
+          "expert_ids": [
+            42,
+            13,
+            52,
+            40,
+            33,
+            41
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.007259231060743332
+        },
+        {
+          "expert_ids": [
+            40,
+            18,
+            31,
+            22,
+            52,
+            16
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.0005640052258968353
+        },
+        {
+          "expert_ids": [
+            63,
+            13,
+            62,
+            53,
+            61,
+            5
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.007915591821074486
+        },
+        {
+          "expert_ids": [
+            10,
+            14,
+            47,
+            20,
+            38,
+            37
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.004947347566485405
+        },
+        {
+          "expert_ids": [
+            36,
+            63,
+            37,
+            42,
+            27,
+            25
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.0001567583531141281
+        },
+        {
+          "expert_ids": [
+            4,
+            61,
+            56,
+            47,
+            36,
+            25
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.0001979786902666092
+        },
+        {
+          "expert_ids": [
+            7,
+            47,
+            45,
+            30,
+            12,
+            58
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.006698049604892731
+        },
+        {
+          "expert_ids": [
+            8,
+            49,
+            60,
+            19,
+            14,
+            55
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.00025370344519615173
+        },
+        {
+          "expert_ids": [
+            20,
+            44,
+            39,
+            36,
+            38,
+            57
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.0026380755007267
+        },
+        {
+          "expert_ids": [
+            54,
+            34,
+            4,
+            21,
+            41,
+            23
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.000997329130768776
+        },
+        {
+          "expert_ids": [
+            0,
+            25,
+            34,
+            22,
+            52,
+            38
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.0030671823769807816
+        },
+        {
+          "expert_ids": [
+            43,
+            9,
+            19,
+            16,
+            12,
+            61
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.0045850276947021484
+        },
+        {
+          "expert_ids": [
+            10,
+            62,
+            21,
+            18,
+            27,
+            14
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.005613010376691818
+        },
+        {
+          "expert_ids": [
+            56,
+            44,
+            59,
+            23,
+            9,
+            1
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.00024085864424705505
+        },
+        {
+          "expert_ids": [
+            8,
+            22,
+            3,
+            40,
+            17,
+            31
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.002996619790792465
+        },
+        {
+          "expert_ids": [
+            26,
+            2,
+            21,
+            38,
+            43,
+            58
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.00030555203557014465
+        }
+      ],
+      "request": 9
+    },
+    {
+      "min_top6_margin": 7.554888725280762e-06,
+      "native_final_prefill_position": 23,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            32,
+            23,
+            10,
+            37,
+            48,
+            54
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.014272063970565796
+        },
+        {
+          "expert_ids": [
+            24,
+            39,
+            12,
+            18,
+            44,
+            56
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.002314448356628418
+        },
+        {
+          "expert_ids": [
+            2,
+            50,
+            63,
+            61,
+            39,
+            37
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.008414655923843384
+        },
+        {
+          "expert_ids": [
+            41,
+            43,
+            53,
+            9,
+            50,
+            25
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.00600844994187355
+        },
+        {
+          "expert_ids": [
+            24,
+            30,
+            45,
+            49,
+            19,
+            3
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.0013122819364070892
+        },
+        {
+          "expert_ids": [
+            7,
+            5,
+            24,
+            14,
+            2,
+            31
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.005890294909477234
+        },
+        {
+          "expert_ids": [
+            47,
+            44,
+            4,
+            54,
+            37,
+            10
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.012451697140932083
+        },
+        {
+          "expert_ids": [
+            15,
+            2,
+            38,
+            48,
+            61,
+            29
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.019039690494537354
+        },
+        {
+          "expert_ids": [
+            46,
+            11,
+            26,
+            6,
+            9,
+            40
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.001370493322610855
+        },
+        {
+          "expert_ids": [
+            36,
+            19,
+            8,
+            24,
+            3,
+            56
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.0007135011255741119
+        },
+        {
+          "expert_ids": [
+            55,
+            16,
+            56,
+            54,
+            33,
+            21
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.0032338611781597137
+        },
+        {
+          "expert_ids": [
+            49,
+            30,
+            1,
+            11,
+            44,
+            0
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.014032913371920586
+        },
+        {
+          "expert_ids": [
+            51,
+            62,
+            55,
+            11,
+            28,
+            57
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.008176391944289207
+        },
+        {
+          "expert_ids": [
+            52,
+            35,
+            42,
+            38,
+            62,
+            8
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.00961744412779808
+        },
+        {
+          "expert_ids": [
+            28,
+            57,
+            48,
+            38,
+            4,
+            27
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.007093563675880432
+        },
+        {
+          "expert_ids": [
+            22,
+            52,
+            48,
+            7,
+            56,
+            26
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.0003763437271118164
+        },
+        {
+          "expert_ids": [
+            7,
+            61,
+            11,
+            47,
+            24,
+            51
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.008049745112657547
+        },
+        {
+          "expert_ids": [
+            55,
+            7,
+            13,
+            54,
+            35,
+            5
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.000587165355682373
+        },
+        {
+          "expert_ids": [
+            44,
+            56,
+            63,
+            57,
+            20,
+            4
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.006950909271836281
+        },
+        {
+          "expert_ids": [
+            21,
+            53,
+            23,
+            44,
+            3,
+            55
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.001492515206336975
+        },
+        {
+          "expert_ids": [
+            0,
+            29,
+            25,
+            13,
+            22,
+            23
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.0007460527122020721
+        },
+        {
+          "expert_ids": [
+            61,
+            47,
+            25,
+            16,
+            51,
+            12
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.0062844883650541306
+        },
+        {
+          "expert_ids": [
+            51,
+            10,
+            2,
+            32,
+            52,
+            18
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.0006189141422510147
+        },
+        {
+          "expert_ids": [
+            32,
+            36,
+            19,
+            9,
+            26,
+            62
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 9.32738184928894e-05
+        },
+        {
+          "expert_ids": [
+            21,
+            37,
+            28,
+            17,
+            11,
+            20
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 7.554888725280762e-06
+        },
+        {
+          "expert_ids": [
+            56,
+            10,
+            40,
+            53,
+            29,
+            38
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.000571027398109436
+        }
+      ],
+      "request": 10
+    },
+    {
+      "min_top6_margin": 0.00031379610300064087,
+      "native_final_prefill_position": 24,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            36,
+            35,
+            56,
+            11,
+            1,
+            15
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.0003540273755788803
+        },
+        {
+          "expert_ids": [
+            43,
+            29,
+            38,
+            41,
+            23,
+            14
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.0025209998711943626
+        },
+        {
+          "expert_ids": [
+            38,
+            11,
+            31,
+            41,
+            42,
+            10
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.0057190582156181335
+        },
+        {
+          "expert_ids": [
+            46,
+            51,
+            33,
+            2,
+            49,
+            14
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.0025235936045646667
+        },
+        {
+          "expert_ids": [
+            42,
+            47,
+            9,
+            20,
+            54,
+            55
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.007935669273138046
+        },
+        {
+          "expert_ids": [
+            63,
+            47,
+            48,
+            1,
+            13,
+            32
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.0021563898772001266
+        },
+        {
+          "expert_ids": [
+            43,
+            24,
+            46,
+            58,
+            13,
+            34
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.0036588814109563828
+        },
+        {
+          "expert_ids": [
+            11,
+            13,
+            39,
+            47,
+            54,
+            30
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.014950575307011604
+        },
+        {
+          "expert_ids": [
+            10,
+            63,
+            7,
+            4,
+            13,
+            32
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.0017038024961948395
+        },
+        {
+          "expert_ids": [
+            47,
+            46,
+            16,
+            18,
+            9,
+            42
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.0003902073949575424
+        },
+        {
+          "expert_ids": [
+            32,
+            61,
+            49,
+            52,
+            59,
+            40
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.001516692340373993
+        },
+        {
+          "expert_ids": [
+            52,
+            33,
+            16,
+            22,
+            31,
+            56
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.004027009010314941
+        },
+        {
+          "expert_ids": [
+            10,
+            14,
+            15,
+            61,
+            5,
+            35
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.011454828083515167
+        },
+        {
+          "expert_ids": [
+            51,
+            27,
+            19,
+            59,
+            47,
+            46
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.015190481208264828
+        },
+        {
+          "expert_ids": [
+            61,
+            11,
+            24,
+            52,
+            25,
+            47
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.0020835865288972855
+        },
+        {
+          "expert_ids": [
+            30,
+            19,
+            63,
+            25,
+            60,
+            40
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.003454834222793579
+        },
+        {
+          "expert_ids": [
+            30,
+            48,
+            7,
+            10,
+            9,
+            45
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.007058586925268173
+        },
+        {
+          "expert_ids": [
+            58,
+            42,
+            32,
+            23,
+            2,
+            49
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.014447461813688278
+        },
+        {
+          "expert_ids": [
+            12,
+            22,
+            57,
+            60,
+            2,
+            35
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.0005224812775850296
+        },
+        {
+          "expert_ids": [
+            44,
+            46,
+            36,
+            21,
+            3,
+            41
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.0046467967331409454
+        },
+        {
+          "expert_ids": [
+            56,
+            22,
+            1,
+            55,
+            10,
+            52
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.002419412136077881
+        },
+        {
+          "expert_ids": [
+            5,
+            16,
+            9,
+            20,
+            43,
+            24
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.00031379610300064087
+        },
+        {
+          "expert_ids": [
+            28,
+            47,
+            59,
+            10,
+            62,
+            27
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.002920921891927719
+        },
+        {
+          "expert_ids": [
+            63,
+            9,
+            52,
+            25,
+            60,
+            45
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.00221933051943779
+        },
+        {
+          "expert_ids": [
+            28,
+            2,
+            7,
+            6,
+            55,
+            3
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.0021186787635087967
+        },
+        {
+          "expert_ids": [
+            26,
+            32,
+            17,
+            58,
+            43,
+            27
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.005100730806589127
+        }
+      ],
+      "request": 11
+    },
+    {
+      "min_top6_margin": 2.867169678211212e-05,
+      "native_final_prefill_position": 24,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            39,
+            41,
+            58,
+            54,
+            23,
+            18
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.0037899259477853775
+        },
+        {
+          "expert_ids": [
+            12,
+            5,
+            39,
+            24,
+            9,
+            32
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.006080277264118195
+        },
+        {
+          "expert_ids": [
+            19,
+            2,
+            30,
+            4,
+            61,
+            50
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.025721440091729164
+        },
+        {
+          "expert_ids": [
+            57,
+            29,
+            8,
+            6,
+            38,
+            25
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.0005302056670188904
+        },
+        {
+          "expert_ids": [
+            24,
+            0,
+            49,
+            45,
+            60,
+            19
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.002114754170179367
+        },
+        {
+          "expert_ids": [
+            39,
+            7,
+            58,
+            40,
+            61,
+            29
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.0031498074531555176
+        },
+        {
+          "expert_ids": [
+            12,
+            48,
+            52,
+            0,
+            9,
+            51
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.001806335523724556
+        },
+        {
+          "expert_ids": [
+            60,
+            15,
+            18,
+            29,
+            33,
+            34
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.0001127198338508606
+        },
+        {
+          "expert_ids": [
+            38,
+            21,
+            42,
+            50,
+            36,
+            45
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.0025967806577682495
+        },
+        {
+          "expert_ids": [
+            52,
+            35,
+            8,
+            62,
+            56,
+            59
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.0011886581778526306
+        },
+        {
+          "expert_ids": [
+            36,
+            1,
+            39,
+            16,
+            60,
+            21
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.005341611802577972
+        },
+        {
+          "expert_ids": [
+            13,
+            55,
+            19,
+            0,
+            1,
+            57
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.01670968346297741
+        },
+        {
+          "expert_ids": [
+            23,
+            36,
+            13,
+            1,
+            28,
+            38
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.0014498401433229446
+        },
+        {
+          "expert_ids": [
+            45,
+            63,
+            36,
+            59,
+            21,
+            24
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.0011736750602722168
+        },
+        {
+          "expert_ids": [
+            0,
+            41,
+            33,
+            48,
+            27,
+            7
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.002625430002808571
+        },
+        {
+          "expert_ids": [
+            23,
+            45,
+            29,
+            3,
+            51,
+            26
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.0010217726230621338
+        },
+        {
+          "expert_ids": [
+            48,
+            61,
+            47,
+            24,
+            22,
+            51
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.0035847388207912445
+        },
+        {
+          "expert_ids": [
+            35,
+            13,
+            47,
+            55,
+            7,
+            5
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.010109532624483109
+        },
+        {
+          "expert_ids": [
+            44,
+            24,
+            21,
+            59,
+            20,
+            4
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.0040444787591695786
+        },
+        {
+          "expert_ids": [
+            9,
+            1,
+            25,
+            51,
+            31,
+            55
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 2.867169678211212e-05
+        },
+        {
+          "expert_ids": [
+            18,
+            13,
+            28,
+            47,
+            43,
+            29
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.0003141835331916809
+        },
+        {
+          "expert_ids": [
+            31,
+            14,
+            45,
+            32,
+            54,
+            12
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.010622352361679077
+        },
+        {
+          "expert_ids": [
+            17,
+            18,
+            10,
+            30,
+            52,
+            21
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.0002903565764427185
+        },
+        {
+          "expert_ids": [
+            34,
+            38,
+            19,
+            18,
+            2,
+            3
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.0006611458957195282
+        },
+        {
+          "expert_ids": [
+            56,
+            36,
+            29,
+            20,
+            47,
+            5
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.0006157495081424713
+        },
+        {
+          "expert_ids": [
+            0,
+            10,
+            37,
+            40,
+            53,
+            38
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.009639689698815346
+        }
+      ],
+      "request": 12
+    },
+    {
+      "min_top6_margin": 5.518272519111633e-05,
+      "native_final_prefill_position": 24,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            27,
+            8,
+            49,
+            20,
+            38,
+            5
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.0013822056353092194
+        },
+        {
+          "expert_ids": [
+            47,
+            49,
+            19,
+            15,
+            5,
+            56
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.005186302587389946
+        },
+        {
+          "expert_ids": [
+            53,
+            6,
+            44,
+            30,
+            13,
+            19
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.00018215179443359375
+        },
+        {
+          "expert_ids": [
+            63,
+            21,
+            6,
+            8,
+            41,
+            38
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.009138232097029686
+        },
+        {
+          "expert_ids": [
+            0,
+            19,
+            21,
+            62,
+            27,
+            45
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.004631310701370239
+        },
+        {
+          "expert_ids": [
+            24,
+            37,
+            56,
+            54,
+            40,
+            43
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 5.518272519111633e-05
+        },
+        {
+          "expert_ids": [
+            26,
+            30,
+            12,
+            38,
+            51,
+            19
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.003427306190133095
+        },
+        {
+          "expert_ids": [
+            46,
+            20,
+            18,
+            60,
+            33,
+            45
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.0028447210788726807
+        },
+        {
+          "expert_ids": [
+            20,
+            58,
+            41,
+            52,
+            45,
+            15
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.006825275719165802
+        },
+        {
+          "expert_ids": [
+            29,
+            62,
+            37,
+            24,
+            55,
+            60
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.004248838871717453
+        },
+        {
+          "expert_ids": [
+            54,
+            57,
+            60,
+            10,
+            6,
+            55
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.0002562776207923889
+        },
+        {
+          "expert_ids": [
+            36,
+            48,
+            25,
+            13,
+            19,
+            39
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.0001863427460193634
+        },
+        {
+          "expert_ids": [
+            18,
+            1,
+            27,
+            28,
+            60,
+            31
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.00885561853647232
+        },
+        {
+          "expert_ids": [
+            30,
+            21,
+            59,
+            34,
+            63,
+            62
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.0035759788006544113
+        },
+        {
+          "expert_ids": [
+            38,
+            59,
+            62,
+            22,
+            4,
+            44
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.0030813589692115784
+        },
+        {
+          "expert_ids": [
+            29,
+            33,
+            36,
+            26,
+            12,
+            0
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.0012800823897123337
+        },
+        {
+          "expert_ids": [
+            6,
+            57,
+            14,
+            8,
+            12,
+            33
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.014332108199596405
+        },
+        {
+          "expert_ids": [
+            15,
+            60,
+            1,
+            44,
+            45,
+            20
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.0005374252796173096
+        },
+        {
+          "expert_ids": [
+            43,
+            52,
+            4,
+            8,
+            59,
+            45
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.000987699255347252
+        },
+        {
+          "expert_ids": [
+            47,
+            1,
+            31,
+            45,
+            37,
+            54
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.00595085509121418
+        },
+        {
+          "expert_ids": [
+            23,
+            24,
+            16,
+            26,
+            29,
+            47
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.0026518572121858597
+        },
+        {
+          "expert_ids": [
+            28,
+            35,
+            32,
+            59,
+            31,
+            36
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.00021839700639247894
+        },
+        {
+          "expert_ids": [
+            8,
+            29,
+            44,
+            27,
+            21,
+            15
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.006332671269774437
+        },
+        {
+          "expert_ids": [
+            19,
+            4,
+            62,
+            55,
+            54,
+            15
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.0007623340934514999
+        },
+        {
+          "expert_ids": [
+            9,
+            37,
+            22,
+            24,
+            12,
+            53
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.0031628217548131943
+        },
+        {
+          "expert_ids": [
+            7,
+            13,
+            16,
+            21,
+            2,
+            4
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 9.076669812202454e-05
+        }
+      ],
+      "request": 13
+    },
+    {
+      "min_top6_margin": 0.0002536941319704056,
+      "native_final_prefill_position": 24,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            14,
+            23,
+            10,
+            42,
+            54,
+            37
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.02141849882900715
+        },
+        {
+          "expert_ids": [
+            23,
+            56,
+            59,
+            61,
+            32,
+            44
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.003626035526394844
+        },
+        {
+          "expert_ids": [
+            51,
+            50,
+            39,
+            59,
+            33,
+            61
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.007626645267009735
+        },
+        {
+          "expert_ids": [
+            19,
+            20,
+            61,
+            53,
+            43,
+            56
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.006093449890613556
+        },
+        {
+          "expert_ids": [
+            62,
+            23,
+            7,
+            37,
+            22,
+            24
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.007432527840137482
+        },
+        {
+          "expert_ids": [
+            58,
+            30,
+            62,
+            40,
+            7,
+            31
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.009679924696683884
+        },
+        {
+          "expert_ids": [
+            53,
+            52,
+            62,
+            51,
+            0,
+            35
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.007154926657676697
+        },
+        {
+          "expert_ids": [
+            56,
+            53,
+            57,
+            42,
+            29,
+            16
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.0013200268149375916
+        },
+        {
+          "expert_ids": [
+            54,
+            49,
+            43,
+            21,
+            57,
+            36
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.002399556338787079
+        },
+        {
+          "expert_ids": [
+            5,
+            15,
+            33,
+            62,
+            8,
+            24
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.0010445453226566315
+        },
+        {
+          "expert_ids": [
+            3,
+            32,
+            33,
+            36,
+            29,
+            21
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.004771241918206215
+        },
+        {
+          "expert_ids": [
+            40,
+            51,
+            20,
+            13,
+            1,
+            19
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.009585848078131676
+        },
+        {
+          "expert_ids": [
+            3,
+            4,
+            38,
+            28,
+            7,
+            18
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.004549141973257065
+        },
+        {
+          "expert_ids": [
+            20,
+            35,
+            29,
+            44,
+            54,
+            2
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.002416566014289856
+        },
+        {
+          "expert_ids": [
+            59,
+            21,
+            20,
+            2,
+            60,
+            27
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.0002863258123397827
+        },
+        {
+          "expert_ids": [
+            0,
+            23,
+            29,
+            12,
+            27,
+            35
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.007236998528242111
+        },
+        {
+          "expert_ids": [
+            53,
+            39,
+            14,
+            11,
+            47,
+            22
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.00910925678908825
+        },
+        {
+          "expert_ids": [
+            23,
+            47,
+            13,
+            24,
+            54,
+            7
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.001009838655591011
+        },
+        {
+          "expert_ids": [
+            4,
+            48,
+            21,
+            33,
+            59,
+            20
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.003940420225262642
+        },
+        {
+          "expert_ids": [
+            54,
+            51,
+            3,
+            59,
+            45,
+            63
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.002619905397295952
+        },
+        {
+          "expert_ids": [
+            9,
+            37,
+            20,
+            50,
+            47,
+            29
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 0.004467736929655075
+        },
+        {
+          "expert_ids": [
+            16,
+            20,
+            14,
+            58,
+            51,
+            12
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.0052671879529953
+        },
+        {
+          "expert_ids": [
+            36,
+            27,
+            34,
+            59,
+            18,
+            52
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.00223400816321373
+        },
+        {
+          "expert_ids": [
+            6,
+            15,
+            21,
+            58,
+            9,
+            27
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.007951335981488228
+        },
+        {
+          "expert_ids": [
+            14,
+            4,
+            30,
+            47,
+            5,
+            20
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.00027737952768802643
+        },
+        {
+          "expert_ids": [
+            49,
+            29,
+            53,
+            40,
+            37,
+            38
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.0002536941319704056
+        }
+      ],
+      "request": 14
+    },
+    {
+      "min_top6_margin": 4.643946886062622e-05,
+      "native_final_prefill_position": 24,
+      "per_layer_top6": [
+        {
+          "expert_ids": [
+            15,
+            3,
+            61,
+            30,
+            46,
+            7
+          ],
+          "layer": 1,
+          "min_6_vs_7_probability_gap": 0.0010360833257436752
+        },
+        {
+          "expert_ids": [
+            63,
+            31,
+            27,
+            13,
+            35,
+            60
+          ],
+          "layer": 2,
+          "min_6_vs_7_probability_gap": 0.004541425034403801
+        },
+        {
+          "expert_ids": [
+            17,
+            41,
+            27,
+            3,
+            38,
+            49
+          ],
+          "layer": 3,
+          "min_6_vs_7_probability_gap": 0.0038923192769289017
+        },
+        {
+          "expert_ids": [
+            33,
+            35,
+            49,
+            1,
+            51,
+            37
+          ],
+          "layer": 4,
+          "min_6_vs_7_probability_gap": 0.003401048481464386
+        },
+        {
+          "expert_ids": [
+            63,
+            15,
+            44,
+            5,
+            13,
+            42
+          ],
+          "layer": 5,
+          "min_6_vs_7_probability_gap": 0.00036306679248809814
+        },
+        {
+          "expert_ids": [
+            13,
+            48,
+            23,
+            63,
+            27,
+            41
+          ],
+          "layer": 6,
+          "min_6_vs_7_probability_gap": 0.01668158918619156
+        },
+        {
+          "expert_ids": [
+            62,
+            46,
+            18,
+            23,
+            39,
+            34
+          ],
+          "layer": 7,
+          "min_6_vs_7_probability_gap": 0.004530442878603935
+        },
+        {
+          "expert_ids": [
+            16,
+            54,
+            4,
+            30,
+            47,
+            39
+          ],
+          "layer": 8,
+          "min_6_vs_7_probability_gap": 0.02473883330821991
+        },
+        {
+          "expert_ids": [
+            22,
+            13,
+            55,
+            32,
+            4,
+            16
+          ],
+          "layer": 9,
+          "min_6_vs_7_probability_gap": 0.00145779550075531
+        },
+        {
+          "expert_ids": [
+            47,
+            14,
+            61,
+            46,
+            18,
+            42
+          ],
+          "layer": 10,
+          "min_6_vs_7_probability_gap": 0.0002746507525444031
+        },
+        {
+          "expert_ids": [
+            17,
+            32,
+            27,
+            59,
+            40,
+            34
+          ],
+          "layer": 11,
+          "min_6_vs_7_probability_gap": 0.013989081606268883
+        },
+        {
+          "expert_ids": [
+            43,
+            4,
+            56,
+            31,
+            23,
+            12
+          ],
+          "layer": 12,
+          "min_6_vs_7_probability_gap": 0.0033872798085212708
+        },
+        {
+          "expert_ids": [
+            36,
+            45,
+            24,
+            15,
+            5,
+            54
+          ],
+          "layer": 13,
+          "min_6_vs_7_probability_gap": 0.004841174930334091
+        },
+        {
+          "expert_ids": [
+            63,
+            27,
+            57,
+            46,
+            36,
+            51
+          ],
+          "layer": 14,
+          "min_6_vs_7_probability_gap": 0.007094105705618858
+        },
+        {
+          "expert_ids": [
+            14,
+            7,
+            61,
+            24,
+            52,
+            55
+          ],
+          "layer": 15,
+          "min_6_vs_7_probability_gap": 0.002349844202399254
+        },
+        {
+          "expert_ids": [
+            13,
+            33,
+            29,
+            32,
+            63,
+            60
+          ],
+          "layer": 16,
+          "min_6_vs_7_probability_gap": 0.0012604594230651855
+        },
+        {
+          "expert_ids": [
+            9,
+            28,
+            26,
+            32,
+            15,
+            10
+          ],
+          "layer": 17,
+          "min_6_vs_7_probability_gap": 0.0019615143537521362
+        },
+        {
+          "expert_ids": [
+            8,
+            3,
+            36,
+            49,
+            23,
+            2
+          ],
+          "layer": 18,
+          "min_6_vs_7_probability_gap": 0.0035371780395507812
+        },
+        {
+          "expert_ids": [
+            22,
+            55,
+            2,
+            42,
+            19,
+            35
+          ],
+          "layer": 19,
+          "min_6_vs_7_probability_gap": 0.012892287224531174
+        },
+        {
+          "expert_ids": [
+            15,
+            5,
+            1,
+            33,
+            31,
+            41
+          ],
+          "layer": 20,
+          "min_6_vs_7_probability_gap": 0.0019775554537773132
+        },
+        {
+          "expert_ids": [
+            30,
+            46,
+            17,
+            18,
+            61,
+            12
+          ],
+          "layer": 21,
+          "min_6_vs_7_probability_gap": 4.643946886062622e-05
+        },
+        {
+          "expert_ids": [
+            49,
+            27,
+            44,
+            0,
+            33,
+            57
+          ],
+          "layer": 22,
+          "min_6_vs_7_probability_gap": 0.0024415049701929092
+        },
+        {
+          "expert_ids": [
+            16,
+            24,
+            30,
+            5,
+            11,
+            21
+          ],
+          "layer": 23,
+          "min_6_vs_7_probability_gap": 0.00131947360932827
+        },
+        {
+          "expert_ids": [
+            12,
+            52,
+            42,
+            28,
+            25,
+            45
+          ],
+          "layer": 24,
+          "min_6_vs_7_probability_gap": 0.007273605093359947
+        },
+        {
+          "expert_ids": [
+            7,
+            9,
+            29,
+            48,
+            6,
+            3
+          ],
+          "layer": 25,
+          "min_6_vs_7_probability_gap": 0.00025003403425216675
+        },
+        {
+          "expert_ids": [
+            45,
+            25,
+            51,
+            28,
+            27,
+            43
+          ],
+          "layer": 26,
+          "min_6_vs_7_probability_gap": 0.005768474191427231
+        }
+      ],
+      "request": 15
+    }
+  ],
+  "exit_code": 0,
+  "min_mem_free_percent": 47,
+  "native_stderr_sha256": "fb141c61648df9a268d6049c6000577c029baf7de8550ac177755cb61908d5df",
+  "original_256_calibration_slot_freeze": "NOT_PERFORMED",
+  "paired_heldout_quality": "NOT_MEASURED",
+  "previous_uninstrumented_full102400_sha256": "428d2f985d1eca80ab299a7ab8cbf3d1330391efe46791f87d013a670f5d387a",
+  "production_after": {
+    "beglin-baseline-q4g64": 35481,
+    "beglin-candidate-shared-up-l3-n6": 35493
+  },
+  "production_before": {
+    "beglin-baseline-q4g64": 35481,
+    "beglin-candidate-shared-up-l3-n6": 35493
+  },
+  "production_promotion_allowed": false,
+  "production_route_mutated": false,
+  "raw_102400_full_logits_sha256": "428d2f985d1eca80ab299a7ab8cbf3d1330391efe46791f87d013a670f5d387a",
+  "raw_router_sha256": "c0dea242bdece470b14791723ce9d9469b013fa0a26420209f2067b1faac5c16",
+  "real_calibration_only_unlabeled_router": true,
+  "real_expert_decisions": 2496,
+  "real_pilot_top8_occupancy_only_not_frozen_for_256": [
+    {
+      "calls": 11,
+      "expert": 21,
+      "layer": 23
+    },
+    {
+      "calls": 9,
+      "expert": 31,
+      "layer": 20
+    },
+    {
+      "calls": 8,
+      "expert": 50,
+      "layer": 3
+    },
+    {
+      "calls": 7,
+      "expert": 15,
+      "layer": 8
+    },
+    {
+      "calls": 7,
+      "expert": 33,
+      "layer": 11
+    },
+    {
+      "calls": 7,
+      "expert": 28,
+      "layer": 13
+    },
+    {
+      "calls": 7,
+      "expert": 27,
+      "layer": 15
+    },
+    {
+      "calls": 7,
+      "expert": 29,
+      "layer": 16
+    }
+  ],
+  "real_route_events": 416,
+  "real_router_scores": 26624,
+  "receipt_sha256": "bfacc0c0257d9916ef2aac3ffea840f9228ca4ee1b488797034daec9f5e7e223",
+  "schema": "beglin-je01-original-AF-real-router26-cal16-logit-parity/1",
+  "seconds": 12.688,
+  "source_512_manifest_sha256": "0aef144a8d549aa9e33c3a9fd9e899e0301e826bd563ceb92ad541cff1bbf768",
+  "source_original_weights_mutated": false,
+  "source_previous_full102400_receipt_sha256": "34da06b2441bd1cfa8c8593ff20e8c2d3e40850e1c0ef6d6c8a127d70cb75d14",
+  "source_research_binary_sha256": "37eccd3870e4b95be493ae18773497b8c6ab1ba54fff37d317477c0c7cfc78ad",
+  "status": "PASS_REAL_ORIGINAL_GPU_26_LAYER_16_CAL_ROUTER_PARITY"
+}

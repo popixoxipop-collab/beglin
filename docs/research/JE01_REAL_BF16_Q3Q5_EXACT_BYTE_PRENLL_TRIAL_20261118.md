@@ -1,0 +1,7 @@
+# JE01 — physical BF16 3/5bit alternative at exact original AF8 budget
+
+Independent real 2/6bit FFN synthetic activation measurement (seed 20261119, run 44175567170) was strongly negative relative to all6 re-quantized reference: mean8 relative FFN output MSE frequency 2.7081, BF16-weight-MSE plan 2.8720, permutation 2.5825. It is not native original AF q4 or NLL evidence, but warrants replacing 2bit with a less destructive tier for the NEXT shadow trial.
+
+Reusing the exact original SHA-verified DeepSeek-V2-Lite-Chat BF16 eight Expert slots and BEGLIN native qNg64 codec, create 3-bit and 5-bit packed weights/scales for all 24 gate/up/down roles; 48 role-tier pairs, 96 binary files. Codec physical cost: q3 one Expert 3,784,704 bytes; q5 one Expert 5,947,392 bytes. Exactly 2 q3 + 6 q5 = 43,253,760 bytes (8 Expert original AF packed+scale+bias baseline), yielding C(8,2)=28 candidate maps. Freeze pre-gold candidates based on routing frequency, source-weight MSE proxy and deterministic unrelated permutation. No existing source raw weights, model, heldout or runtime is changed.
+
+After physical SHA audit, independently compare true BF16-source 3/5 vs 2/6 on NEW synthetic activations with both original candidate policies already frozen; never use these observations as real NLL improvement or heldout success. 27-layer AF overlay, paired NLL and p95 remain blocked until resource admission and native integration.

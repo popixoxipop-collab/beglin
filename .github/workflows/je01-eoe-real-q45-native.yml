@@ -1,0 +1,120 @@
+name: JE01 original384 real BF16 Q4/Q5 scratch native kernel and fullgold build
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_eoe_original384_q45_scratch_stage.py'
+      - 'tests/test_je01_q45_scratch_source.py'
+      - '.github/workflows/je01-eoe-real-q45-native.yml'
+permissions:
+  contents: read
+jobs:
+  q4q5-scratch-anchor-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Refuse q4 backend source drift; preserve original affine bias
+        run: python tests/test_je01_q45_scratch_source.py
+  real-q45-native-original384-gold-binary:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned MLX and build tools
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'mlx==0.32.1' 'cmake>=3.20,<5' 'ninja>=1.10'
+      - name: Isolated original AF384 fullgold code + real mixed Expert source + guarded Q4 sym bias
+        run: |
+          set -euo pipefail
+          python tools/je01_isolated_context384_stage.py \
+            --checkout "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP/je01_q45_source" \
+            --expected-commit "$(git rev-parse HEAD)" \
+            > "$RUNNER_TEMP/je01_original_stage.json"
+          python tools/je01_scratch_cb384_overlay_stage.py \
+            --staged-source "$RUNNER_TEMP/je01_q45_source" \
+            > "$RUNNER_TEMP/je01_overlay_stage.json"
+          python - <<'PY'
+          import importlib.util,os,pathlib
+          path=pathlib.Path("tools/je01_xox_original256_fulltarget_teacherforced_nll.py").resolve()
+          spec=importlib.util.spec_from_file_location("je01_real_fullgold",path)
+          m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+          file=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_q45_source"/"qwen_infer.c"
+          old=file.read_text()
+          updated=m.patch_cpu(old)
+          assert updated!=old
+          file.write_text(updated)
+          PY
+          python tools/je01_eoe_original384_mixed_source_stage.py \
+            --scratch "$RUNNER_TEMP/je01_q45_source" \
+            > "$RUNNER_TEMP/je01_nig_mixed_source.json"
+          python tools/je01_eoe_original384_q45_scratch_stage.py \
+            --scratch "$RUNNER_TEMP/je01_q45_source" \
+            > "$RUNNER_TEMP/je01_q45_source.json"
+          python - <<'PY'
+          import pathlib,os,json
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          d=json.loads((root/"je01_q45_source.json").read_text())
+          assert d["status"]=="JE01_Q45_ORIGINAL384_B1_Q4SYMMETRIC_Q5_NATIVE_SCRATCH_ONLY_PATCH"
+          assert d["original_affine_q4_bias_when_nonnegative_offset_preserved"]
+          assert d["new_q4_symmetric_implicit_bias_only_when_bias_off_minus_one"]
+          assert not d["production_code_modified"]
+          cm=root/"je01_q45_source"/"CMakeLists.txt"
+          src=cm.read_text()
+          old="OUTPUT_NAME qwen_infer_gpu_je01_context384"
+          assert src.count(old)==1
+          cm.write_text(src.replace(old,"OUTPUT_NAME je01_eoe_original384_Q45_fullgold",1))
+          print("JE01_ORIGINAL384_Q45_TRUE_SYM_Q4_SCRATCH_SOURCE_PASS")
+          PY
+      - name: Compile original actual full 27-layer BEGLIN native Metal with guarded Q4/Q5 binder
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import platform
+          assert platform.system()=="Darwin" and platform.machine()=="arm64"
+          PY
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os;print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S "$RUNNER_TEMP/je01_q45_source" -B "$RUNNER_TEMP/je01_q45_build" \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$RUNNER_TEMP/je01_q45_build" --target qwen_infer_gpu --parallel 2
+          f="$RUNNER_TEMP/je01_q45_build/je01_eoe_original384_Q45_fullgold"
+          test -f "$f"
+          cp "$f" "$RUNNER_TEMP/je01_eoe_original384_Q45_fullgold"
+          python - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          binary=root/"je01_eoe_original384_Q45_fullgold"
+          d={"schema":"beglin-je01-original384-real-Q45-native-source-binary/1",
+             "status":"REAL_ORIGINAL384_Q4SYM12_Q5SYM12_NATIVE_FULLGOLD_COMPILED",
+             "source_patch":json.loads((root/"je01_q45_source.json").read_text()),
+             "binary_sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
+             "binary_bytes":binary.stat().st_size,
+             "actual_real_source_43MB_bound":"NOT_YET",
+             "original_27layer_model_forward":"NOT_YET_RUN",
+             "real_gold_NLL":"NOT_MEASURED",
+             "operating_model_modified":False}
+          (root/"JE01_EOE_REAL_Q45_NATIVE_BUILD_RECEIPT.json").write_text(
+             json.dumps(d,sort_keys=True,indent=2)+"\n")
+          print("JE01_REAL_Q45_ORIGINAL384_NATIVE_COMPILE_PASS",d["binary_sha256"])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-eoe-original384-real-q45-native-fullgold-binary
+          path: |
+            ${{ runner.temp }}/je01_eoe_original384_Q45_fullgold
+            ${{ runner.temp }}/JE01_EOE_REAL_Q45_NATIVE_BUILD_RECEIPT.json
+            ${{ runner.temp }}/je01_q45_source.json
+          retention-days: 14
+          if-no-files-found: error

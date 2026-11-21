@@ -1,0 +1,43 @@
+{
+  "actual_model_forward": "NOT_RUN",
+  "checkpoint_identity_sha256": "36e7e3cafb5c01d3249d2d538ccb77fcb4c5ce2d1df213ea0881b2b85e6debfc",
+  "model": {
+    "config_sha256": "f346286b0f1c8b044252fd54cb4fa78b9fab6472a6e8bebb9edfe03d414ea03d",
+    "first_k_dense_replace": 1,
+    "index_sha256": "d2cdb2f325f6682cf3ad1ad2526a9f979d857390b579380c0331d975136e0acf",
+    "model_type": "deepseek_v2",
+    "n_routed_experts": 64,
+    "norm_topk_prob": false,
+    "num_experts_per_tok": 6,
+    "shards": [
+      {
+        "name": "model-00001-of-000004.safetensors",
+        "sha256": "a314b79a30810b1038f9db08345178e16fb5742aa266c4a3dc05054c59800082",
+        "size_bytes": 8594887408
+      },
+      {
+        "name": "model-00002-of-000004.safetensors",
+        "sha256": "b0bd088feada0af954614da3a5b179c4d4d5d8bb2482ec83194d101f3fe91796",
+        "size_bytes": 8591757448
+      },
+      {
+        "name": "model-00003-of-000004.safetensors",
+        "sha256": "d31b192e488f0b3a04e007d842c3c9ba5783d944cb1cc27402fe8b8bb837c490",
+        "size_bytes": 8590718520
+      },
+      {
+        "name": "model-00004-of-000004.safetensors",
+        "sha256": "304499be0ea06bf8a3937d7a3cc515bc3738dbd288bdd0bbc1b2d3560fce4930",
+        "size_bytes": 5636263200
+      }
+    ],
+    "tokenizer_sha256": "41f3bf64213da8c012d8bd0871a58a1fdf70463e8f08f110ddbb1082f529f669"
+  },
+  "native_logit_parity": "NOT_RUN",
+  "promotion_authorized": false,
+  "quantized_weight_binary_identity": "NOT_VERIFIED",
+  "raw_model_checkpoint_byte_total": 31413626576,
+  "receipt_sha256": "689c78abe0280c1cc961222f8c8601e54ad89c97641aeee62ef3c4e05951fe7b",
+  "schema": "beglin-je01-native-bf16-checkpoint-sha-v1",
+  "status": "FULL_BF16_SHA_ONLY"
+}

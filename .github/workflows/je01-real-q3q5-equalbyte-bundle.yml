@@ -1,0 +1,56 @@
+name: JE01 real BF16 Q3Q5 three exact-byte physical payloads
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_real_q3q5_equalbyte_bundle.py'
+      - '.github/workflows/je01-real-q3q5-equalbyte-bundle.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  true-q3q5-physical-expert-bundles:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-real-original-bf16-q3q5-48-native-role-tiers
+          run-id: 44176129643
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/real_source
+      - name: Build three 43,253,760-byte real Q3Q5 files
+        run: |
+          set -euo pipefail
+          python tools/je01_real_q3q5_equalbyte_bundle.py \
+            --source "$RUNNER_TEMP/real_source/je01_real_q3q5" \
+            --output "$RUNNER_TEMP/real_q3q5_bundles"
+      - name: Independently re-open and check three file SHA and length
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib,json,hashlib,os
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"real_q3q5_bundles"
+          d=json.loads((root/"JE01_REAL_Q3Q5_EQUALBYTE_BUNDLE_RECEIPT.json").read_text())
+          sig=d.pop("receipt_sha256")
+          assert sig==hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert d["status"]=="THREE_REAL_BF16_Q3Q5_EXACTBYTE_BUNDLES_PASS"
+          assert len(d["bundles"])==3
+          for b in d["bundles"]:
+            p=root/b["filename"]
+            assert p.is_file() and p.stat().st_size==43253760
+            assert hashlib.sha256(p.read_bytes()).hexdigest()==b["sha256"]
+            assert len(b["regions"])==48 and len(b["n3_selected"])==2
+          assert d["gold_token_NLL"]=="NOT_MEASURED"
+          print("JE01_REAL_Q3Q5_3x43253760B_SHA_PASS",sig)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-three-real-bf16-q3q5-equalbyte-payloads
+          path: ${{ runner.temp }}/real_q3q5_bundles/*
+          retention-days: 14
+          if-no-files-found: error

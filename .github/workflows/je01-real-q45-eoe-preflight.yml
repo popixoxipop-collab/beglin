@@ -1,0 +1,77 @@
+name: JE01 real Q4/Q5 EOE source and pilot16 preflight contract
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_eoe_real_q45_source_stage_verify.py'
+      - 'tools/je01_eoe_original27_q45_gold16_paired_runner.py'
+      - '.github/workflows/je01-real-q45-eoe-preflight.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  physical-real-q45-stage-with-sha-and-original-pilot-scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-real-original-chat-bf16-12q4-12q5-equalbyte
+          run-id: 44939239490
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/je01_eoe_preflight/weights
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-eoe-original384-real-q45-native-fullgold-binary
+          run-id: 44938954618
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/je01_eoe_preflight/bin
+      - name: Independently validate original physical source+actual binary and 48 exact regions
+        run: |
+          set -euo pipefail
+          python tools/je01_eoe_real_q45_source_stage_verify.py \
+            --source-root "$RUNNER_TEMP/je01_eoe_preflight" \
+            | tee "$RUNNER_TEMP/je01_q45_eoe_stage_result.json"
+          python - <<'PY'
+          import json,hashlib,os,pathlib,ast
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_eoe_preflight"
+          x=json.loads((root/"JE01_REAL_Q45_EOE_SOURCE_STAGE.json").read_text())
+          signed=x.pop("receipt_sha256")
+          assert hashlib.sha256(json.dumps(x,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()==signed
+          assert x["status"]=="JE01_EOE_REAL_Q45_12ROLE4_12ROLE5_SOURCE_STAGE_PASS"
+          assert x["source_receipt_sha256"]=="f82645bcff33fa2f7268c1fb7e2797cbc20cbd667a2cd8556e9adc01e20204e3"
+          assert x["source_Q45_SHA256"]=="b4bd15db43f60f5aeb3ae8d6b9af148fa38545e5289ac049cd26a57a82932e6b"
+          assert x["binary_SHA256"]=="1eb8dd5311cc23efba11a54a2891e9ec77fc9bb5cb88cfb60bdd6183310059ab"
+          assert x["real_role_count"]==24 and x["real_q4_roles"]==12 and x["real_q5_roles"]==12
+          assert x["full_43MB_byte_size"]==43253760
+          assert not x["production_modified"] and x["full_model_NLL"]=="NOT_MEASURED"
+          runner=pathlib.Path("tools/je01_eoe_original27_q45_gold16_paired_runner.py")
+          ast.parse(runner.read_text())
+          content=runner.read_text()
+          assert "PASS_ORIGINAL27_Q45_BINARY_NO_OVERLAY_GOLD_PARITY" in content
+          assert "ACTUAL_REAL_ORIGINAL27_Q45_PILOT16_MEASURED" in content
+          assert 'choices=["off","q45"]' in content
+          assert 'rawstage["source_Q45_SHA256"]' in content
+          assert 'rawstage["real_q4_roles"]!=12' in content
+          assert 'rawstage["real_q5_roles"]!=12' in content
+          assert 'rawstage.get("source_receipt_sha256")' in content
+          assert '"JE01_REAL_Q35_BUNDLE"' in content # legacy C-gate variable; payload is signed Q4Q5
+          assert "NIG_candidate_precision_comparison" in content # historical original-only baseline receipt
+          assert "JE01_MEMORY_FREE_BELOW35" in content
+          assert "JE01_REAL_MODEL_RSS_GT16G" in content
+          assert "MEASURED_THIS_RUN" in content
+          print("JE01_REAL_ORIGINAL_BF16_Q45_FULL_SOURCE_AND_ARM64_BINARY_FROZEN_PREP_PASS",signed)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-original-q45-gold16-sha-bound-offon-preflight
+          path: |
+            ${{ runner.temp }}/je01_q45_eoe_stage_result.json
+            ${{ runner.temp }}/je01_eoe_preflight/JE01_REAL_Q45_EOE_SOURCE_STAGE.json
+          retention-days: 14
+          if-no-files-found: error

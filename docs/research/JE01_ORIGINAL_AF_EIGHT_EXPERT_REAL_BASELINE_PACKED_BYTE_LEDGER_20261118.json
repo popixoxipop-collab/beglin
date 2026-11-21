@@ -1,0 +1,642 @@
+{
+  "actual_selected_expert_slots": 8,
+  "cannot_use_formula_to_certify_equal_real_bytes": true,
+  "native_reference_model_checkpoint_unchanged": true,
+  "production_promotion_allowed": false,
+  "real_256_selected_expert_baseline_eight_bytes": 43253760,
+  "real_alternate_2_6_8_precision_byte_artifacts": "NOT_CREATED",
+  "real_mixed_expert_2_6_8_bits_end_to_end_NLL": "NOT_MEASURED",
+  "real_original_baseline_bit_width_per_selected_expert": 4,
+  "receipt_sha256": "f47bbccbc3878a70dccb9f4b7f5f7f5bd43087aeec58c948924ef85bb428ca4c",
+  "schema": "beglin-je01-actual-original-AF-eight-expert-exact-baseline-bytes/1",
+  "selected_slots": [
+    {
+      "actual_packed_baseline_bytes": 5406720,
+      "baseline_assumed_native_AF_bits": 4,
+      "calibration_last_token_routed_calls": 97,
+      "expert": 61,
+      "layer": 21,
+      "roles": [
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "gate_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              7755890688,
+              7756070912
+            ],
+            "packed": [
+              7729037312,
+              7730479104
+            ],
+            "scale": [
+              7744356352,
+              7744536576
+            ]
+          },
+          "tensor": "model.layers.21.mlp.switch_mlp.gate_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "up_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              7871234048,
+              7871414272
+            ],
+            "packed": [
+              7844380672,
+              7845822464
+            ],
+            "scale": [
+              7859699712,
+              7859879936
+            ]
+          },
+          "tensor": "model.layers.21.mlp.switch_mlp.up_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "down_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              7986577408,
+              7986757632
+            ],
+            "packed": [
+              7959724032,
+              7961165824
+            ],
+            "scale": [
+              7975043072,
+              7975223296
+            ]
+          },
+          "tensor": "model.layers.21.mlp.switch_mlp.down_proj",
+          "total_expert_role_bytes": 1802240
+        }
+      ]
+    },
+    {
+      "actual_packed_baseline_bytes": 5406720,
+      "baseline_assumed_native_AF_bits": 4,
+      "calibration_last_token_routed_calls": 91,
+      "expert": 26,
+      "layer": 24,
+      "roles": [
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "gate_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              8845918208,
+              8846098432
+            ],
+            "packed": [
+              8774909952,
+              8776351744
+            ],
+            "scale": [
+              8834383872,
+              8834564096
+            ]
+          },
+          "tensor": "model.layers.24.mlp.switch_mlp.gate_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "up_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              8961261568,
+              8961441792
+            ],
+            "packed": [
+              8890253312,
+              8891695104
+            ],
+            "scale": [
+              8949727232,
+              8949907456
+            ]
+          },
+          "tensor": "model.layers.24.mlp.switch_mlp.up_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "down_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              9076604928,
+              9076785152
+            ],
+            "packed": [
+              9005596672,
+              9007038464
+            ],
+            "scale": [
+              9065070592,
+              9065250816
+            ]
+          },
+          "tensor": "model.layers.24.mlp.switch_mlp.down_proj",
+          "total_expert_role_bytes": 1802240
+        }
+      ]
+    },
+    {
+      "actual_packed_baseline_bytes": 5406720,
+      "baseline_assumed_native_AF_bits": 4,
+      "calibration_last_token_routed_calls": 87,
+      "expert": 28,
+      "layer": 13,
+      "roles": [
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "gate_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              4826382336,
+              4826562560
+            ],
+            "packed": [
+              4757897216,
+              4759339008
+            ],
+            "scale": [
+              4814848000,
+              4815028224
+            ]
+          },
+          "tensor": "model.layers.13.mlp.switch_mlp.gate_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "up_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              4941725696,
+              4941905920
+            ],
+            "packed": [
+              4873240576,
+              4874682368
+            ],
+            "scale": [
+              4930191360,
+              4930371584
+            ]
+          },
+          "tensor": "model.layers.13.mlp.switch_mlp.up_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "down_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              5057069056,
+              5057249280
+            ],
+            "packed": [
+              4988583936,
+              4990025728
+            ],
+            "scale": [
+              5045534720,
+              5045714944
+            ]
+          },
+          "tensor": "model.layers.13.mlp.switch_mlp.down_proj",
+          "total_expert_role_bytes": 1802240
+        }
+      ]
+    },
+    {
+      "actual_packed_baseline_bytes": 5406720,
+      "baseline_assumed_native_AF_bits": 4,
+      "calibration_last_token_routed_calls": 86,
+      "expert": 17,
+      "layer": 20,
+      "roles": [
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "gate_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              7382515712,
+              7382695936
+            ],
+            "packed": [
+              7300153344,
+              7301595136
+            ],
+            "scale": [
+              7370981376,
+              7371161600
+            ]
+          },
+          "tensor": "model.layers.20.mlp.switch_mlp.gate_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "up_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              7497859072,
+              7498039296
+            ],
+            "packed": [
+              7415496704,
+              7416938496
+            ],
+            "scale": [
+              7486324736,
+              7486504960
+            ]
+          },
+          "tensor": "model.layers.20.mlp.switch_mlp.up_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "down_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              7613202432,
+              7613382656
+            ],
+            "packed": [
+              7530840064,
+              7532281856
+            ],
+            "scale": [
+              7601668096,
+              7601848320
+            ]
+          },
+          "tensor": "model.layers.20.mlp.switch_mlp.down_proj",
+          "total_expert_role_bytes": 1802240
+        }
+      ]
+    },
+    {
+      "actual_packed_baseline_bytes": 5406720,
+      "baseline_assumed_native_AF_bits": 4,
+      "calibration_last_token_routed_calls": 81,
+      "expert": 13,
+      "layer": 12,
+      "roles": [
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "gate_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              4458233856,
+              4458414080
+            ],
+            "packed": [
+              4370825216,
+              4372267008
+            ],
+            "scale": [
+              4446699520,
+              4446879744
+            ]
+          },
+          "tensor": "model.layers.12.mlp.switch_mlp.gate_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "up_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              4573577216,
+              4573757440
+            ],
+            "packed": [
+              4486168576,
+              4487610368
+            ],
+            "scale": [
+              4562042880,
+              4562223104
+            ]
+          },
+          "tensor": "model.layers.12.mlp.switch_mlp.up_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "down_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              4688920576,
+              4689100800
+            ],
+            "packed": [
+              4601511936,
+              4602953728
+            ],
+            "scale": [
+              4677386240,
+              4677566464
+            ]
+          },
+          "tensor": "model.layers.12.mlp.switch_mlp.down_proj",
+          "total_expert_role_bytes": 1802240
+        }
+      ]
+    },
+    {
+      "actual_packed_baseline_bytes": 5406720,
+      "baseline_assumed_native_AF_bits": 4,
+      "calibration_last_token_routed_calls": 81,
+      "expert": 60,
+      "layer": 24,
+      "roles": [
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "gate_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              8852045824,
+              8852226048
+            ],
+            "packed": [
+              8823930880,
+              8825372672
+            ],
+            "scale": [
+              8840511488,
+              8840691712
+            ]
+          },
+          "tensor": "model.layers.24.mlp.switch_mlp.gate_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "up_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              8967389184,
+              8967569408
+            ],
+            "packed": [
+              8939274240,
+              8940716032
+            ],
+            "scale": [
+              8955854848,
+              8956035072
+            ]
+          },
+          "tensor": "model.layers.24.mlp.switch_mlp.up_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "down_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              9082732544,
+              9082912768
+            ],
+            "packed": [
+              9054617600,
+              9056059392
+            ],
+            "scale": [
+              9071198208,
+              9071378432
+            ]
+          },
+          "tensor": "model.layers.24.mlp.switch_mlp.down_proj",
+          "total_expert_role_bytes": 1802240
+        }
+      ]
+    },
+    {
+      "actual_packed_baseline_bytes": 5406720,
+      "baseline_assumed_native_AF_bits": 4,
+      "calibration_last_token_routed_calls": 80,
+      "expert": 63,
+      "layer": 14,
+      "roles": [
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "gate_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              5198135296,
+              5198315520
+            ],
+            "packed": [
+              5173805056,
+              5175246848
+            ],
+            "scale": [
+              5186600960,
+              5186781184
+            ]
+          },
+          "tensor": "model.layers.14.mlp.switch_mlp.gate_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "up_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              5313478656,
+              5313658880
+            ],
+            "packed": [
+              5289148416,
+              5290590208
+            ],
+            "scale": [
+              5301944320,
+              5302124544
+            ]
+          },
+          "tensor": "model.layers.14.mlp.switch_mlp.up_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "down_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              5428822016,
+              5429002240
+            ],
+            "packed": [
+              5404491776,
+              5405933568
+            ],
+            "scale": [
+              5417287680,
+              5417467904
+            ]
+          },
+          "tensor": "model.layers.14.mlp.switch_mlp.down_proj",
+          "total_expert_role_bytes": 1802240
+        }
+      ]
+    },
+    {
+      "actual_packed_baseline_bytes": 5406720,
+      "baseline_assumed_native_AF_bits": 4,
+      "calibration_last_token_routed_calls": 79,
+      "expert": 22,
+      "layer": 13,
+      "roles": [
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "gate_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              4825300992,
+              4825481216
+            ],
+            "packed": [
+              4749246464,
+              4750688256
+            ],
+            "scale": [
+              4813766656,
+              4813946880
+            ]
+          },
+          "tensor": "model.layers.13.mlp.switch_mlp.gate_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "up_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              4940644352,
+              4940824576
+            ],
+            "packed": [
+              4864589824,
+              4866031616
+            ],
+            "scale": [
+              4929110016,
+              4929290240
+            ]
+          },
+          "tensor": "model.layers.13.mlp.switch_mlp.up_proj",
+          "total_expert_role_bytes": 1802240
+        },
+        {
+          "individual_expert_bias_f32_bytes": 180224,
+          "individual_expert_bits": 4,
+          "individual_expert_scale_f32_bytes": 180224,
+          "packed_weight_bytes": 1441792,
+          "role": "down_proj",
+          "source_Af_global_byte_regions": {
+            "bias": [
+              5055987712,
+              5056167936
+            ],
+            "packed": [
+              4979933184,
+              4981374976
+            ],
+            "scale": [
+              5044453376,
+              5044633600
+            ]
+          },
+          "tensor": "model.layers.13.mlp.switch_mlp.down_proj",
+          "total_expert_role_bytes": 1802240
+        }
+      ]
+    }
+  ],
+  "source_original_AF_layout_SHA256": "ba3898f3bf366b1aec8471d9896885f101bf64b78c816828ea82bd7d58851c3e",
+  "source_original_AF_total_bytes": 9814343680,
+  "source_real_original_256_route_receipt_sha256": "62d0a86956c1a07fa8143efcb52b0b5dea6808767716cd160e05ceb1c0c8a8eb",
+  "status": "EIGHT_SELECTED_ORIGINAL_AF_BASELINE_BYTES_AUDITED"
+}

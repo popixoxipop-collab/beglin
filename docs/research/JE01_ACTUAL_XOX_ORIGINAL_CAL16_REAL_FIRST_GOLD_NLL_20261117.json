@@ -1,0 +1,169 @@
+{
+  "Bayesian_Expert_precision_improvement": "NOT_TESTED",
+  "excluded_boundary_alignment_cases": [],
+  "frozen_public_train_calibration_only": true,
+  "full_model_vocab": 102400,
+  "independent_same_source_and_OOD_NLL": "NOT_MEASURED",
+  "max_case_abs_NLL_delta": 0.0,
+  "mean_delta_new384_minus_old32": 0.0,
+  "mean_gold_one_token_nll_new384": 2.7294751068138448,
+  "mean_gold_one_token_nll_old32": 2.7294751068138448,
+  "native_logit_vectors_per_arm": 16,
+  "original_16_full_logit_receipt_sha256": "34da06b2441bd1cfa8c8593ff20e8c2d3e40850e1c0ef6d6c8a127d70cb75d14",
+  "original_512_full_target_NLL": "NOT_MEASURED",
+  "production_promotion_allowed": false,
+  "production_weights_changed": false,
+  "receipt_sha256": "272a5272e7af5408e89c38366dc71906ed9bfab4af6537dd14f8eece04b2920a",
+  "schema": "beglin-je01-original-AF-calibration16-next-gold-token-NLL/1",
+  "scored_cases": [
+    {
+      "first_public_gold_token_id": 588,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 4.124038019472341,
+      "gold_first_token_NLL_384": 4.124038019472341,
+      "input_id": "01ab288093faa4f727151e78dd0074f3814e7270dc7084b51ef3e8a23cd1ce59",
+      "native_prompt_sha256": "a3a0960188d5ea59963ddd0c2601ed186202ba7879bc73bb821efaf5c5faec88",
+      "request": 0
+    },
+    {
+      "first_public_gold_token_id": 279,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 1.3608891382816886,
+      "gold_first_token_NLL_384": 1.3608891382816886,
+      "input_id": "64ea8925ced5b315f63bd12b813cb2c83e347e425674e291d892eb00865c3435",
+      "native_prompt_sha256": "efb3f13c5143703a8cc36d344bc8b2722901c921cbbcde857da5dcae1dd93c1b",
+      "request": 1
+    },
+    {
+      "first_public_gold_token_id": 2238,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 1.094451708282513,
+      "gold_first_token_NLL_384": 1.094451708282513,
+      "input_id": "0fc1a065e7859c01a3f4d9962b5f1084a7f4fdc53bffdf409c4750e123a47f5c",
+      "native_prompt_sha256": "b46c0969bc13d2ef432f9bcb02a613f6913accb2154360f90e2e0a59da6204cf",
+      "request": 2
+    },
+    {
+      "first_public_gold_token_id": 69176,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 3.3995163856464288,
+      "gold_first_token_NLL_384": 3.3995163856464288,
+      "input_id": "02c1025cf405fc1a80f0b39e5748f8f246fda9be1bdf9db7bf7c0bf179c907a8",
+      "native_prompt_sha256": "b341580aea2f9adff14ed2ad0d1b0d8e8ce4336dcdb03836ce3ff4f40cae285b",
+      "request": 3
+    },
+    {
+      "first_public_gold_token_id": 8347,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 4.4249160009725905,
+      "gold_first_token_NLL_384": 4.4249160009725905,
+      "input_id": "136de45ba61bf8457cc3fb849dceedc1c7f57634caa4444662aa946fb9417ead",
+      "native_prompt_sha256": "0d2e90409e39056602044a4f3e911dc384865b6fb4f91d15113adba59f079537",
+      "request": 4
+    },
+    {
+      "first_public_gold_token_id": 15848,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 2.848523887271959,
+      "gold_first_token_NLL_384": 2.848523887271959,
+      "input_id": "2d69fca898825e235ffad28af59d5ef02a0d4e4b72b2e658c6fa085fe67ad481",
+      "native_prompt_sha256": "51fc0bd1f2de60845f45ccee546760599b8859542b4b8fdf26807ee998f49cc5",
+      "request": 5
+    },
+    {
+      "first_public_gold_token_id": 413,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 8.316661694306468,
+      "gold_first_token_NLL_384": 8.316661694306468,
+      "input_id": "618fbf4b630383405ba4f686ac3bc4004f94e2d1eee6653ac8b6654c47d871b5",
+      "native_prompt_sha256": "04325b0aa87f73573061dd59de4e3385f0885c0e8190385bb3d11bffc5abe964",
+      "request": 6
+    },
+    {
+      "first_public_gold_token_id": 2051,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 2.0929017390534916,
+      "gold_first_token_NLL_384": 2.0929017390534916,
+      "input_id": "0b2bcfd3c8921860eeb1709eaa6dd78e95d73958aac3ee6f5b6ee117edd63a90",
+      "native_prompt_sha256": "48743a76bdb0d91eed7fc1286e683ca7fcf6d5b1f23e98fb9860d3edeb72d0e8",
+      "request": 7
+    },
+    {
+      "first_public_gold_token_id": 254,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 1.825706380794358,
+      "gold_first_token_NLL_384": 1.825706380794358,
+      "input_id": "0fc87948017613d2d93780527570795263397cad8780b66a672b86e498a6741f",
+      "native_prompt_sha256": "e861f4a07497ba4b345a604fbb58dea472740360af6c52d20adcc040d6ac4ebb",
+      "request": 8
+    },
+    {
+      "first_public_gold_token_id": 2051,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 3.41781602705818,
+      "gold_first_token_NLL_384": 3.41781602705818,
+      "input_id": "8d6bc0df0fc0dccc29ef3223c0856266565edff7603dc6fea3741913c50195e0",
+      "native_prompt_sha256": "2aedfdc4ec23a43df461240c894189802c010792d981fde0f31cc19aaee9975f",
+      "request": 9
+    },
+    {
+      "first_public_gold_token_id": 372,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 3.594339231195306,
+      "gold_first_token_NLL_384": 3.594339231195306,
+      "input_id": "ec65a781e0629ae0b600f23ef480256b0c8852619a7494c6d23035e0efb07d65",
+      "native_prompt_sha256": "2f53d7afd4eed2292d47f6fce7a510cbb28f7210e5ae81e9f0830c68cd15ca6d",
+      "request": 10
+    },
+    {
+      "first_public_gold_token_id": 285,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 0.1317487779072124,
+      "gold_first_token_NLL_384": 0.1317487779072124,
+      "input_id": "2068195b24794c13a6817beae53eaf7dbe31ba3692f5ad04a69fd4d05a0439a8",
+      "native_prompt_sha256": "d92ae9b34a12640ce83b612fed210f0f91cbe4a920992e5a5fd56ed3ca9c4b69",
+      "request": 11
+    },
+    {
+      "first_public_gold_token_id": 327,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 0.6623339104899024,
+      "gold_first_token_NLL_384": 0.6623339104899024,
+      "input_id": "28df487f8c28af2aec12c01e3cc2c4f58f435e0ae4105ce2b73c23c3fc8f2a84",
+      "native_prompt_sha256": "b5da4dc8ef60627ab85906091dcd50930bc62090740e2c9a9bc2972c06977629",
+      "request": 12
+    },
+    {
+      "first_public_gold_token_id": 254,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 3.574033517264084,
+      "gold_first_token_NLL_384": 3.574033517264084,
+      "input_id": "693baeab5fe549d21bdebb6be4e1d29f03dfa9a54a622ca249fb45b9aeb75359",
+      "native_prompt_sha256": "86e9edf83f68728d79ea8150d39d87fcf30b9225510ca160b38a3ee665115a75",
+      "request": 13
+    },
+    {
+      "first_public_gold_token_id": 372,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 2.7669307442091338,
+      "gold_first_token_NLL_384": 2.7669307442091338,
+      "input_id": "8367cdb60778593d06c5eab2e5b0146d81197f0bf7b040016b4519ba07c8bbc2",
+      "native_prompt_sha256": "9c20e27077e480c412bae36cb6b23743478723c987cfb66975625301f6e675a6",
+      "request": 14
+    },
+    {
+      "first_public_gold_token_id": 68307,
+      "gold_NLL_new384_minus_old32": 0.0,
+      "gold_first_token_NLL_32": 0.036794546815855256,
+      "gold_first_token_NLL_384": 0.036794546815855256,
+      "input_id": "ac7a4e77a69784194ee43b16c5cc7ff4e876f4d2f60a4eebc8679ec8971fe8b6",
+      "native_prompt_sha256": "25537250d8a832ad46f938bf5b956c97519fc81b1d2f69ae54ec055624bd87d9",
+      "request": 15
+    }
+  ],
+  "source_calibration_only": true,
+  "source_gold_manifest_receipt_sha256": "9d81479d2772c8e76f8ba9a7e2d6ef3eb97597ccf515d12186e969e037ca3b76",
+  "status": "REAL_ORIGINAL_PRETRAINED_CAL_NEXT_GOLD_NLL_PASS",
+  "target_token_alignment_valid": 16,
+  "true_original_compressed_AF_model": true
+}

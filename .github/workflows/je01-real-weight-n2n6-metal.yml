@@ -1,0 +1,93 @@
+name: JE01 actual pretrained BF16 n2-n6 eight Expert native Apple Metal
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_real_weight_metal_manifest_prep.py'
+      - 'tools/je01_real_weight_n2n6_metal_probe.cpp'
+      - '.github/workflows/je01-real-weight-n2n6-metal.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  real-weight-native-metal-matvec:
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Get exact 43,253,760B real BF16-derived Expert payload bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: je01-three-physical-samebyte-8expert-native-payload-bundles
+          run-id: 44172798485
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/je01_real_bundles
+      - name: Independently verify actual physical source SHA and generate 24 real-role map
+        run: |
+          set -euo pipefail
+          python tools/je01_real_weight_metal_manifest_prep.py \
+            --source "$RUNNER_TEMP/je01_real_bundles/je01_actual_equalbyte_bundles" \
+            --tsv "$RUNNER_TEMP/je01_real_binding.tsv"
+      - name: Prepare isolated 384 original BEGLIN MLX source only
+        run: |
+          set -euo pipefail
+          python tools/je01_isolated_context384_stage.py --checkout "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP/je01_real_metal_src" --expected-commit "$(git rev-parse HEAD)" \
+            > "$RUNNER_TEMP/je01_real_metal_stage.json"
+          cat >> "$RUNNER_TEMP/je01_real_metal_src/CMakeLists.txt" <<'CMAKE'
+          add_executable(je01_real_weight_n2n6_metal_probe
+            tools/je01_real_weight_n2n6_metal_probe.cpp
+            $<TARGET_OBJECTS:mlx_moe_obj>)
+          target_include_directories(je01_real_weight_n2n6_metal_probe PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR})
+          target_link_libraries(je01_real_weight_n2n6_metal_probe PRIVATE mlx)
+          CMAKE
+      - name: Install pinned Apple-native MLX and compiler
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'mlx==0.32.1' 'cmake>=3.20,<5' 'ninja>=1.10'
+      - name: Build AND RUN 24 real pretrained-weight GPU matvecs with independent CPU reference
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import platform
+          assert platform.system()=="Darwin" and platform.machine()=="arm64"
+          PY
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os;print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S "$RUNNER_TEMP/je01_real_metal_src" -B "$RUNNER_TEMP/je01_real_metal_build" \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$RUNNER_TEMP/je01_real_metal_build" \
+            --target je01_real_weight_n2n6_metal_probe --parallel 2
+          "$RUNNER_TEMP/je01_real_metal_build/je01_real_weight_n2n6_metal_probe" \
+            "$RUNNER_TEMP/je01_real_bundles/je01_actual_equalbyte_bundles/frequency_prelabel.packed-and-scales.bin" \
+            "$RUNNER_TEMP/je01_real_binding.tsv" | tee "$RUNNER_TEMP/je01_real_weight_metal_result.log"
+          python - <<'PY'
+          import os,json,pathlib
+          lines=pathlib.Path(os.environ["RUNNER_TEMP"]+"/je01_real_weight_metal_result.log").read_text().splitlines()
+          r=json.loads(lines[-1])
+          assert r["status"]=="PASS_ACTUAL_PRETRAINED_BF16_DERIVED_N2_N6_METAL"
+          assert r["real_pretrained_expert_roles_gpu"]==24
+          assert r["real_n2_roles"]==9 and r["real_n6_roles"]==15
+          assert r["physical_original_AF_budget_bytes"]==43253760
+          assert r["worst_gpu_cpu_relative_rmse"]<0.05
+          assert r["actual_full_27layer_model_forward"]=="NOT_RUN"
+          assert r["full_gold_token_NLL"]=="NOT_MEASURED"
+          print("JE01_REAL_BF16_NATIVE_METAL_24_ROLES_GPU_CPU_AUDIT_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real-bf16-8expert-24role-metal-matvec
+          path: |
+            ${{ runner.temp }}/je01_real_metal_stage.json
+            ${{ runner.temp }}/je01_real_binding.tsv
+            ${{ runner.temp }}/je01_real_weight_metal_result.log
+          retention-days: 14
+          if-no-files-found: error

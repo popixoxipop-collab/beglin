@@ -1,0 +1,91 @@
+name: JE01 original384 real-BF16 Q3 Expert routed correction Apple Metal
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_scratch_real_q35_overlay_probe_stage.py'
+      - '.github/workflows/je01-scratch-original384-real-overlay-metal.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  original384-real-q3-correction-math:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-three-real-bf16-q3q5-equalbyte-payloads
+          run-id: 44177403091
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/source_bundles
+      - name: Fail-closed real physical SHA source descriptor
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/source_bundles"
+          if [[ -f "$src/JE01_REAL_Q3Q5_EQUALBYTE_BUNDLE_RECEIPT.json" ]]; then
+            :
+          elif [[ -f "$src/real_q3q5_bundles/JE01_REAL_Q3Q5_EQUALBYTE_BUNDLE_RECEIPT.json" ]]; then
+            src="$src/real_q3q5_bundles"
+          else
+            echo "JE01_REAL_BUNDLE_ROOT_NOT_FOUND"; exit 2
+          fi
+          echo "JE01_REAL_BUNDLE_ROOT=$src" >> "$GITHUB_ENV"
+          python tools/je01_real_q3q5_metal_manifest_prep.py \
+            --source "$src" --tsv "$RUNNER_TEMP/je01_real_roles.tsv"
+      - name: Clone original one-slot384 and inject isolated Expert-ID GPU correction
+        run: |
+          set -euo pipefail
+          python tools/je01_isolated_context384_stage.py \
+            --checkout "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP/je01_src" \
+            --expected-commit "$(git rev-parse HEAD)" > "$RUNNER_TEMP/je01_stage.json"
+          python tools/je01_scratch_cb384_overlay_stage.py \
+            --staged-source "$RUNNER_TEMP/je01_src" > "$RUNNER_TEMP/je01_patch.json"
+          python tools/je01_scratch_real_q35_overlay_probe_stage.py \
+            --staged-source "$RUNNER_TEMP/je01_src" > "$RUNNER_TEMP/je01_probe_stage.json"
+      - name: Build original MLX/Metal and run selected real q3 correction plus fallback
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'mlx==0.32.1' 'cmake>=3.20,<5' 'ninja>=1.10'
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os;print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S "$RUNNER_TEMP/je01_src" -B "$RUNNER_TEMP/je01_build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$RUNNER_TEMP/je01_build" \
+            --target je01_real_q35_overlay_graph_probe --parallel 2
+          "$RUNNER_TEMP/je01_build/je01_real_q35_overlay_graph_probe" \
+            "$JE01_REAL_BUNDLE_ROOT/route_frequency.bin" \
+            "$RUNNER_TEMP/je01_real_roles.tsv" \
+            | tee "$RUNNER_TEMP/je01_original384_real_overlay_result.log"
+          python - <<'PY'
+          import pathlib,os,json
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_original384_real_overlay_result.log"
+          obj=[json.loads(x) for x in p.read_text().splitlines() if x.startswith('{"schema"')]
+          matches=[x for x in obj if x.get("schema")=="beglin-je01-original384-cbatch-real-BF16-E1-overlay-math/1"]
+          assert len(matches)==1
+          d=matches[0]
+          assert d["status"]=="PASS_REAL_Q3_GPU_CORRECTION_WITH_ORIGINAL_Q4_UNSELECTED_FALLBACK"
+          assert d["q3_actual_pretrained_roles_bound"]==3
+          assert d["relative_error_vs_independent_CPU_reference"]<0.03
+          assert d["nonrouted_expert_baseline_max_abs_diff"]<1e-7
+          assert d["cleared_baseline_max_abs_diff"]<1e-7
+          assert d["actual_gold_NLL"]=="NOT_MEASURED"
+          print("JE01_REAL_ORIGINAL384_E1_GPU_CORRECTION_FALLBACK_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-original384-real-q3-E1-overlay-gpu-graph-parity
+          path: |
+            ${{ runner.temp }}/je01_stage.json
+            ${{ runner.temp }}/je01_patch.json
+            ${{ runner.temp }}/je01_probe_stage.json
+            ${{ runner.temp }}/je01_original384_real_overlay_result.log
+          retention-days: 14
+          if-no-files-found: error

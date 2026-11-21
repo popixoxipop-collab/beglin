@@ -1,0 +1,43 @@
+name: JE01 isolated 384 original Expert overlay source contracts
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_scratch_cb384_overlay_stage.py'
+      - 'tests/test_je01_scratch_cb384_overlay_stage.py'
+      - '.github/workflows/je01-scratch-overlay-contracts.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-stage-static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test fail-closed anchors
+        run: python tests/test_je01_scratch_cb384_overlay_stage.py
+      - name: Verify original384 staged C++ hook, no root edits
+        run: |
+          set -euo pipefail
+          python tools/je01_isolated_context384_stage.py \
+            --checkout "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP/je01_source" \
+            --expected-commit "$(git rev-parse HEAD)" \
+            > "$RUNNER_TEMP/je01_stage.json"
+          python tools/je01_scratch_cb384_overlay_stage.py \
+            --staged-source "$RUNNER_TEMP/je01_source" \
+            > "$RUNNER_TEMP/je01_overlay.json"
+          python - <<'PY'
+          import json,os,pathlib
+          d=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'je01_overlay.json').read_text())
+          assert d["status"]=="ONLY_ISOLATED_ORIGINAL384_GPU_CPP_AND_HEADER_PATCHED"
+          assert d["cbatch_hook_count"]==1 and len(d["frozen_slots"])==8
+          assert not d["root_repository_files_modified"]
+          assert d["real_gold_NLL"]=="NOT_MEASURED"
+          print("JE01_ORIGINAL_384_SOURCE_OVERLAY_STATIC_PASS")
+          PY

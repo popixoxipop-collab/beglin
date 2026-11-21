@@ -1,0 +1,49 @@
+{
+  "files": [
+    {
+      "byte_size": 156987808,
+      "dataset": "Salesforce/wikitext",
+      "file_sha256": "74da360f23826045b3e6ac6375411fdb15f003030aa74f2596ed08b857cb9212",
+      "parquet_magic_verified": true,
+      "relative_path": "wikitext-103-raw-v1/train-00000-of-00002.parquet",
+      "revision": "b08601e04326c79dfdd32d625aee71d232d685c3",
+      "role": "wikitext_train_0"
+    },
+    {
+      "byte_size": 157088770,
+      "dataset": "Salesforce/wikitext",
+      "file_sha256": "ba090ac30dbf5461e8dcbdd1a1b8e6f3cf9c2c756d64f0c1220450acd514f720",
+      "parquet_magic_verified": true,
+      "relative_path": "wikitext-103-raw-v1/train-00001-of-00002.parquet",
+      "revision": "b08601e04326c79dfdd32d625aee71d232d685c3",
+      "role": "wikitext_train_1"
+    },
+    {
+      "byte_size": 657209,
+      "dataset": "Salesforce/wikitext",
+      "file_sha256": "204929b7ff9d6184953f867dedb860e40aa69c078fc1e54b3baaa8fb28511c4c",
+      "parquet_magic_verified": true,
+      "relative_path": "wikitext-103-raw-v1/validation-00000-of-00001.parquet",
+      "revision": "b08601e04326c79dfdd32d625aee71d232d685c3",
+      "role": "wikitext_validation"
+    },
+    {
+      "byte_size": 6315951,
+      "dataset": "Rowan/hellaswag",
+      "file_sha256": "899813071e1e95efafec90f856e1987d2150fa4d020fc005df6962c259f660cd",
+      "parquet_magic_verified": true,
+      "relative_path": "data/validation-00000-of-00001.parquet",
+      "revision": "218ec52e09a7e7462a5400043bb9a69a41d06b76",
+      "role": "hellaswag_validation"
+    }
+  ],
+  "input_row_manifest_sha256": "a9397bfabdd012f60d3dd3d33bcfab455ac1046eced30373d553217dd9409147",
+  "model_checkpoint_sha256": "NOT_MEASURED",
+  "native_moe_inference": "NOT_RUN",
+  "production_authorized": false,
+  "receipt_sha256": "0924b13ac6022bf18e895c76dbd1498432079cb73c69e43e00fe01b9f63226d5",
+  "schema": "beglin-je01-full-source-parquet-sha256-v1",
+  "stage": "FOUR_COMPLETE_PUBLIC_PARQUET_SOURCES_SHA256_PINNED",
+  "total_source_bytes": 321049738,
+  "weights_modified": false
+}

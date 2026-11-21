@@ -1,0 +1,128 @@
+name: JE01 original384 NIG real Q3Q5 native fullgold candidate
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_eoe_real_nig24_role_tsv.py'
+      - 'tools/je01_eoe_original384_mixed_source_stage.py'
+      - '.github/workflows/je01-eoe-real-nig384-native.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  true-source-43MB:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-four-real-q35-NIG-Expert-role-exactbyte-bundles
+          run-id: 44181761880
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/original
+      - name: Verify actual NIG file SHA and create original frozen 8-Expert native role TSV
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/original"
+          if [[ -f "$root/JE01_REAL_Q35_FOUR_ROLE_POLICIES_PHYSICAL_RECEIPT.json" ]]; then
+            :
+          elif [[ -f "$root/je01_role_policy_binaries/JE01_REAL_Q35_FOUR_ROLE_POLICIES_PHYSICAL_RECEIPT.json" ]]; then
+            root="$root/je01_role_policy_binaries"
+          else
+            echo JE01_NIG_SOURCE_NOT_FOUND;exit 2
+          fi
+          python tools/je01_eoe_real_nig24_role_tsv.py \
+            --source "$root" --tsv "$RUNNER_TEMP/JE01_NIG_24_REAL.tsv" \
+            | tee "$RUNNER_TEMP/JE01_NIG_SOURCE_VERIFIED.json"
+          echo "dab4f50b6233688d789facf37a7fc94e22b0f4aa33298c36e5f69d89063db8cd  $root/NIG_proxy_upper_6roles.bin" | sha256sum --check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-original-NIG-8Expert24-role-real-TSV
+          path: |
+            ${{ runner.temp }}/JE01_NIG_24_REAL.tsv
+            ${{ runner.temp }}/JE01_NIG_SOURCE_VERIFIED.json
+          retention-days: 14
+          if-no-files-found: error
+  isolated-real-arm64-binary:
+    runs-on: macos-15
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned MLX/Metal source build dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'mlx==0.32.1' 'cmake>=3.20,<5' 'ninja>=1.10'
+      - name: Stage original native384 fullgold and E1 NIG scratch-only source
+        run: |
+          set -euo pipefail
+          python tools/je01_isolated_context384_stage.py \
+            --checkout "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP/je01_nig_src" \
+            --expected-commit "$(git rev-parse HEAD)" > "$RUNNER_TEMP/original_stage.json"
+          python tools/je01_scratch_cb384_overlay_stage.py \
+            --staged-source "$RUNNER_TEMP/je01_nig_src" > "$RUNNER_TEMP/overlay_stage.json"
+          python - <<'PY'
+          import importlib.util,os,pathlib
+          f=pathlib.Path("tools/je01_xox_original256_fulltarget_teacherforced_nll.py").resolve()
+          spec=importlib.util.spec_from_file_location("je01_gold",f)
+          mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_nig_src"/"qwen_infer.c"
+          raw=p.read_text()
+          changed=mod.patch_cpu(raw)
+          assert changed!=raw
+          p.write_text(changed)
+          PY
+          python tools/je01_eoe_original384_mixed_source_stage.py \
+            --scratch "$RUNNER_TEMP/je01_nig_src" > "$RUNNER_TEMP/JE01_NIG_STAGE.json"
+          python - <<'PY'
+          import pathlib,os,json
+          r=pathlib.Path(os.environ["RUNNER_TEMP"])
+          d=json.loads((r/"JE01_NIG_STAGE.json").read_text())
+          assert d["status"]=="JE01_REAL_ORIGINAL384_EIGHT_EXPERT_Q3Q5_RESEARCH_HOOK_STAGED"
+          p=r/"je01_nig_src"/"CMakeLists.txt"
+          a=p.read_text()
+          before="OUTPUT_NAME qwen_infer_gpu_je01_context384"
+          assert a.count(before)==1
+          p.write_text(a.replace(before,"OUTPUT_NAME je01_eoe_original384_NIG_fullgold",1))
+          print("JE01_ORIGINAL_REAL_NIG8_SOURCE_SCRATCH_ONLY_PASS")
+          PY
+      - name: Compile original native AF B1 fullgold with optional 8 Expert real NIG loader
+        run: |
+          set -euo pipefail
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os;print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S "$RUNNER_TEMP/je01_nig_src" -B "$RUNNER_TEMP/je01_nig_build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$RUNNER_TEMP/je01_nig_build" --target qwen_infer_gpu --parallel 2
+          f="$RUNNER_TEMP/je01_nig_build/je01_eoe_original384_NIG_fullgold"
+          test -f "$f"
+          cp "$f" "$RUNNER_TEMP/je01_eoe_original384_NIG_fullgold"
+          python - <<'PY'
+          import hashlib,pathlib,json,os
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          binary=root/"je01_eoe_original384_NIG_fullgold"
+          receipt={"status":"JE01_NATIVE_ORIGINAL384_NIG8_BINARY_COMPILED_NOT_FORWARDED",
+                   "sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
+                   "binary_bytes":binary.stat().st_size,
+                   "source_patch":json.loads((root/"JE01_NIG_STAGE.json").read_text()),
+                   "original_weight_edits":False,"real_gold_NLL":"NOT_MEASURED"}
+          (root/"JE01_NIG_NATIVE_BUILD_RECEIPT.json").write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\n")
+          print("JE01_NATIVE_ORIGINAL384_REAL_NIG8_BUILD_PASS",receipt["sha256"])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-original384-real-NIG8-arm64-fullgold-binary
+          path: |
+            ${{ runner.temp }}/je01_eoe_original384_NIG_fullgold
+            ${{ runner.temp }}/JE01_NIG_NATIVE_BUILD_RECEIPT.json
+            ${{ runner.temp }}/JE01_NIG_STAGE.json
+          retention-days: 14
+          if-no-files-found: error

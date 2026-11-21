@@ -1,0 +1,41 @@
+{
+  "schema": "BEGLIN-JE01-actual-MLX-fused-KV-allocation/1",
+  "ci_run_id": 44017766019,
+  "ci_job_id": 133819700906,
+  "ci_url": "https://github.com/popixoxipop-collab/beglin/actions/runs/44017766019",
+  "research_branch": "research/je01-moe-bayesian-bit-allocation-20261117",
+  "ci_checked_commit": "cdc72d723716d3162b96c4b8ec2d1fea2308e575",
+  "native_arch": "macOS Mach-O arm64 (GitHub macos-15 M1)",
+  "native_mlx_version": "0.32.1",
+  "isolated_binary_sha256": "bd7d79661d25370d50529b92cddaa3871cd60be6211263dbc29f35aeacd35b6f",
+  "native_observation": {
+    "schema": "beglin-je01-metal384-gpu-kv-probe-v2",
+    "status": "PASS_NO_MODEL",
+    "mlx_device_available": true,
+    "single_slot_accepted": true,
+    "two_or_more_slots_rejected": true,
+    "mla_host_configured": true,
+    "theoretical_kv_bytes_per_single_slot": 251658240,
+    "measured_process_peak_rss_delta_bytes": 251691008,
+    "measured_mlx_gpu_active_before_bytes": 0,
+    "measured_mlx_gpu_active_after_bytes": 251658240,
+    "measured_mlx_gpu_active_delta_bytes": 251658240,
+    "measured_mlx_gpu_peak_after_bytes": 251658496,
+    "pretrained_model_forward": "NOT_RUN",
+    "metal_full_fused_kv_materialized": true,
+    "model_weights_loaded": false,
+    "production_modified": false
+  },
+  "limits": {
+    "host_ram_delta_is_not_same_as_metal_gpu_delta": true,
+    "short_prefix_logit_parity": "NOT_RUN",
+    "pretrained_model_weights_loaded": false,
+    "actual_full_model_forward": "NOT_RUN",
+    "routed_expert_nll": "NOT_MEASURED",
+    "quality_improvement": "NOT_MEASURED",
+    "operating_release_modified": false,
+    "production_promotion_allowed": false
+  },
+  "frozen_input_manifest_sha256": "a9397bfabdd012f60d3dd3d33bcfab455ac1046eced30373d553217dd9409147",
+  "original_bf16_sha256": "36e7e3cafb5c01d3249d2d538ccb77fcb4c5ce2d1df213ea0881b2b85e6debfc"
+}

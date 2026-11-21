@@ -1,0 +1,73 @@
+name: JE01 actual pinned BF16 24 role native compressed alternatives
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_hf_exact_bf16_range_tiers.py'
+      - '.github/workflows/je01-hf-exact-bf16-range-tiers.yml'
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  validate-original-BF16-remote-and-quantize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned numeric and HTTP dependencies
+        run: |
+          python -m pip install --disable-pip-version-check numpy==2.2.6 requests==2.32.3
+      - name: Verify SHA-addressed BF16 shard HEAD and strict HTTP byte-range support
+        run: |
+          set -euo pipefail
+          python tools/je01_hf_exact_bf16_range_tiers.py --mode preflight \
+            | tee "$RUNNER_TEMP/je01_bf16_range_preflight.json"
+      - name: Build actual 72 native 2/6/8bit artifacts from 24 BF16 selected roles
+        run: |
+          set -euo pipefail
+          python tools/je01_hf_exact_bf16_range_tiers.py --mode extract \
+            --output "$RUNNER_TEMP/je01_native_bf16_artifacts" \
+            | tee "$RUNNER_TEMP/je01_bf16_range_real_result.jsonl"
+      - name: Independently audit 72 generated file hashes and byte sizes
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, pathlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_native_bf16_artifacts"
+          r=json.loads((root/"JE01_HF_RANGE_NATIVE_BF16_72_ARTIFACTS.json").read_text())
+          claimed=r.pop("receipt_sha256")
+          actual=hashlib.sha256(json.dumps(r,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert claimed==actual
+          assert r["status"]=="REAL_ORIGINAL_BF16_SHA_ATTESTED_24_TENSORS_72_NATIVE_TIERS_PACKED"
+          assert r["real_role_tier_count"]==72
+          assert len({(e["layer"],e["expert"],e["role"]) for e in r["records"]})==24
+          byte_counts={"2":0,"6":0,"8":0}
+          for item in r["records"]:
+            for typ in ("packed","scale"):
+              v=item[typ]
+              path=root/v["filename"]
+              assert path.is_file() and not path.is_symlink()
+              assert path.stat().st_size==v["actual_bytes"]
+              assert hashlib.sha256(path.read_bytes()).hexdigest()==v["sha256"]
+              byte_counts[str(item["tier"])]+=v["actual_bytes"]
+          assert byte_counts==r["real_physical_byte_totals_all8"]
+          assert r["original_full_model_mixed_precision_forward"]=="NOT_RUN"
+          assert r["actual_gold_token_NLL_improvement"]=="NOT_MEASURED"
+          print("JE01_REAL_BF16_72_FILES_INDEPENDENT_SHA_BYTE_AUDIT_PASS",byte_counts,claimed)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real-exact-bf16-24-roles-72-native-tiers
+          path: |
+            ${{ runner.temp }}/je01_bf16_range_preflight.json
+            ${{ runner.temp }}/je01_bf16_range_real_result.jsonl
+            ${{ runner.temp }}/je01_native_bf16_artifacts/*
+          retention-days: 14
+          if-no-files-found: error

@@ -1,0 +1,64 @@
+name: JE01 independent original-BF16-derived FFN output diagnostic
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_real_packed_ffn_independent_screen.py'
+      - '.github/workflows/je01-real-packed-ffn-independent.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  real-sourced-native-ffn-independent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      OPENBLAS_NUM_THREADS: '2'
+      OMP_NUM_THREADS: '2'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy==2.2.6
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-real-exact-bf16-24-roles-72-native-tiers
+          run-id: 44172058412
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/je01_real72
+      - name: Real packed n2/n6 tensors FFN and independent new activations
+        run: |
+          set -euo pipefail
+          python tools/je01_real_packed_ffn_independent_screen.py \
+            --source "$RUNNER_TEMP/je01_real72/je01_native_bf16_artifacts" \
+            --out "$RUNNER_TEMP/je01_real_ffn_indep.json" \
+            | tee "$RUNNER_TEMP/je01_real_ffn_indep_log.txt"
+      - name: Independent result integrity and NOT-NLL guard
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_real_ffn_indep.json"
+          d=json.loads(p.read_text())
+          sig=d.pop("receipt_sha256")
+          assert sig==hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert d["status"]=="REAL_BF16_SOURCED_PACKED_N2_N6_FFN_DIAGNOSTIC_PASS"
+          assert len(d["per_expert"])==8 and len(d["tested_locked_equalbyte_policies"])==3
+          assert d["reference_kind"]=="ALL6_NATIVE_REQUANTIZED_NOT_ORIGINAL_AF4"
+          assert d["full_model_gold_NLL"]=="NOT_MEASURED" and not d["production_changes"]
+          assert d["independent_128_128_labels_used"] is False
+          print("JE01_REAL_ORIGINAL_BF16_PACKED_FFN_SCREEN_INDEPENDENT_PASS",sig)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real-packed-ffn-independent-activation-screen
+          path: |
+            ${{ runner.temp }}/je01_real_ffn_indep.json
+            ${{ runner.temp }}/je01_real_ffn_indep_log.txt
+          retention-days: 14
+          if-no-files-found: error

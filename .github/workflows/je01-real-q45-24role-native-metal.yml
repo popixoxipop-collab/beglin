@@ -1,0 +1,125 @@
+name: JE01 original BF16 Q4 nibble Q5 bitplane 24 role real Apple Metal parity
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_real_weight_q4q5_metal_probe.cpp'
+      - '.github/workflows/je01-real-q45-24role-native-metal.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native-metal-original-real-Q45-parity:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-real-original-chat-bf16-12q4-12q5-equalbyte
+          run-id: 44939239490
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/candidate
+      - name: Resolve physical real pretrained-source candidate, independently full SHA check
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/candidate"
+          if [[ -f "$root/JE01_REAL_Q45_EQUALBYTE_RECEIPT.json" ]]; then
+            :
+          elif [[ -f "$root/je01_real_q45/JE01_REAL_Q45_EQUALBYTE_RECEIPT.json" ]]; then
+            root="$root/je01_real_q45"
+          else
+            echo JE01_Q45_REAL_SOURCE_ROOT_MISSING;exit 2
+          fi
+          echo "JE01_Q45_REAL_SOURCE_ROOT=$root" >> "$GITHUB_ENV"
+          python - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"candidate"
+          valid=[p for p in [root,root/"je01_real_q45"] if (p/"JE01_REAL_Q45_EQUALBYTE_RECEIPT.json").is_file()]
+          assert len(valid)==1
+          d=json.loads((valid[0]/"JE01_REAL_Q45_EQUALBYTE_RECEIPT.json").read_text())
+          sig=d.pop("receipt_sha256")
+          assert sig=="f82645bcff33fa2f7268c1fb7e2797cbc20cbd667a2cd8556e9adc01e20204e3"
+          assert hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()==sig
+          target=valid[0]/"JE01_SOURCE_REAL_Q4Q5_12_12_EXACT_BYTE.bin"
+          assert target.stat().st_size==43253760
+          assert hashlib.sha256(target.read_bytes()).hexdigest()=="b4bd15db43f60f5aeb3ae8d6b9af148fa38545e5289ac049cd26a57a82932e6b"
+          assert d["q4_role_count"]==12 and d["q5_role_count"]==12 and len(d["physical_regions"])==48
+          print("JE01_REAL_Q4_Q5_GPU_SOURCE_SHA_PREFLIGHT_PASS",sig)
+          PY
+      - name: Stage original384 native MLX scratch and Q4 symmetry-only GPU binder
+        run: |
+          set -euo pipefail
+          python tools/je01_isolated_context384_stage.py \
+            --checkout "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP/je01_real_src" \
+            --expected-commit "$(git rev-parse HEAD)" > "$RUNNER_TEMP/je01_base.json"
+          python tools/je01_scratch_cb384_overlay_stage.py \
+            --staged-source "$RUNNER_TEMP/je01_real_src" > "$RUNNER_TEMP/je01_overlay.json"
+          python - <<'PY'
+          import importlib.util,os,pathlib
+          path=pathlib.Path("tools/je01_xox_original256_fulltarget_teacherforced_nll.py").resolve()
+          spec=importlib.util.spec_from_file_location("je01_fullgold",path)
+          m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+          f=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_real_src"/"qwen_infer.c"
+          f.write_text(m.patch_cpu(f.read_text()))
+          PY
+          python tools/je01_eoe_original384_mixed_source_stage.py \
+            --scratch "$RUNNER_TEMP/je01_real_src" > "$RUNNER_TEMP/je01_mixed.json"
+          python tools/je01_eoe_original384_q45_scratch_stage.py \
+            --scratch "$RUNNER_TEMP/je01_real_src" > "$RUNNER_TEMP/je01_q45_patch.json"
+          cat >> "$RUNNER_TEMP/je01_real_src/CMakeLists.txt" <<'CMAKE'
+          add_executable(je01_real_weight_q4q5_metal_probe
+            tools/je01_real_weight_q4q5_metal_probe.cpp
+            $<TARGET_OBJECTS:mlx_moe_obj>)
+          target_include_directories(je01_real_weight_q4q5_metal_probe PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR})
+          target_link_libraries(je01_real_weight_q4q5_metal_probe PRIVATE mlx)
+          CMAKE
+      - name: Install pinned MLX and compile native real Q4/Q5 GPU probe
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'mlx==0.32.1' 'cmake>=3.20,<5' 'ninja>=1.10'
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os;print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S "$RUNNER_TEMP/je01_real_src" -B "$RUNNER_TEMP/je01_real_build" \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$RUNNER_TEMP/je01_real_build" \
+            --target je01_real_weight_q4q5_metal_probe --parallel 2
+      - name: Actual 24 original Chat BF16-derived Q4 and Q5 GPU matvec versus independent CPU
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/je01_real_build/je01_real_weight_q4q5_metal_probe" \
+            "$JE01_Q45_REAL_SOURCE_ROOT/JE01_SOURCE_REAL_Q4Q5_12_12_EXACT_BYTE.bin" \
+            "$JE01_Q45_REAL_SOURCE_ROOT/JE01_SOURCE_REAL_Q4Q5_24_ROLES.tsv" \
+            | tee "$RUNNER_TEMP/JE01_REAL_Q4Q5_GPU_ACTUAL.log"
+          python - <<'PY'
+          import json,os,pathlib
+          s=(pathlib.Path(os.environ["RUNNER_TEMP"])/"JE01_REAL_Q4Q5_GPU_ACTUAL.log").read_text().splitlines()
+          obj=[json.loads(x) for x in s if x.startswith('{"schema"')]
+          x=[a for a in obj if a["schema"]=="beglin-je01-real-bf16-q4nibble-q5plane-24role-native-metal/1"]
+          assert len(x)==1
+          v=x[0]
+          assert v["status"]=="PASS_ORIGINAL_CHAT_BF16_12Q4_12Q5_NATIVE_METAL_CPU_PARITY"
+          assert v["real_pretrained_expert_roles_gpu"]==24
+          assert v["real_n4_roles"]==12 and v["real_n5_roles"]==12
+          assert v["physical_original_AF_budget_bytes"]==43253760
+          assert v["worst_gpu_cpu_relative_rmse"]<0.001
+          assert v["actual_full_27layer_model_forward"]=="NOT_RUN"
+          assert v["full_gold_token_NLL"]=="NOT_MEASURED"
+          assert v["production_changed"] is False
+          print("JE01_REAL_12Q4_12Q5_METAL_24ROLE_INDEPENDENT_CPU_PARITY_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real-BF16-q4q5-24role-metal-cpu-parity
+          path: |
+            ${{ runner.temp }}/JE01_REAL_Q4Q5_GPU_ACTUAL.log
+            ${{ runner.temp }}/je01_q45_patch.json
+          retention-days: 14
+          if-no-files-found: error
