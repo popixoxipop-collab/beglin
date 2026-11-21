@@ -69,8 +69,9 @@ def patch(cpp):
     before,binder,after=section(cpp,NATIVE_BIND_ENTRY,NATIVE_BIND_END)
     binder=replace_exact(binder,BIAS_PTR_OLD,BIAS_PTR_NEW,"ORIGINAL_BINDER_BIAS_POINTER")
     binder=replace_exact(binder,BIAS_LOAD_OLD,BIAS_LOAD_NEW,"ORIGINAL_BINDER_BIAS_BRANCH")
-    if binder.count("bias_off==-1")!=2:
-        raise ValueError("JE01_Q45_SYMMETRIC_SENTINEL_UNEXPECTED_COUNT")
+    if binder.count("void *bias_ptr = bias_off==-1 ? nullptr")!=1 or \
+       binder.count("if (bias_off==-1) {")!=1:
+        raise ValueError("JE01_Q45_SYMMETRIC_SENTINEL_BRANCHED_INVALID")
     cpp=before+binder+after
     if cpp.count("Q4 symmetric")!=1 or cpp.count(CHECK_NEW)!=1:
         raise ValueError("JE01_Q45_SOURCE_PATCH_NOT_UNIQUE")
