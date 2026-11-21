@@ -1,0 +1,65 @@
+name: JE01 single actual BF16 NIG 43MB source transit
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - '.github/workflows/je01-eoe-single-nig-transit.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  export-only-original-real-NIG-43MB:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-four-real-q35-NIG-Expert-role-exactbyte-bundles
+          run-id: 44181761880
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/original_allfour
+      - name: SHA-verify complete original NIG real-source blob and 48-region ledger
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,pathlib,json,hashlib,shutil
+          origin=pathlib.Path(os.environ["RUNNER_TEMP"])/"original_allfour"
+          match=[p for p in (origin,origin/"je01_role_policy_binaries")
+                 if (p/"JE01_REAL_Q35_FOUR_ROLE_POLICIES_PHYSICAL_RECEIPT.json").is_file()]
+          assert len(match)==1
+          root=match[0]
+          receipt=root/"JE01_REAL_Q35_FOUR_ROLE_POLICIES_PHYSICAL_RECEIPT.json"
+          d=json.loads(receipt.read_text())
+          sig=d.pop("receipt_sha256")
+          assert sig==hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert sig=="8d3be1509b0484b9f97687c98d0eaceeea3a6e2bde836c94e0a30ac242898d58"
+          rows=[x for x in d["bundles"] if x["policy"]=="NIG_proxy_upper_6roles"]
+          assert len(rows)==1
+          r=rows[0]
+          assert len(r["source_role_regions"])==48 and r["physical_bytes"]==43253760
+          path=root/r["file"]
+          assert path.is_file() and not path.is_symlink()
+          assert path.stat().st_size==43253760
+          sha=hashlib.sha256(path.read_bytes()).hexdigest()
+          assert sha==r["sha256"]=="dab4f50b6233688d789facf37a7fc94e22b0f4aa33298c36e5f69d89063db8cd"
+          dest=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_only_nig"
+          dest.mkdir(mode=0o700)
+          shutil.copyfile(path,dest/"NIG_proxy_upper_6roles.bin")
+          evidence={"status":"JE01_ONLY_REAL_ORIGINAL_BF16_NIG_43MB_STAGED",
+                    "full_source_sha256":sha,"original_four_bundle_receipt_sha256":sig,
+                    "physical_bytes":43253760,
+                    "role_segments":48,"other_policies_exported":False,
+                    "real_27layer_gold_NLL":"NOT_RUN"}
+          (dest/"JE01_SINGLE_NIG_SOURCE_RECEIPT.json").write_text(json.dumps(evidence,sort_keys=True,indent=2)+"\n")
+          print("JE01_SINGLE_NIG43MB_SOURCE_SHA_PASS",sha)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-single-real-original-NIG43MB-eoe-transport
+          path: ${{ runner.temp }}/je01_only_nig/*
+          retention-days: 14
+          if-no-files-found: error
