@@ -51,7 +51,7 @@ def run(inputs,gold_file,baseline_file,target):
     prompts=original["cohorts"]["calibration"]["file_receipts"]
     cases=gold["cases"]
     reference=base["per_case_real_NLL"]
-    if len(prompts)!=len(cases)!=len(reference)!=256:
+    if (len(prompts),len(cases),len(reference))!=(256,256,256):
         raise ValueError("JE01_ORIGINAL_256_COUNT_DRIFT")
     rows=[]
     for i,(p,c,r) in enumerate(zip(prompts,cases,reference)):
