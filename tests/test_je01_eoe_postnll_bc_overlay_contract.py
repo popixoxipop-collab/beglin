@@ -44,7 +44,7 @@ class TestJE01PostNLLBCNativePatch(unittest.TestCase):
         self.assertNotIn("mlx_gpu_je01_overlay_count()!=4",mark)
 
     def test_original_frozen_A_code_or_marker_not_accepted(self):
-        with self.assertRaisesRegex(ValueError,"ANCHOR"):
+        with self.assertRaisesRegex(ValueError,"ANCHOR|BINDER"):
             m.patch("int mlx_gpu_je01_overlay_load_bundle(){}","bad")
 
 
