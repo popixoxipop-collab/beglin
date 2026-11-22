@@ -1,0 +1,44 @@
+{
+  "adapter_smoke_receipt_sha256": "b0825ab7a048f7d95b155592760e10d73e3df2b112230adbf7b348f388ca1595",
+  "adapter_smoke_source_sha256": {
+    "je01_mlx_native_jvp_adapters.h": "9ae9d98b921334bae321e583908e71bdc9c08178cbf3ca5d7a1d4d4e552a09ec",
+    "je01_mlx_native_jvp_smoke.cpp": "eb2e596a5283a354d732e270d2c82e7c709484667f1fdfa9360278afecee25ac",
+    "je01_mlx_native_jvp_smoke.py": "13e26b32b05eb152db8be274c62ab6d6192729fd406507f24a771760b5fb5563"
+  },
+  "allocation_selected": false,
+  "bank_receipt_sha256": "4994ec762b3a9b8a44015bad18f4b5bc7ea26505208384146238e7def28464d4",
+  "base_c_sha256": "8d1a8fce7d578319ceb45d17948ebe0349758acb2ae0b786944c8119ea795c3d",
+  "base_cpp_sha256": "390fb6b136bdd9f4978e6482b7a18b11951333e453752a15c3fd094a7d3b07f3",
+  "binary_bytes": 1278040,
+  "binary_sha256": "559ed0aae0181c03e3ca617fa83ff8f727f3cfb57bde09b3cf3c2ea2dda4c3e6",
+  "cmake_sha256": "6775ad35ecb67d45000955a7a2efbabd523f55b23c8787c9967959fbffb018e8",
+  "configuration": {
+    "adapter_sha256": "9ae9d98b921334bae321e583908e71bdc9c08178cbf3ca5d7a1d4d4e552a09ec",
+    "patch_source_sha256": "518c65b7ca22c1df2a257f1f30c4e71fb12255f9d657793b961f4feed6e387bf",
+    "patched_c_sha256": "6b30ab9997df17af23fc8af2adf5ba2c8fea64489378427e008f97ce7d904067",
+    "patched_cpp_sha256": "56301599354a4c3081428ca822c1d2768ff0ce6b9b8589331ecb8d6f153077b5",
+    "smoke_canonical_sha256": "b0825ab7a048f7d95b155592760e10d73e3df2b112230adbf7b348f388ca1595"
+  },
+  "dataset_receipt_sha256": "a0091a208adaa559788a942149fe28f12f1de4e03dfbbafe840a5acce50f3e2a",
+  "fixed_build_receipt_sha256": "dbcdd1beb38a3863a5cbb1ac4bb697dddcc6e263448bea80d03385b7db8c2fc7",
+  "fixed_native_sha256": "46ea1f61fdd7483767ebc20900f4c97f9663a51148c74e566d2f66ccc848e688",
+  "full48_empirical_fisher": null,
+  "full_prefix_jvp": "NOT_EXECUTED",
+  "helper_source_sha256": {
+    "je01_role_directional_bank.py": "045fd22d86e4ce18f967d66830a1f71b0c61ad6ab5c5889d953cb9a8d05bce33",
+    "je01_role_directional_fixed_native.py": "cffe2e1dd8298681f3a134caace742ddc9fea77209c58683cd8d2f48fe6284e7",
+    "je01_role_directional_fixed_routes_patch.py": "233937b59293bec11300b66450b819dc48bb09b8d28eb6e98ca81aac7f511019",
+    "je01_role_directional_native_runner.py": "5607c0afef3bd4b1a61bcab6622267acc6b6137fc65ba0e79873e92e31d7e9e6"
+  },
+  "independent_validation_ood_accessed": false,
+  "mlx_library_sha256": "afb1939edc96dc10e452132e4e665276fe0c48bf8cdc1a69286feb8a14de1da0",
+  "model_original_af4_sha256": "9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4",
+  "off_parity": "NOT_RUN",
+  "production_modified": false,
+  "receipt_sha256": "811605094dd704b46b3453c01199fa44946653e5acee05083a5f2b0d3ffe0ff3",
+  "runner_source_sha256": "ffd632d79d948119ad261e2720ebbcd7c5076af21070aeaf60bf0ca8e7d79bd6",
+  "schema": "beglin-je01-native-one-column-jvp-build/1",
+  "scope": "TRAIN16_DIAGNOSTIC",
+  "source_patch_receipt_sha256": "1ffe363507b75e14f920640ed96c374e34a41f37ee1a9f040635c4d0e7d8cf61",
+  "status": "ONE_COLUMN_JVP_NATIVE_COMPILE_PASS"
+}

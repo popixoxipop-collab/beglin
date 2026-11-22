@@ -1,0 +1,184 @@
+{
+  "all_predeclared_roles_reported_regardless_of_numerical_sign_or_pass": true,
+  "allocation_selected": false,
+  "alpha_grid": [
+    "0",
+    "+0.05",
+    "-0.05",
+    "+0.025",
+    "-0.025"
+  ],
+  "case_ids": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "diagnostic_role_indices": [
+    0,
+    1,
+    2
+  ],
+  "diagnostic_role_keys": [
+    [
+      12,
+      13,
+      "gate_proj"
+    ],
+    [
+      12,
+      13,
+      "up_proj"
+    ],
+    [
+      12,
+      13,
+      "down_proj"
+    ]
+  ],
+  "every_fixed_route_output_requires_baseline_sha": "7e5811d13953f99db5df55169bf465f039acb9224f626336d247168e0f570711",
+  "every_zero_and_jvp_primal_requires_original_gold_sha": "b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c",
+  "fd_convergence_rule": {
+    "coarse_h": 0.05,
+    "fine_h": 0.025,
+    "reference": "RMS_OF_FINE_FD_OVER_ALL_656_GOLD_TOKENS",
+    "rms_absolute_tolerance": 0.0001,
+    "rms_relative_tolerance": 0.05
+  },
+  "full48_empirical_fisher": null,
+  "full_prefix_completion_counters": {
+    "cases": 32,
+    "gold": 656,
+    "layers": 117018,
+    "tokens": 4334
+  },
+  "gate_fd_reference": {
+    "canonical_sha256": "87f239d900d9aff3921ab99d478024b13002e80b3b3d65683d4a055e4147598c",
+    "file_sha256": "a64d13644a47396c8d514d60f6b5eee2f5683ef91975bc7433ab0260066208b9",
+    "status": "PREVIOUSLY_CONVERGED_INDEPENDENT_FIXED_ROUTE_AUDIT"
+  },
+  "gold_tokens": 656,
+  "independent_validation_ood_accessed": false,
+  "jvp_agreement_rule": {
+    "reference": "RMS_OF_FINE_FD_OVER_ALL_656_GOLD_TOKENS",
+    "rms_absolute_tolerance": 0.0001,
+    "rms_relative_tolerance": 0.05
+  },
+  "jvp_alpha": 0,
+  "native_cell_count": 14,
+  "native_execution_sequence": [
+    {
+      "alpha": "0",
+      "kind": "OFF",
+      "role_index": null
+    },
+    {
+      "alpha": "0",
+      "kind": "JVP",
+      "role_index": 0
+    },
+    {
+      "alpha": "0",
+      "kind": "FD",
+      "role_index": 1
+    },
+    {
+      "alpha": "+0.05",
+      "kind": "FD",
+      "role_index": 1
+    },
+    {
+      "alpha": "-0.05",
+      "kind": "FD",
+      "role_index": 1
+    },
+    {
+      "alpha": "+0.025",
+      "kind": "FD",
+      "role_index": 1
+    },
+    {
+      "alpha": "-0.025",
+      "kind": "FD",
+      "role_index": 1
+    },
+    {
+      "alpha": "0",
+      "kind": "JVP",
+      "role_index": 1
+    },
+    {
+      "alpha": "0",
+      "kind": "FD",
+      "role_index": 2
+    },
+    {
+      "alpha": "+0.05",
+      "kind": "FD",
+      "role_index": 2
+    },
+    {
+      "alpha": "-0.05",
+      "kind": "FD",
+      "role_index": 2
+    },
+    {
+      "alpha": "+0.025",
+      "kind": "FD",
+      "role_index": 2
+    },
+    {
+      "alpha": "-0.025",
+      "kind": "FD",
+      "role_index": 2
+    },
+    {
+      "alpha": "0",
+      "kind": "JVP",
+      "role_index": 2
+    }
+  ],
+  "new_build_receipt_sha256": "2cbeb4dc1a7e1ab5642a4abb22395498c10dde43bee051eec3c303c7e53fa008",
+  "observed_label_gram_rule": "ONLY_AFTER_ALL_THREE_DIRECTIONS_PASS; EXPLORATORY_NOT_ALLOCATION",
+  "pass_requires_fd_convergence_and_jvp_agreement": true,
+  "patch_source_sha256": "68c8cd6541657312bca6604dcbe74dcdc8156ff4da80de9c8fd672a1ad08d755",
+  "production_modified": false,
+  "receipt_sha256": "12ae8c5eb7a3d6409eea2aa79337de9da9c56453bac33ec084c4e4a64aec8a14",
+  "result_adaptive_attempts": false,
+  "result_adaptive_roles": false,
+  "result_adaptive_thresholds": false,
+  "retry_policy": "ONLY_EXECUTION_OR_INTEGRITY_FAILURE_WITH_NEW_ATTEMPT",
+  "runner_source_sha256": "9be8372fa3858577011eb5ab1d4ad654f746e151a95012aaf23e515fd8a7eb90",
+  "schema": "beglin-je01-native-three-role-jvp-prerun-plan/1",
+  "scope": "PREVIOUSLY_SEEN_TRAIN16_DIAGNOSTIC_ONLY",
+  "source_identity": {
+    "adapter_header_sha256": "9ae9d98b921334bae321e583908e71bdc9c08178cbf3ca5d7a1d4d4e552a09ec",
+    "adapter_smoke_receipt_sha256": "b0825ab7a048f7d95b155592760e10d73e3df2b112230adbf7b348f388ca1595",
+    "bank_sha256": "3b18257d22caddd0916292bef692110f9eeaf0edf83ad3fd4d5417fdf3443bb8",
+    "baseline_route_sha256": "7e5811d13953f99db5df55169bf465f039acb9224f626336d247168e0f570711",
+    "derivative_definition": "THREE_NATIVE_ROLE_Q4_ALPHA_ZERO_FIXED_HARD_ROUTE_FULL_PREFIX_DIRECTIONS",
+    "fixed_fd_executable_sha256": "46ea1f61fdd7483767ebc20900f4c97f9663a51148c74e566d2f66ccc848e688",
+    "gate_fixed_reference_audit_sha256": "87f239d900d9aff3921ab99d478024b13002e80b3b3d65683d4a055e4147598c",
+    "gold_metadata_sha256": "be0dab12624efb4fae17538b4c5e6ef76bd09aebf4c09b1b428fc1d8f0fff406",
+    "input_manifest_sha256": "fab455198ef37d443b20af8e3029df3ddf4f4ba0f6d584eceeb262d26d6a146d",
+    "native_executable_sha256": "110b1978d97bcd7c6bdfd6d42142569e56e9dacffa4ff462dc0786b3128e49f4",
+    "new_build_receipt_sha256": "2cbeb4dc1a7e1ab5642a4abb22395498c10dde43bee051eec3c303c7e53fa008",
+    "original_af4_sha256": "9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4",
+    "original_off_receipt_sha256": "85d8e28d51fbc0e2d319f0e60e5f9e6ac3d2f9050b2e386d81a969f6ad8f672a",
+    "role_order_sha256": "d232ca637eb17a1b40bf29f75e0590d8f63ecbc9aa950fb838a34b6fa90259a1"
+  },
+  "tier": "Q4",
+  "train240_allocation": "NOT_RUN"
+}
