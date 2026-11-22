@@ -110,9 +110,14 @@ def load_original_sources():
     f32 = ctypes.POINTER(ctypes.c_float)
     lib.gguf_quantize_q4g64_error_feedback.argtypes = [
         f32, ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p]
+    # Verified original native gguf_quantize_qNg64 ABI: exactly six arguments.
+    # The earlier seven-argument ctypes prototype allowed 14/24 roles to run,
+    # then raised TypeError at the first Q5 role (2026-11-22 managed job).
     lib.gguf_quantize_qNg64.argtypes = [
-        f32, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        f32, ctypes.c_int, ctypes.c_int, ctypes.c_int,
         ctypes.c_void_p, ctypes.c_void_p]
+    lib.gguf_quantize_q4g64_error_feedback.restype = None
+    lib.gguf_quantize_qNg64.restype = None
     return native, af, layout, weightmap, shards, headers, lib
 
 
