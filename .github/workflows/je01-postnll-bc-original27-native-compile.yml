@@ -1,5 +1,12 @@
 name: JE01 Post-NLL B/C exact-byte original27 native MLX build
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/je01_eoe_postnll_bc_native_overlay_patch.py'
+      - 'tools/je01_postnll_bc_exactbyte_native_bundle.py'
+      - 'tests/test_je01_eoe_postnll_bc_overlay_contract.py'
+      - '.github/workflows/je01-postnll-bc-original27-native-compile.yml'
   push:
     branches: [research/je01-moe-bayesian-bit-allocation-20261117]
     paths:
