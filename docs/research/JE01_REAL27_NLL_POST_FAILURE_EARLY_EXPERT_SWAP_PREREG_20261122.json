@@ -1,0 +1,173 @@
+{
+  "schema": "beglin-je01-post-real-original27-train16-exploratory-fixedbudget-next-ablation-preregister/1",
+  "stage": "PRE_REGISTERED_CONDITIONAL_UNRUN",
+  "date_utc": "2026-11-22",
+  "parent_source": {
+    "actual_original27_TRAIN240_role_SSE_ledger": "docs/research/JE01_ACTUAL_CAL240_FFN_H2_SWIGLU_NATIVE_OUTPUT_DP_20261122.json",
+    "canonical_signed_receipt": "35f9b96767d3e2b40ab6dfc9b79d99bf1ccd392124804cf41e63b38af6c77dfb",
+    "full_original_AF4_sha256": "9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4",
+    "preexisting_independent_27layer_OFF_SHA": "b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c",
+    "current_sevenexpert_native_binary_sha": "db028b252d489861349259ec7cd08c87086e617d9f331b1de4a5f660bed79f8f"
+  },
+  "real_model_gold16_observed": {
+    "AF4_mean_NLL": 2.291799702354307,
+    "current_mixed_mean_NLL": 2.294761262072885,
+    "paired_delta": 0.002961559718578117,
+    "cases": 16,
+    "tokens": 656,
+    "worsened_cases": 10,
+    "improved_cases": 6,
+    "paired_bootstrap95": [
+      -0.0010308552071630677,
+      0.007325131013914283
+    ],
+    "no_independent_holdout": true
+  },
+  "budget": {
+    "total_exact_bytes": 43253760,
+    "role_bytes": {
+      "AF4": 1802240,
+      "Q4": 1622016,
+      "Q5": 1982464
+    },
+    "exact_tier_counts": {
+      "AF4": 12,
+      "Q4": 6,
+      "Q5": 6
+    },
+    "Q5_FROZEN": [
+      "20/17/down_proj",
+      "21/61/down_proj",
+      "24/60/down_proj",
+      "24/26/gate_proj",
+      "24/26/up_proj",
+      "24/26/down_proj"
+    ],
+    "original_role_universe": [
+      "12/13/gate_proj",
+      "12/13/up_proj",
+      "12/13/down_proj",
+      "13/22/gate_proj",
+      "13/22/up_proj",
+      "13/22/down_proj",
+      "13/28/gate_proj",
+      "13/28/up_proj",
+      "13/28/down_proj",
+      "14/63/gate_proj",
+      "14/63/up_proj",
+      "14/63/down_proj",
+      "20/17/gate_proj",
+      "20/17/up_proj",
+      "20/17/down_proj",
+      "21/61/gate_proj",
+      "21/61/up_proj",
+      "21/61/down_proj",
+      "24/26/gate_proj",
+      "24/26/up_proj",
+      "24/26/down_proj",
+      "24/60/gate_proj",
+      "24/60/up_proj",
+      "24/60/down_proj"
+    ]
+  },
+  "rolewise_proxies_are_not_full_model_NLL": true,
+  "arms": [
+    {
+      "id": "A_FROZEN_SSE",
+      "q4": [
+        "12/13/gate_proj",
+        "12/13/up_proj",
+        "13/22/gate_proj",
+        "13/22/up_proj",
+        "13/28/gate_proj",
+        "13/28/up_proj"
+      ],
+      "sse": 5584.880989209061,
+      "relative_mse": 0.1664768825277238,
+      "actual_pilot16_nll": 2.294761262072885,
+      "counts": {
+        "AF4": 12,
+        "Q4": 6,
+        "Q5": 6
+      },
+      "actual_43mb_bytes": 43253760,
+      "train240_weighted_output_SSE_gain_vs_AF4_pct": 22.346918918996305,
+      "new_gold_NLL_status": "MEASURED_TRAIN16"
+    },
+    {
+      "id": "B_PROTECT_EARLY_GATE",
+      "q4": [
+        "12/13/up_proj",
+        "13/22/up_proj",
+        "13/28/up_proj",
+        "20/17/gate_proj",
+        "20/17/up_proj",
+        "24/60/gate_proj"
+      ],
+      "sse": 6210.563372475845,
+      "relative_mse": 0.16949066170682592,
+      "counts": {
+        "AF4": 12,
+        "Q4": 6,
+        "Q5": 6
+      },
+      "actual_43mb_bytes": 43253760,
+      "train240_weighted_output_SSE_gain_vs_AF4_pct": 13.64733070348233,
+      "new_gold_NLL_status": "NOT_RUN"
+    },
+    {
+      "id": "C_PROTECT_EARLY_UP",
+      "q4": [
+        "12/13/gate_proj",
+        "13/22/gate_proj",
+        "13/28/gate_proj",
+        "20/17/gate_proj",
+        "20/17/up_proj",
+        "24/60/gate_proj"
+      ],
+      "sse": 6192.579168462276,
+      "relative_mse": 0.1654188854759158,
+      "counts": {
+        "AF4": 12,
+        "Q4": 6,
+        "Q5": 6
+      },
+      "actual_43mb_bytes": 43253760,
+      "train240_weighted_output_SSE_gain_vs_AF4_pct": 13.89738596072797,
+      "new_gold_NLL_status": "NOT_RUN"
+    },
+    {
+      "id": "D_PROTECT_ALL_EARLY",
+      "q4": [
+        "20/17/gate_proj",
+        "20/17/up_proj",
+        "21/61/gate_proj",
+        "21/61/up_proj",
+        "24/60/gate_proj",
+        "24/60/up_proj"
+      ],
+      "sse": 6968.085985724383,
+      "relative_mse": 0.1662176108009755,
+      "counts": {
+        "AF4": 12,
+        "Q4": 6,
+        "Q5": 6
+      },
+      "actual_43mb_bytes": 43253760,
+      "train240_weighted_output_SSE_gain_vs_AF4_pct": 3.1146147833149285,
+      "new_gold_NLL_status": "NOT_RUN"
+    }
+  ],
+  "analysis_scope": "TRAIN240 observed role-output SSE fixed-policy forecast only. B/C/D have no native SwiGLU or full 27-layer gold NLL yet.",
+  "evaluation_plan": "Use fresh isolated original-source physical bundle per fixed role assignment, source/byte SHA independently audit; run original27 OFF exact output SHA gate then ON candidate same old TRAIN16 only for mechanism; do not select or claim quality on seen TRAIN16; if continuing choose on separate TRAIN240-only NLL with sealed validation128/OOD128 untouched until one preregistered policy frozen.",
+  "adoption_gate": "HOLD unless downstream real original27 NLL improvement confirmed on independent validation128 and OOD128, no statistically significant degradation in worst layers/Expert, original intact, same exact bytes.",
+  "not_measured": [
+    "true Fisher/Hessian",
+    "real NLL gradients",
+    "B/C/D native FFN",
+    "B/C/D NLL",
+    "independent heldout 128",
+    "OOD128"
+  ],
+  "production_checkpoint_modified": false
+}
