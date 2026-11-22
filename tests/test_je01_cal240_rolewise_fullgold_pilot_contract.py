@@ -23,7 +23,7 @@ class TestJE01RealCal240RolewiseGoldPilotContract(unittest.TestCase):
             'AF_SHA="9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4"',
             'je01_cal240_rolewise_native_stage_20261122_v1',
             'JE01_CAL240_ROLEWISE_STAGE_RECEIPT.json',
-            'source_real_CAL240_rolewise_BF16_source_sha256',
+            'original_real_CAL240_rolewise_BF16_source_sha256',
         ]
         for marker in required:
             with self.subTest(marker=marker):
@@ -46,7 +46,7 @@ class TestJE01RealCal240RolewiseGoldPilotContract(unittest.TestCase):
             'GOLD_MAGIC=b"JE01_ORIGINAL_AF_FULL_GOLD_NLL_V1',
             'META_MAGIC=b"JE01_ORIGINAL_FULL_GOLD_TARGETS_META_V1',
             '656', 'gold_meta.bin',
-            'QWEN_MOE_GPU_CB_REQS',
+            'QWEN_MOE_CB_REQS',
             'JE01_REAL_Q35_BUNDLE',
             'JE01_REAL_Q35_TSV',
             'if free<35:stop=',
