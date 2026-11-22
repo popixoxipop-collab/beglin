@@ -26,6 +26,7 @@ EXE=BUILD/"bin/je01_eoe_original384_cal240_bc_rolewise_fullgold"
 EXE_SHA="d53db80fd7326d5c247fc8d9544b70b60b4601abd1fbe84715dd180b297737ac"
 BUILD_RECEIPT_SHA="5fc038e5ac644fac006d5f55caa532f551b22f21d3d885ee6b17d34f1482f43d"
 BASELINE_SHA="b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c"
+BASELINE_NLL=2.291799702354307
 SOURCE_GIT_HEAD="d187697bf9ed730f05042f89355e1281e79d1d4f"
 PRE=BUILD/"checkout/docs/research/JE01_REAL27_NLL_POST_FAILURE_EARLY_EXPERT_SWAP_PREREG_20261122.json"
 PRE_BLOB="08c493215078b83481c871203d1e08232f2646e3"
@@ -212,7 +213,7 @@ def run(mode):
     reference=OLD/"gold_original_nll.bin"
     if mode=="off":
         fail(max(map(abs,deltas))<1e-10 and
-             abs(mean-old.BASELINE_NLL)<1e-12 and
+             abs(mean-BASELINE_NLL)<1e-12 and
              filehash(target)==BASELINE_SHA and
              filehash(target)==filehash(reference),
              "JE01_BC_NEW_BINARY_OFF_ORIGINAL27_OUTPUT_NOT_BIT_IDENTICAL")
@@ -230,8 +231,8 @@ def run(mode):
        "original_AF4_output_sha256":BASELINE_SHA,
        "native_output_sha256":filehash(target),
        "mean_gold_NLL":mean,
-       "same_source_original_NLL":old.BASELINE_NLL,
-       "NLL_candidate_minus_original":mean-old.BASELINE_NLL,
+       "same_source_original_NLL":BASELINE_NLL,
+       "NLL_candidate_minus_original":mean-BASELINE_NLL,
        "gold_train_cases":16,"gold_tokens":656,
        "per_case":[{"row":i,"tokens":len(ref[i]),
           "original_NLL_sum":base[i],"measured_mode_NLL_sum":sums[i],
