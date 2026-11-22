@@ -76,6 +76,26 @@ class TestJE01Cal240RolewiseBundle(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertIn(marker, TEXT)
 
+    def test_q5_native_ctypes_abi_is_six_arguments(self):
+        """Regression for real 14/24 role builder failure: Q5 ABI was typed as 7."""
+        functions = [node for node in TREE.body
+                     if isinstance(node, ast.FunctionDef)
+                     and node.name == "load_original_sources"]
+        self.assertEqual(len(functions), 1)
+        assignments = [
+            node for node in ast.walk(functions[0])
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Attribute)
+                    and target.attr == "argtypes"
+                    and isinstance(target.value, ast.Attribute)
+                    and target.value.attr == "gguf_quantize_qNg64"
+                    for target in node.targets)
+        ]
+        self.assertEqual(len(assignments), 1)
+        self.assertIsInstance(assignments[0].value, ast.List)
+        self.assertEqual(len(assignments[0].value.elts), 6)
+        self.assertIn("lib.gguf_quantize_qNg64.restype = None", TEXT)
+
     def test_research_file_is_create_only_never_prod_mutation(self):
         self.assertIn('not output.exists() and not output.is_symlink()', TEXT)
         self.assertIn('binary.open("xb")', TEXT)
