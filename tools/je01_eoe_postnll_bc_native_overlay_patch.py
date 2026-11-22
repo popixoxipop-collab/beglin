@@ -63,8 +63,8 @@ def patch(cpp,c):
     spec.loader.exec_module(original)
     a,b=original.patch(cpp,c)
     old="""const bool q4=((r.layer==12 && r.expert==13) ||
-                            (r.layer==13 && r.expert==22) ||
-                            (r.layer==13 && r.expert==28)) && idx>=0 && idx<2;"""
+                           (r.layer==13 && r.expert==22) ||
+                           (r.layer==13 && r.expert==28)) && idx>=0 && idx<2;"""
     if a.count(old)!=1 or b.count(original.NEW_MARK)!=1:
         raise ValueError("JE01_BC_EXACT_ORIGINAL_A_LOADER_ANCHOR_LOST")
     dynamic="""const bool q4=(
