@@ -86,10 +86,11 @@ class TestActualJE01Original27BCPairedGoldNLL(unittest.TestCase):
             root=pathlib.Path(d)
             self.make_tree(root)
             p=root/"B"/"JE01_BC_REAL27_GOLD16_NATIVE_NLL.json"
-            raw=p.read_bytes()
-            bad=raw.replace(b"2.2974258514952206",b"2.2974258514952207",1)
-            self.assertNotEqual(raw,bad)
-            p.write_bytes(bad)
+            import json
+            source=json.loads(p.read_text())
+            prior=source["per_gold_target_actual_NLL"][0][0]
+            source["per_gold_target_actual_NLL"][0][0]=prior+0.125
+            p.write_text(json.dumps(source,sort_keys=True,indent=2,allow_nan=False)+"\n")
             with mock.patch.object(module,"RUN",root):
                 with self.assertRaisesRegex(ValueError,"SIGN"):
                     module.audit()
