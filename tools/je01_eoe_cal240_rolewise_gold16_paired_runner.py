@@ -181,7 +181,7 @@ def run(mode):
     print(json.dumps({"event":"JE01_REAL_ORIGINAL27_CAL240_ROLEWISE_16GOLD_START",
                       "mode":mode,"cases":16,"gold_tokens":656,
                       "native_binary_sha256":CANDIDATE_SHA,
-                      "source_real_affine_AF4_mixedq45_sha256":CANDIDATE_FILE_SHA,
+                      "source_real_cal240_rolewise_physical_sha256":CANDIDATE_FILE_SHA,
                       "original_AF_weight_sha256":AF_SHA,
                       "initial_memory_free_percent":low}),flush=True)
     with stdout.open("xb") as out,stderr.open("xb") as err:
@@ -260,7 +260,7 @@ if __name__=="__main__":
     a=p.parse_args()
     try:run(a.mode)
     except BaseException as e:
-        print(json.dumps({"status":"JE01_FULL_MODEL_REAL_AFFINE_MIX4_FAIL_CLOSED",
+        print(json.dumps({"status":"JE01_FULL_MODEL_CAL240_ROLEWISE_FAIL_CLOSED",
                           "mode":a.mode,"type":type(e).__name__,
                           "reason":str(e)[:1000]},sort_keys=True),flush=True)
         raise SystemExit(2)
