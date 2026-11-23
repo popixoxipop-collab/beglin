@@ -1,0 +1,96 @@
+name: JE01 original27 actual routed FFN hidden h2 last-token trace scratch build
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_scratch_original27_real_h2_trace16.py'
+      - '.github/workflows/je01-real-original27-routed-h2-trace.yml'
+permissions:
+  contents: read
+jobs:
+  actual-model-original27-scratch-routed-h2-metal-build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned original Apple MLX/CMake
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'mlx==0.32.1' 'cmake>=3.20,<5' 'ninja>=1.10'
+      - name: Stage native original384 real gold model then scratch-only h2 last-token trace
+        run: |
+          set -euo pipefail
+          python tools/je01_isolated_context384_stage.py \
+            --checkout "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP/je01_original27_h2_source" \
+            --expected-commit "$(git rev-parse HEAD)" > "$RUNNER_TEMP/je01_h2_base.json"
+          python - <<'PY'
+          import importlib.util,os,pathlib
+          path=pathlib.Path("tools/je01_xox_original256_fulltarget_teacherforced_nll.py").resolve()
+          spec=importlib.util.spec_from_file_location("je01_real_true_fullgold",path)
+          module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+          f=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_original27_h2_source"/"qwen_infer.c"
+          f.write_text(module.patch_cpu(f.read_text()))
+          PY
+          python tools/je01_scratch_original27_real_h2_trace16.py \
+            --scratch "$RUNNER_TEMP/je01_original27_h2_source" \
+            > "$RUNNER_TEMP/JE01_ORIGINAL27_REAL_ROUTED_H2_SOURCE_STAGE.json"
+          python - <<'PY'
+          import json,pathlib,os
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          j=json.loads((root/"JE01_ORIGINAL27_REAL_ROUTED_H2_SOURCE_STAGE.json").read_text())
+          assert j["status"]=="JE01_ISOLATED_ORIGINAL27_LASTPROMPT_ROUTED_H2_TRACE_SOURCE_STAGED"
+          assert j["original_gold_NLL_parity"]=="NOT_TESTED"
+          assert j["true_Fisher_or_Hessian"]=="NOT_MEASURED"
+          assert not j["root_production_modified"]
+          cm=root/"je01_original27_h2_source"/"CMakeLists.txt"
+          src=cm.read_text()
+          old="OUTPUT_NAME qwen_infer_gpu_je01_context384"
+          assert src.count(old)==1
+          cm.write_text(src.replace(old,"OUTPUT_NAME je01_eoe_original27_routed_h2_trace16_fullgold",1))
+          print("JE01_ORIGINAL27_ROUTED_TRUE_H2_ACTUAL_TENSOR_STAGE_PASS")
+          PY
+      - name: Compile Apple Silicon full original 27-layer B1 true pretrained native binary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import platform
+          assert platform.system()=="Darwin" and platform.machine()=="arm64"
+          PY
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os;print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S "$RUNNER_TEMP/je01_original27_h2_source" -B "$RUNNER_TEMP/je01_original27_h2_build" \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$RUNNER_TEMP/je01_original27_h2_build" --target qwen_infer_gpu --parallel 2
+          cp "$RUNNER_TEMP/je01_original27_h2_build/je01_eoe_original27_routed_h2_trace16_fullgold" \
+             "$RUNNER_TEMP/je01_eoe_original27_routed_h2_trace16_fullgold"
+          python - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          f=root/"je01_eoe_original27_routed_h2_trace16_fullgold"
+          d={"schema":"beglin-je01-original27-native-routed-h2-train16-build/1",
+             "status":"JE01_ACTUAL_ORIGINAL27_ROUTED_H2_NATIVE_TRACE_COMPILED",
+             "binary_sha256":hashlib.sha256(f.read_bytes()).hexdigest(),
+             "binary_bytes":f.stat().st_size,
+             "original_source_patch":json.loads((root/"JE01_ORIGINAL27_REAL_ROUTED_H2_SOURCE_STAGE.json").read_text()),
+             "real_model_forward":"NOT_RUN",
+             "real_h2_values":"NOT_COLLECTED",
+             "gold_NLL_parity":"NOT_TESTED",
+             "true_Fisher_Hessian":"NOT_MEASURED",
+             "production_modified":False}
+          (root/"JE01_REAL_ORIGINAL27_ROUTED_H2_BUILD_RECEIPT.json").write_text(json.dumps(d,sort_keys=True,indent=2)+"\n")
+          print("JE01_REAL_ORIGINAL27_ACTUAL_ROUTED_H2_TRACE_NATIVE_ARM64_COMPILE_PASS",d["binary_sha256"])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real-original27-routed-h2-train16-native
+          path: |
+            ${{ runner.temp }}/je01_eoe_original27_routed_h2_trace16_fullgold
+            ${{ runner.temp }}/JE01_REAL_ORIGINAL27_ROUTED_H2_BUILD_RECEIPT.json
+            ${{ runner.temp }}/JE01_ORIGINAL27_REAL_ROUTED_H2_SOURCE_STAGE.json
+          retention-days: 14
+          if-no-files-found: error

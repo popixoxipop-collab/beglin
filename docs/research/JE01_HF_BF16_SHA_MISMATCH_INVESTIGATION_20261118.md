@@ -1,0 +1,7 @@
+# JE01 original BF16 source mismatch investigation
+
+The first independent GitHub runner HTTP range trial found a real full-source identity conflict, not a shape discrepancy: pinned official revision `419ef8b6b7a816343af14bc1a4436d4e33affb5d` returned shard1 `X-Linked-Etag=0d7e9f39bde40111a4c0f390b87497dce4565cf578d916395e6b2c7851f1e8da`, size `8594887408`; EOE SHA-attested local original BF16 shard1 is `a314b79a30810b1038f9db08345178e16fb5742aa266c4a3dc05054c59800082` with the same size. Therefore the range-based quantizer correctly blocked with `JE01_CDN_FULL_SHARD_SHA_SIZE_MISMATCH`. The first workflow accidentally lacked shell pipefail; its supposed extraction step was run after a reported BLOCKED and produced NO files, with final independent audit FAIL. The next commit added pipefail, so the second workflow stopped correctly at preflight, no gold accessed and no packed alternatives created.
+
+This new revision audit tests other **official** DeepSeek-V2-Lite commits for EXACT equality of EOE index SHA and all full-shard SHA+sizes. Source can only be considered equivalent if all match; no fallback to different weights based only on checkpoint name or same file length. Even if a matching revision is found, actual physical 72 alternatives and original-model NLL still require a fresh independently audited extraction run.
+
+Existing EOE admitted idempotent job `je01-eoe-bf16-codecs-99a4da4-20261118` remains WAITING/NO_CAPACITY, 18 attempted scheduler admissions at last check. Do not manipulate unrelated CPU reservations or operational services.

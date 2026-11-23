@@ -1,0 +1,26 @@
+{
+  "schema": "beglin-je01-original27-real-cal240-independent-physical-binary-audit-receipt/1",
+  "source": "Tailnet Commander EOE registered managed job stdout and job_status",
+  "job_id": "job_d1a4ed1be7af809b0f2777482d0ed2b0",
+  "status": "JE01_CAL240_PHYSICAL_SOURCE_BYTE_AUDIT_PASS",
+  "job_state": "SUCCEEDED",
+  "exit_code": 0,
+  "original_source_auditor_git_blob": "86e9e3b3e3360f4576d3af4f72847cda62f238cc",
+  "independent_code_source_sha_gate": "JE01_AUDITOR_GIT_SOURCE_SHA_PASS",
+  "bundle_sha256": "ada43c5e233aa4154d37de5988aa22662ed16496363e84183a784c4c588a63ac",
+  "original_signed_physical_receipt_sha256": "77d587e923283dc81d7c354ecc379298712f8a76868cb518208eecbe5a6df8b4",
+  "physical_bytes": 43253760,
+  "role_count": 24,
+  "region_count": 60,
+  "tiers": {
+    "AF4": 12,
+    "Q4": 6,
+    "Q5": 6
+  },
+  "provenance": "Reopened physical EOE D50 binary + original signed CAL240 role ledger; independently compared all SHA-protected physical regions and exact frozen policy",
+  "native_27layer_NLL": "NOT_MEASURED",
+  "native_Metal_q5_numerical_parity": "NOT_MEASURED",
+  "heldout_or_OOD_gold_scored": false,
+  "production_modified": false,
+  "decision": "RESEARCH_BYTE_INTEGRITY_PASS_ONLY; FULL_PRETRAINED_NATIVE_NLL_HOLD"
+}

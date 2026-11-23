@@ -1,0 +1,647 @@
+{
+  "actual_16_gate_up_role_measurements": 16,
+  "actual_2048d_hidden_vectors": 45,
+  "actual_original_routed_h2_events": 45,
+  "actual_source_original_AF4_SHA256": "9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4",
+  "actual_uncentered_covariance_not_empirical_Fisher": true,
+  "calibration_scope": "TRAIN16_ROUTED_EVENT_LAST_PROMPT_ONLY_NOT_256",
+  "independent_heldout_labels_used": false,
+  "not_measured": [
+    "true_loss_Fisher",
+    "true_loss_Hessian",
+    "true_loss_gradients",
+    "down_proj_swiglu_activation",
+    "256_prompt_activations",
+    "heldout128_ood128_or_prod_metrics",
+    "new_27_layer_NLL"
+  ],
+  "per_role": [
+    {
+      "actual_output_bf16_energy": 758.7925185601603,
+      "actual_routed_last_prompt_count": 6,
+      "actual_router_weight_sum": 0.4048466309905052,
+      "effective_uncentered_input_covariance_rank_max": 6,
+      "expert": 13,
+      "layer": 12,
+      "original_2048d_ffn_h2_vector_sha256": "1e64cd280d9df73db49202871741b28f721e1d16b8d06fdeb8b5a58b64284357",
+      "role": "gate_proj",
+      "source_original_bf16_role_tensor_sha256": "0f793c908f6e1a5147768a9b72c33e3d8cf64ed3bb5b74e0e86ca2f2d32a567e",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.06967320535908961,
+          "actual_diagonal_approx_output_sse": 3.0551347404206437,
+          "actual_exact_relative_output_MSE_to_BF16": 0.003934489945586956,
+          "actual_exact_weighted_output_sse": 2.985461535061554,
+          "diagonal_approx_relative_error": 0.023337498922977446,
+          "diagonal_approx_to_exact_ratio": 1.0233374989229775
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.14508866976215984,
+          "actual_diagonal_approx_output_sse": 8.467006844023576,
+          "actual_exact_relative_output_MSE_to_BF16": 0.010967317113316557,
+          "actual_exact_weighted_output_sse": 8.321918174261416,
+          "diagonal_approx_relative_error": 0.01743452251319891,
+          "diagonal_approx_to_exact_ratio": 1.0174345225131989
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.03269033183435455,
+          "actual_diagonal_approx_output_sse": 1.8477430191082465,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0023920276529848087,
+          "actual_exact_weighted_output_sse": 1.815052687273892,
+          "diagonal_approx_relative_error": 0.01801067928416646,
+          "diagonal_approx_to_exact_ratio": 1.0180106792841666
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 695.0088373290404,
+      "actual_routed_last_prompt_count": 6,
+      "actual_router_weight_sum": 0.4048466309905052,
+      "effective_uncentered_input_covariance_rank_max": 6,
+      "expert": 13,
+      "layer": 12,
+      "original_2048d_ffn_h2_vector_sha256": "1e64cd280d9df73db49202871741b28f721e1d16b8d06fdeb8b5a58b64284357",
+      "role": "up_proj",
+      "source_original_bf16_role_tensor_sha256": "faf72425ac0ca98c3599bfbc428c8e5374018553c55460e569248b7871f0d102",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.013205518478350164,
+          "actual_diagonal_approx_output_sse": 3.306432385642913,
+          "actual_exact_relative_output_MSE_to_BF16": 0.004738395672522132,
+          "actual_exact_weighted_output_sse": 3.293226867164563,
+          "diagonal_approx_relative_error": 0.00400990244857318,
+          "diagonal_approx_to_exact_ratio": 1.0040099024485731
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.1242239295777754,
+          "actual_diagonal_approx_output_sse": 9.248281433216587,
+          "actual_exact_relative_output_MSE_to_BF16": 0.013127973363192184,
+          "actual_exact_weighted_output_sse": 9.124057503638811,
+          "diagonal_approx_relative_error": 0.013614987578523374,
+          "diagonal_approx_to_exact_ratio": 1.0136149875785234
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.03277144014637967,
+          "actual_diagonal_approx_output_sse": 2.0109513438649946,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0029405709312496234,
+          "actual_exact_weighted_output_sse": 2.0437227840113743,
+          "diagonal_approx_relative_error": -0.016035168958706134,
+          "diagonal_approx_to_exact_ratio": 0.9839648310412938
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 599.0123385704,
+      "actual_routed_last_prompt_count": 4,
+      "actual_router_weight_sum": 0.2521405406296253,
+      "effective_uncentered_input_covariance_rank_max": 4,
+      "expert": 22,
+      "layer": 13,
+      "original_2048d_ffn_h2_vector_sha256": "ca0809da3c664b70ff99c9e0b642c430b8617269955ebba70005ded010b308a7",
+      "role": "gate_proj",
+      "source_original_bf16_role_tensor_sha256": "a9f28d02e1ef2fcaae008c896178ffce43cd49e48982bf4e15982bddecd40637",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.01937297289300144,
+          "actual_diagonal_approx_output_sse": 2.3916382765354256,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0039602945563760195,
+          "actual_exact_weighted_output_sse": 2.372265303642424,
+          "diagonal_approx_relative_error": 0.008166444479568024,
+          "diagonal_approx_to_exact_ratio": 1.008166444479568
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.009268708323026509,
+          "actual_diagonal_approx_output_sse": 6.670970541065839,
+          "actual_exact_relative_output_MSE_to_BF16": 0.011121142927776077,
+          "actual_exact_weighted_output_sse": 6.661701832742812,
+          "diagonal_approx_relative_error": 0.0013913424160580177,
+          "diagonal_approx_to_exact_ratio": 1.001391342416058
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.026495295718316214,
+          "actual_diagonal_approx_output_sse": 1.4514680486102893,
+          "actual_exact_relative_output_MSE_to_BF16": 0.002467333724470361,
+          "actual_exact_weighted_output_sse": 1.4779633443286055,
+          "diagonal_approx_relative_error": -0.01792689637397755,
+          "diagonal_approx_to_exact_ratio": 0.9820731036260224
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 539.7130206240736,
+      "actual_routed_last_prompt_count": 4,
+      "actual_router_weight_sum": 0.2521405406296253,
+      "effective_uncentered_input_covariance_rank_max": 4,
+      "expert": 22,
+      "layer": 13,
+      "original_2048d_ffn_h2_vector_sha256": "ca0809da3c664b70ff99c9e0b642c430b8617269955ebba70005ded010b308a7",
+      "role": "up_proj",
+      "source_original_bf16_role_tensor_sha256": "d8043a191bda2f37e3494276508c2cdb824bcaed4990936a1c7b633aeecc2bcd",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.08952992219993394,
+          "actual_diagonal_approx_output_sse": 2.551741813070787,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0045620761345053,
+          "actual_exact_weighted_output_sse": 2.462211890870853,
+          "diagonal_approx_relative_error": 0.036361583067600386,
+          "diagonal_approx_to_exact_ratio": 1.0363615830676003
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.20569548104258395,
+          "actual_diagonal_approx_output_sse": 7.136337016110318,
+          "actual_exact_relative_output_MSE_to_BF16": 0.012841345808284908,
+          "actual_exact_weighted_output_sse": 6.930641535067734,
+          "diagonal_approx_relative_error": 0.02967914009140478,
+          "diagonal_approx_to_exact_ratio": 1.0296791400914047
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.04486537473892516,
+          "actual_diagonal_approx_output_sse": 1.5535679675500536,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0027953792759466984,
+          "actual_exact_weighted_output_sse": 1.5087025928111284,
+          "diagonal_approx_relative_error": 0.02973771964912489,
+          "diagonal_approx_to_exact_ratio": 1.0297377196491249
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 688.1512247693247,
+      "actual_routed_last_prompt_count": 5,
+      "actual_router_weight_sum": 0.2893981859087944,
+      "effective_uncentered_input_covariance_rank_max": 5,
+      "expert": 28,
+      "layer": 13,
+      "original_2048d_ffn_h2_vector_sha256": "ef574a7305c4f5a963fbbcb7e82d013416edd61206d90ef52c660602596b05ef",
+      "role": "gate_proj",
+      "source_original_bf16_role_tensor_sha256": "890edb0989a4603fb59ed783119b551a204d8f658ae8c350be2528a4c772db0f",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.013704829913102401,
+          "actual_diagonal_approx_output_sse": 2.73639253699042,
+          "actual_exact_relative_output_MSE_to_BF16": 0.003996356132077485,
+          "actual_exact_weighted_output_sse": 2.7500973669035225,
+          "diagonal_approx_relative_error": -0.004983398070932078,
+          "diagonal_approx_to_exact_ratio": 0.9950166019290679
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.05161615570566447,
+          "actual_diagonal_approx_output_sse": 7.629202108668119,
+          "actual_exact_relative_output_MSE_to_BF16": 0.011011512702753001,
+          "actual_exact_weighted_output_sse": 7.577585952962455,
+          "diagonal_approx_relative_error": 0.006811688580778836,
+          "diagonal_approx_to_exact_ratio": 1.0068116885807787
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.05560601413619404,
+          "actual_diagonal_approx_output_sse": 1.6623496002824183,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0023348699069522414,
+          "actual_exact_weighted_output_sse": 1.6067435861462243,
+          "diagonal_approx_relative_error": 0.03460789550718862,
+          "diagonal_approx_to_exact_ratio": 1.0346078955071887
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 659.6649887605203,
+      "actual_routed_last_prompt_count": 5,
+      "actual_router_weight_sum": 0.2893981859087944,
+      "effective_uncentered_input_covariance_rank_max": 5,
+      "expert": 28,
+      "layer": 13,
+      "original_2048d_ffn_h2_vector_sha256": "ef574a7305c4f5a963fbbcb7e82d013416edd61206d90ef52c660602596b05ef",
+      "role": "up_proj",
+      "source_original_bf16_role_tensor_sha256": "0a9ac07b870e8e6664af181f7765a8c491f067672644e0d51e17962216dd14f1",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.06343934104561466,
+          "actual_diagonal_approx_output_sse": 2.9733550369837087,
+          "actual_exact_relative_output_MSE_to_BF16": 0.004411202270118489,
+          "actual_exact_weighted_output_sse": 2.909915695938094,
+          "diagonal_approx_relative_error": 0.02180109242826816,
+          "diagonal_approx_to_exact_ratio": 1.021801092428268
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.09834509451104267,
+          "actual_diagonal_approx_output_sse": 8.316323062001155,
+          "actual_exact_relative_output_MSE_to_BF16": 0.012755972046239662,
+          "actual_exact_weighted_output_sse": 8.414668156512198,
+          "diagonal_approx_relative_error": -0.011687340805582737,
+          "diagonal_approx_to_exact_ratio": 0.9883126591944172
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.023900095746344663,
+          "actual_diagonal_approx_output_sse": 1.8042419939035605,
+          "actual_exact_relative_output_MSE_to_BF16": 0.002771318958559403,
+          "actual_exact_weighted_output_sse": 1.8281420896499052,
+          "diagonal_approx_relative_error": -0.013073434434695174,
+          "diagonal_approx_to_exact_ratio": 0.9869265655653048
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 1239.3391599674928,
+      "actual_routed_last_prompt_count": 6,
+      "actual_router_weight_sum": 0.4457838572561741,
+      "effective_uncentered_input_covariance_rank_max": 6,
+      "expert": 63,
+      "layer": 14,
+      "original_2048d_ffn_h2_vector_sha256": "212a4da76b7a453206d60a3a92c195e3e60e708848a091cf89544edfbcf61f33",
+      "role": "gate_proj",
+      "source_original_bf16_role_tensor_sha256": "318d6fe2d73e6e8dbceaad9a4be72e1eb55ae59518402011da36777b596b863f",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.012757903426519057,
+          "actual_diagonal_approx_output_sse": 4.4927703064645,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0036354279404914444,
+          "actual_exact_weighted_output_sse": 4.505528209891019,
+          "diagonal_approx_relative_error": -0.0028316110414116458,
+          "diagonal_approx_to_exact_ratio": 0.9971683889585884
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.1336806276441802,
+          "actual_diagonal_approx_output_sse": 12.556705910455417,
+          "actual_exact_relative_output_MSE_to_BF16": 0.010023910874515646,
+          "actual_exact_weighted_output_sse": 12.423025282811237,
+          "diagonal_approx_relative_error": 0.010760714447642926,
+          "diagonal_approx_to_exact_ratio": 1.010760714447643
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.028139597104667846,
+          "actual_diagonal_approx_output_sse": 2.728309928481315,
+          "actual_exact_relative_output_MSE_to_BF16": 0.002224128482842649,
+          "actual_exact_weighted_output_sse": 2.7564495255859827,
+          "diagonal_approx_relative_error": -0.010208638628594427,
+          "diagonal_approx_to_exact_ratio": 0.9897913613714056
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 1156.8876188226843,
+      "actual_routed_last_prompt_count": 6,
+      "actual_router_weight_sum": 0.4457838572561741,
+      "effective_uncentered_input_covariance_rank_max": 6,
+      "expert": 63,
+      "layer": 14,
+      "original_2048d_ffn_h2_vector_sha256": "212a4da76b7a453206d60a3a92c195e3e60e708848a091cf89544edfbcf61f33",
+      "role": "up_proj",
+      "source_original_bf16_role_tensor_sha256": "82e90d84b3e9a6f28caddf46a7dec2f487186803e782deb115c8ad94aff0bc91",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.20555242694952813,
+          "actual_diagonal_approx_output_sse": 4.595367916402299,
+          "actual_exact_relative_output_MSE_to_BF16": 0.004149858867223008,
+          "actual_exact_weighted_output_sse": 4.8009203433518275,
+          "diagonal_approx_relative_error": -0.04281521296935723,
+          "diagonal_approx_to_exact_ratio": 0.9571847870306428
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.3814223163778383,
+          "actual_diagonal_approx_output_sse": 12.823766372107047,
+          "actual_exact_relative_output_MSE_to_BF16": 0.010755015312888607,
+          "actual_exact_weighted_output_sse": 12.442344055729208,
+          "diagonal_approx_relative_error": 0.030655181585515504,
+          "diagonal_approx_to_exact_ratio": 1.0306551815855156
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.0005218545112906092,
+          "actual_diagonal_approx_output_sse": 2.7936204700058136,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0024152236388877467,
+          "actual_exact_weighted_output_sse": 2.794142324517104,
+          "diagonal_approx_relative_error": -0.00018676733347174732,
+          "diagonal_approx_to_exact_ratio": 0.9998132326665282
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 2379.220092874683,
+      "actual_routed_last_prompt_count": 7,
+      "actual_router_weight_sum": 0.5992204360663891,
+      "effective_uncentered_input_covariance_rank_max": 7,
+      "expert": 17,
+      "layer": 20,
+      "original_2048d_ffn_h2_vector_sha256": "89e7c534edc75b67e71c178fe411f15e15782f58412e652adc7fdb2b5d624d17",
+      "role": "gate_proj",
+      "source_original_bf16_role_tensor_sha256": "b85e15a29e4c38b9c6e2a406c844eb5f4cc8621a47211c4971bfe5ef972e595b",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.18567223028229307,
+          "actual_diagonal_approx_output_sse": 11.82652181267397,
+          "actual_exact_relative_output_MSE_to_BF16": 0.004892716574331999,
+          "actual_exact_weighted_output_sse": 11.640849582391677,
+          "diagonal_approx_relative_error": 0.01595005836714417,
+          "diagonal_approx_to_exact_ratio": 1.0159500583671441
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.7618883468452466,
+          "actual_diagonal_approx_output_sse": 33.131404146891796,
+          "actual_exact_relative_output_MSE_to_BF16": 0.013605095172568173,
+          "actual_exact_weighted_output_sse": 32.36951580004655,
+          "diagonal_approx_relative_error": 0.02353721790438864,
+          "diagonal_approx_to_exact_ratio": 1.0235372179043887
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.007811618935208209,
+          "actual_diagonal_approx_output_sse": 7.17830618204467,
+          "actual_exact_relative_output_MSE_to_BF16": 0.003013800440145805,
+          "actual_exact_weighted_output_sse": 7.170494563109462,
+          "diagonal_approx_relative_error": 0.0010894114578089472,
+          "diagonal_approx_to_exact_ratio": 1.001089411457809
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 2336.746752044254,
+      "actual_routed_last_prompt_count": 7,
+      "actual_router_weight_sum": 0.5992204360663891,
+      "effective_uncentered_input_covariance_rank_max": 7,
+      "expert": 17,
+      "layer": 20,
+      "original_2048d_ffn_h2_vector_sha256": "89e7c534edc75b67e71c178fe411f15e15782f58412e652adc7fdb2b5d624d17",
+      "role": "up_proj",
+      "source_original_bf16_role_tensor_sha256": "3a41127580935771757e6dea31f14ab7c6ad5d74be7e156258810b47f71cc868",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.2562865973052606,
+          "actual_diagonal_approx_output_sse": 13.639178826791026,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0059465003693447436,
+          "actual_exact_weighted_output_sse": 13.895465424096287,
+          "diagonal_approx_relative_error": -0.018443901624254418,
+          "diagonal_approx_to_exact_ratio": 0.9815560983757455
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.5462003889311475,
+          "actual_diagonal_approx_output_sse": 38.08177776607882,
+          "actual_exact_relative_output_MSE_to_BF16": 0.016530665174228694,
+          "actual_exact_weighted_output_sse": 38.62797815500997,
+          "diagonal_approx_relative_error": -0.014140020136164088,
+          "diagonal_approx_to_exact_ratio": 0.9858599798638359
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.019065192934833775,
+          "actual_diagonal_approx_output_sse": 8.29360675005071,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0035573696361034315,
+          "actual_exact_weighted_output_sse": 8.312671942985544,
+          "diagonal_approx_relative_error": -0.0022935096038430216,
+          "diagonal_approx_to_exact_ratio": 0.997706490396157
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 4228.391040082817,
+      "actual_routed_last_prompt_count": 8,
+      "actual_router_weight_sum": 0.784248910844326,
+      "effective_uncentered_input_covariance_rank_max": 8,
+      "expert": 61,
+      "layer": 21,
+      "original_2048d_ffn_h2_vector_sha256": "1d79a4ec3cca1c6816f81a9c38a01f1928f6153379a9fe91099844c67f3d902c",
+      "role": "gate_proj",
+      "source_original_bf16_role_tensor_sha256": "44f553087414f2d099367234206ec3c2ed8f528b7d527d09a0befd3c128f3a6c",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.1268954526849626,
+          "actual_diagonal_approx_output_sse": 18.05513554449074,
+          "actual_exact_relative_output_MSE_to_BF16": 0.004299988062792695,
+          "actual_exact_weighted_output_sse": 18.1820309971757,
+          "diagonal_approx_relative_error": -0.006979168207593193,
+          "diagonal_approx_to_exact_ratio": 0.9930208317924069
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.24711791604427447,
+          "actual_diagonal_approx_output_sse": 50.460254855933,
+          "actual_exact_relative_output_MSE_to_BF16": 0.011875234921249207,
+          "actual_exact_weighted_output_sse": 50.21313693988873,
+          "diagonal_approx_relative_error": 0.004921379764425092,
+          "diagonal_approx_to_exact_ratio": 1.0049213797644252
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.1076479373095065,
+          "actual_diagonal_approx_output_sse": 10.980111349321199,
+          "actual_exact_relative_output_MSE_to_BF16": 0.00262221709901588,
+          "actual_exact_weighted_output_sse": 11.087759286630705,
+          "diagonal_approx_relative_error": -0.00970871882466868,
+          "diagonal_approx_to_exact_ratio": 0.9902912811753313
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 4407.831493304728,
+      "actual_routed_last_prompt_count": 8,
+      "actual_router_weight_sum": 0.784248910844326,
+      "effective_uncentered_input_covariance_rank_max": 8,
+      "expert": 61,
+      "layer": 21,
+      "original_2048d_ffn_h2_vector_sha256": "1d79a4ec3cca1c6816f81a9c38a01f1928f6153379a9fe91099844c67f3d902c",
+      "role": "up_proj",
+      "source_original_bf16_role_tensor_sha256": "36bc9b8bc5872544d66b098f8e741e6d392f72cb466d2b9fd6353a7842b7c770",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.02125273554875662,
+          "actual_diagonal_approx_output_sse": 20.646003156698818,
+          "actual_exact_relative_output_MSE_to_BF16": 0.004688758162293655,
+          "actual_exact_weighted_output_sse": 20.667255892247574,
+          "diagonal_approx_relative_error": -0.0010283288531172956,
+          "diagonal_approx_to_exact_ratio": 0.9989716711468827
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.7808463213903849,
+          "actual_diagonal_approx_output_sse": 57.19448181042321,
+          "actual_exact_relative_output_MSE_to_BF16": 0.012798500935147426,
+          "actual_exact_weighted_output_sse": 56.41363548903283,
+          "diagonal_approx_relative_error": 0.013841446569104493,
+          "diagonal_approx_to_exact_ratio": 1.0138414465691046
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.12146140830832053,
+          "actual_diagonal_approx_output_sse": 12.569383264040681,
+          "actual_exact_relative_output_MSE_to_BF16": 0.002879158309845953,
+          "actual_exact_weighted_output_sse": 12.690844672349002,
+          "diagonal_approx_relative_error": -0.009570789923302932,
+          "diagonal_approx_to_exact_ratio": 0.990429210076697
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 3739.345676696614,
+      "actual_routed_last_prompt_count": 4,
+      "actual_router_weight_sum": 0.38065677136182785,
+      "effective_uncentered_input_covariance_rank_max": 4,
+      "expert": 26,
+      "layer": 24,
+      "original_2048d_ffn_h2_vector_sha256": "9bc2fa190f12318c0ab98c629f0575cb36dcb31a9c67ec6934c616ab52881e3b",
+      "role": "gate_proj",
+      "source_original_bf16_role_tensor_sha256": "b43c5699477b545b5c17effa539204a586a881bc6f8ed4efb9ebdb2e95a13844",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.23110018236218366,
+          "actual_diagonal_approx_output_sse": 14.01413504772488,
+          "actual_exact_relative_output_MSE_to_BF16": 0.003685948306747293,
+          "actual_exact_weighted_output_sse": 13.783034865362696,
+          "diagonal_approx_relative_error": 0.016767002668109578,
+          "diagonal_approx_to_exact_ratio": 1.0167670026681095
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.037419404968737524,
+          "actual_diagonal_approx_output_sse": 38.855433461253085,
+          "actual_exact_relative_output_MSE_to_BF16": 0.010400978200170108,
+          "actual_exact_weighted_output_sse": 38.89285286622182,
+          "diagonal_approx_relative_error": -0.000962115201408535,
+          "diagonal_approx_to_exact_ratio": 0.9990378847985915
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.2537471425868514,
+          "actual_diagonal_approx_output_sse": 8.560398926923254,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0022214185321520223,
+          "actual_exact_weighted_output_sse": 8.306651784336402,
+          "diagonal_approx_relative_error": 0.030547463547868296,
+          "diagonal_approx_to_exact_ratio": 1.0305474635478682
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 3509.1803800045673,
+      "actual_routed_last_prompt_count": 4,
+      "actual_router_weight_sum": 0.38065677136182785,
+      "effective_uncentered_input_covariance_rank_max": 4,
+      "expert": 26,
+      "layer": 24,
+      "original_2048d_ffn_h2_vector_sha256": "9bc2fa190f12318c0ab98c629f0575cb36dcb31a9c67ec6934c616ab52881e3b",
+      "role": "up_proj",
+      "source_original_bf16_role_tensor_sha256": "cecd54ae0a09060e16900de6c5719dbb0877394ef1ef4e8ac53ae7454e013002",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.24774820006589948,
+          "actual_diagonal_approx_output_sse": 16.42593167453373,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0047514456565432885,
+          "actual_exact_weighted_output_sse": 16.673679874599628,
+          "diagonal_approx_relative_error": -0.014858639600206938,
+          "diagonal_approx_to_exact_ratio": 0.985141360399793
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -1.7322425999433833,
+          "actual_diagonal_approx_output_sse": 45.7794192576236,
+          "actual_exact_relative_output_MSE_to_BF16": 0.012551984192281073,
+          "actual_exact_weighted_output_sse": 44.04717665768022,
+          "diagonal_approx_relative_error": 0.039326983733958425,
+          "diagonal_approx_to_exact_ratio": 1.0393269837339585
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.4212148857592979,
+          "actual_diagonal_approx_output_sse": 10.03082436191351,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0027384199258921266,
+          "actual_exact_weighted_output_sse": 9.609609476154212,
+          "diagonal_approx_relative_error": 0.04383267465806207,
+          "diagonal_approx_to_exact_ratio": 1.0438326746580622
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 3211.084225070885,
+      "actual_routed_last_prompt_count": 5,
+      "actual_router_weight_sum": 0.2929833121597767,
+      "effective_uncentered_input_covariance_rank_max": 5,
+      "expert": 60,
+      "layer": 24,
+      "original_2048d_ffn_h2_vector_sha256": "22d58000053571ca09032128a87dc87516d98e921ea13d68ec3c12cfbccbec6e",
+      "role": "gate_proj",
+      "source_original_bf16_role_tensor_sha256": "feb2a4eb894079efd1628d630f9238b0b2a4d435e74ae2dbf6bbeb1ede5b5c94",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.11184704409404667,
+          "actual_diagonal_approx_output_sse": 11.00997810598771,
+          "actual_exact_relative_output_MSE_to_BF16": 0.003463573164243688,
+          "actual_exact_weighted_output_sse": 11.121825150081756,
+          "diagonal_approx_relative_error": -0.010056536817001163,
+          "diagonal_approx_to_exact_ratio": 0.9899434631829989
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.07441710529996115,
+          "actual_diagonal_approx_output_sse": 30.63308820511794,
+          "actual_exact_relative_output_MSE_to_BF16": 0.009562970996109586,
+          "actual_exact_weighted_output_sse": 30.7075053104179,
+          "diagonal_approx_relative_error": -0.0024234174853244826,
+          "diagonal_approx_to_exact_ratio": 0.9975765825146755
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.046352963175411155,
+          "actual_diagonal_approx_output_sse": 6.7241972080800405,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0020796228864900655,
+          "actual_exact_weighted_output_sse": 6.677844244904629,
+          "diagonal_approx_relative_error": 0.006941306426962516,
+          "diagonal_approx_to_exact_ratio": 1.0069413064269626
+        }
+      }
+    },
+    {
+      "actual_output_bf16_energy": 3588.8559820968785,
+      "actual_routed_last_prompt_count": 5,
+      "actual_router_weight_sum": 0.2929833121597767,
+      "effective_uncentered_input_covariance_rank_max": 5,
+      "expert": 60,
+      "layer": 24,
+      "original_2048d_ffn_h2_vector_sha256": "22d58000053571ca09032128a87dc87516d98e921ea13d68ec3c12cfbccbec6e",
+      "role": "up_proj",
+      "source_original_bf16_role_tensor_sha256": "600aa41ba4a747ff08cd81625075e2e9f81a18c82a3b866f4b87fb0417bb64c6",
+      "tier_diagnostics": {
+        "AF4": {
+          "actual_cov_offdiagonal_output_interaction_sse": 0.20980113848726667,
+          "actual_diagonal_approx_output_sse": 12.427012906836326,
+          "actual_exact_relative_output_MSE_to_BF16": 0.0035211259823082174,
+          "actual_exact_weighted_output_sse": 12.636814045323593,
+          "diagonal_approx_relative_error": -0.01660237602094858,
+          "diagonal_approx_to_exact_ratio": 0.9833976239790514
+        },
+        "Q4": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.0953290250874872,
+          "actual_diagonal_approx_output_sse": 34.5746882957868,
+          "actual_exact_relative_output_MSE_to_BF16": 0.009607339899594936,
+          "actual_exact_weighted_output_sse": 34.47935927069931,
+          "diagonal_approx_relative_error": 0.0027648142861082152,
+          "diagonal_approx_to_exact_ratio": 1.0027648142861083
+        },
+        "Q5": {
+          "actual_cov_offdiagonal_output_interaction_sse": -0.01651165625887341,
+          "actual_diagonal_approx_output_sse": 7.55437444469552,
+          "actual_exact_relative_output_MSE_to_BF16": 0.002100352542994066,
+          "actual_exact_weighted_output_sse": 7.537862788436646,
+          "diagonal_approx_relative_error": 0.0021904957309919313,
+          "diagonal_approx_to_exact_ratio": 1.002190495730992
+        }
+      }
+    }
+  ],
+  "production_modified": false,
+  "receipt_sha256": "de5d5487ec29e8b554d21cb5142246f0c1017e93a4c3c8c86be6c931a8e9e847",
+  "schema": "beglin-je01-real27-train16-h2-raw-covariance-diagonal-approx-vs-exact-gateup/1",
+  "source_16_role_actual_gemv_receipt_SHA256": "d55f4b506076a3a30f73c582ede270c38d41ac12b06190e959ac5a7383157a89",
+  "source_45_actual_routed_original_h2_SHA256": "238642649f68d111df3b60f60083a47d3a6074ada881ccb36f813dd606f9a5b4",
+  "source_all_four_BF16_shards_fullsha_rechecked": true,
+  "source_original_gold_output_SHA256": "b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c",
+  "source_training_prompt_cases": 16,
+  "status": "ACTUAL_ORIGINAL27_H2_ROUTED_COVARIANCE_DIAG_VS_EXACT_16_GATEUP_REAL_NORM_PASS",
+  "summary": {
+    "AF4": {
+      "count_diagonal_exceeds_exact": 7,
+      "count_ratio_outside_0p8_to_1p2": 0,
+      "diagonal_approx_ratio_max": 1.0363615830676003,
+      "diagonal_approx_ratio_min": 0.9571847870306428,
+      "diagonal_approx_ratio_p50": 0.9980700300527355,
+      "mean_absolute_relative_diagonal_approx_error": 0.015312047224191468
+    },
+    "Q4": {
+      "count_diagonal_exceeds_exact": 12,
+      "count_ratio_outside_0p8_to_1p2": 0,
+      "diagonal_approx_ratio_max": 1.0393269837339585,
+      "diagonal_approx_ratio_min": 0.9858599798638359,
+      "diagonal_approx_ratio_p50": 1.0087862015142108,
+      "mean_absolute_relative_diagonal_approx_error": 0.013997019568724192
+    },
+    "Q5": {
+      "count_diagonal_exceeds_exact": 8,
+      "count_ratio_outside_0p8_to_1p2": 0,
+      "diagonal_approx_ratio_max": 1.0438326746580622,
+      "diagonal_approx_ratio_min": 0.9820731036260224,
+      "diagonal_approx_ratio_p50": 1.0004513220621687,
+      "mean_absolute_relative_diagonal_approx_error": 0.015372598146464588
+    }
+  }
+}

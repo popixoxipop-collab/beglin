@@ -1,0 +1,115 @@
+{
+  "actual_full_target_per_prompt_NLL_median": 2.5006232424923516,
+  "actual_full_target_per_prompt_NLL_p05": 1.3173839582162241,
+  "actual_full_target_per_prompt_NLL_p95": 3.5898095320930574,
+  "actually_reopened_16_native_GPU_result_files": 16,
+  "all_11024_real_gold_tokens_independently_checked": 11024,
+  "all_256_original_train_prompts_checked": 256,
+  "baseline_CI_is_not_a_precision_improvement_CI": true,
+  "bootstrap": {
+    "bootstrap_independent_units": "256 TRAIN source prompts",
+    "bootstrap_seed": 20261118,
+    "n_case_resamples": 20000,
+    "not_paired_precision_allocation_improvement": true,
+    "real_source_train_mean_gold_token_NLL_CI_95": [
+      2.3658130403184066,
+      2.551722621915675
+    ]
+  },
+  "full_source_native_result_receipt_sha256": "f71a4c4397cbadf938c7a9631ba8306547b31e33028dd9a54b556a1a758e3f41",
+  "max_abs_first_gold_baseline_NLL_discrepancy": 5.471179065352771e-13,
+  "native_Bayesian_expert_bit_quality_alternatives": "NOT_MEASURED",
+  "no_same_source_or_ood_gold_labels_used": true,
+  "original_256_train_gold_source_receipt_sha256": "355a169cfb7c9ab79901ae7848afa21a2f5a576d048a5476f527bca699136fb7",
+  "per_chunk_native_original_GPU_NLL_SHA": [
+    {
+      "actual_gold_tokens_independently_checked": 656,
+      "chunk": 0,
+      "data_sha256": "b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 634,
+      "chunk": 1,
+      "data_sha256": "10146a002575aa1da674250a1795648fe0b9448f0ab3ed726e448916b943fed7"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 702,
+      "chunk": 2,
+      "data_sha256": "9a49c7ed3a05f8b82b4f227655b6d490e1a71b8c8cfd05151ae63eb7d8254180"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 664,
+      "chunk": 3,
+      "data_sha256": "361ad2b1df447d7e69556e3a9af78d4b87f9dcb2a3e60f83bed3b92c4a4e0615"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 784,
+      "chunk": 4,
+      "data_sha256": "baad81810d224df6469ceaa8ac7db50909354d24c6bc77486d8e0880d88f2c8c"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 791,
+      "chunk": 5,
+      "data_sha256": "afd92f9e12c6fd986fe5d306bfe59fc746f4a713dd88f07ddf273afadf34504a"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 772,
+      "chunk": 6,
+      "data_sha256": "68f0f88280b6af2db1fbce45bce87bfd5cf42b42dee64c8836289d8430b75349"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 589,
+      "chunk": 7,
+      "data_sha256": "9498dd0ac27573fea1c5dc1628daf80f2ff43fa9038cf25523f6f81d76968cac"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 646,
+      "chunk": 8,
+      "data_sha256": "dd71754f9e7a4c2596b9485b09cd9e41150d3e95966eb7733acc0cb61268ea88"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 742,
+      "chunk": 9,
+      "data_sha256": "c1c961ac2b4297748d7cdf7970dcb956d404a93017257cb25ef8edb9f5de1aee"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 698,
+      "chunk": 10,
+      "data_sha256": "70462344aa21228b1ef15942183df4c32df5cd796d5454a843aa920df55fcc25"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 660,
+      "chunk": 11,
+      "data_sha256": "5d4278dd0d952803caf37ab3b51461c5f6c6a5edd4471efc6631292cb210044a"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 700,
+      "chunk": 12,
+      "data_sha256": "901c51794098d1f5262cca044a8ff0d4f0ef003590e0a798d466a6c446de194e"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 776,
+      "chunk": 13,
+      "data_sha256": "b4b1ba25ac1dfbfb7f0ba3c2663166d536b8bdff5949da3094c5c333a666b301"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 617,
+      "chunk": 14,
+      "data_sha256": "83f7f248324ffe73147a716e2486a3a05e71e0a1316958e9d01a92f1b3e48071"
+    },
+    {
+      "actual_gold_tokens_independently_checked": 593,
+      "chunk": 15,
+      "data_sha256": "a2d73e9f1795229d19bf84685ce894a4127c275760c3c1900205521f57ed5120"
+    }
+  ],
+  "prior_real_256_first_gold_NLL_receipt_sha256": "aca35d52a67c8ce5854c1b7297f80b241df2b2d66823b75a98744123fe8169b4",
+  "production_promotion_allowed": false,
+  "production_weight_change": false,
+  "real_original_af_pretrained_model": true,
+  "receipt_sha256": "d00a56221a12a7456b39321f870e9d4a119f3425215a78142cd36c78b7eba2fa",
+  "recomputed_mean_per_train_prompt_full_target_NLL": 2.520329570888713,
+  "recomputed_weighted_mean_full_target_NLL": 2.46035653719724,
+  "schema": "beglin-je01-native-original-AF-train256-fullgold-NLL-independent-audit/1",
+  "status": "INDEPENDENT_256_NATIVE_REAL_FULL_TARGET_GOLD_NLL_PASS"
+}

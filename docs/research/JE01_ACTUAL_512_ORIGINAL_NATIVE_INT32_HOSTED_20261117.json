@@ -1,0 +1,43 @@
+{
+  "schema": "beglin-je01-real-512-int32-hosted-artifact-attestation/1",
+  "date_kst": "2026-11-17",
+  "repo": "popixoxipop-collab/beglin",
+  "branch": "research/je01-moe-bayesian-bit-allocation-20261117",
+  "github_actions_run_id": 44065018857,
+  "github_actions_job_id": 133976359979,
+  "github_actions_url": "https://github.com/popixoxipop-collab/beglin/actions/runs/44065018857",
+  "artifact_id": 14320036463,
+  "artifact_name": "je01-real-512-deepseek-native384-int32",
+  "artifact_url": "https://github.com/popixoxipop-collab/beglin/actions/runs/44065018857/artifacts/14320036463",
+  "artifact_zip_sha256": "384c2e0ea3b7649a8e72545d84330a3eec3be88869ededaf3f3fdd27d7c2850f",
+  "artifact_zip_size_bytes": 338000,
+  "artifact_files_uploaded": 518,
+  "artifact_expires_at": "2026-12-01T10:27:50Z",
+  "github_checked_head": "44777c07cb14a96a461e77f4616c6b750adf7047",
+  "native_inputs_receipt_sha256": "2f835daf453741d35e292dd2661b927e2a6196000c9917b62b68415968b5ce34",
+  "original_model_config_sha256": "f346286b0f1c8b044252fd54cb4fa78b9fab6472a6e8bebb9edfe03d414ea03d",
+  "original_model_tokenizer_sha256": "41f3bf64213da8c012d8bd0871a58a1fdf70463e8f08f110ddbb1082f529f669",
+  "upstream_model_commit": "419ef8b6b7a816343af14bc1a4436d4e33affb5d",
+  "original_frozen_input_manifest_sha256": "a9397bfabdd012f60d3dd3d33bcfab455ac1046eced30373d553217dd9409147",
+  "cohorts": {
+    "calibration": 256,
+    "same_source_holdout": 128,
+    "ood_holdout": 128
+  },
+  "native_int32_prompt_files_checked": 512,
+  "native_input_canonical_sha_recomputed": true,
+  "native_all_512_file_bytes_reverified": true,
+  "actual_pipeline": "public frozen rows x34 pages -> original DeepSeek tokenizer 0.22.2 -> BOS 100000 -> raw int32 little-endian -> independent per-file SHA",
+  "tests_for_input_generator": 7,
+  "runs_on": "GitHub Actions ubuntu-24.04 hosted, independently from EOE Fleet capacity",
+  "status": "REAL_ORIGINAL_512_INPUT_BYTES_GENERATED_AND_VERIFIED",
+  "important_limitations": {
+    "input_manifest_contains_runner_absolute_paths": true,
+    "portable_relocation_verified": false,
+    "native_model_weights_loaded": false,
+    "native_original_384_inference": "NOT_RUN",
+    "teacher_forced_nll": "NOT_IMPLEMENTED",
+    "joined_bayesian_expert_accuracy": "NOT_MEASURED",
+    "model_promotion_authorized": false
+  }
+}

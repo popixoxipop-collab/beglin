@@ -1,0 +1,116 @@
+name: JE01 independent original27 45 true routed h2 and actual 16 gate/up GEMV audit
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'docs/research/JE01_TRUE_ORIGINAL27_LASTPROMPT_ROUTED_H2_TRAIN16_20261122.json'
+      - 'docs/research/JE01_TRUE_ORIGINAL_ROUTED_H2_GATEUP_ACTIVATION_WEIGHTED_GEMV_20261122.json'
+      - '.github/workflows/je01-original27-h2-real-gemv-audit.yml'
+permissions:
+  contents: read
+jobs:
+  actual-original-pretrained-routed-h2-and-gate-up-role-proxy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Independently recompute sealed 45 real h2 records, 16 full-FFN gate/up output perturbation metrics, and no Fisher claim
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,hashlib,math,pathlib,collections
+          base=pathlib.Path("docs/research")
+          def sealed(name,expected):
+              d=json.loads((base/name).read_text())
+              claimed=d.pop("receipt_sha256")
+              actual=hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+              assert claimed==actual==expected,(name,"canonical SHA")
+              return d
+          h=sealed("JE01_TRUE_ORIGINAL27_LASTPROMPT_ROUTED_H2_TRAIN16_20261122.json",
+             "42213c246c488dcef8176c468811fe516d542dd367532ea191c21cfd1d17d6ca")
+          q=sealed("JE01_TRUE_ORIGINAL_ROUTED_H2_GATEUP_ACTIVATION_WEIGHTED_GEMV_20261122.json",
+             "d55f4b506076a3a30f73c582ede270c38d41ac12b06190e959ac5a7383157a89")
+          expected_slots={(12,13),(13,22),(13,28),(14,63),(20,17),(21,61),(24,26),(24,60)}
+          assert h["status"]=="JE01_ACTUAL_ORIGINAL27_B1_LASTPROMPT_ROUTED_H2_TRAIN16_TRACE_AND_GOLD_PARITY_PASS"
+          assert h["original_AF4_checkpoint_sha256"]=="9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4"
+          assert h["original_true_27layer_native_binary_sha256"]=="ec703e0267d11a99caaa49b60ee906c63e0544bb72363d2beca3f84d1da788d9"
+          assert h["actual_gold16_output_sha256"]=="b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c"
+          assert h["actual_binary_trace_SHA256"]=="238642649f68d111df3b60f60083a47d3a6074ada881ccb36f813dd606f9a5b4"
+          assert h["full_teacherforced_gold_tokens"]==656
+          assert h["actual_training_prompt_cases"]==16 and h["actual_routed_hidden_records"]==45
+          assert not h["source_heldout_or_ood_labels_used"] and not h["production_weights_modified"]
+          assert h["actual_weight_Fisher_Hessian"]=="NOT_MEASURED"
+          assert h["source_true_256_training_activation_vectors"]=="NOT_MEASURED"
+          records=h["per_record_training_prompt_h2_summary"]
+          assert len(records)==45
+          keys={(v["case"],v["layer"],v["expert"]) for v in records}
+          assert len(keys)==45
+          freq=collections.Counter((v["layer"],v["expert"]) for v in records)
+          for v in records:
+              assert 0<=v["case"]<16 and (v["layer"],v["expert"]) in expected_slots
+              assert 0<v["actual_router_weight"]<1
+              assert 0<v["actual_real_h2_rms"]<10
+              assert v["actual_real_h2_max_abs"]>=v["actual_real_h2_rms"]
+              assert abs(v["actual_real_h2_l2_norm"]**2-2048*v["actual_real_h2_rms"]**2)<1e-6
+              assert len(v["actual_h2_vector_sha256"])==64
+          group=h["selected_eight_expert_slot_summary"]
+          assert len(group)==8 and {(v["layer"],v["expert"]) for v in group}==expected_slots
+          for v in group:
+              ls=[r for r in records if (r["layer"],r["expert"])==(v["layer"],v["expert"])]
+              assert len(ls)==freq[(v["layer"],v["expert"])]==v["routed_prompt_count"]
+              assert abs(sum(x["actual_router_weight"] for x in ls)/len(ls)-v["mean_original_router_weight"])<1e-9
+              assert abs(sum(x["actual_real_h2_rms"] for x in ls)/len(ls)-v["empirical_actual_h2_rms_mean"])<1e-9
+          assert q["status"]=="ACTUAL_ORIGINAL27_ROUTED_H2_45_OBSERVATIONS_GATEUP_16ROLE_GEMV_PROXY_MEASURED"
+          assert q["source_actual_original_h2_receipt_sha256"]=="42213c246c488dcef8176c468811fe516d542dd367532ea191c21cfd1d17d6ca"
+          assert q["source_actual_h2_trace_sha256"]==h["actual_binary_trace_SHA256"]
+          assert q["source_real_routed_h2_observations"]==45 and q["source_training_prompts"]==16
+          assert q["actual_original_AF4_checkpoint_sha256"]==h["original_AF4_checkpoint_sha256"]
+          assert q["source_actual_original_BF16_4shard_full_SHA_reverified"]
+          assert q["source_training_gold_NLL_original_bitwise_same"]
+          assert not q["independent_heldout_OOD_accessed"] and not q["production_modified"]
+          assert q["analysis_scope"]=="ROUTER_PROB_WEIGHTED_TRUE_PRETRAINED_GATE_UP_INPUT_H2_X_WEIGHT_GEMV_IDENTITY_OUTPUT_METRIC_NOT_TRUE_FISHER"
+          roles=q["per_role"]
+          assert len(roles)==16
+          roleids={(v["layer"],v["expert"],v["role"]) for v in roles}
+          assert len(roleids)==16
+          for v in roles:
+              key=v["layer"],v["expert"]
+              assert key in expected_slots and v["role"] in ("gate_proj","up_proj")
+              assert v["actual_routed_prompt_observations"]==freq[key]
+              assert v["source_actual_h2_trace_sha256"]==h["actual_binary_trace_SHA256"]
+              assert abs(v["router_prob_weight_sum"]-sum(x["actual_router_weight"] for x in records if (x["layer"],x["expert"])==key))<1e-8
+              assert v["actual_h2_weighted_energy"]>0
+              assert v["true_BF16_AF4_symmetric_output_energy"]>0
+              assert v["original_AF4_output_energy"]>0
+              for name in ("AF4_vs_BF16","Q4_vs_BF16","Q5_vs_BF16","Q4_vs_AF4","Q5_vs_AF4"):
+                  val=v["actual_activation_output_relative_MSE_"+name]
+                  assert math.isfinite(val) and val>=0
+              assert v["actual_activation_output_relative_MSE_Q4_vs_BF16"]>v["actual_activation_output_relative_MSE_AF4_vs_BF16"]
+              assert v["actual_activation_output_relative_MSE_Q5_vs_BF16"]<v["actual_activation_output_relative_MSE_AF4_vs_BF16"]
+          summary=q["summary"]
+          assert summary["actual_original27_hidden_records"]==45
+          assert summary["actual_real_FFN_gate_up_role_sensitivity_count"]==16
+          assert summary["source_router_prob_weighted_h2_proxy_available"]
+          for name,bit in (("AF4","AF4"),("Q4","Q4"),("Q5","Q5")):
+              val=math.sqrt(sum(v["actual_activation_output_relative_MSE_"+bit+"_vs_BF16"] for v in roles)/16)
+              assert abs(val-summary["per_role_normalized_output_MSE_sqrt_mean_"+name])<1e-12
+          assert all(t in summary["not_measured"] for t in ("real_down_proj_swiglu_activation","real_256_train_h2_records","true_model_loss_Fisher","true_model_loss_Hessian","loss_gradient","heldout_and_OOD_quality","new_27layer_NLL"))
+          # Paired exchange lower bound ONLY FOR 16 OBSERVED gate/up roles:
+          # relative output error weighted by the actual sum of original Router weights.
+          q4_costs=[v["router_prob_weight_sum"]*
+              (v["actual_activation_output_relative_MSE_Q4_vs_BF16"]-
+               v["actual_activation_output_relative_MSE_AF4_vs_BF16"]) for v in roles]
+          q5_benefits=[v["router_prob_weight_sum"]*
+              (v["actual_activation_output_relative_MSE_AF4_vs_BF16"]-
+               v["actual_activation_output_relative_MSE_Q5_vs_BF16"]) for v in roles]
+          assert min(q4_costs)>max(q5_benefits)>0
+          print("JE01_REAL_ACTUAL_ROUTED_H2_TRAIN16_45_SAMPLES_ORIGINAL_NATIVE_GOLD_SHA_AND_16_GATEUP_GEMV_PASS")
+          print("SOURCE_SIGNED_H2",h["actual_binary_trace_SHA256"])
+          print("AF4_GATEUP_OUTPUT_RMSE",summary["per_role_normalized_output_MSE_sqrt_mean_AF4"])
+          print("Q4_GATEUP_OUTPUT_RMSE",summary["per_role_normalized_output_MSE_sqrt_mean_Q4"])
+          print("Q5_GATEUP_OUTPUT_RMSE",summary["per_role_normalized_output_MSE_sqrt_mean_Q5"])
+          print("OBSERVED16_GATEUP_MIN_Q4_MINUS_MAX_Q5_PAIR_COST",min(q4_costs)-max(q5_benefits))
+          print("DOWN_PROJ_FISHER_HESSIAN_256TRAIN_NOT_MEASURED_DO_NOT_PROMOTE")
+          PY

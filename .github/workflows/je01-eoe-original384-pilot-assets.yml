@@ -1,0 +1,139 @@
+name: JE01 real EOE original384 pilot16 gold native assets
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_eoe_portable_original16_gold_prepare.py'
+      - '.github/workflows/je01-eoe-original384-pilot-assets.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  actual-original-train16-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-real-512-deepseek-native384-int32
+          run-id: 44065018857
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/source
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-original-real-train256-gold-full-target-token-ids
+          run-id: 44115609052
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/gold
+      - name: Verify 256 original-gold sources and create 16 new teacherforce inputs
+        run: |
+          set -euo pipefail
+          python tools/je01_eoe_portable_original16_gold_prepare.py \
+            --native-input-root "$RUNNER_TEMP/source" \
+            --gold-json "$RUNNER_TEMP/gold/JE01_ORIGINAL_REAL_TRAIN256_FULL_GOLD_IDS.json" \
+            --baseline-json docs/research/JE01_ORIGINAL_AF_REAL256_FULL_TARGET_GOLD_NLL_20261118.json \
+            --output "$RUNNER_TEMP/je01_real_pilot16" \
+            | tee "$RUNNER_TEMP/je01_gold_prep.log"
+          python - <<'PY'
+          import pathlib,os,json,hashlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_real_pilot16"
+          d=json.loads((root/"JE01_EOE_ORIGINAL_PILOT16_INPUT_RECEIPT.json").read_text())
+          sha=d.pop("receipt_sha256")
+          assert sha==hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert d["status"]=="TRAIN256_ALL_SOURCE_SHA_PASS_AND_PILOT16_NATIVE_INPUT_CREATED"
+          assert len(d["pilot_evidence"])==16 and d["pilot_gold_tokens"]>=16
+          assert not d["independent_128_128_labels_used"] and not d["production_modified"]
+          assert d["real_model_forward"]=="NOT_RUN"
+          print("JE01_EOE_ORIGINAL_TRAIN16_GOLD_SOURCE_PROVENANCE_PASS",sha)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-eoe-original-real-fullgold-pilot16-source
+          path: |
+            ${{ runner.temp }}/je01_real_pilot16/*
+            ${{ runner.temp }}/je01_gold_prep.log
+          retention-days: 14
+          if-no-files-found: error
+  original-arm64-native384-teacherforce-binary:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original native MLX 0.32.1 and compile dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'mlx==0.32.1' 'cmake>=3.20,<5' 'ninja>=1.10'
+      - name: Stage original 384 B1 real source and add already XOX-proven gold scoring path
+        run: |
+          set -euo pipefail
+          python tools/je01_isolated_context384_stage.py \
+            --checkout "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP/je01_eoe_src" \
+            --expected-commit "$(git rev-parse HEAD)" \
+            > "$RUNNER_TEMP/je01_eoe_stage.json"
+          python - <<'PY'
+          import importlib.util,json,os,pathlib,hashlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          s=importlib.util.spec_from_file_location("je01_gold",pathlib.Path("tools/je01_xox_original256_fulltarget_teacherforced_nll.py").resolve())
+          m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+          src=root/"je01_eoe_src"
+          original=(src/"qwen_infer.c").read_text()
+          modified=m.patch_cpu(original)
+          assert modified!=original and "JE01_ORIGINAL_GOLD_OUTPUT" in modified
+          (src/"qwen_infer.c").write_text(modified)
+          path=src/"CMakeLists.txt"
+          content=path.read_text()
+          anchor="OUTPUT_NAME qwen_infer_gpu_je01_context384"
+          assert content.count(anchor)==1
+          path.write_text(content.replace(anchor,"OUTPUT_NAME je01_eoe_original384_fullgold",1))
+          rec={"status":"ONLY_ORIGINAL_384_RESEARCH_SOURCE_PATCHED",
+               "source_qwen_sha256":hashlib.sha256(original.encode()).hexdigest(),
+               "gold_patch_sha256":hashlib.sha256(modified.encode()).hexdigest(),
+               "training16_only":True,"model_forward":"NOT_RUN","production_modified":False}
+          (root/"JE01_EOE_NATIVE384_SOURCE_RECEIPT.json").write_text(json.dumps(rec,sort_keys=True,indent=2)+"\n")
+          PY
+      - name: Compile actual original AF 384 full-vocabulary native MLX/Metal executable
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import platform
+          assert platform.system()=="Darwin" and platform.machine()=="arm64"
+          PY
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os;print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S "$RUNNER_TEMP/je01_eoe_src" -B "$RUNNER_TEMP/je01_eoe_build" \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$RUNNER_TEMP/je01_eoe_build" --target qwen_infer_gpu --parallel 2
+          exe="$RUNNER_TEMP/je01_eoe_build/je01_eoe_original384_fullgold"
+          test -f "$exe"
+          file "$exe"
+          cp "$exe" "$RUNNER_TEMP/je01_eoe_original384_fullgold"
+          python - <<'PY'
+          import hashlib,json,pathlib,os
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          f=root/"je01_eoe_original384_fullgold"
+          r=json.loads((root/"JE01_EOE_NATIVE384_SOURCE_RECEIPT.json").read_text())
+          r["actual_arm64_binary_sha256"]=hashlib.sha256(f.read_bytes()).hexdigest()
+          r["native_binary_file_bytes"]=f.stat().st_size
+          r["actual_gold_NLL"]="NOT_MEASURED"
+          (root/"JE01_EOE_NATIVE384_BUILD_RECEIPT.json").write_text(json.dumps(r,sort_keys=True,indent=2)+"\n")
+          print("JE01_EOE_REAL_NATIVE_AF384_BINARY_BUILD_PASS",r["actual_arm64_binary_sha256"])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-eoe-original384-gold-teacherforce-arm64-binary
+          path: |
+            ${{ runner.temp }}/je01_eoe_original384_fullgold
+            ${{ runner.temp }}/JE01_EOE_NATIVE384_BUILD_RECEIPT.json
+            ${{ runner.temp }}/je01_eoe_stage.json
+          retention-days: 14
+          if-no-files-found: error

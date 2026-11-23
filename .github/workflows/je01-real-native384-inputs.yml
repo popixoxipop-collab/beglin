@@ -1,0 +1,130 @@
+name: JE01 real 512 original native384 input artifact
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/je01-moe-bayesian-bit-allocation-20261117
+    paths:
+      - ".github/workflows/je01-real-native384-inputs.yml"
+      - "tools/je01_original_native384_input_manifest.py"
+      - "tools/je01_native384_relocate_actual_artifact.py"
+      - "tests/test_je01_native384_artifact_relocation.py"
+permissions:
+  contents: read
+jobs:
+  create-512-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      DEEPSEEK_REV: "419ef8b6b7a816343af14bc1a4436d4e33affb5d"
+      TOKENIZER_SHA: "41f3bf64213da8c012d8bd0871a58a1fdf70463e8f08f110ddbb1082f529f669"
+      CONFIG_SHA: "f346286b0f1c8b044252fd54cb4fa78b9fab6472a6e8bebb9edfe03d414ea03d"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify original input contract
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'tokenizers==0.22.2'
+          python -m unittest discover -s tests -p 'test_je01_original_native384_input_manifest.py' -v
+      - name: Fetch immutable original model tokenizer and config and compare complete SHAs
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/je01_upstream"
+          for name in tokenizer.json config.json; do
+            curl --fail --location --silent --show-error --retry 3 --retry-delay 2 --max-time 140 \
+              "https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite/resolve/$DEEPSEEK_REV/$name?download=true" \
+              --output "$RUNNER_TEMP/je01_upstream/$name"
+          done
+          echo "$TOKENIZER_SHA  $RUNNER_TEMP/je01_upstream/tokenizer.json" | sha256sum --check
+          echo "$CONFIG_SHA  $RUNNER_TEMP/je01_upstream/config.json" | sha256sum --check
+          echo "JE01_ORIGINAL_HF_TOKENIZER_CONFIG_SHA_PASS"
+      - name: Recreate all frozen 512 native int32 prompt files
+        run: |
+          set -euo pipefail
+          python tools/je01_original_native384_input_manifest.py \
+            --tokenizer "$RUNNER_TEMP/je01_upstream/tokenizer.json" \
+            --config "$RUNNER_TEMP/je01_upstream/config.json" \
+            --frozen docs/research/JE01_FROZEN_WIKITEXT_HELLASWAG_512_20261117.json \
+            --output "$RUNNER_TEMP/je01_inputs" \
+            | tee "$RUNNER_TEMP/je01_stdout.json"
+      - name: Independently verify every native file and full input index SHA
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,os,pathlib,struct
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_inputs"
+          doc=json.loads((root/"JE01_NATIVE_384_INPUTS_RECEIPT.json").read_text())
+          sig=doc.pop("receipt_sha256")
+          assert sig==hashlib.sha256(json.dumps(doc,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+          assert doc["source_manifest_sha256"]=="a9397bfabdd012f60d3dd3d33bcfab455ac1046eced30373d553217dd9409147"
+          assert doc["total_input_records"]==512 and doc["no_labels_used"] is True
+          assert doc["real_model_forward"]=="NOT_RUN" and doc["native_gold_nll"]=="NOT_IMPLEMENTED"
+          seen=set()
+          for group,n in (("calibration",256),("same_source_holdout",128),("ood_holdout",128)):
+            entries=doc["cohorts"][group]["file_receipts"]
+            paths=(root/group/"manifest.txt").read_text().splitlines()
+            assert len(entries)==len(paths)==n
+            for line,rec in zip(paths,entries):
+              name,num=line.rsplit(" ",1)
+              assert num=="1" and name.endswith(rec["input_id"]+".bin")
+              f=pathlib.Path(name)
+              assert f.is_file() and f.parent.resolve()==(root/group).resolve()
+              b=f.read_bytes()
+              assert hashlib.sha256(b).hexdigest()==rec["native_int32_sha256"]
+              assert len(b)==rec["native_int32_bytes"]
+              toks=struct.unpack("<"+"i"*(len(b)//4),b)
+              assert len(toks)==rec["token_count_with_bos"] and 1<len(toks)<384
+              assert toks[0]==100000 and all(0<=v<102400 for v in toks)
+              assert rec["input_id"] not in seen
+              seen.add(rec["input_id"])
+          assert len(seen)==512
+          audit={"status":"PASS_512_OF_512_REAL_NATIVE_INT32_FILES",
+                 "original_receipt_sha256":sig,"model_forward":"NOT_RUN",
+                 "gold_NLL":"NOT_MEASURED"}
+          (root/"JE01_INDEPENDENT_512_FILE_AUDIT.json").write_text(json.dumps(audit,sort_keys=True,indent=2)+"\n")
+          print(json.dumps(audit,sort_keys=True))
+          PY
+      - name: Copy actual 512 files to a NEW root and independently regenerate all relocation manifests
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_je01_native384_artifact_relocation.py' -v
+          cp -a "$RUNNER_TEMP/je01_inputs" "$RUNNER_TEMP/je01_relocated_copy"
+          python tools/je01_native384_relocate_actual_artifact.py \
+            --artifact-input-root "$RUNNER_TEMP/je01_relocated_copy" \
+            --new-manifests-directory "$RUNNER_TEMP/je01_rebased_manifests" \
+            | tee "$RUNNER_TEMP/je01_relocation_stdout.json"
+          python - <<'PY'
+          import json,os,pathlib,hashlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          out=root/"je01_rebased_manifests"
+          report=json.loads((out/"JE01_RELOCATION_PASS.json").read_text())
+          sha=report.pop("receipt_sha256")
+          assert hashlib.sha256(json.dumps(report,sort_keys=True,separators=(",",":")).encode()).hexdigest()==sha
+          assert report["status"]=="RELOCATED_512_REAL_NATIVE_FILES_MANIFESTS_PASS"
+          assert report["files"]==512 and report["original_data_modified"] is False
+          assert report["source_receipt_sha256"]=="2f835daf453741d35e292dd2661b927e2a6196000c9917b62b68415968b5ce34"
+          assert report["original_model_forward"]=="NOT_RUN"
+          for cohort,n in (("calibration",256),("same_source_holdout",128),("ood_holdout",128)):
+            lines=(out/(cohort+".manifest")).read_text().splitlines()
+            assert len(lines)==n
+            assert all(path.startswith(str(root/"je01_relocated_copy")+"/") and suffix=="1"
+                       for path,suffix in (line.rsplit(" ",1) for line in lines))
+            assert hashlib.sha256((out/(cohort+".manifest")).read_bytes()).hexdigest()==report["cohorts"][cohort]["absolute_manifest_sha256"]
+          print("JE01_ALL512_MANIFEST_RELOCATION_AFTER_RELOCATION_PASS",sha)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real-512-deepseek-native384-int32
+          path: |
+            ${{ runner.temp }}/je01_inputs/
+            ${{ runner.temp }}/je01_stdout.json
+            ${{ runner.temp }}/je01_rebased_manifests/
+            ${{ runner.temp }}/je01_relocation_stdout.json
+          retention-days: 14
+          if-no-files-found: error

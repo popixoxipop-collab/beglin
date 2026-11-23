@@ -1,0 +1,96 @@
+{
+  "schema": "beglin-je01-original-AF-prealternative-eight-slot-byte-frozen/1",
+  "date_kst": "2026-11-18",
+  "commit_reference": "2f835daf453741d35e292dd2661b927e2a6196000c9917b62b68415968b5ce34",
+  "native_model": "Original BEGLIN DeepSeek-V2-Lite compressed AF, 27L, 64 Expert, Top6, XOX Metal native 384 one-slot",
+  "source_real_256_routed_calibration_sha256": "62d0a86956c1a07fa8143efcb52b0b5dea6808767716cd160e05ceb1c0c8a8eb",
+  "source_real_selected_expert_file_byte_sha256": "f47bbccbc3878a70dccb9f4b7f5f7f5bd43087aeec58c948924ef85bb428ca4c",
+  "source_original_frozen_512_manifest_sha256": "a9397bfabdd012f60d3dd3d33bcfab455ac1046eced30373d553217dd9409147",
+  "source_original_native_AF_sha256": "9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4",
+  "source_original_AF_layout_sha256": "ba3898f3bf366b1aec8471d9896885f101bf64b78c816828ea82bd7d58851c3e",
+  "selected8_pre_alternative_model_results": [
+    {
+      "expert": 61,
+      "layer": 21,
+      "real_original_calibration_routed_calls": 97
+    },
+    {
+      "expert": 26,
+      "layer": 24,
+      "real_original_calibration_routed_calls": 91
+    },
+    {
+      "expert": 28,
+      "layer": 13,
+      "real_original_calibration_routed_calls": 87
+    },
+    {
+      "expert": 17,
+      "layer": 20,
+      "real_original_calibration_routed_calls": 86
+    },
+    {
+      "expert": 13,
+      "layer": 12,
+      "real_original_calibration_routed_calls": 81
+    },
+    {
+      "expert": 60,
+      "layer": 24,
+      "real_original_calibration_routed_calls": 81
+    },
+    {
+      "expert": 63,
+      "layer": 14,
+      "real_original_calibration_routed_calls": 80
+    },
+    {
+      "expert": 22,
+      "layer": 13,
+      "real_original_calibration_routed_calls": 79
+    }
+  ],
+  "all8_have_ge32_unique_prompt_last_token_routes": true,
+  "real_model_baseline_precision_bits": 4,
+  "actual_selected8_file_payload_bytes": 43253760,
+  "actual_selected8_ffn_gate_up_down_role_payloads": 24,
+  "allowed_alternatives_only_if_real_packed_artifacts_sha_and_bytes_exist": true,
+  "candidate_precision_2_6_8_file_artifacts": "NOT_CREATED",
+  "equal_byte_requirement": "sum actual packed weight/scale/bias bytes for all selected slots EXACTLY 43,253,760; no formula-only acceptance",
+  "comparison_arms": [
+    "unchanged original AF uniform4 baseline",
+    "independent Expert NIG-Bayesian exact-byte DP where physically supported",
+    "same-byte randomized assignment control",
+    "frequency-only heuristic under same measured bytes"
+  ],
+  "independent_same_source_holdout": 128,
+  "independent_ood_holds": 128,
+  "training_calibration": 256,
+  "calibration_last_token_probe_only_for_route_selection": true,
+  "quality_reference_known_before_this_lock": {
+    "previous_train256_first_gold_token_mean_NLL": 3.201974851245297,
+    "previous_train256_first_gold_token_case_count": 256,
+    "previous_calibration16_full_target_gold_NLL_already_viewed": true,
+    "gold_before_whole_256_route_frozen": {
+      "previously_disclosed_cal16_first_gold": true
+    },
+    "strict_all256_prelabel_selection": false
+  },
+  "real_256_full_target_baseline_NLL": "RUNNING_NOT_TREATED_AS_BAYES_CANDIDATE",
+  "actual_quantized_expert_alt_quality": "NOT_MEASURED",
+  "model_release_or_worker_mutation": false,
+  "no_candidate_expert_selection_using_holdout_labels": true,
+  "preregistered_decision_thresholds": {
+    "min_routed_paired_NLL_observations_per_expert_tier": 32,
+    "pilot_conservative_NLL_gain_surrogate": 0.15,
+    "full_independent_same_source_mean_NLL_gain_min": 0.02,
+    "paired_bootstrap_resamples": 20000,
+    "paired_bootstrap_lower_95pct_gain_must_be_positive": true,
+    "ood_128_mean_NLL_must_not_regress": true,
+    "zero_hard_topk_router_flips": true,
+    "p95_token_latency_regression_max_fraction": 0.05
+  },
+  "status": "EIGHT_REAL_SOURCE_ROUTES_AND_ACTUAL_BASELINE_BYTES_LOCKED_BEFORE_ANY_NBIT_ALTERNATIVE_FORWARD",
+  "promotion_allowed": false,
+  "caveat": "Route coactivation and baseline gold NLL are not causal per-Expert precision effects; no matched-byte alternative currently exists."
+}

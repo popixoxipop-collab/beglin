@@ -1,0 +1,71 @@
+name: JE01 actual Q3Q5 vs Q2Q6 independent FFN on same source weights
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_real_q3q5_vs_q2q6_independent.py'
+      - '.github/workflows/je01-real-q3q5-vs-q2q6.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  original-weight-common-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    env:
+      OPENBLAS_NUM_THREADS: '2'
+      OMP_NUM_THREADS: '2'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy==2.2.6
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-real-exact-bf16-24-roles-72-native-tiers
+          run-id: 44172058412
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/old
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-real-original-bf16-q3q5-48-native-role-tiers
+          run-id: 44176129643
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/new
+      - name: Compare fixed exact-byte Q2Q6 and Q3Q5 policies with source-matched q8 reference
+        run: |
+          set -euo pipefail
+          python tools/je01_real_q3q5_vs_q2q6_independent.py \
+            --old "$RUNNER_TEMP/old/je01_native_bf16_artifacts" \
+            --new "$RUNNER_TEMP/new/je01_real_q3q5" \
+            --output "$RUNNER_TEMP/JE01_REAL_Q26_Q35_COMMON_Q8_RESULTS.json" \
+            | tee "$RUNNER_TEMP/JE01_REAL_Q26_Q35_CONSOLE.txt"
+      - name: Independent receipt and scientific gate audit
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,hashlib,pathlib,os
+          d=json.loads((pathlib.Path(os.environ["RUNNER_TEMP"])/"JE01_REAL_Q26_Q35_COMMON_Q8_RESULTS.json").read_text())
+          sig=d.pop("receipt_sha256")
+          assert sig==hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert d["status"]=="REAL_ORIGINAL_BF16_Q26_Q35_FFN_COMMON_Q8_REFERENCE_PASS"
+          assert len(d["old_q2x3_q6x5"])==3 and len(d["new_q3x2_q5x6"])==3
+          assert d["independent_seed"]==20261120 and d["original_AF8_budget_bytes"]==43253760
+          assert d["real_gold_NLL"]=="NOT_MEASURED" and d["native_27layer_forward"]=="NOT_RUN"
+          assert not d["OOD_holdout_labels_accessed"] and not d["production_changed"]
+          print("JE01_REAL_SOURCE_Q35_VS_Q26_FFN_INDEPENDENT_SHA_PASS",sig)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real-source-q26-q35-FFN-common-q8
+          path: |
+            ${{ runner.temp }}/JE01_REAL_Q26_Q35_COMMON_Q8_RESULTS.json
+            ${{ runner.temp }}/JE01_REAL_Q26_Q35_CONSOLE.txt
+          retention-days: 14
+          if-no-files-found: error

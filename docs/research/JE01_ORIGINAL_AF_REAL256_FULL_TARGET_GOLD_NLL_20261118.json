@@ -1,0 +1,2227 @@
+{
+  "actual_original_pretrained_AF_model": true,
+  "bayesian_expert_quantization_changed": false,
+  "calibration_original256_router_receipt_sha256": "62d0a86956c1a07fa8143efcb52b0b5dea6808767716cd160e05ceb1c0c8a8eb",
+  "gold_full_target_tokens_scored": 11024,
+  "heldout_gold_labels_used": false,
+  "max_abs_first_gold_NLL_disagreement_from_original_256_previous_run": 5.471179065352771e-13,
+  "mean_gold_token_NLL": 2.46035653719724,
+  "n_calibration_train_cases": 256,
+  "native_model_binary_sha256": "de6f1a97aef17ddae42d1729282c38e2b7924f6d841daa3576dc47edeebbbba9",
+  "original_512_input_sha256": "2f835daf453741d35e292dd2661b927e2a6196000c9917b62b68415968b5ce34",
+  "per_case_real_NLL": [
+    {
+      "first_gold_nll": 7.1120428959585205,
+      "nll_mean": 2.137727967905851,
+      "nll_sum": 49.16774326183457,
+      "row": 0,
+      "source_id": "1238f877c10f039ed6e9d4fca0f5dfa1c515cc70a2f069765e9426b14e0474c1",
+      "tokens": 23
+    },
+    {
+      "first_gold_nll": 4.039534692098496,
+      "nll_mean": 2.46469985177036,
+      "nll_sum": 123.234992588518,
+      "row": 1,
+      "source_id": "db037f9d1c936fa3e13ae8667bf4aa74f6fe17b952686277edd5950ade7a3c9d",
+      "tokens": 50
+    },
+    {
+      "first_gold_nll": 4.8272450708785435,
+      "nll_mean": 1.7182409731348494,
+      "nll_sum": 60.13843405971973,
+      "row": 2,
+      "source_id": "61fc48ad81ab3c00a2307c5f0b92c0de4e59201b540fe4127aec10215c2278f3",
+      "tokens": 35
+    },
+    {
+      "first_gold_nll": 0.004194551516448541,
+      "nll_mean": 0.6361162266369587,
+      "nll_sum": 19.71960302574572,
+      "row": 3,
+      "source_id": "b817e623fb45033a3383adf2689e06054f0e62bacdeff14c4fba01049e3c8281",
+      "tokens": 31
+    },
+    {
+      "first_gold_nll": 1.1658431908199312,
+      "nll_mean": 3.0250477015109234,
+      "nll_sum": 117.97686035892602,
+      "row": 4,
+      "source_id": "bd267b8bef31882bbc39d44b3bb87f87c47633c8528db5180805fe1cbd91c175",
+      "tokens": 39
+    },
+    {
+      "first_gold_nll": 3.033621097068824,
+      "nll_mean": 2.8415059606103177,
+      "nll_sum": 142.07529803051588,
+      "row": 5,
+      "source_id": "be10ace1de627d1fdab75013523e91a09672fc2877d6d09a21bfe68b47fc427e",
+      "tokens": 50
+    },
+    {
+      "first_gold_nll": 3.5131328103581083,
+      "nll_mean": 2.166196145872432,
+      "nll_sum": 90.98023812664215,
+      "row": 6,
+      "source_id": "9d9671cd0433525a28dc697e5b7e43ba114301ad281a410e497f5b4f5b4784aa",
+      "tokens": 42
+    },
+    {
+      "first_gold_nll": 6.588435158175212,
+      "nll_mean": 2.783056818323726,
+      "nll_sum": 94.62393182300669,
+      "row": 7,
+      "source_id": "b1395890313d1db56d5baf55ac2a61017bc39ed932a47d4c44b29f8c1b187709",
+      "tokens": 34
+    },
+    {
+      "first_gold_nll": 0.11989905268655221,
+      "nll_mean": 1.786538616457744,
+      "nll_sum": 78.60769912414074,
+      "row": 8,
+      "source_id": "21485cd7a42a7b0180b995aad00a7598f45138c497663311aba9197d5d0d6ece",
+      "tokens": 44
+    },
+    {
+      "first_gold_nll": 1.558261415577121,
+      "nll_mean": 2.363339307555319,
+      "nll_sum": 151.2537156835404,
+      "row": 9,
+      "source_id": "f651c4275e584ff21f47ad2a702d88a349ae1bfb62a22df6539562c66603395b",
+      "tokens": 64
+    },
+    {
+      "first_gold_nll": 5.917331420467427,
+      "nll_mean": 2.842821134926097,
+      "nll_sum": 79.5989917779307,
+      "row": 10,
+      "source_id": "ebe4268484169ccb5a2dbaea9bf49ceaa1c07f246cf0c3f1e1cd07f90f467274",
+      "tokens": 28
+    },
+    {
+      "first_gold_nll": 7.1191251047781705,
+      "nll_mean": 2.1523618088448573,
+      "nll_sum": 116.2275376776223,
+      "row": 11,
+      "source_id": "a0a1ca143d329e60afdaf18bb5d93dccc3d6759008e33195dbd1c6f53a165526",
+      "tokens": 54
+    },
+    {
+      "first_gold_nll": 4.796408203901365,
+      "nll_mean": 2.741680400407978,
+      "nll_sum": 180.95090642692654,
+      "row": 12,
+      "source_id": "86575fad179792e10eda968cbddcf5645377ff90508debeb0381e3133410d009",
+      "tokens": 66
+    },
+    {
+      "first_gold_nll": 0.8466158053825765,
+      "nll_mean": 2.2545026042311096,
+      "nll_sum": 54.10806250154663,
+      "row": 13,
+      "source_id": "56626b7dd8366e88dc85e4b14e384487c14a1029bf1bc9d0f3c00d311bf1291e",
+      "tokens": 24
+    },
+    {
+      "first_gold_nll": 0.00878762376329334,
+      "nll_mean": 2.000433938455108,
+      "nll_sum": 30.006509076826617,
+      "row": 14,
+      "source_id": "938d483fad002fe5dde65024b1e8fac903f9b79d3a209e49603065b6344780c8",
+      "tokens": 15
+    },
+    {
+      "first_gold_nll": 3.4032788231491082,
+      "nll_mean": 2.013159319315484,
+      "nll_sum": 114.7500812009826,
+      "row": 15,
+      "source_id": "7f8f6013fb5386cbba9c11b47238482dc29b185a3d23cdd6ae65cb1538f5def0",
+      "tokens": 57
+    },
+    {
+      "first_gold_nll": 0.7446025418446887,
+      "nll_mean": 2.1528666156274516,
+      "nll_sum": 79.65606477821571,
+      "row": 16,
+      "source_id": "49c5be3831811a68c238a402820b4ce7a0e345d8d83e2dd3097763ef84c8a3f2",
+      "tokens": 37
+    },
+    {
+      "first_gold_nll": 0.005034880293369071,
+      "nll_mean": 1.3025670969593,
+      "nll_sum": 56.0103851692499,
+      "row": 17,
+      "source_id": "fd99fe8bc4f3752f568f71db4bd6069e1f67ed2df4f0c0f64ee56717b53b7d60",
+      "tokens": 43
+    },
+    {
+      "first_gold_nll": 9.73536683317717,
+      "nll_mean": 3.487520841208668,
+      "nll_sum": 191.81364626647675,
+      "row": 18,
+      "source_id": "54f9c2536b7e0c43a06c01fbbe3fd487f14d17f2417d6bb06f4afa4301317484",
+      "tokens": 55
+    },
+    {
+      "first_gold_nll": 0.5577616948900648,
+      "nll_mean": 1.9486162295936291,
+      "nll_sum": 44.81817328065347,
+      "row": 19,
+      "source_id": "7cc368b0479ed6d4bfebfab588bd4858cf4794ecfb63e5d3c3001f8593cf7939",
+      "tokens": 23
+    },
+    {
+      "first_gold_nll": 1.135332238491614,
+      "nll_mean": 2.2023362435993907,
+      "nll_sum": 24.2256986795933,
+      "row": 20,
+      "source_id": "95c25b63952483ad1211554d9000e49add7c4426a71779733d9467dafc67edd4",
+      "tokens": 11
+    },
+    {
+      "first_gold_nll": 1.1794660982580112,
+      "nll_mean": 2.960738196305927,
+      "nll_sum": 153.9583862079082,
+      "row": 21,
+      "source_id": "0f7025becad0169cce18ee4f6c397723b5c0f887f129fa40ea1114f09644fb2a",
+      "tokens": 52
+    },
+    {
+      "first_gold_nll": 1.0190868039530159,
+      "nll_mean": 2.3366865418878047,
+      "nll_sum": 58.417163547195116,
+      "row": 22,
+      "source_id": "e5fd2533c9fbb7f5838514d1b7a26b24b6509607f89885045999fa9a0a6836bc",
+      "tokens": 25
+    },
+    {
+      "first_gold_nll": 0.033460492406661047,
+      "nll_mean": 2.6762967755566356,
+      "nll_sum": 147.19632265561495,
+      "row": 23,
+      "source_id": "16b5b9530eb5d884231b2488da4758e61410bcbd9a66cd26eb0fef746497f53c",
+      "tokens": 55
+    },
+    {
+      "first_gold_nll": 11.874777775635781,
+      "nll_mean": 2.883272214279746,
+      "nll_sum": 118.21416078546957,
+      "row": 24,
+      "source_id": "a7e3b39ac3ca92d5bff65a6bea37bfc4112d112d9cdaaf5e346dd60d01cf33ec",
+      "tokens": 41
+    },
+    {
+      "first_gold_nll": 1.5726134746238039,
+      "nll_mean": 3.112368893096505,
+      "nll_sum": 118.2700179376672,
+      "row": 25,
+      "source_id": "8e2e74e9f388467e6f37f38f08f70254eb66d22a75c790897023d98f94a16621",
+      "tokens": 38
+    },
+    {
+      "first_gold_nll": 9.800678149690711,
+      "nll_mean": 2.8415722854360728,
+      "nll_sum": 90.93031313395433,
+      "row": 26,
+      "source_id": "1caeea58b9cf23c68b6a926a93512c76878854b95cd8d3270dfaa5b47dadd8ab",
+      "tokens": 32
+    },
+    {
+      "first_gold_nll": 1.3861554259530031,
+      "nll_mean": 2.316897575999811,
+      "nll_sum": 127.4293666799896,
+      "row": 27,
+      "source_id": "b1352595bc95c0f9c8be21fa3b19ca02ae79eb0812bd41ede7282413c1b15036",
+      "tokens": 55
+    },
+    {
+      "first_gold_nll": 2.2730943783117645,
+      "nll_mean": 2.461138859153188,
+      "nll_sum": 66.45074919713608,
+      "row": 28,
+      "source_id": "797bf6197098cae826ac678e17ded3d4eba9d2a6c6e8ad0831290a1b0e9b874d",
+      "tokens": 27
+    },
+    {
+      "first_gold_nll": 2.2116301389550053,
+      "nll_mean": 2.888013339157201,
+      "nll_sum": 144.40066695786004,
+      "row": 29,
+      "source_id": "8e5fb51e5d3d1b92f38a6f9774f4bae54fa54cb61a52dd81acb9bb9decfbde74",
+      "tokens": 50
+    },
+    {
+      "first_gold_nll": 0.9195614781730548,
+      "nll_mean": 1.5697611545022017,
+      "nll_sum": 114.59256427866072,
+      "row": 30,
+      "source_id": "a49da9583254ae168cf54bb6a03face9afe55f8722489a3058dfcd12ab4ac789",
+      "tokens": 73
+    },
+    {
+      "first_gold_nll": 1.0683809246240017,
+      "nll_mean": 2.305005192739183,
+      "nll_sum": 39.185088276566105,
+      "row": 31,
+      "source_id": "951fe0a054759d34f70eca32236d5208f8ab1744432c5e9d126ac18d7bf7eb2c",
+      "tokens": 17
+    },
+    {
+      "first_gold_nll": 0.028117875914901447,
+      "nll_mean": 3.0135630923439978,
+      "nll_sum": 183.82734863298387,
+      "row": 32,
+      "source_id": "b284812a926a23d32183037d26021b07876442daf7e8cea82f5ac347d21913e0",
+      "tokens": 61
+    },
+    {
+      "first_gold_nll": 3.574033517264084,
+      "nll_mean": 2.904137525899858,
+      "nll_sum": 20.328962681299004,
+      "row": 33,
+      "source_id": "693baeab5fe549d21bdebb6be4e1d29f03dfa9a54a622ca249fb45b9aeb75359",
+      "tokens": 7
+    },
+    {
+      "first_gold_nll": 3.5676348575765964,
+      "nll_mean": 3.7816927529068916,
+      "nll_sum": 177.7395593866239,
+      "row": 34,
+      "source_id": "491db9378bafbf334da67272e4cae04c45ea7c9a16ecdeb0484caa7e897a2dea",
+      "tokens": 47
+    },
+    {
+      "first_gold_nll": 2.5813994062358496,
+      "nll_mean": 2.5465405162465924,
+      "nll_sum": 193.53707923474101,
+      "row": 35,
+      "source_id": "d225896d8631e69926fcb77abb58e2ad53c4be245c5563feaf51072f71921aa6",
+      "tokens": 76
+    },
+    {
+      "first_gold_nll": 2.092901739053147,
+      "nll_mean": 1.9343386253021437,
+      "nll_sum": 61.8988360096686,
+      "row": 36,
+      "source_id": "0b2bcfd3c8921860eeb1709eaa6dd78e95d73958aac3ee6f5b6ee117edd63a90",
+      "tokens": 32
+    },
+    {
+      "first_gold_nll": 8.633435060206743,
+      "nll_mean": 2.5942392987671474,
+      "nll_sum": 166.03131512109744,
+      "row": 37,
+      "source_id": "8f723aca6a647edaaa7b567589a1e2372440975d1fa43917fcbfabc9c7fc4c8d",
+      "tokens": 64
+    },
+    {
+      "first_gold_nll": 0.018938558003224415,
+      "nll_mean": 1.930130496927016,
+      "nll_sum": 111.94756882176694,
+      "row": 38,
+      "source_id": "849049621e2ba4977fb6edb1272b2dc0f42e5450c126f70582b4b518c7940cd8",
+      "tokens": 58
+    },
+    {
+      "first_gold_nll": 1.8257063807943403,
+      "nll_mean": 3.5089314767568833,
+      "nll_sum": 28.071451814055067,
+      "row": 39,
+      "source_id": "0fc87948017613d2d93780527570795263397cad8780b66a672b86e498a6741f",
+      "tokens": 8
+    },
+    {
+      "first_gold_nll": 3.4592739766291807,
+      "nll_mean": 2.700993070830186,
+      "nll_sum": 81.02979212490558,
+      "row": 40,
+      "source_id": "fafa921e3754e2bf8b87f007b0a0ac6418e493258fb2b8aab3e65a33b9884e48",
+      "tokens": 30
+    },
+    {
+      "first_gold_nll": 0.028011721449345828,
+      "nll_mean": 2.831961932706546,
+      "nll_sum": 186.90948755863204,
+      "row": 41,
+      "source_id": "1e56f65ea14662b0a948d737e1decc3c67e104612caf2c809c340932dca04d88",
+      "tokens": 66
+    },
+    {
+      "first_gold_nll": 6.9303891042722086,
+      "nll_mean": 3.0034376454407163,
+      "nll_sum": 120.13750581762865,
+      "row": 42,
+      "source_id": "1e14c5ec5012d2a2b994901e548c96f6dda1c348b3f83fcb57aaf6cf749214a6",
+      "tokens": 40
+    },
+    {
+      "first_gold_nll": 0.9174733627224789,
+      "nll_mean": 3.1657260740410327,
+      "nll_sum": 167.78348192417474,
+      "row": 43,
+      "source_id": "9d72125d77cff1acf3a086f4aa332b6c6f60e5a0e957478390f4fce620f70c27",
+      "tokens": 53
+    },
+    {
+      "first_gold_nll": 5.349817043977911,
+      "nll_mean": 2.820178050816527,
+      "nll_sum": 172.03086109980813,
+      "row": 44,
+      "source_id": "b5a92d806b85be4b1fd3650af19ecc620a8528bca47a9bc425da56554464bfe4",
+      "tokens": 61
+    },
+    {
+      "first_gold_nll": 5.225016432371625,
+      "nll_mean": 3.337241222105376,
+      "nll_sum": 36.709653443159134,
+      "row": 45,
+      "source_id": "6c9c74a308c1661e8d539a72ceb88546da8b59d6f03b04c4649b70a5b1547ef7",
+      "tokens": 11
+    },
+    {
+      "first_gold_nll": 1.1375241611883098,
+      "nll_mean": 2.775017681449846,
+      "nll_sum": 88.80056580639507,
+      "row": 46,
+      "source_id": "045aca26c6079ee9cff413aff388c96d5a5189ab8a6331710a6a5aedd45a1e95",
+      "tokens": 32
+    },
+    {
+      "first_gold_nll": 5.302968618634274,
+      "nll_mean": 3.2832284665632763,
+      "nll_sum": 183.86079412754347,
+      "row": 47,
+      "source_id": "6ce7e266ddac4b85d3622f12c2772db8d7fc5eec72afdd40762292824f118582",
+      "tokens": 56
+    },
+    {
+      "first_gold_nll": 0.16577541014927277,
+      "nll_mean": 2.0286073660916375,
+      "nll_sum": 117.65922723331498,
+      "row": 48,
+      "source_id": "6040a106194d74d1d3830c33691cca57c79bd1e77bfc17249b285c3070e262bf",
+      "tokens": 58
+    },
+    {
+      "first_gold_nll": 7.64016584174194,
+      "nll_mean": 4.218838090979814,
+      "nll_sum": 118.12746654743478,
+      "row": 49,
+      "source_id": "27c258f01e4e459e465d748b1172fb89371d642620a44dea821a76fdd69c5c5e",
+      "tokens": 28
+    },
+    {
+      "first_gold_nll": 0.15778326585280666,
+      "nll_mean": 2.7481409937384775,
+      "nll_sum": 200.61429254290886,
+      "row": 50,
+      "source_id": "8a03576e86ae0ceb307fd4a7b1ef22833d70c1b64159f8b7be300e0e5659d83c",
+      "tokens": 73
+    },
+    {
+      "first_gold_nll": 0.8881210240662227,
+      "nll_mean": 1.887784584968938,
+      "nll_sum": 41.53126086931664,
+      "row": 51,
+      "source_id": "7a54a9763843dacdb4cece57826bd451408c73e05da12514d032fb50aa301bf4",
+      "tokens": 22
+    },
+    {
+      "first_gold_nll": 13.686744562006417,
+      "nll_mean": 2.909707871768175,
+      "nll_sum": 154.21451720371329,
+      "row": 52,
+      "source_id": "4a9f13cb31df9562cf0b998b0cdf6af4bcdbdfe2fee3b8629461785d92351738",
+      "tokens": 53
+    },
+    {
+      "first_gold_nll": 0.7487691440202049,
+      "nll_mean": 3.5549880995652834,
+      "nll_sum": 60.43479769260982,
+      "row": 53,
+      "source_id": "f532af1ed60f1f021ccfb497b6e3cb13e8d7051020c02c4ca13dd2de3fde3ace",
+      "tokens": 17
+    },
+    {
+      "first_gold_nll": 3.7002601754332147,
+      "nll_mean": 1.9875464462991637,
+      "nll_sum": 113.29014743905233,
+      "row": 54,
+      "source_id": "c6c749d07e23b1fb36b33878f7318c6a3a79b89ee2b99837fec1500812ffaea9",
+      "tokens": 57
+    },
+    {
+      "first_gold_nll": 4.100327214784066,
+      "nll_mean": 2.5226277368182695,
+      "nll_sum": 85.76934305182117,
+      "row": 55,
+      "source_id": "2930df5b96ef8630a5433d4ce735c7dff968b50accdb86a87af4315ab85c47d6",
+      "tokens": 34
+    },
+    {
+      "first_gold_nll": 0.0007952675817293198,
+      "nll_mean": 3.1779381682034016,
+      "nll_sum": 73.09257786867823,
+      "row": 56,
+      "source_id": "b8c20e96ad338d216a8a920c6fe2f3d0e388e0e0417eabe5a0015839721c7094",
+      "tokens": 23
+    },
+    {
+      "first_gold_nll": 2.51218546220041,
+      "nll_mean": 3.0308772572011327,
+      "nll_sum": 154.57474011725776,
+      "row": 57,
+      "source_id": "f3a5d1381ea78b4da15573a0b6c862b9624a65809689106e677595bb7578920b",
+      "tokens": 51
+    },
+    {
+      "first_gold_nll": 2.4073237312358557,
+      "nll_mean": 2.29399783952896,
+      "nll_sum": 139.93386821126657,
+      "row": 58,
+      "source_id": "2d5dd3513b9880de6d8beeb9d5d45d47902a11ba25c661149f0c777631c576c7",
+      "tokens": 61
+    },
+    {
+      "first_gold_nll": 6.408883011973732,
+      "nll_mean": 2.1696780252309535,
+      "nll_sum": 52.072272605542885,
+      "row": 59,
+      "source_id": "35185b395e771dc7f08b359142b8d51ecc1943231cf945f14fd8b1917ffe733e",
+      "tokens": 24
+    },
+    {
+      "first_gold_nll": 1.7735343969812014,
+      "nll_mean": 1.7139645375480295,
+      "nll_sum": 58.274794276633,
+      "row": 60,
+      "source_id": "73ddedfce38c79728145cc01505e815e41396ffb4609bf2c81f894d2e030eb49",
+      "tokens": 34
+    },
+    {
+      "first_gold_nll": 0.3857064473829048,
+      "nll_mean": 3.062876947580691,
+      "nll_sum": 174.5839860120994,
+      "row": 61,
+      "source_id": "2a43fe92c9747e34ed7109863d3cce89bda2ff4a529e5019e59fcbf2f2ab33a0",
+      "tokens": 57
+    },
+    {
+      "first_gold_nll": 0.5934272534271514,
+      "nll_mean": 3.4337309293673743,
+      "nll_sum": 37.77104022304112,
+      "row": 62,
+      "source_id": "cd44e1910fb6e936a7a72ac057f91417ce56808a0de2cf45a86e4f88b2cd4872",
+      "tokens": 11
+    },
+    {
+      "first_gold_nll": 3.349920791913437,
+      "nll_mean": 2.1799792259983497,
+      "nll_sum": 132.97873278589933,
+      "row": 63,
+      "source_id": "9eb78fba32a7342c06a3c01f096b730b5fe7ef2af438b0bded7c4f1beadc26da",
+      "tokens": 61
+    },
+    {
+      "first_gold_nll": 9.8008531914864,
+      "nll_mean": 1.5003661294418238,
+      "nll_sum": 58.51427904823113,
+      "row": 64,
+      "source_id": "b33e1f817572ef91acf82d0f061edb10ef708f2ecfd5f680e7f4891cacdfb5cc",
+      "tokens": 39
+    },
+    {
+      "first_gold_nll": 0.011967994512932734,
+      "nll_mean": 2.221892962051295,
+      "nll_sum": 133.3135777230777,
+      "row": 65,
+      "source_id": "2481565849fa91fddd26ca41a3bd65908fbb2b1bdf637cdaae1687f63812c571",
+      "tokens": 60
+    },
+    {
+      "first_gold_nll": 1.5510126520513303,
+      "nll_mean": 1.9977506269499887,
+      "nll_sum": 79.91002507799955,
+      "row": 66,
+      "source_id": "55ffe0efc453d723bb407aefa6903091c8bc3bad407400be14f8ee34f7bddcab",
+      "tokens": 40
+    },
+    {
+      "first_gold_nll": 0.9247757954777782,
+      "nll_mean": 2.8598393619097195,
+      "nll_sum": 97.23453830493047,
+      "row": 67,
+      "source_id": "59c74e2c0d0c27291c8d1cad068eed0f3f154f701a0403ef6a30720515a3ef4d",
+      "tokens": 34
+    },
+    {
+      "first_gold_nll": 0.5991399570206397,
+      "nll_mean": 3.0385688806377966,
+      "nll_sum": 151.92844403188982,
+      "row": 68,
+      "source_id": "b51efd2df2699c7dc2550e8eb393adf026c46872d0cc2173f69440f640b9ad9d",
+      "tokens": 50
+    },
+    {
+      "first_gold_nll": 4.514187100785563,
+      "nll_mean": 2.562222926230048,
+      "nll_sum": 128.1111463115024,
+      "row": 69,
+      "source_id": "c3c452f849400d0a23b3cd0af85c87a06a49dc23333feef5485ad27a56466555",
+      "tokens": 50
+    },
+    {
+      "first_gold_nll": 5.035519362382438,
+      "nll_mean": 2.5811429829056816,
+      "nll_sum": 139.3817210769068,
+      "row": 70,
+      "source_id": "e90d49212368a0656022bba07ad6b06cfe2d7dc29fd27ec83bbd51e1d29b2ea0",
+      "tokens": 54
+    },
+    {
+      "first_gold_nll": 7.658614773153122,
+      "nll_mean": 1.6882952341215045,
+      "nll_sum": 27.012723745944072,
+      "row": 71,
+      "source_id": "5e17db8659fe25b3c31eed0da5fa2e713c2a5105e6cd59af292bce4a8fdc4d48",
+      "tokens": 16
+    },
+    {
+      "first_gold_nll": 0.4342836591775203,
+      "nll_mean": 2.18290686755436,
+      "nll_sum": 72.03592662929388,
+      "row": 72,
+      "source_id": "ebd61f8cc056cc5f100fdab53e538b16f5b16199e6d8e0b47251fd03518e06f9",
+      "tokens": 33
+    },
+    {
+      "first_gold_nll": 5.6126133527089905,
+      "nll_mean": 3.0122313220151806,
+      "nll_sum": 180.73387932091083,
+      "row": 73,
+      "source_id": "e73b39b80dd4cc94aa6ef6a7f2065e4c031f6109a491d919cf6a6b19771cb282",
+      "tokens": 60
+    },
+    {
+      "first_gold_nll": 0.0024371463981935904,
+      "nll_mean": 1.8080111849231484,
+      "nll_sum": 137.40885005415927,
+      "row": 74,
+      "source_id": "1ad8d7890bd673c7eb6777c2256f08fd7668f5cb6caa979ea666a2decef67991",
+      "tokens": 76
+    },
+    {
+      "first_gold_nll": 0.6906375497975787,
+      "nll_mean": 2.5704817355864593,
+      "nll_sum": 118.24215983697712,
+      "row": 75,
+      "source_id": "e8c31dadfe070237691968f8d77bfd7286f619fbc312d1cbfc9fc8ae5188afd2",
+      "tokens": 46
+    },
+    {
+      "first_gold_nll": 1.7270476046723395,
+      "nll_mean": 2.353285034524147,
+      "nll_sum": 112.95768165715907,
+      "row": 76,
+      "source_id": "f6b34b30ca679b433178a6b234b93dd178755f3dfc9595f7a3ba449f39faef2e",
+      "tokens": 48
+    },
+    {
+      "first_gold_nll": 0.5169563665936607,
+      "nll_mean": 1.6971420586942865,
+      "nll_sum": 128.98279646076577,
+      "row": 77,
+      "source_id": "a3f2ea05860886b6b1ace510e38d7af061f99930b5ca4594b757182817d15b3f",
+      "tokens": 76
+    },
+    {
+      "first_gold_nll": 0.0021089555164124363,
+      "nll_mean": 2.4740014370052164,
+      "nll_sum": 111.33006466523474,
+      "row": 78,
+      "source_id": "aaca77c74df389eb2862ee3b29a65957755cad2b0c0590b81e7af6f3f6c34c56",
+      "tokens": 45
+    },
+    {
+      "first_gold_nll": 2.4795889140211216,
+      "nll_mean": 2.424054678487931,
+      "nll_sum": 138.17111667381207,
+      "row": 79,
+      "source_id": "5ed3cbeb16efb166bcbc02c1fc098285e1fff390cdadbd1908a9ba403f1d7fa6",
+      "tokens": 57
+    },
+    {
+      "first_gold_nll": 2.7871372718235676,
+      "nll_mean": 1.255648108374714,
+      "nll_sum": 80.3614789359817,
+      "row": 80,
+      "source_id": "83b5e9e8d7098009cf4c6d51c17fb4f458fae855dae5a6895844f0ee2f0fa045",
+      "tokens": 64
+    },
+    {
+      "first_gold_nll": 1.2611177566895755,
+      "nll_mean": 1.7707160277559382,
+      "nll_sum": 58.43362891594596,
+      "row": 81,
+      "source_id": "e71d0a3a04b778885d68cf34c25bffddda5a53c013dc728f1b97996bf4b0880c",
+      "tokens": 33
+    },
+    {
+      "first_gold_nll": 0.0003369293771413595,
+      "nll_mean": 2.2331928947968462,
+      "nll_sum": 113.89283763463916,
+      "row": 82,
+      "source_id": "774ba8490f69267345fa93b3410bf156c1c1c8debca0458c1de48c196b9cdf61",
+      "tokens": 51
+    },
+    {
+      "first_gold_nll": 4.255891097686305,
+      "nll_mean": 1.8393863102515926,
+      "nll_sum": 49.663430376793,
+      "row": 83,
+      "source_id": "63c106431963c41c1557ef140ae37087e914fb719a26905b0d99fdb1709e92b3",
+      "tokens": 27
+    },
+    {
+      "first_gold_nll": 0.6623339104898598,
+      "nll_mean": 2.397940367361245,
+      "nll_sum": 19.18352293888996,
+      "row": 84,
+      "source_id": "28df487f8c28af2aec12c01e3cc2c4f58f435e0ae4105ce2b73c23c3fc8f2a84",
+      "tokens": 8
+    },
+    {
+      "first_gold_nll": 2.496118023429375,
+      "nll_mean": 2.494924374092451,
+      "nll_sum": 152.1903868196395,
+      "row": 85,
+      "source_id": "bf5fb030385ab35c034404137088c22079c18d1a72e3711ac45f4a48a4b8fd04",
+      "tokens": 61
+    },
+    {
+      "first_gold_nll": 7.107469554025524,
+      "nll_mean": 2.3556543517306996,
+      "nll_sum": 98.93748277268938,
+      "row": 86,
+      "source_id": "692ab80db0a2b1bcacc8b23790a2a7557adb4c4deb4eb6ae5fb81b5e1d098d23",
+      "tokens": 42
+    },
+    {
+      "first_gold_nll": 6.7306079795046045,
+      "nll_mean": 2.643323225217323,
+      "nll_sum": 155.95607028782206,
+      "row": 87,
+      "source_id": "7d66c62f3219191d09ed0184c9bf0d87889f6580bc33de9ef8c1174e45111595",
+      "tokens": 59
+    },
+    {
+      "first_gold_nll": 0.03510598143803634,
+      "nll_mean": 0.7477159559629192,
+      "nll_sum": 57.57412860914478,
+      "row": 88,
+      "source_id": "23446a7e2e7b974c520d12b99d0956875931c3e6f40cf3992881c2e40588901a",
+      "tokens": 77
+    },
+    {
+      "first_gold_nll": 9.22859018452153,
+      "nll_mean": 1.911044856519809,
+      "nll_sum": 145.2394090955055,
+      "row": 89,
+      "source_id": "e3adcb770be269155fc3916101d5c7235a2d1bc92be24038ad7f2ca93c5404c1",
+      "tokens": 76
+    },
+    {
+      "first_gold_nll": 6.168585201335812,
+      "nll_mean": 2.8879161087648266,
+      "nll_sum": 83.74956715417997,
+      "row": 90,
+      "source_id": "ff0f408edf87daeff4bded1cb82e3d6683aece9a49b70f6aef787b49377b51fb",
+      "tokens": 29
+    },
+    {
+      "first_gold_nll": 6.586744451777044,
+      "nll_mean": 2.807772277700169,
+      "nll_sum": 143.19638616270862,
+      "row": 91,
+      "source_id": "60c8ea6a26cabba40b7a6fa4d80da9760b8305e9a7304e7acc92fae4a3968f68",
+      "tokens": 51
+    },
+    {
+      "first_gold_nll": 1.8587153774675897,
+      "nll_mean": 1.994113416236274,
+      "nll_sum": 109.67623789299506,
+      "row": 92,
+      "source_id": "f3a4be0f754349bce9181b2b350aa9ac524c441157f1f959942d1e1d7d85e2fe",
+      "tokens": 55
+    },
+    {
+      "first_gold_nll": 1.4995844082448642,
+      "nll_mean": 0.9968966399707289,
+      "nll_sum": 34.89138239897551,
+      "row": 93,
+      "source_id": "c6c76b279225a13f464f28e17e358f29b00d4b1cc066bc867671eb971c20f0c3",
+      "tokens": 35
+    },
+    {
+      "first_gold_nll": 1.8229058020298012,
+      "nll_mean": 2.416964879255822,
+      "nll_sum": 169.18754154790753,
+      "row": 94,
+      "source_id": "9f3c5f410caf8dba2963747b75e86d08b9700982fe378e4ac900fb8155b20ebb",
+      "tokens": 70
+    },
+    {
+      "first_gold_nll": 3.4067837335480604,
+      "nll_mean": 2.210117287945401,
+      "nll_sum": 117.13621626110627,
+      "row": 95,
+      "source_id": "4457f59e1d497108aa4caea956dfac3c3ae1d724696daedf35e134f5c7b91b94",
+      "tokens": 53
+    },
+    {
+      "first_gold_nll": 10.174042688057686,
+      "nll_mean": 2.951741457874145,
+      "nll_sum": 171.2010045567004,
+      "row": 96,
+      "source_id": "cd2d4755425a6c2ba386658733bb4ebe9b5d2560478ea88afc9be8c221ae9d0f",
+      "tokens": 58
+    },
+    {
+      "first_gold_nll": 2.2119240650243057,
+      "nll_mean": 2.1343631205364697,
+      "nll_sum": 147.27105531701642,
+      "row": 97,
+      "source_id": "ec249003cfc8d2d7bec2bd4037d1157702c1459b0adb1c20244034a710509a2e",
+      "tokens": 69
+    },
+    {
+      "first_gold_nll": 3.6293860993213265,
+      "nll_mean": 2.5063221108922518,
+      "nll_sum": 40.10115377427603,
+      "row": 98,
+      "source_id": "4a078f359de79a8158a905e61de60562c163cbc607d9973d12e596c204801866",
+      "tokens": 16
+    },
+    {
+      "first_gold_nll": 5.719119505658075,
+      "nll_mean": 3.4923903143799824,
+      "nll_sum": 111.75649006015944,
+      "row": 99,
+      "source_id": "d0431ee77a20e7e3eec6fc119c702e1a6ceb81c81b37aec20ef2d635f1c922a5",
+      "tokens": 32
+    },
+    {
+      "first_gold_nll": 3.399516385646379,
+      "nll_mean": 4.479178018119258,
+      "nll_sum": 44.791780181192586,
+      "row": 100,
+      "source_id": "02c1025cf405fc1a80f0b39e5748f8f246fda9be1bdf9db7bf7c0bf179c907a8",
+      "tokens": 10
+    },
+    {
+      "first_gold_nll": 4.424916000972544,
+      "nll_mean": 2.300522307199603,
+      "nll_sum": 27.60626768639524,
+      "row": 101,
+      "source_id": "136de45ba61bf8457cc3fb849dceedc1c7f57634caa4444662aa946fb9417ead",
+      "tokens": 12
+    },
+    {
+      "first_gold_nll": 0.6854479799707498,
+      "nll_mean": 2.6123341427552256,
+      "nll_sum": 31.34800971306271,
+      "row": 102,
+      "source_id": "2fe07ae7f09d7131e5d19c746693bb21b0253d833a096c4e0350da4084293409",
+      "tokens": 12
+    },
+    {
+      "first_gold_nll": 7.276040785857781,
+      "nll_mean": 2.3592961514999495,
+      "nll_sum": 125.04269602949732,
+      "row": 103,
+      "source_id": "f75ac6bd924d43506b48eda31607e1d21ffe1b6fec6f3fd2f150a55a4f108cdb",
+      "tokens": 53
+    },
+    {
+      "first_gold_nll": 0.4035441566898079,
+      "nll_mean": 2.703109601927434,
+      "nll_sum": 156.7803569117912,
+      "row": 104,
+      "source_id": "5b03670f15822a88781d1b301ec4013b126a90fcbe33c889b8abe91890e164d8",
+      "tokens": 58
+    },
+    {
+      "first_gold_nll": 0.3453886676356248,
+      "nll_mean": 1.1722477569582357,
+      "nll_sum": 105.50229812624121,
+      "row": 105,
+      "source_id": "92920ef219e77146df8f0e62f0fc3c680cd084ae3c46b3c3ceb7e0a6b3e0fee0",
+      "tokens": 90
+    },
+    {
+      "first_gold_nll": 0.3159707167142187,
+      "nll_mean": 1.7484237311331907,
+      "nll_sum": 104.90542386799144,
+      "row": 106,
+      "source_id": "8efc0ca49b9a9a3c7cdc48ac302ac62ab601927e56138d69ea405b44d0d45737",
+      "tokens": 60
+    },
+    {
+      "first_gold_nll": 2.765735871928797,
+      "nll_mean": 2.6800254665681753,
+      "nll_sum": 144.72137519468146,
+      "row": 107,
+      "source_id": "bfc6afffc2dc6dff3e48158f22d5dc1ed67b68781730de5d6aca08ffa9ffb36c",
+      "tokens": 54
+    },
+    {
+      "first_gold_nll": 2.9845883562087963,
+      "nll_mean": 2.898039322662901,
+      "nll_sum": 60.85882577592093,
+      "row": 108,
+      "source_id": "07c2f14284491a222a2f83b929d58b323f97c0f4afecc0b7ba7ef23a7cbe6ea3",
+      "tokens": 21
+    },
+    {
+      "first_gold_nll": 2.978795648016437,
+      "nll_mean": 2.1775376296969466,
+      "nll_sum": 128.47472015211986,
+      "row": 109,
+      "source_id": "2d850a10783b7f7d465b84c19679e46486f06e831322f267586dd7ead8debbb2",
+      "tokens": 59
+    },
+    {
+      "first_gold_nll": 5.153682305403308,
+      "nll_mean": 2.7157843026404613,
+      "nll_sum": 152.08392094786583,
+      "row": 110,
+      "source_id": "57e252a917a4f3fd8ba90969707544643ddb3f5651a5aef5c390864bd2952af5",
+      "tokens": 56
+    },
+    {
+      "first_gold_nll": 0.018147214184590865,
+      "nll_mean": 0.5053303944950072,
+      "nll_sum": 56.5970041834408,
+      "row": 111,
+      "source_id": "881390648d4beffa8ded864b1ac6cc8e18a3f429d5fc60036ba1f80f7adbbfdd",
+      "tokens": 112
+    },
+    {
+      "first_gold_nll": 0.35162337709891744,
+      "nll_mean": 1.4699913084824872,
+      "nll_sum": 89.66946981743172,
+      "row": 112,
+      "source_id": "e29003c2da73ad7c98a03cf39eff9f3c42c0ad9d0710b7d341c45017ed1b8ff3",
+      "tokens": 61
+    },
+    {
+      "first_gold_nll": 9.680798892542207,
+      "nll_mean": 3.373941775376953,
+      "nll_sum": 87.72248615980078,
+      "row": 113,
+      "source_id": "112c4fbb28b3f5e619368f0862e0b3da8adea78387d13b24803cf9da70f739cc",
+      "tokens": 26
+    },
+    {
+      "first_gold_nll": 7.805503793497323,
+      "nll_mean": 3.400462953143029,
+      "nll_sum": 200.62731423543872,
+      "row": 114,
+      "source_id": "4eed04296605187859b16ba7acfc1e267bd885dc684d1fddb39f19a64f74d992",
+      "tokens": 59
+    },
+    {
+      "first_gold_nll": 0.036794546815748674,
+      "nll_mean": 1.067330657408634,
+      "nll_sum": 16.009959861129513,
+      "row": 115,
+      "source_id": "ac7a4e77a69784194ee43b16c5cc7ff4e876f4d2f60a4eebc8679ec8971fe8b6",
+      "tokens": 15
+    },
+    {
+      "first_gold_nll": 0.17450011205485083,
+      "nll_mean": 2.2338823322854218,
+      "nll_sum": 107.22635194970024,
+      "row": 116,
+      "source_id": "7dfae1b6e43097a9653e59be653fc97667336621a380c0d08622aea21c675712",
+      "tokens": 48
+    },
+    {
+      "first_gold_nll": 2.960591159912422,
+      "nll_mean": 4.9695273482080475,
+      "nll_sum": 84.48196491953681,
+      "row": 117,
+      "source_id": "b2659e6b89f8d27a9796f52455a45a76c37ec8f90a4b35175ed9ea3ae58befab",
+      "tokens": 17
+    },
+    {
+      "first_gold_nll": 3.379287489646412,
+      "nll_mean": 3.128479788739278,
+      "nll_sum": 187.70878732435668,
+      "row": 118,
+      "source_id": "781f0a7671f8af6a9b8b3285ff85caac8dfd877c43c83a4352b1b5cabd134f49",
+      "tokens": 60
+    },
+    {
+      "first_gold_nll": 2.791364076584088,
+      "nll_mean": 2.3084797191525612,
+      "nll_sum": 129.27486427254343,
+      "row": 119,
+      "source_id": "434d9e4c24b37fe64635e1a9c94c89954e545ee03f38f87c5220b766e22b1fb9",
+      "tokens": 56
+    },
+    {
+      "first_gold_nll": 3.8350402760392903,
+      "nll_mean": 2.94513969286042,
+      "nll_sum": 88.35419078581259,
+      "row": 120,
+      "source_id": "4adae79d382f864d00433716909e11bf8ef9f86ea868aeaa1a0f2f2a4f3521b1",
+      "tokens": 30
+    },
+    {
+      "first_gold_nll": 1.8966941428104995,
+      "nll_mean": 2.027118585451567,
+      "nll_sum": 64.86779473445014,
+      "row": 121,
+      "source_id": "f023a811ef80992b00e3682bb3e3bf6dc55fb4788a6bd3d7ca1591a6fe7fc6d9",
+      "tokens": 32
+    },
+    {
+      "first_gold_nll": 0.19308980049121516,
+      "nll_mean": 2.4340083320423456,
+      "nll_sum": 92.49231661760913,
+      "row": 122,
+      "source_id": "df24ecc575f5e49af32feda1a5bc6f997fda42e10f5faad1e6c868f8692143d3",
+      "tokens": 38
+    },
+    {
+      "first_gold_nll": 1.5193972811144327,
+      "nll_mean": 2.0445982794475457,
+      "nll_sum": 47.02576042729355,
+      "row": 123,
+      "source_id": "56dca9b80c88914c5b890a97bcaee2c9b2be48c0a05de7176dfff47144f3c014",
+      "tokens": 23
+    },
+    {
+      "first_gold_nll": 0.09243899129977962,
+      "nll_mean": 2.922994447669793,
+      "nll_sum": 96.45881677310317,
+      "row": 124,
+      "source_id": "88d9b16bdd16a2003b272635443473bafba89c3eae4595447d02c15984bbd6b4",
+      "tokens": 33
+    },
+    {
+      "first_gold_nll": 7.8684868033413125,
+      "nll_mean": 3.0242062511181595,
+      "nll_sum": 117.94404379360822,
+      "row": 125,
+      "source_id": "5cfa272ec3742393ae375ef959a78e531c0ca1c5335dfd1725078c4a995b117e",
+      "tokens": 39
+    },
+    {
+      "first_gold_nll": 4.901196637031337,
+      "nll_mean": 2.2964621299479773,
+      "nll_sum": 75.78325028828326,
+      "row": 126,
+      "source_id": "87ab9f0484787ae61cc738ffbcc6b4b73cc4d9e2a150e2fbe19affad4ac654dc",
+      "tokens": 33
+    },
+    {
+      "first_gold_nll": 1.0944517082824632,
+      "nll_mean": 2.3320601356463704,
+      "nll_sum": 44.30914257728104,
+      "row": 127,
+      "source_id": "0fc1a065e7859c01a3f4d9962b5f1084a7f4fdc53bffdf409c4750e123a47f5c",
+      "tokens": 19
+    },
+    {
+      "first_gold_nll": 0.07218386822129474,
+      "nll_mean": 0.9034634166700999,
+      "nll_sum": 14.455414666721598,
+      "row": 128,
+      "source_id": "47e595608e4be900c8b19ca6b947e1a649de43997039c9f5d6324d65f03c6199",
+      "tokens": 16
+    },
+    {
+      "first_gold_nll": 0.849284498277072,
+      "nll_mean": 2.2638902150705245,
+      "nll_sum": 113.19451075352623,
+      "row": 129,
+      "source_id": "dd87343584def000af36efb0dbbf57859608a376a39a51d05b90ca1b019fdeaa",
+      "tokens": 50
+    },
+    {
+      "first_gold_nll": 2.6086557925596345,
+      "nll_mean": 1.6648957799678643,
+      "nll_sum": 101.55864257803972,
+      "row": 130,
+      "source_id": "b922de8ea8da8dfab338301b3b7928ab9e3790600928099465265ea243c646c0",
+      "tokens": 61
+    },
+    {
+      "first_gold_nll": 0.027060759377818044,
+      "nll_mean": 1.9950072451199472,
+      "nll_sum": 107.73039123647715,
+      "row": 131,
+      "source_id": "5461b67b8022a140b51680680e57bf87c7760f81af6f33999623fbd50a581c81",
+      "tokens": 54
+    },
+    {
+      "first_gold_nll": 1.551196010202741,
+      "nll_mean": 1.4355008969313723,
+      "nll_sum": 111.96906996064703,
+      "row": 132,
+      "source_id": "e042e7ae3ede7266b1fa3d37faa4f4b3765036fd423cc161791d20a9b96a9811",
+      "tokens": 78
+    },
+    {
+      "first_gold_nll": 3.921645323301295,
+      "nll_mean": 3.455073700157624,
+      "nll_sum": 38.005810701733864,
+      "row": 133,
+      "source_id": "21d411cf6b36474a9089cabe61f8c91bfd07450bbd7882badea7406c6c26e20d",
+      "tokens": 11
+    },
+    {
+      "first_gold_nll": 8.316661694306458,
+      "nll_mean": 3.955901812100995,
+      "nll_sum": 55.38262536941393,
+      "row": 134,
+      "source_id": "618fbf4b630383405ba4f686ac3bc4004f94e2d1eee6653ac8b6654c47d871b5",
+      "tokens": 14
+    },
+    {
+      "first_gold_nll": 2.226805016684736,
+      "nll_mean": 3.5935604789130617,
+      "nll_sum": 194.05226586130533,
+      "row": 135,
+      "source_id": "c39c28757387e24813124f2f218b4113b5cff8d54803f0e7bc68b4685e17dcc3",
+      "tokens": 54
+    },
+    {
+      "first_gold_nll": 12.639558926382865,
+      "nll_mean": 2.576334283280178,
+      "nll_sum": 105.6297056144873,
+      "row": 136,
+      "source_id": "0626369264792851e8d3d75df5713bb87fa6b55efb98ca193f85b2ef7d556215",
+      "tokens": 41
+    },
+    {
+      "first_gold_nll": 4.124038019472273,
+      "nll_mean": 4.061821756672184,
+      "nll_sum": 28.43275229670529,
+      "row": 137,
+      "source_id": "01ab288093faa4f727151e78dd0074f3814e7270dc7084b51ef3e8a23cd1ce59",
+      "tokens": 7
+    },
+    {
+      "first_gold_nll": 3.7179775887063933,
+      "nll_mean": 2.408309436516824,
+      "nll_sum": 127.64040013539167,
+      "row": 138,
+      "source_id": "7ca24ddbd51658c746e95af0da19917b269d99f398f06646b117c73a4d38a46e",
+      "tokens": 53
+    },
+    {
+      "first_gold_nll": 5.0943135349472755,
+      "nll_mean": 3.3763213675930697,
+      "nll_sum": 60.77378461667526,
+      "row": 139,
+      "source_id": "8470be4ab60ed3a7ffc4d3004903ea3e5fd429123d06f0900daa483c0920eeca",
+      "tokens": 18
+    },
+    {
+      "first_gold_nll": 8.124726923171657,
+      "nll_mean": 3.428721630177655,
+      "nll_sum": 133.72014357692854,
+      "row": 140,
+      "source_id": "6fa8ea7b8d488024dcb3f1c9b29d7b29dc0e09a66b25e811745968138dd5e6c5",
+      "tokens": 39
+    },
+    {
+      "first_gold_nll": 2.486506939065773,
+      "nll_mean": 1.5343289899630437,
+      "nll_sum": 110.47168727733914,
+      "row": 141,
+      "source_id": "bad2fa9e0d2f6cd48c02ed9eff3d6b91fc066fc50bd092e5af4f31c6186358f3",
+      "tokens": 72
+    },
+    {
+      "first_gold_nll": 6.2806160498768016,
+      "nll_mean": 1.5863756399144544,
+      "nll_sum": 39.65939099786136,
+      "row": 142,
+      "source_id": "ab616db2736ed570f26a24dcc526d98880fff90d34824e82db49591e8fcabee6",
+      "tokens": 25
+    },
+    {
+      "first_gold_nll": 0.001525338051635572,
+      "nll_mean": 2.6904949407723375,
+      "nll_sum": 142.5962318609339,
+      "row": 143,
+      "source_id": "4ac4787cb149cd1756a0f9b4a2da735b1612520e83d4346703988de6babdbe93",
+      "tokens": 53
+    },
+    {
+      "first_gold_nll": 0.22868114772384018,
+      "nll_mean": 2.085932822069196,
+      "nll_sum": 73.00764877242186,
+      "row": 144,
+      "source_id": "0d71c5ad9d4e51df985c43d09de9b9becb8574791a28e82e2f90ecf55e61347e",
+      "tokens": 35
+    },
+    {
+      "first_gold_nll": 6.5292031419818315,
+      "nll_mean": 3.4078069958559807,
+      "nll_sum": 204.46841975135885,
+      "row": 145,
+      "source_id": "6073f417108c18dc8deeb6d89825702f78a057385b7ac717a4b1b7ad0e246b2c",
+      "tokens": 60
+    },
+    {
+      "first_gold_nll": 0.10066526333110204,
+      "nll_mean": 1.7859062872009608,
+      "nll_sum": 57.149001190430745,
+      "row": 146,
+      "source_id": "d7a1c6cb98cbb017f309142d199178064abd3282bcf34dee6a4095454f2fde38",
+      "tokens": 32
+    },
+    {
+      "first_gold_nll": 2.896116285279092,
+      "nll_mean": 3.165209237376015,
+      "nll_sum": 158.26046186880075,
+      "row": 147,
+      "source_id": "49fda55bdfbca1e6a86d5f6ac62af359b7dfcf9f64bd5ff0660c6d0b01fa890a",
+      "tokens": 50
+    },
+    {
+      "first_gold_nll": 0.7943284669056219,
+      "nll_mean": 0.8019891769771844,
+      "nll_sum": 20.04972942442961,
+      "row": 148,
+      "source_id": "718d22f7e573dd4b69589cf576036cf7ae73f616f1062cc5b99ed37d642a3c31",
+      "tokens": 25
+    },
+    {
+      "first_gold_nll": 1.1088411419872024,
+      "nll_mean": 3.3019455176274124,
+      "nll_sum": 171.70116691662545,
+      "row": 149,
+      "source_id": "bfb50ade2d77808bb52f5348f8c00cbe3b8337f6ba504e569272b484b1dfdcdd",
+      "tokens": 52
+    },
+    {
+      "first_gold_nll": 0.009024169688512274,
+      "nll_mean": 3.4014876131791794,
+      "nll_sum": 193.88479395121323,
+      "row": 150,
+      "source_id": "a4d731a029f72cac80d18fe370b05a692ff4153e5a330704f12608b497225c59",
+      "tokens": 57
+    },
+    {
+      "first_gold_nll": 0.09974949140903888,
+      "nll_mean": 2.8360034317535936,
+      "nll_sum": 170.1602059052156,
+      "row": 151,
+      "source_id": "06f78c162f4230082502936b98e81fd6402e5a5a6992769644c7554a7caaae81",
+      "tokens": 60
+    },
+    {
+      "first_gold_nll": 7.8617646341321645,
+      "nll_mean": 3.397394016466183,
+      "nll_sum": 115.51139655985021,
+      "row": 152,
+      "source_id": "fabc97ee27e9cee13cb5dd864699ccc43a4bc4734888a4d0a5c1a7c315e59b2d",
+      "tokens": 34
+    },
+    {
+      "first_gold_nll": 0.46607897286312294,
+      "nll_mean": 2.2478933605131806,
+      "nll_sum": 130.37781490976448,
+      "row": 153,
+      "source_id": "6a15f5059ddc76b2e5109c4473870aba9966de2cd50614731eb24c10040722de",
+      "tokens": 58
+    },
+    {
+      "first_gold_nll": 7.891222561582008,
+      "nll_mean": 3.042735491494863,
+      "nll_sum": 115.6239486768048,
+      "row": 154,
+      "source_id": "a088c40c3d424efb05fd3728ec6ad7d30e00b8a76a10402d9e6c7c78da315655",
+      "tokens": 38
+    },
+    {
+      "first_gold_nll": 7.724491292084082,
+      "nll_mean": 1.6296887843366155,
+      "nll_sum": 83.11412800116739,
+      "row": 155,
+      "source_id": "6fba7e65e60236d425532dbe3397d02e6a1fd01a86516ca0bfb25b34e7ed96c0",
+      "tokens": 51
+    },
+    {
+      "first_gold_nll": 0.3138272231300441,
+      "nll_mean": 2.1754916355679685,
+      "nll_sum": 139.23146467635,
+      "row": 156,
+      "source_id": "0fbeebc268186168a64484434e4c41be29b99f2e9569a2270a72ee9bc6ecdb51",
+      "tokens": 64
+    },
+    {
+      "first_gold_nll": 4.545591841195957,
+      "nll_mean": 2.5311917736297604,
+      "nll_sum": 83.52932852978209,
+      "row": 157,
+      "source_id": "2b73ec99e5d043d319134790bcc0ad9983c0965264a892e1f202faac648b4984",
+      "tokens": 33
+    },
+    {
+      "first_gold_nll": 1.6719120550570352,
+      "nll_mean": 1.911872049934476,
+      "nll_sum": 84.12237019711694,
+      "row": 158,
+      "source_id": "32bc405873e0f560932a332136b92662c3c15194ecc18d46f7927da9ae4cb216",
+      "tokens": 44
+    },
+    {
+      "first_gold_nll": 5.51423919036883,
+      "nll_mean": 2.9551185492318197,
+      "nll_sum": 144.80080891235917,
+      "row": 159,
+      "source_id": "5ec57ca31ac3269bfc85a06e00cf26508b109129cfaa69a88ffeed034a78b787",
+      "tokens": 49
+    },
+    {
+      "first_gold_nll": 8.948386799778397,
+      "nll_mean": 2.621908739418423,
+      "nll_sum": 73.41344470371584,
+      "row": 160,
+      "source_id": "0c8c97c5fe88326c603e850935e4af36b2cc26606559445033fd32cc266fcc76",
+      "tokens": 28
+    },
+    {
+      "first_gold_nll": 0.023141682951592912,
+      "nll_mean": 1.8176432872393615,
+      "nll_sum": 138.14088983019147,
+      "row": 161,
+      "source_id": "bfc3d0570864b47f5c8f3426c271296e2fe46b6999624a3b9c10d0c8398888e8",
+      "tokens": 76
+    },
+    {
+      "first_gold_nll": 3.26491121686475,
+      "nll_mean": 2.387035940567669,
+      "nll_sum": 145.6091923746278,
+      "row": 162,
+      "source_id": "a87e219753f45de8ed73d7040ac06cd55b01b3cb55562f50b4d7bf02fff6e35f",
+      "tokens": 61
+    },
+    {
+      "first_gold_nll": 0.9576262398904305,
+      "nll_mean": 2.9323476537403024,
+      "nll_sum": 170.07616391693753,
+      "row": 163,
+      "source_id": "f866b1196e5c604430c32918f73eb97622cbe989c0b2a616a4586fb8a9838c74",
+      "tokens": 58
+    },
+    {
+      "first_gold_nll": 6.613076173365297,
+      "nll_mean": 3.1054412997616345,
+      "nll_sum": 139.74485848927355,
+      "row": 164,
+      "source_id": "083bd4252572069d5da486d2108131f66f7e2b7a83dcf4099ccdb2b129282784",
+      "tokens": 45
+    },
+    {
+      "first_gold_nll": 4.510791447948044,
+      "nll_mean": 1.9008817660500206,
+      "nll_sum": 112.15202419695122,
+      "row": 165,
+      "source_id": "b887afeef601cd6d712df2a257828ebde6a6b28d2312263fa45563b43dfceaff",
+      "tokens": 59
+    },
+    {
+      "first_gold_nll": 3.417816027058109,
+      "nll_mean": 2.0895430013504903,
+      "nll_sum": 16.716344010803923,
+      "row": 166,
+      "source_id": "8d6bc0df0fc0dccc29ef3223c0856266565edff7603dc6fea3741913c50195e0",
+      "tokens": 8
+    },
+    {
+      "first_gold_nll": 0.22758914181767054,
+      "nll_mean": 3.034797172951709,
+      "nll_sum": 169.9486416852957,
+      "row": 167,
+      "source_id": "0832c05ab8e83938dbdd857d518e4f6c39dc9fef814253eb62fb513895f8f82c",
+      "tokens": 56
+    },
+    {
+      "first_gold_nll": 2.2128761422620116,
+      "nll_mean": 2.9768342517896302,
+      "nll_sum": 47.629348028634084,
+      "row": 168,
+      "source_id": "61c29e690f810e7fc9d2200ac7d2bbe18627a51d07c55cc4156ef9ee104dc89f",
+      "tokens": 16
+    },
+    {
+      "first_gold_nll": 9.704026684464793,
+      "nll_mean": 3.744349940307311,
+      "nll_sum": 93.60874850768278,
+      "row": 169,
+      "source_id": "c85eb491beeffe19df609d23ef5fb95b9f7c59c75fbeeb89ea587ef82ef75f77",
+      "tokens": 25
+    },
+    {
+      "first_gold_nll": 3.027692613759566,
+      "nll_mean": 2.1748033441301575,
+      "nll_sum": 121.78898727128882,
+      "row": 170,
+      "source_id": "feecabc59c03ae16e8f640edc74bba2eedf31e82cfc80b44929f15bb2146441b",
+      "tokens": 56
+    },
+    {
+      "first_gold_nll": 7.987741698888573,
+      "nll_mean": 2.41696057574071,
+      "nll_sum": 101.51234418110982,
+      "row": 171,
+      "source_id": "bf4fb201b3128bb907bce66367b0c9a64fdcb3cef4965924178e18ad13f16fe4",
+      "tokens": 42
+    },
+    {
+      "first_gold_nll": 0.36054995877564266,
+      "nll_mean": 3.026026794197076,
+      "nll_sum": 166.4314736808392,
+      "row": 172,
+      "source_id": "950e175f6571ad2098d3ed2da4781aec302183149ae5ed8bed7eff34bc4e927e",
+      "tokens": 55
+    },
+    {
+      "first_gold_nll": 0.005322010200966787,
+      "nll_mean": 1.3619549101263069,
+      "nll_sum": 40.858647303789205,
+      "row": 173,
+      "source_id": "0a6764951e2c468fad75f2be842215a6e80d1ca7596de07cac9df6a942255679",
+      "tokens": 30
+    },
+    {
+      "first_gold_nll": 0.15668071596988042,
+      "nll_mean": 2.038371314500957,
+      "nll_sum": 63.18951074952966,
+      "row": 174,
+      "source_id": "fb1d7d9f25f68adb173b3b4b507a5f8d091f3606b2322ccf80c21a6006c7dbc2",
+      "tokens": 31
+    },
+    {
+      "first_gold_nll": 5.890860310073101,
+      "nll_mean": 3.221278876188561,
+      "nll_sum": 167.50650156180518,
+      "row": 175,
+      "source_id": "0237f6f45c8eb1678035fc4a7df62a226ebc57da710073d3f89f72ffcd765a55",
+      "tokens": 52
+    },
+    {
+      "first_gold_nll": 0.8905667101063912,
+      "nll_mean": 2.228755267401987,
+      "nll_sum": 131.49656077671722,
+      "row": 176,
+      "source_id": "4699b99d43c45a48fca148fcf3c6fb0cbf9d2d89203c3dc96f5561b6417a77ad",
+      "tokens": 59
+    },
+    {
+      "first_gold_nll": 16.783386281332312,
+      "nll_mean": 3.0677919793040163,
+      "nll_sum": 134.98284708937672,
+      "row": 177,
+      "source_id": "b5d116b4d8daeb905fc6f5165cf1ee89553a1b6c7ac205db36d727c446e52a01",
+      "tokens": 44
+    },
+    {
+      "first_gold_nll": 0.009597089415599669,
+      "nll_mean": 3.166929227197885,
+      "nll_sum": 85.50708913434289,
+      "row": 178,
+      "source_id": "a61dc84356b4f21035249adc2cc4cd20dffe2af3fad614c132c3d8db4dc7a5fc",
+      "tokens": 27
+    },
+    {
+      "first_gold_nll": 3.011078189646163,
+      "nll_mean": 3.2241893727137687,
+      "nll_sum": 196.6755517355399,
+      "row": 179,
+      "source_id": "644939fd21814555ea6ffc2a31eef80678c4e52f4f66d301a97efe6012220436",
+      "tokens": 61
+    },
+    {
+      "first_gold_nll": 0.36793807891616837,
+      "nll_mean": 2.5450433677521427,
+      "nll_sum": 78.89634440031642,
+      "row": 180,
+      "source_id": "4fbf109ad067e45b88855af87e3a398c430e2faaab9dc5a13d049fe6c9c08996",
+      "tokens": 31
+    },
+    {
+      "first_gold_nll": 5.302560108363579,
+      "nll_mean": 3.285027873513854,
+      "nll_sum": 210.24178390488666,
+      "row": 181,
+      "source_id": "b8bb55aaf1e4671d983a429be85e1d987e5fa3b6b70d0807778e2b185257fd26",
+      "tokens": 64
+    },
+    {
+      "first_gold_nll": 2.20982040755473,
+      "nll_mean": 2.359729870913588,
+      "nll_sum": 146.30325199664247,
+      "row": 182,
+      "source_id": "59642d9b968957342ad54449d4b601154b981d61e02eaead5d4b1e1a17200e5c",
+      "tokens": 62
+    },
+    {
+      "first_gold_nll": 4.0592381030804034,
+      "nll_mean": 2.766496346345765,
+      "nll_sum": 141.09131366363403,
+      "row": 183,
+      "source_id": "ecd288c7528f9ba1a6e56e88c3b1dcbd735b9e777efbf6b0f7bf078187bdcc71",
+      "tokens": 51
+    },
+    {
+      "first_gold_nll": 3.550905124505256,
+      "nll_mean": 1.9685085483870022,
+      "nll_sum": 29.52762822580503,
+      "row": 184,
+      "source_id": "f61e30f119c482ecd8f7998980767c5b0ec71dbf40b5581c9e5107c989500ad9",
+      "tokens": 15
+    },
+    {
+      "first_gold_nll": 0.07673879595810718,
+      "nll_mean": 2.79808713886085,
+      "nll_sum": 61.557917054938706,
+      "row": 185,
+      "source_id": "332f5929440253e72580ee87e8048ff76d727f5808091853b45f0c906ef06c05",
+      "tokens": 22
+    },
+    {
+      "first_gold_nll": 3.1932397665239662,
+      "nll_mean": 2.0800624576401834,
+      "nll_sum": 95.68287305144844,
+      "row": 186,
+      "source_id": "eac16d8643191e783dfbfa36bd2f027b0b9a79ce408de21a615e9c467c421cc8",
+      "tokens": 46
+    },
+    {
+      "first_gold_nll": 0.011294552933403423,
+      "nll_mean": 2.967074497336823,
+      "nll_sum": 133.51835238015704,
+      "row": 187,
+      "source_id": "2ce3506de6fee6dab2241ac842649909de3f524abc59cb03c7161b6ab9bf0826",
+      "tokens": 45
+    },
+    {
+      "first_gold_nll": 7.241931431171096,
+      "nll_mean": 3.7647497460906294,
+      "nll_sum": 195.76698679671273,
+      "row": 188,
+      "source_id": "f2bb2914205fd012bff3d392de48337085f6f285f6092627cab06df0fcb7d685",
+      "tokens": 52
+    },
+    {
+      "first_gold_nll": 1.8015897084158325,
+      "nll_mean": 1.6511335436455308,
+      "nll_sum": 49.53400630936592,
+      "row": 189,
+      "source_id": "815ffc706883faebcfa75e739d9a4afe5629a7b36e5e3c07c37b48446caca0ad",
+      "tokens": 30
+    },
+    {
+      "first_gold_nll": 9.598390053522746,
+      "nll_mean": 3.2095818471861546,
+      "nll_sum": 102.70661910995695,
+      "row": 190,
+      "source_id": "1f00cbb8683e05aefd0feb65a0031ea056ffe8f95e2c6d9d5fa2e707267ffa02",
+      "tokens": 32
+    },
+    {
+      "first_gold_nll": 0.8647614340758238,
+      "nll_mean": 2.578550619655523,
+      "nll_sum": 48.992461773454934,
+      "row": 191,
+      "source_id": "dab74d6019340529aaa992821f8cca80ac376d03e3a914bac23182c7d24f3f6f",
+      "tokens": 19
+    },
+    {
+      "first_gold_nll": 0.15381845516250792,
+      "nll_mean": 1.6617583650797072,
+      "nll_sum": 99.70550190478244,
+      "row": 192,
+      "source_id": "b69519e494b2ed662a800bb8b0779e415648841d1b870bcb00f5d46ea739cff4",
+      "tokens": 60
+    },
+    {
+      "first_gold_nll": 1.743306876115156,
+      "nll_mean": 2.490775537838255,
+      "nll_sum": 102.12179705136845,
+      "row": 193,
+      "source_id": "926b41e899b9967fd703b0c5cdba2a935fb8cd5c69e1dc245a11863273faf44d",
+      "tokens": 41
+    },
+    {
+      "first_gold_nll": 1.1559320938089783,
+      "nll_mean": 2.7968883618354754,
+      "nll_sum": 109.07864611158354,
+      "row": 194,
+      "source_id": "bd69a665753585a08ae29f5c789f929ac62b9502cf97ea2ce631dc6b110a465f",
+      "tokens": 39
+    },
+    {
+      "first_gold_nll": 0.000747712352108465,
+      "nll_mean": 3.056963861983567,
+      "nll_sum": 116.16462675537554,
+      "row": 195,
+      "source_id": "0b4c35075ae701439b9eec4ef780ce60a377c62e49fadd5d3cf70f75dc88037f",
+      "tokens": 38
+    },
+    {
+      "first_gold_nll": 2.0293931414023483,
+      "nll_mean": 1.3173839582162241,
+      "nll_sum": 25.03029520610826,
+      "row": 196,
+      "source_id": "87f9eb30587e27d9fef921b7f27e86187bc55b0e701fa1c8a5102ad7e0d2eb62",
+      "tokens": 19
+    },
+    {
+      "first_gold_nll": 7.61695500997763,
+      "nll_mean": 1.4967545618049216,
+      "nll_sum": 88.30851914649037,
+      "row": 197,
+      "source_id": "a30442ca836cdf0b3c0298cb3364108d89aec0dbcff1a92cf4deb535d0cd8115",
+      "tokens": 59
+    },
+    {
+      "first_gold_nll": 2.341162537290355,
+      "nll_mean": 2.0735627925456215,
+      "nll_sum": 157.59077223346725,
+      "row": 198,
+      "source_id": "ecd546142fbdfd5e97988ede368f9281849f518f6cc48d6b73187e0fe7bcd65f",
+      "tokens": 76
+    },
+    {
+      "first_gold_nll": 0.4681790535194068,
+      "nll_mean": 1.570924777450763,
+      "nll_sum": 42.4149689911706,
+      "row": 199,
+      "source_id": "bdc17e1db246ff4ba24060228ceb9d675846fbd4e217ef7939cb09ebe77b75de",
+      "tokens": 27
+    },
+    {
+      "first_gold_nll": 4.942833131232888,
+      "nll_mean": 2.427711305041272,
+      "nll_sum": 48.554226100825446,
+      "row": 200,
+      "source_id": "d2b1b68547088b9cb2f6bdf23227d26a799187ed1023d3127aa9bf82acca3971",
+      "tokens": 20
+    },
+    {
+      "first_gold_nll": 8.367746989244765,
+      "nll_mean": 3.8222236489926726,
+      "nll_sum": 179.6445115026556,
+      "row": 201,
+      "source_id": "00ec67aaaefb47d3a03d6ce275076bab92b6500f66b020e96953b2aedd4b937d",
+      "tokens": 47
+    },
+    {
+      "first_gold_nll": 0.0015815881334333426,
+      "nll_mean": 1.811180371398432,
+      "nll_sum": 48.90187002775767,
+      "row": 202,
+      "source_id": "dbbc280cc20409b0c4b6cc64a44692a2d93365c75ba50400d7c92c9c2a01e99a",
+      "tokens": 27
+    },
+    {
+      "first_gold_nll": 0.07940370490820925,
+      "nll_mean": 1.2829315005253341,
+      "nll_sum": 65.42950652679204,
+      "row": 203,
+      "source_id": "5a6096a063555e25635589fda4221b01e83f7f9fb93222bd7de585421071f494",
+      "tokens": 51
+    },
+    {
+      "first_gold_nll": 2.126397247347235,
+      "nll_mean": 2.8645102717714597,
+      "nll_sum": 94.52883896845817,
+      "row": 204,
+      "source_id": "ad0553846c1669721743ec46eaefe1ed8e204a523c276c3b7cf65dcd14b4f50c",
+      "tokens": 33
+    },
+    {
+      "first_gold_nll": 1.4662917868356473,
+      "nll_mean": 2.818916312934893,
+      "nll_sum": 166.3160624631587,
+      "row": 205,
+      "source_id": "aeb99f91788d2ed47feffc5b5109a24e4b89758e76dbf41ba21a3bf02b33d22d",
+      "tokens": 59
+    },
+    {
+      "first_gold_nll": 4.52038073163456,
+      "nll_mean": 2.472299221417172,
+      "nll_sum": 108.78116574235557,
+      "row": 206,
+      "source_id": "64bf74dfeac5b8d2b344194da31fb9f4e9becf9af92d2993405d6de190ea384d",
+      "tokens": 44
+    },
+    {
+      "first_gold_nll": 2.6713046211311138,
+      "nll_mean": 3.5898095320930574,
+      "nll_sum": 215.38857192558345,
+      "row": 207,
+      "source_id": "c57d827642298e79673642ffdc71291cb20f630b0be1f8a2d75f4410f8d55fcc",
+      "tokens": 60
+    },
+    {
+      "first_gold_nll": 0.9021399923410023,
+      "nll_mean": 2.3251209642311768,
+      "nll_sum": 127.88165303271472,
+      "row": 208,
+      "source_id": "b89230a4baee68d07cc659bd2264b36b5f6f2c4dbe58e605238c0f13cfe3ce86",
+      "tokens": 55
+    },
+    {
+      "first_gold_nll": 2.4862236967407583,
+      "nll_mean": 2.5817368273132173,
+      "nll_sum": 147.15899915685338,
+      "row": 209,
+      "source_id": "e9255900611f8c53ab1ad2ad2bc78217e75f8660a3883f8fb4ae22e4833a80d2",
+      "tokens": 57
+    },
+    {
+      "first_gold_nll": 2.677447386755283,
+      "nll_mean": 3.1573574990341338,
+      "nll_sum": 126.29429996136535,
+      "row": 210,
+      "source_id": "baa5fb141b6ba5a2f29e448d25bdd3b7f286e43169b3f72505cbc79aac33aa46",
+      "tokens": 40
+    },
+    {
+      "first_gold_nll": 3.682235675818294,
+      "nll_mean": 2.1679994387002757,
+      "nll_sum": 101.89597361891296,
+      "row": 211,
+      "source_id": "ac929c74fd4cd175972506c8fd39f8e1767c85828849379528619f96c68862f8",
+      "tokens": 47
+    },
+    {
+      "first_gold_nll": 12.14170920480257,
+      "nll_mean": 3.043072244915017,
+      "nll_sum": 152.15361224575085,
+      "row": 212,
+      "source_id": "f0de0a7addda7d34f5bb77f71d71513823281c7ca123320ce3befd063f6ce5c2",
+      "tokens": 50
+    },
+    {
+      "first_gold_nll": 13.318839907826387,
+      "nll_mean": 2.372043000445085,
+      "nll_sum": 85.39354801602306,
+      "row": 213,
+      "source_id": "126ef87931df4202e2efa271d0a43e9f8636da4ef109c15f866148fcd09fa81a",
+      "tokens": 36
+    },
+    {
+      "first_gold_nll": 4.258837380597221,
+      "nll_mean": 2.0930291239510503,
+      "nll_sum": 100.46539794965042,
+      "row": 214,
+      "source_id": "a9d4e02e729072639d321c12a891690a5c9f4775f81539c0e1cc4261c8010d9d",
+      "tokens": 48
+    },
+    {
+      "first_gold_nll": 2.6303774815470113,
+      "nll_mean": 3.7340887623217616,
+      "nll_sum": 160.56581677983576,
+      "row": 215,
+      "source_id": "9a22946dbaf0fcba9dac88fa38b1f301604bf53a6eb57f819688260016173218",
+      "tokens": 43
+    },
+    {
+      "first_gold_nll": 0.5390232767226095,
+      "nll_mean": 2.521422181682314,
+      "nll_sum": 186.58524144449123,
+      "row": 216,
+      "source_id": "881b71e10ddfae9b9b98d166db6ea06cf17153aade269eb58b17fdcf1b632e48",
+      "tokens": 74
+    },
+    {
+      "first_gold_nll": 1.7564840596968523,
+      "nll_mean": 2.642324365772249,
+      "nll_sum": 118.9045964597512,
+      "row": 217,
+      "source_id": "16295589c561934a5f0e75da3af021be8bb7f62374a5ad5be57623c09302e601",
+      "tokens": 45
+    },
+    {
+      "first_gold_nll": 0.1295385257690569,
+      "nll_mean": 2.281324520094537,
+      "nll_sum": 95.81562984397056,
+      "row": 218,
+      "source_id": "2d64e1bddb2efa92c0a80d6b638663a257fbc47f09946b51be2f802fc4e49891",
+      "tokens": 42
+    },
+    {
+      "first_gold_nll": 0.04471005942892958,
+      "nll_mean": 2.7536028071344387,
+      "nll_sum": 143.1873459709908,
+      "row": 219,
+      "source_id": "8f67649b9e9138c4acbb9497accc5a74ecb426372b9030fd864dde2289316930",
+      "tokens": 52
+    },
+    {
+      "first_gold_nll": 4.518144001974321,
+      "nll_mean": 1.6604408832070403,
+      "nll_sum": 96.30557122600834,
+      "row": 220,
+      "source_id": "491c03a417c17a255e507b589b64c947fd19453849bd5746e77978ccacdc6723",
+      "tokens": 58
+    },
+    {
+      "first_gold_nll": 9.060445541008246,
+      "nll_mean": 2.60492124768172,
+      "nll_sum": 148.48051111785804,
+      "row": 221,
+      "source_id": "c851ff5746b5ce4aed2cfadebae7b4400912fd893374892733588be3840031ec",
+      "tokens": 57
+    },
+    {
+      "first_gold_nll": 1.8786025295073827,
+      "nll_mean": 3.5240850929211764,
+      "nll_sum": 193.8246801106647,
+      "row": 222,
+      "source_id": "5bf68a55a275e211d0bbfcca1d957e8b8cd90dd6b9140a2151ba9ff98daddd4b",
+      "tokens": 55
+    },
+    {
+      "first_gold_nll": 4.12441048089892,
+      "nll_mean": 3.1551617575262525,
+      "nll_sum": 53.63774987794629,
+      "row": 223,
+      "source_id": "265292accb81496c91235201d6fedde13189c0d82e2b9a2c8d7f30bb3102e7c4",
+      "tokens": 17
+    },
+    {
+      "first_gold_nll": 3.5943392311951854,
+      "nll_mean": 4.952832302326494,
+      "nll_sum": 34.66982611628546,
+      "row": 224,
+      "source_id": "ec65a781e0629ae0b600f23ef480256b0c8852619a7494c6d23035e0efb07d65",
+      "tokens": 7
+    },
+    {
+      "first_gold_nll": 6.175074134554411,
+      "nll_mean": 2.964339739969986,
+      "nll_sum": 154.14566647843927,
+      "row": 225,
+      "source_id": "88ada103ff3e0b2da734c261a22d72680b4fc24545b34812e4f290117b5f1716",
+      "tokens": 52
+    },
+    {
+      "first_gold_nll": 11.74757720471515,
+      "nll_mean": 2.3779960732408987,
+      "nll_sum": 161.70373298038112,
+      "row": 226,
+      "source_id": "02e301a5d4b2c6d2ca88d549d8ff9f8eebc6a3a2c7a414688568f40fc9e996ff",
+      "tokens": 68
+    },
+    {
+      "first_gold_nll": 1.360889138281653,
+      "nll_mean": 2.6071426319139417,
+      "nll_sum": 23.464283687225475,
+      "row": 227,
+      "source_id": "64ea8925ced5b315f63bd12b813cb2c83e347e425674e291d892eb00865c3435",
+      "tokens": 9
+    },
+    {
+      "first_gold_nll": 0.024151763192140407,
+      "nll_mean": 2.224273806711536,
+      "nll_sum": 28.91555948724997,
+      "row": 228,
+      "source_id": "3ed6932969c8a1d481e17af4c5935eaeabec1a121fb00afc2ea036d95a88ade2",
+      "tokens": 13
+    },
+    {
+      "first_gold_nll": 0.6990431604918186,
+      "nll_mean": 2.775774691081295,
+      "nll_sum": 144.34028393622734,
+      "row": 229,
+      "source_id": "ba14ca87a3dc23d201de620677bc50e09e27e2352ca3dd9ab2fb6a09f3c5d6c2",
+      "tokens": 52
+    },
+    {
+      "first_gold_nll": 1.3476067070821998,
+      "nll_mean": 1.8307807197380732,
+      "nll_sum": 106.18528174480825,
+      "row": 230,
+      "source_id": "7323aad7fe4d0eb77c2102d8210d20dfac5cc40bcec8e09c33adc574cf003ec5",
+      "tokens": 58
+    },
+    {
+      "first_gold_nll": 4.727799643994743,
+      "nll_mean": 2.791738495837488,
+      "nll_sum": 55.834769916749764,
+      "row": 231,
+      "source_id": "56864cce44c8d2c13437286c62f5bcf838696297ad36e28df0aa91b5d034cc92",
+      "tokens": 20
+    },
+    {
+      "first_gold_nll": 2.402068975726479e-05,
+      "nll_mean": 2.1206443974112337,
+      "nll_sum": 129.35930824208526,
+      "row": 232,
+      "source_id": "5f625d010e23982141b4f82730fb64cdccb38a85bcf7d6afe4573881d4b02fe7",
+      "tokens": 61
+    },
+    {
+      "first_gold_nll": 5.270521257029365,
+      "nll_mean": 2.701198653005006,
+      "nll_sum": 105.34674746719523,
+      "row": 233,
+      "source_id": "aa35d80e82e212cf100ba03b51f53e3c3b60ae968a012681c7dc8e9aed7066e3",
+      "tokens": 39
+    },
+    {
+      "first_gold_nll": 2.766930744209077,
+      "nll_mean": 3.429385860637072,
+      "nll_sum": 48.01140204891901,
+      "row": 234,
+      "source_id": "8367cdb60778593d06c5eab2e5b0146d81197f0bf7b040016b4519ba07c8bbc2",
+      "tokens": 14
+    },
+    {
+      "first_gold_nll": 6.775966665620718,
+      "nll_mean": 3.7491078499402524,
+      "nll_sum": 228.6955788463554,
+      "row": 235,
+      "source_id": "b68aad79db10dd1a8d029f0ab856d815e027c14b6fe32989c253dc6c5f7cfc61",
+      "tokens": 61
+    },
+    {
+      "first_gold_nll": 5.441465947176113,
+      "nll_mean": 3.209599471635469,
+      "nll_sum": 144.4319762235961,
+      "row": 236,
+      "source_id": "f32379dc3998f9efe774d9de78218de2673acbee471613febf12e27de8b62495",
+      "tokens": 45
+    },
+    {
+      "first_gold_nll": 0.49652920849431936,
+      "nll_mean": 2.304627139058349,
+      "nll_sum": 92.18508556233395,
+      "row": 237,
+      "source_id": "bb6803b4703236495c73d67e5f2f0dcccdb243efa016f3e182ca295eb8d60623",
+      "tokens": 40
+    },
+    {
+      "first_gold_nll": 0.30188275695681455,
+      "nll_mean": 2.7420806906435833,
+      "nll_sum": 74.03617864737674,
+      "row": 238,
+      "source_id": "136a57ea477fef272237303fb8191e131ba7e278a1029336b9510171da6d0aa2",
+      "tokens": 27
+    },
+    {
+      "first_gold_nll": 2.2310517017525626,
+      "nll_mean": 1.978230162966111,
+      "nll_sum": 100.88973831127166,
+      "row": 239,
+      "source_id": "a19ad7d1062a5263557835f7936f89af39db17efdad547fdbdb9a54ee81b0e69",
+      "tokens": 51
+    },
+    {
+      "first_gold_nll": 0.05834638092127875,
+      "nll_mean": 3.0435084821329155,
+      "nll_sum": 112.60981383891787,
+      "row": 240,
+      "source_id": "2f349fda106a41e54cf5d4602ff29b15b6afe12ba6b86aaf875a0bf92a778246",
+      "tokens": 37
+    },
+    {
+      "first_gold_nll": 0.4646605642142383,
+      "nll_mean": 3.2513616739644506,
+      "nll_sum": 169.07080704615143,
+      "row": 241,
+      "source_id": "35acdb617d235f9e89fcc3fd12c0eb7c2bf25273e41d6e666181beb70ae6d91a",
+      "tokens": 52
+    },
+    {
+      "first_gold_nll": 1.3661146082701379,
+      "nll_mean": 1.7541172168614068,
+      "nll_sum": 26.311758252921102,
+      "row": 242,
+      "source_id": "05e9d0a9096ef58b10bde3e8a27b7d53ac8242531c65337297999ef4300b76aa",
+      "tokens": 15
+    },
+    {
+      "first_gold_nll": 2.911406658234746,
+      "nll_mean": 2.403323649297432,
+      "nll_sum": 96.13294597189729,
+      "row": 243,
+      "source_id": "96e6a35804510f5ec458edb22775902b0d199ad9df0c48ce16b9ce61fdedd338",
+      "tokens": 40
+    },
+    {
+      "first_gold_nll": 1.5474862287362612,
+      "nll_mean": 2.3498824983576845,
+      "nll_sum": 119.84400741624191,
+      "row": 244,
+      "source_id": "7d37c0de69a4ee9ec6d92046a0894463ea09c0f12cb44ed049eeaa9ce0454c0f",
+      "tokens": 51
+    },
+    {
+      "first_gold_nll": 0.13174877790703476,
+      "nll_mean": 1.7389242174240993,
+      "nll_sum": 20.867090609089193,
+      "row": 245,
+      "source_id": "2068195b24794c13a6817beae53eaf7dbe31ba3692f5ad04a69fd4d05a0439a8",
+      "tokens": 12
+    },
+    {
+      "first_gold_nll": 2.525719948527005,
+      "nll_mean": 2.720025297847388,
+      "nll_sum": 57.12053125479514,
+      "row": 246,
+      "source_id": "291e2e7d52b4e6bac15d539dc32a17d6fabfafd4034dfdf85c69790f7fd0539b",
+      "tokens": 21
+    },
+    {
+      "first_gold_nll": 0.5578518241998864,
+      "nll_mean": 2.428146929082903,
+      "nll_sum": 65.55996708523838,
+      "row": 247,
+      "source_id": "75137448c22bdbd30a6cd18b3abce4bc68134760c33f96b4d74967d66ba51f82",
+      "tokens": 27
+    },
+    {
+      "first_gold_nll": 2.848523887271984,
+      "nll_mean": 2.6978370262192217,
+      "nll_sum": 21.582696209753774,
+      "row": 248,
+      "source_id": "2d69fca898825e235ffad28af59d5ef02a0d4e4b72b2e658c6fa085fe67ad481",
+      "tokens": 8
+    },
+    {
+      "first_gold_nll": 7.104721489277317,
+      "nll_mean": 2.3546340888215513,
+      "nll_sum": 80.05755901993274,
+      "row": 249,
+      "source_id": "708c8e76c10946c79872676ae80bc660827879672ffff8a766e2d84b7417ba61",
+      "tokens": 34
+    },
+    {
+      "first_gold_nll": 0.1282502319630794,
+      "nll_mean": 2.3043423247347206,
+      "nll_sum": 96.78237763885826,
+      "row": 250,
+      "source_id": "6003d6305bfed725602e7bf090aaf1b361fc54547b1a03c6d10ed38a415ac223",
+      "tokens": 42
+    },
+    {
+      "first_gold_nll": 3.158252731470803,
+      "nll_mean": 1.6413990814501986,
+      "nll_sum": 134.5947246789163,
+      "row": 251,
+      "source_id": "2d4dfba08978c9974f19733e55364991c7f434075365caed725d6d6a14e45a7d",
+      "tokens": 82
+    },
+    {
+      "first_gold_nll": 7.7768736403208045,
+      "nll_mean": 2.8468778330470914,
+      "nll_sum": 148.03764731844876,
+      "row": 252,
+      "source_id": "71f2f4e6fd3c41d01286e13a72a0929d0645f969d3bf4b10e60c2b42c933f9e7",
+      "tokens": 52
+    },
+    {
+      "first_gold_nll": 4.792496528636651,
+      "nll_mean": 2.456499570601379,
+      "nll_sum": 46.6734918414262,
+      "row": 253,
+      "source_id": "f61bfc9c7675a7defe7d84879c74b75b9df6cc4db8a31e37ba4f7824b6915d6e",
+      "tokens": 19
+    },
+    {
+      "first_gold_nll": 3.369517384624274,
+      "nll_mean": 2.5276090139346006,
+      "nll_sum": 159.23936787787983,
+      "row": 254,
+      "source_id": "c71b96cd5b26b8dbbdd57379e04d070a9392f7fd7977a99559d9cb0cd0c7bdd1",
+      "tokens": 63
+    },
+    {
+      "first_gold_nll": 0.7871133684164455,
+      "nll_mean": 1.8576656023650533,
+      "nll_sum": 70.59129288987202,
+      "row": 255,
+      "source_id": "d4f755d8aeed2adb94f7a4e414e69bd3c4bf91245fc65a8ecd04d270a8642d49",
+      "tokens": 38
+    }
+  ],
+  "per_chunk_native_output_sha256": [
+    {
+      "bytes": 21026,
+      "chunk": 0,
+      "gold_targets_scored": 656,
+      "min_free_pct": 47,
+      "records": 16,
+      "result_sha256": "b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c",
+      "stderr_sha256": "d5f2e75111db7c5f42965b83c1193c6322057ca123fa2837c7780ba1f1dbc31f",
+      "wall_seconds": 64.777
+    },
+    {
+      "bytes": 20322,
+      "chunk": 1,
+      "gold_targets_scored": 634,
+      "min_free_pct": 45,
+      "result_sha256": "10146a002575aa1da674250a1795648fe0b9448f0ab3ed726e448916b943fed7",
+      "stderr_sha256": "02d070ef0a593c87839e6a57fd35d5dcb9f30387914a968a066c94429a13614d",
+      "wall_seconds": 69.68
+    },
+    {
+      "bytes": 22498,
+      "chunk": 2,
+      "gold_targets_scored": 702,
+      "min_free_pct": 45,
+      "result_sha256": "9a49c7ed3a05f8b82b4f227655b6d490e1a71b8c8cfd05151ae63eb7d8254180",
+      "stderr_sha256": "b2934a5a9363915d49417375694e6b97415680e255333cb03560efd8e99495ca",
+      "wall_seconds": 68.985
+    },
+    {
+      "bytes": 21282,
+      "chunk": 3,
+      "gold_targets_scored": 664,
+      "min_free_pct": 45,
+      "result_sha256": "361ad2b1df447d7e69556e3a9af78d4b87f9dcb2a3e60f83bed3b92c4a4e0615",
+      "stderr_sha256": "558089a62e315a3f89874542ea3c9c86e0e23e3439c4479fcae809f165cfc09c",
+      "wall_seconds": 68.956
+    },
+    {
+      "bytes": 25122,
+      "chunk": 4,
+      "gold_targets_scored": 784,
+      "min_free_pct": 46,
+      "result_sha256": "baad81810d224df6469ceaa8ac7db50909354d24c6bc77486d8e0880d88f2c8c",
+      "stderr_sha256": "f3edd11eb26273a5ce1f8aa36c30acf7128f0b6d7a8ec077eef7727fe24f6434",
+      "wall_seconds": 72.026
+    },
+    {
+      "bytes": 25346,
+      "chunk": 5,
+      "gold_targets_scored": 791,
+      "min_free_pct": 46,
+      "result_sha256": "afd92f9e12c6fd986fe5d306bfe59fc746f4a713dd88f07ddf273afadf34504a",
+      "stderr_sha256": "2d8bbb6729b7b74f5b631d58e0a77ee331d911fc11bb9da8a4e12497c80699c1",
+      "wall_seconds": 73.682
+    },
+    {
+      "bytes": 24738,
+      "chunk": 6,
+      "gold_targets_scored": 772,
+      "min_free_pct": 46,
+      "result_sha256": "68f0f88280b6af2db1fbce45bce87bfd5cf42b42dee64c8836289d8430b75349",
+      "stderr_sha256": "b2d2a2e04bc088d222d102d6cdccd530e152f5e0f3fbb0ea77622d7e9ec28a97",
+      "wall_seconds": 71.525
+    },
+    {
+      "bytes": 18882,
+      "chunk": 7,
+      "gold_targets_scored": 589,
+      "min_free_pct": 46,
+      "result_sha256": "9498dd0ac27573fea1c5dc1628daf80f2ff43fa9038cf25523f6f81d76968cac",
+      "stderr_sha256": "619a9f7d80ac760cdc6ace7be61a43faa18962dbf498972aa4492c93f0114ca8",
+      "wall_seconds": 55.876
+    },
+    {
+      "bytes": 20706,
+      "chunk": 8,
+      "gold_targets_scored": 646,
+      "min_free_pct": 45,
+      "result_sha256": "dd71754f9e7a4c2596b9485b09cd9e41150d3e95966eb7733acc0cb61268ea88",
+      "stderr_sha256": "98670783c0ac673ee405ffa1e2daf448dc85d99ffe9c736d5bf01d7dd74efe57",
+      "wall_seconds": 65.599
+    },
+    {
+      "bytes": 23778,
+      "chunk": 9,
+      "gold_targets_scored": 742,
+      "min_free_pct": 45,
+      "result_sha256": "c1c961ac2b4297748d7cdf7970dcb956d404a93017257cb25ef8edb9f5de1aee",
+      "stderr_sha256": "0ad13c9007f4092903495e888ab15a0db8ba67e7b3103903a5d582e4f0606441",
+      "wall_seconds": 75.192
+    },
+    {
+      "bytes": 22370,
+      "chunk": 10,
+      "gold_targets_scored": 698,
+      "min_free_pct": 46,
+      "result_sha256": "70462344aa21228b1ef15942183df4c32df5cd796d5454a843aa920df55fcc25",
+      "stderr_sha256": "5faf7418721d94a1e3d1e228ec46b4e29696993d452e363d04556f885a5a32e2",
+      "wall_seconds": 63.8
+    },
+    {
+      "bytes": 21154,
+      "chunk": 11,
+      "gold_targets_scored": 660,
+      "min_free_pct": 46,
+      "result_sha256": "5d4278dd0d952803caf37ab3b51461c5f6c6a5edd4471efc6631292cb210044a",
+      "stderr_sha256": "4466bc2acdcf80fb70a7281ecd0b5d90a2c3084c7c80cb8d7e184ccc4f1b4915",
+      "wall_seconds": 62.978
+    },
+    {
+      "bytes": 22434,
+      "chunk": 12,
+      "gold_targets_scored": 700,
+      "min_free_pct": 46,
+      "result_sha256": "901c51794098d1f5262cca044a8ff0d4f0ef003590e0a798d466a6c446de194e",
+      "stderr_sha256": "392c5c78c7325218fc312415cf997d41126fbb72a77c895c4a98e0f4fbc9c084",
+      "wall_seconds": 66.009
+    },
+    {
+      "bytes": 24866,
+      "chunk": 13,
+      "gold_targets_scored": 776,
+      "min_free_pct": 46,
+      "result_sha256": "b4b1ba25ac1dfbfb7f0ba3c2663166d536b8bdff5949da3094c5c333a666b301",
+      "stderr_sha256": "8764bafca088fb248e2ca9a85c394e826df8450ee31ee32efd89c310d1a19eb7",
+      "wall_seconds": 74.24
+    },
+    {
+      "bytes": 19778,
+      "chunk": 14,
+      "gold_targets_scored": 617,
+      "min_free_pct": 45,
+      "result_sha256": "83f7f248324ffe73147a716e2486a3a05e71e0a1316958e9d01a92f1b3e48071",
+      "stderr_sha256": "711f44140069e3ee752472d8ec77e03b60d5383517ccbd7a40ea7d6ff084efaa",
+      "wall_seconds": 58.465
+    },
+    {
+      "bytes": 19010,
+      "chunk": 15,
+      "gold_targets_scored": 593,
+      "min_free_pct": 46,
+      "result_sha256": "a2d73e9f1795229d19bf84685ce894a4127c275760c3c1900205521f57ed5120",
+      "stderr_sha256": "cf86d39d5940d0109b1ee8e02a7b7681ccb5dcfd2c8233b1a3e0b0809458365d",
+      "wall_seconds": 56.288
+    }
+  ],
+  "per_example_mean_full_target_NLL": 2.5203295708887143,
+  "production_after": {
+    "beglin-baseline-q4g64": 35481,
+    "beglin-candidate-shared-up-l3-n6": 35493
+  },
+  "production_before": {
+    "beglin-baseline-q4g64": 35481,
+    "beglin-candidate-shared-up-l3-n6": 35493
+  },
+  "production_checkpoint_or_release_modified": false,
+  "production_promotion_allowed": false,
+  "receipt_sha256": "f71a4c4397cbadf938c7a9631ba8306547b31e33028dd9a54b556a1a758e3f41",
+  "same_source_128_or_OOD_128_NLL": "NOT_MEASURED",
+  "schema": "beglin-je01-original-AF-train256-native-fullgold-teacherforce-NLL/1",
+  "source_gold_sha256": "355a169cfb7c9ab79901ae7848afa21a2f5a576d048a5476f527bca699136fb7",
+  "status": "REAL_ORIGINAL_AF_TRAIN_FULL_TARGET_NLL_CAL256_PASS",
+  "trained_alt_bits_comparison": "NOT_MEASURED",
+  "training_only": true
+}

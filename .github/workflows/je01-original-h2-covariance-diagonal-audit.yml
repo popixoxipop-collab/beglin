@@ -1,0 +1,92 @@
+name: JE01 actual original27 routed h2 diagonal vs full covariance native audit
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'docs/research/JE01_TRUE_ORIGINAL_H2_DIAGONAL_VS_FULL_COV_GATEUP_20261122.json'
+      - '.github/workflows/je01-original-h2-covariance-diagonal-audit.yml'
+permissions:
+  contents: read
+jobs:
+  original-real-45-h2-exact-vs-diagonal-error:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Independently recompute 16x3 actual h2 covariance diagonal approximations and source receipts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,math,pathlib,statistics,collections
+          root=pathlib.Path("docs/research")
+          def sealed(n,h):
+              d=json.loads((root/n).read_text())
+              claimed=d.pop("receipt_sha256",None)
+              actual=hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+              assert claimed==actual==h,(n,"source receipt SHA")
+              return d
+          h=sealed("JE01_TRUE_ORIGINAL27_LASTPROMPT_ROUTED_H2_TRAIN16_20261122.json",
+             "42213c246c488dcef8176c468811fe516d542dd367532ea191c21cfd1d17d6ca")
+          g=sealed("JE01_TRUE_ORIGINAL_ROUTED_H2_GATEUP_ACTIVATION_WEIGHTED_GEMV_20261122.json",
+             "d55f4b506076a3a30f73c582ede270c38d41ac12b06190e959ac5a7383157a89")
+          d=sealed("JE01_TRUE_ORIGINAL_H2_DIAGONAL_VS_FULL_COV_GATEUP_20261122.json",
+             "de5d5487ec29e8b554d21cb5142246f0c1017e93a4c3c8c86be6c931a8e9e847")
+          assert d["status"]=="ACTUAL_ORIGINAL27_H2_ROUTED_COVARIANCE_DIAG_VS_EXACT_16_GATEUP_REAL_NORM_PASS"
+          assert d["source_45_actual_routed_original_h2_SHA256"]==h["actual_binary_trace_SHA256"]==g["source_actual_h2_trace_sha256"]
+          assert d["source_original_gold_output_SHA256"]==h["actual_gold16_output_sha256"]=="b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c"
+          assert d["source_16_role_actual_gemv_receipt_SHA256"]=="d55f4b506076a3a30f73c582ede270c38d41ac12b06190e959ac5a7383157a89"
+          assert d["actual_source_original_AF4_SHA256"]==h["original_AF4_checkpoint_sha256"]==g["actual_original_AF4_checkpoint_sha256"]
+          assert d["source_all_four_BF16_shards_fullsha_rechecked"]
+          assert d["actual_original_routed_h2_events"]==h["actual_routed_hidden_records"]==45
+          assert d["actual_2048d_hidden_vectors"]==45 and d["source_training_prompt_cases"]==16
+          assert d["actual_16_gate_up_role_measurements"]==16
+          assert d["actual_uncentered_covariance_not_empirical_Fisher"] is True
+          assert d["calibration_scope"]=="TRAIN16_ROUTED_EVENT_LAST_PROMPT_ONLY_NOT_256"
+          assert not d["independent_heldout_labels_used"] and not d["production_modified"]
+          assert all(v in d["not_measured"] for v in ("true_loss_Fisher","true_loss_Hessian","true_loss_gradients",
+                    "down_proj_swiglu_activation","256_prompt_activations","new_27_layer_NLL"))
+          source={(r["layer"],r["expert"],r["role"]):r for r in g["per_role"]}
+          rows=d["per_role"]
+          assert len(rows)==len(source)==16
+          assert len(set((r["layer"],r["expert"],r["role"]) for r in rows))==16
+          for row in rows:
+              key=(row["layer"],row["expert"],row["role"])
+              assert key in source
+              ref=source[key]
+              assert row["role"] in ("gate_proj","up_proj")
+              assert row["actual_routed_last_prompt_count"]==ref["actual_routed_prompt_observations"]
+              assert abs(row["actual_router_weight_sum"]-ref["router_prob_weight_sum"])<1e-8
+              assert abs(row["actual_output_bf16_energy"]-ref["true_BF16_AF4_symmetric_output_energy"])<1e-3
+              assert row["effective_uncentered_input_covariance_rank_max"]<=8
+              assert len(row["original_2048d_ffn_h2_vector_sha256"])==64
+              assert len(row["source_original_bf16_role_tensor_sha256"])==64
+              assert set(row["tier_diagnostics"])=={"AF4","Q4","Q5"}
+              for tier,v in row["tier_diagnostics"].items():
+                  exact=v["actual_exact_weighted_output_sse"]
+                  diag=v["actual_diagonal_approx_output_sse"]
+                  assert math.isfinite(exact) and exact>0 and math.isfinite(diag) and diag>0
+                  assert abs((exact-diag)-v["actual_cov_offdiagonal_output_interaction_sse"])<1e-6
+                  assert abs(exact/row["actual_output_bf16_energy"]-v["actual_exact_relative_output_MSE_to_BF16"])<1e-9
+                  assert abs(v["actual_exact_relative_output_MSE_to_BF16"]-ref["actual_activation_output_relative_MSE_"+tier+"_vs_BF16"])<2e-6
+                  assert abs(diag/exact-v["diagonal_approx_to_exact_ratio"])<1e-10
+                  assert abs((diag-exact)/exact-v["diagonal_approx_relative_error"])<1e-10
+          for tier,saved in d["summary"].items():
+              assert tier in ("AF4","Q4","Q5")
+              ratios=[x["tier_diagnostics"][tier]["diagonal_approx_to_exact_ratio"] for x in rows]
+              errors=[x["tier_diagnostics"][tier]["diagonal_approx_relative_error"] for x in rows]
+              assert abs(statistics.median(ratios)-saved["diagonal_approx_ratio_p50"])<1e-12
+              assert abs(min(ratios)-saved["diagonal_approx_ratio_min"])<1e-12
+              assert abs(max(ratios)-saved["diagonal_approx_ratio_max"])<1e-12
+              assert abs(sum(abs(x) for x in errors)/len(errors)-saved["mean_absolute_relative_diagonal_approx_error"])<1e-12
+              assert sum(x<.8 or x>1.2 for x in ratios)==saved["count_ratio_outside_0p8_to_1p2"]
+              assert sum(x>1 for x in ratios)==saved["count_diagonal_exceeds_exact"]
+              assert min(ratios)>.95 and max(ratios)<1.05
+              assert saved["mean_absolute_relative_diagonal_approx_error"]<.02
+          print("JE01_REAL_45_ROUTED_H2_16_NATIVE_GATEUP_DIAGONAL_COVARIANCE_VS_EXACT_OUTPUT_SSE_AUDIT_PASS")
+          for k,v in sorted(d["summary"].items()):
+              print("TIER",k,"MEAN_ABS_REL_DIAG_ERROR",v["mean_absolute_relative_diagonal_approx_error"],
+                    "MIN_MAX_DIAG_EXACT_RATIO",v["diagonal_approx_ratio_min"],v["diagonal_approx_ratio_max"])
+          print("NOT_TRUE_MODEL_LOSS_FISHER_HESSIAN_NOT_256_TRAIN_NOT_DOWN_PROJ_NOT_VALIDATION")
+          PY

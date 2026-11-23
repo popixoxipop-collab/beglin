@@ -1,0 +1,204 @@
+{
+  "schema": "beglin-je01-train240-source-metadata-review/1",
+  "observed_date_utc": "2026-11-23",
+  "status": "SOURCE_METADATA_REVIEWED_NO_TRAIN240_NATIVE_RUN",
+  "source_pr_head": "a0bac6efaa11182177e88c3f6561fabbebc2f758",
+  "source_gold": {
+    "path": "/Volumes/D50/TailnetCommander/work/je01_role_directional_20261123_v1/train_gold_source/JE01_ORIGINAL_REAL_TRAIN256_FULL_GOLD_IDS.json",
+    "bytes": 189936,
+    "file_sha256": "b86e08bb54f65d0fa29dd545801d2fb3ef0bfb45bc1993743f21cd30cde7d7fd",
+    "receipt_sha256": "355a169cfb7c9ab79901ae7848afa21a2f5a576d048a5476f527bca699136fb7",
+    "file_and_canonical_recomputed": true
+  },
+  "existing_preparation": {
+    "path": "/Volumes/D50/TailnetCommander/work/je01_role_directional_20261123_v1/train240_inputs/JE01_TRAIN240_INPUT_PREPARATION_RECEIPT.json",
+    "bytes": 12298,
+    "file_sha256": "4dfb79c79bc564eaf1f7372c33b80fcaa3aba966ff280d0ac66ecb9ace565b50",
+    "receipt_sha256": "f0a95e7ee7fbb1ce001c419c8626744e3730e85b235b9a726897ae38f946e477",
+    "file_and_canonical_recomputed": true
+  },
+  "source_linkage": {
+    "all_256_training_source_rows_validated": true,
+    "baseline_source_path": "/Volumes/D50/TailnetCommander/work/je01_role_directional_20261123_v1/source/docs/research/JE01_ORIGINAL_AF_REAL256_FULL_TARGET_GOLD_NLL_20261118.json",
+    "baseline_source_receipt_sha256": "f71a4c4397cbadf938c7a9631ba8306547b31e33028dd9a54b556a1a758e3f41",
+    "excluded_diagnostic_case_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "frozen_manifest_sha256": "a9397bfabdd012f60d3dd3d33bcfab455ac1046eced30373d553217dd9409147",
+    "gold_source_path": "/Volumes/D50/TailnetCommander/work/je01_role_directional_20261123_v1/train_gold_source/JE01_ORIGINAL_REAL_TRAIN256_FULL_GOLD_IDS.json",
+    "gold_source_receipt_sha256": "355a169cfb7c9ab79901ae7848afa21a2f5a576d048a5476f527bca699136fb7",
+    "native_input_receipt_path": "/Volumes/D50/TailnetCommander/work/je01_real_original256_activation_20261122_v1/portable512/je01_inputs/JE01_NATIVE_384_INPUTS_RECEIPT.json",
+    "native_input_receipt_sha256": "2f835daf453741d35e292dd2661b927e2a6196000c9917b62b68415968b5ce34",
+    "native_input_root": "/Volumes/D50/TailnetCommander/work/je01_real_original256_activation_20261122_v1/portable512/je01_inputs"
+  },
+  "source_helper": {
+    "path": "/Volumes/D50/TailnetCommander/work/je01_role_directional_20261123_v1/tools/je01_role_directional_train240_inputs.py",
+    "bytes": 16054,
+    "sha256": "99f4d6da38880e3eaadcd8a32e9f288a75ae87b7f13c9721fe00109616b7175b",
+    "recovered_verbatim": true
+  },
+  "chunks": [
+    {
+      "chunk": 1,
+      "case_first": 16,
+      "case_last": 31,
+      "gold_tokens": 634,
+      "prompt_bos_tokens": 1608,
+      "native_input_tokens": 2226,
+      "dataset_receipt_sha256": "a571d5f863287d8b274cae19075e608ff60f5415df8badcd153bc1584372d99d"
+    },
+    {
+      "chunk": 2,
+      "case_first": 32,
+      "case_last": 47,
+      "gold_tokens": 702,
+      "prompt_bos_tokens": 1507,
+      "native_input_tokens": 2193,
+      "dataset_receipt_sha256": "e4b2dfd72f327a537d1af12cb8c6d5a66899a7d73af73759351cd770f666372d"
+    },
+    {
+      "chunk": 3,
+      "case_first": 48,
+      "case_last": 63,
+      "gold_tokens": 664,
+      "prompt_bos_tokens": 1604,
+      "native_input_tokens": 2252,
+      "dataset_receipt_sha256": "8a8b773b0f1719daf7a61bc5a56427b07e29f6f52e328eea64b5c990afc642b7"
+    },
+    {
+      "chunk": 4,
+      "case_first": 64,
+      "case_last": 79,
+      "gold_tokens": 784,
+      "prompt_bos_tokens": 1664,
+      "native_input_tokens": 2432,
+      "dataset_receipt_sha256": "613c0a270e2c9facffc9b0447de992d2d4bcb0faa8228ce310c9132363734501"
+    },
+    {
+      "chunk": 5,
+      "case_first": 80,
+      "case_last": 95,
+      "gold_tokens": 791,
+      "prompt_bos_tokens": 1714,
+      "native_input_tokens": 2489,
+      "dataset_receipt_sha256": "dfe2ca29b0c96a8c98469ca0a6270a4a9110b11518f79dc6d865b459a102dd7c"
+    },
+    {
+      "chunk": 6,
+      "case_first": 96,
+      "case_last": 111,
+      "gold_tokens": 772,
+      "prompt_bos_tokens": 1647,
+      "native_input_tokens": 2403,
+      "dataset_receipt_sha256": "676c2c33ecf9a718725e2ec50a4ee3f9914f7051300377e52eaf7dc92db0b0f6"
+    },
+    {
+      "chunk": 7,
+      "case_first": 112,
+      "case_last": 127,
+      "gold_tokens": 589,
+      "prompt_bos_tokens": 1249,
+      "native_input_tokens": 1822,
+      "dataset_receipt_sha256": "8cc1c9571fa57881f1d0e0b6d97f0052100bc06de8e7b5c767e38ca8e01cbd8a"
+    },
+    {
+      "chunk": 8,
+      "case_first": 128,
+      "case_last": 143,
+      "gold_tokens": 646,
+      "prompt_bos_tokens": 1512,
+      "native_input_tokens": 2142,
+      "dataset_receipt_sha256": "ff1b28a556b8b6b05a0dae9aeed18b2e52ed50739a52dc85ef0d7f7b043794af"
+    },
+    {
+      "chunk": 9,
+      "case_first": 144,
+      "case_last": 159,
+      "gold_tokens": 742,
+      "prompt_bos_tokens": 1832,
+      "native_input_tokens": 2558,
+      "dataset_receipt_sha256": "bd666828cd2e761b0bc1f63931c8bdcb9907cdb05290ea9063d62ee91f8bec21"
+    },
+    {
+      "chunk": 10,
+      "case_first": 160,
+      "case_last": 175,
+      "gold_tokens": 698,
+      "prompt_bos_tokens": 1502,
+      "native_input_tokens": 2184,
+      "dataset_receipt_sha256": "50414c9448c8da5b7bbf5fb7b62c45e6f0fffb9e9e259974ebfe4c0186379ad5"
+    },
+    {
+      "chunk": 11,
+      "case_first": 176,
+      "case_last": 191,
+      "gold_tokens": 660,
+      "prompt_bos_tokens": 1510,
+      "native_input_tokens": 2154,
+      "dataset_receipt_sha256": "f85377f0559c796ccd65138e84084af4bef5135eb7c083030a2a116980fb1f65"
+    },
+    {
+      "chunk": 12,
+      "case_first": 192,
+      "case_last": 207,
+      "gold_tokens": 700,
+      "prompt_bos_tokens": 1563,
+      "native_input_tokens": 2247,
+      "dataset_receipt_sha256": "5815116722db534ed08e5b48f3fc8e4cf12bd0fe696d7a046a4f9bea7399bc21"
+    },
+    {
+      "chunk": 13,
+      "case_first": 208,
+      "case_last": 223,
+      "gold_tokens": 776,
+      "prompt_bos_tokens": 1793,
+      "native_input_tokens": 2553,
+      "dataset_receipt_sha256": "80d2b8f19be1e866d5a96da9f4fbf698badc3aeeb11e26d21903c217d39a05ee"
+    },
+    {
+      "chunk": 14,
+      "case_first": 224,
+      "case_last": 239,
+      "gold_tokens": 617,
+      "prompt_bos_tokens": 1397,
+      "native_input_tokens": 1998,
+      "dataset_receipt_sha256": "8a07c5262bc5735dca1049702afd719992d04cb6d974233a7d5d960ecc197649"
+    },
+    {
+      "chunk": 15,
+      "case_first": 240,
+      "case_last": 255,
+      "gold_tokens": 593,
+      "prompt_bos_tokens": 1330,
+      "native_input_tokens": 1907,
+      "dataset_receipt_sha256": "c4a469243dd7827972154a955c9b4ebb1f4a2dfa00e827cb47499cb1a6fbc916"
+    }
+  ],
+  "totals": {
+    "sentences": 240,
+    "gold_tokens": 10368,
+    "prompt_bos_tokens": 23432,
+    "native_input_tokens": 33560
+  },
+  "limits": [
+    "Metadata and stored receipt validation only; no TRAIN240 inference or fresh route capture performed.",
+    "Only chunk01 dataset bytes/canonical rechecked in this review; other dataset pins come from the verified preparation receipt.",
+    "TRAIN240 original/prepared binary files have not been rehashed by this review.",
+    "No heldout prompt binaries or labels opened."
+  ]
+}

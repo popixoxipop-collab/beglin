@@ -1,0 +1,150 @@
+{
+  "NIG_candidate_precision_comparison": "NOT_MEASURED",
+  "elapsed_seconds": 75.421,
+  "full_gold_tokens": 656,
+  "heldout_or_ood_gold_used": false,
+  "max_abs_per_case_gold_sum_diff": 5.684341886080802e-14,
+  "measured_native_EOE_mean_gold_NLL": 2.291799702354307,
+  "minimum_memory_free_percent": 71,
+  "native_eoe_arm64_binary_sha256": "2b9a665e17b4cbfed8112a5d3271e56365495a80049cd1f19af25098a8f46be7",
+  "native_output_sha256": "b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c",
+  "original_AF_source_sha256": "9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4",
+  "original_model_full_27layer_inference": true,
+  "per_case": [
+    {
+      "actual_EOE_native_gold_sum": 49.16774326183459,
+      "delta": 1.4210854715202004e-14,
+      "gold_tokens": 23,
+      "original_XOX_native_gold_sum": 49.16774326183457,
+      "row": 0,
+      "source_id": "1238f877c10f039ed6e9d4fca0f5dfa1c515cc70a2f069765e9426b14e0474c1"
+    },
+    {
+      "actual_EOE_native_gold_sum": 123.234992588518,
+      "delta": 0.0,
+      "gold_tokens": 50,
+      "original_XOX_native_gold_sum": 123.234992588518,
+      "row": 1,
+      "source_id": "db037f9d1c936fa3e13ae8667bf4aa74f6fe17b952686277edd5950ade7a3c9d"
+    },
+    {
+      "actual_EOE_native_gold_sum": 60.138434059719714,
+      "delta": -1.4210854715202004e-14,
+      "gold_tokens": 35,
+      "original_XOX_native_gold_sum": 60.13843405971973,
+      "row": 2,
+      "source_id": "61fc48ad81ab3c00a2307c5f0b92c0de4e59201b540fe4127aec10215c2278f3"
+    },
+    {
+      "actual_EOE_native_gold_sum": 19.71960302574572,
+      "delta": 0.0,
+      "gold_tokens": 31,
+      "original_XOX_native_gold_sum": 19.71960302574572,
+      "row": 3,
+      "source_id": "b817e623fb45033a3383adf2689e06054f0e62bacdeff14c4fba01049e3c8281"
+    },
+    {
+      "actual_EOE_native_gold_sum": 117.97686035892606,
+      "delta": 4.263256414560601e-14,
+      "gold_tokens": 39,
+      "original_XOX_native_gold_sum": 117.97686035892602,
+      "row": 4,
+      "source_id": "bd267b8bef31882bbc39d44b3bb87f87c47633c8528db5180805fe1cbd91c175"
+    },
+    {
+      "actual_EOE_native_gold_sum": 142.0752980305159,
+      "delta": 2.842170943040401e-14,
+      "gold_tokens": 50,
+      "original_XOX_native_gold_sum": 142.07529803051588,
+      "row": 5,
+      "source_id": "be10ace1de627d1fdab75013523e91a09672fc2877d6d09a21bfe68b47fc427e"
+    },
+    {
+      "actual_EOE_native_gold_sum": 90.98023812664215,
+      "delta": 0.0,
+      "gold_tokens": 42,
+      "original_XOX_native_gold_sum": 90.98023812664215,
+      "row": 6,
+      "source_id": "9d9671cd0433525a28dc697e5b7e43ba114301ad281a410e497f5b4f5b4784aa"
+    },
+    {
+      "actual_EOE_native_gold_sum": 94.6239318230067,
+      "delta": 1.4210854715202004e-14,
+      "gold_tokens": 34,
+      "original_XOX_native_gold_sum": 94.62393182300669,
+      "row": 7,
+      "source_id": "b1395890313d1db56d5baf55ac2a61017bc39ed932a47d4c44b29f8c1b187709"
+    },
+    {
+      "actual_EOE_native_gold_sum": 78.60769912414074,
+      "delta": 0.0,
+      "gold_tokens": 44,
+      "original_XOX_native_gold_sum": 78.60769912414074,
+      "row": 8,
+      "source_id": "21485cd7a42a7b0180b995aad00a7598f45138c497663311aba9197d5d0d6ece"
+    },
+    {
+      "actual_EOE_native_gold_sum": 151.2537156835404,
+      "delta": 0.0,
+      "gold_tokens": 64,
+      "original_XOX_native_gold_sum": 151.2537156835404,
+      "row": 9,
+      "source_id": "f651c4275e584ff21f47ad2a702d88a349ae1bfb62a22df6539562c66603395b"
+    },
+    {
+      "actual_EOE_native_gold_sum": 79.5989917779307,
+      "delta": 0.0,
+      "gold_tokens": 28,
+      "original_XOX_native_gold_sum": 79.5989917779307,
+      "row": 10,
+      "source_id": "ebe4268484169ccb5a2dbaea9bf49ceaa1c07f246cf0c3f1e1cd07f90f467274"
+    },
+    {
+      "actual_EOE_native_gold_sum": 116.22753767762234,
+      "delta": 4.263256414560601e-14,
+      "gold_tokens": 54,
+      "original_XOX_native_gold_sum": 116.2275376776223,
+      "row": 11,
+      "source_id": "a0a1ca143d329e60afdaf18bb5d93dccc3d6759008e33195dbd1c6f53a165526"
+    },
+    {
+      "actual_EOE_native_gold_sum": 180.95090642692648,
+      "delta": -5.684341886080802e-14,
+      "gold_tokens": 66,
+      "original_XOX_native_gold_sum": 180.95090642692654,
+      "row": 12,
+      "source_id": "86575fad179792e10eda968cbddcf5645377ff90508debeb0381e3133410d009"
+    },
+    {
+      "actual_EOE_native_gold_sum": 54.10806250154661,
+      "delta": -1.4210854715202004e-14,
+      "gold_tokens": 24,
+      "original_XOX_native_gold_sum": 54.10806250154663,
+      "row": 13,
+      "source_id": "56626b7dd8366e88dc85e4b14e384487c14a1029bf1bc9d0f3c00d311bf1291e"
+    },
+    {
+      "actual_EOE_native_gold_sum": 30.006509076826617,
+      "delta": 0.0,
+      "gold_tokens": 15,
+      "original_XOX_native_gold_sum": 30.006509076826617,
+      "row": 14,
+      "source_id": "938d483fad002fe5dde65024b1e8fac903f9b79d3a209e49603065b6344780c8"
+    },
+    {
+      "actual_EOE_native_gold_sum": 114.75008120098255,
+      "delta": -5.684341886080802e-14,
+      "gold_tokens": 57,
+      "original_XOX_native_gold_sum": 114.7500812009826,
+      "row": 15,
+      "source_id": "7f8f6013fb5386cbba9c11b47238482dc29b185a3d23cdd6ae65cb1538f5def0"
+    }
+  ],
+  "prior_XOX_original_mean_gold_NLL": 2.291799702354307,
+  "production_checkpoint_changed": false,
+  "real_cases": 16,
+  "receipt_sha256": "7dd5da25e500007a2a35fd724d82a7c8c6966727458763160f6d4ee7b3ac54ec",
+  "schema": "beglin-je01-eoe-original-AF384-native-train16-fullgold/1",
+  "status": "PASS_EOE_REAL_ORIGINAL_AF384_FULLGOLD_TRAIN16_NLL_PARITY",
+  "training_only": true
+}

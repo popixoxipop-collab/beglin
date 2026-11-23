@@ -1,0 +1,175 @@
+{
+  "actual_original_pretrained_AF_model": true,
+  "bayesian_expert_quantization_changed": false,
+  "calibration_original256_router_receipt_sha256": "62d0a86956c1a07fa8143efcb52b0b5dea6808767716cd160e05ceb1c0c8a8eb",
+  "gold_full_target_tokens_scored": 656,
+  "gold_full_target_train_source_sha256": "355a169cfb7c9ab79901ae7848afa21a2f5a576d048a5476f527bca699136fb7",
+  "heldout_gold_labels_used": false,
+  "max_abs_first_gold_NLL_disagreement_from_original_256_previous_run": 2.3092638912203256e-13,
+  "mean_gold_token_NLL": 2.291799702354307,
+  "minimum_memory_free_percent": 47,
+  "mode": "pilot16",
+  "n_calibration_train_cases": 16,
+  "native_model_binary_sha256": "de6f1a97aef17ddae42d1729282c38e2b7924f6d841daa3576dc47edeebbbba9",
+  "original_512_train_holdout_input_receipt_sha256": "2f835daf453741d35e292dd2661b927e2a6196000c9917b62b68415968b5ce34",
+  "per_case_real_NLL": [
+    {
+      "first_gold_nll": 7.1120428959585205,
+      "nll_mean": 2.137727967905851,
+      "nll_sum": 49.16774326183457,
+      "row": 0,
+      "source_id": "1238f877c10f039ed6e9d4fca0f5dfa1c515cc70a2f069765e9426b14e0474c1",
+      "tokens": 23
+    },
+    {
+      "first_gold_nll": 4.039534692098496,
+      "nll_mean": 2.46469985177036,
+      "nll_sum": 123.234992588518,
+      "row": 1,
+      "source_id": "db037f9d1c936fa3e13ae8667bf4aa74f6fe17b952686277edd5950ade7a3c9d",
+      "tokens": 50
+    },
+    {
+      "first_gold_nll": 4.8272450708785435,
+      "nll_mean": 1.7182409731348494,
+      "nll_sum": 60.13843405971973,
+      "row": 2,
+      "source_id": "61fc48ad81ab3c00a2307c5f0b92c0de4e59201b540fe4127aec10215c2278f3",
+      "tokens": 35
+    },
+    {
+      "first_gold_nll": 0.004194551516448541,
+      "nll_mean": 0.6361162266369587,
+      "nll_sum": 19.71960302574572,
+      "row": 3,
+      "source_id": "b817e623fb45033a3383adf2689e06054f0e62bacdeff14c4fba01049e3c8281",
+      "tokens": 31
+    },
+    {
+      "first_gold_nll": 1.1658431908199312,
+      "nll_mean": 3.0250477015109234,
+      "nll_sum": 117.97686035892602,
+      "row": 4,
+      "source_id": "bd267b8bef31882bbc39d44b3bb87f87c47633c8528db5180805fe1cbd91c175",
+      "tokens": 39
+    },
+    {
+      "first_gold_nll": 3.033621097068824,
+      "nll_mean": 2.8415059606103177,
+      "nll_sum": 142.07529803051588,
+      "row": 5,
+      "source_id": "be10ace1de627d1fdab75013523e91a09672fc2877d6d09a21bfe68b47fc427e",
+      "tokens": 50
+    },
+    {
+      "first_gold_nll": 3.5131328103581083,
+      "nll_mean": 2.166196145872432,
+      "nll_sum": 90.98023812664215,
+      "row": 6,
+      "source_id": "9d9671cd0433525a28dc697e5b7e43ba114301ad281a410e497f5b4f5b4784aa",
+      "tokens": 42
+    },
+    {
+      "first_gold_nll": 6.588435158175212,
+      "nll_mean": 2.783056818323726,
+      "nll_sum": 94.62393182300669,
+      "row": 7,
+      "source_id": "b1395890313d1db56d5baf55ac2a61017bc39ed932a47d4c44b29f8c1b187709",
+      "tokens": 34
+    },
+    {
+      "first_gold_nll": 0.11989905268655221,
+      "nll_mean": 1.786538616457744,
+      "nll_sum": 78.60769912414074,
+      "row": 8,
+      "source_id": "21485cd7a42a7b0180b995aad00a7598f45138c497663311aba9197d5d0d6ece",
+      "tokens": 44
+    },
+    {
+      "first_gold_nll": 1.558261415577121,
+      "nll_mean": 2.363339307555319,
+      "nll_sum": 151.2537156835404,
+      "row": 9,
+      "source_id": "f651c4275e584ff21f47ad2a702d88a349ae1bfb62a22df6539562c66603395b",
+      "tokens": 64
+    },
+    {
+      "first_gold_nll": 5.917331420467427,
+      "nll_mean": 2.842821134926097,
+      "nll_sum": 79.5989917779307,
+      "row": 10,
+      "source_id": "ebe4268484169ccb5a2dbaea9bf49ceaa1c07f246cf0c3f1e1cd07f90f467274",
+      "tokens": 28
+    },
+    {
+      "first_gold_nll": 7.1191251047781705,
+      "nll_mean": 2.1523618088448573,
+      "nll_sum": 116.2275376776223,
+      "row": 11,
+      "source_id": "a0a1ca143d329e60afdaf18bb5d93dccc3d6759008e33195dbd1c6f53a165526",
+      "tokens": 54
+    },
+    {
+      "first_gold_nll": 4.796408203901365,
+      "nll_mean": 2.741680400407978,
+      "nll_sum": 180.95090642692654,
+      "row": 12,
+      "source_id": "86575fad179792e10eda968cbddcf5645377ff90508debeb0381e3133410d009",
+      "tokens": 66
+    },
+    {
+      "first_gold_nll": 0.8466158053825765,
+      "nll_mean": 2.2545026042311096,
+      "nll_sum": 54.10806250154663,
+      "row": 13,
+      "source_id": "56626b7dd8366e88dc85e4b14e384487c14a1029bf1bc9d0f3c00d311bf1291e",
+      "tokens": 24
+    },
+    {
+      "first_gold_nll": 0.00878762376329334,
+      "nll_mean": 2.000433938455108,
+      "nll_sum": 30.006509076826617,
+      "row": 14,
+      "source_id": "938d483fad002fe5dde65024b1e8fac903f9b79d3a209e49603065b6344780c8",
+      "tokens": 15
+    },
+    {
+      "first_gold_nll": 3.4032788231491082,
+      "nll_mean": 2.013159319315484,
+      "nll_sum": 114.7500812009826,
+      "row": 15,
+      "source_id": "7f8f6013fb5386cbba9c11b47238482dc29b185a3d23cdd6ae65cb1538f5def0",
+      "tokens": 57
+    }
+  ],
+  "per_chunk_native_output_sha256": [
+    {
+      "bytes": 21026,
+      "chunk": 0,
+      "gold_targets_scored": 656,
+      "min_free_pct": 47,
+      "records": 16,
+      "result_sha256": "b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c",
+      "stderr_sha256": "d5f2e75111db7c5f42965b83c1193c6322057ca123fa2837c7780ba1f1dbc31f",
+      "wall_seconds": 64.777
+    }
+  ],
+  "per_example_mean_full_target_NLL": 2.245464298497445,
+  "production_after": {
+    "beglin-baseline-q4g64": 35481,
+    "beglin-candidate-shared-up-l3-n6": 35493
+  },
+  "production_before": {
+    "beglin-baseline-q4g64": 35481,
+    "beglin-candidate-shared-up-l3-n6": 35493
+  },
+  "production_checkpoint_or_release_modified": false,
+  "production_promotion_allowed": false,
+  "receipt_sha256": "2f99cf865cb816989b8dcd2b06d2aaa85e2d87ccc9f35e36877e767fb51f8e69",
+  "same_source_128_or_OOD_128_NLL": "NOT_MEASURED",
+  "schema": "beglin-je01-original-AF-train256-native-fullgold-teacherforce-NLL/1",
+  "source_original_model_af_sha_scope": "UNCHANGED_RESEARCH_SOURCE",
+  "status": "REAL_ORIGINAL_AF_TRAIN_FULL_TARGET_NLL_PILOT16_PASS",
+  "trained_alt_bits_comparison": "NOT_MEASURED",
+  "training_only": true
+}

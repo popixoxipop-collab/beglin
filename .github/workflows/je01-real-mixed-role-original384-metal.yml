@@ -1,0 +1,94 @@
+name: JE01 original 384 real BF16 mixed Q3-Q5 roles GPU correction
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_real_mixed_role_policy_descriptor.py'
+      - 'tools/je01_scratch_mixed_role_graph_stage.py'
+      - '.github/workflows/je01-real-mixed-role-original384-metal.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  real-source-weight-mixed-role-gpu:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-four-real-q35-NIG-Expert-role-exactbyte-bundles
+          run-id: 44181761880
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/mixed_source
+      - name: Prove exact 43,253,760B original-source mixed-role policy SHA
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/mixed_source"
+          if [[ -f "$root/JE01_REAL_Q35_FOUR_ROLE_POLICIES_PHYSICAL_RECEIPT.json" ]]; then
+            :
+          elif [[ -f "$root/je01_role_policy_binaries/JE01_REAL_Q35_FOUR_ROLE_POLICIES_PHYSICAL_RECEIPT.json" ]]; then
+            root="$root/je01_role_policy_binaries"
+          else
+            echo "JE01_REAL_ROLE_ARTIFACT_ROOT_MISSING"; exit 2
+          fi
+          echo "JE01_ROLE_SOURCE_ROOT=$root" >> "$GITHUB_ENV"
+          python tools/je01_real_mixed_role_policy_descriptor.py \
+            --source "$root" --tsv "$RUNNER_TEMP/je01_mixed_role.tsv"
+      - name: Build ONLY isolated 384 original FFN overlay source with mixed role bits
+        run: |
+          set -euo pipefail
+          python tools/je01_isolated_context384_stage.py \
+            --checkout "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP/je01_src" \
+            --expected-commit "$(git rev-parse HEAD)" > "$RUNNER_TEMP/je01_stage.json"
+          python tools/je01_scratch_cb384_overlay_stage.py \
+            --staged-source "$RUNNER_TEMP/je01_src" > "$RUNNER_TEMP/je01_overlay.json"
+          python tools/je01_scratch_real_q35_overlay_probe_stage.py \
+            --staged-source "$RUNNER_TEMP/je01_src" > "$RUNNER_TEMP/je01_real_probe.json"
+          python tools/je01_scratch_mixed_role_graph_stage.py \
+            --folder "$RUNNER_TEMP/je01_src" > "$RUNNER_TEMP/je01_mixed_probe.json"
+      - name: Native Apple Metal run with independent CPU q3/q5 SwiGLU and fallback control
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'mlx==0.32.1' 'cmake>=3.20,<5' 'ninja>=1.10'
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os;print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S "$RUNNER_TEMP/je01_src" -B "$RUNNER_TEMP/je01_build" \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$RUNNER_TEMP/je01_build" \
+            --target je01_real_q35_overlay_graph_probe --parallel 2
+          "$RUNNER_TEMP/je01_build/je01_real_q35_overlay_graph_probe" \
+            "$JE01_ROLE_SOURCE_ROOT/weight_MSE_proxy_6roles.bin" \
+            "$RUNNER_TEMP/je01_mixed_role.tsv" \
+            | tee "$RUNNER_TEMP/je01_mixed_gpu_log.txt"
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_mixed_gpu_log.txt"
+          results=[json.loads(x) for x in p.read_text().splitlines() if x.startswith('{"schema"')]
+          a=[x for x in results if x.get("schema")=="beglin-je01-original384-cbatch-real-BF16-E1-overlay-math/1"]
+          assert len(a)==1
+          d=a[0]
+          assert d["status"]=="PASS_REAL_MIXED_Q3Q5_ROLE_GPU_CORRECTION_AND_BASELINE_FALLBACK"
+          assert d["selected_layer"]==24 and d["selected_expert"]==26
+          assert d["q3_roles"]==2 and d["q5_roles"]==1
+          assert d["relative_error_vs_independent_CPU_reference"]<0.03
+          assert d["nonrouted_expert_baseline_max_abs_diff"]<1e-7
+          assert d["cleared_baseline_max_abs_diff"]<1e-7
+          assert d["actual_gold_NLL"]=="NOT_MEASURED"
+          print("JE01_REAL_MIXED_ROLE_Q3Q5_GPU_GRAPH_CORRECTION_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real-pretrained-mixed-role-original384-gpu-correction
+          path: |
+            ${{ runner.temp }}/je01_mixed_gpu_log.txt
+            ${{ runner.temp }}/je01_real_probe.json
+            ${{ runner.temp }}/je01_mixed_probe.json
+          retention-days: 14
+          if-no-files-found: error

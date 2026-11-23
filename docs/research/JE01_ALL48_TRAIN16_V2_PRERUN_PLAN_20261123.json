@@ -1,0 +1,2677 @@
+{
+  "Hessian": "NOT_MEASURED",
+  "allocation_selected": false,
+  "alpha_grid": [
+    "0",
+    "+0.05",
+    "-0.05",
+    "+0.025",
+    "-0.025"
+  ],
+  "case_ids": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "column_count": 48,
+  "coordinate_definition": "ALTERNATIVE_MINUS_ORIGINAL_NATIVE_WEIGHT_ACTION_AT_ALPHA_ZERO",
+  "coordinate_order": [
+    {
+      "column_index": 0,
+      "role_index": 0,
+      "role_key": [
+        12,
+        13,
+        "gate_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 1,
+      "role_index": 0,
+      "role_key": [
+        12,
+        13,
+        "gate_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 2,
+      "role_index": 1,
+      "role_key": [
+        12,
+        13,
+        "up_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 3,
+      "role_index": 1,
+      "role_key": [
+        12,
+        13,
+        "up_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 4,
+      "role_index": 2,
+      "role_key": [
+        12,
+        13,
+        "down_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 5,
+      "role_index": 2,
+      "role_key": [
+        12,
+        13,
+        "down_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 6,
+      "role_index": 3,
+      "role_key": [
+        13,
+        22,
+        "gate_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 7,
+      "role_index": 3,
+      "role_key": [
+        13,
+        22,
+        "gate_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 8,
+      "role_index": 4,
+      "role_key": [
+        13,
+        22,
+        "up_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 9,
+      "role_index": 4,
+      "role_key": [
+        13,
+        22,
+        "up_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 10,
+      "role_index": 5,
+      "role_key": [
+        13,
+        22,
+        "down_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 11,
+      "role_index": 5,
+      "role_key": [
+        13,
+        22,
+        "down_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 12,
+      "role_index": 6,
+      "role_key": [
+        13,
+        28,
+        "gate_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 13,
+      "role_index": 6,
+      "role_key": [
+        13,
+        28,
+        "gate_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 14,
+      "role_index": 7,
+      "role_key": [
+        13,
+        28,
+        "up_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 15,
+      "role_index": 7,
+      "role_key": [
+        13,
+        28,
+        "up_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 16,
+      "role_index": 8,
+      "role_key": [
+        13,
+        28,
+        "down_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 17,
+      "role_index": 8,
+      "role_key": [
+        13,
+        28,
+        "down_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 18,
+      "role_index": 9,
+      "role_key": [
+        14,
+        63,
+        "gate_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 19,
+      "role_index": 9,
+      "role_key": [
+        14,
+        63,
+        "gate_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 20,
+      "role_index": 10,
+      "role_key": [
+        14,
+        63,
+        "up_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 21,
+      "role_index": 10,
+      "role_key": [
+        14,
+        63,
+        "up_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 22,
+      "role_index": 11,
+      "role_key": [
+        14,
+        63,
+        "down_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 23,
+      "role_index": 11,
+      "role_key": [
+        14,
+        63,
+        "down_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 24,
+      "role_index": 12,
+      "role_key": [
+        20,
+        17,
+        "gate_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 25,
+      "role_index": 12,
+      "role_key": [
+        20,
+        17,
+        "gate_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 26,
+      "role_index": 13,
+      "role_key": [
+        20,
+        17,
+        "up_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 27,
+      "role_index": 13,
+      "role_key": [
+        20,
+        17,
+        "up_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 28,
+      "role_index": 14,
+      "role_key": [
+        20,
+        17,
+        "down_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 29,
+      "role_index": 14,
+      "role_key": [
+        20,
+        17,
+        "down_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 30,
+      "role_index": 15,
+      "role_key": [
+        21,
+        61,
+        "gate_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 31,
+      "role_index": 15,
+      "role_key": [
+        21,
+        61,
+        "gate_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 32,
+      "role_index": 16,
+      "role_key": [
+        21,
+        61,
+        "up_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 33,
+      "role_index": 16,
+      "role_key": [
+        21,
+        61,
+        "up_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 34,
+      "role_index": 17,
+      "role_key": [
+        21,
+        61,
+        "down_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 35,
+      "role_index": 17,
+      "role_key": [
+        21,
+        61,
+        "down_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 36,
+      "role_index": 18,
+      "role_key": [
+        24,
+        26,
+        "gate_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 37,
+      "role_index": 18,
+      "role_key": [
+        24,
+        26,
+        "gate_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 38,
+      "role_index": 19,
+      "role_key": [
+        24,
+        26,
+        "up_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 39,
+      "role_index": 19,
+      "role_key": [
+        24,
+        26,
+        "up_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 40,
+      "role_index": 20,
+      "role_key": [
+        24,
+        26,
+        "down_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 41,
+      "role_index": 20,
+      "role_key": [
+        24,
+        26,
+        "down_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 42,
+      "role_index": 21,
+      "role_key": [
+        24,
+        60,
+        "gate_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 43,
+      "role_index": 21,
+      "role_key": [
+        24,
+        60,
+        "gate_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 44,
+      "role_index": 22,
+      "role_key": [
+        24,
+        60,
+        "up_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 45,
+      "role_index": 22,
+      "role_key": [
+        24,
+        60,
+        "up_proj"
+      ],
+      "tier": "Q5"
+    },
+    {
+      "column_index": 46,
+      "role_index": 23,
+      "role_key": [
+        24,
+        60,
+        "down_proj"
+      ],
+      "tier": "Q4"
+    },
+    {
+      "column_index": 47,
+      "role_index": 23,
+      "role_key": [
+        24,
+        60,
+        "down_proj"
+      ],
+      "tier": "Q5"
+    }
+  ],
+  "every_fixed_route_output_requires_baseline_sha": "7e5811d13953f99db5df55169bf465f039acb9224f626336d247168e0f570711",
+  "every_zero_and_jvp_primal_requires_original_gold_sha": "b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c",
+  "evidence_cell_count": 79,
+  "evidence_execution_sequence": [
+    {
+      "alpha_literal": "0",
+      "cell_index": 0,
+      "column_index": null,
+      "kind": "OFF",
+      "role_index": null,
+      "tier": null
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 1,
+      "column_index": 1,
+      "kind": "FD",
+      "role_index": 0,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.05",
+      "cell_index": 2,
+      "column_index": 1,
+      "kind": "FD",
+      "role_index": 0,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.05",
+      "cell_index": 3,
+      "column_index": 1,
+      "kind": "FD",
+      "role_index": 0,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.025",
+      "cell_index": 4,
+      "column_index": 1,
+      "kind": "FD",
+      "role_index": 0,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.025",
+      "cell_index": 5,
+      "column_index": 1,
+      "kind": "FD",
+      "role_index": 0,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 6,
+      "column_index": 1,
+      "kind": "JVP",
+      "role_index": 0,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 7,
+      "column_index": 3,
+      "kind": "FD",
+      "role_index": 1,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.05",
+      "cell_index": 8,
+      "column_index": 3,
+      "kind": "FD",
+      "role_index": 1,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.05",
+      "cell_index": 9,
+      "column_index": 3,
+      "kind": "FD",
+      "role_index": 1,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.025",
+      "cell_index": 10,
+      "column_index": 3,
+      "kind": "FD",
+      "role_index": 1,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.025",
+      "cell_index": 11,
+      "column_index": 3,
+      "kind": "FD",
+      "role_index": 1,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 12,
+      "column_index": 3,
+      "kind": "JVP",
+      "role_index": 1,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 13,
+      "column_index": 5,
+      "kind": "FD",
+      "role_index": 2,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.05",
+      "cell_index": 14,
+      "column_index": 5,
+      "kind": "FD",
+      "role_index": 2,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.05",
+      "cell_index": 15,
+      "column_index": 5,
+      "kind": "FD",
+      "role_index": 2,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.025",
+      "cell_index": 16,
+      "column_index": 5,
+      "kind": "FD",
+      "role_index": 2,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.025",
+      "cell_index": 17,
+      "column_index": 5,
+      "kind": "FD",
+      "role_index": 2,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 18,
+      "column_index": 5,
+      "kind": "JVP",
+      "role_index": 2,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 19,
+      "column_index": 0,
+      "kind": "JVP",
+      "role_index": 0,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 20,
+      "column_index": 2,
+      "kind": "JVP",
+      "role_index": 1,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 21,
+      "column_index": 4,
+      "kind": "JVP",
+      "role_index": 2,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 22,
+      "column_index": 6,
+      "kind": "FD",
+      "role_index": 3,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "+0.05",
+      "cell_index": 23,
+      "column_index": 6,
+      "kind": "FD",
+      "role_index": 3,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "-0.05",
+      "cell_index": 24,
+      "column_index": 6,
+      "kind": "FD",
+      "role_index": 3,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "+0.025",
+      "cell_index": 25,
+      "column_index": 6,
+      "kind": "FD",
+      "role_index": 3,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "-0.025",
+      "cell_index": 26,
+      "column_index": 6,
+      "kind": "FD",
+      "role_index": 3,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 27,
+      "column_index": 6,
+      "kind": "JVP",
+      "role_index": 3,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 28,
+      "column_index": 7,
+      "kind": "JVP",
+      "role_index": 3,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 29,
+      "column_index": 8,
+      "kind": "JVP",
+      "role_index": 4,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 30,
+      "column_index": 9,
+      "kind": "JVP",
+      "role_index": 4,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 31,
+      "column_index": 10,
+      "kind": "JVP",
+      "role_index": 5,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 32,
+      "column_index": 11,
+      "kind": "JVP",
+      "role_index": 5,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 33,
+      "column_index": 12,
+      "kind": "JVP",
+      "role_index": 6,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 34,
+      "column_index": 13,
+      "kind": "JVP",
+      "role_index": 6,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 35,
+      "column_index": 14,
+      "kind": "JVP",
+      "role_index": 7,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 36,
+      "column_index": 15,
+      "kind": "JVP",
+      "role_index": 7,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 37,
+      "column_index": 16,
+      "kind": "JVP",
+      "role_index": 8,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 38,
+      "column_index": 17,
+      "kind": "JVP",
+      "role_index": 8,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 39,
+      "column_index": 18,
+      "kind": "JVP",
+      "role_index": 9,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 40,
+      "column_index": 19,
+      "kind": "JVP",
+      "role_index": 9,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 41,
+      "column_index": 20,
+      "kind": "JVP",
+      "role_index": 10,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 42,
+      "column_index": 21,
+      "kind": "JVP",
+      "role_index": 10,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 43,
+      "column_index": 22,
+      "kind": "JVP",
+      "role_index": 11,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 44,
+      "column_index": 23,
+      "kind": "JVP",
+      "role_index": 11,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 45,
+      "column_index": 24,
+      "kind": "JVP",
+      "role_index": 12,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 46,
+      "column_index": 25,
+      "kind": "JVP",
+      "role_index": 12,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 47,
+      "column_index": 26,
+      "kind": "JVP",
+      "role_index": 13,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 48,
+      "column_index": 27,
+      "kind": "FD",
+      "role_index": 13,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.05",
+      "cell_index": 49,
+      "column_index": 27,
+      "kind": "FD",
+      "role_index": 13,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.05",
+      "cell_index": 50,
+      "column_index": 27,
+      "kind": "FD",
+      "role_index": 13,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.025",
+      "cell_index": 51,
+      "column_index": 27,
+      "kind": "FD",
+      "role_index": 13,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.025",
+      "cell_index": 52,
+      "column_index": 27,
+      "kind": "FD",
+      "role_index": 13,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 53,
+      "column_index": 27,
+      "kind": "JVP",
+      "role_index": 13,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 54,
+      "column_index": 28,
+      "kind": "JVP",
+      "role_index": 14,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 55,
+      "column_index": 29,
+      "kind": "JVP",
+      "role_index": 14,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 56,
+      "column_index": 30,
+      "kind": "JVP",
+      "role_index": 15,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 57,
+      "column_index": 31,
+      "kind": "JVP",
+      "role_index": 15,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 58,
+      "column_index": 32,
+      "kind": "JVP",
+      "role_index": 16,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 59,
+      "column_index": 33,
+      "kind": "JVP",
+      "role_index": 16,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 60,
+      "column_index": 34,
+      "kind": "JVP",
+      "role_index": 17,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 61,
+      "column_index": 35,
+      "kind": "JVP",
+      "role_index": 17,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 62,
+      "column_index": 36,
+      "kind": "JVP",
+      "role_index": 18,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 63,
+      "column_index": 37,
+      "kind": "JVP",
+      "role_index": 18,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 64,
+      "column_index": 38,
+      "kind": "JVP",
+      "role_index": 19,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 65,
+      "column_index": 39,
+      "kind": "JVP",
+      "role_index": 19,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 66,
+      "column_index": 40,
+      "kind": "JVP",
+      "role_index": 20,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 67,
+      "column_index": 41,
+      "kind": "JVP",
+      "role_index": 20,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 68,
+      "column_index": 42,
+      "kind": "JVP",
+      "role_index": 21,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 69,
+      "column_index": 43,
+      "kind": "JVP",
+      "role_index": 21,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 70,
+      "column_index": 44,
+      "kind": "JVP",
+      "role_index": 22,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 71,
+      "column_index": 45,
+      "kind": "JVP",
+      "role_index": 22,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 72,
+      "column_index": 46,
+      "kind": "FD",
+      "role_index": 23,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "+0.05",
+      "cell_index": 73,
+      "column_index": 46,
+      "kind": "FD",
+      "role_index": 23,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "-0.05",
+      "cell_index": 74,
+      "column_index": 46,
+      "kind": "FD",
+      "role_index": 23,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "+0.025",
+      "cell_index": 75,
+      "column_index": 46,
+      "kind": "FD",
+      "role_index": 23,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "-0.025",
+      "cell_index": 76,
+      "column_index": 46,
+      "kind": "FD",
+      "role_index": 23,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 77,
+      "column_index": 46,
+      "kind": "JVP",
+      "role_index": 23,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 78,
+      "column_index": 47,
+      "kind": "JVP",
+      "role_index": 23,
+      "tier": "Q5"
+    }
+  ],
+  "execution_policy": {
+    "default_max_new_cells": 12,
+    "initial_memory_free_percent_min": 55,
+    "maximum_max_new_cells": 79,
+    "memory_free_percent_floor": 35,
+    "native_cell_timeout_seconds_max": 900,
+    "numerical_failure": "SEAL_HOLD_AND_STOP_FURTHER_NATIVE_CELLS",
+    "plan_or_threshold_changes_after_first_cell": false,
+    "retry": "SEALED_EXECUTION_OR_INTEGRITY_FAILURE_ONLY",
+    "rss_limit_gib": 18,
+    "sequential": true,
+    "successful_cells_never_reexecuted": true
+  },
+  "fd_convergence_rule": {
+    "coarse_h": 0.05,
+    "fine_h": 0.025,
+    "reference": "ALL_656_FINE_FD_TOKEN_DERIVATIVES",
+    "rms_absolute_tolerance": 0.0001,
+    "rms_relative_tolerance": 0.05
+  },
+  "fd_coverage_interpretation": "NINE_PREDECLARED_CHECKPOINTS_NOT_ALL_48_INDIVIDUAL_FD_VALIDATIONS",
+  "fd_verified_coordinate_count": 9,
+  "full48_empirical_fisher": null,
+  "full_parameter_fisher": null,
+  "full_prefix_completion_counters": {
+    "cases": 32,
+    "gold": 656,
+    "layers": 117018,
+    "tokens": 4334
+  },
+  "gold_tokens": 656,
+  "helper_source_sha256": {
+    "je01_native_all48_train16_runner.py": "7451c867ebb810cff9fe854322e00937bf8b1807c2d0475006d6703be32dd4de",
+    "je01_native_one_column_jvp_runner.py": "ffd632d79d948119ad261e2720ebbcd7c5076af21070aeaf60bf0ca8e7d79bd6",
+    "je01_native_role_jvp_runner.py": "9be8372fa3858577011eb5ab1d4ad654f746e151a95012aaf23e515fd8a7eb90",
+    "je01_role_directional_bank.py": "045fd22d86e4ce18f967d66830a1f71b0c61ad6ab5c5889d953cb9a8d05bce33",
+    "je01_role_directional_fixed_native.py": "cffe2e1dd8298681f3a134caace742ddc9fea77209c58683cd8d2f48fe6284e7",
+    "je01_role_directional_fixed_routes_patch.py": "233937b59293bec11300b66450b819dc48bb09b8d28eb6e98ca81aac7f511019",
+    "je01_role_directional_native_runner.py": "5607c0afef3bd4b1a61bcab6622267acc6b6137fc65ba0e79873e92e31d7e9e6"
+  },
+  "independent_audit_required_before_train240": true,
+  "independent_validation_ood_accessed": false,
+  "inherited_native_cell_count": 1,
+  "jvp_agreement_rule": {
+    "reference": "ALL_656_FINE_FD_TOKEN_DERIVATIVES",
+    "rms_absolute_tolerance": 0.0001,
+    "rms_relative_tolerance": 0.05
+  },
+  "jvp_alpha": 0,
+  "matrix_rules": {
+    "centering": "NONE",
+    "eigen_residual_tolerance_times_max_1_abs_trace": 1e-12,
+    "g_definition": "MEAN_TOKEN_DNLL",
+    "gram_definition": "MEAN_TOKEN_DNLL_OUTER_PRODUCT",
+    "psd_min_eigenvalue_lower_bound": "-1e-8 * max(1, trace(Gram))",
+    "publish_only_if_all_48_raw_and_9_checkpoints_and_psd_pass": true,
+    "raw_shape": [
+      656,
+      48
+    ],
+    "score_definition": "NEGATIVE_DNLL",
+    "sentence_partition": "16_FROZEN_CASE_IDS_IN_METADATA_ORDER"
+  },
+  "native_binary_sha256": "110b1978d97bcd7c6bdfd6d42142569e56e9dacffa4ff462dc0786b3128e49f4",
+  "native_cell_count": 78,
+  "native_execution_sequence": [
+    {
+      "alpha_literal": "0",
+      "cell_index": 1,
+      "column_index": 1,
+      "kind": "FD",
+      "role_index": 0,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.05",
+      "cell_index": 2,
+      "column_index": 1,
+      "kind": "FD",
+      "role_index": 0,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.05",
+      "cell_index": 3,
+      "column_index": 1,
+      "kind": "FD",
+      "role_index": 0,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.025",
+      "cell_index": 4,
+      "column_index": 1,
+      "kind": "FD",
+      "role_index": 0,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.025",
+      "cell_index": 5,
+      "column_index": 1,
+      "kind": "FD",
+      "role_index": 0,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 6,
+      "column_index": 1,
+      "kind": "JVP",
+      "role_index": 0,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 7,
+      "column_index": 3,
+      "kind": "FD",
+      "role_index": 1,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.05",
+      "cell_index": 8,
+      "column_index": 3,
+      "kind": "FD",
+      "role_index": 1,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.05",
+      "cell_index": 9,
+      "column_index": 3,
+      "kind": "FD",
+      "role_index": 1,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.025",
+      "cell_index": 10,
+      "column_index": 3,
+      "kind": "FD",
+      "role_index": 1,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.025",
+      "cell_index": 11,
+      "column_index": 3,
+      "kind": "FD",
+      "role_index": 1,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 12,
+      "column_index": 3,
+      "kind": "JVP",
+      "role_index": 1,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 13,
+      "column_index": 5,
+      "kind": "FD",
+      "role_index": 2,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.05",
+      "cell_index": 14,
+      "column_index": 5,
+      "kind": "FD",
+      "role_index": 2,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.05",
+      "cell_index": 15,
+      "column_index": 5,
+      "kind": "FD",
+      "role_index": 2,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.025",
+      "cell_index": 16,
+      "column_index": 5,
+      "kind": "FD",
+      "role_index": 2,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.025",
+      "cell_index": 17,
+      "column_index": 5,
+      "kind": "FD",
+      "role_index": 2,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 18,
+      "column_index": 5,
+      "kind": "JVP",
+      "role_index": 2,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 19,
+      "column_index": 0,
+      "kind": "JVP",
+      "role_index": 0,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 20,
+      "column_index": 2,
+      "kind": "JVP",
+      "role_index": 1,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 21,
+      "column_index": 4,
+      "kind": "JVP",
+      "role_index": 2,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 22,
+      "column_index": 6,
+      "kind": "FD",
+      "role_index": 3,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "+0.05",
+      "cell_index": 23,
+      "column_index": 6,
+      "kind": "FD",
+      "role_index": 3,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "-0.05",
+      "cell_index": 24,
+      "column_index": 6,
+      "kind": "FD",
+      "role_index": 3,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "+0.025",
+      "cell_index": 25,
+      "column_index": 6,
+      "kind": "FD",
+      "role_index": 3,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "-0.025",
+      "cell_index": 26,
+      "column_index": 6,
+      "kind": "FD",
+      "role_index": 3,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 27,
+      "column_index": 6,
+      "kind": "JVP",
+      "role_index": 3,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 28,
+      "column_index": 7,
+      "kind": "JVP",
+      "role_index": 3,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 29,
+      "column_index": 8,
+      "kind": "JVP",
+      "role_index": 4,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 30,
+      "column_index": 9,
+      "kind": "JVP",
+      "role_index": 4,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 31,
+      "column_index": 10,
+      "kind": "JVP",
+      "role_index": 5,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 32,
+      "column_index": 11,
+      "kind": "JVP",
+      "role_index": 5,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 33,
+      "column_index": 12,
+      "kind": "JVP",
+      "role_index": 6,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 34,
+      "column_index": 13,
+      "kind": "JVP",
+      "role_index": 6,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 35,
+      "column_index": 14,
+      "kind": "JVP",
+      "role_index": 7,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 36,
+      "column_index": 15,
+      "kind": "JVP",
+      "role_index": 7,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 37,
+      "column_index": 16,
+      "kind": "JVP",
+      "role_index": 8,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 38,
+      "column_index": 17,
+      "kind": "JVP",
+      "role_index": 8,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 39,
+      "column_index": 18,
+      "kind": "JVP",
+      "role_index": 9,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 40,
+      "column_index": 19,
+      "kind": "JVP",
+      "role_index": 9,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 41,
+      "column_index": 20,
+      "kind": "JVP",
+      "role_index": 10,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 42,
+      "column_index": 21,
+      "kind": "JVP",
+      "role_index": 10,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 43,
+      "column_index": 22,
+      "kind": "JVP",
+      "role_index": 11,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 44,
+      "column_index": 23,
+      "kind": "JVP",
+      "role_index": 11,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 45,
+      "column_index": 24,
+      "kind": "JVP",
+      "role_index": 12,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 46,
+      "column_index": 25,
+      "kind": "JVP",
+      "role_index": 12,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 47,
+      "column_index": 26,
+      "kind": "JVP",
+      "role_index": 13,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 48,
+      "column_index": 27,
+      "kind": "FD",
+      "role_index": 13,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.05",
+      "cell_index": 49,
+      "column_index": 27,
+      "kind": "FD",
+      "role_index": 13,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.05",
+      "cell_index": 50,
+      "column_index": 27,
+      "kind": "FD",
+      "role_index": 13,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "+0.025",
+      "cell_index": 51,
+      "column_index": 27,
+      "kind": "FD",
+      "role_index": 13,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "-0.025",
+      "cell_index": 52,
+      "column_index": 27,
+      "kind": "FD",
+      "role_index": 13,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 53,
+      "column_index": 27,
+      "kind": "JVP",
+      "role_index": 13,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 54,
+      "column_index": 28,
+      "kind": "JVP",
+      "role_index": 14,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 55,
+      "column_index": 29,
+      "kind": "JVP",
+      "role_index": 14,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 56,
+      "column_index": 30,
+      "kind": "JVP",
+      "role_index": 15,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 57,
+      "column_index": 31,
+      "kind": "JVP",
+      "role_index": 15,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 58,
+      "column_index": 32,
+      "kind": "JVP",
+      "role_index": 16,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 59,
+      "column_index": 33,
+      "kind": "JVP",
+      "role_index": 16,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 60,
+      "column_index": 34,
+      "kind": "JVP",
+      "role_index": 17,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 61,
+      "column_index": 35,
+      "kind": "JVP",
+      "role_index": 17,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 62,
+      "column_index": 36,
+      "kind": "JVP",
+      "role_index": 18,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 63,
+      "column_index": 37,
+      "kind": "JVP",
+      "role_index": 18,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 64,
+      "column_index": 38,
+      "kind": "JVP",
+      "role_index": 19,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 65,
+      "column_index": 39,
+      "kind": "JVP",
+      "role_index": 19,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 66,
+      "column_index": 40,
+      "kind": "JVP",
+      "role_index": 20,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 67,
+      "column_index": 41,
+      "kind": "JVP",
+      "role_index": 20,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 68,
+      "column_index": 42,
+      "kind": "JVP",
+      "role_index": 21,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 69,
+      "column_index": 43,
+      "kind": "JVP",
+      "role_index": 21,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 70,
+      "column_index": 44,
+      "kind": "JVP",
+      "role_index": 22,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 71,
+      "column_index": 45,
+      "kind": "JVP",
+      "role_index": 22,
+      "tier": "Q5"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 72,
+      "column_index": 46,
+      "kind": "FD",
+      "role_index": 23,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "+0.05",
+      "cell_index": 73,
+      "column_index": 46,
+      "kind": "FD",
+      "role_index": 23,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "-0.05",
+      "cell_index": 74,
+      "column_index": 46,
+      "kind": "FD",
+      "role_index": 23,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "+0.025",
+      "cell_index": 75,
+      "column_index": 46,
+      "kind": "FD",
+      "role_index": 23,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "-0.025",
+      "cell_index": 76,
+      "column_index": 46,
+      "kind": "FD",
+      "role_index": 23,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 77,
+      "column_index": 46,
+      "kind": "JVP",
+      "role_index": 23,
+      "tier": "Q4"
+    },
+    {
+      "alpha_literal": "0",
+      "cell_index": 78,
+      "column_index": 47,
+      "kind": "JVP",
+      "role_index": 23,
+      "tier": "Q5"
+    }
+  ],
+  "native_output_path_contract": {
+    "output_root": "/Volumes/D50/TailnetCommander/work/je01_native_role_jvp_all48_train16_20261123_v2",
+    "required_absolute_prefix": "/Volumes/D50/TailnetCommander/work/je01_native_role_jvp_",
+    "source_c_sha256": "5e2a6ea76c22c1ec0ff9f2fb6d093b7d3a471679adbe439ed1c4b898a56a52a6",
+    "validated_before_any_native_execution": true
+  },
+  "natural_routing_stability": "NOT_ESTABLISHED_BY_FORCED_ROUTE_REPLAY",
+  "new_fd_cell_count": 30,
+  "new_fd_checkpoints": [
+    {
+      "column_index": 1,
+      "role_index": 0,
+      "tier": "Q5"
+    },
+    {
+      "column_index": 3,
+      "role_index": 1,
+      "tier": "Q5"
+    },
+    {
+      "column_index": 5,
+      "role_index": 2,
+      "tier": "Q5"
+    },
+    {
+      "column_index": 6,
+      "role_index": 3,
+      "tier": "Q4"
+    },
+    {
+      "column_index": 27,
+      "role_index": 13,
+      "tier": "Q5"
+    },
+    {
+      "column_index": 46,
+      "role_index": 23,
+      "tier": "Q4"
+    }
+  ],
+  "parent_audit_file_sha256": "9d82c2d727d4d20eb799e9a5b7625474311c954aaf7694063793bfaf09f18fcc",
+  "parent_audit_receipt_sha256": "5ce09188e65d5cfcc0f956447b2918fe9c80bf81f14e8486ba97864f7137b87b",
+  "parent_plan_receipt_sha256": "12ae8c5eb7a3d6409eea2aa79337de9da9c56453bac33ec084c4e4a64aec8a14",
+  "parent_report_file_sha256": "22f929b8e92eff027358fa7c2104044cda7967ab46503199793c42618b5ae2b5",
+  "parent_report_receipt_sha256": "1448de4fdfb34082c7bd6976676d8a5404f078d649d730adbaf331fb233857df",
+  "parent_root": "/Volumes/D50/TailnetCommander/work/je01_native_role_jvp_followup_20261123_v1",
+  "patch_source_sha256": "68c8cd6541657312bca6604dcbe74dcdc8156ff4da80de9c8fd672a1ad08d755",
+  "prior_q4_jvp_requires_exact_gradient_output_sha": true,
+  "production_modified": false,
+  "proven_native_build_receipt_sha256": "2cbeb4dc1a7e1ab5642a4abb22395498c10dde43bee051eec3c303c7e53fa008",
+  "receipt_sha256": "260c199a18f1b60bf94a6388fd9df306803a950383a199bd2665b88a6d553aba",
+  "recovery": {
+    "change": "FRESH_NATIVE_COMPATIBLE_ROOT_ONLY_NO_NATIVE_BINARY_OR_MATH_CHANGE",
+    "inherited_successful_cell_indices": [
+      0
+    ],
+    "interrupted_fd_was_not_a_completed_numerical_result": true,
+    "off_native_reexecution_forbidden": true,
+    "reason": "SOURCE_ENFORCED_JVP_OUTPUT_ROOT_MISMATCH_FOUND_BEFORE_FIRST_JVP",
+    "v1_evidence_is_preserved": true,
+    "v1_independent_auditor_source_sha256": "270fc991cd0e4378457fe80cfa4f7f924ab69d44d77656ecfb95bb11449730a9",
+    "v1_independent_confirmation_file_sha256": "66fd0128598c2705ea735ea0876006b8effa2602aa25f455fec9e4e4e90a6e35",
+    "v1_independent_confirmation_receipt_sha256": "b21f0e037e27ce30c47bb5ec4ef8b17a44d09c3b38f18389e33ae2fb62df6d3f",
+    "v1_interrupted_fd_file_sha256": "40daee88c55a53c478a17c34b584a7736c54b76fd06142cdd0656bcdc5e74579",
+    "v1_interrupted_fd_receipt_sha256": "51b3795007b69b783d94e22eae5f62fc96d8c73f8b377d3a1d18e5ee7e561129",
+    "v1_jvp_columns_measured": 0,
+    "v1_off_file_sha256": "98d68ca9a5984502bd3858bbb0523653814589abf1114ec5ad28eff39e6c6f6d",
+    "v1_off_receipt_sha256": "f044aa2e2ee1a22ab305f1854d2cf6c7280a5d72cded594859d786fcc5a0caa9",
+    "v1_plan_receipt_sha256": "60fdced19fad43cbf2b73801dd68effbbd75c186f8a5f39de9274cad39453419",
+    "v1_root": "/Volumes/D50/TailnetCommander/work/je01_native_all48_train16_20261123_v1",
+    "v1_runner_source_sha256": "7451c867ebb810cff9fe854322e00937bf8b1807c2d0475006d6703be32dd4de",
+    "v1_workflow_file_sha256": "1f32a3461859f8c90f485fd8e6fff95553cb872b9723bd59ba3c988f5f63cf0e",
+    "v1_workflow_receipt_sha256": "694f066501ddf1f1e31d94a746c56fc10239081e5c072311118c2c89c6e13b53"
+  },
+  "result_adaptive_selection": false,
+  "reused_fd_checkpoints": [
+    {
+      "column_index": 0,
+      "role_index": 0,
+      "tier": "Q4"
+    },
+    {
+      "column_index": 2,
+      "role_index": 1,
+      "tier": "Q4"
+    },
+    {
+      "column_index": 4,
+      "role_index": 2,
+      "tier": "Q4"
+    }
+  ],
+  "root": "/Volumes/D50/TailnetCommander/work/je01_native_role_jvp_all48_train16_20261123_v2",
+  "runner_source_sha256": "ad07f04937a79868a67f8eacedee22b6fe091399cf0557e5d2575234ebc50df6",
+  "runtime": {
+    "bank_path": "/Volumes/D50/TailnetCommander/work/je01_role_direction_bank_20261123_v1/JE01_ROLE_DIRECTION_BANK.bin",
+    "bank_receipt_sha256": "4994ec762b3a9b8a44015bad18f4b5bc7ea26505208384146238e7def28464d4",
+    "bank_sha256": "3b18257d22caddd0916292bef692110f9eeaf0edf83ad3fd4d5417fdf3443bb8",
+    "baseline_gold_sha256": "b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c",
+    "baseline_routes_path": "/Volumes/D50/TailnetCommander/work/je01_role_directional_20261123_v1/runs/pilot16/off_attempt1/routes.bin",
+    "baseline_routes_sha256": "7e5811d13953f99db5df55169bf465f039acb9224f626336d247168e0f570711",
+    "fixed_fd_executable_path": "/Volumes/D50/TailnetCommander/work/je01_role_directional_fixed_20261123_v1/bin/je01_role_directional_fixed_native",
+    "fixed_fd_executable_sha256": "46ea1f61fdd7483767ebc20900f4c97f9663a51148c74e566d2f66ccc848e688",
+    "libmlx_path": "/opt/homebrew/lib/python3.11/site-packages/mlx/lib/libmlx.dylib",
+    "libmlx_sha256": "afb1939edc96dc10e452132e4e665276fe0c48bf8cdc1a69286feb8a14de1da0",
+    "library_path": "/opt/homebrew/lib/python3.11/site-packages/mlx/lib",
+    "manifest_path": "/Volumes/D50/TailnetCommander/work/je01_eoe_realaf_nll_pilot16_20261122_v1/manifest.eoe.txt",
+    "manifest_sha256": "fab455198ef37d443b20af8e3029df3ddf4f4ba0f6d584eceeb262d26d6a146d",
+    "metadata_path": "/Volumes/D50/TailnetCommander/work/je01_eoe_realaf_nll_pilot16_20261122_v1/inputs/je01_real_pilot16/chunk00/gold_meta.bin",
+    "metadata_sha256": "be0dab12624efb4fae17538b4c5e6ef76bd09aebf4c09b1b428fc1d8f0fff406",
+    "native_executable_path": "/Volumes/D50/TailnetCommander/work/je01_native_role_jvp_followup_20261123_v1/bin/je01_native_role_jvp"
+  },
+  "schema": "beglin-je01-native-all48-train16-plan/2",
+  "scope": "PREVIOUSLY_SEEN_TRAIN16_FIXED_HARD_ROUTE_48_DIRECTION_DIAGNOSTIC_ONLY",
+  "source_identity": {
+    "adapter_header_sha256": "9ae9d98b921334bae321e583908e71bdc9c08178cbf3ca5d7a1d4d4e552a09ec",
+    "adapter_smoke_receipt_sha256": "b0825ab7a048f7d95b155592760e10d73e3df2b112230adbf7b348f388ca1595",
+    "bank_sha256": "3b18257d22caddd0916292bef692110f9eeaf0edf83ad3fd4d5417fdf3443bb8",
+    "baseline_route_sha256": "7e5811d13953f99db5df55169bf465f039acb9224f626336d247168e0f570711",
+    "derivative_definition": "ALL48_NATIVE_ALPHA_ZERO_FIXED_HARD_ROUTE_FULL_PREFIX_DIRECTIONS",
+    "fixed_fd_executable_sha256": "46ea1f61fdd7483767ebc20900f4c97f9663a51148c74e566d2f66ccc848e688",
+    "gate_fixed_reference_audit_sha256": "87f239d900d9aff3921ab99d478024b13002e80b3b3d65683d4a055e4147598c",
+    "gold_metadata_sha256": "be0dab12624efb4fae17538b4c5e6ef76bd09aebf4c09b1b428fc1d8f0fff406",
+    "input_manifest_sha256": "fab455198ef37d443b20af8e3029df3ddf4f4ba0f6d584eceeb262d26d6a146d",
+    "native_executable_sha256": "110b1978d97bcd7c6bdfd6d42142569e56e9dacffa4ff462dc0786b3128e49f4",
+    "new_build_receipt_sha256": "2cbeb4dc1a7e1ab5642a4abb22395498c10dde43bee051eec3c303c7e53fa008",
+    "original_af4_sha256": "9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4",
+    "original_off_receipt_sha256": "85d8e28d51fbc0e2d319f0e60e5f9e6ac3d2f9050b2e386d81a969f6ad8f672a",
+    "parent_three_role_independent_audit_sha256": "5ce09188e65d5cfcc0f956447b2918fe9c80bf81f14e8486ba97864f7137b87b",
+    "parent_three_role_report_sha256": "1448de4fdfb34082c7bd6976676d8a5404f078d649d730adbaf331fb233857df",
+    "role_order_sha256": "d232ca637eb17a1b40bf29f75e0590d8f63ecbc9aa950fb838a34b6fa90259a1"
+  },
+  "target_token_ids": [
+    [
+      6938,
+      75,
+      70125,
+      4910,
+      280,
+      254,
+      8723,
+      1021,
+      2426,
+      254,
+      3074,
+      1604,
+      207,
+      23,
+      418,
+      254,
+      4773,
+      280,
+      254,
+      1853,
+      62202,
+      82,
+      1021
+    ],
+    [
+      1245,
+      4286,
+      25371,
+      70332,
+      4585,
+      3358,
+      1021,
+      45534,
+      23548,
+      331,
+      845,
+      1439,
+      9300,
+      89117,
+      285,
+      7066,
+      12794,
+      5273,
+      8414,
+      511,
+      285,
+      1439,
+      89117,
+      285,
+      2489,
+      1990,
+      7384,
+      257,
+      1021,
+      89117,
+      10820,
+      19989,
+      344,
+      362,
+      285,
+      7384,
+      257,
+      1023,
+      441,
+      4127,
+      254,
+      1246,
+      845,
+      1021,
+      89117,
+      2116,
+      254,
+      6131,
+      1323,
+      2868
+    ],
+    [
+      23904,
+      280,
+      254,
+      207,
+      16,
+      24,
+      15,
+      20,
+      11433,
+      315,
+      7239,
+      2051,
+      375,
+      1973,
+      1369,
+      2051,
+      744,
+      330,
+      691,
+      6956,
+      279,
+      254,
+      2112,
+      1012,
+      2051,
+      754,
+      362,
+      2115,
+      254,
+      7705,
+      13854,
+      285,
+      4047,
+      15848,
+      1021
+    ],
+    [
+      23954,
+      207,
+      18,
+      2051,
+      285,
+      254,
+      11363,
+      1969,
+      57465,
+      279,
+      254,
+      13095,
+      23954,
+      4077,
+      1021,
+      429,
+      2624,
+      438,
+      7964,
+      331,
+      7953,
+      207,
+      16,
+      23,
+      2051,
+      207,
+      17,
+      15,
+      16,
+      19,
+      1021
+    ],
+    [
+      23206,
+      254,
+      6704,
+      2051,
+      13587,
+      24249,
+      245,
+      207,
+      19,
+      1173,
+      12,
+      31,
+      5395,
+      23206,
+      2051,
+      19561,
+      6692,
+      68,
+      276,
+      3230,
+      254,
+      16703,
+      6204,
+      362,
+      11684,
+      276,
+      49024,
+      39712,
+      331,
+      254,
+      7056,
+      279,
+      7564,
+      207,
+      17,
+      15,
+      16,
+      16,
+      1021
+    ],
+    [
+      1592,
+      3080,
+      457,
+      254,
+      11109,
+      280,
+      35916,
+      441,
+      276,
+      13270,
+      387,
+      13907,
+      655,
+      82,
+      5638,
+      280,
+      32724,
+      8732,
+      1021,
+      3563,
+      207,
+      16,
+      23,
+      17,
+      20,
+      2051,
+      19010,
+      304,
+      438,
+      13938,
+      75597,
+      366,
+      254,
+      1982,
+      63167,
+      344,
+      362,
+      6143,
+      276,
+      3253,
+      742,
+      280,
+      254,
+      1094,
+      22156,
+      18164,
+      70643,
+      473,
+      359,
+      1021
+    ],
+    [
+      4443,
+      6351,
+      344,
+      5985,
+      276,
+      20893,
+      550,
+      279,
+      17879,
+      1021,
+      15382,
+      90035,
+      344,
+      1069,
+      4194,
+      661,
+      803,
+      77335,
+      2051,
+      27842,
+      39881,
+      1027,
+      441,
+      22645,
+      87716,
+      245,
+      81723,
+      8723,
+      2645,
+      4585,
+      405,
+      89195,
+      1727,
+      23266,
+      10340,
+      344,
+      254,
+      40831,
+      632,
+      438,
+      4599,
+      1021
+    ],
+    [
+      14987,
+      35361,
+      382,
+      78419,
+      92399,
+      334,
+      7722,
+      207,
+      16,
+      24,
+      18,
+      16,
+      2238,
+      1021,
+      1063,
+      317,
+      245,
+      4443,
+      21146,
+      280,
+      254,
+      5189,
+      58298,
+      52115,
+      2051,
+      254,
+      52674,
+      280,
+      254,
+      5676,
+      7199,
+      9966,
+      14704,
+      1021
+    ],
+    [
+      22025,
+      28429,
+      548,
+      7705,
+      359,
+      438,
+      441,
+      1207,
+      2527,
+      440,
+      1021,
+      1063,
+      438,
+      2143,
+      842,
+      2481,
+      1396,
+      652,
+      16165,
+      303,
+      331,
+      254,
+      2328,
+      1492,
+      280,
+      254,
+      4326,
+      1166,
+      497,
+      5693,
+      366,
+      29749,
+      10854,
+      285,
+      362,
+      7370,
+      254,
+      4326,
+      366,
+      207,
+      19,
+      17,
+      32212,
+      1021
+    ],
+    [
+      473,
+      254,
+      60577,
+      2051,
+      18359,
+      359,
+      438,
+      279,
+      245,
+      207,
+      16,
+      24,
+      18,
+      1173,
+      13,
+      31,
+      207,
+      18,
+      1173,
+      12,
+      31,
+      457,
+      1173,
+      12,
+      31,
+      207,
+      21,
+      24,
+      1173,
+      13,
+      31,
+      207,
+      20,
+      1173,
+      12,
+      31,
+      13925,
+      334,
+      207,
+      18,
+      16,
+      16,
+      1173,
+      13,
+      31,
+      207,
+      16,
+      457,
+      207,
+      16,
+      16,
+      16,
+      1173,
+      13,
+      31,
+      207,
+      23,
+      9005,
+      2238,
+      17879,
+      786,
+      254,
+      20992,
+      1021
+    ],
+    [
+      52322,
+      655,
+      82,
+      12497,
+      51089,
+      1021,
+      429,
+      44055,
+      331,
+      254,
+      428,
+      2992,
+      463,
+      803,
+      5734,
+      372,
+      440,
+      17933,
+      285,
+      51404,
+      440,
+      457,
+      634,
+      25620,
+      280,
+      254,
+      28101,
+      1021
+    ],
+    [
+      94123,
+      1090,
+      55964,
+      51997,
+      207,
+      16,
+      23,
+      33,
+      2051,
+      2726,
+      366,
+      1094,
+      750,
+      5467,
+      14864,
+      1934,
+      279,
+      15856,
+      1021,
+      10850,
+      21989,
+      2734,
+      438,
+      53682,
+      245,
+      2483,
+      3470,
+      1021,
+      8690,
+      285,
+      586,
+      6251,
+      19010,
+      778,
+      441,
+      5598,
+      279,
+      437,
+      48675,
+      285,
+      372,
+      245,
+      1230,
+      778,
+      14801,
+      473,
+      704,
+      6866,
+      327,
+      254,
+      1022,
+      1860,
+      1555,
+      280
+    ],
+    [
+      32915,
+      1550,
+      276,
+      34713,
+      15023,
+      704,
+      30512,
+      3252,
+      430,
+      91808,
+      279,
+      6175,
+      207,
+      16,
+      24,
+      16,
+      23,
+      410,
+      463,
+      704,
+      15007,
+      2463,
+      271,
+      457,
+      13553,
+      6187,
+      43813,
+      1236,
+      2451,
+      254,
+      28311,
+      280,
+      43813,
+      438,
+      1592,
+      21085,
+      855,
+      1021,
+      30739,
+      72,
+      375,
+      959,
+      11328,
+      85,
+      14013,
+      285,
+      711,
+      9233,
+      5225,
+      254,
+      44266,
+      2741,
+      11198,
+      807,
+      5887,
+      2051,
+      5426,
+      254,
+      1864,
+      2592,
+      280,
+      15007,
+      331,
+      207,
+      20,
+      338
+    ],
+    [
+      254,
+      1225,
+      280,
+      254,
+      2135,
+      362,
+      317,
+      2826,
+      27786,
+      586,
+      17587,
+      276,
+      6417,
+      254,
+      9470,
+      2051,
+      9139,
+      586,
+      3248,
+      276,
+      254,
+      35915,
+      11203,
+      1021
+    ],
+    [
+      280,
+      245,
+      27988,
+      25243,
+      366,
+      245,
+      6059,
+      3164,
+      280,
+      207,
+      23,
+      15,
+      18,
+      45487,
+      1021
+    ],
+    [
+      42962,
+      1551,
+      13,
+      7128,
+      14385,
+      408,
+      1217,
+      441,
+      9941,
+      245,
+      4382,
+      250,
+      21628,
+      327,
+      437,
+      5909,
+      2051,
+      548,
+      430,
+      2754,
+      984,
+      2198,
+      13139,
+      2639,
+      1021,
+      48285,
+      8839,
+      438,
+      254,
+      1022,
+      4382,
+      250,
+      21628,
+      280,
+      254,
+      35231,
+      71,
+      82534,
+      2607,
+      2051,
+      548,
+      362,
+      438,
+      3444,
+      10213,
+      457,
+      20354,
+      9936,
+      37722,
+      779,
+      661,
+      1555,
+      280,
+      2784,
+      372,
+      245,
+      1592
+    ]
+  ],
+  "timing_estimate": {
+    "estimate_is_not_a_runtime_guarantee": true,
+    "estimated_native_seconds": 9581.2704,
+    "excludes_preflight_hashing_and_audit": true,
+    "inherited_off_elapsed_seconds": 72.38797466736287,
+    "observed_up_jvp_seconds": 151.295,
+    "seconds_per_cell": {
+      "FD": 71.4456,
+      "JVP": 154.9563,
+      "OFF": 73.8836
+    },
+    "source": "MEASURED_PRIOR_THREE_ROLE_NATIVE_CELL_RECEIPTS"
+  },
+  "train240_allocation": "NOT_RUN"
+}

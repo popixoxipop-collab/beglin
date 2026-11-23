@@ -1,0 +1,161 @@
+name: JE01 Post-NLL B/C exact-byte original27 native MLX build
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/je01_eoe_postnll_bc_native_overlay_patch.py'
+      - 'tools/je01_postnll_bc_exactbyte_native_bundle.py'
+      - 'tests/test_je01_eoe_postnll_bc_overlay_contract.py'
+      - '.github/workflows/je01-postnll-bc-original27-native-compile.yml'
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_eoe_postnll_bc_native_overlay_patch.py'
+      - 'tools/je01_postnll_bc_exactbyte_native_bundle.py'
+      - 'tests/test_je01_eoe_postnll_bc_overlay_contract.py'
+      - '.github/workflows/je01-postnll-bc-original27-native-compile.yml'
+permissions:
+  contents: read
+jobs:
+  original-affine-source-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pre-registered B/C native MLX source pins and original full model pass-through tests
+        run: python tests/test_je01_eoe_postnll_bc_overlay_contract.py
+  native-original-27layer-affine-keep4-mix4-compile:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned Apple MLX with standalone CMake
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'mlx==0.32.1' 'cmake>=3.20,<5' 'ninja>=1.10'
+      - name: Stage original 384 scratch, real fullgold, 8-source hook, Q4 sentinel, and 4 passthrough 4 overlay
+        run: |
+          set -euo pipefail
+          python tools/je01_isolated_context384_stage.py \
+             --checkout "$GITHUB_WORKSPACE" \
+             --scratch "$RUNNER_TEMP/je01_affine4_mix4_source" \
+             --expected-commit "$(git rev-parse HEAD)" \
+             > "$RUNNER_TEMP/je01_base_source.json"
+          python tools/je01_scratch_cb384_overlay_stage.py \
+             --staged-source "$RUNNER_TEMP/je01_affine4_mix4_source" \
+             > "$RUNNER_TEMP/je01_overlay_source.json"
+          python - <<'PY'
+          import importlib.util,os,pathlib
+          path=pathlib.Path("tools/je01_xox_original256_fulltarget_teacherforced_nll.py").resolve()
+          spec=importlib.util.spec_from_file_location("je01_native_original_fullgold",path)
+          m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+          f=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_affine4_mix4_source"/"qwen_infer.c"
+          f.write_text(m.patch_cpu(f.read_text()))
+          PY
+          python tools/je01_eoe_original384_mixed_source_stage.py \
+             --scratch "$RUNNER_TEMP/je01_affine4_mix4_source" \
+             > "$RUNNER_TEMP/je01_q35_staged.json"
+          python tools/je01_eoe_original384_q45_scratch_stage.py \
+             --scratch "$RUNNER_TEMP/je01_affine4_mix4_source" \
+             > "$RUNNER_TEMP/je01_q45_staged.json"
+          python tools/je01_eoe_original384_affine_keep4_mix4_stage.py \
+             --scratch "$RUNNER_TEMP/je01_affine4_mix4_source" \
+             > "$RUNNER_TEMP/je01_real_affine_keep4_mix4_staged.json"
+          python - <<'PY'
+          import hashlib,importlib.util,json,os,pathlib
+          src=pathlib.Path("tools/je01_eoe_postnll_bc_native_overlay_patch.py")
+          spec=importlib.util.spec_from_file_location("je01_rolewise_patch",src)
+          mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          scratch=root/"je01_affine4_mix4_source"
+          cpp=scratch/"mlx_moe.cpp"; c=scratch/"qwen_infer.c"
+          before={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (cpp,c)}
+          cpp_new,c_new=mod.patch(cpp.read_text(),c.read_text())
+          cpp.write_text(cpp_new);c.write_text(c_new)
+          assert c_new.count("mlx_gpu_je01_overlay_count()!=7")==1
+          assert c_new.count(mod.NEW_MARK)==1
+          assert cpp_new.count("altered_experts==7")==1
+          record={"schema":mod.SCHEMA,
+                  "status":"JE01_CAL240_ROLE_SPECIFIC_7_EXPERT_SCRATCH_ONLY_SOURCE_PATCHED",
+                  "original_source_SHA":before,
+                  "patched_source_SHA":{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (cpp,c)},
+                  "changed_expert_overlays":7,"fully_original_E64_experts":1,
+                  "physical_selected_budget_bytes":43253760,
+                  "physical_role_tiers":{"AF4":12,"Q4":6,"Q5":6},
+                  "native_binder_compilation":"NOT_RUN",
+                  "model_gold_NLL":"NOT_RUN","production_modified":False}
+          (root/"je01_cal240_rolewise_staged.json").write_text(json.dumps(record,sort_keys=True,indent=2)+"\n")
+          print("JE01_CAL240_ROLEWISE_SEVEN_EXPERT_SOURCE_PATCH_PASS")
+          PY
+          python - <<'PY'
+          import json,pathlib,os
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          d=json.loads((root/"je01_real_affine_keep4_mix4_staged.json").read_text())
+          assert d["status"]=="JE01_ORIGINAL27_AFFINE4_KEEP4_Q4Q5_MIX4_NATIVE_CODE_STAGED"
+          assert d["registered_experts"]==4 and d["native_original_AF4_preserved_experts"]==4
+          assert d["original_E64_affine_GPU_path_preserved"] is True
+          assert d["symmetric_Q4_bias_sentinel_preserved"] is True
+          assert not d["production_modified"]
+          rolewise=json.loads((root/"je01_cal240_rolewise_staged.json").read_text())
+          assert rolewise["changed_expert_overlays"]==7
+          assert rolewise["fully_original_E64_experts"]==1
+          assert rolewise["physical_selected_budget_bytes"]==43253760
+          assert rolewise["physical_role_tiers"]=={"AF4":12,"Q4":6,"Q5":6}
+          assert rolewise["native_binder_compilation"]=="NOT_RUN"
+          assert rolewise["production_modified"] is False
+          cm=root/"je01_affine4_mix4_source"/"CMakeLists.txt"
+          src=cm.read_text()
+          anchor="OUTPUT_NAME qwen_infer_gpu_je01_context384"
+          assert src.count(anchor)==1
+          cm.write_text(src.replace(anchor,"OUTPUT_NAME je01_eoe_original384_cal240_bc_rolewise_fullgold",1))
+          print("JE01_AFFINE4_NATIVE_ORIGINAL27_EXPERT_KEEP4_SCRATCH_SOURCE_PASS")
+          PY
+      - name: Compile actual BEGLIN full27 Apple Silicon Metal true pretrained native model
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import platform
+          assert platform.system()=="Darwin" and platform.machine()=="arm64"
+          PY
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os;print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S "$RUNNER_TEMP/je01_affine4_mix4_source" -B "$RUNNER_TEMP/je01_affine4_mix4_build" \
+             -G Ninja -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$RUNNER_TEMP/je01_affine4_mix4_build" --target qwen_infer_gpu --parallel 2
+          cp "$RUNNER_TEMP/je01_affine4_mix4_build/je01_eoe_original384_cal240_bc_rolewise_fullgold" \
+             "$RUNNER_TEMP/je01_eoe_original384_cal240_bc_rolewise_fullgold"
+          python - <<'PY'
+          import hashlib,json,pathlib,os
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          binary=root/"je01_eoe_original384_cal240_bc_rolewise_fullgold"
+          assert binary.is_file()
+          d={"schema":"beglin-je01-original27-cal240-frozen-7-expert-role-specific-native-build/1",
+             "status":"JE01_CAL240_POSTNLL_BC_7EXPERT_ORIGINAL27_NATIVE_COMPILE_PASS",
+             "source_patch":json.loads((root/"je01_cal240_rolewise_staged.json").read_text()),
+             "actual_executable_sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
+             "actual_executable_bytes":binary.stat().st_size,
+             "original_fullmodel_forward":"NOT_RUN",
+             "model_gold_NLL":"NOT_MEASURED",
+             "production_modified":False}
+          (root/"JE01_ORIGINAL384_CAL240_ROLEWISE_NATIVE_BUILD_RECEIPT.json").write_text(
+             json.dumps(d,sort_keys=True,indent=2)+"\n")
+          print("JE01_CAL240_POSTNLL_BC_SEVEN_EXPERT_NATIVE_COMPILE_PASS",d["actual_executable_sha256"])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-original27-postnll-BC-native-gold
+          path: |
+            ${{ runner.temp }}/je01_eoe_original384_cal240_bc_rolewise_fullgold
+            ${{ runner.temp }}/JE01_ORIGINAL384_CAL240_ROLEWISE_NATIVE_BUILD_RECEIPT.json
+            ${{ runner.temp }}/je01_cal240_rolewise_staged.json
+          retention-days: 14
+          if-no-files-found: error

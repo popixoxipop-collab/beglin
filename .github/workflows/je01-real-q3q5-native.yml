@@ -1,0 +1,65 @@
+name: JE01 real original BF16 native n3-n5 matched-byte candidate tiers
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_real_native_q3q5_from_bf16.py'
+      - '.github/workflows/je01-real-q3q5-native.yml'
+permissions:
+  contents: read
+jobs:
+  real-bf16-native-Q3Q5-48-role-tiers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      OPENBLAS_NUM_THREADS: '2'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy==2.2.6 requests==2.32.3
+      - name: Quantize original SHA-pinned pretrained BF16 24 roles into real n3/n5 native files
+        run: |
+          set -euo pipefail
+          python tools/je01_real_native_q3q5_from_bf16.py \
+            --output "$RUNNER_TEMP/je01_real_q3q5" \
+            | tee "$RUNNER_TEMP/je01_real_q3q5_log.txt"
+      - name: Independently SHA audit all saved files and exact byte budget
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_real_q3q5"
+          d=json.loads((root/"JE01_ORIGINAL_BF16_E8_Q3Q5_PHYSICAL_RECEIPT.json").read_text())
+          claimed=d.pop("receipt_sha256")
+          assert claimed==hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert d["status"]=="REAL_SOURCE_BF16_8EXPERT_48_NATIVE_Q3Q5_ROLE_TIERS_GENERATED"
+          assert d["actual_full8_physical_tier_bytes"]=={"3":30277632,"5":47579136}
+          assert d["physical_cost3_per_expert"]*2+d["physical_cost5_per_expert"]*6==43253760
+          assert d["equal_byte_2x3_6x5_combinations"]==28
+          assert len(d["records"])==48
+          assert len(d["frozen_before_gold_three_candidate_assignments"])==3
+          for r in d["records"]:
+            for key in ("packed","scale"):
+              value=r["files"][key]
+              p=root/value["filename"]
+              assert p.is_file() and not p.is_symlink()
+              assert p.stat().st_size==value["actual_bytes"]
+              assert hashlib.sha256(p.read_bytes()).hexdigest()==value["sha256"]
+          assert d["full_model_NLL"]=="NOT_MEASURED"
+          assert d["original_AF_q4_equivalence"]=="NOT_VERIFIED"
+          assert not d["production_modified"]
+          print("JE01_REAL_BF16_Q3Q5_48_TIERS_PHYSICAL_SHA_AUDIT_PASS",claimed)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real-original-bf16-q3q5-48-native-role-tiers
+          path: |
+            ${{ runner.temp }}/je01_real_q3q5/*
+            ${{ runner.temp }}/je01_real_q3q5_log.txt
+          retention-days: 14
+          if-no-files-found: error

@@ -1,0 +1,110 @@
+name: JE01 real pretrained BF16 Q3Q5 Expert Apple Metal
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_real_q3q5_metal_manifest_prep.py'
+      - 'tools/je01_real_weight_n3n5_metal_probe.cpp'
+      - '.github/workflows/je01-real-weight-n3n5-metal.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  real-weight-native-metal-matvec:
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Get exact 43,253,760B real BF16-derived Expert payload bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: je01-three-real-bf16-q3q5-equalbyte-payloads
+          run-id: 44177403091
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/je01_real_bundles
+      - name: Resolve only two known GitHub artifact directory layouts
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/je01_real_bundles"
+          direct="$root/JE01_REAL_Q3Q5_EQUALBYTE_BUNDLE_RECEIPT.json"
+          nested="$root/real_q3q5_bundles/JE01_REAL_Q3Q5_EQUALBYTE_BUNDLE_RECEIPT.json"
+          if [[ -f "$direct" && ! -f "$nested" ]]; then
+            source="$root"
+          elif [[ -f "$nested" && ! -f "$direct" ]]; then
+            source="$root/real_q3q5_bundles"
+          else
+            echo "JE01_ARTIFACT_ROOT_MISSING_OR_AMBIGUOUS"
+            find "$root" -maxdepth 2 -type f -name 'JE01_REAL_Q3Q5_EQUALBYTE_BUNDLE_RECEIPT.json' -print
+            exit 2
+          fi
+          echo "JE01_REAL_Q35_SOURCE_ROOT=$source" >> "$GITHUB_ENV"
+          echo "JE01_SOURCE_ROOT_RESOLVED"
+      - name: Independently verify actual physical source SHA and generate 24 real-role map
+        run: |
+          set -euo pipefail
+          python tools/je01_real_q3q5_metal_manifest_prep.py \
+            --source "$JE01_REAL_Q35_SOURCE_ROOT" \
+            --tsv "$RUNNER_TEMP/je01_real_binding.tsv"
+      - name: Prepare isolated 384 original BEGLIN MLX source only
+        run: |
+          set -euo pipefail
+          python tools/je01_isolated_context384_stage.py --checkout "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP/je01_real_metal_src" --expected-commit "$(git rev-parse HEAD)" \
+            > "$RUNNER_TEMP/je01_real_metal_stage.json"
+          cat >> "$RUNNER_TEMP/je01_real_metal_src/CMakeLists.txt" <<'CMAKE'
+          add_executable(je01_real_weight_n3n5_metal_probe
+            tools/je01_real_weight_n3n5_metal_probe.cpp
+            $<TARGET_OBJECTS:mlx_moe_obj>)
+          target_include_directories(je01_real_weight_n3n5_metal_probe PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR})
+          target_link_libraries(je01_real_weight_n3n5_metal_probe PRIVATE mlx)
+          CMAKE
+      - name: Install pinned Apple-native MLX and compiler
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'mlx==0.32.1' 'cmake>=3.20,<5' 'ninja>=1.10'
+      - name: Build AND RUN 24 real pretrained-weight GPU matvecs with independent CPU reference
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import platform
+          assert platform.system()=="Darwin" and platform.machine()=="arm64"
+          PY
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os;print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S "$RUNNER_TEMP/je01_real_metal_src" -B "$RUNNER_TEMP/je01_real_metal_build" \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$RUNNER_TEMP/je01_real_metal_build" \
+            --target je01_real_weight_n3n5_metal_probe --parallel 2
+          "$RUNNER_TEMP/je01_real_metal_build/je01_real_weight_n3n5_metal_probe" \
+            "$JE01_REAL_Q35_SOURCE_ROOT/route_frequency.bin" \
+            "$RUNNER_TEMP/je01_real_binding.tsv" | tee "$RUNNER_TEMP/je01_real_weight_metal_result.log"
+          python - <<'PY'
+          import os,json,pathlib
+          lines=pathlib.Path(os.environ["RUNNER_TEMP"]+"/je01_real_weight_metal_result.log").read_text().splitlines()
+          r=json.loads(lines[-1])
+          assert r["status"]=="PASS_ACTUAL_PRETRAINED_BF16_DERIVED_N3_N5_METAL"
+          assert r["real_pretrained_expert_roles_gpu"]==24
+          assert r["real_n3_roles"]==6 and r["real_n5_roles"]==18
+          assert r["physical_original_AF_budget_bytes"]==43253760
+          assert r["worst_gpu_cpu_relative_rmse"]<0.05
+          assert r["actual_full_27layer_model_forward"]=="NOT_RUN"
+          assert r["full_gold_token_NLL"]=="NOT_MEASURED"
+          print("JE01_REAL_BF16_NATIVE_METAL_24_ROLES_GPU_CPU_AUDIT_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real-bf16-8expert-24role-q3q5-metal-matvec
+          path: |
+            ${{ runner.temp }}/je01_real_metal_stage.json
+            ${{ runner.temp }}/je01_real_binding.tsv
+            ${{ runner.temp }}/je01_real_weight_metal_result.log
+          retention-days: 14
+          if-no-files-found: error

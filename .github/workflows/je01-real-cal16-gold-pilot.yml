@@ -1,0 +1,68 @@
+name: JE01 real 16 train-only next-gold token identity
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/je01-moe-bayesian-bit-allocation-20261117
+    paths:
+      - ".github/workflows/je01-real-cal16-gold-pilot.yml"
+      - "tools/je01_actual_original_cal16_next_gold_token_manifest.py"
+permissions:
+  contents: read
+jobs:
+  cal16-train-gold-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      ORIGINAL_REV: "419ef8b6b7a816343af14bc1a4436d4e33affb5d"
+      ORIGINAL_TOKENIZER_SHA: "41f3bf64213da8c012d8bd0871a58a1fdf70463e8f08f110ddbb1082f529f669"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Pin original tokenizer only, no model weights or holdout labels
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'tokenizers==0.22.2'
+          curl --fail --location --silent --show-error --retry 3 --retry-delay 2 --max-time 140 \
+            "https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite/resolve/$ORIGINAL_REV/tokenizer.json?download=true" \
+            --output "$RUNNER_TEMP/je01_original_tokenizer.json"
+          echo "$ORIGINAL_TOKENIZER_SHA  $RUNNER_TEMP/je01_original_tokenizer.json" | sha256sum --check
+      - name: Regenerate exactly the 16 length-preselected real WikiText calibration continuations
+        run: |
+          set -euo pipefail
+          python tools/je01_actual_original_cal16_next_gold_token_manifest.py \
+            docs/research/JE01_FROZEN_WIKITEXT_HELLASWAG_512_20261117.json \
+            "$RUNNER_TEMP/je01_original_tokenizer.json" \
+            | tee "$RUNNER_TEMP/je01_original_cal16_public_first_gold_tokens.json"
+      - name: Validate all 16 source prompt byte hashes and no test/OOD access
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,hashlib,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_original_cal16_public_first_gold_tokens.json"
+          d=json.loads(p.read_text())
+          sig=d.pop("receipt_sha256")
+          assert sig==hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),ensure_ascii=False,allow_nan=False).encode()).hexdigest()
+          assert d["prior_fixed_input_count"]==16 and len(d["records"])==16
+          assert d["no_heldout_or_OOD_labels_accessed"] is True
+          assert d["source_frozen_manifest_sha256"]=="a9397bfabdd012f60d3dd3d33bcfab455ac1046eced30373d553217dd9409147"
+          assert d["original_pretrained_NLL"]=="NOT_SCORED_BY_THIS_SCRIPT"
+          assert all(x["request"]==i for i,x in enumerate(d["records"]))
+          assert all(len(x["native_prompt_sha256"])==64 for x in d["records"])
+          assert 0<=d["valid_first_gold_token_targets"]<=16
+          assert d["valid_first_gold_token_targets"]>=1
+          assert d["production_promotion"] is False
+          print("JE01_REAL_CAL16_NEXT_GOLD_SOURCE_SHA_VERIFIED",sig,
+                "token_alignment_valid",d["valid_first_gold_token_targets"])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real-original-cal16-first-gold-token-ids
+          path: ${{ runner.temp }}/je01_original_cal16_public_first_gold_tokens.json
+          retention-days: 14
+          if-no-files-found: error

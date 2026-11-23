@@ -1,0 +1,130 @@
+{
+  "schema": "beglin-je01-postnll-abc-measured-native27-and-directional-precision-next-gate/1",
+  "observed_at_utc": "2026-11-22T21:19:00Z",
+  "study_scope": "Same 16 PREVIOUSLY SEEN WikiText TRAIN prompts / 656 teacher-forced gold tokens, DeepSeek-V2-Lite-Chat original27 native MLX Metal. NOT independent testing.",
+  "source_identity": {
+    "original_af4_weight_sha256": "9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4",
+    "actual_new_bc_original27_native_binary_sha256": "d53db80fd7326d5c247fc8d9544b70b60b4601abd1fbe84715dd180b297737ac",
+    "original_af4_gold_fulloutput_sha256": "b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c",
+    "prior_A_binary_sha256": "db028b252d489861349259ec7cd08c87086e617d9f331b1de4a5f660bed79f8f",
+    "physical_budget_bytes": 43253760,
+    "all_mixed_role_tiers": {
+      "AF4": 12,
+      "Q4": 6,
+      "Q5": 6
+    },
+    "B_physical_sha256": "fcf33feb58b87724f8be673c8457cf2d0b3e2ab0cf947ed6c3b0cb6e91f67fcf",
+    "C_physical_sha256": "9a61a792d7e529868109ee3e5c240fea545479ca89d681cbf0b0ea6543b17997"
+  },
+  "actual_native_original27_results": {
+    "original": {
+      "mean_nll": 2.291799702354307,
+      "output_sha256": "b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c",
+      "job_id": "job_f7c5c87310d14068be4d4935413f83c1",
+      "status": "SUCCEEDED_EXIT0",
+      "role_budget": "original AF4"
+    },
+    "A": {
+      "mean_nll": 2.294761262072885,
+      "relative_nll_worsening_pct": 0.12922419509593386,
+      "job_id": "job_8b74fef081bf9ecbf05cad074d823c24",
+      "status": "SUCCEEDED_EXIT0",
+      "role_sse_gain_pct": 22.346918918996305,
+      "physical_sha256": "ada43c5e233aa4154d37de5988aa22662ed16496363e84183a784c4c588a63ac"
+    },
+    "B": {
+      "mean_nll": 2.2974258514952206,
+      "relative_nll_worsening_pct": 0.2454904385899903,
+      "job_id": "job_ff8c3702c3b37ba8c29172e8bf528bf3",
+      "status": "SUCCEEDED_EXIT0",
+      "role_sse_gain_pct": 13.64733070348233,
+      "physical_sha256": "fcf33feb58b87724f8be673c8457cf2d0b3e2ab0cf947ed6c3b0cb6e91f67fcf"
+    },
+    "C": {
+      "mean_nll": 2.2959651985430702,
+      "relative_nll_worsening_pct": 0.18175655509877764,
+      "job_id": "job_2537997767c627edd417c7afa481825e",
+      "status": "SUCCEEDED_EXIT0",
+      "role_sse_gain_pct": 13.89738596072797,
+      "physical_sha256": "9a61a792d7e529868109ee3e5c240fea545479ca89d681cbf0b0ea6543b17997"
+    }
+  },
+  "independent_audit": {
+    "job_id": "job_6147825ca42618e4c9e1b79b409c2286",
+    "status": "SUCCEEDED_EXIT0",
+    "receipt_sha256": "c499ec1378e9bfa258b6d30d1bfddbe8530d112dd06708ec55fbcc1896f60c1c",
+    "raw_sha256": "1c22cbccb72f461fb10c94f79540922c43a8ec94140fb68fbdf052065239a819",
+    "paired_delta_candidate_minus_original_NLL": {
+      "A": 0.002961559718578144,
+      "B": 0.00562614914091375,
+      "C": 0.0041654961887633846
+    },
+    "bootstrap_type": "shared 16-sentence cluster percentile resampling 20,000 draws on previously observed TRAIN16",
+    "percentile95_delta_NLL": {
+      "A": [
+        -0.001007444889869271,
+        0.007217346674826375
+      ],
+      "B": [
+        0.0010673738965382513,
+        0.010962937260804613
+      ],
+      "C": [
+        0.0002846066234587653,
+        0.008322838184099238
+      ],
+      "B_minus_A": [
+        -0.0007915464162841778,
+        0.00722163293048186
+      ],
+      "C_minus_A": [
+        -0.001758544122574617,
+        0.005148142474207386
+      ],
+      "C_minus_B": [
+        -0.004971812583539136,
+        0.0013534706094441376
+      ]
+    },
+    "bootstrap_not_frequentist_p_value": true,
+    "no_independent_test": true,
+    "actual_heldout_validation128_accessed": false,
+    "actual_heldout_OOD128_accessed": false
+  },
+  "scientific_interpretation": {
+    "observation": "Three exact-byte mixed A/B/C policies have higher true NLL than original AF4 in previously inspected TRAIN16. Role-output SSE gain ranks A>B/C, but this proxy does not supply parameter NLL Fisher.",
+    "conditional_hypothesis": "The compound early Q4-to-AF4 / late AF4-to-Q4 switches in B/C failed to recover original NLL. This cannot isolate the causal harm of early vs late role changes.",
+    "current_policy_decision": "NO_ADOPT / HOLD",
+    "empirical_fisher_weight_gradient_status": "NOT_MEASURED",
+    "uncertainty": "TRAIN16 cluster bootstrap bounds are conditional to observed 16 sentences, not a prospective generalization CI."
+  },
+  "next_preregistered_gradient_gate": {
+    "schema": "JE01-real27-gold-loss-sensitivity-48-quantization-directions/1",
+    "target": "True per-token gradient of original27 log probability in a 48-dimensional categorical tier interpolation around baseline original AF4. 24 roles x {Q4,Q5} candidate difference vectors; no direct weight-Hessian claim.",
+    "required_differentiable_coordinates": "alpha_{r,tier} multiplies (dequantize(W_{r,tier})-dequantize(W_{r,AF4})), all 48 coordinates initially 0. Q4 and Q5 are mutually exclusive for each role. Preserve E64 original path.",
+    "required_per_token_score": "s_(token,r,tier)=partial log p_original27(y_token|context,alpha)/partial alpha_{r,tier}|alpha=0, differentiating through all affected downstream layers and full NLL, not through FFN output MSE",
+    "empirical_fisher_definition": "F_jk = (1/N) * sum_token s_token,j*s_token,k; 48x48 PSD by construction; do not substitute (mean score)^2",
+    "first_order_nll_direction": "g_j = - (1/N)*sum_token s_token,j",
+    "quadratic_risk_proxy": "DeltaNLL_hat(x) = g^T x + 0.5*x^T F x; F is a Gauss-Newton/Fisher surrogate, not automatically equal the Hessian or exact NLL increase; cross-role interactions must be retained",
+    "bit_budget_constraints": "24 categorical AF4/Q4/Q5 roles; enforce exact 12 AF4,6 Q4,6 Q5 and 43,253,760 physical bytes; only one tier per role",
+    "autochecks": [
+      "Exact original27 OFF gold NLL and output SHA parity",
+      "True per-token NLL gradient e2e, not aggregated gradient squared",
+      "Source orig AF4 vs candidate dequantized weight SHA pinned",
+      "Numerical small-alpha +/- eps check for at least 20 train tokens with preset eps=0.025,0.05 and finite differences consistent",
+      "F PSD eigenvalue min >= -1e-8*max(1,trace(F))",
+      "Sixteen-sentence diagnostic A/B/C cannot be used for adopting or fine-tuning hyperparameters",
+      "Split TRAIN240 by document/sentence not token for sensitivity fitting",
+      "Only after one frozen allocation, independent validation128 and OOD128 read and scored under predeclared gate"
+    ],
+    "current_status": "UNIMPLEMENTED_TRUE_MODEL_AUTODIFF_NOT_PRESENT_IN_CURRENT_C++_FORWARD_ONLY_NATIVE",
+    "actual_gpu_gradient_measurement": "NOT_RUN",
+    "calibration_weight_derivative": "NOT_RUN",
+    "prospective_adoption": "HOLD_UNTIL_TRUE_FISHER_AND_HELDOUT"
+  },
+  "workflow_integrity": {
+    "production_original_af4_modified": false,
+    "release_activated_by_je01": false,
+    "pr94_draft_unmerged": true
+  }
+}

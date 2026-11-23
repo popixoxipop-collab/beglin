@@ -1,0 +1,5 @@
+# JE01 independent real-source packed FFN sensitivity, not full model NLL
+
+Actual 24 Expert-role n2/n6 source tensors from original Chat BF16 are SHA-attested in Actions run 44172058412. Run unlabelled synthetic activation seed 20261119, 12 hidden states per frozen expert, and use native group64 CPU decoding to reconstruct the real packed matrices. Compare full SwiGLU gate/up/down FFN output of each n2 Expert against all6 native-requantized Expert, plus one-role-only n2 ablations. Evaluate the three previously sealed 3x2bit+5x6bit exact-original-byte policies and all 56 combinations as a diagnostic.
+
+**Reference all6 requires 56,229,888 bytes, greater than actual original AF8 43,253,760B budget.** MSE versus all6 is NOT the original q4 AF model NLL, and post-hoc ranks do not authorize selection/promotion. No 27-layer inference, no original hidden states, no gold or heldout labels, no production change.

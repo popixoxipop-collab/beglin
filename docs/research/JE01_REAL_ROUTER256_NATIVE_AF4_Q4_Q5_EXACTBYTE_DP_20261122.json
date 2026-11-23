@@ -1,0 +1,850 @@
+{
+  "actual_256_last_token_router_count_observations": 256,
+  "actual_real_BF16_coefficients": 69206016,
+  "actual_real_model_selected_expert_roles": 24,
+  "actual_true_source_original_Chat_BF16_full4shard_SHA_verified": true,
+  "all_original_24role_native_source_measurements": [
+    {
+      "Q4_group_scale_sha256": "455f616b9d8c4119bb54924bc626d500f8384da9c69372855c54ecc30fcd95a6",
+      "Q4_packed_sha256": "d4b0f812bf043b40f6dcbdf65b169a57c6371e42bcd92c217677f683b2d4edb7",
+      "Q5_group_scale_sha256": "bafb3c05fcd0733f6474b0dd699e70c47d77b6a8d1f718ff13f7eaf4b7c64698",
+      "Q5_packed_sha256": "fc6d60e23a281ca15625e35574663eb10b25b5854f09d3a81b5591f4889b1f45",
+      "coefficient_count": 2883584,
+      "expert": 13,
+      "layer": 12,
+      "original_AF4_packed_sha256": "755e8d0f2ce4fb25055d6cbeac32194298d92227e091b81fae156a2a9e591b6e",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008281304535754644,
+      "relative_MSE_Q4": 0.023015803722535033,
+      "relative_MSE_Q5": 0.005014398390335468,
+      "role": "gate_proj",
+      "routed_cal256_last_token_count": 81,
+      "true_original_BF16_sha256": "0f793c908f6e1a5147768a9b72c33e3d8cf64ed3bb5b74e0e86ca2f2d32a567e"
+    },
+    {
+      "Q4_group_scale_sha256": "39b8f6579b226b4878ccd0c85ad4e9cd6fa5c2f622df9eb09334155ef516ea16",
+      "Q4_packed_sha256": "a0dda181c07e9fe66203d69c2349d932ce6b902f6138c7bfa4f6f2a14f1571af",
+      "Q5_group_scale_sha256": "57f3170684bd17fba797a4955e7da7a58ffea2edd566d645be08ef41ff19c620",
+      "Q5_packed_sha256": "9377074ebc93fcc7712ffb6361f1e20d86383eda1eba37a210e73b357f711e61",
+      "coefficient_count": 2883584,
+      "expert": 13,
+      "layer": 12,
+      "original_AF4_packed_sha256": "b952b24eb9fe048320ebeb17d2553e0a59b551f39ba4e94fe51769199163768c",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008310581084406398,
+      "relative_MSE_Q4": 0.02316860196664015,
+      "relative_MSE_Q5": 0.005047655281484558,
+      "role": "up_proj",
+      "routed_cal256_last_token_count": 81,
+      "true_original_BF16_sha256": "faf72425ac0ca98c3599bfbc428c8e5374018553c55460e569248b7871f0d102"
+    },
+    {
+      "Q4_group_scale_sha256": "646e172f9e9f88931c45f59b10c96b00b764759538cb34e1ee6efa4f8b20f2ad",
+      "Q4_packed_sha256": "fddcaaa0f4dee6a1edbfdb1e68b9c55bdf2cfb39c601f1eb033d2e7f3cf7fdea",
+      "Q5_group_scale_sha256": "f4e7cd95aeaf1b8630db9205d87d4df2e46b12ec7361a871407b5fff145a21cf",
+      "Q5_packed_sha256": "f41945abecfe966d37d5d29afc5a4ce6f41ad42e20f8978979138c8e1596a48b",
+      "coefficient_count": 2883584,
+      "expert": 13,
+      "layer": 12,
+      "original_AF4_packed_sha256": "27695daba5303a8044d0e4361d96b665db8df5fca83fac870f718bbb3c646d93",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.00836405314571092,
+      "relative_MSE_Q4": 0.023368872769244958,
+      "relative_MSE_Q5": 0.005084685540990765,
+      "role": "down_proj",
+      "routed_cal256_last_token_count": 81,
+      "true_original_BF16_sha256": "6b9482301ab63656d7df71022d789864c74a00ddd7a69ab0502001f4dd9b9476"
+    },
+    {
+      "Q4_group_scale_sha256": "b55bf17b8ca1daf7d40884a733fd162345ac191377ee08f5178e0a7725c3b5ff",
+      "Q4_packed_sha256": "57e3842043de2058e512f32e396f5f79d8ed1a3f4a8faf9d78feb7d2b9f88880",
+      "Q5_group_scale_sha256": "f9401a7680f951b3d9584f6f4052c7560311373b1936cbf8e1995c7526f2a29a",
+      "Q5_packed_sha256": "2e30c4619fc7fe0704e78918f87c40620ee4f399e1f51217218ebf85e60cfdc6",
+      "coefficient_count": 2883584,
+      "expert": 22,
+      "layer": 13,
+      "original_AF4_packed_sha256": "c6ddd1d992b11820dc0acdf0aaeda835a532ede87ec7e23cf3a67dbbb7cddfe3",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008302931554232887,
+      "relative_MSE_Q4": 0.023118751702160552,
+      "relative_MSE_Q5": 0.005032325730468388,
+      "role": "gate_proj",
+      "routed_cal256_last_token_count": 79,
+      "true_original_BF16_sha256": "a9f28d02e1ef2fcaae008c896178ffce43cd49e48982bf4e15982bddecd40637"
+    },
+    {
+      "Q4_group_scale_sha256": "2ed6e7eeb830754b7ea48a39efa7c55c6a5f54211087eb84ebd97f265794031c",
+      "Q4_packed_sha256": "a7a4779ea607063cc1b5e713a64b431019edbcf829c077e96b469d7b34f943f7",
+      "Q5_group_scale_sha256": "c277602c907bd346d8f98082d0acb663086ce5a0fd3a2012f47dcc8d885ad6a2",
+      "Q5_packed_sha256": "631033ed9661657b62668bb8fe04acdab111368d7494fa443545d23cf19fde20",
+      "coefficient_count": 2883584,
+      "expert": 22,
+      "layer": 13,
+      "original_AF4_packed_sha256": "b649115e22e86ba867771e6e4edaedf8fc9a98d71d9e161f1224302e9fd0592f",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008329581795960252,
+      "relative_MSE_Q4": 0.02325343693305251,
+      "relative_MSE_Q5": 0.005061332784006077,
+      "role": "up_proj",
+      "routed_cal256_last_token_count": 79,
+      "true_original_BF16_sha256": "d8043a191bda2f37e3494276508c2cdb824bcaed4990936a1c7b633aeecc2bcd"
+    },
+    {
+      "Q4_group_scale_sha256": "2863313d6ebf9c4d74a5d1fac904375abe83a5f8f8b260adb0cbe38cb5158962",
+      "Q4_packed_sha256": "f82d46dbdb729c2d84f5f6229922e2b9a8694a9550303fc3e9c5a3c2cdcf8b9b",
+      "Q5_group_scale_sha256": "26f21f7bcd75e450a2ba2340734ad02f1e5df0cbb0fcbe4d0050acd495123044",
+      "Q5_packed_sha256": "6ebc4b945e2bd7014362d9eeb09043fcdb0d143b5f0ef80d18e20f7553c49197",
+      "coefficient_count": 2883584,
+      "expert": 22,
+      "layer": 13,
+      "original_AF4_packed_sha256": "4eb476411f864b432fea67fc638ba2d514adffc83fabc92576f9cb4eb46edd44",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008392994665349988,
+      "relative_MSE_Q4": 0.023455903879745825,
+      "relative_MSE_Q5": 0.005110254611712804,
+      "role": "down_proj",
+      "routed_cal256_last_token_count": 79,
+      "true_original_BF16_sha256": "af5986a0880afb49120f8cb4b727782c58b5ce8f3d9bd2e1e1063186b2d8c82f"
+    },
+    {
+      "Q4_group_scale_sha256": "0bfde59e57a6c6f1fb54f7908367ce9910613ecc938dece4b1306c3251c9f1d7",
+      "Q4_packed_sha256": "8b065d6c46a462e41ff8774ef6765218098918a618279568e7dcbf4857c620c1",
+      "Q5_group_scale_sha256": "a7282983dd7e07a92677727b0764d4c96e9abf6a93f6af30c7c96abf50ff9e56",
+      "Q5_packed_sha256": "17bb155e5d2fe7e2d769929a2ececd55210c4d81b660cc895fb8801e4528bbdd",
+      "coefficient_count": 2883584,
+      "expert": 28,
+      "layer": 13,
+      "original_AF4_packed_sha256": "bc8d0d8b90c5f3cd9aa9853036a6fd83d08cdab84a658e867ff7aafff32f376b",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008298996183165413,
+      "relative_MSE_Q4": 0.02308574584109172,
+      "relative_MSE_Q5": 0.0050236642702291565,
+      "role": "gate_proj",
+      "routed_cal256_last_token_count": 87,
+      "true_original_BF16_sha256": "890edb0989a4603fb59ed783119b551a204d8f658ae8c350be2528a4c772db0f"
+    },
+    {
+      "Q4_group_scale_sha256": "9266da01c503cdfd64757ea94a582fea01c826f84bb871307811964759ed9a7f",
+      "Q4_packed_sha256": "30eaf4d651fd23e13cd1db2840abc5b095e7fc10a97d802387159136225402b6",
+      "Q5_group_scale_sha256": "21b2eeadcde4546e84776e8d35ba294a624c8d106f0df8a5e18b1cb19cd31350",
+      "Q5_packed_sha256": "e2303f075ebd7725161b0d82396e7b772c262f4792ad64f1d34a0323786362e0",
+      "coefficient_count": 2883584,
+      "expert": 28,
+      "layer": 13,
+      "original_AF4_packed_sha256": "d364e00d90c9c071aaefaa2aa81d464b6dce8e7d6e457cddced6ae8f5c8bada6",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008326409202697187,
+      "relative_MSE_Q4": 0.023186600435911333,
+      "relative_MSE_Q5": 0.005043061700521548,
+      "role": "up_proj",
+      "routed_cal256_last_token_count": 87,
+      "true_original_BF16_sha256": "0a9ac07b870e8e6664af181f7765a8c491f067672644e0d51e17962216dd14f1"
+    },
+    {
+      "Q4_group_scale_sha256": "ce9988c864ea3a221fbab2eae0cec03573959347463a21263b79891bb3d44fdf",
+      "Q4_packed_sha256": "6cdeeb0816837c467394b69270aac08160dbbd5c34bfb1d5541785f75cf52f05",
+      "Q5_group_scale_sha256": "6b352d9a1df6ca5172c734de895c44de4b98be9984085619e51b1632312092e9",
+      "Q5_packed_sha256": "51345eb811645cff65afe53c3c9dd4d3745d8a74b0974be9278dde52f0df0aa0",
+      "coefficient_count": 2883584,
+      "expert": 28,
+      "layer": 13,
+      "original_AF4_packed_sha256": "10c4ab905efeae3390011ab6c4ce27d003925dd51d578e0cb251978a08d827a4",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008408547123959546,
+      "relative_MSE_Q4": 0.023509084181154938,
+      "relative_MSE_Q5": 0.005106231061731493,
+      "role": "down_proj",
+      "routed_cal256_last_token_count": 87,
+      "true_original_BF16_sha256": "5384b58ef81c6153cd614f060b8fc533514fa7ba7b337741263ec4d3837c06ac"
+    },
+    {
+      "Q4_group_scale_sha256": "d5d2401fe008954c62021852dcfe2efbaea81598fe0083cf9747f78704ef1119",
+      "Q4_packed_sha256": "af58db69959bd33188b8d6fec1cc9c851cb2637d7deec516596eb044d84206ca",
+      "Q5_group_scale_sha256": "3aad8e5b371a2446d03c7d4b0ccc81592a36c112231f305b2f25bb162e43682f",
+      "Q5_packed_sha256": "b77612cfd1210a33790d40adaa3bf304bbb60f96a2e019ef98920722ece76ef6",
+      "coefficient_count": 2883584,
+      "expert": 63,
+      "layer": 14,
+      "original_AF4_packed_sha256": "490cf0561913bd065cf5210e9d3550356ea1c84976c132a070738f326f1daa86",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008320665887651069,
+      "relative_MSE_Q4": 0.02327548764745707,
+      "relative_MSE_Q5": 0.005060611606215257,
+      "role": "gate_proj",
+      "routed_cal256_last_token_count": 80,
+      "true_original_BF16_sha256": "318d6fe2d73e6e8dbceaad9a4be72e1eb55ae59518402011da36777b596b863f"
+    },
+    {
+      "Q4_group_scale_sha256": "495251415fc3a89560ca50eb1473e050740a385ec05f68128c21649adbfee7ec",
+      "Q4_packed_sha256": "191287d8041df1b2bb6a5f5b5e6d0beb061722563566da99f2a8a0f5e876f39d",
+      "Q5_group_scale_sha256": "bd23f869e356f2f19bc91828c4fea8d795eb39072c526049c5731c8ced638fdc",
+      "Q5_packed_sha256": "30fe40ade0d405ec5282ca50e8e5f1074c316fc69589d7bddfb61fcecc87a966",
+      "coefficient_count": 2883584,
+      "expert": 63,
+      "layer": 14,
+      "original_AF4_packed_sha256": "1d25df553f6c3e197ec33eefe7572f88258a7f154d7d1732619f8571087972e6",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008357053555657315,
+      "relative_MSE_Q4": 0.023370158938452974,
+      "relative_MSE_Q5": 0.005090860782968422,
+      "role": "up_proj",
+      "routed_cal256_last_token_count": 80,
+      "true_original_BF16_sha256": "82e90d84b3e9a6f28caddf46a7dec2f487186803e782deb115c8ad94aff0bc91"
+    },
+    {
+      "Q4_group_scale_sha256": "ac87186611a437cef532d7231ae77a92b42207ca047df7eaa7bb373625da05b1",
+      "Q4_packed_sha256": "b41618a5778eb953a106d724b33ef86c7fbb7206fb6fd0310fabe72744d6a745",
+      "Q5_group_scale_sha256": "4727df3f8d78993ead26a014a57b5d2c7cd1508d439a51123069e2a5f82439f1",
+      "Q5_packed_sha256": "24632b6b26d8397e5f510f601eb891b264b62833f33c107be03d84570b565f11",
+      "coefficient_count": 2883584,
+      "expert": 63,
+      "layer": 14,
+      "original_AF4_packed_sha256": "f8d657e5c42b276fca73d32a84d1a3d374f6da9c3cffcaee7a584ff81a61183e",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008491920253324993,
+      "relative_MSE_Q4": 0.02386396749133383,
+      "relative_MSE_Q5": 0.005189434511609668,
+      "role": "down_proj",
+      "routed_cal256_last_token_count": 80,
+      "true_original_BF16_sha256": "3532285c7e8c5ef3840e469dccab6602efe86665465ddae9ddf76a5f3ef6a985"
+    },
+    {
+      "Q4_group_scale_sha256": "ee6a23fd473729833a31cc1511ebce30965fb9e83cfebb550dad63f1def1eb28",
+      "Q4_packed_sha256": "8fda4d36fd62c04f068a46dadde8cca1dc5b1af6326ab0e8d402de0ae8bf20df",
+      "Q5_group_scale_sha256": "b2008a456e05e9d657cdbb200ffd6ca1492ae958f27ae8614aef411c27687683",
+      "Q5_packed_sha256": "6da66aabc317d315ed4b75f832ca127e0d90bcfe8a59b8e157a90d6de6600c6d",
+      "coefficient_count": 2883584,
+      "expert": 17,
+      "layer": 20,
+      "original_AF4_packed_sha256": "996b3b3e0aca0b4a5ca83717208aacaae3db747053c5cee3bcd23cdeae63b5f0",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.00831224580275084,
+      "relative_MSE_Q4": 0.02322004116992654,
+      "relative_MSE_Q5": 0.005044514409521543,
+      "role": "gate_proj",
+      "routed_cal256_last_token_count": 86,
+      "true_original_BF16_sha256": "b85e15a29e4c38b9c6e2a406c844eb5f4cc8621a47211c4971bfe5ef972e595b"
+    },
+    {
+      "Q4_group_scale_sha256": "bacd4fe1ff41c26556ee482dd58942cb46728107af30ddda2df77b65fe9ef6cc",
+      "Q4_packed_sha256": "5c76ac0becc7841d9094b172cc4770aa30dc3852b31c3289a210208de09342a0",
+      "Q5_group_scale_sha256": "a7853964da269fef9f461e3f601b5f4ce16ae7723d2b7326b46af7960dd2fb5b",
+      "Q5_packed_sha256": "23d18526e60b6c747d037f49d1eadde7f0aa4530c347d06f6c09a5c8d220e082",
+      "coefficient_count": 2883584,
+      "expert": 17,
+      "layer": 20,
+      "original_AF4_packed_sha256": "4e69073faec3ebe62530c6e5d46877a6265bf6ae6fbc169d9c70a17c1b6dfc00",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008291407062739795,
+      "relative_MSE_Q4": 0.02305401083916247,
+      "relative_MSE_Q5": 0.005016310049962305,
+      "role": "up_proj",
+      "routed_cal256_last_token_count": 86,
+      "true_original_BF16_sha256": "3a41127580935771757e6dea31f14ab7c6ad5d74be7e156258810b47f71cc868"
+    },
+    {
+      "Q4_group_scale_sha256": "39a80664ae0966a40caea2a3a44a62975c010835f47e660fc968c855d5611ffc",
+      "Q4_packed_sha256": "041c375ccffee1c18b210c5e231c63859d8a4d45920ce04ada514789439d615c",
+      "Q5_group_scale_sha256": "34150654c860846c922c7fdd75aba7c6529b335051e3e20abf22c38c10f78dff",
+      "Q5_packed_sha256": "835baf0ace9e2b787870bf21ab071df7a8cf1f3ac0c46c86996f9da7c5584e47",
+      "coefficient_count": 2883584,
+      "expert": 17,
+      "layer": 20,
+      "original_AF4_packed_sha256": "b57b309f5e73b89c8891bd8d544db7531ca4d707cda5ddf6a7146d36c49f1382",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008412519352652805,
+      "relative_MSE_Q4": 0.023495538147158813,
+      "relative_MSE_Q5": 0.005112615569535603,
+      "role": "down_proj",
+      "routed_cal256_last_token_count": 86,
+      "true_original_BF16_sha256": "4477ff0ab2196343b46f5c46f1e29ede5c1d07c375e4cd6c38302ccd84278e2f"
+    },
+    {
+      "Q4_group_scale_sha256": "538b676077ed24132e577af0f60ccdc7c7ca090092178b0bf9782143c8db6460",
+      "Q4_packed_sha256": "af7a1b7c9c04599cccd26ec7f8368b96685e9c6c51c9a38c2153db67416453c5",
+      "Q5_group_scale_sha256": "d6b83119451e9362a3cd8f86bacf173339fe39099071580a0591352ef3c2b783",
+      "Q5_packed_sha256": "5996b8dcfa3f2a336fd03f9d5ac5ef9144a39d61780b12d2eb3e4239ae39cb0e",
+      "coefficient_count": 2883584,
+      "expert": 61,
+      "layer": 21,
+      "original_AF4_packed_sha256": "064e7fd7c74e657bff51419eaf4b8b8b122faba1516e5bc3a09d0a5ca4afdcf0",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008301089526173316,
+      "relative_MSE_Q4": 0.023132286627790887,
+      "relative_MSE_Q5": 0.005039902939353396,
+      "role": "gate_proj",
+      "routed_cal256_last_token_count": 97,
+      "true_original_BF16_sha256": "44f553087414f2d099367234206ec3c2ed8f528b7d527d09a0befd3c128f3a6c"
+    },
+    {
+      "Q4_group_scale_sha256": "a484b11be473ffdf01d63e94e5cc8de2bc4c41cc43af46909eccac1b8734c877",
+      "Q4_packed_sha256": "80630156c44b4fb0856cb0b99cac238885847aed10a1bb553c469817937d5390",
+      "Q5_group_scale_sha256": "3857fbf6e84ff5e3ca3fc4cba65520a87e8dbe92f3fcfa3b641055ed1acc34a3",
+      "Q5_packed_sha256": "697e56188cb5a127d8b0f717d90516ed1169de5602c4778924672a071b550be2",
+      "coefficient_count": 2883584,
+      "expert": 61,
+      "layer": 21,
+      "original_AF4_packed_sha256": "a21a743af63cc9717badeb355dc55cb10c45dd8db27a6326bba87fdd537afe12",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008318159642999465,
+      "relative_MSE_Q4": 0.023107651462648066,
+      "relative_MSE_Q5": 0.005042579243163,
+      "role": "up_proj",
+      "routed_cal256_last_token_count": 97,
+      "true_original_BF16_sha256": "36bc9b8bc5872544d66b098f8e741e6d392f72cb466d2b9fd6353a7842b7c770"
+    },
+    {
+      "Q4_group_scale_sha256": "95826d35dddbcb388d88aa70c56904ca11a2ed426ab814aa621e3df6f6a12ee4",
+      "Q4_packed_sha256": "a1bdb9becc31792da3b5bac5adb6d69649c7b19e17cf2588cf5e3ea774cd941b",
+      "Q5_group_scale_sha256": "6e3492a83d05ce579c177fb2ca12339b58494fd640c594dfdb80e27c8f74301b",
+      "Q5_packed_sha256": "40169e4b1d742b5fde23e490fc6510ede3e536c56982bf5f4509e729d365a351",
+      "coefficient_count": 2883584,
+      "expert": 61,
+      "layer": 21,
+      "original_AF4_packed_sha256": "58699265ee22c52e4f3c0ec1908840e1bcd75d32174dee01215a30b6ae92c7ad",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008358356308152416,
+      "relative_MSE_Q4": 0.023335013826827535,
+      "relative_MSE_Q5": 0.005083318643797069,
+      "role": "down_proj",
+      "routed_cal256_last_token_count": 97,
+      "true_original_BF16_sha256": "9ad23b4f2a796fa654c70d6622b14b63ba0541baa85e7c17998751c8d84f85f9"
+    },
+    {
+      "Q4_group_scale_sha256": "44b22000aa188869c40d2625fee1c30dbd1889b9467812e082c49563232e01b9",
+      "Q4_packed_sha256": "892d0bf8e97d6d6013432ee7f75b35ff8a416d60e76d93a97e447755e0fe494a",
+      "Q5_group_scale_sha256": "142c9772ed622ac147320dbb912f99d44155e921b3427ec5408aaa4a261c020f",
+      "Q5_packed_sha256": "d34499d6289ae2fb0ad233a7d8566928c442558650f612a844580230b2b3c989",
+      "coefficient_count": 2883584,
+      "expert": 26,
+      "layer": 24,
+      "original_AF4_packed_sha256": "bec44c378b794a1f9c834fecd85712072d94c99b72f72302e36bcd39be9d4df9",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008301255060011222,
+      "relative_MSE_Q4": 0.02302280369826917,
+      "relative_MSE_Q5": 0.005011613799980446,
+      "role": "gate_proj",
+      "routed_cal256_last_token_count": 91,
+      "true_original_BF16_sha256": "b43c5699477b545b5c17effa539204a586a881bc6f8ed4efb9ebdb2e95a13844"
+    },
+    {
+      "Q4_group_scale_sha256": "f392fd278dea2b08d090968786a2fe6930843065c13a06ec140d6586c56f5000",
+      "Q4_packed_sha256": "2f87bb387ac896271c4066f988d623c933845af787b02f58c6259309a35a00ef",
+      "Q5_group_scale_sha256": "c001ea7a709d6b79f3467e5a5a6e68ea6ab7be85081168025ff2b0ff8f72a29d",
+      "Q5_packed_sha256": "8d5f74f38c5895d5aa25020c5350cdd2ba2f7eb9b220b918a7a80b3f8269e249",
+      "coefficient_count": 2883584,
+      "expert": 26,
+      "layer": 24,
+      "original_AF4_packed_sha256": "294d58b53e8d3545cf14e1804bfcfcd048bc427336c7e6bf52ea6e3327f8150d",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.00829576267042005,
+      "relative_MSE_Q4": 0.023023868976744875,
+      "relative_MSE_Q5": 0.005011519587675426,
+      "role": "up_proj",
+      "routed_cal256_last_token_count": 91,
+      "true_original_BF16_sha256": "cecd54ae0a09060e16900de6c5719dbb0877394ef1ef4e8ac53ae7454e013002"
+    },
+    {
+      "Q4_group_scale_sha256": "b7ea73700a754abef6f0e9e0094a9b4f53a579b8228bf807b1df2511fa8d1ad2",
+      "Q4_packed_sha256": "e3774d5a6a281c09cc7b43262055369b9b958cc9e9ab06987e161cb495de9085",
+      "Q5_group_scale_sha256": "24ba051964cb279c00135b44d5566367901fcd32e82d6d6e56910ae0e41ccad4",
+      "Q5_packed_sha256": "fb9b689fb9df364ab9e6e711da944af4dbbd212238dc668ca2f475501a448556",
+      "coefficient_count": 2883584,
+      "expert": 26,
+      "layer": 24,
+      "original_AF4_packed_sha256": "19ab09051996e66c149592bfe08e4ba85af42ec2047243a9f5b65b0e275c173a",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008357077911765647,
+      "relative_MSE_Q4": 0.02331780552473556,
+      "relative_MSE_Q5": 0.005068259456793659,
+      "role": "down_proj",
+      "routed_cal256_last_token_count": 91,
+      "true_original_BF16_sha256": "ddab68bdd05d0cec16dc7da34303a1b5da8ae439104ddc960357828af887d3ae"
+    },
+    {
+      "Q4_group_scale_sha256": "012e3af39097fae20b2616544eeff9d451148bb9e4eab705b8612ca09fb9c075",
+      "Q4_packed_sha256": "ba3d89bc0495d20df490bb01e16d19c22f577ee03ad19aeb8a04c2a2d3735e33",
+      "Q5_group_scale_sha256": "93030395457011e656809cdf88e8c64541f793a59b290be00daaa8684a8b18c1",
+      "Q5_packed_sha256": "c70f2d9ff3097274a42cb472e9dfaf227253b682e82b40ee60a9da1719cab3bd",
+      "coefficient_count": 2883584,
+      "expert": 60,
+      "layer": 24,
+      "original_AF4_packed_sha256": "078d6f7560d508580dcadc80d458fbdb5ef8649f2ddc4c22677a6b4581d73c60",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008295943817590266,
+      "relative_MSE_Q4": 0.023118236421445282,
+      "relative_MSE_Q5": 0.005029579040230572,
+      "role": "gate_proj",
+      "routed_cal256_last_token_count": 81,
+      "true_original_BF16_sha256": "feb2a4eb894079efd1628d630f9238b0b2a4d435e74ae2dbf6bbeb1ede5b5c94"
+    },
+    {
+      "Q4_group_scale_sha256": "2715fadad02c0bc03588a5e1b969fcebe5841f7ace7907520e233bb2cef28704",
+      "Q4_packed_sha256": "484fbc6df091891567959fc61839c61e00c621a68bdcfae68bb3739875b6e824",
+      "Q5_group_scale_sha256": "16492c85d589fb8d01e0f6de2a60e511b02d6e8fd59f8375d10ffb94201d96eb",
+      "Q5_packed_sha256": "67eb150bbd5feb128c2d1b4b6e126977f8df58b3051dc07f592cf65631923bf4",
+      "coefficient_count": 2883584,
+      "expert": 60,
+      "layer": 24,
+      "original_AF4_packed_sha256": "3d1d7823b78fb69e04bca4fbdaa035124e9c064ab9310654cc72d19d4159b5ed",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008346623426499304,
+      "relative_MSE_Q4": 0.023307492414404697,
+      "relative_MSE_Q5": 0.005081043476503444,
+      "role": "up_proj",
+      "routed_cal256_last_token_count": 81,
+      "true_original_BF16_sha256": "600aa41ba4a747ff08cd81625075e2e9f81a18c82a3b866f4b87fb0417bb64c6"
+    },
+    {
+      "Q4_group_scale_sha256": "a69be0cdbc7a871f24528324f7fbc3b12f3e27bac32bd22088997f204d32fcf1",
+      "Q4_packed_sha256": "ce47a4d88df8cb3dce01ca0d55c7e055cc4b4b8207e60041dc0452181bd8e90f",
+      "Q5_group_scale_sha256": "582e258abc30d3a6bc28457da776898f23dc22408bf78bb5511fbfa1f4ebca0c",
+      "Q5_packed_sha256": "4d92325effba4b9fba3099aec68500cb198c8a1ca2bc1d2d4234ce1379baec45",
+      "coefficient_count": 2883584,
+      "expert": 60,
+      "layer": 24,
+      "original_AF4_packed_sha256": "9077d5047b11efc8ceeb0b86c09d747969fbb1ce066507308d5fd2f0fbcf87d8",
+      "physical_bytes": {
+        "AF4": 1802240,
+        "Q4": 1622016,
+        "Q5": 1982464
+      },
+      "relative_MSE_AF4": 0.008583342381745086,
+      "relative_MSE_Q4": 0.024253245324869388,
+      "relative_MSE_Q5": 0.005278838877606671,
+      "role": "down_proj",
+      "routed_cal256_last_token_count": 81,
+      "true_original_BF16_sha256": "d30898c66d36cc6a66c35c76ab35aae5b619258947ee5272a64b5d350e6df97c"
+    }
+  ],
+  "exactbyte_dp": {
+    "best_exactbudget_overall": {
+      "assignment": [
+        [
+          12,
+          13,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          12,
+          13,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          12,
+          13,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          13,
+          22,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          13,
+          22,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          13,
+          22,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          13,
+          28,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          13,
+          28,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          13,
+          28,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          14,
+          63,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          14,
+          63,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          14,
+          63,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          20,
+          17,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          20,
+          17,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          20,
+          17,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          21,
+          61,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          21,
+          61,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          21,
+          61,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          24,
+          26,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          24,
+          26,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          24,
+          26,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          24,
+          60,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          24,
+          60,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          24,
+          60,
+          "down_proj",
+          "AF4"
+        ]
+      ],
+      "q4_roles": 0,
+      "q5_roles": 0,
+      "roles_changed": 0,
+      "source_router_weighted_relative_MSE_delta": 0.0
+    },
+    "best_nonbaseline_exactbudget": {
+      "assignment": [
+        [
+          12,
+          13,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          12,
+          13,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          12,
+          13,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          13,
+          22,
+          "gate_proj",
+          "Q4"
+        ],
+        [
+          13,
+          22,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          13,
+          22,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          13,
+          28,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          13,
+          28,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          13,
+          28,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          14,
+          63,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          14,
+          63,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          14,
+          63,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          20,
+          17,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          20,
+          17,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          20,
+          17,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          21,
+          61,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          21,
+          61,
+          "up_proj",
+          "Q5"
+        ],
+        [
+          21,
+          61,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          24,
+          26,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          24,
+          26,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          24,
+          26,
+          "down_proj",
+          "AF4"
+        ],
+        [
+          24,
+          60,
+          "gate_proj",
+          "AF4"
+        ],
+        [
+          24,
+          60,
+          "up_proj",
+          "AF4"
+        ],
+        [
+          24,
+          60,
+          "down_proj",
+          "AF4"
+        ]
+      ],
+      "q4_roles": 1,
+      "q5_roles": 1,
+      "roles_changed": 2,
+      "source_router_weighted_relative_MSE_delta": 0.8527184929021485
+    },
+    "tested_final_states": 50
+  },
+  "independent_holdout_OOD_labels_used": false,
+  "not_measured": [
+    "hidden_states",
+    "FFN_activations",
+    "loss_gradients",
+    "Fisher",
+    "Hessian",
+    "true_all-token_router_sensitivity",
+    "new_27layer_NLL"
+  ],
+  "original_AF4_full_SHA256": "9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4",
+  "physical_eight_expert_original_AF_budget": 43253760,
+  "production_modified": false,
+  "receipt_sha256": "74e6c4c7a37b8172eb2a9c2f7b7dd9a14af1849c4897077c7d0d622b02b14337",
+  "risk_measure": "last_token_router_count * BF16_normalized_true_weight_MSE_difference",
+  "router256_original_prompt_manifest_sha256": "6674cefd09124f45599ba40a33a32ebf513968aa91f562f201f4e10e9f34cb3d",
+  "router256_source_receipt_sha256": "62d0a86956c1a07fa8143efcb52b0b5dea6808767716cd160e05ceb1c0c8a8eb",
+  "schema": "beglin-je01-true-original-cal256-router-AF4-Q4-Q5-24role-exactbytes-weight-proxy/1",
+  "source_calibration_only_labels_used": false,
+  "status": "REAL_UNLABELLED_ROUTER256_BF16_ORIGINAL_NATIVE_Q4Q5_EXACTBYTE_DP_COMPLETE",
+  "summary": {
+    "all24_Q4_have_more_weight_MSE_than_AF4": true,
+    "all24_Q5_have_less_weight_MSE_than_AF4": true,
+    "max_weighted_Q5_recovery_MSE": 0.31773129878413703,
+    "min_one_to_one_transfer_lower_bound": 0.8527184929021485,
+    "min_weighted_Q4_excess_MSE": 1.1704497916862855,
+    "source_router_counts_min_max": [
+      79,
+      97
+    ]
+  }
+}

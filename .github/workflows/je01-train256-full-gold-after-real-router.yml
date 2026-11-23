@@ -1,0 +1,96 @@
+name: JE01 original train256 gold targets AFTER sealed real router
+on:
+  push:
+    branches:
+      - research/je01-moe-bayesian-bit-allocation-20261117
+    paths:
+      - docs/research/JE01_ACTUAL_XOX_ORIGINAL_AF_REAL256_ROUTER_FINAL_20261118.json
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  train256-real-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      DEEPSEEK_ORIG_REV: "419ef8b6b7a816343af14bc1a4436d4e33affb5d"
+      ORIG_TOKEN_SHA: "41f3bf64213da8c012d8bd0871a58a1fdf70463e8f08f110ddbb1082f529f669"
+      ORIG_CFG_SHA: "f346286b0f1c8b044252fd54cb4fa78b9fab6472a6e8bebb9edfe03d414ea03d"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Demand completed full256 original route-source gate before opening additional train gold
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,hashlib,pathlib
+          p=pathlib.Path("docs/research/JE01_ACTUAL_XOX_ORIGINAL_AF_REAL256_ROUTER_FINAL_20261118.json")
+          if not p.is_file():
+              raise SystemExit("JE01_REAL_ORIGINAL_ROUTER256_MUST_BE_COMPLETE_FIRST")
+          d=json.loads(p.read_text())
+          sig=d.pop("receipt_sha256")
+          canonical=hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert sig==canonical
+          assert d["status"]=="PASS_256_REAL_ORIGINAL_AF_ROUTER_LAST_PROMPT_ONLY"
+          assert d["calibration_prompt_count"]==256
+          assert d["source_calibration256_manifest_sha256"]=="6674cefd09124f45599ba40a33a32ebf513968aa91f562f201f4e10e9f34cb3d"
+          assert d["unlabeled_calibration_only"] is True
+          assert d["real_bayesian_expert_precision_tier_delta_NLL"]=="NOT_MEASURED"
+          assert d["production_promotion_allowed"] is False
+          assert len(d["all_chunks"])==16 and d["observed_route_events"]==6656
+          print("JE01_ORIGINAL_256_REAL_ROUTER_PRE_GOLD_FROZEN_PASS",sig)
+          PY
+      - name: Pin original DeepSeek tokenizer and config, training only
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'tokenizers==0.22.2'
+          for name in tokenizer.json config.json; do
+            curl --fail --location --silent --show-error --retry 3 --retry-delay 2 --max-time 140 \
+              "https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite/resolve/$DEEPSEEK_ORIG_REV/$name?download=true" \
+              --output "$RUNNER_TEMP/$name"
+          done
+          echo "$ORIG_TOKEN_SHA  $RUNNER_TEMP/tokenizer.json" | sha256sum --check
+          echo "$ORIG_CFG_SHA  $RUNNER_TEMP/config.json" | sha256sum --check
+      - name: Restore 256 original WikiText training target token IDs from pinned source pages
+        run: |
+          set -euo pipefail
+          python tools/je01_original_train256_full_gold_tokens.py \
+            --original-frozen-manifest docs/research/JE01_FROZEN_WIKITEXT_HELLASWAG_512_20261117.json \
+            --original-tokenizer-json "$RUNNER_TEMP/tokenizer.json" \
+            --original-config-json "$RUNNER_TEMP/config.json" \
+            | tee "$RUNNER_TEMP/JE01_ORIGINAL_REAL_TRAIN256_FULL_GOLD_IDS.json"
+      - name: Independent audit original target IDs and original model 384 capacity
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,json,hashlib,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"JE01_ORIGINAL_REAL_TRAIN256_FULL_GOLD_IDS.json"
+          d=json.loads(p.read_text())
+          sig=d.pop("receipt_sha256")
+          assert sig==hashlib.sha256(json.dumps(d,sort_keys=True,ensure_ascii=False,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert d["schema"]=="beglin-je01-original-deepseek-wikitext256-train-full-target-tokens/1"
+          assert d["original_256_source_rows"]==256 and len(d["cases"])==256
+          assert d["source_frozen_manifest_sha256"]=="a9397bfabdd012f60d3dd3d33bcfab455ac1046eced30373d553217dd9409147"
+          assert d["same_source_validation_and_ood_labels_used"] is False
+          assert d["all_rows_preserved_no_resampling"] is True
+          assert d["real_gold_full_target_NLL"]=="NOT_MEASURED"
+          assert all(x["row"]==n for n,x in enumerate(d["cases"]))
+          assert all(x["model_full_BOS_sequence_positions"]<=384 for x in d["cases"])
+          assert d["aligned_to_original_prompt_prefix_count"]+d["unscoreable_original_prefix_boundary_count"]==256
+          targets=sum(x["gold_token_count"] or 0 for x in d["cases"])
+          print("JE01_REAL_ORIGINAL_TRAIN256_GOLD_SOURCE_SHA_PASS",
+                "receipt",sig,"aligned",d["aligned_to_original_prompt_prefix_count"],
+                "unscoreable",d["unscoreable_original_prefix_boundary_count"],
+                "total_target_tokens",targets,"quality_NOT_MEASURED")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-original-real-train256-gold-full-target-token-ids
+          path: ${{ runner.temp }}/JE01_ORIGINAL_REAL_TRAIN256_FULL_GOLD_IDS.json
+          retention-days: 14
+          if-no-files-found: error

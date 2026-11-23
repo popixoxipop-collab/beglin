@@ -1,0 +1,86 @@
+name: JE01 independent original27 real Q45 Gold16 NLL receipt and pairing audit
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'docs/research/JE01_REAL_ORIGINAL27_Q45_GOLD16_OFF_20261122.json'
+      - 'docs/research/JE01_REAL_ORIGINAL27_Q45_GOLD16_ON_20261122.json'
+      - '.github/workflows/je01-real-q45-gold16-paired-audit.yml'
+permissions:
+  contents: read
+jobs:
+  original27-native-off-versus-q45-gold-pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Independently verify both EOE original27 native outputs, gold records, and SHA receipts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,math,pathlib
+          prefix=pathlib.Path("docs/research")
+          modes={
+            "off":("JE01_REAL_ORIGINAL27_Q45_GOLD16_OFF_20261122.json","9b63d843b2a8bde9bd0633ddd46e635ea7e3eaba4a35a10d31807c5a1638f72b"),
+            "q45":("JE01_REAL_ORIGINAL27_Q45_GOLD16_ON_20261122.json","48e7f1f808cfaea23caaf0f265a0379391036283adfb7dddb143aee1666fdfc4")
+          }
+          obs={}
+          for mode,(filename,expected) in modes.items():
+              p=prefix/filename
+              d=json.loads(p.read_text())
+              claimed=d.pop("receipt_sha256",None)
+              computed=hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+              assert claimed==computed==expected,("RECEIPT_INVALID",mode)
+              assert d["schema"]=="beglin-je01-original27-paired-real-BF16-Q45-fullgold-pilot16/1"
+              assert d["mode"]==mode and d["actual_model_complete_27layers"] is True
+              assert d["gold_train_cases"]==16 and d["gold_tokens"]==656
+              assert d["scientific_scope"]=="POST_NIG_16TRAIN_PILOT_EXPLORATORY_CHALLENGER_NOT_CONFIRMATORY"
+              assert d["actual_q4_roles"]==12 and d["actual_q5_roles"]==12
+              assert d["actual_original_AF_source_sha256"]=="9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4"
+              assert d["actual_compiled_Q45_model_sha256"]=="1eb8dd5311cc23efba11a54a2891e9ec77fc9bb5cb88cfb60bdd6183310059ab"
+              assert d["original_real_BF16_Q45_source_sha256"]=="b4bd15db43f60f5aeb3ae8d6b9af148fa38545e5289ac049cd26a57a82932e6b"
+              assert d["true_source_heldout_ood_labels_accessed"] is False
+              assert d["production_checkpoint_modified"] is False
+              assert d["full256_calibration_NLL"]=="NOT_MEASURED_THIS_RUN"
+              assert d["real_OOD_and_same_source_128"]=="NOT_MEASURED"
+              assert d["meets_preregistered_adoption_gate"]=="NOT_EVALUATED"
+              assert len(d["per_case"])==16
+              assert len(d["per_gold_target_actual_NLL"])==16
+              assert sum(a["tokens"] for a in d["per_case"])==656
+              assert all(len(d["per_gold_target_actual_NLL"][i])==d["per_case"][i]["tokens"] for i in range(16))
+              for i,(case,row) in enumerate(zip(d["per_case"],d["per_gold_target_actual_NLL"])):
+                  assert case["row"]==i and case["tokens"]>0
+                  assert all(math.isfinite(x) and x>=0 for x in row)
+                  assert abs(math.fsum(row)-case["measured_mode_NLL_sum"])<1e-8
+                  assert abs(case["measured_mode_NLL_sum"]-case["original_NLL_sum"]-case["candidate_minus_original_NLL_sum"])<1e-8
+              recomputed=math.fsum(a["measured_mode_NLL_sum"] for a in d["per_case"])/656
+              assert abs(recomputed-d["actual_native_mean_gold_NLL"])<1e-10
+              original=math.fsum(a["original_NLL_sum"] for a in d["per_case"])/656
+              assert abs(original-d["same_EOE_original_native_mean_gold_NLL"])<1e-10
+              assert abs((recomputed-original)-d["paired_mean_NLL_candidate_minus_original"])<1e-10
+              assert d["minimum_memory_free_percent"]>=35
+              obs[mode]=d
+          off=obs["off"];on=obs["q45"]
+          assert off["status"]=="PASS_ORIGINAL27_Q45_BINARY_NO_OVERLAY_GOLD_PARITY"
+          assert on["status"]=="ACTUAL_REAL_ORIGINAL27_Q45_PILOT16_MEASURED"
+          assert off["real_native_output_sha256"]=="b23715f0dec13de881f9ad948bacf3f8e8885068ff39aef25733fa236070493c"
+          assert on["real_native_output_sha256"]=="27f5864fe11606ad1f494893e32144aea90cb9ee406e954aee118b91b78b2090"
+          assert off["actual_native_mean_gold_NLL"]==2.291799702354307
+          assert off["paired_mean_NLL_candidate_minus_original"]==0.0
+          assert all(a["candidate_minus_original_NLL_sum"]==0.0 for a in off["per_case"])
+          assert abs(on["actual_native_mean_gold_NLL"]-2.2975364339707807)<1e-10
+          assert abs(on["paired_mean_NLL_candidate_minus_original"]-0.005736731616473811)<1e-10
+          assert all(abs(a["original_NLL_sum"]-b["original_NLL_sum"])<1e-12 for a,b in zip(off["per_case"],on["per_case"]))
+          assert on["actual_native_mean_gold_NLL"]>off["actual_native_mean_gold_NLL"]
+          worse=sum(x["candidate_minus_original_NLL_sum"]>0 for x in on["per_case"])
+          better=sum(x["candidate_minus_original_NLL_sum"]<0 for x in on["per_case"])
+          assert (worse,better)==(10,6)
+          print("JE01_REAL_ORIGINAL27_Q45_656GOLD_OFFON_SHA_RECEIPT_AND_PAIRED_NLL_PASS")
+          print("ORIGINAL_NLL",off["actual_native_mean_gold_NLL"])
+          print("Q45_NLL",on["actual_native_mean_gold_NLL"])
+          print("Q45_MINUS_ORIGINAL_NLL",on["paired_mean_NLL_candidate_minus_original"])
+          print("Q45_WORSE_BETTER_SENTENCES",worse,better)
+          print("RESEARCH_DECISION_NO_PROMOTION_TRUE_16_TRAIN_PILOT_NOT_VALIDATION")
+          PY

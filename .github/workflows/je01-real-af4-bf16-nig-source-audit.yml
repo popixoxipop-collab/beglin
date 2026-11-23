@@ -1,0 +1,67 @@
+name: JE01 actual original AF4 vs Chat BF16 vs NIG source and quantization evidence
+on:
+  push:
+    branches:
+      - research/je01-moe-bayesian-bit-allocation-20261117
+    paths:
+      - 'docs/research/JE01_ORIGINAL_AF4_CHAT_BF16_NIG_Q35_REAL_24ROLE_WEIGHT_ATTRIBUTION_20261122.json'
+      - '.github/workflows/je01-real-af4-bf16-nig-source-audit.yml'
+permissions:
+  contents: read
+jobs:
+  independent-source-receipt-and-negative-control:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Independently verify real weight source SHA receipt and false-pairing controls
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,math,pathlib
+          path=pathlib.Path("docs/research/JE01_ORIGINAL_AF4_CHAT_BF16_NIG_Q35_REAL_24ROLE_WEIGHT_ATTRIBUTION_20261122.json")
+          d=json.loads(path.read_text())
+          claimed=d.pop("receipt_sha256",None)
+          actual=hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert claimed==actual=="82f047f6e323be2ace5936b5acc177a2fd2f36b9144b64035a75d29a6e8a69a4"
+          assert d["status"]=="REAL_ORIGINAL_AF4_VS_SAME_CHAT_BF16_NIG_Q3Q5_24_ROLE_ERROR_ATTRIBUTION_COMPLETE"
+          assert d["true_original_9point8GB_AF4_sha256"]=="9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4"
+          assert d["true_original_BF16_Chat_four_shard_fullsha_rechecked"] is True
+          assert d["previous_original_AF4_vs_BF16_24role_receipt"]=="be513c64e6af0a91613abdc34f1051a666023870561c143e4ad231e93a6e9233"
+          assert d["actual_NIG43MB_native_BF16_Chat_source_sha256"]=="dab4f50b6233688d789facf37a7fc94e22b0f4aa33298c36e5f69d89063db8cd"
+          assert len(d["per_role"])==24 and len({(x["layer"],x["expert"],x["role"]) for x in d["per_role"]})==24
+          assert sum(x["coefficients"] for x in d["per_role"])==69206016
+          assert sum(x["nig_real_bits"]==3 for x in d["per_role"])==6
+          assert sum(x["nig_real_bits"]==5 for x in d["per_role"])==18
+          source=d["aggregate_actual_weight_error"]
+          assert source["coefficients"]==69206016
+          for name in ("original_AF4_RMSE_to_BF16","NIG_RMSE_to_BF16","NIG_RMSE_to_original_AF4"):
+            assert math.isfinite(source[name]) and source[name]>0
+          assert 0.09<source["original_AF4_RMSE_to_BF16"]<0.10
+          assert 0.19<source["NIG_RMSE_to_BF16"]<0.20
+          assert 0.21<source["NIG_RMSE_to_original_AF4"]<0.22
+          q=d["summary_per_NIG_role_precision"]
+          assert q["3"]["roles"]==6 and q["5"]["roles"]==18
+          assert q["3"]["coefficients"]==17301504 and q["5"]["coefficients"]==51904512
+          assert 0.35<q["3"]["NIG_relative_RMSE_to_BF16"]<0.37
+          assert 0.07<q["5"]["NIG_relative_RMSE_to_BF16"]<0.08
+          assert q["3"]["delta_NIG_minus_AF4_weight_squared_error_ratio_to_BF16"]>0
+          assert q["5"]["delta_NIG_minus_AF4_weight_squared_error_ratio_to_BF16"]<0
+          decoy=d["wrong_expert_negative_control"]
+          assert decoy["original_AF4"]=={"layer":21,"expert":61,"role":"gate_proj"}
+          assert decoy["true_source_correct_expert_id"]==61
+          assert decoy["decoy_different_expert_same_layer_id"]==60
+          assert decoy["correct_same_source_nibble_agreement"]>0.997
+          assert decoy["decoy_wrong_source_nibble_agreement"]<0.10
+          assert decoy["correct_same_source_weight_corr"]>0.995
+          assert abs(decoy["decoy_wrong_source_weight_corr"])<0.01
+          assert d["actual_NIG_minus_AF4_real_656gold_NLL"]>0.014
+          assert d["full_gold_256_retested"] is False
+          assert d["n_ood_labels_used"]==0 and d["production_modified"] is False
+          assert d["original_transformer_model_forward_this_job"]=="NOT_RUN"
+          assert d["same_source_checkpoint_bitwise_proof"]=="NOT_APPLICABLE_Q4_LOSSY"
+          assert d["exact_original_4bit_encoder_equivalence"]=="NOT_PROVEN"
+          print("JE01_REAL_AF4_CHAT_BF16_NIG_SOURCE_69M_NEGATIVE_CONTROL_INDEPENDENT_AUDIT_PASS",claimed)
+          PY

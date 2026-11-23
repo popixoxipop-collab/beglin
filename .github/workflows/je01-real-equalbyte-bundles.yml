@@ -1,0 +1,64 @@
+name: JE01 three actual equal-byte mixed Expert payload bundles
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_real_72_to_equalbyte_bundle.py'
+      - '.github/workflows/je01-real-equalbyte-bundles.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  assemble-physical-8expert-candidate-files:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Get original SHA-pinned 72 real-weight native tier artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: je01-real-exact-bf16-24-roles-72-native-tiers
+          run-id: 44172058412
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/je01_real72
+      - name: Create exact physical-byte equal-budget bundles from original source artifacts
+        run: |
+          set -euo pipefail
+          test -f "$RUNNER_TEMP/je01_real72/je01_native_bf16_artifacts/JE01_HF_RANGE_NATIVE_BF16_72_ARTIFACTS.json"
+          python tools/je01_real_72_to_equalbyte_bundle.py \
+            --source "$RUNNER_TEMP/je01_real72/je01_native_bf16_artifacts" \
+            --output "$RUNNER_TEMP/je01_actual_equalbyte_bundles" \
+            | tee "$RUNNER_TEMP/je01_real_bundles_log.jsonl"
+      - name: Independently rehash all bundles and original per-region source bytes
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_actual_equalbyte_bundles"
+          d=json.loads((root/"JE01_REAL3_EQUALBYTE_BUNDLES_RECEIPT.json").read_text())
+          sig=d.pop("receipt_sha256")
+          assert sig==hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert d["status"]=="THREE_ACTUAL_8EXPERT_EQUALBYTE_43253760_PAYLOADS_CONSTRUCTED"
+          assert len(d["bundles"])==3
+          for p in d["bundles"]:
+            blob=root/p["file_name"]
+            assert blob.is_file() and not blob.is_symlink()
+            assert blob.stat().st_size==43253760
+            assert hashlib.sha256(blob.read_bytes()).hexdigest()==p["file_sha256"]
+            assert len(p["file_regions"])==48
+            assert sum(x["bits"]==2 for x in p["bit_assignment"])==3
+            assert sum(x["bits"]==6 for x in p["bit_assignment"])==5
+          assert d["case_specific_Bayesian_NLL_effects"]=="NOT_MEASURED"
+          print("JE01_REAL_ORIGINAL_BF16_3_REAL_EQUALBYTE_BUNDLES_FULL_SHA_PASS",sig)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-three-physical-samebyte-8expert-native-payload-bundles
+          path: |
+            ${{ runner.temp }}/je01_actual_equalbyte_bundles/*
+            ${{ runner.temp }}/je01_real_bundles_log.jsonl
+          retention-days: 14
+          if-no-files-found: error

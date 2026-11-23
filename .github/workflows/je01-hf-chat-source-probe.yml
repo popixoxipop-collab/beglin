@@ -1,0 +1,34 @@
+name: JE01 EOE source vs official DeepSeek Chat full-SHA audit
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_hf_chat_exact_source_probe.py'
+      - '.github/workflows/je01-hf-chat-source-probe.yml'
+permissions:
+  contents: read
+jobs:
+  official-chat-full-shards-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy==2.2.6 requests==2.32.3
+      - name: Compare full source SHA across all four Chat BF16 shards
+        run: |
+          set -euo pipefail
+          python tools/je01_hf_chat_exact_source_probe.py \
+            | tee "$RUNNER_TEMP/chat_bf16_source_identity.log"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-chat-full-shard-source-identity
+          path: |
+            JE01_CHAT_MODEL_SOURCE_IDENTITY_AUDIT.json
+            ${{ runner.temp }}/chat_bf16_source_identity.log
+          retention-days: 14
+          if-no-files-found: error

@@ -1,0 +1,79 @@
+{
+  "schema": "beglin-je01-real-BF16-expert8-proxy-fullgrid/1",
+  "basis": "REAL_PRETRAINED_EXPERT_FFN_WEIGHTS_ONLY_SYNTHETIC_ACTIVATIONS",
+  "data_source_training_receipt_sha256": "555e11d05ca3228a4cb8a828d6a2a3eef153ff5e4f21b4aa547f5820fdecaf2d",
+  "data_source_new_input_heldout_receipt_sha256": "441b08e520a512f10377fb801aab0ed1ba3d24852f8280abf524be42cca5c64a",
+  "experts": [
+    0,
+    7,
+    15,
+    23,
+    31,
+    39,
+    47,
+    55
+  ],
+  "group_quant_bits": [
+    4,
+    6,
+    8
+  ],
+  "exact_theoretical_bit_budget_sum": 48,
+  "state_count_all": 6561,
+  "state_count_with_equal_budget": 1107,
+  "full_grid_training_winner": {
+    "bits": {
+      "0": 6,
+      "7": 6,
+      "15": 6,
+      "23": 6,
+      "31": 6,
+      "39": 6,
+      "47": 6,
+      "55": 6
+    },
+    "trainMse": 0.0011926285082711112,
+    "heldoutMse": 0.0011980553914987767
+  },
+  "full_grid_heldout_oracle": {
+    "bits": {
+      "0": 6,
+      "7": 6,
+      "15": 6,
+      "23": 6,
+      "31": 6,
+      "39": 6,
+      "47": 6,
+      "55": 6
+    },
+    "heldoutMse": 0.0011980553914987767,
+    "selection_uses_heldout": true
+  },
+  "uniform6": {
+    "trainMse": 0.0011926285082711112,
+    "heldoutMse": 0.0011980553914987767
+  },
+  "best_non_uniform_on_training": {
+    "bits": [
+      6,
+      8,
+      6,
+      6,
+      6,
+      6,
+      6,
+      4
+    ],
+    "trainMse": 0.0026981564129576804,
+    "heldoutMse": 0.002556907837973997
+  },
+  "min_non_uniform_training_mse_ratio_to_uniform6": 2.2623611579342935,
+  "min_non_uniform_heldout_mse_ratio_to_uniform6": 2.119274872274182,
+  "selected_by_training_uniform6": true,
+  "heldout_optimal_uniform6": true,
+  "quant_codec": "PROXY_GROUP64_AFFINE_MINMAX_NOT_BEGLIN",
+  "equal_bytes": "FORMULA_ONLY_NOT_VERIFIED_NATIVE_PACKING",
+  "pretrained_full_forward": "NOT_RUN",
+  "gold_token_nll": "NOT_MEASURED",
+  "production_promotion_allowed": false
+}

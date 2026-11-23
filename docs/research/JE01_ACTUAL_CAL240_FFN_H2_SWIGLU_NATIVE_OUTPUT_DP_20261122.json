@@ -1,0 +1,1075 @@
+{
+  "actual_original_256_training_prompts_all_capture": true,
+  "full_native_27layer_new_NLL": "NOT_RUN",
+  "observed_FFN_input_dimensions": {
+    "down_SwiGLU": 1408,
+    "gate_up": 2048
+  },
+  "observed_source_input_moment_npz_sha256": "a96a9ec184ce67af3f4896d7a537b3e37e618f780661ead56aff988e753a7fbd",
+  "observed_total_original256_routed_activation_records": 682,
+  "per_role": [
+    {
+      "actual_clean_unseen_training_router_observations": 75,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "755e8d0f2ce4fb25055d6cbeac32194298d92227e091b81fae156a2a9e591b6e",
+      "actual_original_BF16_tensor_sha256": "0f793c908f6e1a5147768a9b72c33e3d8cf64ed3bb5b74e0e86ca2f2d32a567e",
+      "actual_output_dimension": 1408,
+      "expert": 13,
+      "layer": 12,
+      "original_BF16_activation_output_energy": 7937.005984480513,
+      "role": "gate_proj",
+      "route_weighted_output_SSE_AF4": 33.01446466155104,
+      "route_weighted_output_SSE_Q4": 92.1024770191494,
+      "route_weighted_output_SSE_Q5": 20.065103050016397,
+      "route_weighted_output_relative_MSE_AF4": 0.004159561518046641,
+      "route_weighted_output_relative_MSE_Q4": 0.011604183894939777,
+      "route_weighted_output_relative_MSE_Q5": 0.002528044339294987,
+      "routed_probability_mass": 4.338645251467824
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 75,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "b952b24eb9fe048320ebeb17d2553e0a59b551f39ba4e94fe51769199163768c",
+      "actual_original_BF16_tensor_sha256": "faf72425ac0ca98c3599bfbc428c8e5374018553c55460e569248b7871f0d102",
+      "actual_output_dimension": 1408,
+      "expert": 13,
+      "layer": 12,
+      "original_BF16_activation_output_energy": 7276.410373626319,
+      "role": "up_proj",
+      "route_weighted_output_SSE_AF4": 35.797751652522216,
+      "route_weighted_output_SSE_Q4": 101.19624774955508,
+      "route_weighted_output_SSE_Q5": 21.94133833540624,
+      "route_weighted_output_relative_MSE_AF4": 0.004919699386702102,
+      "route_weighted_output_relative_MSE_Q4": 0.013907440970666731,
+      "route_weighted_output_relative_MSE_Q5": 0.0030154069395169933,
+      "routed_probability_mass": 4.338645251467824
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 75,
+      "actual_input_dimension": 1408,
+      "actual_original_AF4_packed_sha256": "27695daba5303a8044d0e4361d96b665db8df5fca83fac870f718bbb3c646d93",
+      "actual_original_BF16_tensor_sha256": "6b9482301ab63656d7df71022d789864c74a00ddd7a69ab0502001f4dd9b9476",
+      "actual_output_dimension": 2048,
+      "expert": 13,
+      "layer": 12,
+      "original_BF16_activation_output_energy": 6479.614960967923,
+      "role": "down_proj",
+      "route_weighted_output_SSE_AF4": 54.203612823248875,
+      "route_weighted_output_SSE_Q4": 151.10826546383865,
+      "route_weighted_output_SSE_Q5": 32.81375664316163,
+      "route_weighted_output_relative_MSE_AF4": 0.00836525212528245,
+      "route_weighted_output_relative_MSE_Q4": 0.023320562467691156,
+      "route_weighted_output_relative_MSE_Q5": 0.005064152243740717,
+      "routed_probability_mass": 4.338645251467824
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 75,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "c6ddd1d992b11820dc0acdf0aaeda835a532ede87ec7e23cf3a67dbbb7cddfe3",
+      "actual_original_BF16_tensor_sha256": "a9f28d02e1ef2fcaae008c896178ffce43cd49e48982bf4e15982bddecd40637",
+      "actual_output_dimension": 1408,
+      "expert": 22,
+      "layer": 13,
+      "original_BF16_activation_output_energy": 12151.22802542261,
+      "role": "gate_proj",
+      "route_weighted_output_SSE_AF4": 48.697191623683715,
+      "route_weighted_output_SSE_Q4": 139.7731578002439,
+      "route_weighted_output_SSE_Q5": 29.66569101693193,
+      "route_weighted_output_relative_MSE_AF4": 0.004007594254819366,
+      "route_weighted_output_relative_MSE_Q4": 0.011502800993266908,
+      "route_weighted_output_relative_MSE_Q5": 0.0024413739051613414,
+      "routed_probability_mass": 5.2523712404072285
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 75,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "b649115e22e86ba867771e6e4edaedf8fc9a98d71d9e161f1224302e9fd0592f",
+      "actual_original_BF16_tensor_sha256": "d8043a191bda2f37e3494276508c2cdb824bcaed4990936a1c7b633aeecc2bcd",
+      "actual_output_dimension": 1408,
+      "expert": 22,
+      "layer": 13,
+      "original_BF16_activation_output_energy": 10833.582831200334,
+      "role": "up_proj",
+      "route_weighted_output_SSE_AF4": 52.59567592271376,
+      "route_weighted_output_SSE_Q4": 147.35774343071344,
+      "route_weighted_output_SSE_Q5": 31.776708051702354,
+      "route_weighted_output_relative_MSE_AF4": 0.004854873659269958,
+      "route_weighted_output_relative_MSE_Q4": 0.013601939979295527,
+      "route_weighted_output_relative_MSE_Q5": 0.002933167036872286,
+      "routed_probability_mass": 5.2523712404072285
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 75,
+      "actual_input_dimension": 1408,
+      "actual_original_AF4_packed_sha256": "4eb476411f864b432fea67fc638ba2d514adffc83fabc92576f9cb4eb46edd44",
+      "actual_original_BF16_tensor_sha256": "af5986a0880afb49120f8cb4b727782c58b5ce8f3d9bd2e1e1063186b2d8c82f",
+      "actual_output_dimension": 2048,
+      "expert": 22,
+      "layer": 13,
+      "original_BF16_activation_output_energy": 10242.35812615505,
+      "role": "down_proj",
+      "route_weighted_output_SSE_AF4": 86.22605565109792,
+      "route_weighted_output_SSE_Q4": 238.98821645573648,
+      "route_weighted_output_SSE_Q5": 52.64070987554977,
+      "route_weighted_output_relative_MSE_AF4": 0.008418574569357195,
+      "route_weighted_output_relative_MSE_Q4": 0.02333331968206153,
+      "route_weighted_output_relative_MSE_Q5": 0.005139510767654726,
+      "routed_probability_mass": 5.2523712404072285
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 82,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "bc8d0d8b90c5f3cd9aa9853036a6fd83d08cdab84a658e867ff7aafff32f376b",
+      "actual_original_BF16_tensor_sha256": "890edb0989a4603fb59ed783119b551a204d8f658ae8c350be2528a4c772db0f",
+      "actual_output_dimension": 1408,
+      "expert": 28,
+      "layer": 13,
+      "original_BF16_activation_output_energy": 12569.213158724686,
+      "role": "gate_proj",
+      "route_weighted_output_SSE_AF4": 48.70086228837167,
+      "route_weighted_output_SSE_Q4": 135.1082779600793,
+      "route_weighted_output_SSE_Q5": 29.45947873528992,
+      "route_weighted_output_relative_MSE_AF4": 0.0038746150354341687,
+      "route_weighted_output_relative_MSE_Q4": 0.010749143661892344,
+      "route_weighted_output_relative_MSE_Q5": 0.002343780661786388,
+      "routed_probability_mass": 4.950227037072182
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 82,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "d364e00d90c9c071aaefaa2aa81d464b6dce8e7d6e457cddced6ae8f5c8bada6",
+      "actual_original_BF16_tensor_sha256": "0a9ac07b870e8e6664af181f7765a8c491f067672644e0d51e17962216dd14f1",
+      "actual_output_dimension": 1408,
+      "expert": 28,
+      "layer": 13,
+      "original_BF16_activation_output_energy": 11580.328626117529,
+      "role": "up_proj",
+      "route_weighted_output_SSE_AF4": 52.439784872547854,
+      "route_weighted_output_SSE_Q4": 146.83481948695,
+      "route_weighted_output_SSE_Q5": 32.19577851532725,
+      "route_weighted_output_relative_MSE_AF4": 0.004528350322829227,
+      "route_weighted_output_relative_MSE_Q4": 0.012679676391548008,
+      "route_weighted_output_relative_MSE_Q5": 0.0027802128553342568,
+      "routed_probability_mass": 4.950227037072182
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 82,
+      "actual_input_dimension": 1408,
+      "actual_original_AF4_packed_sha256": "10c4ab905efeae3390011ab6c4ce27d003925dd51d578e0cb251978a08d827a4",
+      "actual_original_BF16_tensor_sha256": "5384b58ef81c6153cd614f060b8fc533514fa7ba7b337741263ec4d3837c06ac",
+      "actual_output_dimension": 2048,
+      "expert": 28,
+      "layer": 13,
+      "original_BF16_activation_output_energy": 13053.21827913449,
+      "role": "down_proj",
+      "route_weighted_output_SSE_AF4": 112.32963239883745,
+      "route_weighted_output_SSE_Q4": 309.9444362935476,
+      "route_weighted_output_SSE_Q5": 67.10495938928003,
+      "route_weighted_output_relative_MSE_AF4": 0.008605512448864497,
+      "route_weighted_output_relative_MSE_Q4": 0.023744675808340106,
+      "route_weighted_output_relative_MSE_Q5": 0.005140874683490661,
+      "routed_probability_mass": 4.950227037072182
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 74,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "490cf0561913bd065cf5210e9d3550356ea1c84976c132a070738f326f1daa86",
+      "actual_original_BF16_tensor_sha256": "318d6fe2d73e6e8dbceaad9a4be72e1eb55ae59518402011da36777b596b863f",
+      "actual_output_dimension": 1408,
+      "expert": 63,
+      "layer": 14,
+      "original_BF16_activation_output_energy": 15809.058773835884,
+      "role": "gate_proj",
+      "route_weighted_output_SSE_AF4": 53.855679107919286,
+      "route_weighted_output_SSE_Q4": 150.85110279255696,
+      "route_weighted_output_SSE_Q5": 32.89253895794987,
+      "route_weighted_output_relative_MSE_AF4": 0.0034066341253061096,
+      "route_weighted_output_relative_MSE_Q4": 0.009542067301452298,
+      "route_weighted_output_relative_MSE_Q5": 0.0020806133640534803,
+      "routed_probability_mass": 5.521852508187294
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 74,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "1d25df553f6c3e197ec33eefe7572f88258a7f154d7d1732619f8571087972e6",
+      "actual_original_BF16_tensor_sha256": "82e90d84b3e9a6f28caddf46a7dec2f487186803e782deb115c8ad94aff0bc91",
+      "actual_output_dimension": 1408,
+      "expert": 63,
+      "layer": 14,
+      "original_BF16_activation_output_energy": 14437.774370082358,
+      "role": "up_proj",
+      "route_weighted_output_SSE_AF4": 55.88245902834002,
+      "route_weighted_output_SSE_Q4": 154.4057650873025,
+      "route_weighted_output_SSE_Q5": 33.5099580114274,
+      "route_weighted_output_relative_MSE_AF4": 0.003870572956461935,
+      "route_weighted_output_relative_MSE_Q4": 0.010694568368325438,
+      "route_weighted_output_relative_MSE_Q5": 0.0023209919446355947,
+      "routed_probability_mass": 5.521852508187294
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 74,
+      "actual_input_dimension": 1408,
+      "actual_original_AF4_packed_sha256": "f8d657e5c42b276fca73d32a84d1a3d374f6da9c3cffcaee7a584ff81a61183e",
+      "actual_original_BF16_tensor_sha256": "3532285c7e8c5ef3840e469dccab6602efe86665465ddae9ddf76a5f3ef6a985",
+      "actual_output_dimension": 2048,
+      "expert": 63,
+      "layer": 14,
+      "original_BF16_activation_output_energy": 16187.388477142515,
+      "role": "down_proj",
+      "route_weighted_output_SSE_AF4": 123.66310214386344,
+      "route_weighted_output_SSE_Q4": 344.0738396331296,
+      "route_weighted_output_SSE_Q5": 75.36195281944077,
+      "route_weighted_output_relative_MSE_AF4": 0.007639472069165608,
+      "route_weighted_output_relative_MSE_Q4": 0.021255673212450595,
+      "route_weighted_output_relative_MSE_Q5": 0.0046555967274064,
+      "routed_probability_mass": 5.521852508187294
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 79,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "996b3b3e0aca0b4a5ca83717208aacaae3db747053c5cee3bcd23cdeae63b5f0",
+      "actual_original_BF16_tensor_sha256": "b85e15a29e4c38b9c6e2a406c844eb5f4cc8621a47211c4971bfe5ef972e595b",
+      "actual_output_dimension": 1408,
+      "expert": 17,
+      "layer": 20,
+      "original_BF16_activation_output_energy": 31864.85915511982,
+      "role": "gate_proj",
+      "route_weighted_output_SSE_AF4": 149.4392666265844,
+      "route_weighted_output_SSE_Q4": 410.9351452294267,
+      "route_weighted_output_SSE_Q5": 89.94912213849453,
+      "route_weighted_output_relative_MSE_AF4": 0.004689782744656305,
+      "route_weighted_output_relative_MSE_Q4": 0.012896185833710192,
+      "route_weighted_output_relative_MSE_Q5": 0.0028228313108373537,
+      "routed_probability_mass": 7.622501231729984
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 79,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "4e69073faec3ebe62530c6e5d46877a6265bf6ae6fbc169d9c70a17c1b6dfc00",
+      "actual_original_BF16_tensor_sha256": "3a41127580935771757e6dea31f14ab7c6ad5d74be7e156258810b47f71cc868",
+      "actual_output_dimension": 1408,
+      "expert": 17,
+      "layer": 20,
+      "original_BF16_activation_output_energy": 29510.617566859644,
+      "role": "up_proj",
+      "route_weighted_output_SSE_AF4": 170.06571902184382,
+      "route_weighted_output_SSE_Q4": 479.79207961488055,
+      "route_weighted_output_SSE_Q5": 102.64092007086462,
+      "route_weighted_output_relative_MSE_AF4": 0.005762865471606641,
+      "route_weighted_output_relative_MSE_Q4": 0.016258286649808575,
+      "route_weighted_output_relative_MSE_Q5": 0.0034781013931111404,
+      "routed_probability_mass": 7.622501231729984
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 79,
+      "actual_input_dimension": 1408,
+      "actual_original_AF4_packed_sha256": "b57b309f5e73b89c8891bd8d544db7531ca4d707cda5ddf6a7146d36c49f1382",
+      "actual_original_BF16_tensor_sha256": "4477ff0ab2196343b46f5c46f1e29ede5c1d07c375e4cd6c38302ccd84278e2f",
+      "actual_output_dimension": 2048,
+      "expert": 17,
+      "layer": 20,
+      "original_BF16_activation_output_energy": 86823.84087109595,
+      "role": "down_proj",
+      "route_weighted_output_SSE_AF4": 692.0328425258797,
+      "route_weighted_output_SSE_Q4": 1945.8538839145453,
+      "route_weighted_output_SSE_Q5": 423.3697532949703,
+      "route_weighted_output_relative_MSE_AF4": 0.007970539377004923,
+      "route_weighted_output_relative_MSE_Q4": 0.022411515827818314,
+      "route_weighted_output_relative_MSE_Q5": 0.004876192403461294,
+      "routed_probability_mass": 7.622501231729984
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 89,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "064e7fd7c74e657bff51419eaf4b8b8b122faba1516e5bc3a09d0a5ca4afdcf0",
+      "actual_original_BF16_tensor_sha256": "44f553087414f2d099367234206ec3c2ed8f528b7d527d09a0befd3c128f3a6c",
+      "actual_output_dimension": 1408,
+      "expert": 61,
+      "layer": 21,
+      "original_BF16_activation_output_energy": 40570.746156358335,
+      "role": "gate_proj",
+      "route_weighted_output_SSE_AF4": 186.13033402617918,
+      "route_weighted_output_SSE_Q4": 514.833630517642,
+      "route_weighted_output_SSE_Q5": 111.50394808529734,
+      "route_weighted_output_relative_MSE_AF4": 0.004587796667797012,
+      "route_weighted_output_relative_MSE_Q4": 0.01268977475872615,
+      "route_weighted_output_relative_MSE_Q5": 0.0027483829766296324,
+      "routed_probability_mass": 7.980747466906905
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 89,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "a21a743af63cc9717badeb355dc55cb10c45dd8db27a6326bba87fdd537afe12",
+      "actual_original_BF16_tensor_sha256": "36bc9b8bc5872544d66b098f8e741e6d392f72cb466d2b9fd6353a7842b7c770",
+      "actual_output_dimension": 1408,
+      "expert": 61,
+      "layer": 21,
+      "original_BF16_activation_output_energy": 42506.67280114134,
+      "role": "up_proj",
+      "route_weighted_output_SSE_AF4": 213.59117348991686,
+      "route_weighted_output_SSE_Q4": 577.6545762024105,
+      "route_weighted_output_SSE_Q5": 128.27587816565844,
+      "route_weighted_output_relative_MSE_AF4": 0.005024885727687012,
+      "route_weighted_output_relative_MSE_Q4": 0.013589738695965399,
+      "route_weighted_output_relative_MSE_Q5": 0.003017782143659433,
+      "routed_probability_mass": 7.980747466906905
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 89,
+      "actual_input_dimension": 1408,
+      "actual_original_AF4_packed_sha256": "58699265ee22c52e4f3c0ec1908840e1bcd75d32174dee01215a30b6ae92c7ad",
+      "actual_original_BF16_tensor_sha256": "9ad23b4f2a796fa654c70d6622b14b63ba0541baa85e7c17998751c8d84f85f9",
+      "actual_output_dimension": 2048,
+      "expert": 61,
+      "layer": 21,
+      "original_BF16_activation_output_energy": 78565.68019520432,
+      "role": "down_proj",
+      "route_weighted_output_SSE_AF4": 658.141087495895,
+      "route_weighted_output_SSE_Q4": 1855.6252178593827,
+      "route_weighted_output_SSE_Q5": 404.46786929304375,
+      "route_weighted_output_relative_MSE_AF4": 0.008376953981187173,
+      "route_weighted_output_relative_MSE_Q4": 0.023618776204175865,
+      "route_weighted_output_relative_MSE_Q5": 0.005148149526461207,
+      "routed_probability_mass": 7.980747466906905
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 87,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "bec44c378b794a1f9c834fecd85712072d94c99b72f72302e36bcd39be9d4df9",
+      "actual_original_BF16_tensor_sha256": "b43c5699477b545b5c17effa539204a586a881bc6f8ed4efb9ebdb2e95a13844",
+      "actual_output_dimension": 1408,
+      "expert": 26,
+      "layer": 24,
+      "original_BF16_activation_output_energy": 73399.1269606789,
+      "role": "gate_proj",
+      "route_weighted_output_SSE_AF4": 262.324588180196,
+      "route_weighted_output_SSE_Q4": 718.3115897148866,
+      "route_weighted_output_SSE_Q5": 157.9176038551607,
+      "route_weighted_output_relative_MSE_AF4": 0.003573946980605471,
+      "route_weighted_output_relative_MSE_Q4": 0.009786377842064767,
+      "route_weighted_output_relative_MSE_Q5": 0.0021514915829960717,
+      "routed_probability_mass": 7.685624016448855
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 87,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "294d58b53e8d3545cf14e1804bfcfcd048bc427336c7e6bf52ea6e3327f8150d",
+      "actual_original_BF16_tensor_sha256": "cecd54ae0a09060e16900de6c5719dbb0877394ef1ef4e8ac53ae7454e013002",
+      "actual_output_dimension": 1408,
+      "expert": 26,
+      "layer": 24,
+      "original_BF16_activation_output_energy": 64527.32536081467,
+      "role": "up_proj",
+      "route_weighted_output_SSE_AF4": 307.9061821113655,
+      "route_weighted_output_SSE_Q4": 857.040727194873,
+      "route_weighted_output_SSE_Q5": 186.81464801131,
+      "route_weighted_output_relative_MSE_AF4": 0.004771717724075184,
+      "route_weighted_output_relative_MSE_Q4": 0.01328182630230829,
+      "route_weighted_output_relative_MSE_Q5": 0.002895124615296025,
+      "routed_probability_mass": 7.685624016448855
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 87,
+      "actual_input_dimension": 1408,
+      "actual_original_AF4_packed_sha256": "19ab09051996e66c149592bfe08e4ba85af42ec2047243a9f5b65b0e275c173a",
+      "actual_original_BF16_tensor_sha256": "ddab68bdd05d0cec16dc7da34303a1b5da8ae439104ddc960357828af887d3ae",
+      "actual_output_dimension": 2048,
+      "expert": 26,
+      "layer": 24,
+      "original_BF16_activation_output_energy": 375998.39773976366,
+      "role": "down_proj",
+      "route_weighted_output_SSE_AF4": 2832.8667372263853,
+      "route_weighted_output_SSE_Q4": 7904.135485347992,
+      "route_weighted_output_SSE_Q5": 1717.748633843455,
+      "route_weighted_output_relative_MSE_AF4": 0.007534252151752709,
+      "route_weighted_output_relative_MSE_Q4": 0.021021726509639568,
+      "route_weighted_output_relative_MSE_Q5": 0.004568499877045606,
+      "routed_probability_mass": 7.685624016448855
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 76,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "078d6f7560d508580dcadc80d458fbdb5ef8649f2ddc4c22677a6b4581d73c60",
+      "actual_original_BF16_tensor_sha256": "feb2a4eb894079efd1628d630f9238b0b2a4d435e74ae2dbf6bbeb1ede5b5c94",
+      "actual_output_dimension": 1408,
+      "expert": 60,
+      "layer": 24,
+      "original_BF16_activation_output_energy": 47505.17231659845,
+      "role": "gate_proj",
+      "route_weighted_output_SSE_AF4": 158.59800312192976,
+      "route_weighted_output_SSE_Q4": 449.6295413987008,
+      "route_weighted_output_SSE_Q5": 97.17651585508654,
+      "route_weighted_output_relative_MSE_AF4": 0.0033385417921432347,
+      "route_weighted_output_relative_MSE_Q4": 0.009464854445788397,
+      "route_weighted_output_relative_MSE_Q5": 0.0020455986393955834,
+      "routed_probability_mass": 4.010160263627768
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 76,
+      "actual_input_dimension": 2048,
+      "actual_original_AF4_packed_sha256": "3d1d7823b78fb69e04bca4fbdaa035124e9c064ab9310654cc72d19d4159b5ed",
+      "actual_original_BF16_tensor_sha256": "600aa41ba4a747ff08cd81625075e2e9f81a18c82a3b866f4b87fb0417bb64c6",
+      "actual_output_dimension": 1408,
+      "expert": 60,
+      "layer": 24,
+      "original_BF16_activation_output_energy": 53699.6265636166,
+      "role": "up_proj",
+      "route_weighted_output_SSE_AF4": 180.7248224562,
+      "route_weighted_output_SSE_Q4": 500.0363347202153,
+      "route_weighted_output_SSE_Q5": 110.49867516192477,
+      "route_weighted_output_relative_MSE_AF4": 0.003365476336080286,
+      "route_weighted_output_relative_MSE_Q4": 0.009311728343731307,
+      "route_weighted_output_relative_MSE_Q5": 0.0020577177577020904,
+      "routed_probability_mass": 4.010160263627768
+    },
+    {
+      "actual_clean_unseen_training_router_observations": 76,
+      "actual_input_dimension": 1408,
+      "actual_original_AF4_packed_sha256": "9077d5047b11efc8ceeb0b86c09d747969fbb1ce066507308d5fd2f0fbcf87d8",
+      "actual_original_BF16_tensor_sha256": "d30898c66d36cc6a66c35c76ab35aae5b619258947ee5272a64b5d350e6df97c",
+      "actual_output_dimension": 2048,
+      "expert": 60,
+      "layer": 24,
+      "original_BF16_activation_output_energy": 67778.31039783238,
+      "role": "down_proj",
+      "route_weighted_output_SSE_AF4": 622.8649162053695,
+      "route_weighted_output_SSE_Q4": 1785.8433339334915,
+      "route_weighted_output_SSE_Q5": 387.47989756846874,
+      "route_weighted_output_relative_MSE_AF4": 0.009189738023113798,
+      "route_weighted_output_relative_MSE_Q4": 0.02634830115196564,
+      "route_weighted_output_relative_MSE_Q5": 0.005716871596446004,
+      "routed_probability_mass": 4.010160263627768
+    }
+  ],
+  "production_modified": false,
+  "receipt_sha256": "35f9b96767d3e2b40ab6dfc9b79d99bf1ccd392124804cf41e63b38af6c77dfb",
+  "role_count": 24,
+  "schema": "beglin-je01-actual-original27-cal240-clean-H2-SwiGLU-native-24-role-activation-relative-error-exactbyte-DP/1",
+  "scientific_scope": "ACTUAL_TRAINED_ORIGINAL_ROUTE_WEIGHTED_GEMV_DIAGONAL_OUTPUT_METRIC_NOT_TRUE_LOSS_FISHER_OR_HESSIAN",
+  "selected_frozen_expert_count": 8,
+  "separate_exactbyte_dp_objective_results": {
+    "route_weighted_output_SSE": {
+      "best_nonbaseline_exactbyte": {
+        "q4_roles": 6,
+        "q5_roles": 6,
+        "risk_difference": -1607.2109554533818,
+        "source_assignment": [
+          [
+            12,
+            13,
+            "gate_proj",
+            "Q4"
+          ],
+          [
+            12,
+            13,
+            "up_proj",
+            "Q4"
+          ],
+          [
+            12,
+            13,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            13,
+            22,
+            "gate_proj",
+            "Q4"
+          ],
+          [
+            13,
+            22,
+            "up_proj",
+            "Q4"
+          ],
+          [
+            13,
+            22,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            13,
+            28,
+            "gate_proj",
+            "Q4"
+          ],
+          [
+            13,
+            28,
+            "up_proj",
+            "Q4"
+          ],
+          [
+            13,
+            28,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            14,
+            63,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            14,
+            63,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            14,
+            63,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            20,
+            17,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            20,
+            17,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            20,
+            17,
+            "down_proj",
+            "Q5"
+          ],
+          [
+            21,
+            61,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            21,
+            61,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            21,
+            61,
+            "down_proj",
+            "Q5"
+          ],
+          [
+            24,
+            26,
+            "gate_proj",
+            "Q5"
+          ],
+          [
+            24,
+            26,
+            "up_proj",
+            "Q5"
+          ],
+          [
+            24,
+            26,
+            "down_proj",
+            "Q5"
+          ],
+          [
+            24,
+            60,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            24,
+            60,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            24,
+            60,
+            "down_proj",
+            "Q5"
+          ]
+        ],
+        "unchanged_AF4_roles": 12
+      },
+      "best_overall": {
+        "q4_roles": 6,
+        "q5_roles": 6,
+        "risk_difference": -1607.2109554533818,
+        "source_assignment": [
+          [
+            12,
+            13,
+            "gate_proj",
+            "Q4"
+          ],
+          [
+            12,
+            13,
+            "up_proj",
+            "Q4"
+          ],
+          [
+            12,
+            13,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            13,
+            22,
+            "gate_proj",
+            "Q4"
+          ],
+          [
+            13,
+            22,
+            "up_proj",
+            "Q4"
+          ],
+          [
+            13,
+            22,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            13,
+            28,
+            "gate_proj",
+            "Q4"
+          ],
+          [
+            13,
+            28,
+            "up_proj",
+            "Q4"
+          ],
+          [
+            13,
+            28,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            14,
+            63,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            14,
+            63,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            14,
+            63,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            20,
+            17,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            20,
+            17,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            20,
+            17,
+            "down_proj",
+            "Q5"
+          ],
+          [
+            21,
+            61,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            21,
+            61,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            21,
+            61,
+            "down_proj",
+            "Q5"
+          ],
+          [
+            24,
+            26,
+            "gate_proj",
+            "Q5"
+          ],
+          [
+            24,
+            26,
+            "up_proj",
+            "Q5"
+          ],
+          [
+            24,
+            26,
+            "down_proj",
+            "Q5"
+          ],
+          [
+            24,
+            60,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            24,
+            60,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            24,
+            60,
+            "down_proj",
+            "Q5"
+          ]
+        ],
+        "unchanged_AF4_roles": 12
+      },
+      "number_final_dynamic_states": 50
+    },
+    "route_weighted_output_relative_MSE": {
+      "best_nonbaseline_exactbyte": {
+        "q4_roles": 1,
+        "q5_roles": 1,
+        "risk_difference": 0.0024733855809832266,
+        "source_assignment": [
+          [
+            12,
+            13,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            12,
+            13,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            12,
+            13,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            13,
+            22,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            13,
+            22,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            13,
+            22,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            13,
+            28,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            13,
+            28,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            13,
+            28,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            14,
+            63,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            14,
+            63,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            14,
+            63,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            20,
+            17,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            20,
+            17,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            20,
+            17,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            21,
+            61,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            21,
+            61,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            21,
+            61,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            24,
+            26,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            24,
+            26,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            24,
+            26,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            24,
+            60,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            24,
+            60,
+            "up_proj",
+            "Q4"
+          ],
+          [
+            24,
+            60,
+            "down_proj",
+            "Q5"
+          ]
+        ],
+        "unchanged_AF4_roles": 22
+      },
+      "best_overall": {
+        "q4_roles": 0,
+        "q5_roles": 0,
+        "risk_difference": 0.0,
+        "source_assignment": [
+          [
+            12,
+            13,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            12,
+            13,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            12,
+            13,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            13,
+            22,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            13,
+            22,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            13,
+            22,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            13,
+            28,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            13,
+            28,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            13,
+            28,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            14,
+            63,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            14,
+            63,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            14,
+            63,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            20,
+            17,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            20,
+            17,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            20,
+            17,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            21,
+            61,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            21,
+            61,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            21,
+            61,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            24,
+            26,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            24,
+            26,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            24,
+            26,
+            "down_proj",
+            "AF4"
+          ],
+          [
+            24,
+            60,
+            "gate_proj",
+            "AF4"
+          ],
+          [
+            24,
+            60,
+            "up_proj",
+            "AF4"
+          ],
+          [
+            24,
+            60,
+            "down_proj",
+            "AF4"
+          ]
+        ],
+        "unchanged_AF4_roles": 24
+      },
+      "number_final_dynamic_states": 50
+    }
+  },
+  "source_actual_training_original27_256_h2_sw_trace_receipt_sha256": "b911aef00007b1f9b44214996353f93c7218fe51c82daf91966e450ebba460b6",
+  "source_full_original_AF4_sha256": "9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4",
+  "source_heldout_OOD_labels_used": false,
+  "source_original_router256_receipt_sha256": "62d0a86956c1a07fa8143efcb52b0b5dea6808767716cd160e05ceb1c0c8a8eb",
+  "status": "JE01_ACTUAL_ORIGINAL27_CAL240_UNSEEN_FFN_H2_SWIGLU_24ROLE_ACTIVATION_DP_COMPLETE",
+  "training_first16_prior_pilot_excluded_from_precision_selection": true,
+  "training_unseen240_prompt_count": 240,
+  "true_logprob_gradients": "NOT_MEASURED",
+  "true_original_Chat_BF16_four_shard_SHA_reverified": true
+}

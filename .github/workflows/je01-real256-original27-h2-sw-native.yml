@@ -1,0 +1,102 @@
+name: JE01 actual original27 source256 FFN routed h2 and SwiGLU trace Apple Metal
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_scratch_real256_lastprompt_h2_swiglu.py'
+      - '.github/workflows/je01-real256-original27-h2-sw-native.yml'
+permissions:
+  contents: read
+jobs:
+  original27-actual-train256-h2-sw-metal-build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned native original Apple Silicon MLX and CMake
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'mlx==0.32.1' 'cmake>=3.20,<5' 'ninja>=1.10'
+      - name: Stage original27 scratch and real last-training-prompt H2 and SwiGLU instrumentation
+        run: |
+          set -euo pipefail
+          python tools/je01_isolated_context384_stage.py \
+            --checkout "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP/je01_real_act256_src" \
+            --expected-commit "$(git rev-parse HEAD)" > "$RUNNER_TEMP/JE01_ORIGINAL_SOURCE.json"
+          python - <<'PY'
+          import importlib.util,os,pathlib
+          path=pathlib.Path("tools/je01_xox_original256_fulltarget_teacherforced_nll.py").resolve()
+          spec=importlib.util.spec_from_file_location("je01_gold",path)
+          m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+          f=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_real_act256_src"/"qwen_infer.c"
+          f.write_text(m.patch_cpu(f.read_text()))
+          PY
+          python tools/je01_scratch_real256_lastprompt_h2_swiglu.py \
+            --scratch "$RUNNER_TEMP/je01_real_act256_src" > "$RUNNER_TEMP/JE01_H2_SW_PATCH.json"
+          python - <<'PY'
+          import json,os,pathlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          d=json.loads((root/"JE01_H2_SW_PATCH.json").read_text())
+          assert d["status"]=="JE01_ORIGINAL27_ACTUAL_CAL256_TRAIN_ONLY_H2_SWIGLU_SCRATCH_PATCHED"
+          assert d["source_previous_proven_original16_trace_blob"]=="39370fefa262a982fa5ac267f6adf6c01fd23ab1"
+          assert d["observed_original_FFN_vectors"]=="H2_2048_AND_DOWN_SWIGLU_1408"
+          assert not d["production_modified"] and not d["heldout_OOD_labels_used"]
+          assert d["true_loss_Fisher_Hessian"]=="NOT_MEASURED"
+          src=root/"je01_real_act256_src"
+          c=(src/"qwen_infer.c").read_text()
+          cpp=(src/"mlx_moe.cpp").read_text()
+          assert c.count("JE01_REAL_CAL256_PROMPT_H2_CONTEXT_INVALID")==1
+          assert c.count("JE01_REAL_TRAIN256_ACTIVATION_B1_R16_LASTPROMPT_GUARD")==1
+          assert cpp.count("JE01_REAL_ORIGINAL_AF4_CAL256_ACTUAL_H2_SWIGLU_V1")==1
+          assert cpp.count("JE01_CAL256_TRUE_NATIVE_ACTIVATION_WRITE_FAILED")==1
+          assert cpp.count("g_je01_h2_count++")==1
+          cm=src/"CMakeLists.txt"
+          old="OUTPUT_NAME qwen_infer_gpu_je01_context384"
+          assert cm.read_text().count(old)==1
+          cm.write_text(cm.read_text().replace(old,"OUTPUT_NAME je01_eoe_real_original27_cal256_h2_swiglu",1))
+          print("JE01_REAL256_NATIVE_H2_SWIGLU_SOURCE_PASS")
+          PY
+      - name: Compile actual pretrained all27 DeepSeek Apple Metal native research binary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import platform
+          assert platform.system()=="Darwin" and platform.machine()=="arm64"
+          PY
+          MLX_CMAKE_DIR="$(python -c 'import mlx,os;print(os.path.join(list(mlx.__path__)[0],"share","cmake"))')"
+          cmake -S "$RUNNER_TEMP/je01_real_act256_src" -B "$RUNNER_TEMP/je01_real_act256_build" \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release -DMLX_CMAKE_DIR="$MLX_CMAKE_DIR"
+          cmake --build "$RUNNER_TEMP/je01_real_act256_build" --target qwen_infer_gpu --parallel 2
+          cp "$RUNNER_TEMP/je01_real_act256_build/je01_eoe_real_original27_cal256_h2_swiglu" \
+            "$RUNNER_TEMP/je01_eoe_real_original27_cal256_h2_swiglu"
+          python - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          f=root/"je01_eoe_real_original27_cal256_h2_swiglu"
+          assert f.is_file()
+          r={"schema":"beglin-je01-original27-real256-H2-SwiGLU-Apple-Metal-build/1",
+            "status":"JE01_TRUE_ORIGINAL27_CAL256_H2_AND_SWIGLU_APPLE_METAL_COMPILED",
+            "source_patch":json.loads((root/"JE01_H2_SW_PATCH.json").read_text()),
+            "native_binary_sha256":hashlib.sha256(f.read_bytes()).hexdigest(),
+            "native_binary_bytes":f.stat().st_size,
+            "actual_256_forward":"NOT_RUN",
+            "real_Fisher_Hessian":"NOT_MEASURED",
+            "operating_model_modified":False}
+          (root/"JE01_REAL256_H2_SW_NATIVE_BUILD_RECEIPT.json").write_text(json.dumps(r,sort_keys=True,indent=2)+"\n")
+          print("JE01_REAL256_ORIGINAL27_H2_SWIGLU_NATIVE_COMPILE_PASS",r["native_binary_sha256"])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real256-original27-h2sw-native-binary
+          path: |
+            ${{ runner.temp }}/je01_eoe_real_original27_cal256_h2_swiglu
+            ${{ runner.temp }}/JE01_REAL256_H2_SW_NATIVE_BUILD_RECEIPT.json
+            ${{ runner.temp }}/JE01_H2_SW_PATCH.json
+          retention-days: 14
+          if-no-files-found: error

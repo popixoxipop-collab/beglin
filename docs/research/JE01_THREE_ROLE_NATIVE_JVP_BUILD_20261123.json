@@ -1,0 +1,52 @@
+{
+  "adapter_smoke_receipt_sha256": "b0825ab7a048f7d95b155592760e10d73e3df2b112230adbf7b348f388ca1595",
+  "adapter_smoke_source_sha256": {
+    "je01_mlx_native_jvp_adapters.h": "9ae9d98b921334bae321e583908e71bdc9c08178cbf3ca5d7a1d4d4e552a09ec",
+    "je01_mlx_native_jvp_smoke.cpp": "eb2e596a5283a354d732e270d2c82e7c709484667f1fdfa9360278afecee25ac",
+    "je01_mlx_native_jvp_smoke.py": "13e26b32b05eb152db8be274c62ab6d6192729fd406507f24a771760b5fb5563"
+  },
+  "allocation_selected": false,
+  "bank_receipt_sha256": "4994ec762b3a9b8a44015bad18f4b5bc7ea26505208384146238e7def28464d4",
+  "base_c_sha256": "8d1a8fce7d578319ceb45d17948ebe0349758acb2ae0b786944c8119ea795c3d",
+  "base_cpp_sha256": "390fb6b136bdd9f4978e6482b7a18b11951333e453752a15c3fd094a7d3b07f3",
+  "binary_bytes": 1278360,
+  "binary_sha256": "110b1978d97bcd7c6bdfd6d42142569e56e9dacffa4ff462dc0786b3128e49f4",
+  "cmake_sha256": "1479cf49e18da616e6fcfdde2ed9433b468701a3d5a4482fa7e9ee398683da19",
+  "configuration": {
+    "adapter_sha256": "9ae9d98b921334bae321e583908e71bdc9c08178cbf3ca5d7a1d4d4e552a09ec",
+    "diagnostic_role_indices": [
+      0,
+      1,
+      2
+    ],
+    "diagnostic_scope": "PREVIOUSLY_SEEN_TRAIN16_DIAGNOSTIC_ONLY",
+    "diagnostic_tier": "Q4",
+    "patch_source_sha256": "68c8cd6541657312bca6604dcbe74dcdc8156ff4da80de9c8fd672a1ad08d755",
+    "patched_c_sha256": "5e2a6ea76c22c1ec0ff9f2fb6d093b7d3a471679adbe439ed1c4b898a56a52a6",
+    "patched_cpp_sha256": "6055ca3b261075fe5fcf76e5829f0fb20b8ecdd52599248f4b9b1032cfbeb49f",
+    "runtime_mode": "ROLE_DIRECTION_FIXED_Q4Q5",
+    "smoke_canonical_sha256": "b0825ab7a048f7d95b155592760e10d73e3df2b112230adbf7b348f388ca1595"
+  },
+  "dataset_receipt_sha256": "a0091a208adaa559788a942149fe28f12f1de4e03dfbbafe840a5acce50f3e2a",
+  "fixed_build_receipt_sha256": "dbcdd1beb38a3863a5cbb1ac4bb697dddcc6e263448bea80d03385b7db8c2fc7",
+  "fixed_native_sha256": "46ea1f61fdd7483767ebc20900f4c97f9663a51148c74e566d2f66ccc848e688",
+  "full48_empirical_fisher": null,
+  "helper_source_sha256": {
+    "je01_native_one_column_jvp_runner.py": "ffd632d79d948119ad261e2720ebbcd7c5076af21070aeaf60bf0ca8e7d79bd6",
+    "je01_role_directional_bank.py": "045fd22d86e4ce18f967d66830a1f71b0c61ad6ab5c5889d953cb9a8d05bce33",
+    "je01_role_directional_fixed_native.py": "cffe2e1dd8298681f3a134caace742ddc9fea77209c58683cd8d2f48fe6284e7",
+    "je01_role_directional_fixed_routes_patch.py": "233937b59293bec11300b66450b819dc48bb09b8d28eb6e98ca81aac7f511019",
+    "je01_role_directional_native_runner.py": "5607c0afef3bd4b1a61bcab6622267acc6b6137fc65ba0e79873e92e31d7e9e6"
+  },
+  "independent_validation_ood_accessed": false,
+  "mlx_library_sha256": "afb1939edc96dc10e452132e4e665276fe0c48bf8cdc1a69286feb8a14de1da0",
+  "model_original_af4_sha256": "9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4",
+  "new_role_runtime_validation": "NOT_RUN",
+  "production_modified": false,
+  "receipt_sha256": "2cbeb4dc1a7e1ab5642a4abb22395498c10dde43bee051eec3c303c7e53fa008",
+  "runner_source_sha256": "9be8372fa3858577011eb5ab1d4ad654f746e151a95012aaf23e515fd8a7eb90",
+  "schema": "beglin-je01-native-role-jvp-build/1",
+  "scope": "PREVIOUSLY_SEEN_TRAIN16_DIAGNOSTIC_ONLY",
+  "source_patch_receipt_sha256": "01d6b42e588ee79dd1f58f5065b1a3e2a5239f855f319eaba019ba8c459c0f6a",
+  "status": "ROLE_JVP_NATIVE_COMPILE_PASS"
+}

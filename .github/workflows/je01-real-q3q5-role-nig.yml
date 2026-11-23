@@ -1,0 +1,68 @@
+name: JE01 true BF16 Expert-role NIG proxy independent 32/32
+on:
+  push:
+    branches: [research/je01-moe-bayesian-bit-allocation-20261117]
+    paths:
+      - 'tools/je01_real_q3q5_role_nig_pilot.py'
+      - '.github/workflows/je01-real-q3q5-role-nig.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  train-and-independent-test-true-weight-role-proxy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    env:
+      OPENBLAS_NUM_THREADS: '2'
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy==2.2.6
+      - uses: actions/download-artifact@v4
+        with:
+          name: je01-real-original-bf16-q3q5-48-native-role-tiers
+          run-id: 44176129643
+          repository: popixoxipop-collab/beglin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/input
+      - name: Train NIG proxy on real pretrained packed FFN, independent synthetic input
+        run: |
+          set -euo pipefail
+          python tools/je01_real_q3q5_role_nig_pilot.py \
+            --source "$RUNNER_TEMP/input/je01_real_q3q5" \
+            --output "$RUNNER_TEMP/je01_role_nig_evaluation.json" \
+            | tee "$RUNNER_TEMP/je01_role_nig_console.txt"
+      - name: Independent receipt and no-NLL-claim audit
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,hashlib,pathlib,os,math
+          f=pathlib.Path(os.environ["RUNNER_TEMP"])/"je01_role_nig_evaluation.json"
+          d=json.loads(f.read_text())
+          sig=d.pop("receipt_sha256")
+          assert sig==hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+          assert d["status"]=="REAL_BF16_SOURCE_ROLE_LEVEL_NIG_PROXY_TRAIN32_TEST32_COMPLETE"
+          assert d["baseline_original_AF8_byte_budget"]==43253760
+          assert d["actual_role3_count"]==6 and d["actual_role5_count"]==18
+          assert d["train_synthetic_seed"]==20261121 and d["test_synthetic_seed"]==20261122
+          assert len(d["synthetic_test_policy_results"])==4
+          assert all(v["independent_case_count"]==256 for v in d["synthetic_test_policy_results"].values())
+          assert all(math.isfinite(v["independent_heldout_synthetic_mean8_relative_FFN_MSE"])
+                     for v in d["synthetic_test_policy_results"].values())
+          assert d["original_AF4_q4_gold_NLL"]=="NOT_MEASURED"
+          assert d["27layer_model_forward"]=="NOT_RUN" and not d["production_modified"]
+          print("JE01_REAL_BF16_EXPERT_ROLE_NIG_TRAIN32_TEST32_SHA_PASS",sig)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: je01-real-q3q5-role-NIG-proxy-train32-test32
+          path: |
+            ${{ runner.temp }}/je01_role_nig_evaluation.json
+            ${{ runner.temp }}/je01_role_nig_console.txt
+          retention-days: 14
+          if-no-files-found: error
