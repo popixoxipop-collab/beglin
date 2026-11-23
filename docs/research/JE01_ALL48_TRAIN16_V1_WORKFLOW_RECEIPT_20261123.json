@@ -1,0 +1,23 @@
+{
+  "allocation_selected": false,
+  "analysis_receipt_sha256": null,
+  "auditor_exit_code": null,
+  "auditor_source_sha256": "270fc991cd0e4378457fe80cfa4f7f924ab69d44d77656ecfb95bb11449730a9",
+  "controller_source_sha256": "e4b356deb130cf92bc9f10deb902dbea49ceca79321b003fae4c3656d18df92a",
+  "elapsed_seconds": 140.9438082082197,
+  "ended_at": "2026-11-23T00:51:03.623577+00:00",
+  "error": "InterruptedError: JE01_ALL48_WORKFLOW_SIGNAL:15",
+  "independent_audit_receipt_sha256": null,
+  "independent_validation_ood_accessed": false,
+  "plan_receipt_sha256": "60fdced19fad43cbf2b73801dd68effbbd75c186f8a5f39de9274cad39453419",
+  "production_modified": false,
+  "receipt_sha256": "694f066501ddf1f1e31d94a746c56fc10239081e5c072311118c2c89c6e13b53",
+  "root": "/Volumes/D50/TailnetCommander/work/je01_native_all48_train16_20261123_v1",
+  "runner_exit_code": null,
+  "runner_source_sha256": "7451c867ebb810cff9fe854322e00937bf8b1807c2d0475006d6703be32dd4de",
+  "schema": "beglin-je01-all48-train16-workflow/1",
+  "started_at": "2026-11-23T00:48:42.680616+00:00",
+  "status": "FAILED_OR_INTERRUPTED_NO_COMPLETION_CLAIM",
+  "train240_execution": "NOT_RUN",
+  "workflow_attempt": 1
+}
