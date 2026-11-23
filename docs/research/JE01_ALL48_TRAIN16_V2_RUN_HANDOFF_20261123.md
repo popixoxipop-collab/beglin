@@ -51,6 +51,12 @@ At the 2026-11-23 10:15:59 KST observation, five FD cells and the first JVP cell
 
 Checkpoint canonical: `b5cfefbc499028df297b6668b86b2dd0e736074a31bd6c845a59cb57382c0be1`; exact file SHA `6d6734ec6a5e91d948289837fbc729a6321e572a130b34a054076c78fde6b9bd`, 43,703 bytes. The downloaded checkpoint's checksum and FD comparison were independently recomputed from its derived arrays; the full independent native raw audit has **not** run yet. This is a live runner checkpoint and not a full48 independent PASS or a policy-quality result.
 
+## Follow-up observation: 10:38 KST
+
+Read-only continuation confirmed the same durable job still RUNNING with a fresh heartbeat at **2026-11-23 10:38:25 KST**. The complete stdout page recorded **21/79 evidence observations = 1 inherited OFF + 20 new native cells**, **5/48 JVP columns**, and **5 provisional runner checkpoints**. Gate/Up/Down Q5 and newly reproduced Gate/Up Q4 checkpoints had passed; Down Q4 was the current cell. These are observed runner results, not the final independent raw audit. The immutable native plan and sources remain unchanged.
+
+The full Up and Down Q5 checkpoint bytes, their checksums, and the bounded progress observations are preserved in `JE01_ALL48_TRAIN16_V2_UP_Q5_CHECKPOINT_20261123.json`, `JE01_ALL48_TRAIN16_V2_DOWN_Q5_CHECKPOINT_20261123.json`, and `JE01_ALL48_TRAIN16_V2_Q5_PROGRESS_OBSERVATION_20261123.json`. The earlier Gate Q5 checkpoint is preserved separately. The accompanying `JE01_ALL48_TRAIN16_V2_Q5_PROGRESS_REVIEW_20261123.md` describes the exact verification scope.
+
 ## Completion procedure
 
 1. Read fresh Tailnet current/live release and the exact job status/output. Never start a duplicate job or re-execute successful cells. While this job is RUNNING, its own controller already owns the run lock, native execution and final independent audit. A status query must not race a second auditor or alter its source/plan.
@@ -76,12 +82,12 @@ Before final publication, look for `docs/research/JE01_ALL48_TRAIN16_V2_COMPLETI
 
 - Existing owner-only Site: `appgprj_6b03682ea5f88191b76bc263e09c1c2c`.
 - HTTPS: https://je01-native-sensitivity-20261123-abdb.sweet-eft-6723.chatgpt.site/
-- Site source checkpoint: `cb3afbe16bdefed715eecc9677f36031e76b59ba`.
-- Successful running-state deployment: `appgdep_6b03928ce9f4819181ec0e119fb4fef4`.
+- Site source checkpoint: `5c52849b1edd4491e83d6190d0c0e1d28d439652`.
+- Successful running-state deployment: `appgdep_6b0398c08de88191aa6a4cf7707959ea`.
 - Local checkout when present: `/workspace/scratch/f05b6fa53004/je01_viewer/.sites-checkout`.
 - Source entrypoints: `export_all48_jvp.py`, `record_all48_followup.py`; full commands are in Site `README.md`.
 
-The published progress snapshot is explicitly timestamped 2026-11-23 10:09:38 KST: two observations (inherited OFF plus first new FD), zero JVP columns and zero final FD comparisons. It is not a live backend feed. The local browser verified the new stage, hidden unmeasured matrix/Gram, nine-coordinate table and v1 history, plus existing Up/sentence16 selection showing 57 actual tokens. The HTTPS page reached the expected ChatGPT sign-in screen in the available browser; authenticated production content and physical iPad Safari were not verified.
+The published progress snapshot is explicitly timestamped **2026-11-23 10:34:38 KST**: 19/79 evidence observations (one inherited OFF plus 18 new native cells), 3/48 JVP columns and 3/9 provisional runner FD comparisons. It is not a live backend feed. The local browser verified these counts, the explanatory Gate/Up/Down Q5 note, the still-hidden full48 matrix/Gram and the independent-audit table at 0/9 registered results. All prior experiment objects and six original source JSON files were confirmed unchanged from Site source `2230a3e6342ed6624056b9101ec4b3dcd85c4a1a`. Production deployment succeeded at 2026-11-23 10:37:15 KST. The HTTPS page reached the expected ChatGPT sign-in screen in the available browser; authenticated production content and physical iPad Safari were not verified. The temporary local preview was stopped and the Site checkout is clean.
 
 V2 source checks comprise 12 runner, 15 independent-auditor and 4 workflow tests. All six existing PR workflows at `423896d94548264aa81cef851cbb64e85eaec3a6` succeeded, including independent shadow-contract run `45092664513`. These are contract/build checks, not full48 scientific evidence. The native full48 duration estimate is about 2 hours 40 minutes, not measured end-to-end runtime.
 
