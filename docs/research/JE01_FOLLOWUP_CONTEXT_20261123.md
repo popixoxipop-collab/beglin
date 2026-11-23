@@ -2,9 +2,9 @@
 
 **Handoff date:** 2026-11-23 KST. **Decision:** research only; AF4 retained; no allocation adoption.
 
-The original Gate JVP now has an independent raw-file audit **PASS**. The new Gate/Up/Down Q4 native build **PASSed**, and its 14-cell diagnostic is **RUNNING / numerical verdict pending** under EOE job `job_3b09545af2076ea404721f268b248754`. Build success does not establish derivative agreement or improved model likelihood.
+The original Gate JVP and the new **Gate/Up/Down Q4 full-prefix native diagnostic both PASS**, with an independent raw-file audit confirming all three new directions. The 14-cell native job and the independent audit completed successfully. This establishes derivative agreement with converged fixed-route finite differences on previously seen TRAIN16; improved model likelihood and allocation quality remain unmeasured by this diagnostic.
 
-- Research PR: [beglin #94](https://github.com/popixoxipop-collab/beglin/pull/94), open Draft, unmerged when rechecked; observed HEAD `c1541582bd54e1fc7ee9e60951026142e5e81fd3`.
+- Research PR: [beglin #94](https://github.com/popixoxipop-collab/beglin/pull/94), open Draft, unmerged; follow-up code checkpoint `fa36e03ea365010fef8d7e95f9aecc3e13118587`. The final evidence is identified by its separate receipt and file hashes below.
 - Viewer: [JE01 native sensitivity](https://je01-native-sensitivity-20261123-abdb.sweet-eft-6723.chatgpt.site).
 - Runtime was checked at `g6-0.9.0-operator.900520`, with current/live convergence. This work does not activate a release or modify production weights.
 
@@ -42,13 +42,13 @@ The original OFF implementation, guarded native adapters, hard-route replay, dyn
 
 **Pre-run plan:** the runner seals `PLAN_RECEIPT.json` before any native cell. It fixes the 14-cell order, three roles, Q4 tier, alpha grid, full-prefix counters, and comparison thresholds. Every new run and final result is bound to this plan. Reports are append-only; resume reopens and verifies raw files. A completed diagnostic cannot be retried to obtain a different numerical outcome. A new attempt requires an earlier execution/integrity failure tied to the same plan.
 
-The live attempt's sealed plan canonical SHA is `12ae8c5eb7a3d6409eea2aa79337de9da9c56453bac33ec084c4e4a64aec8a14`.
+The completed attempt's sealed plan canonical SHA is `12ae8c5eb7a3d6409eea2aa79337de9da9c56453bac33ec084c4e4a64aec8a14`.
 
-The planned sequence is OFF once; Gate JVP once using its existing fixed-FD reference; then Up and Down each with alpha-zero, ±0.05, ±0.025 fixed-FD cells and one alpha-zero JVP. All zero/JVP primals must match original gold bytes, and every fixed route must match the baseline route bytes. For each direction, both FD convergence and JVP-versus-fine-FD agreement must pass `RMS(error) <= 0.0001 + 0.05 * RMS(fine FD)` across all 656 tokens.
+The executed sequence was OFF once; Gate JVP once using its existing fixed-FD reference; then Up and Down each with alpha-zero, ±0.05, ±0.025 fixed-FD cells and one alpha-zero JVP. All zero/JVP primals matched original gold bytes, and every fixed route matched the baseline route bytes. For each direction, both FD convergence and JVP-versus-fine-FD agreement passed the predeclared rule `RMS(error) <= 0.0001 + 0.05 * RMS(fine FD)` across all 656 tokens.
 
 ## Source/build pins
 
-[JE01_THREE_ROLE_NATIVE_JVP_BUILD_20261123.json](JE01_THREE_ROLE_NATIVE_JVP_BUILD_20261123.json) records the successful native build. Its `new_role_runtime_validation: NOT_RUN` is the immutable state at build time; the subsequent diagnostic job is running.
+[JE01_THREE_ROLE_NATIVE_JVP_BUILD_20261123.json](JE01_THREE_ROLE_NATIVE_JVP_BUILD_20261123.json) records the successful native build. Its `new_role_runtime_validation: NOT_RUN` is the immutable state at build time. The subsequent diagnostic and independent audit completed with PASS in separate receipts; the historical build receipt was not rewritten.
 
 | Object | SHA-256 / canonical receipt |
 |---|---|
@@ -62,11 +62,11 @@ The planned sequence is OFF once; Gate JVP once using its existing fixed-FD refe
 | Guarded smoke receipt | `b0825ab7a048f7d95b155592760e10d73e3df2b112230adbf7b348f388ca1595` |
 | Original AF4 weights | `9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4` |
 
-Local verification passed 8/8 targeted tests: three patch tests, including compilation of the exact C++ selector guard for 48 allowed and 23 rejected configurations; and five runner tests covering scope expansion, malformed JVP records, finite-difference alignment, append-only receipts, and resume source/plan/role identity. Independent code review found no blocking defect. These checks do not substitute for the running native numerical diagnostic.
+Local verification passed 8/8 targeted tests: three patch tests, including compilation of the exact C++ selector guard for 48 allowed and 23 rejected configurations; and five runner tests covering scope expansion, malformed JVP records, finite-difference alignment, append-only receipts, and resume source/plan/role identity. Independent code review found no blocking defect. The native numerical results and independent raw-output audit below provide the separate runtime evidence.
 
 ## Reproduction and resume
 
-The EOE research root is `/Volumes/D50/TailnetCommander/work/je01_native_role_jvp_followup_20261123_v1`. Preserve its parent source/data/adapter evidence roots. The following command reproduces validation of the current attempt and resumes only hash-verified completed cells; do not launch it while the recorded job is running. Obtain fresh resource admission before execution.
+The EOE research root is `/Volumes/D50/TailnetCommander/work/je01_native_role_jvp_followup_20261123_v1`. Preserve its parent source/data/adapter evidence roots. The following command revalidates attempt 1 from its hash-verified completed cells. With the complete evidence intact, resume reopens the existing outputs without rerunning inference. Obtain fresh resource admission before any execution that could launch native cells; never run concurrent copies against the same attempt.
 
 ```bash
 je01_root=/Volumes/D50/TailnetCommander/work/je01_native_role_jvp_followup_20261123_v1
@@ -94,8 +94,37 @@ Also retain the new `je01_native_role_jvp_runner.py` and `je01_native_role_jvp_p
 
 This source closure does not make the experiment standalone: the SHA-bound native parent source/binaries, MLX runtime, original AF4 checkpoint, bank, frozen tokens, and prior raw receipts remain explicit EOE prerequisites. Do not substitute another checkpoint or rewrite guards to recreate missing artifacts.
 
-## Result insertion point — pending
+## Completed three-direction result and independent audit
 
-Append the final job state/exit, sealed plan SHA, `JE01_THREE_ROLE_JVP_DIAGNOSTIC_attempt1.json` canonical/file hashes, all three FD/JVP verdicts, original-AF4 post-run SHA, and an independent raw-output audit here after completion. At this handoff, none of the new three-role numerical verdicts is final.
+[JE01_THREE_ROLE_JVP_DIAGNOSTIC_20261123.json](JE01_THREE_ROLE_JVP_DIAGNOSTIC_20261123.json) records `THREE_ROLE_NATIVE_JVP_FIXED_FD_PASS`. The native job `job_3b09545af2076ea404721f268b248754` finished `SUCCEEDED`, exit 0, in 1,266.242 seconds. This is the preserved content of EOE `JE01_THREE_ROLE_JVP_DIAGNOSTIC_attempt1.json`.
 
-Even if all three directions pass, the optional 3×3 observed-label directional Gram is exploratory and conditional on the fixed hard route and previously seen TRAIN16. It is not the full parameter Fisher, a Hessian, a 48-direction result, evidence of natural finite-step routing stability, or an allocation policy. TRAIN240 fitting and untouched validation128/OOD128 remain subsequent gated work. PR #94 remains Draft; no quality improvement or production adoption is authorized by these derivative diagnostics alone.
+All rows below use L12/E13, tier Q4, 16 previously seen sentences, and the same 656 gold-token targets. FD convergence compares central differences at `h = 0.05` and `h = 0.025`; native JVP agreement uses the finer difference. Values are rounded here; the linked JSON retains full precision.
+
+| Direction | FD convergence RMS error | JVP–fine FD RMS error | Shared RMS acceptance limit | JVP–fine FD cosine | Verdict |
+|---|---:|---:|---:|---:|---|
+| Gate, role 0 | `4.81633259e-05` | `4.37493389e-05` | `8.81916166e-04` | `0.9999960901` | Both PASS |
+| Up, role 1 | `4.85076422e-05` | `4.38810871e-05` | `8.32416498e-04` | `0.9999955134` | Both PASS |
+| Down, role 2 | `4.70092776e-05` | `4.44129557e-05` | `9.63228112e-04` | `0.9999966957` | Both PASS |
+
+[JE01_THREE_ROLE_INDEPENDENT_AUDIT_20261123.json](JE01_THREE_ROLE_INDEPENDENT_AUDIT_20261123.json) independently reports `INDEPENDENT_AUDIT_CONFIRMED_THREE_ROLE_PASS`, with both evidence integrity and the numerical verdict PASS. It verified **132 files**, reopened all **14 new native-cell outputs**, checked the external plan pin and prior Gate evidence, and recomputed the three direction comparisons and Gram from raw records. The audit performed no additional native inference. Its completion was observed at 2026-11-23 09:17:54 KST; job `job_9ef614c72a23fe297059e97c9a7e40af` finished `SUCCEEDED`, exit 0, in 4.600 seconds.
+
+All three JVP executions satisfied the sealed full-prefix counters: 4,334 processed tokens, 32 resets, 117,018 layer steps, and 656 scored gold tokens. The audit checked zero/JVP primal byte identity, route byte identity, finite values, token/target alignment, native configuration logs, and source/build identity. The complete original AF4 file was rehashed after the run and remained `9e619a391c6eb438f1c0b82b06848578727a86ddebaca15b70d95183a73ae6b4`.
+
+The final evidence pins are:
+
+- Diagnostic canonical receipt: `1448de4fdfb34082c7bd6976676d8a5404f078d649d730adbaf331fb233857df`; file SHA-256: `22f929b8e92eff027358fa7c2104044cda7967ab46503199793c42618b5ae2b5`.
+- Independent audit canonical receipt: `5ce09188e65d5cfcc0f956447b2918fe9c80bf81f14e8486ba97864f7137b87b`; file SHA-256: `9d82c2d727d4d20eb799e9a5b7625474311c954aaf7694063793bfaf09f18fcc` (226,736 bytes).
+
+## Exploratory observed-label Gram and remaining boundary
+
+After all three directions passed, the runner formed `G[i,j] = mean_t(dNLL_t/dalpha_i * dNLL_t/dalpha_j)` over the same 656 observed labels. The independent auditor reproduced it. Coordinate order is Gate, Up, Down at L12/E13 Q4.
+
+| G | Gate | Up | Down |
+|---|---:|---:|---:|
+| Gate | `2.4459528428e-04` | `-4.5962191321e-05` | `1.5396998603e-05` |
+| Up | `-4.5962191321e-05` | `2.1456025280e-04` | `2.4116178817e-05` |
+| Down | `1.5396998603e-05` | `2.4116178817e-05` | `2.9812013568e-04` |
+
+The signed mean directional gradients are respectively `+0.0002523155735237539`, `−0.0004978168552929503`, and `+0.00017885948196584748`. They and the Gram were not used to select an allocation policy.
+
+This 3×3 matrix is exploratory and conditional on the fixed hard route and previously seen TRAIN16. The measured scope covers three Q4 computational directions; general selector support for 24 roles × two tiers does not establish a 48-direction numerical result. Full-parameter Fisher and Hessian claims, natural finite-step routing stability, and allocation quality remain unsupported by this experiment. The report explicitly records `full48_empirical_fisher: null`, `train240_allocation: NOT_RUN`, `allocation_selected: false`, `independent_validation_ood_accessed: false`, and `production_modified: false`. TRAIN240 fitting and untouched validation128/OOD128 remain subsequent gated work. PR #94 remains Draft; AF4 is retained.
